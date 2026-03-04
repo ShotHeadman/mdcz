@@ -321,7 +321,7 @@ function Index() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-lg h-9 px-4 gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="rounded-lg h-9 px-4 gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap"
                 onClick={() => setFailDialogOpen(true)}
               >
                 <AlertTriangle className="h-4 w-4" />
@@ -346,9 +346,10 @@ function Index() {
         )}
 
         <div className="flex-1 min-h-0 flex p-4">
-          <ResizablePanelGroup orientation="horizontal" className="flex-1 gap-1">
+          <ResizablePanelGroup orientation="horizontal" className="flex-1">
             <ResizablePanel
-              defaultSize={35}
+              id="result-list"
+              defaultSize={36}
               minSize={20}
               className="flex flex-col bg-card rounded-xl border shadow-sm overflow-hidden"
             >
@@ -358,7 +359,8 @@ function Index() {
             <ResizableHandle className="w-1 bg-transparent hover:bg-primary/10 rounded-full" />
 
             <ResizablePanel
-              defaultSize={65}
+              id="detail-view"
+              defaultSize={64}
               minSize={30}
               className="flex flex-col bg-card rounded-xl border shadow-sm overflow-hidden"
             >

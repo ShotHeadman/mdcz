@@ -117,8 +117,8 @@ export class NfoGenerator {
       "@_default": "true",
       "#text": data.number,
     };
-    movie.genre = buildStringNodes(toArray(data.genres));
-    movie.tag = buildStringNodes(toArray(data.genres));
+    movie.genre = Array.from(new Set(buildStringNodes(toArray(data.genres))));
+    movie.tag = movie.genre;
     movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
 
     // Image thumbs - prefer local asset paths, fall back to URLs
