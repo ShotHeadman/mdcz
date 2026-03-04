@@ -41,6 +41,16 @@
     "winston-daily-rotate-file": "^5.0.0",
     "zod": "^4.3.6"
   },
+  "optionalDependencies": {
+    "impit-darwin-arm64": "0.9.2",
+    "impit-darwin-x64": "0.9.2",
+    "impit-linux-arm64-gnu": "0.9.2",
+    "impit-linux-arm64-musl": "0.9.2",
+    "impit-linux-x64-gnu": "0.9.2",
+    "impit-linux-x64-musl": "0.9.2",
+    "impit-win32-arm64-msvc": "0.9.2",
+    "impit-win32-x64-msvc": "0.9.2"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.3.0",
     "@electron-toolkit/preload": "^3.0.0",
