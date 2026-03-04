@@ -274,10 +274,6 @@ export class TranslateService {
     target: LanguageTarget,
     config: Configuration,
   ): Promise<string | null> {
-    if (config.translate.engine !== "openai") {
-      return null;
-    }
-
     if (!config.translate.llmApiKey.trim()) {
       return null;
     }

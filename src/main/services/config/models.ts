@@ -58,7 +58,7 @@ const namingSchema = z.object({
 const translateSchema = z.object({
   enableTranslation: z.boolean().default(false),
   engine: z.enum(TranslateEngine).default(TranslateEngine.OPENAI),
-  llmModelName: z.string().default("gpt-4o-mini"),
+  llmModelName: z.string().default("gpt-5.2"),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(""),
   llmPrompt: z.string().default("请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}"),
@@ -114,7 +114,7 @@ const uiSchema = z.object({
 });
 
 const pathsSchema = z.object({
-  mediaPath: z.string().default("./media"),
+  mediaPath: z.string().default(""),
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),
   failedOutputFolder: z.string().default("failed"),

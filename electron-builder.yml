@@ -4,6 +4,7 @@ productName: MDCz
 asar: true
 asarUnpack:
   - resources/**
+  - "**/*.node"
 
 directories:
   buildResources: build
@@ -15,6 +16,7 @@ files:
   - package.json
   - "!**/*.map"
   - "!node_modules/mediainfo.js/dist/MediaInfoModule.wasm"
+  - "!node_modules/openai/src/**"
 
 extraResources:
   - from: node_modules/mediainfo.js/dist/MediaInfoModule.wasm
