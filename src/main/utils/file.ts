@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, stat, statfs } from "node:fs/promises";
+import { mkdir, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 
 const DEFAULT_VIDEO_EXTENSIONS = new Set([
@@ -24,7 +24,21 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
-const walkDirectory = async (dirPath: string, recursive: boolean): Promise<string[]> => {
+const resolveDirectoryKey = async (dirPath: string): Promise<string> => {
+  try {
+    return await realpath(dirPath);
+  } catch {
+    return dirPath;
+  }
+};
+
+const walkDirectory = async (dirPath: string, recursive: boolean, visitedDirs: Set<string>): Promise<string[]> => {
+  const dirKey = await resolveDirectoryKey(dirPath);
+  if (visitedDirs.has(dirKey)) {
+    return [];
+  }
+  visitedDirs.add(dirKey);
+
   const entries = await readdir(dirPath, { withFileTypes: true });
   const files: string[] = [];
 
@@ -33,13 +47,32 @@ const walkDirectory = async (dirPath: string, recursive: boolean): Promise<strin
 
     if (entry.isDirectory()) {
       if (recursive) {
-        files.push(...(await walkDirectory(absolutePath, true)));
+        files.push(...(await walkDirectory(absolutePath, true, visitedDirs)));
       }
       continue;
     }
 
     if (entry.isFile()) {
       files.push(absolutePath);
+      continue;
+    }
+
+    if (entry.isSymbolicLink()) {
+      try {
+        const targetStats = await stat(absolutePath);
+        if (targetStats.isDirectory()) {
+          if (recursive) {
+            files.push(...(await walkDirectory(absolutePath, true, visitedDirs)));
+          }
+          continue;
+        }
+
+        if (targetStats.isFile()) {
+          files.push(absolutePath);
+        }
+      } catch {
+        // Ignore broken/inaccessible symlink entries during scanning.
+      }
     }
   }
 
@@ -51,7 +84,7 @@ export const listVideoFiles = async (
   recursive = false,
   extensions: Set<string> = DEFAULT_VIDEO_EXTENSIONS,
 ): Promise<string[]> => {
-  const files = await walkDirectory(dirPath, recursive);
+  const files = await walkDirectory(dirPath, recursive, new Set<string>());
   return files.filter((filePath) => extensions.has(extname(filePath).toLowerCase()));
 };
 

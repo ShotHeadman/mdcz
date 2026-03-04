@@ -2,7 +2,7 @@ import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@shared/config";
 import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
-import type { AppInfo, IpcRouterContract } from "@shared/ipcContract";
+import type { AppInfo, IpcRouterContract, TranslateTestLlmInput } from "@shared/ipcContract";
 import type { CrawlerData, FileInfo, ScrapeResult } from "@shared/types";
 
 type Unsubscribe = () => void;
@@ -78,6 +78,10 @@ export const ipc = {
   },
   network: {
     checkCookies: () => client[IpcChannel.Network_CheckCookies](undefined),
+  },
+  translate: {
+    testLlm: (input: TranslateTestLlmInput) =>
+      client[IpcChannel.Translate_TestLlm](input) as Promise<{ success: boolean; message: string }>,
   },
   file: {
     listDirectory: (dirPath: string, recursive?: boolean) =>

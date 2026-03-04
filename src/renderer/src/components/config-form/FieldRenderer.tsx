@@ -32,7 +32,7 @@ interface BaseFieldProps {
  * BaseField ensures consistent layout using Row and links FormField state.
  * Important: children must wrap the interactive element in <FormControl> to preserve Radix accessibility.
  */
-function BaseField({ name, label, description, children, contentClassName, fullWidthContent }: BaseFieldProps) {
+export function BaseField({ name, label, description, children, contentClassName, fullWidthContent }: BaseFieldProps) {
   const form = useFormContext();
   return (
     <div className="hover:bg-muted/5 transition-colors group">

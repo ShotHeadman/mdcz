@@ -12,11 +12,7 @@ export interface LoggerEventPayload {
 }
 
 const getLogDir = (): string => {
-  if (app.isReady()) {
-    return join(app.getPath("userData"), "logs");
-  }
-
-  return join(process.cwd(), "logs");
+  return join(app.getPath("userData"), "logs");
 };
 
 const formatLogLine = (input: {

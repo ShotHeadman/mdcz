@@ -11,6 +11,7 @@ import {
   Globe,
   Keyboard,
   Languages,
+  Loader2,
   Monitor,
   Plus,
   RotateCcw,
@@ -22,15 +23,18 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
-import { useForm } from "react-hook-form";
+import { useForm, useFormContext } from "react-hook-form";
+import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Form, FormControl } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
+  BaseField,
   BoolField,
   ChipArrayFieldWrapper,
   CookieFieldWrapper,
@@ -359,13 +363,67 @@ function NamingSection(_props: SectionRenderProps) {
 }
 
 function TranslateSection(_props: SectionRenderProps) {
+  const [testing, setTesting] = useState(false);
+  const form = useFormContext<FieldValues>();
+
+  const handleTestLlm = async () => {
+    const input = {
+      llmModelName: String(form.getValues("translate.llmModelName") ?? ""),
+      llmApiKey: String(form.getValues("translate.llmApiKey") ?? ""),
+      llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
+      llmTemperature: Number(form.getValues("translate.llmTemperature") ?? 0),
+    };
+
+    setTesting(true);
+    try {
+      const result = await ipc.translate.testLlm(input);
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      toast.error(`测试失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <>
-      <BoolField name="translate.enableTranslation" label="启用内容翻译" />
+      <BaseField name="translate.enableTranslation" label="启用内容翻译">
+        {(field) => (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleTestLlm}
+              disabled={testing}
+            >
+              {testing ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" /> 测试中...
+                </>
+              ) : (
+                "测试连通性"
+              )}
+            </Button>
+            <FormControl>
+              <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
+            </FormControl>
+          </div>
+        )}
+      </BaseField>
       <EnumField name="translate.engine" label="翻译引擎" options={TRANSLATE_ENGINE_OPTIONS} />
       <TextField name="translate.llmModelName" label="LLM 模型名称" />
       <TextField name="translate.llmApiKey" label="LLM 密钥" />
-      <UrlField name="translate.llmBaseUrl" label="LLM 接口地址" />
+      <UrlField
+        name="translate.llmBaseUrl"
+        label="LLM 接口地址"
+        description="一般需要增加 /v1 后缀，如果添加后接口报错请尝试去除 /v1 再试"
+      />
       <PromptFieldWrapper name="translate.llmPrompt" label="LLM 翻译提示词" />
       <NumberField name="translate.llmTemperature" label="LLM 温度" min={0} max={2} step={0.1} />
       <NumberField name="translate.llmMaxTry" label="LLM 最大重试次数" min={1} max={20} />
@@ -589,7 +647,7 @@ export function TabbedConfigForm({
   const scroll = (direction: "left" | "right") => {
     if (scrollRef.current) {
       const { clientWidth } = scrollRef.current;
-      const scrollAmount = clientWidth * 0.75;
+      const scrollAmount = clientWidth * 0.5;
       scrollRef.current.scrollBy({
         left: direction === "left" ? -scrollAmount : scrollAmount,
         behavior: "smooth",

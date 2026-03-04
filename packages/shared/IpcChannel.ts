@@ -24,6 +24,8 @@ export enum IpcChannel {
 
   Network_CheckCookies = "network:check-cookies",
 
+  Translate_TestLlm = "translate:test-llm",
+
   File_ListDirectory = "file:list-directory",
   File_Browse = "file:browse",
   File_Delete = "file:delete",

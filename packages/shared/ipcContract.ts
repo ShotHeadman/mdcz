@@ -15,6 +15,13 @@ export type AppInfo = {
   isPackaged: boolean;
 };
 
+export type TranslateTestLlmInput = {
+  llmModelName?: string;
+  llmApiKey?: string;
+  llmBaseUrl?: string;
+  llmTemperature?: number;
+};
+
 export type IpcRouterContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
   [IpcChannel.App_OpenExternal]: IpcProcedure<{ url: string }, { success: true }>;
@@ -51,6 +58,8 @@ export type IpcRouterContract = {
     void,
     { results: Array<{ site: string; valid: boolean; message: string }> }
   >;
+
+  [IpcChannel.Translate_TestLlm]: IpcProcedure<TranslateTestLlmInput, { success: boolean; message: string }>;
 
   [IpcChannel.File_ListDirectory]: IpcProcedure<{ dirPath?: string; recursive?: boolean }, { files: FileInfo[] }>;
   [IpcChannel.File_Browse]: IpcProcedure<
