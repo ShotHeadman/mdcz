@@ -70,49 +70,24 @@ export function isIpcError(value: unknown): value is IpcError {
 }
 
 /**
- * Wraps an IPC handler with error handling
- */
-export function withErrorHandling<TArgs extends unknown[], TResult>(
-  handler: (...args: TArgs) => Promise<TResult>,
-): (...args: TArgs) => Promise<TResult> {
-  return async (...args: TArgs): Promise<TResult> => {
-    try {
-      return await handler(...args);
-    } catch (error) {
-      throw toIpcError(error);
-    }
-  };
-}
-
-/**
  * Common IPC error codes
  */
 export const IpcErrorCode = {
   // Configuration errors
   CONFIG_VALIDATION_ERROR: "CONFIG_VALIDATION_ERROR",
-  CONFIG_LOAD_ERROR: "CONFIG_LOAD_ERROR",
   CONFIG_SAVE_ERROR: "CONFIG_SAVE_ERROR",
 
   // File system errors
-  FILE_NOT_FOUND: "FILE_NOT_FOUND",
-  FILE_READ_ERROR: "FILE_READ_ERROR",
   FILE_WRITE_ERROR: "FILE_WRITE_ERROR",
   DIRECTORY_NOT_FOUND: "DIRECTORY_NOT_FOUND",
 
-  // Scraper errors
-  SCRAPER_ERROR: "SCRAPER_ERROR",
-  CRAWLER_ERROR: "CRAWLER_ERROR",
+  // Runtime errors
   NETWORK_ERROR: "NETWORK_ERROR",
   PARSE_ERROR: "PARSE_ERROR",
-
-  // Translation errors
-  TRANSLATION_ERROR: "TRANSLATION_ERROR",
-  TRANSLATION_API_ERROR: "TRANSLATION_API_ERROR",
 
   // General errors
   INVALID_ARGUMENT: "INVALID_ARGUMENT",
   OPERATION_CANCELLED: "OPERATION_CANCELLED",
-  UNKNOWN_ERROR: "UNKNOWN_ERROR",
 } as const;
 
 export type IpcErrorCodeType = (typeof IpcErrorCode)[keyof typeof IpcErrorCode];

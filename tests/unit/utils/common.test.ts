@@ -1,6 +1,5 @@
 import {
   getProperty,
-  isNonEmptyString,
   isRecord,
   isString,
   setProperty,
@@ -51,16 +50,12 @@ describe("isRecord", () => {
   });
 });
 
-describe("isString / isNonEmptyString", () => {
+describe("isString", () => {
   it("isString detects strings", () => {
     expect(isString("")).toBe(true);
+    expect(isString("hello")).toBe(true);
     expect(isString(42)).toBe(false);
-  });
-
-  it("isNonEmptyString rejects empty strings", () => {
-    expect(isNonEmptyString("hello")).toBe(true);
-    expect(isNonEmptyString("")).toBe(false);
-    expect(isNonEmptyString(null)).toBe(false);
+    expect(isString(null)).toBe(false);
   });
 });
 

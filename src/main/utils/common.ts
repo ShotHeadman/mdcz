@@ -41,13 +41,6 @@ export function isString(value: unknown): value is string {
 }
 
 /**
- * Type guard to check if a value is a non-empty string
- */
-export function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-/**
  * Safely gets a nested property from an object
  */
 export function getProperty<T = unknown>(obj: unknown, path: string, defaultValue?: T): T | undefined {
