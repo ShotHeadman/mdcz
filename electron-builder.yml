@@ -23,6 +23,7 @@ extraResources:
     to: MediaInfoModule.wasm
 
 win:
+  executableName: MDCz
   target:
     - target: portable
       arch:
