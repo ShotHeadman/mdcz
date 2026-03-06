@@ -4,7 +4,7 @@ import type { FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { ipc } from "@/client/ipc";
 import { Row } from "@/components/shared/Row";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/Input";
 
 interface SiteInfo {
   site: Website;

@@ -38,6 +38,7 @@ export interface CrawlerData {
   plot_zh?: string;
   release_date?: string;
   release_year?: number;
+  durationSeconds?: number;
   rating?: number;
   cover_url?: string;
   poster_url?: string;

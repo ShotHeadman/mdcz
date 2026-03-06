@@ -13,6 +13,7 @@ const DEFAULT_VIDEO_EXTENSIONS = new Set([
   ".webm",
   ".iso",
   ".mpg",
+  ".strm",
 ]);
 
 const exists = async (path: string): Promise<boolean> => {

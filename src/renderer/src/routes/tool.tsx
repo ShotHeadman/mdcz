@@ -10,7 +10,6 @@ import {
   FileSearch,
   FolderOpen,
   Link2,
-  Play,
   Search,
   Settings2,
   Trash2,
@@ -19,14 +18,14 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deleteFile } from "@/api/manual";
-import { createSymlink, listFiles, scrapeSingleFile, startScrape } from "@/client/api";
+import { createSymlink, listEntries, scrapeSingleFile } from "@/client/api";
 import { ipc } from "@/client/ipc";
 import type { CreateSoftlinksBody, FileItem, ScrapeFileBody } from "@/client/types";
 import { PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   Dialog,
   DialogContent,
@@ -34,15 +33,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/Label";
+import { Progress } from "@/components/ui/Progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { TabButton } from "@/components/ui/TabButton";
+import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/contexts/ToastProvider";
 import { cn } from "@/lib/utils";
-import { useLogStore } from "@/store/logStore";
 
 export const Route = createFileRoute("/tool")({
   component: ToolComponent,
@@ -61,12 +60,8 @@ interface CleanupCandidate {
   lastModified: string | null;
 }
 
-interface ActorSyncStatusLog {
-  id: string;
-  text: string;
-}
-
 const CLEANUP_PRESET_EXTENSIONS = [".html", ".url", ".txt", ".nfo", ".jpg", ".png", ".torrent", ".ass", ".srt"];
+const CLEANUP_MAX_SCANNED_DIRECTORIES = 50000;
 
 const TOOLS_TABS = [
   { id: "scraping", label: "数据刮削", icon: FileCheck },
@@ -74,6 +69,14 @@ const TOOLS_TABS = [
   { id: "cleanup", label: "垃圾清理", icon: Eraser },
   { id: "utility", label: "实用工具", icon: ClipboardList },
 ] as const;
+
+function toVisitedDirectoryKey(dirPath: string) {
+  const trimmed = dirPath.trim();
+  if (!trimmed) return "";
+
+  const withoutTrailingSeparators = trimmed.replace(/[\\/]+$/u, "");
+  return (withoutTrailingSeparators || trimmed).toLowerCase();
+}
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -124,13 +127,7 @@ function formatBytes(bytes: number) {
 function ToolComponent() {
   const navigate = useNavigate();
   const { showSuccess, showError, showInfo } = useToast();
-  const logs = useLogStore((s) => s.logs);
   const [activeTab, setActiveTab] = useState<(typeof TOOLS_TABS)[number]["id"]>("scraping");
-
-  // 开始刮削
-  const startScrapeMut = useMutation({
-    mutationFn: async () => startScrape({ throwOnError: true }),
-  });
 
   // 单文件刮削
   const [singleFilePath, setSingleFilePath] = useState("");
@@ -153,7 +150,6 @@ function ToolComponent() {
   const [actorPhotoMode, setActorPhotoMode] = useState<"all" | "missing">("missing");
   const [syncRunning, setSyncRunning] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
-  const [syncLogAnchor, setSyncLogAnchor] = useState(0);
 
   // 缺番查找
   const [missingPrefix, setMissingPrefix] = useState("");
@@ -248,17 +244,6 @@ function ToolComponent() {
     return () => el.removeEventListener("wheel", onWheelNative);
   }, []);
 
-  const handleStartScrape = async () => {
-    showInfo("正在启动刮削任务...");
-    try {
-      await startScrapeMut.mutateAsync();
-      showSuccess("刮削任务已成功启动，正在跳转到日志页面...");
-      setTimeout(() => navigate({ to: "/logs" }), 1000);
-    } catch (error) {
-      showError(`刮削任务启动失败: ${error}`);
-    }
-  };
-
   const handleScrapeSingleFile = async () => {
     if (!singleFilePath) {
       showError("请输入文件路径");
@@ -296,37 +281,6 @@ function ToolComponent() {
     }
   };
 
-  const syncStatusLogs = useMemo<ActorSyncStatusLog[]>(() => {
-    return logs
-      .slice(syncLogAnchor)
-      .filter((entry) => entry.level !== "request")
-      .map((entry) => {
-        const data = entry.message;
-        const text = typeof data === "string" ? data : data ? JSON.stringify(data) : "";
-        return { id: entry.id, text };
-      })
-      .filter((line) => line.text.trim().length > 0)
-      .slice(-200);
-  }, [logs, syncLogAnchor]);
-
-  useEffect(() => {
-    if (!syncRunning) return;
-    let parsed = 0;
-    for (const line of syncStatusLogs.slice(-40)) {
-      const match = line.text.match(/(\d+)\s*\/\s*(\d+)/);
-      if (!match) continue;
-      const current = Number(match[1]);
-      const total = Number(match[2]);
-      if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
-        parsed = Math.max(parsed, Math.min(99, Math.round((current / total) * 100)));
-      }
-    }
-    setSyncProgress((prev) => {
-      if (parsed > 0) return Math.max(prev, parsed);
-      return Math.min(90, prev + 2);
-    });
-  }, [syncStatusLogs, syncRunning]);
-
   const runServerConnectionCheck = async (silentSuccess = false): Promise<boolean> => {
     try {
       await checkServerConnectionMut.mutateAsync();
@@ -352,7 +306,6 @@ function ToolComponent() {
       return;
     }
 
-    setSyncLogAnchor(logs.length);
     setSyncRunning(true);
     setSyncProgress(5);
     showInfo("正在同步演员信息...");
@@ -375,7 +328,6 @@ function ToolComponent() {
       return;
     }
 
-    setSyncLogAnchor(logs.length);
     setSyncRunning(true);
     setSyncProgress(5);
     showInfo("正在同步演员头像...");
@@ -444,13 +396,16 @@ function ToolComponent() {
     try {
       while (queue.length > 0) {
         const current = queue.shift();
-        if (!current || visited.has(current)) continue;
-        visited.add(current);
-        if (visited.size > 5000) {
-          throw new Error("扫描层级过深，请缩小路径范围后重试");
+        if (!current) continue;
+
+        const currentKey = toVisitedDirectoryKey(current);
+        if (!currentKey || visited.has(currentKey)) continue;
+        visited.add(currentKey);
+        if (visited.size > CLEANUP_MAX_SCANNED_DIRECTORIES) {
+          throw new Error(`扫描目录数量超过 ${CLEANUP_MAX_SCANNED_DIRECTORIES}，请缩小路径范围后重试`);
         }
 
-        const response = await listFiles({ query: { path: current }, throwOnError: true });
+        const response = await listEntries({ query: { path: current }, throwOnError: true });
         const items = response.data?.items ?? [];
         for (const item of items) {
           if (item.type === "directory") {
@@ -607,7 +562,7 @@ function ToolComponent() {
       <div className="sticky top-0 z-10 bg-background/60 backdrop-blur-xl border-b">
         <PageHeader title="工具" subtitle="常用批量任务与维护工具" icon={Wrench} />
 
-        <div className="px-8 pb-3">
+        <div className="px-8 pb-2 h-11 flex items-center">
           <div className="relative flex items-center flex-1 min-w-0 group/tabs">
             {canScrollLeft && (
               <div className="absolute left-0 inset-y-0 z-10 flex items-center pr-10 bg-gradient-to-r from-background via-background/80 to-transparent pointer-events-none rounded-l-lg">
@@ -631,15 +586,10 @@ function ToolComponent() {
               {TOOLS_TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
-                  <Button
-                    key={tab.id}
-                    variant={activeTab === tab.id ? "tabActive" : "tab"}
-                    size="clean"
-                    onClick={() => setActiveTab(tab.id)}
-                  >
+                  <TabButton key={tab.id} isActive={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
                     <Icon className="h-3.5 w-3.5 mr-1.5" />
                     {tab.label}
-                  </Button>
+                  </TabButton>
                 );
               })}
             </div>
@@ -667,33 +617,10 @@ function ToolComponent() {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="px-1">
               <h2 className="text-base font-semibold mb-1">数据刮削</h2>
-              <p className="text-muted-foreground text-xs">一键处理全库，或按需处理单个文件</p>
+              <p className="text-muted-foreground text-xs">按需处理单个文件，并测试爬虫抓取能力</p>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card className="rounded-xl border shadow-sm flex flex-col">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-primary/8 rounded-lg">
-                      <Play className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-sm font-medium">全局刮削</CardTitle>
-                      <CardDescription className="text-xs">一键启动全库处理，自动扫描并整理媒体信息</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 flex items-end pt-4">
-                  <Button
-                    onClick={handleStartScrape}
-                    disabled={startScrapeMut.isPending}
-                    className="w-full rounded-lg h-9 text-sm font-medium"
-                  >
-                    {startScrapeMut.isPending ? "正在启动..." : "立即开始刮削"}
-                  </Button>
-                </CardContent>
-              </Card>
-
+            <div className="grid gap-6 md:grid-cols-1">
               <Card className="rounded-xl border shadow-sm flex flex-col">
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
@@ -790,7 +717,7 @@ function ToolComponent() {
                   </div>
                 </div>
                 <Button
-                  variant="default"
+                  variant="secondary"
                   onClick={handleCrawlerTest}
                   disabled={crawlerTesting}
                   className="w-full rounded-lg h-9 text-sm font-medium"
@@ -887,94 +814,58 @@ function ToolComponent() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-4">
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-medium text-muted-foreground">信息同步</Label>
-                        <div className="flex gap-2">
-                          <Select value={actorInfoMode} onValueChange={(v) => setActorInfoMode(v as "all" | "missing")}>
-                            <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="missing">仅缺失</SelectItem>
-                              <SelectItem value="all">全部</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="default"
-                            onClick={handleSyncActorInfo}
-                            disabled={syncRunning || checkServerConnectionMut.isPending}
-                            className="flex-1 rounded-lg h-9 text-sm"
-                          >
-                            {syncRunning ? "同步中..." : "同步信息"}
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <div className="flex justify-between text-xs text-muted-foreground font-medium">
-                          <span>任务进度</span>
-                          <span>{Math.round(syncProgress)}%</span>
-                        </div>
-                        <Progress value={syncProgress} className="h-2 bg-muted/30" />
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-medium text-muted-foreground">头像同步</Label>
-                        <div className="flex gap-2">
-                          <Select
-                            value={actorPhotoMode}
-                            onValueChange={(v) => setActorPhotoMode(v as "all" | "missing")}
-                          >
-                            <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="missing">仅缺失</SelectItem>
-                              <SelectItem value="all">全部</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="secondary"
-                            onClick={handleSyncPhotos}
-                            disabled={syncRunning || checkServerConnectionMut.isPending}
-                            className="flex-1 rounded-lg h-9 text-sm"
-                          >
-                            {syncRunning ? "同步中..." : "同步头像"}
-                          </Button>
-                        </div>
+                  <div className="space-y-4">
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-medium text-muted-foreground">信息同步</Label>
+                      <div className="flex gap-2">
+                        <Select value={actorInfoMode} onValueChange={(v) => setActorInfoMode(v as "all" | "missing")}>
+                          <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="missing">仅缺失</SelectItem>
+                            <SelectItem value="all">全部</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="secondary"
+                          onClick={handleSyncActorInfo}
+                          disabled={syncRunning || checkServerConnectionMut.isPending}
+                          className="flex-1 rounded-lg h-9 text-sm"
+                        >
+                          {syncRunning ? "同步中..." : "同步信息"}
+                        </Button>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs font-medium text-muted-foreground">实时状态预览</Label>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-[10px] text-primary hover:text-primary hover:bg-primary/5"
-                          onClick={() => navigate({ to: "/logs" })}
-                        >
-                          查看完整日志
-                        </Button>
+                    <div className="grid gap-2">
+                      <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                        <span>任务进度</span>
+                        <span>{Math.round(syncProgress)}%</span>
                       </div>
+                      <Progress value={syncProgress} className="h-2 bg-muted/30" />
+                    </div>
 
-                      <div className="h-[120px] rounded-xl bg-muted/20 border-none p-3 overflow-hidden flex flex-col justify-end">
-                        <div className="space-y-1 font-mono text-xs leading-relaxed text-muted-foreground">
-                          {syncStatusLogs.length === 0 ? (
-                            <div className="text-center py-8 opacity-50 italic">等待任务启动...</div>
-                          ) : (
-                            syncStatusLogs.slice(-5).map((line) => (
-                              <div key={line.id} className="whitespace-pre-wrap break-words">
-                                <span className="text-primary opacity-50 mr-1">›</span>
-
-                                {line.text}
-                              </div>
-                            ))
-                          )}
-                        </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-medium text-muted-foreground">头像同步</Label>
+                      <div className="flex gap-2">
+                        <Select value={actorPhotoMode} onValueChange={(v) => setActorPhotoMode(v as "all" | "missing")}>
+                          <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="missing">仅缺失</SelectItem>
+                            <SelectItem value="all">全部</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="secondary"
+                          onClick={handleSyncPhotos}
+                          disabled={syncRunning || checkServerConnectionMut.isPending}
+                          className="flex-1 rounded-lg h-9 text-sm"
+                        >
+                          {syncRunning ? "同步中..." : "同步头像"}
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -1063,7 +954,7 @@ function ToolComponent() {
                     </Label>
                   </div>
                   <Button
-                    variant="default"
+                    variant="secondary"
                     onClick={handleCreateSymlink}
                     disabled={createSymlinkMut.isPending}
                     className="w-full rounded-lg h-9 text-sm font-medium"
@@ -1115,7 +1006,7 @@ function ToolComponent() {
                     </div>
                   </div>
                   <Button
-                    variant="default"
+                    variant="secondary"
                     onClick={scanCleanupCandidates}
                     disabled={cleanupScanning}
                     className="h-9 px-8 rounded-lg shrink-0 text-sm font-medium"
@@ -1303,7 +1194,11 @@ function ToolComponent() {
                     />
                   </div>
 
-                  <Button onClick={handleFindMissing} className="w-full rounded-lg h-9 text-sm font-medium">
+                  <Button
+                    variant="secondary"
+                    onClick={handleFindMissing}
+                    className="w-full rounded-lg h-9 text-sm font-medium"
+                  >
                     开始查找缺失番号
                   </Button>
 

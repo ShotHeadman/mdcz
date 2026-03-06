@@ -1,6 +1,6 @@
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
-import { FormControl } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { FormControl } from "@/components/ui/Form";
+import { Input } from "@/components/ui/Input";
 
 interface DurationFieldProps {
   field: ControllerRenderProps<FieldValues, string>;

@@ -17,10 +17,11 @@ import {
 import { type ReactNode, useMemo, useState } from "react";
 import { getCurrentConfig } from "@/client/api";
 import type { ConfigOutput } from "@/client/types";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/Button";
+import { NavButton } from "@/components/ui/NavButton";
+import { Separator } from "@/components/ui/Separator";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/Sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { useTheme } from "@/contexts/ThemeProvider";
 import { cn } from "@/lib/utils";
 
@@ -54,12 +55,12 @@ function NavLink({ item, collapsed, isActive }: { item: NavItem; collapsed: bool
     return (
       <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>
-          <Button asChild variant={isActive ? "navCollapsedActive" : "navCollapsed"} size="clean">
+          <NavButton asChild isActive={isActive} collapsed={true}>
             <Link to={item.to}>
               <Icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />
               <span className="sr-only">{item.label}</span>
             </Link>
-          </Button>
+          </NavButton>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
           {item.label}
@@ -69,12 +70,12 @@ function NavLink({ item, collapsed, isActive }: { item: NavItem; collapsed: bool
   }
 
   return (
-    <Button asChild variant={isActive ? "navActive" : "nav"} size="clean">
+    <NavButton asChild isActive={isActive} collapsed={false}>
       <Link to={item.to}>
         <Icon className="h-5 w-5 shrink-0" strokeWidth={isActive ? 2.5 : 2} />
         <span className="truncate">{item.label}</span>
       </Link>
-    </Button>
+    </NavButton>
   );
 }
 
@@ -106,7 +107,7 @@ function NavContent({
         )}
       </div>
 
-      <Separator className="mx-3 w-auto" />
+      <Separator className="w-[calc(100%-16px)]! mx-auto my-1" />
 
       {/* Navigation */}
       <nav
@@ -116,7 +117,7 @@ function NavContent({
           <NavLink key={item.to} item={item} collapsed={collapsed} isActive={pathname === item.to} />
         ))}
 
-        <Separator className={cn("my-2.5", collapsed ? "w-8" : "mx-1 w-auto")} />
+        <Separator />
 
         {systemNav.map((item) => (
           <NavLink key={item.to} item={item} collapsed={collapsed} isActive={pathname === item.to} />

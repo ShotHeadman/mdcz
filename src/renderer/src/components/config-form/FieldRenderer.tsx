@@ -1,18 +1,18 @@
 import { Loader2 } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { ipc } from "@/client/ipc";
 import { Row } from "@/components/shared/Row";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { FormControl, FormField, FormItem, FormMessage } from "@/components/ui/Form";
+import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { ShortcutInput } from "@/components/ui/ShortcutInput";
+import { Switch } from "@/components/ui/Switch";
+import { Textarea } from "@/components/ui/Textarea";
 import { ChipArrayField } from "./ChipArrayField";
 import { DurationField } from "./DurationField";
 import { ServerPathField } from "./ServerPathField";
@@ -83,6 +83,23 @@ export function TextField({ name, label, description }: { name: string; label: s
           <Input
             {...field}
             value={field.value ?? ""}
+            className="h-8 w-[320px] text-sm bg-background/50 focus:bg-background transition-all"
+          />
+        </FormControl>
+      )}
+    </BaseField>
+  );
+}
+
+export function SecretField({ name, label, description }: { name: string; label: string; description?: string }) {
+  return (
+    <BaseField name={name} label={label} description={description}>
+      {(field) => (
+        <FormControl>
+          <PasswordInput
+            {...field}
+            value={field.value ?? ""}
+            autoComplete="off"
             className="h-8 w-[320px] text-sm bg-background/50 focus:bg-background transition-all"
           />
         </FormControl>
@@ -358,212 +375,16 @@ export function ChipArrayFieldWrapper({
   );
 }
 
-// ── Shortcut (kbd capture) ──
-
-const MODIFIER_KEYS = new Set(["shift", "control", "ctrl", "meta", "alt"]);
-
-const normalizeShortcutToken = (value: string): string => {
-  const raw = value.trim();
-  const token = raw.toLowerCase().replace(/\s+/gu, "");
-  if (!token) {
-    return "";
-  }
-  if (token === "mod") {
-    return "Mod";
-  }
-  if (token === "ctrl") {
-    return "Ctrl";
-  }
-  if (token === "meta") {
-    return "Meta";
-  }
-  if (token === "alt") {
-    return "Alt";
-  }
-  if (token === "shift") {
-    return "Shift";
-  }
-  if (token === "space" || token === "spacebar") {
-    return "Space";
-  }
-  if (token === "arrowleft") return "ArrowLeft";
-  if (token === "arrowright") return "ArrowRight";
-  if (token === "arrowup") return "ArrowUp";
-  if (token === "arrowdown") return "ArrowDown";
-  if (raw.length === 1) {
-    return raw.toUpperCase();
-  }
-  return raw;
-};
-
-const shortcutParts = (value: unknown): string[] => {
-  if (typeof value !== "string") {
-    return [];
-  }
-  return value
-    .split("+")
-    .map((part) => normalizeShortcutToken(part))
-    .filter((part) => part.length > 0);
-};
-
-const displayShortcutToken = (token: string): string => {
-  if (token === "Mod") return "⌘/Ctrl";
-  if (token === "Ctrl") return "Ctrl";
-  if (token === "Meta") return "⌘";
-  if (token === "Alt") return "⌥";
-  if (token === "Shift") return "⇧";
-  if (token === "ArrowLeft") return "←";
-  if (token === "ArrowRight") return "→";
-  if (token === "ArrowUp") return "↑";
-  if (token === "ArrowDown") return "↓";
-  if (token === "Space") return "Space";
-  if (token.length === 1) return token.toUpperCase();
-  return token;
-};
-
-const keyToShortcutToken = (key: string): string | null => {
-  const normalized = key.trim();
-  if (!normalized) return null;
-  const lowered = normalized.toLowerCase();
-  if (MODIFIER_KEYS.has(lowered)) return null;
-  if (lowered === " ") return "Space";
-  if (lowered === "escape") return "Escape";
-  if (lowered === "enter") return "Enter";
-  if (lowered === "tab") return "Tab";
-  if (lowered === "backspace") return "Backspace";
-  if (lowered === "delete") return "Delete";
-  if (lowered.startsWith("arrow")) {
-    if (lowered === "arrowleft") return "ArrowLeft";
-    if (lowered === "arrowright") return "ArrowRight";
-    if (lowered === "arrowup") return "ArrowUp";
-    if (lowered === "arrowdown") return "ArrowDown";
-  }
-  if (normalized.length === 1) return normalized.toUpperCase();
-  return normalized;
-};
-
-const buildShortcutFromKeyboardEvent = (event: ReactKeyboardEvent<HTMLButtonElement>): string | null => {
-  const key = keyToShortcutToken(event.key);
-  if (!key) {
-    return null;
-  }
-  const parts: string[] = [];
-  if (event.ctrlKey || event.metaKey) {
-    parts.push("Mod");
-  }
-  if (event.altKey) {
-    parts.push("Alt");
-  }
-  if (event.shiftKey) {
-    parts.push("Shift");
-  }
-  parts.push(key);
-  return parts.join("+");
-};
+// ── Shortcut ──
 
 export function ShortcutField({ name, label, description }: { name: string; label: string; description?: string }) {
-  const [isRecording, setIsRecording] = useState(false);
-
   return (
     <BaseField name={name} label={label} description={description}>
-      {(field) => {
-        const tokens = shortcutParts(field.value);
-        const keyedTokens = (() => {
-          const counts = new Map<string, number>();
-          return tokens.map((token) => {
-            const next = (counts.get(token) ?? 0) + 1;
-            counts.set(token, next);
-            return { token, key: `${token}-${next}` };
-          });
-        })();
-        return (
-          <div className="flex items-center gap-2 w-[320px] justify-end">
-            <div className="relative group flex-1">
-              <FormControl>
-                <button
-                  type="button"
-                  className={cn(
-                    "h-8 w-full px-3 rounded-md border transition-all text-left flex items-center justify-between overflow-hidden",
-                    isRecording
-                      ? "border-primary ring-2 ring-primary/20 bg-primary/5 cursor-default"
-                      : "border-input bg-background/50 hover:border-muted-foreground/50 cursor-pointer",
-                  )}
-                  onClick={() => !isRecording && setIsRecording(true)}
-                  onBlur={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) {
-                      setIsRecording(false);
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (!isRecording) return;
-                    event.preventDefault();
-                    if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-                      if (event.key === "Backspace" || event.key === "Delete") {
-                        field.onChange("");
-                        setIsRecording(false);
-                        return;
-                      }
-                      if (event.key === "Escape") {
-                        setIsRecording(false);
-                        return;
-                      }
-                    }
-                    const next = buildShortcutFromKeyboardEvent(event);
-                    if (next) {
-                      field.onChange(next);
-                      setIsRecording(false);
-                    }
-                  }}
-                  title={isRecording ? "请直接按下组合键" : "点击进行修改"}
-                >
-                  <div className="flex flex-wrap items-center gap-1.5 flex-1 mr-2">
-                    {isRecording ? (
-                      <span className="text-xs font-medium text-primary animate-pulse flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-primary" />
-                        录制中...
-                      </span>
-                    ) : tokens.length > 0 ? (
-                      keyedTokens.map(({ token, key }) => (
-                        <kbd
-                          key={key}
-                          className="inline-flex items-center rounded border border-border/50 bg-muted/80 px-1.5 h-5 text-[11px] font-mono font-medium shadow-sm"
-                        >
-                          {displayShortcutToken(token)}
-                        </kbd>
-                      ))
-                    ) : (
-                      <span className="text-xs text-muted-foreground">未设置</span>
-                    )}
-                  </div>
-
-                  {!isRecording && (
-                    <div className="shrink-0 flex items-center gap-1.5">
-                      <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                        修改
-                      </span>
-                    </div>
-                  )}
-                </button>
-              </FormControl>
-              {isRecording && (
-                <div className="absolute inset-0 pointer-events-none rounded-md border-primary animate-pulse shadow-[0_0_8px_hsl(var(--primary)/0.2)]" />
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-xs text-muted-foreground hover:text-destructive transition-colors"
-              onClick={() => {
-                field.onChange("");
-                setIsRecording(false);
-              }}
-            >
-              清空
-            </Button>
-          </div>
-        );
-      }}
+      {(field) => (
+        <FormControl>
+          <ShortcutInput value={field.value as string} onChange={field.onChange} className="w-[320px] justify-end" />
+        </FormControl>
+      )}
     </BaseField>
   );
 }

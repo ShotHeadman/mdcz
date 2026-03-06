@@ -84,8 +84,7 @@ export const ipc = {
       client[IpcChannel.Translate_TestLlm](input) as Promise<{ success: boolean; message: string }>,
   },
   file: {
-    listDirectory: (dirPath: string, recursive?: boolean) =>
-      client[IpcChannel.File_ListDirectory]({ dirPath, recursive }),
+    listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),

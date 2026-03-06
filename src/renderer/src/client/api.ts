@@ -1,19 +1,8 @@
-import type { FileInfo } from "@shared/types";
 import { ipc } from "./ipc";
 import type { ConfigOutput, CreateSoftlinksBody, FileItem, ScrapeFileBody, UpdateConfigData } from "./types";
 
 type ThrowOption = {
   throwOnError?: boolean;
-};
-
-const fileInfoToItem = (entry: FileInfo): FileItem => {
-  const slash = Math.max(entry.filePath.lastIndexOf("/"), entry.filePath.lastIndexOf("\\"));
-  const name = slash >= 0 ? entry.filePath.slice(slash + 1) : entry.filePath;
-  return {
-    type: "file",
-    path: entry.filePath,
-    name,
-  };
 };
 
 export const getCurrentConfig = async (_options?: ThrowOption) => {
@@ -80,16 +69,24 @@ export const createSymlink = async (options: { body: CreateSoftlinksBody } & Thr
   return { data };
 };
 
-export const listFiles = async (options: { query: { path: string } } & ThrowOption) => {
+export const listEntries = async (options: { query: { path: string } } & ThrowOption) => {
   const dirPath = options.query.path?.trim();
   if (!dirPath) {
     throw new Error("Path is required");
   }
 
-  const response = await ipc.file.listDirectory(dirPath, false);
+  const response = await ipc.file.listEntries(dirPath);
   return {
     data: {
-      items: response.files.map(fileInfoToItem),
+      items: response.entries.map(
+        (entry): FileItem => ({
+          type: entry.type,
+          path: entry.path,
+          name: entry.name,
+          size: entry.size,
+          last_modified: entry.lastModified ?? null,
+        }),
+      ),
     },
   };
 };

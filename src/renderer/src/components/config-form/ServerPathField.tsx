@@ -1,9 +1,9 @@
 import { FolderOpen } from "lucide-react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { ipc } from "@/client/ipc";
-import { Button } from "@/components/ui/button";
-import { FormControl } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/Button";
+import { FormControl } from "@/components/ui/Form";
+import { Input } from "@/components/ui/Input";
 
 interface ServerPathFieldProps {
   field: ControllerRenderProps<FieldValues, string>;

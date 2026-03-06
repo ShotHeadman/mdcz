@@ -1,11 +1,4 @@
-import {
-  getProperty,
-  isRecord,
-  isString,
-  setProperty,
-  toArray,
-  toErrorMessage,
-} from "@main/utils/common";
+import { getProperty, isRecord, isString, setProperty, toArray, toErrorMessage } from "@main/utils/common";
 import { describe, expect, it } from "vitest";
 
 describe("toErrorMessage", () => {

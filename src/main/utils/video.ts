@@ -1,5 +1,5 @@
 import { open } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import type { VideoMeta } from "@shared/types";
 import { app } from "electron";
 import { isTrackType, type MediaInfoResult, mediaInfoFactory } from "mediainfo.js";
@@ -74,7 +74,13 @@ const getMediaInfo = () => {
   return cachedPromise;
 };
 
-export const probeVideoMetadata = async (filePath: string): Promise<VideoMeta> => {
+const isStreamFile = (filePath: string): boolean => extname(filePath).toLowerCase() === ".strm";
+
+export const probeVideoMetadata = async (filePath: string): Promise<VideoMeta | undefined> => {
+  if (isStreamFile(filePath)) {
+    return undefined;
+  }
+
   const mediaInfo = await getMediaInfo();
   const handle = await open(filePath, "r");
 

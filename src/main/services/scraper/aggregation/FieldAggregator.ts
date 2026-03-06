@@ -77,6 +77,7 @@ export class FieldAggregator {
       plot_zh: resolve("plot_zh"),
       release_date: resolve("release_date"),
       release_year: resolve("release_year"),
+      durationSeconds: resolve("durationSeconds"),
       rating: resolve("rating"),
       cover_url: resolve("cover_url"),
       poster_url: resolve("poster_url"),

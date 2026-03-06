@@ -7,7 +7,7 @@ import { getCurrentConfig, updateConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
 import type { ConfigOutput, UpdateConfigData } from "@/client/types";
 import { TabbedConfigForm } from "@/components/config-form/TabbedConfigForm";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/Button";
 import {
   Dialog,
   DialogClose,
@@ -16,9 +16,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+} from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsComponent,

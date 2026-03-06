@@ -4,9 +4,9 @@ import { Bug, ExternalLink, Github } from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";
 import AppLogo from "@/assets/images/logo.png";
 import { ipc } from "@/client/ipc";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Separator } from "@/components/ui/Separator";
 
 export const Route = createFileRoute("/about")({
   component: About,
@@ -111,7 +111,7 @@ function About() {
             </Card>
 
             {/* Related Projects */}
-            <Card className="bg-muted/20 border-none shadow-none">
+            <Card className="bg-muted/20 border-none shadow-none p-0">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">相关项目</CardTitle>
                 <CardDescription>感谢以下开源项目为本工具提供的核心功能支持</CardDescription>

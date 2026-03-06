@@ -1,14 +1,13 @@
-import { readFile, rm, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
-import { listVideoFiles } from "@main/utils/file";
 import { parseNfo } from "@main/utils/nfo";
-import { parseFileInfo } from "@main/utils/number";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
-import type { CrawlerData, FileInfo } from "@shared/types";
+import type { CrawlerData } from "@shared/types";
 import { dialog } from "electron";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
@@ -19,7 +18,7 @@ export const createFileHandlers = (
   context: ServiceContainer,
 ): Pick<
   IpcRouterContract,
-  | typeof IpcChannel.File_ListDirectory
+  | typeof IpcChannel.File_ListEntries
   | typeof IpcChannel.File_Browse
   | typeof IpcChannel.File_Delete
   | typeof IpcChannel.File_NfoRead
@@ -28,9 +27,18 @@ export const createFileHandlers = (
   const { windowService } = context;
 
   return {
-    [IpcChannel.File_ListDirectory]: t.procedure
-      .input<{ dirPath?: string; recursive?: boolean }>()
-      .action(async ({ input }): Promise<{ files: FileInfo[] }> => {
+    [IpcChannel.File_ListEntries]: t.procedure.input<{ dirPath?: string }>().action(
+      async ({
+        input,
+      }): Promise<{
+        entries: Array<{
+          type: "file" | "directory";
+          path: string;
+          name: string;
+          size?: number;
+          lastModified?: string | null;
+        }>;
+      }> => {
         try {
           const dirPath = input?.dirPath?.trim();
           if (!dirPath) {
@@ -46,12 +54,48 @@ export const createFileHandlers = (
             throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, `Directory not found: ${dirPath}`);
           }
 
-          const files = await listVideoFiles(dirPath, input?.recursive ?? false);
-          return { files: files.map((path) => parseFileInfo(path)) };
+          const entries = await readdir(dirPath, { withFileTypes: true });
+          const normalizedEntries: Array<{
+            type: "file" | "directory";
+            path: string;
+            name: string;
+            size?: number;
+            lastModified?: string | null;
+          }> = [];
+
+          for (const entry of entries) {
+            const entryPath = join(dirPath, entry.name);
+            try {
+              const stats = await lstat(entryPath);
+              if (stats.isSymbolicLink()) {
+                // Avoid traversing symlink/junction targets from renderer recursive scans.
+                continue;
+              }
+
+              const type = stats.isDirectory() ? "directory" : stats.isFile() ? "file" : null;
+              if (!type) {
+                continue;
+              }
+
+              normalizedEntries.push({
+                type,
+                path: entryPath,
+                name: entry.name,
+                size: type === "file" ? stats.size : undefined,
+                lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
+              });
+            } catch {
+              // Skip inaccessible entries and keep scanning.
+            }
+          }
+
+          normalizedEntries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+          return { entries: normalizedEntries };
         } catch (error) {
           throw asSerializableIpcError(error);
         }
-      }),
+      },
+    ),
     [IpcChannel.File_Browse]: t.procedure
       .input<{ type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> }>()
       .action(async ({ input }) => {

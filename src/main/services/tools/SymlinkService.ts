@@ -16,6 +16,7 @@ const DEFAULT_MEDIA_EXTENSIONS = new Set([
   ".webm",
   ".iso",
   ".mpg",
+  ".strm",
 ]);
 
 const DEFAULT_SUBTITLE_EXTENSIONS = new Set([

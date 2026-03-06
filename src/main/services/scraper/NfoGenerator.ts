@@ -81,9 +81,8 @@ export class NfoGenerator {
     const plot = data.plot_zh?.trim() || data.plot?.trim();
     const assets = options?.assets;
     const sources = options?.sources;
-    const runtimeMinutes = options?.videoMeta?.durationSeconds
-      ? Math.round(options.videoMeta.durationSeconds / 60)
-      : undefined;
+    const durationSeconds = options?.videoMeta?.durationSeconds ?? data.durationSeconds;
+    const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
 
     const movie: Record<string, unknown> = {};
 

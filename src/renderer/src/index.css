@@ -1,66 +1,129 @@
 @import "tailwindcss";
-@config "../tailwind.config.ts";
+@import "tw-animate-css";
 
-@layer base {
-  :root {
-    --background: 240 5% 96%; /* #F5F5F6 */
-    --foreground: 240 10% 4%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
-    --primary: 232 100% 65%; /* #4C6EFF approx */
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 10%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 240 5% 65%;
-    --radius: 0.5rem;
-    --sidebar: 0 0% 98%; /* #FAFAFA */
-    --sidebar-foreground: 240 6% 10%;
-    --surface: 0 0% 100%;
-    --surface-foreground: 240 6% 10%;
-  }
+@custom-variant dark (&:is(.dark *));
 
-  .dark {
-    --background: 212 25% 12%; /* Deeper background for dark mode */
-    --foreground: 0 0% 98%;
-    --card: 212 25% 12%;
-    --card-foreground: 0 0% 98%;
-    --popover: 212 25% 12%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 213 94% 55%; /* #2080F7 */
-    --primary-foreground: 0 0% 98%;
-    --secondary: 212 25% 18%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 212 25% 18%;
-    --muted-foreground: 215 20% 60%;
-    --accent: 212 25% 18%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 212 20% 20%;
-    --input: 212 20% 20%;
-    --ring: 213 94% 55%;
-    --sidebar: 212 25% 14%;
-    --sidebar-foreground: 0 0% 98%;
-    --surface: 212 25% 16%;
-    --surface-foreground: 0 0% 98%;
+@theme inline {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
   }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+:root {
+  --background: hsl(240 5% 96%);
+  --foreground: hsl(240 10% 4%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(240 10% 4%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(240 10% 4%);
+  --primary: hsl(232 100% 65%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(240 5% 93%);
+  --secondary-foreground: hsl(240 6% 10%);
+  --muted: hsl(240 5% 93%);
+  --muted-foreground: hsl(240 4% 46%);
+  --accent: hsl(240 5% 93%);
+  --accent-foreground: hsl(240 6% 10%);
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(240 6% 90%);
+  --input: hsl(240 6% 90%);
+  --ring: hsl(232 100% 65%);
+  --radius: 0.5rem;
+  --sidebar: hsl(0 0% 98%);
+  --sidebar-foreground: hsl(240 6% 10%);
+  --surface: hsl(0 0% 100%);
+  --surface-foreground: hsl(240 6% 10%);
+}
+
+.dark {
+  --background: hsl(212 25% 12%);
+  --foreground: hsl(0 0% 98%);
+  --card: hsl(212 25% 12%);
+  --card-foreground: hsl(0 0% 98%);
+  --popover: hsl(212 25% 12%);
+  --popover-foreground: hsl(0 0% 98%);
+  --primary: hsl(213 94% 55%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(212 25% 18%);
+  --secondary-foreground: hsl(0 0% 98%);
+  --muted: hsl(212 25% 18%);
+  --muted-foreground: hsl(215 20% 60%);
+  --accent: hsl(212 25% 18%);
+  --accent-foreground: hsl(0 0% 98%);
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(212 20% 20%);
+  --input: hsl(212 20% 20%);
+  --ring: hsl(213 94% 55%);
+  --sidebar: hsl(212 25% 14%);
+  --sidebar-foreground: hsl(0 0% 98%);
+  --surface: hsl(212 25% 16%);
+  --surface-foreground: hsl(0 0% 98%);
 }
 
 @layer base {
   * {
     @apply border-border;
   }
-  html,
   body {
     @apply bg-background text-foreground overflow-hidden h-full antialiased;
   }

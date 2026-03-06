@@ -2,7 +2,7 @@ import type { ActionContext } from "@egoist/tipc/main";
 import type { Configuration } from "./config";
 import type { Website } from "./enums";
 import { IpcChannel } from "./IpcChannel";
-import type { CrawlerData, FileInfo, ScraperStatus } from "./types";
+import type { CrawlerData, ScraperStatus } from "./types";
 
 export type IpcProcedure<TInput = unknown, TOutput = unknown> = {
   action: (options: { context: ActionContext; input: TInput }) => Promise<TOutput>;
@@ -60,8 +60,18 @@ export type IpcRouterContract = {
   >;
 
   [IpcChannel.Translate_TestLlm]: IpcProcedure<TranslateTestLlmInput, { success: boolean; message: string }>;
-
-  [IpcChannel.File_ListDirectory]: IpcProcedure<{ dirPath?: string; recursive?: boolean }, { files: FileInfo[] }>;
+  [IpcChannel.File_ListEntries]: IpcProcedure<
+    { dirPath?: string },
+    {
+      entries: Array<{
+        type: "file" | "directory";
+        path: string;
+        name: string;
+        size?: number;
+        lastModified?: string | null;
+      }>;
+    }
+  >;
   [IpcChannel.File_Browse]: IpcProcedure<
     { type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> },
     { paths: string[] | null }

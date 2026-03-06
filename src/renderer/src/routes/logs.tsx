@@ -4,7 +4,7 @@ import { ArrowDownToLine, Eraser, FileText, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/Button";
 import {
   Dialog,
   DialogClose,
@@ -13,10 +13,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+} from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/utils";
 import { type RuntimeLog, useLogStore } from "@/store/logStore";
 
@@ -146,8 +146,8 @@ function LogsComponent() {
     <div className="h-full flex flex-col overflow-hidden">
       <PageHeader title="日志" subtitle="查看系统运行状态与网络请求详情" icon={FileText} />
 
-      <div className="px-8 pb-2 border-b bg-background/60 backdrop-blur-md">
-        <div className="flex items-center justify-between">
+      <div className="px-8 pb-2 border-b bg-background/60 backdrop-blur-md h-11 flex items-center">
+        <div className="flex items-center justify-between flex-1">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
             <Input

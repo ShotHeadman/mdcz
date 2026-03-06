@@ -100,6 +100,7 @@ const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<Cr
   return {
     title: content.title,
     number,
+    durationSeconds: typeof content.duration === "number" && content.duration > 0 ? content.duration : undefined,
     actors: (content.actresses ?? []).map((item) => item.name).filter((value): value is string => Boolean(value)),
     genres: (content.genres ?? []).map((item) => item.name).filter((value): value is string => Boolean(value)),
     studio: content.maker?.name,
@@ -209,6 +210,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
       return {
         title: graphQlData.title,
         number: graphQlData.number ?? context.number,
+        durationSeconds: graphQlData.durationSeconds,
         actors: graphQlData.actors ?? [],
         genres: graphQlData.genres ?? [],
         studio: graphQlData.studio,
@@ -235,6 +237,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
     return {
       title: parsed.title,
       number: context.number,
+      durationSeconds: parsed.durationSeconds,
       actors: parsed.actors ?? [],
       genres: parsed.genres ?? [],
       studio: parsed.studio,

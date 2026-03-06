@@ -27,11 +27,12 @@ import { useForm, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { PageHeader } from "@/components/PageHeader";
-import { Button } from "@/components/ui/button";
-import { Form, FormControl } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/Button";
+import { Form, FormControl } from "@/components/ui/Form";
+import { Input } from "@/components/ui/Input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
+import { TabButton } from "@/components/ui/TabButton";
 import { cn } from "@/lib/utils";
 import {
   BaseField,
@@ -44,6 +45,7 @@ import {
   NumberField,
   PathFieldWrapper,
   PromptFieldWrapper,
+  SecretField,
   ShortcutField,
   TextField,
   UrlField,
@@ -418,7 +420,7 @@ function TranslateSection(_props: SectionRenderProps) {
       </BaseField>
       <EnumField name="translate.engine" label="翻译引擎" options={TRANSLATE_ENGINE_OPTIONS} />
       <TextField name="translate.llmModelName" label="LLM 模型名称" />
-      <TextField name="translate.llmApiKey" label="LLM 密钥" />
+      <SecretField name="translate.llmApiKey" label="LLM 密钥" />
       <UrlField
         name="translate.llmBaseUrl"
         label="LLM 接口地址"
@@ -695,12 +697,18 @@ export function TabbedConfigForm({
             subtitle="管理媒体库、刮削策略及系统偏好"
             icon={Server}
             extra={
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-3">
+                {configPath && (
+                  <div className="hidden xl:flex items-center gap-1.5 opacity-20 text-[9px] font-mono truncate max-w-[200px] hover:opacity-100 transition-opacity">
+                    <FileText className="h-2.5 w-2.5" />
+                    <span className="truncate">{configPath}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-3">
                   {profiles.length > 0 && (
-                    <div className="flex items-center bg-muted/40 rounded-lg p-0.5 border">
+                    <div className="flex items-center h-9 bg-muted/40 rounded-lg p-1 border">
                       <Select value={activeProfile || "default"} onValueChange={onSwitchProfile}>
-                        <SelectTrigger className="h-6 min-w-[90px] max-w-[150px] text-[10px] border-none bg-transparent focus:ring-0 shadow-none px-2.5">
+                        <SelectTrigger className="h-full min-w-[90px] max-w-[150px] text-[10px] border-none bg-transparent focus:ring-0 shadow-none px-2">
                           <SelectValue placeholder="默认配置" />
                         </SelectTrigger>
                         <SelectContent>
@@ -713,34 +721,34 @@ export function TabbedConfigForm({
                             ))}
                         </SelectContent>
                       </Select>
-                      <div className="h-3 w-px bg-border/60 mx-0.5" />
+                      <div className="h-3 w-px bg-border/60 mx-1" />
                       <div className="flex items-center pr-0.5">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5 rounded-full hover:bg-background/80"
+                          className="h-6 w-6 rounded-full hover:bg-background/80"
                           onClick={(e) => {
                             e.stopPropagation();
                             onCreateProfile?.();
                           }}
                           title="新建配置档案"
                         >
-                          <Plus className="h-2.5 w-2.5" />
+                          <Plus className="h-3 w-3" />
                         </Button>
                         {profiles.length > 1 && (
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-5 w-5 rounded-full text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                            className="h-6 w-6 rounded-full text-destructive/80 hover:text-destructive hover:bg-destructive/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               onDeleteProfile?.();
                             }}
                             title="删除当前配置档案"
                           >
-                            <Trash2 className="h-2.5 w-2.5" />
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
@@ -755,7 +763,7 @@ export function TabbedConfigForm({
                     onClick={onResetConfig}
                     title="恢复默认设置"
                   >
-                    <RotateCcw className="h-3 w-3" />
+                    <RotateCcw className="h-3.5 w-3.5" />
                   </Button>
 
                   <div className="h-6 w-px bg-border mx-1" />
@@ -768,19 +776,12 @@ export function TabbedConfigForm({
                     {form.formState.isSubmitting ? "保存中..." : "保存设置"}
                   </Button>
                 </div>
-
-                {configPath && (
-                  <div className="flex items-baseline gap-1.5 opacity-40 hover:opacity-100 transition-opacity">
-                    <FileText className="h-3 w-3 self-center" />
-                    <span className="text-[10px] font-mono truncate max-w-[400px]">{configPath}</span>
-                  </div>
-                )}
               </div>
             }
           />
           {/* Sub Header / Tab Bar */}
-          <div className="px-8 pb-3">
-            <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+          <div className="px-8 pb-2 h-11 flex items-center">
+            <div className="max-w-4xl w-full mx-auto flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -789,7 +790,7 @@ export function TabbedConfigForm({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="搜索..."
-                    className="pl-8 pr-7 h-8 w-40 rounded-lg bg-muted/50 border-transparent focus:bg-background focus:border-primary/20 transition-all text-xs"
+                    className="pl-8 pr-7 h-9 w-40 rounded-lg bg-muted/50 border-transparent focus:bg-background focus:border-primary/20 transition-all text-xs"
                   />
                   {isSearchActive && (
                     <button
@@ -804,9 +805,8 @@ export function TabbedConfigForm({
                 <Button
                   type="button"
                   variant={showModifiedOnly ? "secondary" : "ghost"}
-                  size="clean"
                   className={cn(
-                    "rounded-lg h-8 px-2.5 gap-1.5 text-[12px] font-medium transition-all",
+                    "rounded-lg h-9 px-3 gap-1.5 text-[12px] font-medium transition-all",
                     showModifiedOnly
                       ? "bg-primary/10 text-primary hover:bg-primary/20"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -814,7 +814,7 @@ export function TabbedConfigForm({
                   onClick={() => setShowModifiedOnly(!showModifiedOnly)}
                 >
                   <div className="relative">
-                    <RotateCcw className="h-3 w-3" />
+                    <RotateCcw className="h-3.5 w-3.5" />
                     {showModifiedOnly && (
                       <span className="absolute -top-1 -right-1 h-1.5 w-1.5 bg-primary rounded-full" />
                     )}
@@ -849,13 +849,7 @@ export function TabbedConfigForm({
                     const isActive = activeTab === tab.key;
                     const Icon = tab.icon;
                     return (
-                      <Button
-                        key={tab.key}
-                        type="button"
-                        variant={isActive ? "tabActive" : "tab"}
-                        size="clean"
-                        onClick={() => setActiveTab(tab.key)}
-                      >
+                      <TabButton key={tab.key} type="button" isActive={isActive} onClick={() => setActiveTab(tab.key)}>
                         <Icon className="h-3.5 w-3.5 mr-1.5" />
                         {tab.label}
                         {errorCount && (
@@ -863,7 +857,7 @@ export function TabbedConfigForm({
                             {errorCount}
                           </span>
                         )}
-                      </Button>
+                      </TabButton>
                     );
                   })}
                 </div>

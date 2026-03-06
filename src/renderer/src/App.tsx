@@ -5,8 +5,8 @@ import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { ipc } from "./client/ipc";
 import { BootFallback } from "./components/BootFallback";
-import { Toaster } from "./components/ui/sonner";
-import { TooltipProvider } from "./components/ui/tooltip";
+import { Toaster } from "./components/ui/Sonner";
+import { TooltipProvider } from "./components/ui/Tooltip";
 import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
 import { routeTree } from "./routeTree.gen";
@@ -62,7 +62,7 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     outline: data?.plot_zh ?? data?.plot,
     tags: data?.genres,
     release: data?.release_date,
-    duration: formatDuration(payload.videoMeta?.durationSeconds),
+    duration: formatDuration(payload.videoMeta?.durationSeconds ?? data?.durationSeconds),
     resolution:
       payload.videoMeta && payload.videoMeta.width > 0 && payload.videoMeta.height > 0
         ? `${payload.videoMeta.width}x${payload.videoMeta.height}`
