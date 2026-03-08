@@ -19,9 +19,13 @@ export const createToolHandlers = (
   | typeof IpcChannel.Tool_ActorPhotoSync
   | typeof IpcChannel.Tool_ActorInfoSync
   | typeof IpcChannel.Tool_CreateSymlink
+  | typeof IpcChannel.Tool_AmazonPosterScan
+  | typeof IpcChannel.Tool_AmazonPosterLookup
+  | typeof IpcChannel.Tool_AmazonPosterApply
   | typeof IpcChannel.Tool_ToggleDevTools
 > => {
-  const { networkClient, actorPhotoService, actorInfoService, symlinkService, windowService } = context;
+  const { networkClient, actorPhotoService, actorInfoService, symlinkService, windowService, amazonPosterToolService } =
+    context;
   let symlinkTask: Promise<void> | null = null;
 
   const ensureServerReady = async () => {
@@ -119,6 +123,47 @@ export const createToolHandlers = (
             throw createIpcError(error.code, error.message);
           }
           logger.error(`Tool_CreateSymlink setup failed: ${toErrorMessage(error)}`);
+          throw asSerializableIpcError(error);
+        }
+      }),
+    [IpcChannel.Tool_AmazonPosterScan]: t.procedure.input<{ directory?: string }>().action(async ({ input }) => {
+      try {
+        const directory = input?.directory?.trim();
+        if (!directory) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Directory is required");
+        }
+        return {
+          items: await amazonPosterToolService.scan(directory),
+        };
+      } catch (error) {
+        logger.error(`Tool_AmazonPosterScan failed: ${toErrorMessage(error)}`);
+        throw asSerializableIpcError(error);
+      }
+    }),
+    [IpcChannel.Tool_AmazonPosterLookup]: t.procedure
+      .input<{ nfoPath?: string; title?: string }>()
+      .action(async ({ input }) => {
+        try {
+          const nfoPath = input?.nfoPath?.trim();
+          const title = input?.title?.trim();
+          if (!nfoPath || !title) {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "NFO path and title are required");
+          }
+          return amazonPosterToolService.lookup(nfoPath, title);
+        } catch (error) {
+          logger.error(`Tool_AmazonPosterLookup failed: ${toErrorMessage(error)}`);
+          throw asSerializableIpcError(error);
+        }
+      }),
+    [IpcChannel.Tool_AmazonPosterApply]: t.procedure
+      .input<{ items?: Array<{ directory: string; amazonPosterUrl: string }> }>()
+      .action(async ({ input }) => {
+        try {
+          return {
+            results: await amazonPosterToolService.apply(input?.items ?? []),
+          };
+        } catch (error) {
+          logger.error(`Tool_AmazonPosterApply failed: ${toErrorMessage(error)}`);
           throw asSerializableIpcError(error);
         }
       }),

@@ -154,7 +154,7 @@ export class NfoGenerator {
       // Use relative paths: samples/scene-001.jpg
       for (const imagePath of assets.sceneImages) {
         const relativePath = assets.cover
-          ? relative(dirname(assets.cover), imagePath)
+          ? relative(dirname(assets.cover), imagePath).replaceAll("\\", "/")
           : imagePath.split("/").slice(-2).join("/");
         fanartThumbs.push({ "#text": relativePath });
       }

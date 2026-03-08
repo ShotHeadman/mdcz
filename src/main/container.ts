@@ -3,7 +3,7 @@ import type { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import type { ScraperService } from "@main/services/scraper";
-import type { SymlinkService } from "@main/services/tools";
+import type { AmazonPosterToolService, SymlinkService } from "@main/services/tools";
 import type { WindowService } from "@main/services/WindowService";
 
 /**
@@ -24,4 +24,5 @@ export interface ServiceContainer {
   actorPhotoService: JellyfinActorPhotoService;
   actorInfoService: JellyfinActorInfoService;
   symlinkService: SymlinkService;
+  amazonPosterToolService: AmazonPosterToolService;
 }

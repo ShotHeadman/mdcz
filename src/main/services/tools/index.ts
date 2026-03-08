@@ -1,3 +1,4 @@
+export { AmazonPosterToolService } from "./AmazonPosterToolService";
 export {
   type CreateSymlinkPayload,
   SymlinkService,

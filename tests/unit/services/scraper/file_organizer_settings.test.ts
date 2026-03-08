@@ -194,8 +194,8 @@ describe("FileOrganizer naming settings", () => {
     );
 
     expect(plan.outputDir).toBe("/input");
-    expect(plan.targetVideoPath).toBe("/input/original-name.mp4");
-    expect(plan.nfoPath).toBe("/input/original-name.nfo");
+    expect(plan.targetVideoPath).toBe(join("/input", "original-name.mp4"));
+    expect(plan.nfoPath).toBe(join("/input", "original-name.nfo"));
   });
 
   it("supports renaming in place when move is disabled", () => {
@@ -223,8 +223,8 @@ describe("FileOrganizer naming settings", () => {
     );
 
     expect(plan.outputDir).toBe("/input");
-    expect(plan.targetVideoPath).toBe("/input/XYZ-999-CEN.mp4");
-    expect(plan.nfoPath).toBe("/input/XYZ-999-CEN.nfo");
+    expect(plan.targetVideoPath).toBe(join("/input", "XYZ-999-CEN.mp4"));
+    expect(plan.nfoPath).toBe(join("/input", "XYZ-999-CEN.nfo"));
   });
 
   it("resolves target collisions before writing NFO so basenames stay aligned", async () => {

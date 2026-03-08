@@ -7,9 +7,7 @@ import type { SignalService } from "@main/services/SignalService";
 import { pathExists } from "@main/utils/file";
 import { parseFileInfo } from "@main/utils/number";
 import { probeVideoMetadata } from "@main/utils/video";
-import { Website } from "@shared/enums";
 import type { CrawlerData, FileInfo, ScrapeResult, VideoMeta } from "@shared/types";
-import type { AmazonJpImageService } from "./AmazonJpImageService";
 import type { AggregationService } from "./aggregation";
 import type { DownloadManager } from "./DownloadManager";
 import type { FileOrganizer } from "./FileOrganizer";
@@ -20,7 +18,6 @@ export interface FileScraperDependencies {
   configManager: ConfigManager;
   aggregationService: AggregationService;
   translateService: TranslateService;
-  amazonJpImageService: AmazonJpImageService;
   nfoGenerator: NfoGenerator;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
@@ -72,7 +69,7 @@ export class FileScraper {
         return failedResult;
       }
 
-      let crawlerData: CrawlerData = aggregationResult.data;
+      const crawlerData: CrawlerData = aggregationResult.data;
       let videoMeta: VideoMeta | undefined;
 
       try {
@@ -85,14 +82,6 @@ export class FileScraper {
       this.setProgress(progress, 30);
       let plan = this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration);
       plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
-
-      if (configuration.download.amazonJpCoverEnhance) {
-        crawlerData = await this.maybeEnhanceAmazonCover(
-          fileInfo.number,
-          crawlerData,
-          aggregationResult.sources.cover_url,
-        );
-      }
 
       const translated = await this.deps.translateService.translateCrawlerData(crawlerData, configuration);
       this.setProgress(progress, 50);
@@ -189,39 +178,6 @@ export class FileScraper {
     const value = Math.max(0, Math.min(100, Math.round(globalValue * 100)));
 
     this.deps.signalService.setProgress(value, fileIndex, totalFiles);
-  }
-
-  private async maybeEnhanceAmazonCover(
-    number: string,
-    crawlerData: CrawlerData,
-    coverSource?: Website,
-  ): Promise<CrawlerData> {
-    const currentCover = crawlerData.cover_url?.trim();
-    if (!currentCover) {
-      this.deps.signalService.showLogText(`[${number}] Amazon封面图片增强: skip: no current cover`);
-      return crawlerData;
-    }
-
-    if (coverSource === Website.DMM) {
-      this.deps.signalService.showLogText(`[${number}] Amazon封面图片增强: skip: DMM cover source`);
-      return crawlerData;
-    }
-
-    if (currentCover.includes("awsimgsrc.dmm.co.jp")) {
-      this.deps.signalService.showLogText(`[${number}] Amazon封面图片增强: skip: AWS DMM cover`);
-      return crawlerData;
-    }
-
-    const amazonCover = await this.deps.amazonJpImageService.enhance(crawlerData, coverSource);
-    this.deps.signalService.showLogText(`[${number}] Amazon封面图片增强: ${amazonCover.reason}`);
-    if (!amazonCover.upgraded || !amazonCover.cover_url) {
-      return crawlerData;
-    }
-
-    return {
-      ...crawlerData,
-      cover_url: amazonCover.cover_url,
-    };
   }
 
   private async handleFailedFileMove(fileInfo: FileInfo, config: Configuration): Promise<void> {

@@ -10,8 +10,9 @@ import { NetworkClient } from "@main/services/network";
 import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper";
+import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
 import { TrayService } from "@main/services/TrayService";
-import { SymlinkService } from "@main/services/tools";
+import { AmazonPosterToolService, SymlinkService } from "@main/services/tools";
 import { UpdateService } from "@main/services/UpdateService";
 import { WindowService } from "@main/services/WindowService";
 import { app, BrowserWindow } from "electron";
@@ -45,6 +46,7 @@ const ensureMainWindow = async (): Promise<void> => {
     const crawlerProvider = new CrawlerProvider({
       fetchGateway,
     });
+    const amazonJpImageService = new AmazonJpImageService(networkClient);
 
     const container: ServiceContainer = {
       signalService,
@@ -56,6 +58,7 @@ const ensureMainWindow = async (): Promise<void> => {
       actorPhotoService: new JellyfinActorPhotoService({ signalService, networkClient }),
       actorInfoService: new JellyfinActorInfoService({ signalService, networkClient }),
       symlinkService: new SymlinkService({ signalService }),
+      amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
     };
 
     registerIpcHandlers(container);

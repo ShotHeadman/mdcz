@@ -1,6 +1,6 @@
 import type { Configuration } from "@main/services/config";
 import type { NetworkClient } from "@main/services/network";
-import type { JellyfinCheckKey, JellyfinCheckStep, JellyfinConnectionCheckResult } from "@shared/ipcContract";
+import type { JellyfinCheckKey, JellyfinCheckStep, JellyfinConnectionCheckResult } from "@shared/ipcTypes";
 import { buildJellyfinHeaders, buildJellyfinUrl } from "./auth";
 import { getHttpStatus } from "./errors";
 import { fetchMetadataEditorInfo, fetchPersons } from "./people";

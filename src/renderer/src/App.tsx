@@ -75,7 +75,7 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     publisher: data?.publisher,
     score: typeof data?.rating === "number" ? String(data.rating) : undefined,
     poster_url: assets?.poster ?? remotePoster,
-    thumb_url: assets?.cover ?? remoteCover,
+    cover_url: assets?.cover ?? remoteCover,
     output_path: payload.outputPath,
     scene_images: assets?.sceneImages,
     sources: payload.sources as Record<string, string> | undefined,

@@ -148,17 +148,27 @@ export const parseNfo = (xml: string): CrawlerData => {
     .filter((item) => item.length > 0);
 
   const thumbs = parseThumbEntries(movieNode.thumb);
-  const fanartThumbs = parseThumbEntries(
-    movieNode.fanart && typeof movieNode.fanart === "object"
-      ? (movieNode.fanart as Record<string, unknown>).thumb
-      : undefined,
-  );
+  const posterUrl = pickThumbByAspect(thumbs, ["poster"]);
   const coverUrl =
     pickThumbByAspect(thumbs, ["thumb", "cover"]) ?? thumbs.find((entry) => !entry.aspect)?.value ?? thumbs[0]?.value;
-  const posterUrl = pickThumbByAspect(thumbs, ["poster"]);
-  const fanartUrl = fanartThumbs[0]?.value;
-  const sampleImages = fanartThumbs.slice(1).map((entry) => entry.value);
-  const trailerUrl = toStringValue(movieNode.trailer);
+
+  const fanartThumbs =
+    movieNode.fanart && typeof movieNode.fanart === "object"
+      ? toArray((movieNode.fanart as Record<string, unknown>).thumb)
+          .map((item) => {
+            if (typeof item === "string") {
+              return toStringValue(item) ?? "";
+            }
+            if (item && typeof item === "object") {
+              return toStringValue((item as Record<string, unknown>)["#text"]) ?? "";
+            }
+            return "";
+          })
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      : [];
+  const fanartUrl = fanartThumbs[0];
+  const sampleImages = fanartThumbs.slice(1);
 
   const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
   const releaseYear = yearText ? Number.parseInt(yearText, 10) : undefined;
@@ -183,7 +193,7 @@ export const parseNfo = (xml: string): CrawlerData => {
     poster_url: posterUrl,
     fanart_url: fanartUrl,
     sample_images: sampleImages,
-    trailer_url: trailerUrl,
+    trailer_url: toStringValue(movieNode.trailer),
     website,
   };
 };

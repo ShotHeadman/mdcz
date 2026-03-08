@@ -46,5 +46,8 @@ export enum IpcChannel {
   Tool_ActorInfoSync = "tool:actor-info-sync",
   Tool_ServerCheckConnection = "tool:server-check-connection",
   Tool_CreateSymlink = "tool:create-symlink",
+  Tool_AmazonPosterScan = "tool:amazon-poster-scan",
+  Tool_AmazonPosterLookup = "tool:amazon-poster-lookup",
+  Tool_AmazonPosterApply = "tool:amazon-poster-apply",
   Tool_ToggleDevTools = "tool:toggle-devtools",
 }

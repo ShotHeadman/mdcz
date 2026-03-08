@@ -1,47 +1,16 @@
-import type { ActionContext } from "@egoist/tipc/main";
 import type { Configuration } from "./config";
 import type { Website } from "./enums";
 import { IpcChannel } from "./IpcChannel";
+import type {
+  AmazonPosterApplyResultItem,
+  AmazonPosterLookupResult,
+  AmazonPosterScanItem,
+  AppInfo,
+  IpcProcedure,
+  JellyfinConnectionCheckResult,
+  TranslateTestLlmInput,
+} from "./ipcTypes";
 import type { CrawlerData, ScraperStatus } from "./types";
-
-export type IpcProcedure<TInput = unknown, TOutput = unknown> = {
-  action: (options: { context: ActionContext; input: TInput }) => Promise<TOutput>;
-};
-
-export type AppInfo = {
-  version: string;
-  arch: string;
-  platform: string;
-  isPackaged: boolean;
-};
-
-export type TranslateTestLlmInput = {
-  llmModelName?: string;
-  llmApiKey?: string;
-  llmBaseUrl?: string;
-  llmTemperature?: number;
-};
-
-export type JellyfinCheckKey = "server" | "auth" | "peopleRead" | "peopleWrite";
-export type JellyfinCheckStatus = "ok" | "error" | "skipped";
-
-export type JellyfinCheckStep = {
-  key: JellyfinCheckKey;
-  label: string;
-  status: JellyfinCheckStatus;
-  message: string;
-  code?: string;
-};
-
-export type JellyfinConnectionCheckResult = {
-  success: boolean;
-  steps: JellyfinCheckStep[];
-  serverInfo?: {
-    serverName?: string;
-    version?: string;
-  };
-  personCount?: number;
-};
 
 export type IpcRouterContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
@@ -100,6 +69,13 @@ export type IpcRouterContract = {
   [IpcChannel.File_Delete]: IpcProcedure<{ filePaths?: string[] }, { deletedCount: number; failedCount: number }>;
   [IpcChannel.File_NfoRead]: IpcProcedure<{ nfoPath?: string }, { data: CrawlerData }>;
   [IpcChannel.File_NfoWrite]: IpcProcedure<{ nfoPath?: string; data?: CrawlerData }, { success: true }>;
+
+  [IpcChannel.Tool_AmazonPosterScan]: IpcProcedure<{ directory?: string }, { items: AmazonPosterScanItem[] }>;
+  [IpcChannel.Tool_AmazonPosterLookup]: IpcProcedure<{ nfoPath?: string; title?: string }, AmazonPosterLookupResult>;
+  [IpcChannel.Tool_AmazonPosterApply]: IpcProcedure<
+    { items?: Array<{ directory: string; amazonPosterUrl: string }> },
+    { results: AmazonPosterApplyResultItem[] }
+  >;
 
   [IpcChannel.Tool_CreateSymlink]: IpcProcedure<
     {

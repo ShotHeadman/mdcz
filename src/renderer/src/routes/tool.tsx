@@ -1,5 +1,5 @@
 import type { Website } from "@shared/enums";
-import type { JellyfinConnectionCheckResult } from "@shared/ipcContract";
+import type { AmazonPosterScanItem, JellyfinConnectionCheckResult } from "@shared/ipcTypes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -13,6 +13,7 @@ import {
   Link2,
   Search,
   Settings2,
+  ShoppingCart,
   Trash2,
   UserCheck,
   Wrench,
@@ -22,6 +23,7 @@ import { deleteFile } from "@/api/manual";
 import { createSymlink, listEntries, scrapeSingleFile } from "@/client/api";
 import { ipc } from "@/client/ipc";
 import type { CreateSoftlinksBody, FileItem, ScrapeFileBody } from "@/client/types";
+import { AmazonPosterDialog } from "@/components/AmazonPosterDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -203,6 +205,10 @@ function ToolComponent() {
     elapsed: number;
   } | null>(null);
   const [crawlerTesting, setCrawlerTesting] = useState(false);
+  const [amazonDir, setAmazonDir] = useState("");
+  const [amazonPosterDialogOpen, setAmazonPosterDialogOpen] = useState(false);
+  const [amazonPosterScanItems, setAmazonPosterScanItems] = useState<AmazonPosterScanItem[]>([]);
+  const [amazonScanning, setAmazonScanning] = useState(false);
 
   // Navigation arrows logic
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -580,6 +586,38 @@ function ToolComponent() {
     }
   };
 
+  const handleBrowseAmazonDir = async () => {
+    const result = await ipc.file.browse("directory");
+    if (result.paths && result.paths.length > 0) {
+      setAmazonDir(result.paths[0]);
+    }
+  };
+
+  const handleAmazonPosterScan = async () => {
+    const directory = amazonDir.trim();
+    if (!directory) {
+      showError("请输入需要扫描的媒体目录");
+      return;
+    }
+
+    setAmazonScanning(true);
+    try {
+      const result = await ipc.tool.amazonPosterScan(directory);
+      setAmazonPosterScanItems(result.items);
+      setAmazonPosterDialogOpen(true);
+
+      if (result.items.length === 0) {
+        showInfo("扫描完成，但未找到可处理的 NFO 条目。");
+      } else {
+        showSuccess(`扫描完成，共找到 ${result.items.length} 个条目。`);
+      }
+    } catch (error) {
+      showError(`Amazon 海报扫描失败: ${formatError(error)}`);
+    } finally {
+      setAmazonScanning(false);
+    }
+  };
+
   const cleanupTotalSize = useMemo(
     () => cleanupCandidates.reduce((sum, item) => sum + (Number.isFinite(item.size) ? item.size : 0), 0),
     [cleanupCandidates],
@@ -806,6 +844,53 @@ function ToolComponent() {
                     )}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-primary/8 rounded-lg">
+                    <ShoppingCart className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm font-medium">Amazon 海报增强</CardTitle>
+                    <CardDescription className="text-xs">从 Amazon.co.jp 查询高质量竖版海报图片</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="amazon-poster-dir" className="text-xs font-medium text-muted-foreground">
+                    目标目录
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="amazon-poster-dir"
+                      value={amazonDir}
+                      onChange={(e) => setAmazonDir(e.target.value)}
+                      placeholder="输入已刮削完成的输出目录"
+                      className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={handleBrowseAmazonDir}
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={handleAmazonPosterScan}
+                  disabled={amazonScanning}
+                  className="w-full rounded-lg h-9 text-sm font-medium"
+                >
+                  {amazonScanning ? "正在扫描..." : "开始扫描"}
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -1323,6 +1408,12 @@ function ToolComponent() {
         {/* Bottom spacing */}
         <div className="h-10" />
       </div>
+
+      <AmazonPosterDialog
+        open={amazonPosterDialogOpen}
+        onOpenChange={setAmazonPosterDialogOpen}
+        items={amazonPosterScanItems}
+      />
 
       <Dialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
         <DialogContent className="rounded-xl">

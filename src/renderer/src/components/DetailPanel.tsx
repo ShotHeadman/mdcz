@@ -36,7 +36,7 @@ export function DetailPanel() {
   const [nfoLoading, setNfoLoading] = useState(false);
   const [nfoSaving, setNfoSaving] = useState(false);
   const [posterSrc, setPosterSrc] = useState("");
-  const [thumbSrc, setThumbSrc] = useState("");
+  const [coverSrc, setCoverSrc] = useState("");
 
   const selectedItem = results.find((r) => r.id === selectedResultId);
   const posterCandidates = buildImageSourceCandidates({
@@ -45,8 +45,8 @@ export function DetailPanel() {
     outputPath: selectedItem?.output_path,
     fileName: "poster.jpg",
   });
-  const thumbCandidates = buildImageSourceCandidates({
-    remotePath: selectedItem?.thumb_url,
+  const coverCandidates = buildImageSourceCandidates({
+    remotePath: selectedItem?.cover_url,
     filePath: selectedItem?.path,
     outputPath: selectedItem?.output_path,
     fileName: "cover.jpg",
@@ -54,8 +54,8 @@ export function DetailPanel() {
 
   useEffect(() => {
     setPosterSrc(toRenderableSrc(posterCandidates.primary));
-    setThumbSrc(toRenderableSrc(thumbCandidates.primary));
-  }, [posterCandidates.primary, thumbCandidates.primary]);
+    setCoverSrc(toRenderableSrc(coverCandidates.primary));
+  }, [coverCandidates.primary, posterCandidates.primary]);
 
   const handlePlay = () => {
     if (!selectedItem?.path) {
@@ -124,10 +124,10 @@ export function DetailPanel() {
     }
   };
 
-  const handleThumbError = () => {
-    const localThumb = toRenderableSrc(thumbCandidates.fallback);
-    if (localThumb && localThumb !== thumbSrc) {
-      setThumbSrc(localThumb);
+  const handleCoverError = () => {
+    const localCover = toRenderableSrc(coverCandidates.fallback);
+    if (localCover && localCover !== coverSrc) {
+      setCoverSrc(localCover);
     }
   };
 
@@ -291,11 +291,16 @@ export function DetailPanel() {
 
           <Separator />
 
-          {/* Cover / Thumbnail (full width, 16:9) */}
-          {thumbSrc && (
+          {/* Cover / Primary Image */}
+          {coverSrc && (
             <div className="bg-black/5 rounded-xl overflow-hidden border">
-              <div className="aspect-video flex items-center justify-center">
-                <img src={thumbSrc} alt="Cover" className="w-full h-full object-cover" onError={handleThumbError} />
+              <div className="flex max-h-[28rem] items-center justify-center bg-muted/10 p-3">
+                <img
+                  src={coverSrc}
+                  alt="Cover"
+                  className="max-h-[25rem] max-w-full object-contain"
+                  onError={handleCoverError}
+                />
               </div>
             </div>
           )}

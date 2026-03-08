@@ -79,7 +79,6 @@ const downloadSchema = z.object({
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   downloadNfo: z.boolean().default(true),
-  amazonJpCoverEnhance: z.boolean().default(false),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepCover: z.boolean().default(true),
   keepPoster: z.boolean().default(true),

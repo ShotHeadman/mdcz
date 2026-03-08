@@ -2,7 +2,8 @@ import { configManager, configurationSchema } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@shared/IpcChannel";
-import type { IpcRouterContract, TranslateTestLlmInput } from "@shared/ipcContract";
+import type { IpcRouterContract } from "@shared/ipcContract";
+import type { TranslateTestLlmInput } from "@shared/ipcTypes";
 import OpenAI from "openai";
 import { t } from "../shared";
 

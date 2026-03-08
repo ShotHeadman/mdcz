@@ -5,7 +5,6 @@ import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { listVideoFiles } from "@main/utils/file";
 import type { ScraperStatus } from "@shared/types";
-import { AmazonJpImageService } from "./AmazonJpImageService";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { FileOrganizer } from "./FileOrganizer";
@@ -318,7 +317,6 @@ export class ScraperService {
       configManager,
       aggregationService: new AggregationService(this.sharedCrawlerProvider),
       translateService: new TranslateService(this.sharedNetworkClient),
-      amazonJpImageService: new AmazonJpImageService(this.sharedNetworkClient),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.sharedNetworkClient),
       fileOrganizer: new FileOrganizer(),
