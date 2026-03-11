@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import type { Website } from "@shared/enums";
 import type { IpcChannel } from "@shared/IpcChannel";
-import type { FileInfo, ScrapeResult } from "@shared/types";
+import type { FileInfo, MaintenanceItemResult, ScrapeResult } from "@shared/types";
 
 type Unsubscribe = () => void;
 
@@ -59,6 +59,7 @@ type EventPayloadByChannel = {
   [IpcChannel.Event_FailedInfo]: FailedInfoPayload;
   [IpcChannel.Event_ButtonStatus]: ButtonStatusPayload;
   [IpcChannel.Event_Shortcut]: ShortcutPayload;
+  [IpcChannel.Event_MaintenanceItemResult]: MaintenanceItemResult;
 };
 
 declare global {

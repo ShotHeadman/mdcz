@@ -106,6 +106,8 @@ export class EmbyActorPhotoService {
     let failedCount = 0;
     let current = 0;
 
+    this.deps.signalService.resetProgress();
+
     for (const person of persons) {
       current += 1;
       this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);

@@ -1,7 +1,7 @@
 import type { Website } from "@shared/enums";
 
 import { IpcChannel } from "@shared/IpcChannel";
-import type { FileInfo, ScrapeResult } from "@shared/types";
+import type { FileInfo, MaintenanceItemResult, ScrapeResult } from "@shared/types";
 import { contextBridge, type IpcRendererEvent, ipcRenderer, shell } from "electron";
 
 type Unsubscribe = () => void;
@@ -47,7 +47,8 @@ type EventChannel =
   | IpcChannel.Event_ScrapeInfo
   | IpcChannel.Event_FailedInfo
   | IpcChannel.Event_ButtonStatus
-  | IpcChannel.Event_Shortcut;
+  | IpcChannel.Event_Shortcut
+  | IpcChannel.Event_MaintenanceItemResult;
 
 type EventPayloadByChannel = {
   [IpcChannel.Event_Log]: LogPayload;
@@ -57,6 +58,7 @@ type EventPayloadByChannel = {
   [IpcChannel.Event_FailedInfo]: FailedInfoPayload;
   [IpcChannel.Event_ButtonStatus]: ButtonStatusPayload;
   [IpcChannel.Event_Shortcut]: ShortcutPayload;
+  [IpcChannel.Event_MaintenanceItemResult]: MaintenanceItemResult;
 };
 
 const EVENT_CHANNELS = new Set<EventChannel>([
@@ -67,6 +69,7 @@ const EVENT_CHANNELS = new Set<EventChannel>([
   IpcChannel.Event_FailedInfo,
   IpcChannel.Event_ButtonStatus,
   IpcChannel.Event_Shortcut,
+  IpcChannel.Event_MaintenanceItemResult,
 ]);
 
 const listen = <TChannel extends EventChannel>(

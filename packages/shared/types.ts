@@ -102,3 +102,68 @@ export interface IpcError {
   fields?: string[];
   fieldErrors?: Record<string, string>;
 }
+
+// ── Maintenance Mode ──────────────────────────────────────────────
+
+export type MaintenancePresetId = "read_local" | "refresh_data" | "organize_files" | "rebuild_all";
+
+/** Assets discovered on disk for an existing video. */
+export interface DiscoveredAssets {
+  thumb?: string;
+  poster?: string;
+  fanart?: string;
+  sceneImages: string[];
+  trailer?: string;
+  nfo?: string;
+  actorPhotos: string[];
+}
+
+/** A single video entry produced by local directory scanning. */
+export interface LocalScanEntry {
+  id: string;
+  videoPath: string;
+  fileInfo: FileInfo;
+  nfoPath?: string;
+  crawlerData?: CrawlerData;
+  assets: DiscoveredAssets;
+  currentDir: string;
+}
+
+/** A single field-level difference between old and new CrawlerData. */
+export interface FieldDiff {
+  field: string;
+  label: string;
+  oldValue: unknown;
+  newValue: unknown;
+  changed: boolean;
+}
+
+/** Path migration plan for a single video. */
+export interface PathDiff {
+  entryId: string;
+  currentVideoPath: string;
+  targetVideoPath: string;
+  currentDir: string;
+  targetDir: string;
+  changed: boolean;
+}
+
+export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed";
+
+/** Per-item execution result pushed via IPC events. */
+export interface MaintenanceItemResult {
+  entryId: string;
+  status: MaintenanceItemStatus;
+  error?: string;
+  fieldDiffs?: FieldDiff[];
+  pathDiff?: PathDiff;
+}
+
+/** Overall maintenance execution status. */
+export interface MaintenanceStatus {
+  state: "idle" | "scanning" | "executing" | "stopping";
+  totalEntries: number;
+  completedEntries: number;
+  successCount: number;
+  failedCount: number;
+}

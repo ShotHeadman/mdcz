@@ -22,6 +22,7 @@ import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper";
 import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
+import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { TrayService } from "@main/services/TrayService";
 import { AmazonPosterToolService, SymlinkService } from "@main/services/tools";
 import { UpdateService } from "@main/services/UpdateService";
@@ -75,6 +76,7 @@ const ensureMainWindow = async (): Promise<void> => {
       networkClient,
       fetchGateway,
       scraperService: new ScraperService(signalService, networkClient, crawlerProvider, actorImageService),
+      maintenanceService: new MaintenanceService(signalService, networkClient, crawlerProvider),
       crawlerProvider,
       actorSourceProvider,
       actorImageService,

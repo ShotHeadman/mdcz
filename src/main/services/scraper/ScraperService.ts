@@ -354,7 +354,7 @@ export class ScraperService {
     this.restGate = this.createRestGate(configuration);
 
     this.signalService.setButtonStatus(false, true);
-    this.signalService.setProgress(0, 0, filePaths.length);
+    this.signalService.resetProgress();
 
     const fileScraper = new FileScraper(this.createFileScraperDependencies());
 

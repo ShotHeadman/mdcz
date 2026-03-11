@@ -4,7 +4,15 @@ import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type { AppInfo, TranslateTestLlmInput } from "@shared/ipcTypes";
-import type { CrawlerData, FileInfo, ScrapeResult } from "@shared/types";
+import type {
+  CrawlerData,
+  FileInfo,
+  LocalScanEntry,
+  MaintenanceItemResult,
+  MaintenancePresetId,
+  MaintenanceStatus,
+  ScrapeResult,
+} from "@shared/types";
 
 type Unsubscribe = () => void;
 
@@ -114,6 +122,14 @@ export const ipc = {
       client[IpcChannel.Tool_AmazonPosterApply]({ items }),
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
+  maintenance: {
+    scan: (dirPath: string) =>
+      client[IpcChannel.Maintenance_Scan]({ dirPath }) as Promise<{ entries: LocalScanEntry[] }>,
+    execute: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Execute]({ entries, presetId }),
+    stop: () => client[IpcChannel.Maintenance_Stop](undefined),
+    getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined) as Promise<MaintenanceStatus>,
+  },
   on: {
     log: (callback: (payload: LogPayload) => void): Unsubscribe => window.api.on(IpcChannel.Event_Log, callback),
     progress: (callback: (payload: ProgressPayload) => void): Unsubscribe =>
@@ -128,5 +144,7 @@ export const ipc = {
       window.api.on(IpcChannel.Event_ButtonStatus, callback),
     shortcut: (callback: (payload: ShortcutPayload) => void): Unsubscribe =>
       window.api.on(IpcChannel.Event_Shortcut, callback),
+    maintenanceItemResult: (callback: (payload: MaintenanceItemResult) => void): Unsubscribe =>
+      window.api.on(IpcChannel.Event_MaintenanceItemResult, callback),
   },
 };

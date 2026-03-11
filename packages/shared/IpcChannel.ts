@@ -53,4 +53,11 @@ export enum IpcChannel {
   Tool_AmazonPosterLookup = "tool:amazon-poster-lookup",
   Tool_AmazonPosterApply = "tool:amazon-poster-apply",
   Tool_ToggleDevTools = "tool:toggle-devtools",
+
+  Maintenance_Scan = "maintenance:scan",
+  Maintenance_Execute = "maintenance:execute",
+  Maintenance_Stop = "maintenance:stop",
+  Maintenance_GetStatus = "maintenance:get-status",
+
+  Event_MaintenanceItemResult = "event:maintenance-item-result",
 }

@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { Website } from "@shared/enums";
 
 import { IpcChannel } from "@shared/IpcChannel";
-import type { FileInfo, ScrapeResult } from "@shared/types";
+import type { FileInfo, MaintenanceItemResult, ScrapeResult } from "@shared/types";
 import type { BrowserWindow } from "electron";
 import { type LoggerEventPayload, loggerService } from "./LoggerService";
 
@@ -34,6 +34,9 @@ export class SignalService extends EventEmitter {
 
   private readonly logger = loggerService.getLogger("Signal");
 
+  /** High-water mark to prevent progress bar from jumping backwards during concurrent scraping. */
+  private progressHighWater = 0;
+
   constructor(mainWindow: BrowserWindow | null = null) {
     super();
     this.mainWindow = mainWindow;
@@ -56,9 +59,18 @@ export class SignalService extends EventEmitter {
     });
   }
 
+  /** Reset progress high-water mark and send a zero-progress event. Call this before every new task. */
+  resetProgress(): void {
+    this.progressHighWater = 0;
+    this.send(IpcChannel.Event_Progress, { value: 0, current: 0, total: 0 } satisfies ProgressPayload);
+  }
+
   setProgress(value: number, current: number, total: number): void {
+    const clampedValue = Math.max(this.progressHighWater, value);
+    this.progressHighWater = clampedValue;
+
     const payload: ProgressPayload = {
-      value,
+      value: clampedValue,
       current,
       total,
     };
@@ -85,6 +97,10 @@ export class SignalService extends EventEmitter {
     };
 
     this.send(IpcChannel.Event_ButtonStatus, payload);
+  }
+
+  showMaintenanceItemResult(payload: MaintenanceItemResult): void {
+    this.send(IpcChannel.Event_MaintenanceItemResult, payload);
   }
 
   private send<TPayload>(channel: IpcChannel, payload: TPayload): void {
