@@ -8,8 +8,10 @@ import type {
   CrawlerData,
   FileInfo,
   LocalScanEntry,
+  MaintenanceCommitItem,
   MaintenanceItemResult,
   MaintenancePresetId,
+  MaintenancePreviewResult,
   MaintenanceStatus,
   ScrapeResult,
 } from "@shared/types";
@@ -125,8 +127,10 @@ export const ipc = {
   maintenance: {
     scan: (dirPath: string) =>
       client[IpcChannel.Maintenance_Scan]({ dirPath }) as Promise<{ entries: LocalScanEntry[] }>,
-    execute: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_Execute]({ entries, presetId }),
+    preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Preview]({ entries, presetId }) as Promise<MaintenancePreviewResult>,
+    execute: (items: MaintenanceCommitItem[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Execute]({ items, presetId }),
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
     getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined) as Promise<MaintenanceStatus>,
   },

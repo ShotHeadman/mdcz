@@ -11,6 +11,7 @@ import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
 import { routeTree } from "./routeTree.gen";
 import { createRuntimeLog, useLogStore } from "./store/logStore";
+import { useMaintenanceStore } from "./store/maintenanceStore";
 import { type ScrapeResult, useScrapeStore } from "./store/scrapeStore";
 
 const shouldUseHashHistory = typeof window !== "undefined" && window.location.protocol === "file:";
@@ -96,6 +97,7 @@ const App = () => {
     let interval: number | undefined;
     const logStore = useLogStore.getState();
     const scrapeStore = useScrapeStore.getState();
+    const maintenanceStore = useMaintenanceStore.getState();
     const unsubscribers: Array<() => void> = [];
 
     const bootstrap = async () => {
@@ -123,8 +125,12 @@ const App = () => {
       };
 
       const syncStatusNow = async () => {
-        const status = await ipc.scraper.getStatus();
-        applyStatusSnapshot(status);
+        const [scrapeStatus, maintenanceStatus] = await Promise.all([
+          ipc.scraper.getStatus(),
+          ipc.maintenance.getStatus(),
+        ]);
+        applyStatusSnapshot(scrapeStatus);
+        maintenanceStore.applyStatusSnapshot(maintenanceStatus);
       };
 
       try {
@@ -137,6 +143,13 @@ const App = () => {
         unsubscribers.push(
           ipc.on.scrapeInfo((payload) => {
             scrapeStore.setCurrentFilePath(payload.fileInfo.filePath);
+          }),
+        );
+
+        unsubscribers.push(
+          ipc.on.maintenanceItemResult((payload) => {
+            maintenanceStore.applyItemResult(payload);
+            void syncStatusNow();
           }),
         );
 
@@ -158,6 +171,15 @@ const App = () => {
 
         unsubscribers.push(
           ipc.on.progress((payload) => {
+            const latestMaintenanceState = useMaintenanceStore.getState();
+            if (
+              latestMaintenanceState.executionStatus === "executing" ||
+              latestMaintenanceState.executionStatus === "stopping"
+            ) {
+              latestMaintenanceState.setProgress(payload.value, payload.current, payload.total);
+              return;
+            }
+
             scrapeStore.updateProgress(payload.value, 100);
           }),
         );

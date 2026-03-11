@@ -44,7 +44,7 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
       translate: true,
       download: true,
       generateNfo: true,
-      organize: false,
+      organize: true,
     },
     configOverrides: {
       download: {

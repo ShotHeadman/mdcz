@@ -131,7 +131,7 @@ export interface LocalScanEntry {
 
 /** A single field-level difference between old and new CrawlerData. */
 export interface FieldDiff {
-  field: string;
+  field: keyof CrawlerData;
   label: string;
   oldValue: unknown;
   newValue: unknown;
@@ -148,6 +148,36 @@ export interface PathDiff {
   changed: boolean;
 }
 
+export type MaintenancePreviewStatus = "ready" | "blocked";
+
+export interface MaintenancePreviewItem {
+  entryId: string;
+  status: MaintenancePreviewStatus;
+  error?: string;
+  fieldDiffs?: FieldDiff[];
+  pathDiff?: PathDiff;
+  proposedCrawlerData?: CrawlerData;
+  imageAlternatives?: MaintenanceImageAlternatives;
+}
+
+export interface MaintenancePreviewResult {
+  items: MaintenancePreviewItem[];
+  readyCount: number;
+  blockedCount: number;
+}
+
+export interface MaintenanceImageAlternatives {
+  thumb_url?: string[];
+  poster_url?: string[];
+  fanart_url?: string[];
+}
+
+export interface MaintenanceCommitItem {
+  entry: LocalScanEntry;
+  crawlerData?: CrawlerData;
+  imageAlternatives?: MaintenanceImageAlternatives;
+}
+
 export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed";
 
 /** Per-item execution result pushed via IPC events. */
@@ -155,6 +185,8 @@ export interface MaintenanceItemResult {
   entryId: string;
   status: MaintenanceItemStatus;
   error?: string;
+  crawlerData?: CrawlerData;
+  updatedEntry?: LocalScanEntry;
   fieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
 }

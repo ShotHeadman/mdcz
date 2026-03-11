@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
+import type { ScrapeResult } from "@/store/scrapeStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 import { buildImageSourceCandidates, getImageSrc } from "@/utils/image";
@@ -27,7 +28,12 @@ function toRenderableSrc(path: string | undefined): string {
   return getImageSrc(path);
 }
 
-export function DetailPanel() {
+interface DetailPanelProps {
+  item?: ScrapeResult | null;
+  emptyMessage?: string;
+}
+
+export function DetailPanel({ item: explicitItem, emptyMessage = "请选择一个项目以查看详情" }: DetailPanelProps = {}) {
   const { results } = useScrapeStore();
   const { selectedResultId } = useUIStore();
   const [nfoOpen, setNfoOpen] = useState(false);
@@ -38,7 +44,7 @@ export function DetailPanel() {
   const [posterSrc, setPosterSrc] = useState("");
   const [thumbSrc, setThumbSrc] = useState("");
 
-  const selectedItem = results.find((r) => r.id === selectedResultId);
+  const selectedItem = explicitItem ?? results.find((r) => r.id === selectedResultId);
   const posterCandidates = buildImageSourceCandidates({
     remotePath: selectedItem?.poster_url,
     filePath: selectedItem?.path,
@@ -151,7 +157,7 @@ export function DetailPanel() {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-xs opacity-60">
         <FileText className="h-12 w-12 mb-2 opacity-20" />
-        请选择一个项目以查看详情
+        {emptyMessage}
       </div>
     );
   }

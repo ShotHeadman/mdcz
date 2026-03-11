@@ -2,7 +2,7 @@ import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
-import type { LocalScanEntry, MaintenancePresetId } from "@shared/types";
+import type { LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@shared/types";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:maintenance");
@@ -12,6 +12,7 @@ export const createMaintenanceHandlers = (
 ): Pick<
   IpcRouterContract,
   | typeof IpcChannel.Maintenance_Scan
+  | typeof IpcChannel.Maintenance_Preview
   | typeof IpcChannel.Maintenance_Execute
   | typeof IpcChannel.Maintenance_Stop
   | typeof IpcChannel.Maintenance_GetStatus
@@ -33,7 +34,7 @@ export const createMaintenanceHandlers = (
       }
     }),
 
-    [IpcChannel.Maintenance_Execute]: t.procedure
+    [IpcChannel.Maintenance_Preview]: t.procedure
       .input<{ entries?: LocalScanEntry[]; presetId?: MaintenancePresetId }>()
       .action(async ({ input }) => {
         try {
@@ -46,8 +47,27 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          // Run execution in background — don't await
-          void maintenanceService.execute(entries, presetId);
+          return await maintenanceService.preview(entries, presetId);
+        } catch (error) {
+          logger.error(`Maintenance preview failed: ${error instanceof Error ? error.message : String(error)}`);
+          throw asSerializableIpcError(error);
+        }
+      }),
+
+    [IpcChannel.Maintenance_Execute]: t.procedure
+      .input<{ items?: MaintenanceCommitItem[]; presetId?: MaintenancePresetId }>()
+      .action(async ({ input }) => {
+        try {
+          const items = input?.items;
+          const presetId = input?.presetId;
+          if (!items || !Array.isArray(items) || items.length === 0) {
+            throw new Error("items is required and must be non-empty");
+          }
+          if (!presetId) {
+            throw new Error("presetId is required");
+          }
+
+          await maintenanceService.execute(items, presetId);
 
           return { success: true as const };
         } catch (error) {

@@ -55,6 +55,7 @@ export enum IpcChannel {
   Tool_ToggleDevTools = "tool:toggle-devtools",
 
   Maintenance_Scan = "maintenance:scan",
+  Maintenance_Preview = "maintenance:preview",
   Maintenance_Execute = "maintenance:execute",
   Maintenance_Stop = "maintenance:stop",
   Maintenance_GetStatus = "maintenance:get-status",

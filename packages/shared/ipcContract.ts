@@ -11,7 +11,15 @@ import type {
   JellyfinConnectionCheckResult,
   TranslateTestLlmInput,
 } from "./ipcTypes";
-import type { CrawlerData, LocalScanEntry, MaintenancePresetId, MaintenanceStatus, ScraperStatus } from "./types";
+import type {
+  CrawlerData,
+  LocalScanEntry,
+  MaintenanceCommitItem,
+  MaintenancePresetId,
+  MaintenancePreviewResult,
+  MaintenanceStatus,
+  ScraperStatus,
+} from "./types";
 
 export type IpcRouterContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
@@ -110,8 +118,12 @@ export type IpcRouterContract = {
   [IpcChannel.Tool_ToggleDevTools]: IpcProcedure<void, { success: true }>;
 
   [IpcChannel.Maintenance_Scan]: IpcProcedure<{ dirPath?: string }, { entries: LocalScanEntry[] }>;
-  [IpcChannel.Maintenance_Execute]: IpcProcedure<
+  [IpcChannel.Maintenance_Preview]: IpcProcedure<
     { entries?: LocalScanEntry[]; presetId?: MaintenancePresetId },
+    MaintenancePreviewResult
+  >;
+  [IpcChannel.Maintenance_Execute]: IpcProcedure<
+    { items?: MaintenanceCommitItem[]; presetId?: MaintenancePresetId },
     { success: true }
   >;
   [IpcChannel.Maintenance_Stop]: IpcProcedure<void, { success: true }>;

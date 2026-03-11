@@ -255,7 +255,7 @@ function SettingsComponent() {
             <DialogTitle>恢复默认设置</DialogTitle>
             <DialogDescription>确定要将所有设置恢复为默认值吗？此操作不可撤销。</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>
@@ -281,7 +281,7 @@ function SettingsComponent() {
               if (e.key === "Enter") handleCreateProfile();
             }}
           />
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>
@@ -311,7 +311,7 @@ function SettingsComponent() {
               ))}
             </SelectContent>
           </Select>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>

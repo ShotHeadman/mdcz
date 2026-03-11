@@ -4,7 +4,14 @@ import type { CrawlerProvider } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
-import type { LocalScanEntry, MaintenanceItemResult, MaintenancePresetId, MaintenanceStatus } from "@shared/types";
+import type {
+  LocalScanEntry,
+  MaintenanceCommitItem,
+  MaintenanceItemResult,
+  MaintenancePresetId,
+  MaintenancePreviewResult,
+  MaintenanceStatus,
+} from "@shared/types";
 import PQueue from "p-queue";
 import { AggregationService } from "../aggregation";
 import { DownloadManager } from "../DownloadManager";
@@ -89,7 +96,7 @@ export class MaintenanceService {
     }
   }
 
-  async execute(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<void> {
+  async preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<MaintenancePreviewResult> {
     if (this.status.state !== "idle") {
       throw new Error("Maintenance is already running");
     }
@@ -98,41 +105,87 @@ export class MaintenanceService {
       throw new Error("No entries to process");
     }
 
-    const preset = getPreset(presetId);
-    await configManager.ensureLoaded();
-    const baseConfig = configurationSchema.parse(await configManager.get());
-    const config = mergeDeep(baseConfig, preset.configOverrides as DeepPartial<Configuration>);
+    const { preset, config } = await this.preparePresetConfig(presetId);
+    const deps = this.createDependencies();
+    const fileScraper = new MaintenanceFileScraper(deps, preset);
+    const queue = new PQueue({ concurrency: Math.max(1, config.scrape.threadNumber) });
+    const items = await Promise.all(
+      entries.map((entry) =>
+        queue.add(async () => {
+          return fileScraper.previewFile(entry, config);
+        }),
+      ),
+    );
 
+    const readyCount = items.filter((item) => item.status === "ready").length;
+    return {
+      items,
+      readyCount,
+      blockedCount: items.length - readyCount,
+    };
+  }
+
+  async execute(items: MaintenanceCommitItem[], presetId: MaintenancePresetId): Promise<void> {
+    if (this.status.state !== "idle") {
+      throw new Error("Maintenance is already running");
+    }
+
+    if (items.length === 0) {
+      throw new Error("No entries to process");
+    }
+
+    const { preset, config } = await this.preparePresetConfig(presetId);
+    const execution = { items, preset, config };
     this.controller = new AbortController();
-    this.queue = new PQueue({ concurrency: Math.max(1, config.scrape.threadNumber) });
+    const totalItems = execution.items.length;
+    this.queue = new PQueue({ concurrency: Math.max(1, execution.config.scrape.threadNumber) });
 
     this.status = {
       state: "executing",
-      totalEntries: entries.length,
+      totalEntries: totalItems,
       completedEntries: 0,
       successCount: 0,
       failedCount: 0,
     };
 
-    this.signalService.showLogText(`[维护] 开始执行：${preset.label}，共 ${entries.length} 个条目`);
+    this.signalService.showLogText(`[维护] 开始执行：${execution.preset.label}，共 ${totalItems} 个条目`);
     this.signalService.resetProgress();
+
+    void this.runExecution(execution);
+  }
+
+  private async runExecution(execution: {
+    items: MaintenanceCommitItem[];
+    preset: ReturnType<typeof getPreset>;
+    config: Configuration;
+  }): Promise<void> {
+    const { items, preset, config } = execution;
+    const queue = this.queue;
+    if (!queue) {
+      throw new Error("Maintenance queue is not initialized");
+    }
 
     try {
       const deps = this.createDependencies();
       const fileScraper = new MaintenanceFileScraper(deps, preset);
 
-      for (const [index, entry] of entries.entries()) {
+      for (const [index, item] of items.entries()) {
+        const entry = item.entry;
         const fileIndex = index + 1;
 
-        this.queue.add(async () => {
+        queue.add(async () => {
           if (this.controller?.signal.aborted) return;
 
           try {
             const result = await fileScraper.processFile(
               entry,
               config,
-              { fileIndex, totalFiles: entries.length },
+              { fileIndex, totalFiles: items.length },
               this.controller?.signal,
+              {
+                crawlerData: item.crawlerData,
+                imageAlternatives: item.imageAlternatives,
+              },
             );
 
             this.status.completedEntries += 1;
@@ -146,6 +199,8 @@ export class MaintenanceService {
               entryId: entry.id,
               status: result.scrapeResult.status === "success" ? "success" : "failed",
               error: result.scrapeResult.error,
+              crawlerData: result.scrapeResult.crawlerData,
+              updatedEntry: result.updatedEntry,
               fieldDiffs: result.fieldDiffs,
               pathDiff: result.pathDiff,
             };
@@ -165,7 +220,7 @@ export class MaintenanceService {
         });
       }
 
-      await this.queue.onIdle();
+      await queue.onIdle();
 
       this.signalService.showLogText(
         `[维护] 执行完成：成功 ${this.status.successCount}，失败 ${this.status.failedCount}`,
@@ -175,6 +230,22 @@ export class MaintenanceService {
       this.controller = null;
       this.queue = null;
     }
+  }
+
+  private async preparePresetConfig(presetId: MaintenancePresetId): Promise<{
+    preset: ReturnType<typeof getPreset>;
+    config: Configuration;
+  }> {
+    if (this.status.state !== "idle") {
+      throw new Error("Maintenance is already running");
+    }
+
+    const preset = getPreset(presetId);
+    await configManager.ensureLoaded();
+    const baseConfig = configurationSchema.parse(await configManager.get());
+    const config = mergeDeep(baseConfig, preset.configOverrides as DeepPartial<Configuration>);
+
+    return { preset, config };
   }
 
   stop(): void {
