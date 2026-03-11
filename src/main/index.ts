@@ -58,7 +58,7 @@ const ensureMainWindow = async (): Promise<void> => {
       fetchGateway,
     });
     const amazonJpImageService = new AmazonJpImageService(networkClient);
-    const actorImageService = new ActorImageService();
+    const actorImageService = new ActorImageService({ networkClient });
     const actorSourceProvider = new ActorSourceProvider({
       registry: new ActorSourceRegistry([
         new LocalActorSource(actorImageService),

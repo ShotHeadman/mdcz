@@ -9,9 +9,11 @@ import {
   LocalActorSource,
 } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
 import { checkConnection, JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
 import type { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
+import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -20,6 +22,12 @@ const createTempDir = async (): Promise<string> => {
   const dirPath = await mkdtemp(join(tmpdir(), "mdcz-jellyfin-"));
   tempDirs.push(dirPath);
   return dirPath;
+};
+
+const createUserDataDir = async (): Promise<string> => {
+  const userDataDir = await createTempDir();
+  vi.spyOn(app, "getPath").mockReturnValue(userDataDir);
+  return userDataDir;
 };
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>
@@ -385,6 +393,7 @@ describe("Jellyfin services", () => {
 
   it("uploads actor photos as raw bytes and falls back to the indexed image endpoint", async () => {
     const root = await createTempDir();
+    await createUserDataDir();
     const photoPath = join(root, "Actor A.jpg");
     await writeFile(photoPath, "photo-bytes", "utf8");
 
@@ -413,9 +422,12 @@ describe("Jellyfin services", () => {
 
     const result = await service.run(
       createConfig({
+        paths: {
+          ...defaultConfiguration.paths,
+          actorPhotoFolder: root,
+        },
         personSync: {
           ...defaultConfiguration.personSync,
-          actorPhotoFolder: root,
           personImageSources: ["local", "gfriends"],
         },
         jellyfin: {
@@ -438,5 +450,37 @@ describe("Jellyfin services", () => {
     expect(firstUrl).toContain("/Items/person-1/Images/Primary");
     expect(secondUrl).toContain("/Items/person-1/Images/Primary/0");
     expect(Buffer.from(firstBody as Uint8Array)).toEqual(await readFile(photoPath));
+  });
+
+  it("fails fast when local actor photos use a relative path without mediaPath", async () => {
+    const networkClient = new FakeNetworkClient();
+    const service = new JellyfinActorPhotoService({
+      signalService: new SignalService(null),
+      networkClient: networkClient as unknown as NetworkClient,
+      actorSourceProvider: createActorSourceProvider(networkClient),
+    });
+
+    await expect(
+      service.run(
+        createConfig({
+          paths: {
+            ...defaultConfiguration.paths,
+            mediaPath: "",
+            actorPhotoFolder: "actor-library",
+          },
+          personSync: {
+            ...defaultConfiguration.personSync,
+            personImageSources: ["local", "gfriends"],
+          },
+          jellyfin: {
+            ...defaultConfiguration.jellyfin,
+            url: "http://127.0.0.1:8096",
+            apiKey: "token",
+          },
+        }),
+        "all",
+      ),
+    ).rejects.toBeInstanceOf(ActorPhotoFolderConfigurationError);
+    expect(networkClient.getJson).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
+import { assertLocalActorImageSourceReady } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
@@ -89,6 +90,8 @@ export class EmbyActorPhotoService {
   }
 
   async run(configuration: Configuration, mode: EmbyMode): Promise<EmbyBatchResult> {
+    assertLocalActorImageSourceReady(configuration);
+
     const persons = await fetchPersons(this.networkClient, configuration);
     const total = persons.length;
 

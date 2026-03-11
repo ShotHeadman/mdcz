@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { Configuration } from "@main/services/config";
 import { configurationSchema } from "@main/services/config";
@@ -119,9 +120,9 @@ export class FileScraper {
         } else {
           const actorProfiles = await this.actorImageService.prepareActorProfilesForMovie(configuration, {
             movieDir: plan.outputDir,
-            nfoPath: plan.nfoPath,
             actors: translated.actors,
             actorProfiles: translated.actor_profiles,
+            actorPhotoBaseDir: dirname(fileInfo.filePath),
           });
           preparedData = {
             ...translated,

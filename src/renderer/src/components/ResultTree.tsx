@@ -227,7 +227,7 @@ export function ResultTree() {
 
   return (
     <Card className="flex h-full flex-col gap-2 border-0 bg-transparent pt-4 shadow-none rounded-none">
-      <CardHeader className="border-b shrink-0 pb-2!">
+      <CardHeader className="border-b shrink-0 pb-2! pl-4 pr-2">
         <CardTitle className="flex items-center justify-between gap-2 text-sm font-bold tracking-tight">
           <span>处理结果列表</span>
           <div className="flex items-center">

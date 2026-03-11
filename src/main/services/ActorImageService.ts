@@ -1,18 +1,23 @@
+import { createHash, randomUUID } from "node:crypto";
 import { copyFile, link, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import type { Configuration } from "@main/services/config";
+import { resolveActorPhotoFolderPath } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
+import type { NetworkClient } from "@main/services/network";
 import { normalizeActorName, toUniqueActorNames } from "@main/utils/actor";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { pathExists } from "@main/utils/file";
+import { validateImage } from "@main/utils/image";
 import { sanitizePathSegment } from "@main/utils/path";
 import type { ActorProfile } from "@shared/types";
+import { app } from "electron";
 import PQueue from "p-queue";
 
-const CACHE_DIR_NAME = ".cache";
+const CACHE_DIR_NAME = "actor-image-cache";
 const INDEX_FILE_NAME = "index.json";
-const QUEUE_FILE_NAME = "queue.json";
 const PHOTO_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"] as const;
+const DEFAULT_PHOTO_EXTENSION = ".jpg";
 
 type ActorImageIndexEntry = {
   normalizedName: string;
@@ -20,10 +25,6 @@ type ActorImageIndexEntry = {
   aliases: string[];
   publicFileName?: string;
   blobRelativePath?: string;
-  source?: string;
-  remoteUrl?: string;
-  locked: boolean;
-  updatedAt: string;
 };
 
 type ActorImageIndex = {
@@ -31,40 +32,23 @@ type ActorImageIndex = {
   actors: Record<string, ActorImageIndexEntry>;
 };
 
-type ActorImageQueueEntry = {
-  normalizedName: string;
-  displayName: string;
-  aliases: string[];
-  batchNfoPaths: string[];
-  updatedAt: string;
-};
-
-type ActorImageQueue = {
-  version: 1;
-  pending: Record<string, ActorImageQueueEntry>;
-};
-
 type ActorImageLayout = {
   root: string;
+  cacheRoot: string;
   indexPath: string;
-  queuePath: string;
-  blobsDir: string;
 };
 
-export interface EnqueueActorImageInput {
-  name: string;
-  aliases?: string[];
-  batchNfoPath?: string;
+export interface ActorImageServiceDependencies {
+  networkClient?: Pick<NetworkClient, "getContent">;
 }
+
+type ActorImageLookupOptions = {
+  fallbackBaseDir?: string;
+};
 
 const createEmptyIndex = (): ActorImageIndex => ({
   version: 1,
   actors: {},
-});
-
-const createEmptyQueue = (): ActorImageQueue => ({
-  version: 1,
-  pending: {},
 });
 
 const buildPublicFileName = (displayName: string, extension: string): string => {
@@ -72,31 +56,89 @@ const buildPublicFileName = (displayName: string, extension: string): string => 
   return `${sanitized}${extension}`;
 };
 
+const isRemoteUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
+
+const isSupportedPhotoExtension = (value: string): value is (typeof PHOTO_EXTENSIONS)[number] =>
+  (PHOTO_EXTENSIONS as readonly string[]).includes(value);
+
+const normalizePhotoExtension = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return isSupportedPhotoExtension(normalized) ? normalized : undefined;
+};
+
+const detectPhotoExtension = (bytes: Uint8Array): string | undefined => {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return ".jpg";
+  }
+
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return ".png";
+  }
+
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return ".webp";
+  }
+
+  return undefined;
+};
+
+const getPhotoExtensionFromRemoteUrl = (value: string): string | undefined => {
+  try {
+    return normalizePhotoExtension(extname(new URL(value).pathname));
+  } catch {
+    return undefined;
+  }
+};
+
+const resolveCachedPhotoExtension = (sourceUrl: string, bytes: Uint8Array): string => {
+  return detectPhotoExtension(bytes) ?? getPhotoExtensionFromRemoteUrl(sourceUrl) ?? DEFAULT_PHOTO_EXTENSION;
+};
+
+export const getActorImageCacheDirectory = (): string => join(app.getPath("userData"), CACHE_DIR_NAME);
+
 export class ActorImageService {
   private readonly logger = loggerService.getLogger("ActorImageService");
-  private readonly mutexByRoot = new Map<string, PQueue>();
+  private readonly indexMutex = new PQueue({ concurrency: 1 });
   private readonly layoutResolver = new CachedAsyncResolver<string, ActorImageLayout>();
 
-  private getMutex(root: string): PQueue {
-    let mutex = this.mutexByRoot.get(root);
-    if (!mutex) {
-      mutex = new PQueue({ concurrency: 1 });
-      this.mutexByRoot.set(root, mutex);
-    }
-    return mutex;
-  }
+  constructor(private readonly deps: ActorImageServiceDependencies = {}) {}
 
-  async resolveLocalImage(configuration: Configuration, actorNames: string[]): Promise<string | undefined> {
-    const root = configuration.personSync.actorPhotoFolder.trim();
-    if (!root) return undefined;
-    return this.getMutex(root).add(() => this.resolveLocalImageUnsafe(configuration, actorNames));
-  }
-
-  private async resolveLocalImageUnsafe(
+  async resolveLocalImage(
     configuration: Configuration,
     actorNames: string[],
+    options: ActorImageLookupOptions = {},
   ): Promise<string | undefined> {
-    const layout = await this.ensureLayout(configuration.personSync.actorPhotoFolder.trim());
+    const root = resolveActorPhotoFolderPath(configuration, options);
+    if (!root) return undefined;
+    return this.resolveLocalImageUnsafe(root, actorNames);
+  }
+
+  private async resolveLocalImageUnsafe(root: string, actorNames: string[]): Promise<string | undefined> {
+    const layout = await this.ensureLayout(root);
     if (!layout) {
       return undefined;
     }
@@ -108,61 +150,31 @@ export class ActorImageService {
 
     const index = await this.readIndex(layout.indexPath);
     const existing = this.findEntry(index, names);
-    const restoredPath = await this.resolveExistingEntry(layout, existing);
-    if (restoredPath) {
-      return restoredPath;
-    }
-
     const discoveredPath = await this.findPublicImage(layout.root, names);
-    if (!discoveredPath) {
-      return undefined;
+    if (discoveredPath) {
+      await this.upsertEntry(layout, names, (current) =>
+        this.createOrMergeEntry(current, names, {
+          publicFileName: basename(discoveredPath),
+          blobRelativePath: current?.blobRelativePath ?? existing?.blobRelativePath,
+        }),
+      );
+      return discoveredPath;
     }
 
-    const nextEntry = this.createOrMergeEntry(existing, names, {
-      publicFileName: basename(discoveredPath),
-      locked: true,
-      source: existing?.source ?? "local",
-      remoteUrl: existing?.remoteUrl,
-      blobRelativePath: existing?.blobRelativePath,
-    });
-    index.actors[nextEntry.normalizedName] = nextEntry;
-    await this.writeIndex(layout.indexPath, index);
-    return discoveredPath;
-  }
-
-  async enqueue(configuration: Configuration, input: EnqueueActorImageInput): Promise<void> {
-    const root = configuration.personSync.actorPhotoFolder.trim();
-    if (!root) return;
-    await this.getMutex(root).add(() => this.enqueueUnsafe(configuration, input));
-  }
-
-  private async enqueueUnsafe(configuration: Configuration, input: EnqueueActorImageInput): Promise<void> {
-    const layout = await this.ensureLayout(configuration.personSync.actorPhotoFolder.trim());
-    if (!layout) {
-      return;
+    const restoredPath = await this.resolveExistingEntry(layout, existing);
+    if (restoredPath && existing) {
+      await this.upsertEntry(layout, names, (current) => {
+        if (!current) {
+          return existing;
+        }
+        return this.createOrMergeEntry(current, names, {
+          publicFileName: current.publicFileName,
+          blobRelativePath: current.blobRelativePath,
+        });
+      });
     }
 
-    const names = toUniqueActorNames([input.name, ...(input.aliases ?? [])]);
-    if (names.length === 0) {
-      return;
-    }
-
-    const normalized = normalizeActorName(names[0]);
-    const queue = await this.readQueue(layout.queuePath);
-    const existing = queue.pending[normalized];
-    const batchNfoPaths = Array.from(
-      new Set([...(existing?.batchNfoPaths ?? []), ...(input.batchNfoPath ? [input.batchNfoPath] : [])]),
-    );
-
-    queue.pending[normalized] = {
-      normalizedName: normalized,
-      displayName: existing?.displayName ?? names[0],
-      aliases: toUniqueActorNames([...(existing?.aliases ?? []), ...names.slice(1)]),
-      batchNfoPaths,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await this.writeQueue(layout.queuePath, queue);
+    return restoredPath;
   }
 
   async materializeForMovie(movieDir: string, actorName: string, sourcePath: string): Promise<string | undefined> {
@@ -182,7 +194,7 @@ export class ActorImageService {
       await link(sourcePath, targetPath);
     } catch {
       try {
-        await symlink(relative(dirname(targetPath), sourcePath), targetPath);
+        await symlink(sourcePath, targetPath, "file");
       } catch {
         await copyFile(sourcePath, targetPath);
       }
@@ -195,9 +207,9 @@ export class ActorImageService {
     configuration: Configuration,
     input: {
       movieDir: string;
-      nfoPath: string;
       actors: string[];
       actorProfiles?: ActorProfile[];
+      actorPhotoBaseDir?: string;
     },
   ): Promise<ActorProfile[] | undefined> {
     const profileByName = new Map<string, ActorProfile>();
@@ -221,14 +233,17 @@ export class ActorImageService {
 
       const existingProfile = profileByName.get(normalized);
       const lookupNames = toUniqueActorNames([actorName, existingProfile?.name, ...(existingProfile?.aliases ?? [])]);
-      const localImagePath = await this.resolveLocalImage(configuration, lookupNames);
+      let localImagePath = await this.resolveLocalImage(configuration, lookupNames, {
+        fallbackBaseDir: input.actorPhotoBaseDir,
+      });
 
       if (!localImagePath) {
-        await this.enqueue(configuration, {
-          name: actorName,
-          aliases: lookupNames.slice(1),
-          batchNfoPath: input.nfoPath,
+        localImagePath = await this.cacheProfileImage(configuration, lookupNames, existingProfile?.photo_url, {
+          fallbackBaseDir: input.actorPhotoBaseDir,
         });
+      }
+
+      if (!localImagePath) {
         preparedProfiles.push({
           ...existingProfile,
           name: actorName,
@@ -248,27 +263,132 @@ export class ActorImageService {
     return preparedProfiles.length > 0 ? preparedProfiles : undefined;
   }
 
+  private async cacheProfileImage(
+    configuration: Configuration,
+    names: string[],
+    profilePhotoUrl: string | undefined,
+    options: ActorImageLookupOptions = {},
+  ): Promise<string | undefined> {
+    const source = profilePhotoUrl?.trim();
+    if (!source) {
+      return undefined;
+    }
+
+    if (!isRemoteUrl(source)) {
+      return (await pathExists(source)) ? source : undefined;
+    }
+
+    const root = resolveActorPhotoFolderPath(configuration, options);
+    if (!root) {
+      return undefined;
+    }
+
+    return this.cacheRemoteImageUnsafe(root, names, source);
+  }
+
   private ensureLayout(root: string): Promise<ActorImageLayout | null> {
     if (!root) return Promise.resolve(null);
     return this.layoutResolver.resolve(root, (key) => this.initLayout(key));
   }
 
   private async initLayout(root: string): Promise<ActorImageLayout> {
-    const cacheDir = join(root, CACHE_DIR_NAME);
-    const indexPath = join(cacheDir, INDEX_FILE_NAME);
-    const queuePath = join(cacheDir, QUEUE_FILE_NAME);
-    const blobsDir = join(root, ".cache", "blobs", "sha256");
+    const cacheRoot = getActorImageCacheDirectory();
+    const indexPath = join(cacheRoot, INDEX_FILE_NAME);
+    const blobsDir = join(cacheRoot, "blobs", "sha256");
 
+    await mkdir(root, { recursive: true });
     await mkdir(blobsDir, { recursive: true });
 
     if (!(await pathExists(indexPath))) {
       await this.writeIndex(indexPath, createEmptyIndex());
     }
-    if (!(await pathExists(queuePath))) {
-      await this.writeQueue(queuePath, createEmptyQueue());
+
+    return { root, cacheRoot, indexPath };
+  }
+
+  private async cacheRemoteImageUnsafe(root: string, names: string[], remoteUrl: string): Promise<string | undefined> {
+    if (!this.deps.networkClient) {
+      return undefined;
     }
 
-    return { root, indexPath, queuePath, blobsDir };
+    const layout = await this.ensureLayout(root);
+    if (!layout) {
+      return undefined;
+    }
+
+    const index = await this.readIndex(layout.indexPath);
+    const existing = this.findEntry(index, names);
+    const existingBlobPath = existing?.blobRelativePath && join(layout.cacheRoot, existing.blobRelativePath);
+
+    if (existingBlobPath && (await pathExists(existingBlobPath))) {
+      await this.upsertEntry(layout, names, (current) => {
+        if (!current) {
+          return existing;
+        }
+        return this.createOrMergeEntry(current, names, {
+          publicFileName: current.publicFileName,
+          blobRelativePath: current.blobRelativePath,
+        });
+      });
+      return existingBlobPath;
+    }
+
+    try {
+      const bytes = await this.deps.networkClient.getContent(remoteUrl, {
+        headers: {
+          accept: "image/*",
+        },
+      });
+      const extension = resolveCachedPhotoExtension(remoteUrl, bytes);
+      const tempPath = join(layout.cacheRoot, `.tmp-${randomUUID()}${extension}`);
+
+      try {
+        await writeFile(tempPath, Buffer.from(bytes));
+        const validation = await validateImage(tempPath);
+        if (!validation.valid) {
+          this.logger.warn(
+            `Discarded invalid remote actor image for ${names[0] ?? remoteUrl}: ${validation.reason ?? "parse_failed"}`,
+          );
+          return undefined;
+        }
+
+        const digest = createHash("sha256").update(bytes).digest("hex");
+        const blobRelativePath = join("blobs", "sha256", digest.slice(0, 2), `${digest}${extension}`);
+        const blobPath = join(layout.cacheRoot, blobRelativePath);
+        return await this.indexMutex.add(async () => {
+          const currentIndex = await this.readIndex(layout.indexPath);
+          const current = this.findEntry(currentIndex, names);
+          const currentBlobPath = current?.blobRelativePath && join(layout.cacheRoot, current.blobRelativePath);
+
+          if (currentBlobPath && (await pathExists(currentBlobPath))) {
+            const nextEntry = this.createOrMergeEntry(current, names, {
+              publicFileName: current.publicFileName,
+              blobRelativePath: current.blobRelativePath,
+            });
+            await this.writeEntryIfChanged(layout.indexPath, currentIndex, current, nextEntry);
+            return currentBlobPath;
+          }
+
+          if (!(await pathExists(blobPath))) {
+            await mkdir(dirname(blobPath), { recursive: true });
+            await copyFile(tempPath, blobPath);
+          }
+
+          const nextEntry = this.createOrMergeEntry(current, names, {
+            publicFileName: current?.publicFileName,
+            blobRelativePath,
+          });
+          await this.writeEntryIfChanged(layout.indexPath, currentIndex, current, nextEntry);
+          return blobPath;
+        });
+      } finally {
+        await rm(tempPath, { force: true }).catch(() => undefined);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to cache remote actor image for ${names[0] ?? remoteUrl}: ${message}`);
+      return undefined;
+    }
   }
 
   private async readIndex(indexPath: string): Promise<ActorImageIndex> {
@@ -277,14 +397,6 @@ export class ActorImageService {
 
   private async writeIndex(indexPath: string, index: ActorImageIndex): Promise<void> {
     await this.writeJson(indexPath, index);
-  }
-
-  private async readQueue(queuePath: string): Promise<ActorImageQueue> {
-    return this.readJson(queuePath, createEmptyQueue());
-  }
-
-  private async writeQueue(queuePath: string, queue: ActorImageQueue): Promise<void> {
-    await this.writeJson(queuePath, queue);
   }
 
   private async readJson<T>(filePath: string, fallback: T): Promise<T> {
@@ -340,26 +452,23 @@ export class ActorImageService {
     layout: ActorImageLayout,
     entry: ActorImageIndexEntry | undefined,
   ): Promise<string | undefined> {
-    if (!entry?.publicFileName) {
+    if (entry?.publicFileName) {
+      const publicPath = join(layout.root, entry.publicFileName);
+      if (await pathExists(publicPath)) {
+        return publicPath;
+      }
+    }
+
+    if (!entry?.blobRelativePath) {
       return undefined;
     }
 
-    const publicPath = join(layout.root, entry.publicFileName);
-    if (await pathExists(publicPath)) {
-      return publicPath;
-    }
-
-    if (!entry.blobRelativePath || entry.locked) {
-      return undefined;
-    }
-
-    const blobPath = join(layout.root, entry.blobRelativePath);
+    const blobPath = join(layout.cacheRoot, entry.blobRelativePath);
     if (!(await pathExists(blobPath))) {
       return undefined;
     }
 
-    await copyFile(blobPath, publicPath);
-    return publicPath;
+    return blobPath;
   }
 
   private async findPublicImage(root: string, names: string[]): Promise<string | undefined> {
@@ -387,11 +496,11 @@ export class ActorImageService {
   private createOrMergeEntry(
     existing: ActorImageIndexEntry | undefined,
     names: string[],
-    next: Pick<ActorImageIndexEntry, "publicFileName" | "blobRelativePath" | "locked" | "source" | "remoteUrl">,
+    next: Pick<ActorImageIndexEntry, "publicFileName" | "blobRelativePath">,
   ): ActorImageIndexEntry {
     const canonicalName = existing?.displayName ?? names[0] ?? "";
     const normalizedName = existing?.normalizedName ?? normalizeActorName(canonicalName);
-    const aliases = toUniqueActorNames([...(existing?.aliases ?? []), ...names.slice(1)]).filter(
+    const aliases = toUniqueActorNames([...(existing?.aliases ?? []), ...names]).filter(
       (alias) => normalizeActorName(alias) !== normalizedName,
     );
 
@@ -401,10 +510,50 @@ export class ActorImageService {
       aliases,
       publicFileName: next.publicFileName ?? existing?.publicFileName,
       blobRelativePath: next.blobRelativePath ?? existing?.blobRelativePath,
-      source: next.source ?? existing?.source,
-      remoteUrl: next.remoteUrl ?? existing?.remoteUrl,
-      locked: next.locked,
-      updatedAt: new Date().toISOString(),
     };
+  }
+
+  private async upsertEntry(
+    layout: ActorImageLayout,
+    names: string[],
+    buildEntry: (existing: ActorImageIndexEntry | undefined) => ActorImageIndexEntry | undefined,
+  ): Promise<void> {
+    await this.indexMutex.add(async () => {
+      const index = await this.readIndex(layout.indexPath);
+      const existing = this.findEntry(index, names);
+      const nextEntry = buildEntry(existing);
+      if (!nextEntry) {
+        return;
+      }
+      await this.writeEntryIfChanged(layout.indexPath, index, existing, nextEntry);
+    });
+  }
+
+  private async writeEntryIfChanged(
+    indexPath: string,
+    index: ActorImageIndex,
+    existing: ActorImageIndexEntry | undefined,
+    nextEntry: ActorImageIndexEntry,
+  ): Promise<void> {
+    if (existing && this.isSameEntry(existing, nextEntry)) {
+      return;
+    }
+
+    index.actors[nextEntry.normalizedName] = nextEntry;
+    if (existing && existing.normalizedName !== nextEntry.normalizedName) {
+      delete index.actors[existing.normalizedName];
+    }
+    await this.writeIndex(indexPath, index);
+  }
+
+  private isSameEntry(left: ActorImageIndexEntry, right: ActorImageIndexEntry): boolean {
+    return (
+      left.normalizedName === right.normalizedName &&
+      left.displayName === right.displayName &&
+      left.publicFileName === right.publicFileName &&
+      left.blobRelativePath === right.blobRelativePath &&
+      left.aliases.length === right.aliases.length &&
+      left.aliases.every((alias, index) => alias === right.aliases[index])
+    );
   }
 }

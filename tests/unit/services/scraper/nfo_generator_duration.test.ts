@@ -107,6 +107,9 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<releasedate>2024-01-02</releasedate>");
     expect(xml).toContain("<outline>Plot</outline>");
     expect(xml).toContain("<dateadded>");
+    expect(xml).toContain("<publisher>PRESTIGE</publisher>");
+    expect(xml).toContain("<mpaa>JP-18+</mpaa>");
+    expect(xml).not.toContain("<mpaa>XXX</mpaa>");
     expect(xml).toContain("<name>Actor A</name>");
     expect(xml).toContain("<type>Actor</type>");
     expect(xml).toContain("<thumb>https://img.example.com/actor-a.jpg</thumb>");
@@ -114,7 +117,6 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<sortorder>0</sortorder>");
     expect(xml).toContain("<tag>Drama</tag>");
     expect(xml).toContain("<tag>mdcz:content_type:VR</tag>");
-    expect(xml).toContain("<tag>mdcz:publisher:PRESTIGE</tag>");
     expect(xml).not.toContain("<altname>");
     expect(xml).not.toContain("<biography>");
     expect(xml).not.toContain("<website>");

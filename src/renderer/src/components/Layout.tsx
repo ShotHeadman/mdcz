@@ -201,7 +201,7 @@ export default function Layout({ children }: LayoutProps) {
       <aside
         className={cn(
           "hidden md:flex md:flex-col bg-sidebar text-sidebar-foreground border-r shrink-0 transition-[width] duration-300 ease-in-out",
-          isCollapsed ? "w-[60px]" : "w-[180px]",
+          isCollapsed ? "w-[60px]" : "w-[160px]",
         )}
       >
         <NavContent

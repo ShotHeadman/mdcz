@@ -2,7 +2,7 @@ import { normalizeText } from "./normalization";
 
 const MANAGED_MOVIE_TAG_PREFIX = "mdcz:";
 
-const MANAGED_MOVIE_TAG_KEYS = ["content_type", "publisher"] as const;
+const MANAGED_MOVIE_TAG_KEYS = ["content_type"] as const;
 
 type ManagedMovieTagKey = (typeof MANAGED_MOVIE_TAG_KEYS)[number];
 
@@ -34,22 +34,13 @@ const parseManagedMovieTag = (tag: string): { key: ManagedMovieTagKey; value: st
   };
 };
 
-export const buildManagedMovieTags = (input: { contentType?: string; publisher?: string }): string[] => {
-  return [
-    buildManagedMovieTag("content_type", input.contentType),
-    buildManagedMovieTag("publisher", input.publisher),
-  ].filter((entry): entry is string => Boolean(entry));
+export const buildManagedMovieTags = (input: { contentType?: string }): string[] => {
+  return [buildManagedMovieTag("content_type", input.contentType)].filter((entry): entry is string => Boolean(entry));
 };
 
-export const parseManagedMovieTags = (
-  tags: string[],
-): {
-  content_type?: string;
-  publisher?: string;
-} => {
+export const parseManagedMovieTags = (tags: string[]): { content_type?: string } => {
   const parsed: {
     content_type?: string;
-    publisher?: string;
   } = {};
 
   for (const tag of tags) {
@@ -60,11 +51,6 @@ export const parseManagedMovieTags = (
 
     if (entry.key === "content_type") {
       parsed.content_type = parsed.content_type ?? entry.value;
-      continue;
-    }
-
-    if (entry.key === "publisher") {
-      parsed.publisher = parsed.publisher ?? entry.value;
     }
   }
 

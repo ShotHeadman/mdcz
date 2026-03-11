@@ -203,7 +203,7 @@ export class LocalActorSource implements BaseActorSource {
 
     const cacheKey = JSON.stringify({
       mediaPath: configuration.paths.mediaPath.trim(),
-      actorPhotoFolder: configuration.personSync.actorPhotoFolder.trim(),
+      actorPhotoFolder: configuration.paths.actorPhotoFolder.trim(),
     });
 
     return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(configuration));

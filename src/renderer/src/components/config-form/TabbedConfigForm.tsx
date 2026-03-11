@@ -77,8 +77,8 @@ const TRANSLATE_ENGINE_OPTIONS: EnumOption[] = [
   { value: "google", label: "Google 翻译（免费）" },
 ];
 const LANGUAGE_OPTIONS = ["zh-CN", "zh-TW", "ja-JP", "en-US"];
-const JELLYFIN_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"];
-const JELLYFIN_IMAGE_SOURCE_OPTIONS = ["local", "official", "gfriends", "avjoho", "avbase"];
+const ACTOR_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"];
+const ACTOR_IMAGE_SOURCE_OPTIONS = ["local", "official", "gfriends", "avjoho", "avbase"];
 
 // ── Field registry for search/filter ──
 
@@ -91,6 +91,7 @@ interface FieldEntry {
 const FIELD_REGISTRY: FieldEntry[] = [
   // paths
   { key: "paths.mediaPath", label: "媒体目录", section: "paths" },
+  { key: "paths.actorPhotoFolder", label: "演员头像库目录", section: "paths" },
   { key: "paths.softlinkPath", label: "软链接目录", section: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", section: "paths" },
   { key: "paths.failedOutputFolder", label: "失败输出目录", section: "paths" },
@@ -151,7 +152,6 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "translate.titleLanguage", label: "标题目标语言", section: "translate" },
   { key: "translate.plotLanguage", label: "简介目标语言", section: "translate" },
   // person sync
-  { key: "personSync.actorPhotoFolder", label: "演员头像库目录", section: "personSync" },
   { key: "personSync.personOverviewSources", label: "人物简介来源", section: "personSync" },
   { key: "personSync.personImageSources", label: "人物头像来源", section: "personSync" },
   { key: "jellyfin.url", label: "Jellyfin 服务器地址", section: "personSync" },
@@ -190,13 +190,13 @@ const FIELD_REGISTRY: FieldEntry[] = [
 // ── Section descriptions ──
 
 const SECTION_DESCRIPTIONS: Record<string, string> = {
-  paths: "配置媒体库及输出目录路径",
+  paths: "配置媒体库、本地演员头像库及输出目录路径",
   scrape: "配置刮削行为、站点及并发策略",
   network: "代理、超时、重试及 Cookie 设置",
   download: "控制缩略图、海报、背景图、剧照与 NFO 的下载与保留",
   naming: "文件和文件夹的命名模板与规则",
   translate: "LLM 翻译引擎配置",
-  personSync: "共享人物来源、Jellyfin 与 Emby 的人物同步设置",
+  personSync: "共享人物来源顺序，以及 Jellyfin 与 Emby 的人物同步设置",
   shortcuts: "自定义快捷键，留空可禁用（工作台快捷键仅在工作台页生效）",
   ui: "调整界面显示选项",
   behavior: "控制刮削后的文件操作行为",
@@ -300,6 +300,12 @@ function PathsSection(_props: SectionRenderProps) {
   return (
     <>
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
+      <PathFieldWrapper
+        name="paths.actorPhotoFolder"
+        label="演员头像库目录"
+        description="建议放在媒体库目录下。这里的头像会优先使用；如果希望优先使用在线头像，请在“人物头像来源顺序”中调整“本地”的位置或移除它。"
+        isDirectory
+      />
       <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />
       <PathFieldWrapper name="paths.successOutputFolder" label="成功输出目录" isDirectory />
       <PathFieldWrapper name="paths.failedOutputFolder" label="失败输出目录" isDirectory />
@@ -473,24 +479,18 @@ function PersonSyncSection(_props: SectionRenderProps) {
         <div className="space-y-1">
           <h3 className="text-sm font-medium">共享人物资料源</h3>
           <p className="text-xs text-muted-foreground">
-            这部分同时服务 Jellyfin 和 Emby，包括本地头像库、人物简介来源顺序和人物头像来源顺序。
+            这部分同时服务 Jellyfin 和 Emby，包括人物简介来源顺序和人物头像来源顺序。
           </p>
         </div>
-        <PathFieldWrapper
-          name="personSync.actorPhotoFolder"
-          label="演员头像库目录"
-          description="演员头像库根目录；用于手工头像、自动缓存和影片 NFO 演员缩略图导出。"
-          isDirectory
-        />
         <ChipArrayFieldWrapper
           name="personSync.personOverviewSources"
           label="人物简介来源顺序"
-          options={JELLYFIN_OVERVIEW_SOURCE_OPTIONS}
+          options={ACTOR_OVERVIEW_SOURCE_OPTIONS}
         />
         <ChipArrayFieldWrapper
           name="personSync.personImageSources"
           label="人物头像来源顺序"
-          options={JELLYFIN_IMAGE_SOURCE_OPTIONS}
+          options={ACTOR_IMAGE_SOURCE_OPTIONS}
         />
       </div>
 

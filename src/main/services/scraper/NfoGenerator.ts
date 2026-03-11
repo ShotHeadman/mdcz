@@ -76,7 +76,6 @@ const buildMovieTags = (data: CrawlerData): string[] => {
       ...buildStringNodes(toArray(data.genres)),
       ...buildManagedMovieTags({
         contentType: data.content_type,
-        publisher: data.publisher,
       }),
     ]),
   );
@@ -169,7 +168,8 @@ export class NfoGenerator {
     movie.rating = data.rating;
     movie.studio = data.studio;
     movie.director = data.director;
-    movie.mpaa = "XXX";
+    movie.publisher = data.publisher;
+    movie.mpaa = "JP-18+";
     movie.set = data.series;
 
     if (assets?.trailer) {

@@ -91,6 +91,25 @@ describe("buildComputedConfiguration", () => {
     expect(result.success).toBe(false);
   });
 
+  it("uses actor_photo as the default actor photo folder under paths", () => {
+    const configuration = configurationSchema.parse({});
+
+    expect(configuration.paths.actorPhotoFolder).toBe("actor_photo");
+  });
+
+  it("does not read legacy personSync.actorPhotoFolder values", () => {
+    const configuration = configurationSchema.parse({
+      personSync: {
+        actorPhotoFolder: "/legacy/actor-library",
+        personOverviewSources: ["official"],
+        personImageSources: ["local", "official"],
+      },
+    });
+
+    expect(configuration.paths.actorPhotoFolder).toBe("actor_photo");
+    expect(configuration.personSync).not.toHaveProperty("actorPhotoFolder");
+  });
+
   it("requires Jellyfin userId to be a UUID when provided", () => {
     const result = configurationSchema.safeParse({
       jellyfin: {

@@ -206,7 +206,7 @@ export const parseNfo = (xml: string): CrawlerData => {
     genres,
     studio: toStringValue(movieNode.studio),
     director: toStringValue(movieNode.director),
-    publisher: managedMovieTags.publisher,
+    publisher: toStringValue(movieNode.publisher),
     series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
     plot: plot ?? outline,
     plot_zh: plot ?? outline,

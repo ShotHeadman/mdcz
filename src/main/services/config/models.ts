@@ -89,7 +89,6 @@ const downloadSchema = z.object({
 });
 
 const personSyncSchema = z.object({
-  actorPhotoFolder: z.string().default(""),
   personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["official", "avjoho", "avbase"]),
   personImageSources: z
     .array(z.enum(ACTOR_IMAGE_SOURCE_OPTIONS))
@@ -133,6 +132,7 @@ const uiSchema = z.object({
 
 const pathsSchema = z.object({
   mediaPath: z.string().default(""),
+  actorPhotoFolder: z.string().default("actor_photo"),
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),
   failedOutputFolder: z.string().default("failed"),

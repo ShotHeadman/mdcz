@@ -157,7 +157,7 @@ export class ActorSourceProvider {
       aliases: query.aliases ?? [],
       sourceHints: normalizeHintsForCache(query.sourceHints),
       mediaPath: configuration.paths.mediaPath.trim(),
-      actorPhotoFolder: configuration.personSync.actorPhotoFolder.trim(),
+      actorPhotoFolder: configuration.paths.actorPhotoFolder.trim(),
       personOverviewSources: configuration.personSync.personOverviewSources,
       personImageSources: configuration.personSync.personImageSources,
     });
