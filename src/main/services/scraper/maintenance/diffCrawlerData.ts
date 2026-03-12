@@ -5,6 +5,10 @@ interface DiffableField {
   label: string;
 }
 
+interface DiffCrawlerDataOptions {
+  includeTranslatedFields?: boolean;
+}
+
 const DIFFABLE_FIELDS: DiffableField[] = [
   { key: "title", label: "标题" },
   { key: "title_zh", label: "中文标题" },
@@ -40,9 +44,22 @@ const isEqual = (a: unknown, b: unknown): boolean => {
  * Only includes fields that have changed.
  */
 export function diffCrawlerData(oldData: CrawlerData, newData: CrawlerData): FieldDiff[] {
+  return diffCrawlerDataWithOptions(oldData, newData, {});
+}
+
+export function diffCrawlerDataWithOptions(
+  oldData: CrawlerData,
+  newData: CrawlerData,
+  options: DiffCrawlerDataOptions,
+): FieldDiff[] {
   const diffs: FieldDiff[] = [];
+  const includeTranslatedFields = options.includeTranslatedFields ?? true;
 
   for (const { key, label } of DIFFABLE_FIELDS) {
+    if (!includeTranslatedFields && (key === "title_zh" || key === "plot_zh")) {
+      continue;
+    }
+
     const oldValue = oldData[key];
     const newValue = newData[key];
 

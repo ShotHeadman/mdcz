@@ -9,6 +9,12 @@ import type {
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
 
+const IMAGE_ASSET_FIELD_MAP = {
+  thumb_url: "thumb",
+  poster_url: "poster",
+  fanart_url: "fanart",
+} as const satisfies Partial<Record<FieldDiff["field"], keyof LocalScanEntry["assets"]>>;
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 const cloneValue = <T>(value: T): T => {
@@ -28,6 +34,82 @@ export const hasMaintenanceFieldValue = (value: unknown): boolean => {
   if (typeof value === "string") return value.trim().length > 0;
   if (Array.isArray(value)) return value.length > 0;
   return true;
+};
+
+const toNonEmptyString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+const isUrlLike = (value: string): boolean => /^(?:https?:\/\/|data:|blob:|local-file:\/\/|file:\/\/)/iu.test(value);
+
+const isAbsolutePath = (value: string): boolean => {
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\");
+};
+
+const getParentDir = (value: string | undefined): string => {
+  if (!value) {
+    return "";
+  }
+
+  const lastSlash = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
+  return lastSlash >= 0 ? value.slice(0, lastSlash) : "";
+};
+
+const joinPath = (dir: string, child: string): string => {
+  const base = dir.trim();
+  const leaf = child.trim();
+  if (!base) {
+    return leaf;
+  }
+  if (!leaf) {
+    return base;
+  }
+
+  const useBackslash = base.lastIndexOf("\\") > base.lastIndexOf("/");
+  const separator = useBackslash ? "\\" : "/";
+  const normalizedBase = base.endsWith("/") || base.endsWith("\\") ? base.slice(0, -1) : base;
+  const normalizedLeaf = leaf.replace(/^[/\\]+/u, "");
+
+  return `${normalizedBase}${separator}${normalizedLeaf}`;
+};
+
+const getMaintenanceImageAssetPath = (entry: LocalScanEntry | undefined, field: FieldDiff["field"]): string => {
+  const assetKey = IMAGE_ASSET_FIELD_MAP[field as keyof typeof IMAGE_ASSET_FIELD_MAP];
+  const assetValue = assetKey ? entry?.assets[assetKey] : undefined;
+  return typeof assetValue === "string" ? assetValue : "";
+};
+
+export const resolveMaintenanceDiffImageSrc = (
+  entry: LocalScanEntry | undefined,
+  diff: FieldDiff,
+  side: MaintenanceFieldSelectionSide,
+): string => {
+  if (!(diff.field in IMAGE_ASSET_FIELD_MAP)) {
+    return "";
+  }
+
+  if (side === "old") {
+    const assetPath = getMaintenanceImageAssetPath(entry, diff.field);
+    if (assetPath) {
+      return assetPath;
+    }
+  }
+
+  const rawValue = toNonEmptyString(side === "old" ? diff.oldValue : diff.newValue);
+  if (!rawValue) {
+    return "";
+  }
+
+  if (isUrlLike(rawValue) || isAbsolutePath(rawValue)) {
+    return rawValue;
+  }
+
+  if (side === "old") {
+    const baseDir = getParentDir(entry?.nfoPath) || entry?.currentDir || getParentDir(entry?.videoPath);
+    if (baseDir) {
+      return joinPath(baseDir, rawValue);
+    }
+  }
+
+  return rawValue;
 };
 
 export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): MaintenanceFieldSelectionSide => {

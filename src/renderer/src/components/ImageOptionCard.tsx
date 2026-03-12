@@ -73,14 +73,14 @@ export function ImageOptionCard({
   const clickable = Boolean(onClick) && !loading && !empty;
   const isPortrait = Boolean(resolvedWidth && resolvedHeight && resolvedHeight > resolvedWidth);
   const containerClassName = cn(
-    "rounded-xl bg-card p-4 transition-all duration-200",
+    "block w-full min-w-0 overflow-hidden rounded-xl bg-card p-4 text-left align-top transition-all duration-200",
     empty ? "border-2 border-dashed border-muted-foreground/25" : "border-2",
     selected ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-muted-foreground/20",
     clickable && "cursor-pointer",
   );
 
   const content = (
-    <div className={cn("flex gap-4", stacked ? "flex-col" : "flex-col sm:flex-row")}>
+    <div className={cn("flex min-w-0 gap-4", stacked ? "flex-col" : "flex-col sm:flex-row")}>
       <div
         className={cn(
           "relative w-full shrink-0 overflow-hidden rounded-lg bg-muted/20",
@@ -99,7 +99,7 @@ export function ImageOptionCard({
           <img
             src={renderSrc}
             alt={label}
-            className="h-full w-full object-contain"
+            className="block h-full w-full max-w-full object-contain"
             onLoad={(event) => {
               const image = event.currentTarget;
               if (image.naturalWidth > 0 && image.naturalHeight > 0) {

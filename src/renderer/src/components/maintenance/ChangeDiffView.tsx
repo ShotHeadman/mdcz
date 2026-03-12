@@ -2,7 +2,11 @@ import type { ActorProfile, FieldDiff } from "@shared/types";
 import { useShallow } from "zustand/react/shallow";
 import { ImageOptionCard } from "@/components/ImageOptionCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { getDefaultMaintenanceFieldSelection, hasMaintenanceFieldValue } from "@/lib/maintenance";
+import {
+  getDefaultMaintenanceFieldSelection,
+  hasMaintenanceFieldValue,
+  resolveMaintenanceDiffImageSrc,
+} from "@/lib/maintenance";
 import { cn } from "@/lib/utils";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
 
@@ -66,8 +70,9 @@ function DiffOption({
 }
 
 export default function ChangeDiffView({ entryId, diffs }: { entryId: string; diffs: FieldDiff[] }) {
-  const { entrySelections, setFieldSelection } = useMaintenanceStore(
+  const { entry, entrySelections, setFieldSelection } = useMaintenanceStore(
     useShallow((state) => ({
+      entry: state.entries.find((candidate) => candidate.id === entryId),
       entrySelections: state.fieldSelections[entryId],
       setFieldSelection: state.setFieldSelection,
     })),
@@ -86,8 +91,14 @@ export default function ChangeDiffView({ entryId, diffs }: { entryId: string; di
   return (
     <div className="space-y-4">
       {diffs.map((diff) => {
-        const hasOldValue = hasMaintenanceFieldValue(diff.oldValue);
-        const hasNewValue = hasMaintenanceFieldValue(diff.newValue);
+        const oldImageSrc = resolveMaintenanceDiffImageSrc(entry, diff, "old");
+        const newImageSrc = resolveMaintenanceDiffImageSrc(entry, diff, "new");
+        const hasOldValue = IMAGE_FIELDS.has(diff.field)
+          ? hasMaintenanceFieldValue(diff.oldValue) || oldImageSrc.length > 0
+          : hasMaintenanceFieldValue(diff.oldValue);
+        const hasNewValue = IMAGE_FIELDS.has(diff.field)
+          ? hasMaintenanceFieldValue(diff.newValue) || newImageSrc.length > 0
+          : hasMaintenanceFieldValue(diff.newValue);
         const selectedSide = entrySelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
         const isImageField = IMAGE_FIELDS.has(diff.field);
 
@@ -101,7 +112,7 @@ export default function ChangeDiffView({ entryId, diffs }: { entryId: string; di
                 {isImageField ? (
                   <>
                     <ImageOptionCard
-                      src={typeof diff.oldValue === "string" ? diff.oldValue : ""}
+                      src={oldImageSrc}
                       label="旧 (NFO)"
                       stacked
                       selected={selectedSide === "old"}
@@ -112,7 +123,7 @@ export default function ChangeDiffView({ entryId, diffs }: { entryId: string; di
                       }
                     />
                     <ImageOptionCard
-                      src={typeof diff.newValue === "string" ? diff.newValue : ""}
+                      src={newImageSrc}
                       label="新 (网络)"
                       stacked
                       selected={selectedSide === "new"}

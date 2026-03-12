@@ -1,7 +1,11 @@
 import { Website } from "@shared/enums";
-import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
+import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildCommittedCrawlerData, buildMaintenanceCommitItem } from "@/lib/maintenance";
+import {
+  buildCommittedCrawlerData,
+  buildMaintenanceCommitItem,
+  resolveMaintenanceDiffImageSrc,
+} from "@/lib/maintenance";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
@@ -123,6 +127,43 @@ describe("buildMaintenanceCommitItem", () => {
     expect(item.imageAlternatives).toEqual({
       thumb_url: ["https://example.com/thumb-alt.jpg"],
     });
+  });
+});
+
+describe("resolveMaintenanceDiffImageSrc", () => {
+  it("prefers discovered local artwork for old maintenance images", () => {
+    const entry = createEntry(
+      createCrawlerData({
+        poster_url: "poster.jpg",
+      }),
+    );
+    const diff: FieldDiff = {
+      field: "poster_url",
+      label: "海报",
+      oldValue: "poster.jpg",
+      newValue: "https://example.com/new-poster.jpg",
+      changed: true,
+    };
+
+    expect(resolveMaintenanceDiffImageSrc(entry, diff, "old")).toBe("/media/poster.jpg");
+    expect(resolveMaintenanceDiffImageSrc(entry, diff, "new")).toBe("https://example.com/new-poster.jpg");
+  });
+
+  it("falls back to the scanned local asset even when the old NFO image field is empty", () => {
+    const entry = createEntry(
+      createCrawlerData({
+        fanart_url: undefined,
+      }),
+    );
+    const diff: FieldDiff = {
+      field: "fanart_url",
+      label: "背景图",
+      oldValue: undefined,
+      newValue: "https://example.com/new-fanart.jpg",
+      changed: true,
+    };
+
+    expect(resolveMaintenanceDiffImageSrc(entry, diff, "old")).toBe("/media/fanart.jpg");
   });
 });
 

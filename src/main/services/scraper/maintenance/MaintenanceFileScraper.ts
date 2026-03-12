@@ -20,7 +20,7 @@ import type { SourceMap } from "../aggregation/types";
 import type { OrganizePlan } from "../FileOrganizer";
 import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
 import { prepareCrawlerDataForNfo } from "../prepareCrawlerDataForNfo";
-import { diffCrawlerData } from "./diffCrawlerData";
+import { diffCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import type { MaintenancePreset } from "./presets";
 
@@ -282,7 +282,11 @@ export class MaintenanceFileScraper {
     }
 
     const fieldDiffs =
-      entry.crawlerData && crawlerData && steps.aggregate ? diffCrawlerData(entry.crawlerData, crawlerData) : undefined;
+      entry.crawlerData && crawlerData && steps.aggregate
+        ? diffCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
+            includeTranslatedFields: config.translate.enableTranslation,
+          })
+        : undefined;
 
     if (options.progress) {
       this.setProgress(options.progress, 50);
@@ -331,7 +335,12 @@ export class MaintenanceFileScraper {
     }
 
     const crawlerData = committed.crawlerData ?? entry.crawlerData;
-    const fieldDiffs = entry.crawlerData && crawlerData ? diffCrawlerData(entry.crawlerData, crawlerData) : undefined;
+    const fieldDiffs =
+      entry.crawlerData && crawlerData
+        ? diffCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
+            includeTranslatedFields: config.translate.enableTranslation,
+          })
+        : undefined;
 
     if (options.progress) {
       this.setProgress(options.progress, 50);

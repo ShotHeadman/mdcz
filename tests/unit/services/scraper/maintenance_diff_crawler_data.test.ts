@@ -1,4 +1,4 @@
-import { diffCrawlerData } from "@main/services/scraper/maintenance/diffCrawlerData";
+import { diffCrawlerData, diffCrawlerDataWithOptions } from "@main/services/scraper/maintenance/diffCrawlerData";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { describe, expect, it } from "vitest";
@@ -52,5 +52,27 @@ describe("diffCrawlerData", () => {
         changed: true,
       },
     ]);
+  });
+
+  it("skips translated fields when translation is disabled for maintenance preview", () => {
+    const diffs = diffCrawlerDataWithOptions(
+      createCrawlerData({
+        title: "Original Title",
+        title_zh: "旧中文标题",
+        plot: "Original Plot",
+        plot_zh: "旧中文简介",
+      }),
+      createCrawlerData({
+        title: "Original Title",
+        title_zh: undefined,
+        plot: "Original Plot",
+        plot_zh: undefined,
+      }),
+      {
+        includeTranslatedFields: false,
+      },
+    );
+
+    expect(diffs).toEqual([]);
   });
 });
