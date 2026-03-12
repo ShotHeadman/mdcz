@@ -226,8 +226,8 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   };
 
   return (
-    <>
-      <div className={cn("flex flex-wrap items-start justify-end gap-2", className)}>
+    <div className={cn("flex flex-col items-end gap-1.5", className)}>
+      <div className="flex flex-wrap items-start justify-end gap-2">
         <div className="flex flex-col gap-1.5">
           <div className="flex h-9 items-center gap-2 rounded-lg border bg-background px-3">
             <span className="text-xs font-medium text-muted-foreground">预设</span>
@@ -288,9 +288,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
           </Button>
         )}
       </div>
-      <div className="basis-full flex justify-end px-1 text-[11px] leading-4 text-muted-foreground">
-        {presetMeta.description}
-      </div>
+      <div className="flex justify-end px-1 text-[11px] leading-4 text-muted-foreground">{presetMeta.description}</div>
 
       <Dialog open={executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
         <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">
@@ -426,6 +424,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
