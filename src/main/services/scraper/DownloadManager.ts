@@ -6,7 +6,7 @@ import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient, ProbeResult } from "@main/services/network";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
-import type { CrawlerData, DownloadedAssets } from "@shared/types";
+import type { CrawlerData, DownloadedAssets, MaintenanceAssetDecisions } from "@shared/types";
 import type { ImageAlternatives } from "./aggregation";
 
 const normalizeUrl = (input?: string): string | null => {
@@ -19,7 +19,11 @@ const normalizeUrl = (input?: string): string | null => {
     return null;
   }
 
-  return trimmed;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
+  return null;
 };
 
 const resolveExistingAsset = async (assetPath: string): Promise<string | undefined> => {
@@ -54,6 +58,8 @@ export interface DownloadCallbacks {
   onSceneProgress?: (downloaded: number, total: number) => void;
   /** Force a primary image to refresh even when its keep flag is enabled. */
   forceReplace?: Partial<Record<PrimaryImageKey, boolean>>;
+  /** Preserve or replace selected maintenance-managed assets regardless of preset keep flags. */
+  assetDecisions?: MaintenanceAssetDecisions;
 }
 
 type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart">;
@@ -62,17 +68,31 @@ type SceneImageTask = { key: "sceneImages"; path: string; url: string };
 type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 type ProbedImageCandidate = ProbeResult & { index: number; url: string };
 
-const getPrimaryFanartSampleUrl = (data: CrawlerData): string | undefined => {
-  return data.fanart_url ? undefined : (normalizeUrl(data.sample_images[0]) ?? undefined);
+const getPrimaryFanartFallbackUrl = (data: CrawlerData): string | undefined => {
+  if (data.fanart_url) {
+    return undefined;
+  }
+
+  return normalizeUrl(data.thumb_url) ?? undefined;
 };
 
-const getSceneImageUrls = (
+const getPrimaryFanartAlternativeUrls = (
   data: CrawlerData,
-  maxSceneImages: number,
-  reservePrimarySampleForFanart: boolean,
+  imageAlternatives: Partial<ImageAlternatives>,
 ): string[] => {
-  const sampleImages = reservePrimarySampleForFanart ? data.sample_images.slice(1) : data.sample_images;
-  return sampleImages
+  if (data.fanart_url) {
+    return imageAlternatives.fanart_url ?? [];
+  }
+
+  return [
+    getPrimaryFanartFallbackUrl(data),
+    ...(imageAlternatives.fanart_url ?? []),
+    ...(imageAlternatives.thumb_url ?? []),
+  ].filter((item): item is string => typeof item === "string");
+};
+
+const getSceneImageUrls = (data: CrawlerData, maxSceneImages: number): string[] => {
+  return data.sample_images
     .map((item) => normalizeUrl(item))
     .filter((item): item is string => !!item)
     .slice(0, maxSceneImages);
@@ -118,14 +138,22 @@ export class DownloadManager {
     };
 
     const forceReplace = callbacks?.forceReplace ?? {};
+    const assetDecisions = callbacks?.assetDecisions ?? {};
     const primaryTasks = this.buildPrimaryImageTasks(outputDir, data, config, imageAlternatives);
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
-    const primaryFanartSampleUrl = getPrimaryFanartSampleUrl(data);
-    let usedPrimarySampleForFanart = false;
 
     for (const task of primaryTasks) {
       const existingAsset = await resolveExistingAsset(task.path);
-      if (task.keepExisting && existingAsset && !forceReplace[task.key]) {
+      const keepExisting =
+        task.key === "fanart"
+          ? assetDecisions.fanart === "preserve"
+            ? true
+            : assetDecisions.fanart === "replace"
+              ? false
+              : task.keepExisting
+          : task.keepExisting;
+
+      if (keepExisting && existingAsset && !forceReplace[task.key]) {
         assets[task.key] = existingAsset;
         continue;
       }
@@ -144,9 +172,6 @@ export class DownloadManager {
         const key = result.key as PrimaryImageKey;
         assets[key] = result.path;
         assets.downloaded.push(result.path);
-        if (key === "fanart" && result.value && result.value === primaryFanartSampleUrl) {
-          usedPrimarySampleForFanart = true;
-        }
       }
     }
 
@@ -162,13 +187,25 @@ export class DownloadManager {
     if (config.download.downloadSceneImages) {
       const sceneDir = join(outputDir, config.paths.sceneImagesFolder);
       const existingSceneImages = await this.listExistingSceneImages(sceneDir);
-      if (config.download.keepSceneImages && existingSceneImages.length > 0) {
+      const forceReplaceSceneImages = assetDecisions.sceneImages === "replace";
+      const keepSceneImages =
+        assetDecisions.sceneImages === "preserve"
+          ? true
+          : assetDecisions.sceneImages === "replace"
+            ? false
+            : config.download.keepSceneImages;
+
+      if (keepSceneImages && existingSceneImages.length > 0) {
         assets.sceneImages.push(...existingSceneImages);
       } else {
-        const urls = getSceneImageUrls(data, config.aggregation.behavior.maxSceneImages, usedPrimarySampleForFanart);
+        const urls = getSceneImageUrls(data, config.aggregation.behavior.maxSceneImages);
 
         if (urls.length === 0) {
-          assets.sceneImages.push(...existingSceneImages);
+          if (forceReplaceSceneImages && existingSceneImages.length > 0) {
+            await this.removeStaleSceneImages(existingSceneImages, [], sceneDir);
+          } else {
+            assets.sceneImages.push(...existingSceneImages);
+          }
         } else {
           const sceneTasks: SceneImageTask[] = urls.map((url, index) => ({
             url,
@@ -283,9 +320,7 @@ export class DownloadManager {
       config.download.downloadFanart,
       config.download.keepFanart,
       data.fanart_url,
-      [getPrimaryFanartSampleUrl(data), ...(imageAlternatives.fanart_url ?? [])].filter(
-        (item): item is string => typeof item === "string",
-      ),
+      getPrimaryFanartAlternativeUrls(data, imageAlternatives),
       join(outputDir, "fanart.jpg"),
     );
 

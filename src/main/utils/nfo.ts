@@ -106,7 +106,7 @@ export const parseNfo = (xml: string): CrawlerData => {
   const plot = toStringValue(movieNode.plot);
   const premiered = toStringValue(movieNode.premiered);
   const releasedate = toStringValue(movieNode.releasedate);
-  const yearText = toStringValue(movieNode.year);
+  const releaseDate = premiered ?? releasedate;
   const ratingText = toStringValue(movieNode.rating);
 
   const uniqueidNode = movieNode.uniqueid;
@@ -190,10 +190,8 @@ export const parseNfo = (xml: string): CrawlerData => {
           .filter((item) => item.length > 0)
       : [];
   const fanartUrl = fanartThumbs[0];
-  const sampleImages = fanartThumbs.slice(1);
 
   const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
-  const releaseYear = yearText ? Number.parseInt(yearText, 10) : undefined;
   const durationSeconds = parseDurationSeconds(movieNode);
   const outline = toStringValue(movieNode.outline);
 
@@ -210,15 +208,17 @@ export const parseNfo = (xml: string): CrawlerData => {
     series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
     plot: plot ?? outline,
     plot_zh: plot ?? outline,
-    release_date: premiered ?? releasedate,
-    release_year: Number.isFinite(releaseYear) ? releaseYear : undefined,
+    release_date: releaseDate,
     durationSeconds,
     rating: Number.isFinite(rating) ? rating : undefined,
     content_type: managedMovieTags.content_type,
     thumb_url: thumbUrl,
     poster_url: posterUrl,
     fanart_url: fanartUrl,
-    sample_images: sampleImages,
+    thumb_source_url: toStringValue(movieNode.thumb_source_url),
+    poster_source_url: toStringValue(movieNode.poster_source_url),
+    fanart_source_url: toStringValue(movieNode.fanart_source_url),
+    sample_images: [],
     trailer_url: toStringValue(movieNode.trailer),
     website,
   };

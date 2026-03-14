@@ -4,6 +4,7 @@ export interface DetailViewItem {
   id: string;
   status: DetailViewStatus;
   number: string;
+  minimalErrorView?: boolean;
   title?: string;
   path?: string;
   nfoPath?: string;

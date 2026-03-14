@@ -51,4 +51,9 @@ describe("image utils", () => {
     expect(getImageSrc("C:\\covers\\poster.jpg")).toBe("local-file:///C:/covers/poster.jpg");
     expect(getImageSrc("/home/user/covers/poster.jpg")).toBe("local-file:///home/user/covers/poster.jpg");
   });
+
+  it("drops unsupported explicit schemes instead of treating them as file paths", () => {
+    expect(getImageSrc("javascript:void(0)")).toBe("");
+    expect(getImageSrc("about:blank")).toBe("");
+  });
 });

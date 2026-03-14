@@ -64,6 +64,64 @@ const createEntry = (root: string, crawlerData: CrawlerData): LocalScanEntry => 
   currentDir: root,
 });
 
+const createPlan = (root: string): OrganizePlan => {
+  const outputDir = join(root, "output", "ABC-123");
+  return {
+    outputDir,
+    targetVideoPath: join(outputDir, "ABC-123.mp4"),
+    nfoPath: join(outputDir, "ABC-123.nfo"),
+  };
+};
+
+const createScraperHarness = (
+  root: string,
+  options: {
+    actorImageService?: ActorImageService;
+    config?: ReturnType<typeof configurationSchema.parse>;
+    downloadAll?: ReturnType<typeof vi.fn>;
+    writeNfo?: ReturnType<typeof vi.fn>;
+  } = {},
+) => {
+  const plan = createPlan(root);
+  const config = options.config ?? configurationSchema.parse(defaultConfiguration);
+  const downloadAll =
+    options.downloadAll ??
+    vi.fn().mockResolvedValue({
+      downloaded: [],
+      sceneImages: [],
+    });
+  const writeNfo = options.writeNfo ?? vi.fn().mockResolvedValue(plan.nfoPath);
+  const actorImageService = options.actorImageService ?? new ActorImageService();
+
+  const scraper = new MaintenanceFileScraper(
+    {
+      configManager: new TestConfigManager(config),
+      aggregationService: {
+        aggregate: vi.fn(),
+      } as never,
+      translateService: {
+        translateCrawlerData: vi.fn(async (data: CrawlerData) => data),
+      } as unknown as TranslateService,
+      nfoGenerator: {
+        writeNfo,
+      } as unknown as NfoGenerator,
+      downloadManager: {
+        downloadAll,
+      } as unknown as DownloadManager,
+      fileOrganizer: {
+        plan: vi.fn().mockReturnValue(plan),
+        resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
+        organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
+      } as unknown as FileOrganizer,
+      signalService: new SignalService(null),
+      actorImageService,
+    },
+    getPreset("refresh_data"),
+  );
+
+  return { scraper, plan, config, downloadAll, writeNfo, actorImageService };
+};
+
 describe("MaintenanceFileScraper actor image parity", () => {
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -77,14 +135,7 @@ describe("MaintenanceFileScraper actor image parity", () => {
     await createUserDataDir();
     const actorLibraryDir = join(root, "actor-library");
     const actorCacheDir = getActorImageCacheDirectory();
-    const outputDir = join(root, "output", "ABC-123");
-    const plan: OrganizePlan = {
-      outputDir,
-      targetVideoPath: join(outputDir, "ABC-123.mp4"),
-      nfoPath: join(outputDir, "ABC-123.nfo"),
-    };
     const actorImageService = new ActorImageService();
-    const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
     const config = configurationSchema.parse({
       ...defaultConfiguration,
       paths: {
@@ -97,34 +148,11 @@ describe("MaintenanceFileScraper actor image parity", () => {
     await mkdir(actorLibraryDir, { recursive: true });
     await writeFile(manualActorPath, "manual-a", "utf8");
 
-    const scraper = new MaintenanceFileScraper(
-      {
-        configManager: new TestConfigManager(config),
-        aggregationService: {
-          aggregate: vi.fn(),
-        } as never,
-        translateService: {
-          translateCrawlerData: vi.fn(async (data: CrawlerData) => data),
-        } as unknown as TranslateService,
-        nfoGenerator: {
-          writeNfo,
-        } as unknown as NfoGenerator,
-        downloadManager: {
-          downloadAll: vi.fn().mockResolvedValue({
-            downloaded: [],
-            sceneImages: [],
-          }),
-        } as unknown as DownloadManager,
-        fileOrganizer: {
-          plan: vi.fn().mockReturnValue(plan),
-          resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
-          organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
-        } as unknown as FileOrganizer,
-        signalService: new SignalService(null),
-        actorImageService,
-      },
-      getPreset("refresh_data"),
-    );
+    const { scraper, plan, writeNfo } = createScraperHarness(root, {
+      actorImageService,
+      config,
+    });
+    const outputDir = plan.outputDir;
 
     const result = await scraper.processFile(
       createEntry(root, createCrawlerData()),
@@ -149,47 +177,17 @@ describe("MaintenanceFileScraper actor image parity", () => {
     });
   });
 
-  it("forces refreshed primary images when committed metadata changes the selected URL", async () => {
+  it("forces refreshed thumb and derived fanart when the committed thumb URL changes", async () => {
     const root = await createTempDir();
     await createUserDataDir();
-    const outputDir = join(root, "output", "ABC-123");
-    const plan: OrganizePlan = {
-      outputDir,
-      targetVideoPath: join(outputDir, "ABC-123.mp4"),
-      nfoPath: join(outputDir, "ABC-123.nfo"),
-    };
-    const config = configurationSchema.parse(defaultConfiguration);
     const downloadAll = vi.fn().mockResolvedValue({
-      thumb: join(outputDir, "thumb.jpg"),
-      downloaded: [join(outputDir, "thumb.jpg")],
+      thumb: join(root, "output", "ABC-123", "thumb.jpg"),
+      downloaded: [join(root, "output", "ABC-123", "thumb.jpg")],
       sceneImages: [],
     });
-
-    const scraper = new MaintenanceFileScraper(
-      {
-        configManager: new TestConfigManager(config),
-        aggregationService: {
-          aggregate: vi.fn(),
-        } as never,
-        translateService: {
-          translateCrawlerData: vi.fn(async (data: CrawlerData) => data),
-        } as unknown as TranslateService,
-        nfoGenerator: {
-          writeNfo: vi.fn().mockResolvedValue(plan.nfoPath),
-        } as unknown as NfoGenerator,
-        downloadManager: {
-          downloadAll,
-        } as unknown as DownloadManager,
-        fileOrganizer: {
-          plan: vi.fn().mockReturnValue(plan),
-          resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
-          organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
-        } as unknown as FileOrganizer,
-        signalService: new SignalService(null),
-        actorImageService: new ActorImageService(),
-      },
-      getPreset("refresh_data"),
-    );
+    const { scraper, config } = createScraperHarness(root, {
+      downloadAll,
+    });
 
     const oldData = createCrawlerData({
       thumb_url: "https://example.com/thumb-old.jpg",
@@ -202,15 +200,13 @@ describe("MaintenanceFileScraper actor image parity", () => {
       crawlerData: newData,
     });
 
-    expect(downloadAll).toHaveBeenCalledWith(
-      plan.outputDir,
-      newData,
-      config,
-      {},
+    const downloadOptions = downloadAll.mock.calls[0]?.[4];
+    expect(downloadOptions).toEqual(
       expect.objectContaining({
-        forceReplace: {
+        forceReplace: expect.objectContaining({
           thumb: true,
-        },
+          fanart: true,
+        }),
       }),
     );
   });
@@ -219,12 +215,6 @@ describe("MaintenanceFileScraper actor image parity", () => {
     const root = await createTempDir();
     await createUserDataDir();
     const actorLibraryDir = join(root, "actor-library");
-    const outputDir = join(root, "output", "ABC-123");
-    const plan: OrganizePlan = {
-      outputDir,
-      targetVideoPath: join(outputDir, "ABC-123.mp4"),
-      nfoPath: join(outputDir, "ABC-123.nfo"),
-    };
     const validPngBytes = await readValidPngBytes();
     vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
       valid: true,
@@ -236,7 +226,6 @@ describe("MaintenanceFileScraper actor image parity", () => {
         getContent: vi.fn(async () => validPngBytes),
       },
     });
-    const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
     const config = configurationSchema.parse({
       ...defaultConfiguration,
       paths: {
@@ -247,34 +236,10 @@ describe("MaintenanceFileScraper actor image parity", () => {
 
     await mkdir(actorLibraryDir, { recursive: true });
 
-    const scraper = new MaintenanceFileScraper(
-      {
-        configManager: new TestConfigManager(config),
-        aggregationService: {
-          aggregate: vi.fn(),
-        } as never,
-        translateService: {
-          translateCrawlerData: vi.fn(async (data: CrawlerData) => data),
-        } as unknown as TranslateService,
-        nfoGenerator: {
-          writeNfo,
-        } as unknown as NfoGenerator,
-        downloadManager: {
-          downloadAll: vi.fn().mockResolvedValue({
-            downloaded: [],
-            sceneImages: [],
-          }),
-        } as unknown as DownloadManager,
-        fileOrganizer: {
-          plan: vi.fn().mockReturnValue(plan),
-          resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
-          organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
-        } as unknown as FileOrganizer,
-        signalService: new SignalService(null),
-        actorImageService,
-      },
-      getPreset("refresh_data"),
-    );
+    const { scraper, plan, writeNfo } = createScraperHarness(root, {
+      actorImageService,
+      config,
+    });
 
     await scraper.processFile(
       createEntry(root, createCrawlerData()),
@@ -288,6 +253,6 @@ describe("MaintenanceFileScraper actor image parity", () => {
     const preparedData = writeNfo.mock.calls[0]?.[1] as CrawlerData;
 
     expect(preparedData.actor_profiles).toEqual([{ name: "Actor A", photo_url: ".actors/Actor A.png" }]);
-    expect(await readFile(join(outputDir, ".actors", "Actor A.png"))).toEqual(validPngBytes);
+    expect(await readFile(join(plan.outputDir, ".actors", "Actor A.png"))).toEqual(validPngBytes);
   });
 });

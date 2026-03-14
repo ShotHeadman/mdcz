@@ -10,7 +10,6 @@ import { SceneImageGallery } from "@/components/SceneImageGallery";
 import { Row } from "@/components/shared/Row";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/Card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
@@ -23,11 +22,6 @@ interface DetailPanelCompareProps {
   result?: MaintenanceItemResult | MaintenancePreviewItem;
   badgeLabel?: string;
   titleOverride?: string;
-  action?: {
-    label: string;
-    disabled?: boolean;
-    onClick: () => void;
-  };
 }
 
 interface DetailPanelProps {
@@ -38,9 +32,27 @@ interface DetailPanelProps {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-xs opacity-60">
+    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-sm opacity-60">
       <FileText className="h-12 w-12 mb-2 opacity-20" />
       {message}
+    </div>
+  );
+}
+
+function DetailPathBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="mb-2 text-xs text-muted-foreground">{label}</div>
+      <div className="break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-[10px] opacity-70">{value}</div>
+    </div>
+  );
+}
+
+function DetailErrorBlock({ value }: { value: string }) {
+  return (
+    <div>
+      <div className="mb-2 text-xs text-muted-foreground">错误详情</div>
+      <div className="rounded bg-red-50 px-2 py-1.5 text-xs text-red-500 dark:bg-red-950/20">{value}</div>
     </div>
   );
 }
@@ -87,20 +99,24 @@ export function DetailPanel({
   }
 
   if (compareMode) {
+    const compareError = compare?.result?.error ?? (!compare?.result ? item.errorMessage : undefined);
+    const hasComparedResult = Boolean(compare?.result);
+    const shouldRenderDiffs = hasComparedResult || !compareError;
+
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="border-b bg-background/80 px-4 py-3 backdrop-blur">
-          <div className="flex items-start justify-between gap-3">
+        <div className="border-b bg-background/80 px-4 py-2.5 backdrop-blur">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
                 {item.status === "success" ? (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 ) : (
-                  <XCircle className="h-4 w-4 text-destructive" />
+                  <XCircle className="h-4 w-4 text-red-500" />
                 )}
               </div>
-              <p className="mt-1 truncate text-sm text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {compare?.titleOverride ?? item.title ?? item.number}
               </p>
             </div>
@@ -109,29 +125,24 @@ export function DetailPanel({
                 <GitCompareArrows className="h-3.5 w-3.5" />
                 {compare?.badgeLabel ?? "数据对比"}
               </Badge>
-              {compare?.action && (
-                <Button
-                  size="sm"
-                  className="rounded-lg whitespace-nowrap"
-                  disabled={compare.action.disabled}
-                  onClick={compare.action.onClick}
-                >
-                  {compare.action.label}
-                </Button>
-              )}
             </div>
           </div>
         </div>
 
         <ScrollArea className="flex-1 min-h-0">
-          <div className="space-y-4 p-4">
-            {compare?.result?.error && (
-              <Card className="rounded-xl border-destructive/20 bg-destructive/5 shadow-none">
-                <CardContent className="p-4 text-sm text-destructive">{compare.result.error}</CardContent>
-              </Card>
-            )}
+          <div className="flex min-h-full flex-col space-y-4 p-4">
+            {compareError && item.path && <DetailPathBlock label="文件路径" value={item.path} />}
 
-            <ChangeDiffView entryId={item.id} diffs={compare?.result?.fieldDiffs ?? []} />
+            {compareError && <DetailErrorBlock value={compareError} />}
+
+            {shouldRenderDiffs && (
+              <ChangeDiffView
+                entryId={item.id}
+                diffs={compare?.result?.fieldDiffs ?? []}
+                unchangedDiffs={compare?.result?.unchangedFieldDiffs ?? []}
+                hasResult={hasComparedResult}
+              />
+            )}
 
             {compare?.result?.pathDiff && <PathPlanView pathDiff={compare.result.pathDiff} />}
           </div>
@@ -143,18 +154,18 @@ export function DetailPanel({
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="shrink-0 border-b bg-background/80 px-4 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/60">
+        <div className="shrink-0 border-b bg-background/80 px-4 py-2.5 backdrop-blur">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
                 {item.status === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
-                  <XCircle className="h-4 w-4 shrink-0 text-red-500" />
+                  <XCircle className="h-4 w-4 text-red-500" />
                 )}
               </div>
-              {item.title && <p className="mt-1 text-sm leading-snug text-muted-foreground">{item.title}</p>}
+              {item.title && <p className="mt-1 text-sm text-muted-foreground">{item.title}</p>}
             </div>
             <div className="flex shrink-0 gap-1">
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handlePlay} title="播放">
@@ -179,145 +190,140 @@ export function DetailPanel({
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="min-w-0 space-y-4 p-4">
-            <div className="flex items-stretch gap-4">
-              <div className="w-36 shrink-0 self-stretch">
-                {posterSrc ? (
-                  <div className="relative aspect-2/3 overflow-hidden rounded-lg border bg-muted/20">
-                    <img
-                      src={posterSrc}
-                      alt="Poster"
-                      className="h-full w-full object-cover"
-                      onError={handlePosterError}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex aspect-2/3 w-full items-center justify-center rounded-lg border border-dashed bg-muted/20">
-                    <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
-                  </div>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-1">
-                {item.actors && item.actors.length > 0 && (
-                  <Row label="演员" variant="metadata">
-                    {item.actors.join(", ")}
-                  </Row>
-                )}
-                {item.release && (
-                  <Row label="发行" variant="metadata">
-                    {item.release}
-                  </Row>
-                )}
-                {item.duration && (
-                  <Row label="时长" variant="metadata">
-                    {item.duration}
-                  </Row>
-                )}
-                {item.resolution && (
-                  <Row label="分辨率" variant="metadata">
-                    {item.resolution}
-                  </Row>
-                )}
-                {item.codec && (
-                  <Row label="编码" variant="metadata">
-                    {item.codec}
-                  </Row>
-                )}
-                {item.bitrate && (
-                  <Row label="码率" variant="metadata">
-                    {item.bitrate}
-                  </Row>
-                )}
-                {item.studio && (
-                  <Row label="制片" variant="metadata">
-                    {item.studio}
-                  </Row>
-                )}
-                {item.series && (
-                  <Row label="系列" variant="metadata">
-                    {item.series}
-                  </Row>
-                )}
-                {item.publisher && (
-                  <Row label="发行商" variant="metadata">
-                    {item.publisher}
-                  </Row>
-                )}
-                {item.score && (
-                  <Row label="评分" variant="metadata">
-                    {item.score}
-                  </Row>
-                )}
-                {item.directors && item.directors.length > 0 && (
-                  <Row label="导演" variant="metadata">
-                    {item.directors.join(", ")}
-                  </Row>
-                )}
-              </div>
-            </div>
-
-            {item.tags && item.tags.length > 0 && (
-              <div>
-                <div className="mb-2 text-xs text-muted-foreground">标签</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {item.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="h-5 px-2 py-0.5 text-[10px]">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <Separator />
-
-            {thumbSrc && (
-              <div className="overflow-hidden rounded-xl border bg-black/5">
-                <div className="flex max-h-112 items-center justify-center bg-muted/10 p-3">
-                  <img
-                    src={thumbSrc}
-                    alt="Thumb artwork"
-                    className="max-h-100 max-w-full object-contain"
-                    onError={handleThumbError}
-                  />
-                </div>
-              </div>
-            )}
-
-            {item.sceneImages && item.sceneImages.length > 0 && (
+            {item.minimalErrorView ? (
               <>
-                <Separator />
-                <SceneImageGallery images={item.sceneImages} />
+                {item.path && <DetailPathBlock label="文件路径" value={item.path} />}
+                {item.errorMessage && <DetailErrorBlock value={item.errorMessage} />}
               </>
-            )}
+            ) : (
+              <>
+                <div className="flex items-stretch gap-4">
+                  <div className="w-36 shrink-0 self-stretch">
+                    {posterSrc ? (
+                      <div className="relative aspect-2/3 overflow-hidden rounded-lg border bg-muted/20">
+                        <img
+                          src={posterSrc}
+                          alt="Poster"
+                          className="h-full w-full object-cover"
+                          onError={handlePosterError}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex aspect-2/3 w-full items-center justify-center rounded-lg border border-dashed bg-muted/20">
+                        <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+                      </div>
+                    )}
+                  </div>
 
-            <Separator />
-
-            {item.outline && (
-              <div>
-                <div className="mb-2 text-xs text-muted-foreground">内容简介</div>
-                <p className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-                  {item.outline}
-                </p>
-              </div>
-            )}
-
-            {item.path && (
-              <div>
-                <div className="mb-2 text-xs text-muted-foreground">文件路径</div>
-                <div className="break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-[10px] opacity-70">
-                  {item.path}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    {item.actors && item.actors.length > 0 && (
+                      <Row label="演员" variant="metadata">
+                        {item.actors.join(", ")}
+                      </Row>
+                    )}
+                    {item.release && (
+                      <Row label="发行" variant="metadata">
+                        {item.release}
+                      </Row>
+                    )}
+                    {item.duration && (
+                      <Row label="时长" variant="metadata">
+                        {item.duration}
+                      </Row>
+                    )}
+                    {item.resolution && (
+                      <Row label="分辨率" variant="metadata">
+                        {item.resolution}
+                      </Row>
+                    )}
+                    {item.codec && (
+                      <Row label="编码" variant="metadata">
+                        {item.codec}
+                      </Row>
+                    )}
+                    {item.bitrate && (
+                      <Row label="码率" variant="metadata">
+                        {item.bitrate}
+                      </Row>
+                    )}
+                    {item.studio && (
+                      <Row label="制片" variant="metadata">
+                        {item.studio}
+                      </Row>
+                    )}
+                    {item.series && (
+                      <Row label="系列" variant="metadata">
+                        {item.series}
+                      </Row>
+                    )}
+                    {item.publisher && (
+                      <Row label="发行商" variant="metadata">
+                        {item.publisher}
+                      </Row>
+                    )}
+                    {item.score && (
+                      <Row label="评分" variant="metadata">
+                        {item.score}
+                      </Row>
+                    )}
+                    {item.directors && item.directors.length > 0 && (
+                      <Row label="导演" variant="metadata">
+                        {item.directors.join(", ")}
+                      </Row>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {item.errorMessage && (
-              <div>
-                <div className="mb-2 text-xs text-muted-foreground">错误详情</div>
-                <div className="rounded bg-red-50 px-2 py-1.5 text-xs text-red-500 dark:bg-red-950/20">
-                  {item.errorMessage}
-                </div>
-              </div>
+                {item.tags && item.tags.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs text-muted-foreground">标签</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.tags.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="h-5 px-2 py-0.5 text-[10px]">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Separator />
+
+                {thumbSrc && (
+                  <div className="overflow-hidden rounded-xl border bg-black/5">
+                    <div className="flex max-h-112 items-center justify-center bg-muted/10 p-3">
+                      <img
+                        src={thumbSrc}
+                        alt="Thumb artwork"
+                        className="max-h-100 max-w-full object-contain"
+                        onError={handleThumbError}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {item.sceneImages && item.sceneImages.length > 0 && (
+                  <>
+                    <Separator />
+                    <SceneImageGallery images={item.sceneImages} />
+                  </>
+                )}
+
+                <Separator />
+
+                {item.outline && (
+                  <div>
+                    <div className="mb-2 text-xs text-muted-foreground">内容简介</div>
+                    <p className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                      {item.outline}
+                    </p>
+                  </div>
+                )}
+
+                {item.path && <DetailPathBlock label="文件路径" value={item.path} />}
+
+                {item.errorMessage && <DetailErrorBlock value={item.errorMessage} />}
+              </>
             )}
           </div>
         </ScrollArea>

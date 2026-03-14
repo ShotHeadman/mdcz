@@ -89,7 +89,7 @@ describe("FieldAggregator", () => {
       expect(data.actors).toContain("Actress C");
     });
 
-    it("merges genres with deduplication", () => {
+    it("prefers the first non-empty genres without merging sites", () => {
       const aggregator = new FieldAggregator({});
 
       const results = new Map<Website, CrawlerData>([
@@ -98,7 +98,7 @@ describe("FieldAggregator", () => {
       ]);
 
       const { data } = aggregator.aggregate(results);
-      expect(data.genres).toHaveLength(3);
+      expect(data.genres).toEqual(["Tag A", "Tag B"]);
     });
 
     it("picks first non-empty sample_images from highest-priority source", () => {

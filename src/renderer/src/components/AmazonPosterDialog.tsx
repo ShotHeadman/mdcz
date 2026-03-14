@@ -329,7 +329,6 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
                                 label="当前海报"
                                 width={state.scan.currentPosterWidth || null}
                                 height={state.scan.currentPosterHeight || null}
-                                fileSize={state.scan.currentPosterSize || null}
                                 subtitle={state.scan.currentPosterPath ? "本地 poster.jpg" : undefined}
                                 selected={state.selection === "current"}
                                 onClick={

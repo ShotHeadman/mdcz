@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/ContextMenu";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { TreeButton } from "@/components/ui/TreeButton";
 import { cn } from "@/lib/utils";
 
 export type MediaBrowserFilter = "all" | "success" | "failed";
@@ -56,30 +55,30 @@ function MediaBrowserListItem({ item }: { item: MediaBrowserItem }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <TreeButton
-          isSelected={item.active}
-          className="group flex-col items-start p-0 hover:bg-transparent"
-          onClick={item.onClick}
+        <div
+          className={cn(
+            "group flex w-full items-center gap-3 rounded-xl border px-3 py-3 transition-all select-none",
+            item.active ? "border-primary/60 bg-primary/5" : "border-transparent hover:border-border hover:bg-muted/30",
+          )}
         >
-          <div
-            className={cn(
-              "flex w-full items-center gap-3 rounded-xl border px-3 py-3 transition-all",
-              item.active
-                ? "border-primary/60 bg-primary/5"
-                : "border-transparent hover:border-border hover:bg-muted/30",
-            )}
+          {item.selectionControl && <div className="shrink-0">{item.selectionControl}</div>}
+          <button
+            type="button"
+            onClick={item.onClick}
+            className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left outline-none"
           >
-            {item.selectionControl}
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">{item.title}</span>
-                {item.subtitle && <span className="truncate text-sm text-muted-foreground">{item.subtitle}</span>}
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 font-semibold">{item.title}</span>
+                {item.subtitle && (
+                  <span className="min-w-0 shrink truncate text-sm text-muted-foreground">{item.subtitle}</span>
+                )}
               </div>
               {item.errorText && <div className="mt-1 truncate text-xs text-destructive">{item.errorText}</div>}
             </div>
             <StatusIcon status={item.status} />
-          </div>
-        </TreeButton>
+          </button>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent>{item.menuContent}</ContextMenuContent>
     </ContextMenu>

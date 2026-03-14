@@ -25,6 +25,29 @@ export function normalizeImageSourcePath(rawPath: string): string {
   return value;
 }
 
+const isSupportedRemoteImageScheme = (value: string): boolean => {
+  return (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("local-file://") ||
+    value.startsWith("file://")
+  );
+};
+
+const hasExplicitUnsupportedScheme = (value: string): boolean => {
+  if (/^[a-z]:[\\/]/iu.test(value)) {
+    return false;
+  }
+
+  if (isSupportedRemoteImageScheme(value)) {
+    return false;
+  }
+
+  return /^[a-z][a-z\d+.-]*:/iu.test(value);
+};
+
 const buildSiblingPath = (filePath: string, fileName: string): string => {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   const separator = filePath.lastIndexOf("\\") > filePath.lastIndexOf("/") ? "\\" : "/";
@@ -113,13 +136,12 @@ function toFileUrl(path: string): string {
 export function getImageSrc(rawPath: string): string {
   const path = normalizeImageSourcePath(rawPath);
   if (!path) return "";
-  if (
-    path.startsWith("http://") ||
-    path.startsWith("https://") ||
-    path.startsWith("data:") ||
-    path.startsWith("blob:")
-  ) {
+  if (isSupportedRemoteImageScheme(path)) {
     return path;
+  }
+
+  if (hasExplicitUnsupportedScheme(path)) {
+    return "";
   }
 
   return toFileUrl(path);

@@ -6,12 +6,15 @@ import type {
   MaintenancePreviewResult,
   MaintenanceStatus,
 } from "@shared/types";
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { MaintenanceFieldSelectionSide } from "@/lib/maintenance";
 
 export type MaintenanceFilter = "all" | "success" | "failed";
 
 type MaintenanceExecutionStatus = MaintenanceStatus["state"];
+
+const isDev = import.meta.env.DEV;
 
 const createPreviewResetState = () => ({
   executeDialogOpen: false,
@@ -26,13 +29,44 @@ const getIdleStatusText = (entriesCount: number, emptyText = "就绪"): string =
   return entriesCount > 0 ? `已扫描 ${entriesCount} 项` : emptyText;
 };
 
+const summarizeItemResults = (itemResults: Record<string, MaintenanceItemResult>) => {
+  let successCount = 0;
+  let failedCount = 0;
+  let activeCount = 0;
+
+  for (const result of Object.values(itemResults)) {
+    if (result.status === "success") {
+      successCount += 1;
+      continue;
+    }
+
+    if (result.status === "failed") {
+      failedCount += 1;
+      continue;
+    }
+
+    activeCount += 1;
+  }
+
+  return {
+    successCount,
+    failedCount,
+    activeCount,
+    totalCount: successCount + failedCount + activeCount,
+  };
+};
+
 const formatStatusText = (
   status: MaintenanceStatus,
   scannedEntries: number,
+  itemResults: Record<string, MaintenanceItemResult>,
   previousText: string,
   previousExecutionStatus: MaintenanceExecutionStatus,
 ): string => {
   const wasStopping = previousExecutionStatus === "stopping" || previousText.startsWith("已停止");
+  const wasExecuting = previousExecutionStatus === "executing" || previousText.startsWith("执行完成");
+  const localSummary = summarizeItemResults(itemResults);
+  const hasTerminalLocalSummary = localSummary.totalCount > 0 && localSummary.activeCount === 0;
 
   if (status.state === "scanning") {
     return "正在扫描目录...";
@@ -46,12 +80,18 @@ const formatStatusText = (
     return `正在停止 · 已完成 ${status.completedEntries}/${status.totalEntries}`;
   }
 
-  if (wasStopping && status.totalEntries > 0) {
-    return `已停止 · 成功 ${status.successCount} · 失败/取消 ${status.failedCount}`;
+  if (wasStopping && (status.totalEntries > 0 || hasTerminalLocalSummary)) {
+    return `已停止 · 成功 ${status.totalEntries > 0 ? status.successCount : localSummary.successCount} · 失败/取消 ${
+      status.totalEntries > 0 ? status.failedCount : localSummary.failedCount
+    }`;
   }
 
   if (status.totalEntries > 0) {
     return `执行完成 · 成功 ${status.successCount} · 失败 ${status.failedCount}`;
+  }
+
+  if (wasExecuting && hasTerminalLocalSummary) {
+    return `执行完成 · 成功 ${localSummary.successCount} · 失败 ${localSummary.failedCount}`;
   }
 
   if (scannedEntries > 0) {
@@ -59,6 +99,86 @@ const formatStatusText = (
   }
 
   return previousText || "就绪";
+};
+
+const createInitialState = () => ({
+  entries: [] as LocalScanEntry[],
+  selectedIds: [] as string[],
+  activeId: null as string | null,
+  presetId: "read_local" as MaintenancePresetId,
+  executionStatus: "idle" as MaintenanceExecutionStatus,
+  progressValue: 0,
+  progressCurrent: 0,
+  progressTotal: 0,
+  filter: "all" as MaintenanceFilter,
+  currentPath: "",
+  statusText: "就绪",
+  lastScannedDir: "",
+  ...createPreviewResetState(),
+  itemResults: {} as Record<string, MaintenanceItemResult>,
+});
+
+type PersistedMaintenanceState = Pick<
+  MaintenanceState,
+  | "entries"
+  | "selectedIds"
+  | "activeId"
+  | "presetId"
+  | "filter"
+  | "currentPath"
+  | "lastScannedDir"
+  | "previewResults"
+  | "previewReadyCount"
+  | "previewBlockedCount"
+  | "fieldSelections"
+  | "itemResults"
+>;
+
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
+
+const maintenanceStoreStorage = createJSONStorage<PersistedMaintenanceState>(() =>
+  typeof sessionStorage !== "undefined" ? sessionStorage : noopStorage,
+);
+
+const partializeMaintenanceState = (state: MaintenanceState): PersistedMaintenanceState => ({
+  entries: state.entries,
+  selectedIds: state.selectedIds,
+  activeId: state.activeId,
+  presetId: state.presetId,
+  filter: state.filter,
+  currentPath: state.currentPath,
+  lastScannedDir: state.lastScannedDir,
+  previewResults: state.previewResults,
+  previewReadyCount: state.previewReadyCount,
+  previewBlockedCount: state.previewBlockedCount,
+  fieldSelections: state.fieldSelections,
+  itemResults: state.itemResults,
+});
+
+const mergePersistedMaintenanceState = (persisted: unknown, current: MaintenanceState): MaintenanceState => {
+  const persistedState = (persisted ?? {}) as Partial<PersistedMaintenanceState>;
+  const entries = persistedState.entries ?? current.entries;
+  const activeId =
+    persistedState.activeId && entries.some((entry) => entry.id === persistedState.activeId)
+      ? persistedState.activeId
+      : (entries[0]?.id ?? null);
+
+  return {
+    ...current,
+    ...persistedState,
+    activeId,
+    executionStatus: "idle",
+    progressValue: 0,
+    progressCurrent: 0,
+    progressTotal: 0,
+    executeDialogOpen: false,
+    previewPending: false,
+    statusText: getIdleStatusText(entries.length),
+  };
 };
 
 export interface MaintenanceState {
@@ -99,32 +219,15 @@ export interface MaintenanceState {
   clearPreviewResults: () => void;
   setFieldSelection: (entryId: string, field: string, side: MaintenanceFieldSelectionSide) => void;
   beginExecution: (entryIds: string[]) => void;
+  rollbackExecutionStart: () => void;
   applyStatusSnapshot: (status: MaintenanceStatus) => void;
   applyItemResult: (payload: MaintenanceItemResult) => void;
   resetDerivedData: () => void;
   reset: () => void;
 }
 
-export const useMaintenanceStore = create<MaintenanceState>((set) => ({
-  entries: [],
-  selectedIds: [],
-  activeId: null,
-  presetId: "read_local",
-  executionStatus: "idle",
-  progressValue: 0,
-  progressCurrent: 0,
-  progressTotal: 0,
-  filter: "all",
-  currentPath: "",
-  statusText: "就绪",
-  lastScannedDir: "",
-  executeDialogOpen: false,
-  previewPending: false,
-  previewResults: {},
-  previewReadyCount: 0,
-  previewBlockedCount: 0,
-  fieldSelections: {},
-  itemResults: {},
+const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
+  ...createInitialState(),
 
   setPresetId: (presetId) =>
     set((state) => ({
@@ -218,6 +321,7 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
         previewReadyCount: result.readyCount,
         previewBlockedCount: result.blockedCount,
         fieldSelections: {},
+        itemResults: {},
         activeId:
           state.activeId && previewResults[state.activeId]
             ? state.activeId
@@ -249,6 +353,7 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
           status: "pending",
           error: preview?.status === "blocked" ? preview.error : undefined,
           fieldDiffs: preview?.fieldDiffs,
+          unchangedFieldDiffs: preview?.unchangedFieldDiffs,
           pathDiff: preview?.pathDiff,
         };
       }
@@ -262,6 +367,15 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
         statusText: `正在执行 ${entryIds.length} 项...`,
         itemResults: nextResults,
       };
+    }),
+
+  rollbackExecutionStart: () =>
+    set({
+      executionStatus: "idle",
+      progressValue: 0,
+      progressCurrent: 0,
+      progressTotal: 0,
+      itemResults: {},
     }),
 
   applyStatusSnapshot: (status) =>
@@ -278,7 +392,13 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
         progressValue: nextProgress,
         progressCurrent: status.completedEntries,
         progressTotal: status.totalEntries,
-        statusText: formatStatusText(status, state.entries.length, state.statusText, state.executionStatus),
+        statusText: formatStatusText(
+          status,
+          state.entries.length,
+          state.itemResults,
+          state.statusText,
+          state.executionStatus,
+        ),
       };
     }),
 
@@ -321,19 +441,17 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
 
   reset: () =>
     set({
-      entries: [],
-      selectedIds: [],
-      activeId: null,
-      presetId: "read_local",
-      executionStatus: "idle",
-      progressValue: 0,
-      progressCurrent: 0,
-      progressTotal: 0,
-      filter: "all",
-      currentPath: "",
-      statusText: "就绪",
-      lastScannedDir: "",
-      ...createPreviewResetState(),
-      itemResults: {},
+      ...createInitialState(),
     }),
-}));
+});
+
+export const useMaintenanceStore = isDev
+  ? create<MaintenanceState>()(
+      persist(createMaintenanceState, {
+        name: "maintenance-store",
+        storage: maintenanceStoreStorage,
+        partialize: partializeMaintenanceState,
+        merge: mergePersistedMaintenanceState,
+      }),
+    )
+  : create<MaintenanceState>()(createMaintenanceState);

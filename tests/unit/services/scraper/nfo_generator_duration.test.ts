@@ -102,7 +102,8 @@ describe("NfoGenerator", () => {
 
     expect(xml).toContain('<thumb aspect="poster">poster.jpg</thumb>');
     expect(xml).toContain('<thumb aspect="thumb">thumb.jpg</thumb>');
-    expect(xml).not.toContain("<fanart>");
+    expect(xml).toContain("<fanart>");
+    expect(xml).toContain("<thumb>fanart.jpg</thumb>");
     expect(xml).toContain("<trailer>trailer.mp4</trailer>");
     expect(xml).toContain("<releasedate>2024-01-02</releasedate>");
     expect(xml).toContain("<outline>Plot</outline>");
@@ -136,12 +137,31 @@ describe("NfoGenerator", () => {
     expect(parsed.release_date).toBe("2024-01-02");
   });
 
+  it("writes year from release_date when available", () => {
+    const xml = new NfoGenerator().buildXml(
+      createCrawlerData({
+        release_date: "2024-01-02",
+      }),
+    );
+
+    expect(xml).toContain("<year>2024</year>");
+  });
+
+  it("omits year when release_date is missing", () => {
+    const xml = new NfoGenerator().buildXml(createCrawlerData());
+
+    expect(xml).not.toContain("<year>");
+  });
+
   it("preserves local poster, cover, and trailer references when parsed back", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
         poster_url: "https://remote.example.com/poster.jpg",
         thumb_url: "https://remote.example.com/thumb.jpg",
         fanart_url: "https://remote.example.com/fanart.jpg",
+        poster_source_url: "https://remote.example.com/poster.jpg",
+        thumb_source_url: "https://remote.example.com/thumb.jpg",
+        fanart_source_url: "https://remote.example.com/fanart.jpg",
         trailer_url: "https://remote.example.com/trailer.mp4",
       }),
       {
@@ -154,7 +174,10 @@ describe("NfoGenerator", () => {
     expect(parsed.poster_url).toBe("poster.jpg");
     expect(parsed.thumb_url).toBe("thumb.jpg");
     expect(parsed.trailer_url).toBe("trailer.mp4");
-    expect(parsed.fanart_url).toBeUndefined();
+    expect(parsed.fanart_url).toBe("fanart.jpg");
+    expect(parsed.poster_source_url).toBe("https://remote.example.com/poster.jpg");
+    expect(parsed.thumb_source_url).toBe("https://remote.example.com/thumb.jpg");
+    expect(parsed.fanart_source_url).toBe("https://remote.example.com/fanart.jpg");
     expect(parsed.sample_images).toEqual([]);
   });
 
@@ -184,18 +207,20 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<bitrate>8000000</bitrate>");
   });
 
-  it("uses the first sample image as fallback fanart when a dedicated fanart is unavailable", () => {
+  it("uses thumb artwork as fallback fanart and does not persist sample images into NFO", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
         thumb_url: "https://remote.example.com/thumb.jpg",
+        thumb_source_url: "https://remote.example.com/thumb.jpg",
         sample_images: ["https://remote.example.com/scene-001.jpg", "https://remote.example.com/scene-002.jpg"],
       }),
     );
     const parsed = parseNfo(xml);
 
     expect(xml).toContain("<fanart>");
-    expect(parsed.fanart_url).toBe("https://remote.example.com/scene-001.jpg");
-    expect(parsed.sample_images).toEqual(["https://remote.example.com/scene-002.jpg"]);
+    expect(parsed.fanart_url).toBe("https://remote.example.com/thumb.jpg");
+    expect(parsed.fanart_source_url).toBe("https://remote.example.com/thumb.jpg");
+    expect(parsed.sample_images).toEqual([]);
     expect(parsed.thumb_url).toBe("https://remote.example.com/thumb.jpg");
   });
 
