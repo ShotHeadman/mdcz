@@ -165,6 +165,18 @@ export class JavdbCrawler extends BaseCrawler {
       .map((href: string) => toAbsoluteUrl(JAVDB_BASE_URL, href))
       .filter((href): href is string => Boolean(href));
 
+    const ratingText = findStrongRow($, ["評分:", "Rating:"]);
+    let ratingValue: number | undefined;
+    if (ratingText) {
+      const match = ratingText.match(/([\d.]+)/u);
+      if (match) {
+        const parsed = Number.parseFloat(match[1]);
+        if (Number.isFinite(parsed)) {
+          ratingValue = parsed;
+        }
+      }
+    }
+
     return {
       title,
       number,
@@ -176,7 +188,7 @@ export class JavdbCrawler extends BaseCrawler {
       series,
       plot: undefined,
       release_date: release,
-      rating: undefined,
+      rating: ratingValue,
       thumb_url: thumbUrlAbsolute,
       poster_url: posterUrl,
       fanart_url: undefined,
