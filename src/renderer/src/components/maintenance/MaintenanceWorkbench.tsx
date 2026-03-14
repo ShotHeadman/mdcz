@@ -17,11 +17,8 @@ export default function MaintenanceWorkbench() {
     entries,
     activeId,
     presetId,
-    previewPending,
     previewResults,
-    previewReadyCount,
     itemResults,
-    setExecuteDialogOpen,
   } = useMaintenanceStore(
     useShallow((state) => ({
       executionStatus: state.executionStatus,
@@ -31,11 +28,8 @@ export default function MaintenanceWorkbench() {
       entries: state.entries,
       activeId: state.activeId,
       presetId: state.presetId,
-      previewPending: state.previewPending,
       previewResults: state.previewResults,
-      previewReadyCount: state.previewReadyCount,
       itemResults: state.itemResults,
-      setExecuteDialogOpen: state.setExecuteDialogOpen,
     })),
   );
 
@@ -45,7 +39,6 @@ export default function MaintenanceWorkbench() {
   const activeResult = activeEntry ? itemResults[activeEntry.id] : undefined;
   const displayResult = activeResult ?? activePreview;
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
-  const hasPreviewResults = Object.keys(previewResults).length > 0;
   const detailItem = useMemo(
     () => (activeEntry ? toDetailViewItemFromMaintenanceEntry(activeEntry, displayResult) : null),
     [activeEntry, displayResult],
@@ -96,14 +89,6 @@ export default function MaintenanceWorkbench() {
                   ? {
                       result: displayResult,
                       badgeLabel: "数据对比",
-                      action:
-                        executionStatus === "idle" && hasPreviewResults
-                          ? {
-                              label: previewReadyCount === 0 ? "无可执行项" : `确认执行 ${previewReadyCount} 项`,
-                              disabled: previewPending || previewReadyCount === 0,
-                              onClick: () => setExecuteDialogOpen(true),
-                            }
-                          : undefined,
                     }
                   : undefined
               }

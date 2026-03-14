@@ -2,6 +2,7 @@ import type {
   CrawlerData,
   FieldDiff,
   LocalScanEntry,
+  MaintenanceAssetDecisions,
   MaintenanceCommitItem,
   MaintenanceImageAlternatives,
   MaintenancePreviewItem,
@@ -9,27 +10,97 @@ import type {
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
 
-const IMAGE_ASSET_FIELD_MAP = {
-  thumb_url: "thumb",
-  poster_url: "poster",
-  fanart_url: "fanart",
-} as const satisfies Partial<Record<FieldDiff["field"], keyof LocalScanEntry["assets"]>>;
-type MaintenanceImageField = keyof typeof IMAGE_ASSET_FIELD_MAP;
+const IMAGE_SOURCE_FIELD_MAP = {
+  thumb_url: "thumb_source_url",
+  poster_url: "poster_source_url",
+} as const;
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-const isMaintenanceImageField = (field: FieldDiff["field"]): field is MaintenanceImageField =>
-  field in IMAGE_ASSET_FIELD_MAP;
+const getImageSourceField = (
+  field: FieldDiff["field"],
+): (typeof IMAGE_SOURCE_FIELD_MAP)[keyof typeof IMAGE_SOURCE_FIELD_MAP] | undefined => {
+  switch (field) {
+    case "thumb_url":
+    case "poster_url":
+      return IMAGE_SOURCE_FIELD_MAP[field];
+    default:
+      return undefined;
+  }
+};
 
 const cloneValue = <T>(value: T): T => {
   if (Array.isArray(value)) {
     return value.map((item) => cloneValue(item)) as T;
   }
 
-  if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneValue(item)])) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, cloneValue(item)]),
+    ) as T;
   }
 
   return value;
+};
+
+const dedupeStrings = (values: Array<string | undefined>): string[] => {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const value of values) {
+    const normalized = typeof value === "string" ? value.trim() : "";
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+
+  return deduped;
+};
+
+const toRemoteImageSourceValue = (value: unknown): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return /^https?:\/\//iu.test(normalized) ? normalized : undefined;
+};
+
+const getPathLeafName = (value: string): string => {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const lastSlash = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+};
+
+const toLocalImageFieldValue = (value: string): string | undefined => {
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (/^(?:https?:|data:|blob:)/iu.test(normalized)) {
+    return undefined;
+  }
+
+  if (/^(?:local-file|file):\/\//iu.test(normalized)) {
+    try {
+      const parsed = new URL(normalized);
+      const pathname = decodeURIComponent(parsed.pathname);
+      const localPath = /^\/[A-Za-z]:\//u.test(pathname) ? pathname.slice(1) : pathname;
+      const leafName = getPathLeafName(localPath);
+      return leafName || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const leafName = getPathLeafName(normalized);
+  return leafName || undefined;
 };
 
 export const hasMaintenanceFieldValue = (value: unknown): boolean => {
@@ -39,157 +110,111 @@ export const hasMaintenanceFieldValue = (value: unknown): boolean => {
   return true;
 };
 
-const toNonEmptyString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+export const hasMaintenanceDiffSideValue = (diff: FieldDiff, side: MaintenanceFieldSelectionSide): boolean => {
+  if (diff.kind === "image") {
+    const preview = side === "old" ? diff.oldPreview : diff.newPreview;
+    return preview.src.length > 0 || preview.fallbackSrcs.length > 0;
+  }
 
-const isUrlLike = (value: string): boolean => /^(?:https?:\/\/|data:|blob:|local-file:\/\/|file:\/\/)/iu.test(value);
+  if (diff.kind === "imageCollection") {
+    const preview = side === "old" ? diff.oldPreview : diff.newPreview;
+    return preview.items.length > 0;
+  }
 
-const isAbsolutePath = (value: string): boolean => {
-  return value.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\");
+  return hasMaintenanceFieldValue(side === "old" ? diff.oldValue : diff.newValue);
 };
 
-const getParentDir = (value: string | undefined): string => {
-  if (!value) {
+export const resolveMaintenanceDiffImageSrc = (diff: FieldDiff, side: MaintenanceFieldSelectionSide): string => {
+  if (diff.kind !== "image") {
     return "";
   }
 
-  const lastSlash = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
-  return lastSlash >= 0 ? value.slice(0, lastSlash) : "";
-};
-
-const joinPath = (dir: string, child: string): string => {
-  const base = dir.trim();
-  const leaf = child.trim();
-  if (!base) {
-    return leaf;
-  }
-  if (!leaf) {
-    return base;
-  }
-
-  const useBackslash = base.lastIndexOf("\\") > base.lastIndexOf("/");
-  const separator = useBackslash ? "\\" : "/";
-  const normalizedBase = base.endsWith("/") || base.endsWith("\\") ? base.slice(0, -1) : base;
-  const normalizedLeaf = leaf.replace(/^[/\\]+/u, "");
-
-  return `${normalizedBase}${separator}${normalizedLeaf}`;
-};
-
-const getMaintenanceImageAssetPath = (entry: LocalScanEntry | undefined, field: FieldDiff["field"]): string => {
-  const assetKey = IMAGE_ASSET_FIELD_MAP[field as keyof typeof IMAGE_ASSET_FIELD_MAP];
-  const assetValue = assetKey ? entry?.assets[assetKey] : undefined;
-  return typeof assetValue === "string" ? assetValue : "";
-};
-
-const dedupeImageCandidates = (values: Array<string | undefined>): string[] => {
-  const seen = new Set<string>();
-  const candidates: string[] = [];
-
-  for (const value of values) {
-    const trimmed = typeof value === "string" ? value.trim() : "";
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-
-    seen.add(trimmed);
-    candidates.push(trimmed);
-  }
-
-  return candidates;
-};
-
-const resolveMaintenanceImageFieldSrc = (
-  entry: LocalScanEntry | undefined,
-  preview: MaintenancePreviewItem | undefined,
-  field: MaintenanceImageField,
-  side: MaintenanceFieldSelectionSide,
-): string => {
-  return resolveMaintenanceDiffImageSrc(
-    entry,
-    {
-      field,
-      label: "",
-      oldValue: entry?.crawlerData?.[field],
-      newValue: preview?.proposedCrawlerData?.[field],
-      changed: false,
-    },
-    side,
-  );
-};
-
-export const resolveMaintenanceDiffImageSrc = (
-  entry: LocalScanEntry | undefined,
-  diff: FieldDiff,
-  side: MaintenanceFieldSelectionSide,
-): string => {
-  if (!isMaintenanceImageField(diff.field)) {
-    return "";
-  }
-
-  if (side === "old") {
-    const assetPath = getMaintenanceImageAssetPath(entry, diff.field);
-    if (assetPath) {
-      return assetPath;
-    }
-  }
-
-  const rawValue = toNonEmptyString(side === "old" ? diff.oldValue : diff.newValue);
-  if (!rawValue) {
-    return "";
-  }
-
-  if (isUrlLike(rawValue) || isAbsolutePath(rawValue)) {
-    return rawValue;
-  }
-
-  if (side === "old") {
-    const baseDir = getParentDir(entry?.nfoPath) || entry?.currentDir || getParentDir(entry?.videoPath);
-    if (baseDir) {
-      return joinPath(baseDir, rawValue);
-    }
-  }
-
-  return rawValue;
+  return side === "old" ? diff.oldPreview.src : diff.newPreview.src;
 };
 
 export const resolveMaintenanceDiffImageOption = (
-  entry: LocalScanEntry | undefined,
-  preview: MaintenancePreviewItem | undefined,
   diff: FieldDiff,
   side: MaintenanceFieldSelectionSide,
 ): { src: string; fallbackSrcs: string[] } => {
-  const src = resolveMaintenanceDiffImageSrc(entry, diff, side);
-
-  if (!isMaintenanceImageField(diff.field)) {
-    return { src, fallbackSrcs: [] };
+  if (diff.kind !== "image") {
+    return { src: "", fallbackSrcs: [] };
   }
 
-  const fieldAlternatives = side === "new" ? (preview?.imageAlternatives?.[diff.field] ?? []) : [];
+  return side === "old" ? diff.oldPreview : diff.newPreview;
+};
 
-  if (diff.field !== "fanart_url") {
-    return {
-      src,
-      fallbackSrcs: dedupeImageCandidates(fieldAlternatives).filter((candidate) => candidate !== src),
-    };
+export const resolveMaintenanceDiffImageCollection = (
+  diff: FieldDiff,
+  side: MaintenanceFieldSelectionSide,
+): string[] => {
+  if (diff.kind !== "imageCollection") {
+    return [];
   }
 
-  const thumbSrc = resolveMaintenanceImageFieldSrc(entry, preview, "thumb_url", side);
-  const thumbAlternatives = side === "new" ? (preview?.imageAlternatives?.thumb_url ?? []) : [];
-
-  return {
-    src,
-    fallbackSrcs: dedupeImageCandidates([...fieldAlternatives, thumbSrc, ...thumbAlternatives]).filter(
-      (candidate) => candidate !== src,
-    ),
-  };
+  return side === "old" ? diff.oldPreview.items : diff.newPreview.items;
 };
 
 export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): MaintenanceFieldSelectionSide => {
-  const hasOldValue = hasMaintenanceFieldValue(diff.oldValue);
-  const hasNewValue = hasMaintenanceFieldValue(diff.newValue);
+  const hasOldValue = hasMaintenanceDiffSideValue(diff, "old");
+  const hasNewValue = hasMaintenanceDiffSideValue(diff, "new");
 
   if (!hasOldValue && hasNewValue) return "new";
   if (hasOldValue && !hasNewValue) return "old";
   return "new";
+};
+
+const buildSelectedImageSourceValue = (diff: FieldDiff): string | undefined => {
+  if (diff.kind !== "image") {
+    return undefined;
+  }
+
+  return toRemoteImageSourceValue(diff.newValue) ?? toRemoteImageSourceValue(diff.newPreview.src);
+};
+
+const syncSharedFanartWithThumbSelection = (
+  mutableBaseData: Record<string, unknown>,
+  diff: FieldDiff,
+  selection: MaintenanceFieldSelectionSide,
+  options?: {
+    clearDerivedFanartWhenPreservingLocal?: boolean;
+  },
+): void => {
+  if (diff.kind !== "image" || diff.field !== "thumb_url") {
+    return;
+  }
+
+  if (selection === "old") {
+    if (options?.clearDerivedFanartWhenPreservingLocal) {
+      mutableBaseData.fanart_url = undefined;
+      mutableBaseData.fanart_source_url = undefined;
+    }
+    return;
+  }
+
+  mutableBaseData.fanart_url = undefined;
+  mutableBaseData.fanart_source_url = cloneValue(buildSelectedImageSourceValue(diff));
+};
+
+const applyOldImageSelection = (
+  mutableBaseData: Record<string, unknown>,
+  diff: Extract<FieldDiff, { kind: "image" }>,
+  hasExistingCrawlerData: boolean,
+): void => {
+  if (hasExistingCrawlerData) {
+    mutableBaseData[diff.field] = cloneValue(diff.oldValue);
+    return;
+  }
+
+  mutableBaseData[diff.field] = cloneValue(toLocalImageFieldValue(diff.oldPreview.src) ?? diff.oldValue);
+
+  const sourceField = getImageSourceField(diff.field);
+  if (sourceField) {
+    mutableBaseData[sourceField] = undefined;
+  }
+
+  syncSharedFanartWithThumbSelection(mutableBaseData, diff, "old", {
+    clearDerivedFanartWhenPreservingLocal: true,
+  });
 };
 
 export const buildCommittedCrawlerData = (
@@ -198,30 +223,82 @@ export const buildCommittedCrawlerData = (
   fieldSelections: Record<string, MaintenanceFieldSelectionSide> | undefined,
 ): CrawlerData | undefined => {
   const proposedCrawlerData = preview?.proposedCrawlerData;
+  const hasExistingCrawlerData = Boolean(entry.crawlerData);
 
-  if (!entry.crawlerData && !proposedCrawlerData) {
+  if (!hasExistingCrawlerData && !proposedCrawlerData) {
     return undefined;
   }
 
-  const resolved = cloneValue(proposedCrawlerData ?? entry.crawlerData);
-  if (!resolved) {
+  const baseData = cloneValue(entry.crawlerData ?? proposedCrawlerData);
+  if (!baseData) {
     return undefined;
   }
 
-  if (!entry.crawlerData || !preview?.fieldDiffs?.length) {
-    return resolved;
+  if (!preview?.fieldDiffs?.length) {
+    return baseData;
   }
 
-  const baseData = cloneValue(entry.crawlerData);
   const mutableBaseData = baseData as unknown as Record<string, unknown>;
 
   for (const diff of preview.fieldDiffs) {
     const selection = fieldSelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
-    const selectedValue = selection === "old" ? diff.oldValue : diff.newValue;
-    mutableBaseData[diff.field] = cloneValue(selectedValue);
+    if (selection === "old") {
+      if (diff.kind === "image") {
+        applyOldImageSelection(mutableBaseData, diff, hasExistingCrawlerData);
+      } else {
+        mutableBaseData[diff.field] = cloneValue(diff.oldValue);
+      }
+      continue;
+    }
+
+    mutableBaseData[diff.field] = cloneValue(diff.newValue);
+
+    if (diff.kind === "image") {
+      const sourceField = getImageSourceField(diff.field);
+      if (!sourceField) {
+        continue;
+      }
+
+      mutableBaseData[sourceField] = cloneValue(buildSelectedImageSourceValue(diff));
+    }
+
+    syncSharedFanartWithThumbSelection(mutableBaseData, diff, selection);
   }
 
   return baseData;
+};
+
+const buildAssetDecisions = (
+  fieldDiffs: FieldDiff[] | undefined,
+  fieldSelections: Record<string, MaintenanceFieldSelectionSide> | undefined,
+): MaintenanceAssetDecisions | undefined => {
+  const assetDecisions: MaintenanceAssetDecisions = {};
+
+  for (const diff of fieldDiffs ?? []) {
+    const selection = fieldSelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
+
+    if (diff.field === "thumb_url" && diff.kind === "image") {
+      assetDecisions.fanart = selection === "old" ? "preserve" : "replace";
+    }
+
+    if (diff.field === "sample_images" && diff.kind === "imageCollection") {
+      assetDecisions.sceneImages = selection === "old" ? "preserve" : "replace";
+    }
+  }
+
+  return Object.keys(assetDecisions).length > 0 ? assetDecisions : undefined;
+};
+
+const addFanartPreviewFallbacks = (
+  diff: FieldDiff,
+  selectedSide: MaintenanceFieldSelectionSide,
+  alternatives: MaintenanceImageAlternatives,
+): void => {
+  if (diff.kind !== "image" || diff.field !== "thumb_url" || selectedSide !== "new") {
+    return;
+  }
+
+  alternatives.fanart_url = dedupeStrings([...(alternatives.fanart_url ?? []), ...diff.newPreview.fallbackSrcs]);
 };
 
 export const buildMaintenanceCommitItem = (
@@ -235,16 +312,22 @@ export const buildMaintenanceCommitItem = (
   const filteredAlternatives: MaintenanceImageAlternatives = {};
 
   if (crawlerData && proposedCrawlerData && imageAlternatives) {
-    for (const field of ["thumb_url", "poster_url", "fanart_url"] as const) {
+    for (const field of ["thumb_url", "poster_url"] as const) {
       if (crawlerData[field] === proposedCrawlerData[field] && imageAlternatives[field]?.length) {
         filteredAlternatives[field] = imageAlternatives[field];
       }
     }
   }
 
+  for (const diff of preview?.fieldDiffs ?? []) {
+    const selectedSide = fieldSelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
+    addFanartPreviewFallbacks(diff, selectedSide, filteredAlternatives);
+  }
+
   return {
     entry,
     crawlerData,
     imageAlternatives: Object.keys(filteredAlternatives).length > 0 ? filteredAlternatives : undefined,
+    assetDecisions: buildAssetDecisions(preview?.fieldDiffs, fieldSelections),
   };
 };

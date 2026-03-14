@@ -48,16 +48,26 @@ export const toDetailViewItemFromMaintenanceEntry = (
   entry: LocalScanEntry,
   result?: MaintenanceItemResult | MaintenancePreviewItem,
 ): DetailViewItem => {
-  const data = entry.crawlerData;
+  const resultData =
+    result && "proposedCrawlerData" in result
+      ? result.proposedCrawlerData
+      : result && "crawlerData" in result
+        ? result.crawlerData
+        : undefined;
+  const data = entry.crawlerData ?? resultData;
   const hasEntryError = Boolean(entry.scanError);
+  const hasResultError = result?.status === "failed" || result?.status === "blocked";
+  const minimalErrorView = hasEntryError && !entry.crawlerData && !resultData;
+  const errorMessage = hasResultError ? result?.error : !result && hasEntryError ? entry.scanError : undefined;
 
   return {
     id: entry.id,
-    status: result?.status === "failed" || result?.status === "blocked" || hasEntryError ? "failed" : "success",
+    status: hasResultError || (!result && hasEntryError) ? "failed" : "success",
     number: entry.fileInfo.number,
+    minimalErrorView,
     path: entry.videoPath,
     nfoPath: entry.nfoPath,
-    title: getMaintenanceDetailTitle(entry),
+    title: data?.title_zh ?? data?.title ?? entry.fileInfo.fileName,
     actors: data?.actors,
     outline: data?.plot_zh ?? data?.plot,
     tags: data?.genres,
@@ -69,11 +79,19 @@ export const toDetailViewItemFromMaintenanceEntry = (
     studio: data?.studio,
     publisher: data?.publisher,
     score: typeof data?.rating === "number" ? String(data.rating) : undefined,
-    posterUrl: entry.assets.poster ?? data?.poster_url,
-    thumbUrl: entry.assets.thumb ?? entry.assets.fanart ?? data?.thumb_url ?? data?.fanart_url,
-    fanartUrl: entry.assets.fanart ?? entry.assets.thumb ?? data?.fanart_url ?? data?.thumb_url,
-    outputPath: entry.currentDir,
-    sceneImages: entry.assets.sceneImages.length > 0 ? entry.assets.sceneImages : data?.sample_images,
-    errorMessage: result?.error ?? entry.scanError,
+    posterUrl: minimalErrorView ? undefined : (entry.assets.poster ?? data?.poster_url),
+    thumbUrl: minimalErrorView
+      ? undefined
+      : (entry.assets.thumb ?? entry.assets.fanart ?? data?.thumb_url ?? data?.fanart_url),
+    fanartUrl: minimalErrorView
+      ? undefined
+      : (entry.assets.fanart ?? entry.assets.thumb ?? data?.fanart_url ?? data?.thumb_url),
+    outputPath: minimalErrorView ? undefined : entry.currentDir,
+    sceneImages: minimalErrorView
+      ? undefined
+      : entry.assets.sceneImages.length > 0
+        ? entry.assets.sceneImages
+        : data?.sample_images,
+    errorMessage,
   };
 };

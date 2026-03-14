@@ -1,3 +1,4 @@
+import type { MaintenancePreviewItem } from "@shared/types";
 import { Play, RefreshCw, StopCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -32,6 +33,16 @@ const asMessage = (error: unknown): string => {
   return String(error);
 };
 
+const formatPreviewStatusText = (readyCount: number, blockedCount: number): string => {
+  return blockedCount > 0
+    ? `预览完成 · 可执行 ${readyCount} · 阻塞 ${blockedCount}`
+    : `预览完成 · 可执行 ${readyCount} 项`;
+};
+
+const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+};
+
 export default function MaintenanceBatchBar({ mediaPath, className }: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
   const {
@@ -47,7 +58,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     previewResults,
     previewReadyCount,
     previewBlockedCount,
-    fieldSelections,
     setEntries,
     setExecutionStatus,
     setCurrentPath,
@@ -57,6 +67,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     applyPreviewResult,
     clearPreviewResults,
     beginExecution,
+    rollbackExecutionStart,
   } = useMaintenanceStore(
     useShallow((state) => ({
       entries: state.entries,
@@ -71,7 +82,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       previewResults: state.previewResults,
       previewReadyCount: state.previewReadyCount,
       previewBlockedCount: state.previewBlockedCount,
-      fieldSelections: state.fieldSelections,
       setEntries: state.setEntries,
       setExecutionStatus: state.setExecutionStatus,
       setCurrentPath: state.setCurrentPath,
@@ -81,12 +91,14 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       applyPreviewResult: state.applyPreviewResult,
       clearPreviewResults: state.clearPreviewResults,
       beginExecution: state.beginExecution,
+      rollbackExecutionStart: state.rollbackExecutionStart,
     })),
   );
 
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
 
   const presetMeta = getMaintenancePresetMeta(presetId);
+  const supportsExecution = presetMeta.supportsExecution !== false;
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
   const executing = executionStatus === "executing" || executionStatus === "stopping";
   const scanning = executionStatus === "scanning";
@@ -145,6 +157,10 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   };
 
   const handlePreview = async () => {
+    if (!supportsExecution) {
+      return false;
+    }
+
     if (isScraping) {
       toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
       return false;
@@ -158,41 +174,74 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     clearPreviewResults();
     setPreviewPending(true);
     setStatusText(`正在预览 ${selectedEntries.length} 项...`);
+    const requestedPresetId = presetId;
+    const requestedEntries = selectedEntries;
 
     try {
       const preview = await ipc.maintenance.preview(selectedEntries, presetId);
+      const liveState = useMaintenanceStore.getState();
+      const previewExpired =
+        liveState.presetId !== requestedPresetId ||
+        !areEntriesEqual(
+          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id)),
+          requestedEntries,
+        );
+
+      if (previewExpired) {
+        return null;
+      }
+
       applyPreviewResult(preview);
-      setStatusText(
-        preview.blockedCount > 0
-          ? `预览完成 · 可执行 ${preview.readyCount} · 阻塞 ${preview.blockedCount}`
-          : `预览完成 · 可执行 ${preview.readyCount} 项`,
-      );
+      setStatusText(formatPreviewStatusText(preview.readyCount, preview.blockedCount));
       if (usesDiffView) {
         toast.info(
           preview.readyCount > 0
-            ? "预览完成，请在右侧数据对比中确认执行。"
+            ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
             : "预览完成，请在右侧数据对比中查看阻塞项。",
         );
       }
-      return true;
+      return preview;
     } catch (error) {
+      const liveState = useMaintenanceStore.getState();
+      const previewExpired =
+        liveState.presetId !== requestedPresetId ||
+        !areEntriesEqual(
+          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id)),
+          requestedEntries,
+        );
+
+      if (previewExpired) {
+        return null;
+      }
+
       setPreviewPending(false);
       setStatusText("预览失败");
       clearPreviewResults();
       toast.error(`预览失败: ${asMessage(error)}`);
-      return false;
+      return null;
     }
   };
 
-  const handleExecute = async () => {
+  const handleExecute = async (previewMapOverride?: Record<string, MaintenancePreviewItem>) => {
+    if (!supportsExecution) {
+      toast.info("“读取本地”预设只需扫描目录，无需执行。");
+      return;
+    }
+
     if (isScraping) {
       toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
       return;
     }
 
-    const executableEntries = selectedEntries.filter((entry) => previewResults[entry.id]?.status === "ready");
+    const liveState = useMaintenanceStore.getState();
+    const effectivePreviewResults = previewMapOverride ?? liveState.previewResults;
+    const effectiveFieldSelections = liveState.fieldSelections;
+    const latestSelectedEntries = liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id));
+    const executableEntries = latestSelectedEntries.filter(
+      (entry) => effectivePreviewResults[entry.id]?.status === "ready",
+    );
     const commitItems = executableEntries.map((entry) =>
-      buildMaintenanceCommitItem(entry, previewResults[entry.id], fieldSelections[entry.id]),
+      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.id], effectiveFieldSelections[entry.id]),
     );
 
     if (commitItems.length === 0) {
@@ -208,7 +257,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       await ipc.maintenance.execute(commitItems, presetId);
       toast.success(`维护任务已启动，共 ${commitItems.length} 项`);
     } catch (error) {
-      setExecutionStatus("idle");
+      rollbackExecutionStart();
       setStatusText("启动失败");
       toast.error(`启动失败: ${asMessage(error)}`);
     }
@@ -267,19 +316,36 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <RefreshCw className={cn("mr-2 h-4 w-4", scanning && "animate-spin")} />
               {entriesCount > 0 ? "重新扫描" : "扫描目录"}
             </Button>
-            <Button
-              onClick={async () => {
-                const ready = await handlePreview();
-                if (ready && !usesDiffView) {
-                  setExecuteDialogOpen(true);
-                }
-              }}
-              disabled={isScraping || scanning || previewPending || entriesCount === 0 || selectedCount === 0}
-              className="h-9 rounded-lg px-4"
-            >
-              {previewPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              {previewActionLabel}
-            </Button>
+            {supportsExecution && (
+              <Button
+                onClick={async () => {
+                  const preview = await handlePreview();
+                  if (preview && !usesDiffView) {
+                    const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
+                    void handleExecute(previewMap);
+                  }
+                }}
+                disabled={isScraping || scanning || previewPending || entriesCount === 0 || selectedCount === 0}
+                className="h-9 rounded-lg px-4"
+              >
+                {previewPending ? (
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="mr-2 h-4 w-4" />
+                )}
+                {previewActionLabel}
+              </Button>
+            )}
+            {usesDiffView && (
+              <Button
+                variant="secondary"
+                onClick={() => setExecuteDialogOpen(true)}
+                disabled={previewPending || !hasPreviewResults || previewReadyCount === 0}
+                className="h-9 rounded-lg px-4"
+              >
+                数据替换
+              </Button>
+            )}
           </>
         ) : (
           <Button variant="destructive" onClick={() => setStopDialogOpen(true)} className="h-9 rounded-lg px-4">
@@ -290,11 +356,11 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       </div>
       <div className="flex justify-end px-1 text-[11px] leading-4 text-muted-foreground">{presetMeta.description}</div>
 
-      <Dialog open={executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
+      <Dialog open={usesDiffView && executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
         <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>确认执行维护操作</DialogTitle>
-            <DialogDescription>请确认本次维护预设和预览结果。</DialogDescription>
+            <DialogTitle>确认数据替换</DialogTitle>
+            <DialogDescription>这里会按当前预览结果，对已选条目批量写入元数据、图片和文件调整。</DialogDescription>
           </DialogHeader>
           {previewPending ? (
             <div className="space-y-3 py-2 text-sm text-muted-foreground">
@@ -396,7 +462,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                 void handleExecute();
               }}
             >
-              {previewReadyCount === 0 ? "无可执行项" : `确认执行 ${previewReadyCount} 项`}
+              {previewReadyCount === 0 ? "无可执行项" : `开始批量执行 ${previewReadyCount} 项`}
             </Button>
           </DialogFooter>
         </DialogContent>

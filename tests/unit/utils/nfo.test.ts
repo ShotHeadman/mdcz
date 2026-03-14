@@ -25,6 +25,7 @@ describe("parseNfo", () => {
     expect(result.thumb_url).toBe("thumb.jpg");
     expect(result.poster_url).toBe("poster.jpg");
     expect(result.fanart_url).toBe("fanart.jpg");
+    expect(result.sample_images).toEqual([]);
   });
 
   it("falls back to the first aspectless thumb", () => {
@@ -40,6 +41,32 @@ describe("parseNfo", () => {
 
     expect(result.thumb_url).toBe("https://example.com/thumb.jpg");
     expect(result.poster_url).toBeUndefined();
+  });
+
+  it("reads persisted remote image source urls independently from local artwork paths", () => {
+    const xml = `
+      <movie>
+        <title>Source Urls</title>
+        <uniqueid type="${Website.DMM}">SRC-001</uniqueid>
+        <thumb aspect="poster">poster.jpg</thumb>
+        <thumb aspect="thumb">thumb.jpg</thumb>
+        <fanart>
+          <thumb>fanart.jpg</thumb>
+        </fanart>
+        <thumb_source_url>https://example.com/thumb-remote.jpg</thumb_source_url>
+        <poster_source_url>https://example.com/poster-remote.jpg</poster_source_url>
+        <fanart_source_url>https://example.com/fanart-remote.jpg</fanart_source_url>
+      </movie>
+    `;
+
+    const result = parseNfo(xml);
+
+    expect(result.thumb_url).toBe("thumb.jpg");
+    expect(result.poster_url).toBe("poster.jpg");
+    expect(result.fanart_url).toBe("fanart.jpg");
+    expect(result.thumb_source_url).toBe("https://example.com/thumb-remote.jpg");
+    expect(result.poster_source_url).toBe("https://example.com/poster-remote.jpg");
+    expect(result.fanart_source_url).toBe("https://example.com/fanart-remote.jpg");
   });
 
   it("round-trips standard actor nodes, managed movie tags, and streamdetails", () => {
@@ -110,5 +137,51 @@ describe("parseNfo", () => {
 
     expect(result.plot).toBe("概要内容");
     expect(result.plot_zh).toBe("概要内容");
+  });
+
+  it("ignores legacy standalone year data and only keeps release_date", () => {
+    const withReleaseDateXml = `
+      <movie>
+        <title>Release Date Wins</title>
+        <uniqueid type="${Website.DMM}">ABC-2024</uniqueid>
+        <premiered>2024-01-02</premiered>
+        <releasedate>2024-01-02</releasedate>
+        <year>1999</year>
+      </movie>
+    `;
+    const yearOnlyXml = `
+      <movie>
+        <title>Year Only</title>
+        <uniqueid type="${Website.DMM}">ABC-2001</uniqueid>
+        <year>2001</year>
+      </movie>
+    `;
+
+    const withReleaseDate = parseNfo(withReleaseDateXml);
+    const yearOnly = parseNfo(yearOnlyXml);
+
+    expect(withReleaseDate.release_date).toBe("2024-01-02");
+    expect(withReleaseDate).not.toHaveProperty("release_year");
+    expect(yearOnly.release_date).toBeUndefined();
+    expect(yearOnly).not.toHaveProperty("release_year");
+  });
+
+  it("ignores legacy extra fanart thumbs instead of restoring them as sample images", () => {
+    const xml = `
+      <movie>
+        <title>Legacy Fanart</title>
+        <uniqueid type="${Website.DMM}">ABC-555</uniqueid>
+        <fanart>
+          <thumb>fanart.jpg</thumb>
+          <thumb>https://example.com/scene-001.jpg</thumb>
+          <thumb>https://example.com/scene-002.jpg</thumb>
+        </fanart>
+      </movie>
+    `;
+
+    const result = parseNfo(xml);
+
+    expect(result.fanart_url).toBe("fanart.jpg");
+    expect(result.sample_images).toEqual([]);
   });
 });

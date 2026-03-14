@@ -18,6 +18,10 @@ export interface MaintenancePreset {
   configOverrides: DeepPartial<Configuration>;
 }
 
+export const supportsMaintenanceExecution = (preset: MaintenancePreset): boolean => {
+  return Object.values(preset.steps).some(Boolean);
+};
+
 export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset> = {
   read_local: {
     id: "read_local",

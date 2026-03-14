@@ -11,6 +11,7 @@ import type {
   DownloadedAssets,
   FieldDiff,
   LocalScanEntry,
+  MaintenanceAssetDecisions,
   MaintenanceImageAlternatives,
   PathDiff,
   ScrapeResult,
@@ -56,6 +57,7 @@ interface PreparedMaintenanceFile {
 interface CommittedMaintenanceFile {
   crawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
+  assetDecisions?: MaintenanceAssetDecisions;
 }
 
 interface ResolvedMaintenanceArtifacts {
@@ -121,6 +123,7 @@ export class MaintenanceFileScraper {
             this.deps.signalService.showLogText(`[${fileInfo.number}] 场景图: ${downloaded}/${total}`);
           },
           forceReplace,
+          assetDecisions: committed?.assetDecisions,
         });
       }
 
@@ -286,10 +289,13 @@ export class MaintenanceFileScraper {
       crawlerData = await this.deps.translateService.translateCrawlerData(crawlerData, config);
     }
 
+    const comparisonBase = steps.aggregate ? this.buildDiffBaseline(entry, crawlerData) : undefined;
     const { fieldDiffs, unchangedFieldDiffs } =
-      entry.crawlerData && crawlerData && steps.aggregate
-        ? partitionCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
+      comparisonBase && crawlerData && steps.aggregate
+        ? partitionCrawlerDataWithOptions(comparisonBase, crawlerData, {
             includeTranslatedFields: config.translate.enableTranslation,
+            entry,
+            imageAlternatives,
           })
         : { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
 
@@ -341,10 +347,13 @@ export class MaintenanceFileScraper {
     }
 
     const crawlerData = committed.crawlerData ?? entry.crawlerData;
+    const comparisonBase = steps.aggregate ? this.buildDiffBaseline(entry, crawlerData) : undefined;
     const { fieldDiffs, unchangedFieldDiffs } =
-      entry.crawlerData && crawlerData && steps.aggregate
-        ? partitionCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
+      comparisonBase && crawlerData && steps.aggregate
+        ? partitionCrawlerDataWithOptions(comparisonBase, crawlerData, {
             includeTranslatedFields: config.translate.enableTranslation,
+            entry,
+            imageAlternatives: committed.imageAlternatives,
           })
         : { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
 
@@ -574,6 +583,25 @@ export class MaintenanceFileScraper {
     this.deps.signalService.setProgress(value, fileIndex, totalFiles);
   }
 
+  private buildDiffBaseline(entry: LocalScanEntry, crawlerData: CrawlerData | undefined): CrawlerData | undefined {
+    if (entry.crawlerData) {
+      return entry.crawlerData;
+    }
+
+    if (!crawlerData) {
+      return undefined;
+    }
+
+    return {
+      title: "",
+      number: crawlerData.number || entry.fileInfo.number,
+      actors: [],
+      genres: [],
+      sample_images: [],
+      website: crawlerData.website,
+    };
+  }
+
   private getForcedPrimaryImageRefresh(
     entry: LocalScanEntry,
     crawlerData: CrawlerData,
@@ -591,6 +619,10 @@ export class MaintenanceFileScraper {
       if (nextValue && nextValue !== currentValue) {
         forceReplace[key] = true;
       }
+    }
+
+    if (forceReplace.thumb) {
+      forceReplace.fanart = true;
     }
 
     return forceReplace;

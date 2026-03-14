@@ -29,13 +29,44 @@ const getIdleStatusText = (entriesCount: number, emptyText = "就绪"): string =
   return entriesCount > 0 ? `已扫描 ${entriesCount} 项` : emptyText;
 };
 
+const summarizeItemResults = (itemResults: Record<string, MaintenanceItemResult>) => {
+  let successCount = 0;
+  let failedCount = 0;
+  let activeCount = 0;
+
+  for (const result of Object.values(itemResults)) {
+    if (result.status === "success") {
+      successCount += 1;
+      continue;
+    }
+
+    if (result.status === "failed") {
+      failedCount += 1;
+      continue;
+    }
+
+    activeCount += 1;
+  }
+
+  return {
+    successCount,
+    failedCount,
+    activeCount,
+    totalCount: successCount + failedCount + activeCount,
+  };
+};
+
 const formatStatusText = (
   status: MaintenanceStatus,
   scannedEntries: number,
+  itemResults: Record<string, MaintenanceItemResult>,
   previousText: string,
   previousExecutionStatus: MaintenanceExecutionStatus,
 ): string => {
   const wasStopping = previousExecutionStatus === "stopping" || previousText.startsWith("已停止");
+  const wasExecuting = previousExecutionStatus === "executing" || previousText.startsWith("执行完成");
+  const localSummary = summarizeItemResults(itemResults);
+  const hasTerminalLocalSummary = localSummary.totalCount > 0 && localSummary.activeCount === 0;
 
   if (status.state === "scanning") {
     return "正在扫描目录...";
@@ -49,12 +80,18 @@ const formatStatusText = (
     return `正在停止 · 已完成 ${status.completedEntries}/${status.totalEntries}`;
   }
 
-  if (wasStopping && status.totalEntries > 0) {
-    return `已停止 · 成功 ${status.successCount} · 失败/取消 ${status.failedCount}`;
+  if (wasStopping && (status.totalEntries > 0 || hasTerminalLocalSummary)) {
+    return `已停止 · 成功 ${status.totalEntries > 0 ? status.successCount : localSummary.successCount} · 失败/取消 ${
+      status.totalEntries > 0 ? status.failedCount : localSummary.failedCount
+    }`;
   }
 
   if (status.totalEntries > 0) {
     return `执行完成 · 成功 ${status.successCount} · 失败 ${status.failedCount}`;
+  }
+
+  if (wasExecuting && hasTerminalLocalSummary) {
+    return `执行完成 · 成功 ${localSummary.successCount} · 失败 ${localSummary.failedCount}`;
   }
 
   if (scannedEntries > 0) {
@@ -182,6 +219,7 @@ export interface MaintenanceState {
   clearPreviewResults: () => void;
   setFieldSelection: (entryId: string, field: string, side: MaintenanceFieldSelectionSide) => void;
   beginExecution: (entryIds: string[]) => void;
+  rollbackExecutionStart: () => void;
   applyStatusSnapshot: (status: MaintenanceStatus) => void;
   applyItemResult: (payload: MaintenanceItemResult) => void;
   resetDerivedData: () => void;
@@ -331,6 +369,15 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
       };
     }),
 
+  rollbackExecutionStart: () =>
+    set({
+      executionStatus: "idle",
+      progressValue: 0,
+      progressCurrent: 0,
+      progressTotal: 0,
+      itemResults: {},
+    }),
+
   applyStatusSnapshot: (status) =>
     set((state) => {
       const derivedProgress =
@@ -345,7 +392,13 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
         progressValue: nextProgress,
         progressCurrent: status.completedEntries,
         progressTotal: status.totalEntries,
-        statusText: formatStatusText(status, state.entries.length, state.statusText, state.executionStatus),
+        statusText: formatStatusText(
+          status,
+          state.entries.length,
+          state.itemResults,
+          state.statusText,
+          state.executionStatus,
+        ),
       };
     }),
 
@@ -392,13 +445,13 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
     }),
 });
 
-export const useMaintenanceStore = create<MaintenanceState>()(
-  isDev
-    ? persist(createMaintenanceState, {
+export const useMaintenanceStore = isDev
+  ? create<MaintenanceState>()(
+      persist(createMaintenanceState, {
         name: "maintenance-store",
         storage: maintenanceStoreStorage,
         partialize: partializeMaintenanceState,
         merge: mergePersistedMaintenanceState,
-      })
-    : createMaintenanceState,
-);
+      }),
+    )
+  : create<MaintenanceState>()(createMaintenanceState);

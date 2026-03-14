@@ -49,7 +49,6 @@ export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStra
   publisher: "first_non_null",
   series: "first_non_null",
   release_date: "first_non_null",
-  release_year: "first_non_null",
   durationSeconds: "first_non_null",
   rating: "first_non_null",
   thumb_url: "highest_quality",

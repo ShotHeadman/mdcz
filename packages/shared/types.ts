@@ -39,12 +39,14 @@ export interface CrawlerData {
   plot?: string;
   plot_zh?: string;
   release_date?: string;
-  release_year?: number;
   durationSeconds?: number;
   rating?: number;
   thumb_url?: string;
   poster_url?: string;
   fanart_url?: string;
+  thumb_source_url?: string;
+  poster_source_url?: string;
+  fanart_source_url?: string;
   sample_images: string[];
   trailer_url?: string;
   website: Website;
@@ -131,13 +133,40 @@ export interface LocalScanEntry {
 }
 
 /** A single field-level difference between old and new CrawlerData. */
-export interface FieldDiff {
+export interface FieldDiffImagePreview {
+  src: string;
+  fallbackSrcs: string[];
+}
+
+export interface FieldDiffImageCollectionPreview {
+  items: string[];
+}
+
+interface BaseFieldDiff {
   field: keyof CrawlerData;
   label: string;
   oldValue: unknown;
   newValue: unknown;
   changed: boolean;
 }
+
+export interface ValueFieldDiff extends BaseFieldDiff {
+  kind: "value";
+}
+
+export interface ImageFieldDiff extends BaseFieldDiff {
+  kind: "image";
+  oldPreview: FieldDiffImagePreview;
+  newPreview: FieldDiffImagePreview;
+}
+
+export interface ImageCollectionFieldDiff extends BaseFieldDiff {
+  kind: "imageCollection";
+  oldPreview: FieldDiffImageCollectionPreview;
+  newPreview: FieldDiffImageCollectionPreview;
+}
+
+export type FieldDiff = ValueFieldDiff | ImageFieldDiff | ImageCollectionFieldDiff;
 
 /** Path migration plan for a single video. */
 export interface PathDiff {
@@ -174,10 +203,16 @@ export interface MaintenanceImageAlternatives {
   fanart_url?: string[];
 }
 
+export interface MaintenanceAssetDecisions {
+  fanart?: "preserve" | "replace";
+  sceneImages?: "preserve" | "replace";
+}
+
 export interface MaintenanceCommitItem {
   entry: LocalScanEntry;
   crawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
+  assetDecisions?: MaintenanceAssetDecisions;
 }
 
 export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed";

@@ -97,7 +97,7 @@ describe("MaintenanceService stop flow", () => {
       () => runningTask.promise as never,
     );
 
-    await service.execute([createCommitItem("abp-123"), createCommitItem("abp-456")], "read_local");
+    await service.execute([createCommitItem("abp-123"), createCommitItem("abp-456")], "organize_files");
     service.stop();
 
     runningTask.resolve({
@@ -125,10 +125,10 @@ describe("MaintenanceService stop flow", () => {
 
     expect(service.getStatus()).toMatchObject({
       state: "idle",
-      totalEntries: 2,
-      completedEntries: 2,
-      successCount: 1,
-      failedCount: 1,
+      totalEntries: 0,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
     });
     expect(signalService.itemResults).toEqual(
       expect.arrayContaining([
@@ -147,5 +147,29 @@ describe("MaintenanceService stop flow", () => {
         }),
       ]),
     );
+  });
+
+  it("rejects executing the scan-only local-read preset", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse(defaultConfiguration);
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+
+    await expect(service.execute([createCommitItem("abp-123")], "read_local")).rejects.toThrow(
+      "当前预设仅用于扫描本地数据，无需执行",
+    );
+    expect(service.getStatus()).toMatchObject({
+      state: "idle",
+      totalEntries: 0,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
+    });
   });
 });

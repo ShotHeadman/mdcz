@@ -4,6 +4,10 @@ import type { Configuration } from "@main/services/config";
 import type { ActorProfile, CrawlerData } from "@shared/types";
 
 const isRemoteActorPhoto = (value: string): boolean => /^https?:\/\//iu.test(value);
+const toRemoteImageSourceUrl = (value: string | undefined): string | undefined => {
+  const normalized = value?.trim();
+  return normalized && /^https?:\/\//iu.test(normalized) ? normalized : undefined;
+};
 
 const toLocalActorPhotoPaths = (movieDir: string, actorProfiles: ActorProfile[] | undefined): string[] => {
   const resolvedPaths: string[] = [];
@@ -27,6 +31,23 @@ const toLocalActorPhotoPaths = (movieDir: string, actorProfiles: ActorProfile[] 
   return resolvedPaths;
 };
 
+const withPersistedImageSourceUrls = (crawlerData: CrawlerData): CrawlerData => {
+  const thumbSourceUrl = crawlerData.thumb_source_url ?? toRemoteImageSourceUrl(crawlerData.thumb_url);
+  const posterSourceUrl = crawlerData.poster_source_url ?? toRemoteImageSourceUrl(crawlerData.poster_url);
+  const fanartSourceUrl =
+    crawlerData.fanart_source_url ??
+    toRemoteImageSourceUrl(crawlerData.fanart_url) ??
+    thumbSourceUrl ??
+    toRemoteImageSourceUrl(crawlerData.thumb_url);
+
+  return {
+    ...crawlerData,
+    thumb_source_url: thumbSourceUrl,
+    poster_source_url: posterSourceUrl,
+    fanart_source_url: fanartSourceUrl,
+  };
+};
+
 export const prepareCrawlerDataForNfo = async (
   actorImageService: ActorImageService,
   configuration: Configuration,
@@ -45,7 +66,7 @@ export const prepareCrawlerDataForNfo = async (
 
   return {
     data: {
-      ...crawlerData,
+      ...withPersistedImageSourceUrls(crawlerData),
       actor_profiles: actorProfiles,
     },
     actorPhotoPaths: toLocalActorPhotoPaths(options.movieDir, actorProfiles),

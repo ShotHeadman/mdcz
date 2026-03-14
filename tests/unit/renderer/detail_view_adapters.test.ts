@@ -112,6 +112,7 @@ describe("toDetailViewItemFromScrapeResult", () => {
       id: "entry-1",
       status: "failed",
       number: "ABC-123",
+      minimalErrorView: true,
       path: "/media/ABC-123.mp4",
       nfoPath: "/media/ABC-123.nfo",
       title: "ABC-123.mp4",
@@ -126,11 +127,11 @@ describe("toDetailViewItemFromScrapeResult", () => {
       studio: undefined,
       publisher: undefined,
       score: undefined,
-      posterUrl: "/media/poster.jpg",
-      thumbUrl: "/media/thumb.jpg",
-      fanartUrl: "/media/fanart.jpg",
-      outputPath: "/media",
-      sceneImages: ["/media/extrafanart/fanart1.jpg"],
+      posterUrl: undefined,
+      thumbUrl: undefined,
+      fanartUrl: undefined,
+      outputPath: undefined,
+      sceneImages: undefined,
       errorMessage: "NFO 解析失败: Invalid NFO root",
     });
   });
@@ -164,6 +165,7 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       id: "entry-1",
       status: "failed",
       number: "ABC-123",
+      minimalErrorView: false,
       path: "/media/ABC-123.mp4",
       nfoPath: "/media/ABC-123.nfo",
       title: "本地标题",
@@ -184,6 +186,52 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       outputPath: "/media",
       sceneImages: ["/media/extrafanart/fanart1.jpg"],
       errorMessage: "Preview blocked",
+    });
+  });
+
+  it("falls back to preview crawler data when local NFO parsing failed but refresh preview succeeded", () => {
+    const entry: LocalScanEntry = {
+      ...createEntry(createCrawlerData()),
+      crawlerData: undefined,
+      scanError: "NFO 解析失败: NFO missing website",
+    };
+    const preview: MaintenancePreviewItem = {
+      entryId: entry.id,
+      status: "ready",
+      proposedCrawlerData: createCrawlerData({
+        title: "Remote Title",
+        title_zh: "远程标题",
+        plot: "Remote Plot",
+        poster_url: "https://example.com/poster.jpg",
+        thumb_url: "https://example.com/thumb.jpg",
+      }),
+    };
+
+    expect(toDetailViewItemFromMaintenanceEntry(entry, preview)).toEqual({
+      id: "entry-1",
+      status: "success",
+      number: "ABC-123",
+      minimalErrorView: false,
+      path: "/media/ABC-123.mp4",
+      nfoPath: "/media/ABC-123.nfo",
+      title: "远程标题",
+      actors: ["Actor A"],
+      outline: "Remote Plot",
+      tags: ["Drama"],
+      release: undefined,
+      duration: undefined,
+      resolution: "1080p",
+      directors: undefined,
+      series: undefined,
+      studio: undefined,
+      publisher: undefined,
+      score: undefined,
+      posterUrl: "/media/poster.jpg",
+      thumbUrl: "/media/thumb.jpg",
+      fanartUrl: "/media/fanart.jpg",
+      outputPath: "/media",
+      sceneImages: ["/media/extrafanart/fanart1.jpg"],
+      errorMessage: undefined,
     });
   });
 });

@@ -22,7 +22,7 @@ import { NfoGenerator } from "../NfoGenerator";
 import { TranslateService } from "../TranslateService";
 import { LocalScanService } from "./LocalScanService";
 import { MaintenanceFileScraper } from "./MaintenanceFileScraper";
-import { getPreset } from "./presets";
+import { getPreset, supportsMaintenanceExecution } from "./presets";
 
 function mergeDeep<T extends Record<string, unknown>>(base: T, overrides: DeepPartial<T>): T {
   const result = { ...base } as Record<string, unknown>;
@@ -50,18 +50,20 @@ function mergeDeep<T extends Record<string, unknown>>(base: T, overrides: DeepPa
   return result as T;
 }
 
+const createIdleMaintenanceStatus = (): MaintenanceStatus => ({
+  state: "idle",
+  totalEntries: 0,
+  completedEntries: 0,
+  successCount: 0,
+  failedCount: 0,
+});
+
 export class MaintenanceService {
   private readonly logger = loggerService.getLogger("MaintenanceService");
 
   private readonly localScanService = new LocalScanService();
 
-  private status: MaintenanceStatus = {
-    state: "idle",
-    totalEntries: 0,
-    completedEntries: 0,
-    successCount: 0,
-    failedCount: 0,
-  };
+  private status: MaintenanceStatus = createIdleMaintenanceStatus();
 
   private controller: AbortController | null = null;
 
@@ -94,7 +96,7 @@ export class MaintenanceService {
       this.signalService.showLogText(`[维护] 扫描完成：发现 ${entries.length} 个影片`);
       return entries;
     } finally {
-      this.status = { ...this.status, state: "idle" };
+      this.status = createIdleMaintenanceStatus();
     }
   }
 
@@ -108,6 +110,9 @@ export class MaintenanceService {
     }
 
     const { preset, config } = await this.preparePresetConfig(presetId);
+    if (!supportsMaintenanceExecution(preset)) {
+      throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    }
     const deps = this.createDependencies();
     const fileScraper = new MaintenanceFileScraper(deps, preset);
     const queue = new PQueue({ concurrency: Math.max(1, config.scrape.threadNumber) });
@@ -137,6 +142,9 @@ export class MaintenanceService {
     }
 
     const { preset, config } = await this.preparePresetConfig(presetId);
+    if (!supportsMaintenanceExecution(preset)) {
+      throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    }
     const execution = { items, preset, config };
     this.controller = new AbortController();
     const totalItems = execution.items.length;
@@ -193,6 +201,7 @@ export class MaintenanceService {
               {
                 crawlerData: item.crawlerData,
                 imageAlternatives: item.imageAlternatives,
+                assetDecisions: item.assetDecisions,
               },
             );
 
@@ -257,7 +266,7 @@ export class MaintenanceService {
           : `[维护] 执行完成：成功 ${this.status.successCount}，失败 ${this.status.failedCount}`,
       );
     } finally {
-      this.status = { ...this.status, state: "idle" };
+      this.status = createIdleMaintenanceStatus();
       this.controller = null;
       this.queue = null;
     }

@@ -382,6 +382,35 @@ describe("DownloadManager keep flags", () => {
     await expect(readFile(join(root, "extrafanart", "fanart1.jpg"), "utf8")).resolves.toBe("old-1");
   });
 
+  it("removes existing scene images when maintenance explicitly replaces them with an empty set", async () => {
+    const { root, manager } = await createDownloadSubject({
+      "extrafanart/fanart1.jpg": "old-1",
+    });
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData({
+        sample_images: [],
+      }),
+      createDownloadConfig({
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadTrailer: false,
+        keepSceneImages: true,
+      }),
+      {},
+      {
+        assetDecisions: {
+          sceneImages: "replace",
+        },
+      },
+    );
+
+    expect(assets.sceneImages).toEqual([]);
+    expect(assets.downloaded).toEqual([]);
+    await expect(access(join(root, "extrafanart", "fanart1.jpg"))).rejects.toThrow();
+  });
+
   it("keeps the previous scene image when a refreshed download fails validation", async () => {
     const { root, manager } = await createDownloadSubject({
       "extrafanart/fanart1.jpg": "old-1",

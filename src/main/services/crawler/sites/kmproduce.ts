@@ -75,7 +75,6 @@ export class KMProduceCrawler extends BaseCrawler {
       plot: undefined,
       plot_zh: undefined,
       release_date: releaseDate,
-      release_year: undefined,
       durationSeconds,
       rating: undefined,
       thumb_url: thumbUrl,

@@ -67,6 +67,10 @@ const parseReleaseYear = (releaseDate: string | undefined): number | undefined =
 };
 
 const buildStringNodes = (values: string[]) => values.map((value) => value.trim()).filter((value) => value.length > 0);
+const toRemoteImageSourceUrl = (value: string | undefined): string | undefined => {
+  const normalized = value?.trim();
+  return normalized && /^https?:\/\//iu.test(normalized) ? normalized : undefined;
+};
 
 const truncateText = (value: string, maxChars: number): string => Array.from(value).slice(0, maxChars).join("");
 
@@ -110,10 +114,8 @@ const buildFanartNode = (
   data: CrawlerData,
   assets: DownloadedAssets | undefined,
 ): Record<string, unknown> | undefined => {
-  // When local fanart/backdrops exist, prefer filesystem-based artwork discovery
-  // so Jellyfin/Emby can pick up `fanart.jpg` plus `extrafanart`/`backdrop*`.
-  if (assets?.fanart || (assets?.sceneImages.length ?? 0) > 0) {
-    return undefined;
+  if (assets?.fanart) {
+    return { thumb: { "#text": basename(assets.fanart) } };
   }
 
   const primaryFanartUrl = data.fanart_url || data.thumb_url;
@@ -121,12 +123,7 @@ const buildFanartNode = (
     return undefined;
   }
 
-  const thumbs: Array<Record<string, unknown>> = [{ "#text": primaryFanartUrl }];
-  for (const imageUrl of data.sample_images.map((value) => value.trim()).filter((value) => value.length > 0)) {
-    thumbs.push({ "#text": imageUrl });
-  }
-
-  return { thumb: thumbs.length === 1 ? thumbs[0] : thumbs };
+  return { thumb: { "#text": primaryFanartUrl } };
 };
 
 export interface NfoOptions {
@@ -162,7 +159,7 @@ export class NfoGenerator {
     movie.premiered = data.release_date;
     movie.releasedate = data.release_date;
     movie.dateadded = new Date().toISOString();
-    movie.year = data.release_year ?? parseReleaseYear(data.release_date);
+    movie.year = parseReleaseYear(data.release_date);
     movie.runtime = runtimeMinutes;
     movie.rating = data.rating;
     movie.studio = data.studio;
@@ -207,6 +204,18 @@ export class NfoGenerator {
     if (fanartNode) {
       movie.fanart = fanartNode;
     }
+
+    const thumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
+    const posterSourceUrl = data.poster_source_url ?? toRemoteImageSourceUrl(data.poster_url);
+    const fanartSourceUrl =
+      data.fanart_source_url ??
+      toRemoteImageSourceUrl(data.fanart_url) ??
+      thumbSourceUrl ??
+      toRemoteImageSourceUrl(data.thumb_url);
+
+    movie.thumb_source_url = thumbSourceUrl;
+    movie.poster_source_url = posterSourceUrl;
+    movie.fanart_source_url = fanartSourceUrl;
 
     if (videoNode) {
       movie.fileinfo = {

@@ -6,7 +6,7 @@ import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient, ProbeResult } from "@main/services/network";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
-import type { CrawlerData, DownloadedAssets } from "@shared/types";
+import type { CrawlerData, DownloadedAssets, MaintenanceAssetDecisions } from "@shared/types";
 import type { ImageAlternatives } from "./aggregation";
 
 const normalizeUrl = (input?: string): string | null => {
@@ -58,6 +58,8 @@ export interface DownloadCallbacks {
   onSceneProgress?: (downloaded: number, total: number) => void;
   /** Force a primary image to refresh even when its keep flag is enabled. */
   forceReplace?: Partial<Record<PrimaryImageKey, boolean>>;
+  /** Preserve or replace selected maintenance-managed assets regardless of preset keep flags. */
+  assetDecisions?: MaintenanceAssetDecisions;
 }
 
 type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart">;
@@ -136,12 +138,22 @@ export class DownloadManager {
     };
 
     const forceReplace = callbacks?.forceReplace ?? {};
+    const assetDecisions = callbacks?.assetDecisions ?? {};
     const primaryTasks = this.buildPrimaryImageTasks(outputDir, data, config, imageAlternatives);
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
 
     for (const task of primaryTasks) {
       const existingAsset = await resolveExistingAsset(task.path);
-      if (task.keepExisting && existingAsset && !forceReplace[task.key]) {
+      const keepExisting =
+        task.key === "fanart"
+          ? assetDecisions.fanart === "preserve"
+            ? true
+            : assetDecisions.fanart === "replace"
+              ? false
+              : task.keepExisting
+          : task.keepExisting;
+
+      if (keepExisting && existingAsset && !forceReplace[task.key]) {
         assets[task.key] = existingAsset;
         continue;
       }
@@ -175,13 +187,25 @@ export class DownloadManager {
     if (config.download.downloadSceneImages) {
       const sceneDir = join(outputDir, config.paths.sceneImagesFolder);
       const existingSceneImages = await this.listExistingSceneImages(sceneDir);
-      if (config.download.keepSceneImages && existingSceneImages.length > 0) {
+      const forceReplaceSceneImages = assetDecisions.sceneImages === "replace";
+      const keepSceneImages =
+        assetDecisions.sceneImages === "preserve"
+          ? true
+          : assetDecisions.sceneImages === "replace"
+            ? false
+            : config.download.keepSceneImages;
+
+      if (keepSceneImages && existingSceneImages.length > 0) {
         assets.sceneImages.push(...existingSceneImages);
       } else {
         const urls = getSceneImageUrls(data, config.aggregation.behavior.maxSceneImages);
 
         if (urls.length === 0) {
-          assets.sceneImages.push(...existingSceneImages);
+          if (forceReplaceSceneImages && existingSceneImages.length > 0) {
+            await this.removeStaleSceneImages(existingSceneImages, [], sceneDir);
+          } else {
+            assets.sceneImages.push(...existingSceneImages);
+          }
         } else {
           const sceneTasks: SceneImageTask[] = urls.map((url, index) => ({
             url,
