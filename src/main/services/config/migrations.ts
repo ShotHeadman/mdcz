@@ -21,18 +21,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typ
 
 const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((e) => typeof e === "string");
 
-/** Append items to an array field inside a nested section, only if not already present. */
-const appendToArray = (raw: Record<string, unknown>, section: string, key: string, items: string[]): void => {
-  const obj = raw[section];
-  if (!isRecord(obj)) return;
-  const arr = obj[key];
-  if (!isStringArray(arr)) return;
-  for (const item of items) {
-    if (!arr.includes(item)) {
-      arr.push(item);
-    }
-  }
-};
+const stringArraysEqual = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
 
 /** Rename a key inside a nested section. */
 const renameKey = (raw: Record<string, unknown>, section: string, oldKey: string, newKey: string): void => {
@@ -46,19 +36,38 @@ const renameKey = (raw: Record<string, unknown>, section: string, oldKey: string
 
 const DEFAULT_FOLDER_TEMPLATE = "{actor}/{number}";
 
-const FIELD_PRIORITY_SITE_ADDITIONS: Record<string, string[]> = {
-  title: ["km_produce", "avbase"],
-  plot: ["avbase"],
-  actors: ["km_produce", "avbase"],
-  genres: ["km_produce", "avbase"],
-  thumb_url: ["km_produce", "avbase"],
-  poster_url: ["km_produce", "avbase"],
-  sample_images: ["avbase"],
-  studio: ["km_produce", "avbase"],
-  director: ["avbase"],
-  publisher: ["avbase"],
-  series: ["avbase"],
-  release_date: ["km_produce", "avbase"],
+const LEGACY_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+  title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
+  plot: ["mgstage", "dmm", "dmm_tv", "fc2", "jav321"],
+  actors: ["javdb", "dmm", "javbus", "mgstage", "km_produce"],
+  actor_profiles: ["javdb", "mgstage", "dmm"],
+  genres: ["javdb", "fc2", "dmm", "javbus", "km_produce"],
+  thumb_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
+  poster_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
+  sample_images: ["mgstage", "dmm", "javbus", "javdb"],
+  studio: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
+  director: ["dmm", "javdb"],
+  publisher: ["dmm", "fc2", "javdb"],
+  series: ["dmm", "javdb", "javbus"],
+  release_date: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
+  rating: ["javdb", "dmm"],
+};
+
+const CURRENT_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "javdb", "javbus", "jav321", "fc2"],
+  plot: ["avbase", "mgstage", "dmm", "dmm_tv", "jav321", "fc2"],
+  actors: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  actor_profiles: ["mgstage", "dmm", "javdb"],
+  genres: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  thumb_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
+  poster_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
+  sample_images: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  studio: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  director: ["avbase", "dmm", "javdb"],
+  publisher: ["avbase", "dmm", "javdb", "fc2"],
+  series: ["avbase", "dmm", "javdb", "javbus"],
+  release_date: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  rating: ["dmm_tv", "dmm", "javdb"],
 };
 
 const appendPathSegment = (template: string, segment: string): string => {
@@ -92,6 +101,26 @@ const migrateFolderTemplate = (raw: Record<string, unknown>): void => {
 
   if (!folderTemplate.includes("{number}")) {
     naming.folderTemplate = appendPathSegment(folderTemplate, "{number}");
+  }
+};
+
+const normalizeFieldPriorityDefaults = (raw: Record<string, unknown>): void => {
+  const aggregation = raw.aggregation;
+  if (!isRecord(aggregation)) {
+    return;
+  }
+
+  const fieldPriorities = aggregation.fieldPriorities;
+  if (!isRecord(fieldPriorities)) {
+    return;
+  }
+
+  for (const [key, legacySites] of Object.entries(LEGACY_FIELD_PRIORITY_DEFAULTS)) {
+    const currentSites = CURRENT_FIELD_PRIORITY_DEFAULTS[key];
+    const value = fieldPriorities[key];
+    if (isStringArray(value) && stringArraysEqual(value, legacySites)) {
+      fieldPriorities[key] = [...currentSites];
+    }
   }
 };
 
@@ -144,18 +173,18 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   // 7. Ensure folderTemplate stays valid under the new successFileMove rule
   migrateFolderTemplate(raw);
 
-  // 8. Append new sites to enabledSites / siteOrder
+  // 8. Append the newly introduced default site to enabledSites / siteOrder
   const scrape = raw.scrape;
   if (isRecord(scrape)) {
     if (isStringArray(scrape.enabledSites)) {
-      for (const site of ["km_produce", "avbase"]) {
+      for (const site of ["avbase"]) {
         if (!scrape.enabledSites.includes(site)) {
           scrape.enabledSites.push(site);
         }
       }
     }
     if (isStringArray(scrape.siteOrder)) {
-      for (const site of ["km_produce", "avbase"]) {
+      for (const site of ["avbase"]) {
         if (!scrape.siteOrder.includes(site)) {
           scrape.siteOrder.push(site);
         }
@@ -163,15 +192,8 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
     }
   }
 
-  // 9. Append new sites to fieldPriorities arrays, matching current defaults
-  if (isRecord(aggregation)) {
-    const fp = aggregation.fieldPriorities;
-    if (isRecord(fp)) {
-      for (const [key, sites] of Object.entries(FIELD_PRIORITY_SITE_ADDITIONS)) {
-        appendToArray(aggregation, "fieldPriorities", key, sites);
-      }
-    }
-  }
+  // 9. Normalize untouched legacy fieldPriorities arrays to the current v0.4 defaults
+  normalizeFieldPriorityDefaults(raw);
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────

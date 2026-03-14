@@ -18,8 +18,32 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
       javbusCookie: "",
     },
     scrape: {
-      enabledSites: ["dmm", "dmm_tv", "mgstage", "prestige", "faleno", "dahlia", "fc2", "javdb", "javbus", "jav321"],
-      siteOrder: ["dmm", "dmm_tv", "mgstage", "prestige", "faleno", "dahlia", "fc2", "javdb", "javbus", "jav321"],
+      enabledSites: [
+        "dmm",
+        "dmm_tv",
+        "mgstage",
+        "prestige",
+        "faleno",
+        "dahlia",
+        "fc2",
+        "javdb",
+        "javbus",
+        "jav321",
+        "km_produce",
+      ],
+      siteOrder: [
+        "dmm",
+        "dmm_tv",
+        "mgstage",
+        "prestige",
+        "faleno",
+        "dahlia",
+        "fc2",
+        "javdb",
+        "javbus",
+        "jav321",
+        "km_produce",
+      ],
       threadNumber: 2,
       javdbDelaySeconds: 10,
       restAfterCount: 20,
@@ -60,19 +84,19 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
       perCrawlerTimeoutMs: 20000,
       globalTimeoutMs: 60000,
       fieldPriorities: {
-        title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321"],
+        title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
         plot: ["mgstage", "dmm", "dmm_tv", "fc2", "jav321"],
-        actors: ["javdb", "dmm", "javbus", "mgstage"],
+        actors: ["javdb", "dmm", "javbus", "mgstage", "km_produce"],
         actor_profiles: ["javdb", "mgstage", "dmm"],
-        genres: ["javdb", "fc2", "dmm", "javbus"],
-        cover_url: ["dmm", "fc2", "javdb", "javbus"],
-        poster_url: ["dmm", "fc2", "javdb", "javbus"],
+        genres: ["javdb", "fc2", "dmm", "javbus", "km_produce"],
+        cover_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
+        poster_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
         sample_images: ["mgstage", "dmm", "javbus", "javdb"],
-        studio: ["dmm", "fc2", "javdb", "javbus"],
+        studio: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
         director: ["dmm", "javdb"],
         publisher: ["dmm", "fc2", "javdb"],
         series: ["dmm", "javdb", "javbus"],
-        release_date: ["dmm", "fc2", "javdb", "javbus"],
+        release_date: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
         rating: ["javdb", "dmm"],
         trailer_url: ["dmm_tv", "dmm", "javbus"],
       },
@@ -193,7 +217,7 @@ describe("Configuration migrations", () => {
       runMigrations(raw);
 
       const fp = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
-      expect(fp.thumb_url).toEqual(["dmm", "fc2", "javdb", "javbus", "km_produce", "avbase"]);
+      expect(fp.thumb_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.thumb_url);
       expect(fp).not.toHaveProperty("cover_url");
     });
 
@@ -222,7 +246,7 @@ describe("Configuration migrations", () => {
       expect(paths.sceneImagesFolder).toBe("my_custom_folder");
     });
 
-    it("appends new sites (km_produce, avbase) to enabledSites and siteOrder", () => {
+    it("appends avbase to enabledSites and siteOrder", () => {
       const raw = buildV030Config();
       runMigrations(raw);
 
@@ -233,34 +257,37 @@ describe("Configuration migrations", () => {
       expect(scrape.siteOrder).toContain("avbase");
     });
 
-    it("matches current fieldPriorities site additions", () => {
+    it("normalizes legacy fieldPriorities defaults to the current defaults", () => {
       const raw = buildV030Config();
       runMigrations(raw);
 
+      const parsed = configurationSchema.parse(raw);
+      expect(parsed.aggregation.fieldPriorities).toEqual(defaultConfiguration.aggregation.fieldPriorities);
+    });
+
+    it("preserves customized fieldPriorities arrays", () => {
+      const raw = buildV030Config();
       const fp = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
-      expect(fp.title).toEqual(defaultConfiguration.aggregation.fieldPriorities.title);
-      expect(fp.plot).toEqual(defaultConfiguration.aggregation.fieldPriorities.plot);
-      expect(fp.actors).toEqual(defaultConfiguration.aggregation.fieldPriorities.actors);
-      expect(fp.genres).toEqual(defaultConfiguration.aggregation.fieldPriorities.genres);
-      expect(fp.thumb_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.thumb_url);
-      expect(fp.poster_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.poster_url);
-      expect(fp.sample_images).toEqual(defaultConfiguration.aggregation.fieldPriorities.sample_images);
-      expect(fp.studio).toEqual(defaultConfiguration.aggregation.fieldPriorities.studio);
-      expect(fp.director).toEqual(defaultConfiguration.aggregation.fieldPriorities.director);
-      expect(fp.publisher).toEqual(defaultConfiguration.aggregation.fieldPriorities.publisher);
-      expect(fp.series).toEqual(defaultConfiguration.aggregation.fieldPriorities.series);
-      expect(fp.release_date).toEqual(defaultConfiguration.aggregation.fieldPriorities.release_date);
+      fp.title = ["javdb", "dmm"];
+      fp.rating = ["javdb"];
+
+      runMigrations(raw);
+
+      const parsed = configurationSchema.parse(raw);
+      expect(parsed.aggregation.fieldPriorities.title).toEqual(["javdb", "dmm"]);
+      expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
     });
 
     it("does not duplicate sites if already present", () => {
       const raw = buildV030Config();
-      // Manually add km_produce to enabledSites
-      (raw.scrape as Record<string, unknown>).enabledSites = ["dmm", "km_produce"];
+      // Manually add avbase to enabledSites
+      (raw.scrape as Record<string, unknown>).enabledSites = ["dmm", "avbase"];
       runMigrations(raw);
 
       const scrape = raw.scrape as Record<string, unknown>;
       const sites = scrape.enabledSites as string[];
-      expect(sites.filter((s) => s === "km_produce")).toHaveLength(1);
+      expect(sites.filter((s) => s === "avbase")).toHaveLength(1);
+      expect(sites).not.toContain("km_produce");
     });
 
     it("fixes folderTemplate when successFileMove is enabled and {number} is missing", () => {

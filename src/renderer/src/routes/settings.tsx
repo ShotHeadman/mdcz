@@ -334,7 +334,7 @@ function SettingsComponent() {
             <DialogTitle>未保存的更改</DialogTitle>
             <DialogDescription>您有未保存的设置更改。确定要离开吗？未保存的更改将会丢失。</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" onClick={() => reset?.()}>
                 继续编辑

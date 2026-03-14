@@ -204,7 +204,7 @@ function LogsComponent() {
                     <DialogTitle>清空日志</DialogTitle>
                     <DialogDescription>确定要清空所有日志内容吗？此操作不可撤销。</DialogDescription>
                   </DialogHeader>
-                  <DialogFooter className="gap-2 sm:gap-0">
+                  <DialogFooter className="gap-2">
                     <DialogClose asChild>
                       <Button variant="outline">取消</Button>
                     </DialogClose>
