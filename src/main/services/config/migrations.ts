@@ -42,7 +42,6 @@ const LEGACY_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
   plot: ["mgstage", "dmm", "dmm_tv", "fc2", "jav321"],
   actors: ["javdb", "dmm", "javbus", "mgstage", "km_produce"],
-  actor_profiles: ["javdb", "mgstage", "dmm"],
   genres: ["javdb", "fc2", "dmm", "javbus", "km_produce"],
   thumb_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
   poster_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
@@ -59,7 +58,6 @@ const CURRENT_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["avbase", "mgstage", "dmm", "dmm_tv", "javdb", "javbus", "jav321", "fc2"],
   plot: ["avbase", "mgstage", "dmm", "dmm_tv", "jav321", "fc2"],
   actors: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
-  actor_profiles: ["mgstage", "dmm", "javdb"],
   genres: ["avbase", "dmm", "javdb", "javbus", "fc2"],
   thumb_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
   poster_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
@@ -187,6 +185,10 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   const aggregation = raw.aggregation;
   if (isRecord(aggregation)) {
     renameKey(aggregation, "fieldPriorities", "cover_url", "thumb_url");
+    const fieldPriorities = aggregation.fieldPriorities;
+    if (isRecord(fieldPriorities)) {
+      delete fieldPriorities.actor_profiles;
+    }
   }
 
   // 6. paths.sceneImagesFolder: "samples" → "extrafanart"

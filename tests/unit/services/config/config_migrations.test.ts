@@ -87,7 +87,6 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
         title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
         plot: ["mgstage", "dmm", "dmm_tv", "fc2", "jav321"],
         actors: ["javdb", "dmm", "javbus", "mgstage", "km_produce"],
-        actor_profiles: ["javdb", "mgstage", "dmm"],
         genres: ["javdb", "fc2", "dmm", "javbus", "km_produce"],
         cover_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
         poster_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],

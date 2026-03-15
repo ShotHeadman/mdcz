@@ -29,6 +29,7 @@ export interface CrawlerData {
   title_zh?: string;
   number: string;
   actors: string[];
+  // Prepared actor metadata for NFO/output flows; crawlers do not aggregate this field.
   actor_profiles?: ActorProfile[];
   genres: string[];
   content_type?: string;

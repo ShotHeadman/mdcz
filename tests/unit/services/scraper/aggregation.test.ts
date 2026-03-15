@@ -99,7 +99,7 @@ describe("FieldAggregator", () => {
   });
 
   describe("array selection strategy", () => {
-    it("merges actor lists across sites while keeping priority order stable", () => {
+    it("prefers the highest-priority non-empty actor list without merging sites", () => {
       const aggregator = new FieldAggregator({
         actors: [Website.AVBASE, Website.JAVBUS, Website.JAVDB],
       });
@@ -111,7 +111,7 @@ describe("FieldAggregator", () => {
       ]);
 
       const { data, sources } = aggregator.aggregate(results);
-      expect(data.actors).toEqual(["女优 A", "女优 C", "男优 B"]);
+      expect(data.actors).toEqual(["女优 A", "女优 C"]);
       expect(sources.actors).toBe(Website.AVBASE);
     });
 
@@ -128,39 +128,6 @@ describe("FieldAggregator", () => {
       const { data, sources } = aggregator.aggregate(results);
       expect(data.actors).toEqual(["女优 A", "女优 B"]);
       expect(sources.actors).toBe(Website.JAVDB);
-    });
-
-    it("merges actor profile lists across sites while keeping priority order stable", () => {
-      const aggregator = new FieldAggregator({
-        actor_profiles: [Website.MGSTAGE, Website.JAVDB],
-      });
-
-      const results = new Map<Website, CrawlerData>([
-        [
-          Website.JAVDB,
-          makeCrawlerData({
-            actor_profiles: [
-              { name: "女优 A", photo_url: "https://javdb.example/a.jpg" },
-              { name: "女优 C", photo_url: "https://javdb.example/c.jpg" },
-            ],
-            website: Website.JAVDB,
-          }),
-        ],
-        [
-          Website.MGSTAGE,
-          makeCrawlerData({
-            actor_profiles: [{ name: "女优 A", photo_url: "https://mgstage.example/a.jpg" }],
-            website: Website.MGSTAGE,
-          }),
-        ],
-      ]);
-
-      const { data, sources } = aggregator.aggregate(results);
-      expect(data.actor_profiles).toEqual([
-        { name: "女优 A", photo_url: "https://mgstage.example/a.jpg" },
-        { name: "女优 C", photo_url: "https://javdb.example/c.jpg" },
-      ]);
-      expect(sources.actor_profiles).toBe(Website.MGSTAGE);
     });
 
     it("prefers the first non-empty genres without merging sites", () => {

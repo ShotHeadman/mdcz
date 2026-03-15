@@ -169,7 +169,6 @@ const fieldPrioritiesSchema = z.object({
   actors: z
     .array(z.enum(Website))
     .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
-  actor_profiles: z.array(z.enum(Website)).default([Website.MGSTAGE, Website.DMM, Website.JAVDB]),
   genres: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
   thumb_url: z
     .array(z.enum(Website))

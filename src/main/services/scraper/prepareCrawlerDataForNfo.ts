@@ -66,6 +66,7 @@ export const prepareCrawlerDataForNfo = async (
 ): Promise<{ data: CrawlerData; actorPhotoPaths: string[] }> => {
   throwIfAborted(options.signal);
 
+  // Actor profiles are derived here from actor names and local/source lookups, not crawler aggregation.
   const actorProfiles = await actorImageService.prepareActorProfilesForMovie(configuration, {
     movieDir: options.movieDir,
     actors: crawlerData.actors,

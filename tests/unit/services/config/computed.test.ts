@@ -96,7 +96,6 @@ describe("buildComputedConfiguration", () => {
 
     expect(configuration.paths.actorPhotoFolder).toBe("actor_photo");
     expect(configuration.aggregation.fieldPriorities.durationSeconds).toEqual([Website.AVBASE, Website.DMM_TV]);
-    expect(configuration.aggregation.fieldPriorities.actor_profiles).not.toContain(Website.AVBASE);
     expect(configuration.aggregation.fieldPriorities.rating).not.toContain(Website.AVBASE);
     expect(configuration.aggregation.fieldPriorities.trailer_url).not.toContain(Website.AVBASE);
   });

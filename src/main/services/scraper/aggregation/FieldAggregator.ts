@@ -1,5 +1,5 @@
 import type { Website } from "@shared/enums";
-import type { ActorProfile, CrawlerData } from "@shared/types";
+import type { CrawlerData } from "@shared/types";
 
 import type { AggregationStrategy, ImageAlternatives, SourceMap } from "./types";
 import { FIELD_STRATEGIES } from "./types";
@@ -96,7 +96,6 @@ export class FieldAggregator {
       title_zh: resolve("title_zh"),
       number: resolve("number") || firstEntry.data.number,
       actors: resolve("actors") ?? [],
-      actor_profiles: resolve("actor_profiles"),
       genres: resolve("genres") ?? [],
       content_type: resolve("content_type"),
       studio: resolve("studio"),
@@ -184,7 +183,7 @@ export class FieldAggregator {
     for (const entry of entries) {
       const value = entry.data[field];
       if (Array.isArray(value) && value.length > 0) {
-        if (field === "actors" || field === "actor_profiles") {
+        if (field === "actors") {
           return { value: value.slice(0, this.behavior.maxActors), source: entry.site };
         }
 
@@ -252,9 +251,6 @@ export class FieldAggregator {
     if (field === "actors") {
       return this.unionActors(entries);
     }
-    if (field === "actor_profiles") {
-      return this.unionActorProfiles(entries);
-    }
     if (field === "genres") {
       return this.unionGenres(entries);
     }
@@ -300,29 +296,6 @@ export class FieldAggregator {
       source,
     };
   }
-
-  private unionActorProfiles(entries: SourceEntry[]): { value: ActorProfile[] | undefined; source?: Website } {
-    const seen = new Set<string>();
-    const merged: ActorProfile[] = [];
-    let source: Website | undefined;
-
-    for (const entry of entries) {
-      for (const profile of entry.data.actor_profiles ?? []) {
-        const normalized = profile.name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          merged.push(profile);
-          if (!source) source = entry.site;
-        }
-      }
-    }
-
-    return {
-      value: merged.length > 0 ? merged.slice(0, this.behavior.maxActors) : undefined,
-      source,
-    };
-  }
-
   private unionGenres(entries: SourceEntry[]): { value: string[]; source?: Website } {
     const seen = new Set<string>();
     const merged: string[] = [];
