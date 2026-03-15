@@ -179,7 +179,6 @@ describe("buildMaintenanceCommitItem", () => {
     expect(item.crawlerData?.thumb_source_url).toBe("https://example.com/new-thumb.jpg");
     expect(item.crawlerData?.fanart_source_url).toBe("https://example.com/new-thumb.jpg");
     expect(item.imageAlternatives).toEqual({
-      fanart_url: ["https://example.com/thumb-alt.jpg"],
       thumb_url: ["https://example.com/thumb-alt.jpg"],
     });
     expect(item.assetDecisions).toEqual({

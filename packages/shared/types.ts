@@ -200,7 +200,6 @@ export interface MaintenancePreviewResult {
 export interface MaintenanceImageAlternatives {
   thumb_url?: string[];
   poster_url?: string[];
-  fanart_url?: string[];
   sample_images?: string[][];
 }
 

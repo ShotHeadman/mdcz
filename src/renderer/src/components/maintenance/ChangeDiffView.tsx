@@ -17,7 +17,6 @@ const toJoinedProfileNames = (profiles: ActorProfile[]) => profiles.map((profile
 const IMAGE_SOURCE_FIELD_MAP = {
   thumb_url: "thumb_source_url",
   poster_url: "poster_source_url",
-  fanart_url: "fanart_source_url",
 } as const;
 const getImageSourceField = (
   field: FieldDiff["field"],
@@ -25,7 +24,6 @@ const getImageSourceField = (
   switch (field) {
     case "thumb_url":
     case "poster_url":
-    case "fanart_url":
       return IMAGE_SOURCE_FIELD_MAP[field];
     default:
       return undefined;

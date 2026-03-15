@@ -255,15 +255,9 @@ describe("DownloadManager keep flags", () => {
     expect(networkClient.download).not.toHaveBeenCalled();
   });
 
-  it("uses thumb_url as the fanart source when a dedicated fanart is unavailable", async () => {
+  it("does not download fanart when thumb is unavailable", async () => {
     const { root, manager, networkClient } = await createDownloadSubject();
     mockImageValidation(true);
-    networkClient.probe.mockImplementation(async (url: string) => ({
-      ok: true,
-      status: 200,
-      contentLength: url.endsWith("thumb-alt.jpg") ? 2048 : 1024,
-      resolvedUrl: url,
-    }));
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
@@ -279,21 +273,21 @@ describe("DownloadManager keep flags", () => {
       },
     );
 
-    expect(assets.fanart).toBe(join(root, "fanart.jpg"));
     expect(assets.thumb).toBeUndefined();
+    expect(assets.fanart).toBeUndefined();
     expect(assets.sceneImages).toEqual([
       join(root, "extrafanart", "fanart1.jpg"),
       join(root, "extrafanart", "fanart2.jpg"),
     ]);
-    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe(
-      "downloaded:https://example.com/thumb-alt.jpg",
-    );
     await expect(readFile(join(root, "extrafanart", "fanart1.jpg"), "utf8")).resolves.toBe(
       "downloaded:https://example.com/scene-001.jpg",
     );
     await expect(readFile(join(root, "extrafanart", "fanart2.jpg"), "utf8")).resolves.toBe(
       "downloaded:https://example.com/scene-002.jpg",
     );
+    await expect(access(join(root, "fanart.jpg"))).rejects.toThrow();
+    expect(networkClient.probe).not.toHaveBeenCalled();
+    expect(networkClient.download).not.toHaveBeenCalledWith("https://example.com/thumb-alt.jpg", expect.any(String));
   });
 
   it("skips unsupported sample image urls for scene downloads and does not treat them as fanart", async () => {

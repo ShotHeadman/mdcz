@@ -7,7 +7,6 @@ export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
 export interface ImageAlternatives {
   thumb_url: string[];
   poster_url: string[];
-  fanart_url: string[];
   sample_images: string[][];
 }
 
@@ -55,7 +54,7 @@ export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStra
   rating: "first_non_null",
   thumb_url: "highest_quality",
   poster_url: "highest_quality",
-  fanart_url: "highest_quality",
+  fanart_url: "first_non_null",
   trailer_url: "first_non_null",
   website: "first_non_null",
   content_type: "first_non_null",

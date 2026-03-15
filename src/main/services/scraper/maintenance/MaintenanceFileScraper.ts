@@ -645,7 +645,6 @@ export class MaintenanceFileScraper {
     const mappings = [
       { field: "thumb_url" as const, key: "thumb" as const },
       { field: "poster_url" as const, key: "poster" as const },
-      { field: "fanart_url" as const, key: "fanart" as const },
     ];
 
     for (const { field, key } of mappings) {

@@ -56,14 +56,12 @@ const IMAGE_COLLECTION_FIELDS: DiffableField[] = [{ key: "sample_images", label:
 const IMAGE_ASSET_FIELD_MAP = {
   thumb_url: "thumb",
   poster_url: "poster",
-  fanart_url: "fanart",
 } as const satisfies Partial<Record<keyof CrawlerData, keyof LocalScanEntry["assets"]>>;
 
 const IMAGE_SOURCE_FIELD_MAP = {
   thumb_url: "thumb_source_url",
   poster_url: "poster_source_url",
-  fanart_url: "fanart_source_url",
-} as const satisfies Record<"thumb_url" | "poster_url" | "fanart_url", keyof CrawlerData>;
+} as const satisfies Record<"thumb_url" | "poster_url", keyof CrawlerData>;
 
 const isEqual = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;

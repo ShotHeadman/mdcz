@@ -41,23 +41,6 @@ const cloneValue = <T>(value: T): T => {
   return value;
 };
 
-const dedupeStrings = (values: Array<string | undefined>): string[] => {
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-
-  for (const value of values) {
-    const normalized = typeof value === "string" ? value.trim() : "";
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    deduped.push(normalized);
-  }
-
-  return deduped;
-};
-
 const toRemoteImageSourceValue = (value: unknown): string | undefined => {
   if (typeof value !== "string") {
     return undefined;
@@ -293,18 +276,6 @@ const buildAssetDecisions = (
   return Object.keys(assetDecisions).length > 0 ? assetDecisions : undefined;
 };
 
-const addFanartPreviewFallbacks = (
-  diff: FieldDiff,
-  selectedSide: MaintenanceFieldSelectionSide,
-  alternatives: MaintenanceImageAlternatives,
-): void => {
-  if (diff.kind !== "image" || diff.field !== "thumb_url" || selectedSide !== "new") {
-    return;
-  }
-
-  alternatives.fanart_url = dedupeStrings([...(alternatives.fanart_url ?? []), ...diff.newPreview.fallbackSrcs]);
-};
-
 export const buildMaintenanceCommitItem = (
   entry: LocalScanEntry,
   preview: MaintenancePreviewItem | undefined,
@@ -325,7 +296,6 @@ export const buildMaintenanceCommitItem = (
 
   for (const diff of preview?.fieldDiffs ?? []) {
     const selectedSide = fieldSelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
-    addFanartPreviewFallbacks(diff, selectedSide, filteredAlternatives);
     if (diff.field === "sample_images" && diff.kind === "imageCollection" && selectedSide === "new") {
       if (imageAlternatives?.sample_images?.length) {
         filteredAlternatives.sample_images = imageAlternatives.sample_images;

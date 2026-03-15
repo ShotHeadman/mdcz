@@ -81,29 +81,6 @@ const IMAGE_HOST_FAILURE_POLICY: CooldownFailurePolicy = {
   cooldownMs: IMAGE_HOST_COOLDOWN_MS,
 };
 
-const getPrimaryFanartFallbackUrl = (data: CrawlerData): string | undefined => {
-  if (data.fanart_url) {
-    return undefined;
-  }
-
-  return normalizeUrl(data.thumb_url) ?? undefined;
-};
-
-const getPrimaryFanartAlternativeUrls = (
-  data: CrawlerData,
-  imageAlternatives: Partial<ImageAlternatives>,
-): string[] => {
-  if (data.fanart_url) {
-    return imageAlternatives.fanart_url ?? [];
-  }
-
-  return [
-    getPrimaryFanartFallbackUrl(data),
-    ...(imageAlternatives.fanart_url ?? []),
-    ...(imageAlternatives.thumb_url ?? []),
-  ].filter((item): item is string => typeof item === "string");
-};
-
 const getNormalizedSceneImageUrls = (values: string[]): string[] => {
   const seen = new Set<string>();
   const urls: string[] = [];
@@ -226,16 +203,7 @@ export class DownloadManager {
 
     for (const task of primaryTasks) {
       const existingAsset = await resolveExistingAsset(task.path);
-      const keepExisting =
-        task.key === "fanart"
-          ? assetDecisions.fanart === "preserve"
-            ? true
-            : assetDecisions.fanart === "replace"
-              ? false
-              : task.keepExisting
-          : task.keepExisting;
-
-      if (keepExisting && existingAsset && !forceReplace[task.key]) {
+      if (task.keepExisting && existingAsset && !forceReplace[task.key]) {
         assets[task.key] = existingAsset;
         continue;
       }
@@ -336,18 +304,35 @@ export class DownloadManager {
       }
     }
 
-    if (config.download.downloadFanart && !assets.fanart && assets.thumb) {
-      const thumbPath = assets.thumb;
+    if (config.download.downloadFanart) {
       const fanartTargetPath = join(outputDir, "fanart.jpg");
-      const fanartResult = await resolveSingleAsset({
-        targetPath: fanartTargetPath,
-        keepExisting: config.download.keepFanart,
-        create: () => this.copyDerivedImage(thumbPath, fanartTargetPath, "fanart"),
-      });
-      if (fanartResult.assetPath) {
-        assets.fanart = fanartResult.assetPath;
-        if (fanartResult.createdPath) {
-          assets.downloaded.push(fanartResult.createdPath);
+      const thumbPath = assets.thumb;
+
+      if (thumbPath) {
+        const thumbWasRefreshed = assets.downloaded.includes(thumbPath) || forceReplace.fanart;
+        const keepFanart = thumbWasRefreshed
+          ? false
+          : assetDecisions.fanart === "preserve"
+            ? true
+            : assetDecisions.fanart === "replace"
+              ? false
+              : config.download.keepFanart;
+
+        const fanartResult = await resolveSingleAsset({
+          targetPath: fanartTargetPath,
+          keepExisting: keepFanart,
+          create: () => this.copyDerivedImage(thumbPath, fanartTargetPath, "fanart"),
+        });
+        if (fanartResult.assetPath) {
+          assets.fanart = fanartResult.assetPath;
+          if (fanartResult.createdPath) {
+            assets.downloaded.push(fanartResult.createdPath);
+          }
+        }
+      } else {
+        const existingFanart = await resolveExistingAsset(fanartTargetPath);
+        if (existingFanart) {
+          assets.fanart = existingFanart;
         }
       }
     }
@@ -493,15 +478,6 @@ export class DownloadManager {
       data.poster_url,
       imageAlternatives.poster_url,
       join(outputDir, "poster.jpg"),
-    );
-    this.addPrimaryImageTask(
-      tasks,
-      "fanart",
-      config.download.downloadFanart,
-      config.download.keepFanart,
-      data.fanart_url,
-      getPrimaryFanartAlternativeUrls(data, imageAlternatives),
-      join(outputDir, "fanart.jpg"),
     );
 
     return tasks;

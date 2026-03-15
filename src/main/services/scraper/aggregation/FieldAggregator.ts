@@ -36,14 +36,13 @@ type ResolvedField = {
 const EMPTY_IMAGE_ALTERNATIVES: ImageAlternatives = {
   thumb_url: [],
   poster_url: [],
-  fanart_url: [],
   sample_images: [],
 };
 
-type PrimaryImageAlternativeField = "thumb_url" | "poster_url" | "fanart_url";
+type PrimaryImageAlternativeField = "thumb_url" | "poster_url";
 
 function isPrimaryImageField(field: keyof CrawlerData): field is PrimaryImageAlternativeField {
-  return field === "thumb_url" || field === "poster_url" || field === "fanart_url";
+  return field === "thumb_url" || field === "poster_url";
 }
 
 /** Selects the best value for each CrawlerData field from multiple sources. */
