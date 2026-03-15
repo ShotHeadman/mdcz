@@ -308,4 +308,31 @@ describe("diffCrawlerData", () => {
       },
     });
   });
+
+  it("uses old sample image urls as the preview baseline when no local scene assets exist", () => {
+    const oldData = createCrawlerData({
+      sample_images: ["https://example.com/scene-a.jpg"],
+    });
+    const newData = createCrawlerData({
+      sample_images: ["https://example.com/scene-a.jpg"],
+    });
+
+    const result = partitionCrawlerDataWithOptions(oldData, newData, {});
+
+    expect(result.fieldDiffs.find((diff) => diff.field === "sample_images")).toBeUndefined();
+    expect(result.unchangedFieldDiffs).toContainEqual({
+      kind: "imageCollection",
+      field: "sample_images",
+      label: "场景图",
+      oldValue: ["https://example.com/scene-a.jpg"],
+      newValue: ["https://example.com/scene-a.jpg"],
+      changed: false,
+      oldPreview: {
+        items: ["https://example.com/scene-a.jpg"],
+      },
+      newPreview: {
+        items: ["https://example.com/scene-a.jpg"],
+      },
+    });
+  });
 });

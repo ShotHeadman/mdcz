@@ -11,6 +11,7 @@ import type { ActorProfile, CrawlerData } from "@shared/types";
 import OpenAI from "openai";
 import PQueue from "p-queue";
 import { z } from "zod";
+import { isAbortError, throwIfAborted } from "./abort";
 
 type LanguageTarget = "zh_cn" | "zh_tw";
 
@@ -83,24 +84,30 @@ export class TranslateService {
       }),
   ) {}
 
-  async translateCrawlerData(data: CrawlerData, config: Configuration): Promise<CrawlerData> {
+  async translateCrawlerData(data: CrawlerData, config: Configuration, signal?: AbortSignal): Promise<CrawlerData> {
     if (!config.translate.enableTranslation) {
       return data;
     }
 
+    throwIfAborted(signal);
+
     const titleTarget = toTarget(config.translate.titleLanguage);
     const plotTarget = toTarget(config.translate.plotLanguage);
 
-    const title_zh = await this.translateText(data.title, titleTarget, config);
-    const plot_zh = data.plot ? await this.translateText(data.plot, plotTarget, config) : undefined;
+    const title_zh = await this.translateText(data.title, titleTarget, config, signal);
+    const plot_zh = data.plot ? await this.translateText(data.plot, plotTarget, config, signal) : undefined;
+
+    throwIfAborted(signal);
 
     const mappedActors = await Promise.all((data.actors ?? []).map((actor) => this.normalizeActorAlias(actor)));
     const mappedActorProfiles = await Promise.all(
       (data.actor_profiles ?? []).map((profile) => this.normalizeActorProfile(profile)),
     );
     const mappedGenres = await Promise.all(
-      (data.genres ?? []).map((genre) => this.translateGenreTerm(genre, titleTarget, config)),
+      (data.genres ?? []).map((genre) => this.translateGenreTerm(genre, titleTarget, config, signal)),
     );
+
+    throwIfAborted(signal);
 
     return {
       ...data,
@@ -167,23 +174,31 @@ export class TranslateService {
     };
   }
 
-  private async translateGenreTerm(term: string, target: LanguageTarget, config: Configuration): Promise<string> {
+  private async translateGenreTerm(
+    term: string,
+    target: LanguageTarget,
+    config: Configuration,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const normalized = term.trim();
     if (!normalized) {
       return "";
     }
 
+    throwIfAborted(signal);
+
     const cacheKey = this.buildGenreCacheKey(normalized, target);
 
     return this.genreResolver.resolve(cacheKey, async () => {
+      throwIfAborted(signal);
       const mapped = await findMappedGenreName(normalized, target);
 
       if (mapped) {
         return ensureTargetChinese(mapped, target);
       }
 
-      const llmTerm = await this.translateGenreWithOpenAiTerm(normalized, target, config);
-      const translated = llmTerm ?? (await this.translateText(normalized, target, config));
+      const llmTerm = await this.translateGenreWithOpenAiTerm(normalized, target, config, signal);
+      const translated = llmTerm ?? (await this.translateText(normalized, target, config, signal));
       const normalizedResult = ensureTargetChinese(translated.trim(), target);
 
       if (llmTerm) {
@@ -207,27 +222,37 @@ export class TranslateService {
     term: string,
     target: LanguageTarget,
     config: Configuration,
+    signal?: AbortSignal,
   ): Promise<string | null> {
     if (!config.translate.llmApiKey.trim()) {
       return null;
     }
 
+    throwIfAborted(signal);
+
     const prompt = this.buildGenreTranslationPrompt(term, target);
     const client = this.openAiFactory(config);
 
     try {
-      const response = await this.executeOpenAiRequestWithRetry(config, () => {
-        return client.chat.completions.create({
-          model: config.translate.llmModelName,
-          temperature: 0,
-          messages: [
+      const response = await this.executeOpenAiRequestWithRetry(
+        config,
+        () => {
+          return client.chat.completions.create(
             {
-              role: "user",
-              content: prompt,
+              model: config.translate.llmModelName,
+              temperature: 0,
+              messages: [
+                {
+                  role: "user",
+                  content: prompt,
+                },
+              ],
             },
-          ],
-        });
-      });
+            { signal },
+          );
+        },
+        signal,
+      );
 
       const content = response.choices[0]?.message?.content;
       if (typeof content === "string" && content.trim().length > 0) {
@@ -242,17 +267,27 @@ export class TranslateService {
         }
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       this.logger.warn(`OpenAI term translation failed: ${toErrorMessage(error)}`);
     }
 
     return null;
   }
 
-  async translateText(input: string, target: LanguageTarget, config: Configuration): Promise<string> {
+  async translateText(
+    input: string,
+    target: LanguageTarget,
+    config: Configuration,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const text = normalizeNewlines(input).trim();
     if (!text) {
       return "";
     }
+
+    throwIfAborted(signal);
 
     const detected: DetectedLanguage = detectLanguage(text);
     if (detected === target) {
@@ -266,23 +301,23 @@ export class TranslateService {
     const engine = config.translate.engine;
 
     if (engine === "google") {
-      const google = await this.translateWithGoogle(text, target);
+      const google = await this.translateWithGoogle(text, target, signal);
       if (google) {
         return ensureTargetChinese(google, target);
       }
 
-      const openAi = await this.translateWithOpenAi(text, target, config);
+      const openAi = await this.translateWithOpenAi(text, target, config, signal);
       if (openAi) {
         return ensureTargetChinese(openAi, target);
       }
     } else {
-      const openAi = await this.translateWithOpenAi(text, target, config);
+      const openAi = await this.translateWithOpenAi(text, target, config, signal);
       if (openAi) {
         return ensureTargetChinese(openAi, target);
       }
 
       if (config.translate.enableGoogleFallback) {
-        const google = await this.translateWithGoogle(text, target);
+        const google = await this.translateWithGoogle(text, target, signal);
         if (google) {
           return ensureTargetChinese(google, target);
         }
@@ -296,10 +331,13 @@ export class TranslateService {
     text: string,
     target: LanguageTarget,
     config: Configuration,
+    signal?: AbortSignal,
   ): Promise<string | null> {
     if (!config.translate.llmApiKey.trim()) {
       return null;
     }
+
+    throwIfAborted(signal);
 
     const prompt = config.translate.llmPrompt
       .replaceAll("{lang}", target === "zh_tw" ? "Traditional Chinese" : "Simplified Chinese")
@@ -308,24 +346,34 @@ export class TranslateService {
     const client = this.openAiFactory(config);
 
     try {
-      const response = await this.executeOpenAiRequestWithRetry(config, () => {
-        return client.chat.completions.create({
-          model: config.translate.llmModelName,
-          temperature: config.translate.llmTemperature,
-          messages: [
+      const response = await this.executeOpenAiRequestWithRetry(
+        config,
+        () => {
+          return client.chat.completions.create(
             {
-              role: "user",
-              content: prompt,
+              model: config.translate.llmModelName,
+              temperature: config.translate.llmTemperature,
+              messages: [
+                {
+                  role: "user",
+                  content: prompt,
+                },
+              ],
             },
-          ],
-        });
-      });
+            { signal },
+          );
+        },
+        signal,
+      );
 
       const content = response.choices[0]?.message?.content;
       if (typeof content === "string" && content.trim().length > 0) {
         return content.trim();
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       this.logger.warn(`OpenAI translation failed: ${toErrorMessage(error)}`);
     }
 
@@ -357,15 +405,28 @@ export class TranslateService {
     return queue;
   }
 
-  private async executeOpenAiRequestWithRetry<T>(config: Configuration, request: () => Promise<T>): Promise<T> {
+  private async executeOpenAiRequestWithRetry<T>(
+    config: Configuration,
+    request: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const maxRetryCount = Math.max(0, Math.trunc(config.translate.llmMaxTry));
     let attempt = 0;
 
     while (true) {
       try {
         const queue = this.getOpenAiQueue(config);
-        return await queue.add(request);
+        return await queue.add(
+          async () => {
+            throwIfAborted(signal);
+            return request();
+          },
+          signal ? { signal } : undefined,
+        );
       } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
         if (attempt >= maxRetryCount) {
           throw error;
         }
@@ -377,7 +438,7 @@ export class TranslateService {
 
         attempt += 1;
         this.logger.warn(`OpenAI returned 429, retrying (${attempt}/${maxRetryCount}) after ${retryAfterMs}ms`);
-        await sleep(retryAfterMs);
+        await sleep(retryAfterMs, undefined, signal ? { signal } : undefined);
       }
     }
   }
@@ -403,10 +464,16 @@ export class TranslateService {
 
     return Math.min(parsed, RETRY_AFTER_CAP_MS);
   }
-  private async translateWithGoogle(text: string, target: LanguageTarget): Promise<string | null> {
+  private async translateWithGoogle(
+    text: string,
+    target: LanguageTarget,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     if (!text.trim()) {
       return null;
     }
+
+    throwIfAborted(signal);
 
     const tl = target === "zh_tw" ? "zh-TW" : "zh-CN";
     const url = new URL("https://translate.googleapis.com/translate_a/single");
@@ -417,9 +484,12 @@ export class TranslateService {
     url.searchParams.set("q", text);
 
     try {
-      const payload = await this.networkClient.getJson<unknown>(url.toString());
+      const payload = await this.networkClient.getJson<unknown>(url.toString(), { signal });
       return extractGoogleTranslatedText(payload);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       this.logger.warn(`Google translate fallback failed: ${toErrorMessage(error)}`);
       return null;
     }

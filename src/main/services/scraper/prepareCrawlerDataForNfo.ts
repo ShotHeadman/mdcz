@@ -4,6 +4,7 @@ import type { ActorSourceProvider } from "@main/services/actorSource";
 import { mergeActorSourceHints } from "@main/services/actorSource/sourceHints";
 import type { Configuration } from "@main/services/config";
 import type { ActorProfile, CrawlerData } from "@shared/types";
+import { throwIfAborted } from "./abort";
 
 const isRemoteActorPhoto = (value: string): boolean => /^https?:\/\//iu.test(value);
 const toRemoteImageSourceUrl = (value: string | undefined): string | undefined => {
@@ -58,14 +59,18 @@ export const prepareCrawlerDataForNfo = async (
     movieDir: string;
     sourceVideoPath: string;
     actorSourceProvider?: ActorSourceProvider;
+    signal?: AbortSignal;
   },
 ): Promise<{ data: CrawlerData; actorPhotoPaths: string[] }> => {
+  throwIfAborted(options.signal);
+
   const actorProfiles = await actorImageService.prepareActorProfilesForMovie(configuration, {
     movieDir: options.movieDir,
     actors: crawlerData.actors,
     actorProfiles: crawlerData.actor_profiles,
     actorPhotoBaseDir: dirname(options.sourceVideoPath),
     actorSourceProvider: options.actorSourceProvider,
+    signal: options.signal,
     sourceHints: mergeActorSourceHints([
       {
         website: crawlerData.website,
@@ -74,6 +79,8 @@ export const prepareCrawlerDataForNfo = async (
       },
     ]),
   });
+
+  throwIfAborted(options.signal);
 
   return {
     data: {

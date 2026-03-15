@@ -15,6 +15,7 @@ import { sanitizePathSegment } from "@main/utils/path";
 import type { ActorProfile } from "@shared/types";
 import { app } from "electron";
 import PQueue from "p-queue";
+import { isAbortError, throwIfAborted } from "./scraper/abort";
 
 const CACHE_DIR_NAME = "actor-image-cache";
 const INDEX_FILE_NAME = "index.json";
@@ -221,8 +222,11 @@ export class ActorImageService {
       actorPhotoBaseDir?: string;
       actorSourceProvider?: ActorSourceProvider;
       sourceHints?: ActorSourceHint[];
+      signal?: AbortSignal;
     },
   ): Promise<ActorProfile[] | undefined> {
+    throwIfAborted(input.signal);
+
     const profileByName = new Map<string, ActorProfile>();
     for (const profile of input.actorProfiles ?? []) {
       const lookupNames = toUniqueActorNames([profile.name, ...(profile.aliases ?? [])]);
@@ -239,6 +243,7 @@ export class ActorImageService {
 
     const seenActorNames = new Set<string>();
     for (const rawActorName of input.actors) {
+      throwIfAborted(input.signal);
       const actorName = rawActorName.trim();
       const normalized = normalizeActorName(actorName);
       if (!normalized || seenActorNames.has(normalized)) {
@@ -261,6 +266,7 @@ export class ActorImageService {
           matchedProfile,
           input.actorSourceProvider,
           input.sourceHints,
+          input.signal,
         );
         lookupNames = toUniqueActorNames([actorName, existingProfile?.name, ...(existingProfile?.aliases ?? [])]);
         localImagePath = await this.resolveLocalImage(configuration, lookupNames, {
@@ -270,9 +276,15 @@ export class ActorImageService {
       }
 
       if (!localImagePath) {
-        localImagePath = await this.cacheProfileImage(configuration, lookupNames, existingProfile?.photo_url, {
-          fallbackBaseDir: input.actorPhotoBaseDir,
-        });
+        localImagePath = await this.cacheProfileImage(
+          configuration,
+          lookupNames,
+          existingProfile?.photo_url,
+          {
+            fallbackBaseDir: input.actorPhotoBaseDir,
+          },
+          input.signal,
+        );
       }
 
       if (!localImagePath) {
@@ -282,6 +294,7 @@ export class ActorImageService {
           existingProfile,
           input.actorSourceProvider,
           input.sourceHints,
+          input.signal,
           { forceLookup: true },
         );
 
@@ -294,12 +307,20 @@ export class ActorImageService {
           });
 
           if (!localImagePath) {
-            localImagePath = await this.cacheProfileImage(configuration, lookupNames, existingProfile.photo_url, {
-              fallbackBaseDir: input.actorPhotoBaseDir,
-            });
+            localImagePath = await this.cacheProfileImage(
+              configuration,
+              lookupNames,
+              existingProfile.photo_url,
+              {
+                fallbackBaseDir: input.actorPhotoBaseDir,
+              },
+              input.signal,
+            );
           }
         }
       }
+
+      throwIfAborted(input.signal);
 
       if (!localImagePath) {
         preparedProfiles.push({
@@ -327,11 +348,14 @@ export class ActorImageService {
     existingProfile: ActorProfile | undefined,
     actorSourceProvider?: ActorSourceProvider,
     sourceHints?: ActorSourceHint[],
+    signal?: AbortSignal,
     options: { forceLookup?: boolean } = {},
   ): Promise<ActorProfile | undefined> {
     if ((!options.forceLookup && hasActorPhoto(existingProfile)) || !actorSourceProvider) {
       return existingProfile;
     }
+
+    throwIfAborted(signal);
 
     const lookup = await actorSourceProvider.lookup(configuration, {
       name: actorName,
@@ -339,6 +363,8 @@ export class ActorImageService {
       requiredField: "photo_url",
       sourceHints,
     });
+
+    throwIfAborted(signal);
 
     if (lookup.profile.photo_url) {
       this.logger.info(
@@ -361,6 +387,7 @@ export class ActorImageService {
     names: string[],
     profilePhotoUrl: string | undefined,
     options: ActorImageLookupOptions = {},
+    signal?: AbortSignal,
   ): Promise<string | undefined> {
     const source = profilePhotoUrl?.trim();
     if (!source) {
@@ -376,7 +403,7 @@ export class ActorImageService {
       return undefined;
     }
 
-    return this.cacheRemoteImageUnsafe(root, names, source);
+    return this.cacheRemoteImageUnsafe(root, names, source, signal);
   }
 
   private ensureLayout(root: string): Promise<ActorImageLayout | null> {
@@ -399,10 +426,17 @@ export class ActorImageService {
     return { root, cacheRoot, indexPath };
   }
 
-  private async cacheRemoteImageUnsafe(root: string, names: string[], remoteUrl: string): Promise<string | undefined> {
+  private async cacheRemoteImageUnsafe(
+    root: string,
+    names: string[],
+    remoteUrl: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
     if (!this.deps.networkClient) {
       return undefined;
     }
+
+    throwIfAborted(signal);
 
     const layout = await this.ensureLayout(root);
     if (!layout) {
@@ -433,6 +467,7 @@ export class ActorImageService {
         headers: {
           accept: "image/*",
         },
+        signal,
       });
       const extension = resolveCachedPhotoExtension(remoteUrl, bytes);
       const tempPath = join(layout.cacheRoot, `.tmp-${randomUUID()}${extension}`);
@@ -482,6 +517,9 @@ export class ActorImageService {
         await rm(tempPath, { force: true }).catch(() => undefined);
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Failed to cache remote actor image for ${names[0] ?? remoteUrl}: ${message}`);
       return undefined;

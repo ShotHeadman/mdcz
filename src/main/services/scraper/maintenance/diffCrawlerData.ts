@@ -254,7 +254,8 @@ const buildImageCollectionFieldDiff = (
 ): FieldDiff => {
   const oldValue = oldData[field];
   const newValue = newData[field];
-  const oldPreview = buildSceneImagePreview(entry?.assets.sceneImages ?? []);
+  const hasLocalSceneImages = (entry?.assets.sceneImages.length ?? 0) > 0;
+  const oldPreview = buildSceneImagePreview(hasLocalSceneImages ? entry?.assets.sceneImages : oldValue);
   const newPreview = buildSceneImagePreview(newValue);
 
   return {

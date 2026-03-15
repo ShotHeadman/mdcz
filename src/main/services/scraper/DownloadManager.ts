@@ -8,6 +8,7 @@ import type { NetworkClient, ProbeResult } from "@main/services/network";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
 import type { CrawlerData, DownloadedAssets, MaintenanceAssetDecisions } from "@shared/types";
+import { isAbortError, throwIfAborted } from "./abort";
 import type { ImageAlternatives } from "./aggregation";
 
 const normalizeUrl = (input?: string): string | null => {
@@ -63,6 +64,8 @@ export interface DownloadCallbacks {
   forceReplace?: Partial<Record<PrimaryImageKey, boolean>>;
   /** Preserve or replace selected maintenance-managed assets regardless of preset keep flags. */
   assetDecisions?: MaintenanceAssetDecisions;
+  /** Cancels in-flight work when the current scrape is stopped. */
+  signal?: AbortSignal;
 }
 
 type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart">;
@@ -196,6 +199,8 @@ export class DownloadManager {
       downloaded: [],
     };
 
+    throwIfAborted(callbacks?.signal);
+
     const forceReplace = callbacks?.forceReplace ?? {};
     const assetDecisions = callbacks?.assetDecisions ?? {};
     const primaryTasks = this.buildPrimaryImageTasks(outputDir, data, config, imageAlternatives);
@@ -214,7 +219,7 @@ export class DownloadManager {
     }
 
     const primaryResults = await this.runParallel(pendingPrimaryTasks, 3, async (task) => {
-      return await this.downloadBestImage(task.candidates, task.path);
+      return await this.downloadBestImage(task.candidates, task.path, callbacks?.signal);
     });
 
     for (const result of primaryResults) {
@@ -235,6 +240,7 @@ export class DownloadManager {
     }
 
     if (config.download.downloadSceneImages) {
+      throwIfAborted(callbacks?.signal);
       const sceneDir = join(outputDir, config.paths.sceneImagesFolder);
       const existingSceneImages = await this.listExistingSceneImages(sceneDir);
       const forceReplaceSceneImages = assetDecisions.sceneImages === "replace";
@@ -248,6 +254,7 @@ export class DownloadManager {
       if (keepSceneImages && existingSceneImages.length > 0) {
         assets.sceneImages.push(...existingSceneImages);
       } else {
+        throwIfAborted(callbacks?.signal);
         const targetSceneCount = Math.max(0, config.aggregation.behavior.maxSceneImages);
         const sceneImageSets = getSceneImageSets(data, imageAlternatives, targetSceneCount);
 
@@ -305,6 +312,7 @@ export class DownloadManager {
     }
 
     if (config.download.downloadFanart) {
+      throwIfAborted(callbacks?.signal);
       const fanartTargetPath = join(outputDir, "fanart.jpg");
       const thumbPath = assets.thumb;
 
@@ -338,6 +346,7 @@ export class DownloadManager {
     }
 
     if (config.download.downloadTrailer) {
+      throwIfAborted(callbacks?.signal);
       const trailerPath = join(outputDir, "trailer.mp4");
       const url = normalizeUrl(data.trailer_url);
       const keepTrailer =
@@ -350,7 +359,7 @@ export class DownloadManager {
         targetPath: trailerPath,
         keepExisting: keepTrailer,
         fallbackToExistingOnFailure: assetDecisions.trailer !== "replace",
-        create: async () => (url ? this.safeDownload(url, trailerPath) : null),
+        create: async () => (url ? this.safeDownload(url, trailerPath, { signal: callbacks?.signal }) : null),
       });
       if (trailerResult.assetPath) {
         assets.trailer = trailerResult.assetPath;
@@ -376,6 +385,7 @@ export class DownloadManager {
     }
 
     for (const [setIndex, urls] of sceneImageSets.entries()) {
+      throwIfAborted(callbacks?.signal);
       const attemptedUrls = urls.slice(0, targetSceneCount);
       this.logger.info(
         `Trying scene image set ${setIndex + 1}/${sceneImageSets.length} with ${attemptedUrls.length} image(s)`,
@@ -410,6 +420,8 @@ export class DownloadManager {
       return [];
     }
 
+    throwIfAborted(callbacks?.signal);
+
     const results: Array<string | null> = new Array(urls.length).fill(null);
     const temporaryPaths = new Set<string>();
     const state = {
@@ -420,6 +432,7 @@ export class DownloadManager {
     const workerCount = Math.min(urls.length, Math.max(1, maxConcurrent));
     const runWorker = async (): Promise<void> => {
       while (!state.failed) {
+        throwIfAborted(callbacks?.signal);
         const candidateIndex = state.nextIndex++;
         const url = urls[candidateIndex];
         if (!url) {
@@ -429,6 +442,7 @@ export class DownloadManager {
         const tempPath = join(outputDir, sceneFolder, buildSceneImageTempFileName(candidateIndex));
         const downloadedPath = await this.downloadAndValidateImage(url, tempPath, {
           timeoutMs: SCENE_IMAGE_ATTEMPT_TIMEOUT_MS,
+          signal: callbacks?.signal,
         });
         if (!downloadedPath) {
           state.failed = true;
@@ -441,7 +455,14 @@ export class DownloadManager {
       }
     };
 
-    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+    try {
+      await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+    } catch (error) {
+      for (const filePath of temporaryPaths) {
+        await unlink(filePath).catch(() => undefined);
+      }
+      throw error;
+    }
     const downloadedPaths = results.filter((item): item is string => Boolean(item));
     if (state.failed || downloadedPaths.length !== urls.length) {
       for (const filePath of temporaryPaths) {
@@ -547,6 +568,9 @@ export class DownloadManager {
             value,
           };
         } catch (error) {
+          if (isAbortError(error)) {
+            throw error;
+          }
           const message = error instanceof Error ? error.message : String(error);
           this.logger.warn(`Parallel task failed for ${task.path}: ${message}`);
           results[taskIndex] = { key: task.key, path: task.path, success: false };
@@ -560,13 +584,18 @@ export class DownloadManager {
     return results;
   }
 
-  private async downloadBestImage(candidates: string[], outputPath: string): Promise<string | undefined> {
+  private async downloadBestImage(
+    candidates: string[],
+    outputPath: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
     if (candidates.length === 0) {
       return undefined;
     }
 
-    for (const url of await this.orderImageCandidatesByProbe(candidates)) {
-      const downloadedPath = await this.downloadAndValidateImage(url, outputPath);
+    for (const url of await this.orderImageCandidatesByProbe(candidates, signal)) {
+      throwIfAborted(signal);
+      const downloadedPath = await this.downloadAndValidateImage(url, outputPath, { signal });
       if (downloadedPath) {
         return url;
       }
@@ -578,8 +607,9 @@ export class DownloadManager {
   private async downloadAndValidateImage(
     url: string,
     outputPath: string,
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<string | null> {
+    throwIfAborted(options.signal);
     const tempPath = `${outputPath}.part`;
     const downloadedPath = await this.safeDownload(url, tempPath, options);
     if (!downloadedPath) {
@@ -604,8 +634,11 @@ export class DownloadManager {
     return null;
   }
 
-  private async orderImageCandidatesByProbe(candidates: string[]): Promise<string[]> {
-    const probedCandidates = await Promise.all(candidates.map((url, index) => this.probeImageCandidate(url, index)));
+  private async orderImageCandidatesByProbe(candidates: string[], signal?: AbortSignal): Promise<string[]> {
+    throwIfAborted(signal);
+    const probedCandidates = await Promise.all(
+      candidates.map((url, index) => this.probeImageCandidate(url, index, signal)),
+    );
     const successfulUrls = probedCandidates
       .filter((candidate) => candidate.ok)
       .sort((a, b) => (b.contentLength ?? 0) - (a.contentLength ?? 0) || a.index - b.index)
@@ -615,18 +648,22 @@ export class DownloadManager {
     return [...successfulUrls, ...candidates.filter((url) => !attemptedUrls.has(url))];
   }
 
-  private async probeImageCandidate(url: string, index: number): Promise<ProbedImageCandidate> {
+  private async probeImageCandidate(url: string, index: number, signal?: AbortSignal): Promise<ProbedImageCandidate> {
+    throwIfAborted(signal);
     if (this.isHostCoolingDown(url)) {
       return createFailedProbeCandidate(url, index);
     }
 
     try {
-      const result = await this.networkClient.probe(url);
+      const result = await this.networkClient.probe(url, { signal });
       if (!result.ok) {
         this.recordImageHostFailure(url, `HTTP ${result.status}`);
       }
       return { ...result, index, url };
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.recordImageHostFailure(url, message);
       return createFailedProbeCandidate(url, index);
@@ -648,8 +685,9 @@ export class DownloadManager {
   private async safeDownload(
     url: string,
     outputPath: string,
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<string | null> {
+    throwIfAborted(options.signal);
     if (this.isHostCoolingDown(url)) {
       return null;
     }
@@ -657,10 +695,14 @@ export class DownloadManager {
     try {
       const downloadedPath = await this.networkClient.download(url, outputPath, {
         timeout: options.timeoutMs,
+        signal: options.signal,
       });
       this.resetImageHostFailure(url);
       return downloadedPath;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.recordImageHostFailure(url, message);
       this.logger.warn(`Download failed for ${url}: ${message}`);

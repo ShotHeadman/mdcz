@@ -17,6 +17,7 @@ import type {
   ScrapeResult,
   VideoMeta,
 } from "@shared/types";
+import { isAbortError, throwIfAborted } from "../abort";
 import type { SourceMap } from "../aggregation/types";
 import type { OrganizePlan } from "../FileOrganizer";
 import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
@@ -90,6 +91,7 @@ export class MaintenanceFileScraper {
     this.setProgress(progress, 0);
 
     try {
+      throwIfAborted(signal);
       const prepared = committed
         ? await this.prepareCommittedFile(entry, config, committed, {
             createDirectories: true,
@@ -108,11 +110,13 @@ export class MaintenanceFileScraper {
             movieDir: plan?.outputDir,
             sourceVideoPath: fileInfo.filePath,
             actorSourceProvider: this.deps.actorSourceProvider,
+            signal,
           })
         : {
             data: crawlerData,
             actorPhotoPaths: [],
           };
+      throwIfAborted(signal);
       const preparedCrawlerData = preparedOutputData.data;
       const preparedActorPhotoPaths = preparedOutputData.actorPhotoPaths;
 
@@ -140,10 +144,12 @@ export class MaintenanceFileScraper {
             },
             forceReplace,
             assetDecisions: committed?.assetDecisions,
+            signal,
           },
         );
       }
 
+      throwIfAborted(signal);
       this.setProgress(progress, 75);
 
       // Step 5: Generate NFO (if enabled)
@@ -163,6 +169,7 @@ export class MaintenanceFileScraper {
         });
       }
 
+      throwIfAborted(signal);
       this.setProgress(progress, 80);
 
       // Step 6: Organize files (if enabled)
@@ -172,6 +179,7 @@ export class MaintenanceFileScraper {
         outputVideoPath = await this.deps.fileOrganizer.organizeVideo(fileInfo, plan, config);
       }
 
+      throwIfAborted(signal);
       const resolvedArtifacts = await this.resolveArtifacts(
         entry,
         plan,
@@ -202,6 +210,12 @@ export class MaintenanceFileScraper {
 
       return { scrapeResult: result, updatedEntry, fieldDiffs, unchangedFieldDiffs, pathDiff };
     } catch (error) {
+      if (isAbortError(error)) {
+        this.logger.info(`Maintenance aborted for ${fileInfo.filePath}`);
+        this.setProgress(progress, 100);
+        return this.buildFailedResult(entry, "Operation aborted");
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Maintenance failed for ${fileInfo.filePath}: ${message}`);
       this.setProgress(progress, 100);
@@ -264,6 +278,8 @@ export class MaintenanceFileScraper {
     let aggregationSources: SourceMap | undefined;
     let imageAlternatives: MaintenanceImageAlternatives = {};
 
+    throwIfAborted(signal);
+
     if (!steps.aggregate && entry.scanError) {
       throw new Error(entry.scanError);
     }
@@ -274,6 +290,7 @@ export class MaintenanceFileScraper {
       }
 
       const aggregationResult = await this.deps.aggregationService.aggregate(fileInfo.number, config, signal);
+      throwIfAborted(signal);
 
       if (!aggregationResult) {
         throw new Error("联网获取元数据失败：无数据返回");
@@ -298,8 +315,10 @@ export class MaintenanceFileScraper {
       if (options.emitLogs) {
         this.deps.signalService.showLogText(`[${fileInfo.number}] Translating metadata...`);
       }
-      crawlerData = await this.deps.translateService.translateCrawlerData(crawlerData, config);
+      crawlerData = await this.translateCrawlerDataOrFallback(crawlerData, config, signal);
     }
+
+    throwIfAborted(signal);
 
     const comparisonBase = steps.aggregate ? this.buildDiffBaseline(entry, crawlerData) : undefined;
     const { fieldDiffs, unchangedFieldDiffs } =
@@ -397,6 +416,26 @@ export class MaintenanceFileScraper {
       plan,
       pathDiff,
     };
+  }
+
+  private async translateCrawlerDataOrFallback(
+    crawlerData: CrawlerData,
+    config: Configuration,
+    signal?: AbortSignal,
+  ): Promise<CrawlerData> {
+    throwIfAborted(signal);
+
+    try {
+      return await this.deps.translateService.translateCrawlerData(crawlerData, config, signal);
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Translation failed for ${crawlerData.number}: ${message}`);
+      return crawlerData;
+    }
   }
 
   private async resolveArtifacts(

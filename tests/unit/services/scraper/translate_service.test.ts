@@ -206,7 +206,7 @@ describe("TranslateService term consistency", () => {
 
     expect(completionCreate).toHaveBeenCalledTimes(2);
     expect(sleepMock).toHaveBeenCalledTimes(1);
-    expect(sleepMock).toHaveBeenCalledWith(15_000);
+    expect(sleepMock).toHaveBeenCalledWith(15_000, undefined, undefined);
   });
 
   it("does not retry OpenAI request for non-429 errors", async () => {

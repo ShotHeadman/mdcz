@@ -10,6 +10,7 @@ import { pathExists } from "@main/utils/file";
 import { parseFileInfo } from "@main/utils/number";
 import { probeVideoMetadata } from "@main/utils/video";
 import type { CrawlerData, FileInfo, ScrapeResult, VideoMeta } from "@shared/types";
+import { isAbortError, throwIfAborted } from "./abort";
 import type { AggregationService } from "./aggregation";
 import type { DownloadManager } from "./DownloadManager";
 import type { FileOrganizer } from "./FileOrganizer";
@@ -56,6 +57,7 @@ export class FileScraper {
 
     try {
       const configuration = configurationSchema.parse(await this.deps.configManager.get());
+      throwIfAborted(signal);
 
       this.deps.signalService.showScrapeInfo({
         fileInfo,
@@ -64,6 +66,7 @@ export class FileScraper {
       });
 
       const aggregationResult = await this.deps.aggregationService.aggregate(fileInfo.number, configuration, signal);
+      throwIfAborted(signal);
 
       if (!aggregationResult) {
         this.setProgress(progress, 100);
@@ -89,9 +92,11 @@ export class FileScraper {
       }
 
       this.setProgress(progress, 30);
-      const translated = await this.deps.translateService.translateCrawlerData(crawlerData, configuration);
+      const translated = await this.translateCrawlerDataOrFallback(crawlerData, configuration, signal);
+      throwIfAborted(signal);
       let plan = this.deps.fileOrganizer.plan(fileInfo, translated, configuration);
       plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
+      throwIfAborted(signal);
       const preparedOutputData = await prepareCrawlerDataForMovieOutput(
         this.actorImageService,
         configuration,
@@ -101,8 +106,10 @@ export class FileScraper {
           movieDir: plan.outputDir,
           sourceVideoPath: fileInfo.filePath,
           actorSourceProvider: this.deps.actorSourceProvider,
+          signal,
         },
       );
+      throwIfAborted(signal);
       this.setProgress(progress, 50);
 
       this.deps.signalService.showScrapeInfo({
@@ -120,8 +127,10 @@ export class FileScraper {
           onSceneProgress: (downloaded, total) => {
             this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);
           },
+          signal,
         },
       );
+      throwIfAborted(signal);
       this.setProgress(progress, 75);
 
       const preparedData = preparedOutputData.data;
@@ -137,6 +146,7 @@ export class FileScraper {
           });
         }
       }
+      throwIfAborted(signal);
       this.setProgress(progress, 80);
 
       this.deps.signalService.showScrapeInfo({
@@ -145,6 +155,7 @@ export class FileScraper {
         step: "organize",
       });
 
+      throwIfAborted(signal);
       const outputVideoPath = await this.deps.fileOrganizer.organizeVideo(fileInfo, plan, configuration);
 
       this.setProgress(progress, 100);
@@ -167,6 +178,18 @@ export class FileScraper {
 
       return result;
     } catch (error) {
+      if (isAbortError(error)) {
+        this.logger.info(`Scrape aborted for ${fileInfo.filePath}`);
+        this.setProgress(progress, 100);
+        const skippedResult: ScrapeResult = {
+          fileInfo,
+          status: "skipped",
+          error: "Operation aborted",
+        };
+        this.deps.signalService.showScrapeResult(skippedResult);
+        return skippedResult;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Scrape failed for ${fileInfo.filePath}: ${message}`);
       this.setProgress(progress, 100);
@@ -187,6 +210,26 @@ export class FileScraper {
       this.deps.signalService.showScrapeResult(failedResult);
       this.deps.signalService.showFailedInfo({ fileInfo, error: message });
       return failedResult;
+    }
+  }
+
+  private async translateCrawlerDataOrFallback(
+    crawlerData: CrawlerData,
+    configuration: Configuration,
+    signal?: AbortSignal,
+  ): Promise<CrawlerData> {
+    throwIfAborted(signal);
+
+    try {
+      return await this.deps.translateService.translateCrawlerData(crawlerData, configuration, signal);
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Translation failed for ${crawlerData.number}: ${message}`);
+      return crawlerData;
     }
   }
 
