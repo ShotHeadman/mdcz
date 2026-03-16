@@ -1,3 +1,4 @@
+import { normalizeDmmNumberVariants } from "@main/utils/dmmImage";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
@@ -5,7 +6,6 @@ import { type CheerioAPI, load } from "cheerio";
 import type { Context, CrawlerInput } from "../../base/types";
 
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
-import { normalizeNumberVariants } from "./contentId";
 import { classifyDmmDetailFailure } from "./failureClassifier";
 import { DmmCategory, parseCategory, parseDigitalDetail, parseMonoLikeDetail } from "./parsers";
 
@@ -77,7 +77,7 @@ export class DmmCrawler extends BaseDmmCrawler {
 
   protected override newContext(input: CrawlerInput): DmmContext {
     const context = super.newContext(input) as DmmContext;
-    const variants = normalizeNumberVariants(input.number);
+    const variants = normalizeDmmNumberVariants(input.number);
     context.number00 = variants.number00;
     context.numberNo00 = variants.numberNo00;
     return context;
@@ -143,7 +143,7 @@ export class DmmCrawler extends BaseDmmCrawler {
     }
     const title = baseData.title;
 
-    baseData = await this.optimizeAwsImages(baseData, context, context.number00, context.numberNo00);
+    baseData = await this.optimizeAwsImages(baseData, context, context.number);
 
     return {
       title,

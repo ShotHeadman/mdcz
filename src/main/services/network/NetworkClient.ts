@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { loggerService } from "@main/services/LoggerService";
 import { parseRetryAfterMs } from "@main/utils/http";
+import { parseImageDimensions } from "@main/utils/image";
 import { type Browser, Impit, type RequestInit as ImpitRequestInit } from "impit";
 import { RateLimiter } from "./RateLimiter";
 
@@ -10,10 +11,14 @@ const RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
 const RETRYABLE_STATUS_CODES = new Set([408, 500, 502, 503, 504]);
 const PROBE_FALLBACK_STATUS_CODES = new Set([403, 405, 501]);
+const PROBE_RANGE_HEADER = "bytes=0-0";
+const IMAGE_METADATA_PROBE_BYTES = 64 * 1024;
+const IMAGE_METADATA_PROBE_RETRY_BYTES = 256 * 1024;
 type ImpitResponse = Awaited<ReturnType<Impit["fetch"]>>;
 type ProbeMethod = "HEAD" | "GET";
 type ProbeOptions = Omit<ImpitRequestInit, "method"> & {
   method?: ProbeMethod;
+  captureImageSize?: boolean;
 };
 
 export interface NetworkCookieJar {
@@ -39,6 +44,8 @@ export interface ProbeResult {
   status: number;
   contentLength: number | null;
   resolvedUrl: string;
+  width?: number;
+  height?: number;
 }
 
 interface RequestBehavior {
@@ -159,10 +166,15 @@ export class NetworkClient {
   }
 
   async probe(url: string, init: ProbeOptions = {}): Promise<ProbeResult> {
-    const method = init.method ?? "HEAD";
+    const { captureImageSize = false, ...requestInit } = init;
+    if (captureImageSize) {
+      return await this.probeWithImageSize(url, requestInit);
+    }
+
+    const method = requestInit.method ?? "HEAD";
     if (method === "GET") {
       const response = await this.requestForProbe(url, {
-        ...init,
+        ...requestInit,
         method: "GET",
       });
 
@@ -170,7 +182,7 @@ export class NetworkClient {
     }
 
     const response = await this.requestForProbe(url, {
-      ...init,
+      ...requestInit,
       method: "HEAD",
     });
     if (response.ok || !PROBE_FALLBACK_STATUS_CODES.has(response.status)) {
@@ -178,9 +190,9 @@ export class NetworkClient {
     }
 
     const fallbackResponse = await this.requestForProbe(url, {
-      ...init,
+      ...requestInit,
       method: "GET",
-      headers: this.buildProbeFallbackHeaders(init.headers),
+      headers: this.buildProbeHeaders(requestInit.headers, PROBE_RANGE_HEADER),
     });
 
     return this.toProbeResult(url, fallbackResponse);
@@ -211,6 +223,61 @@ export class NetworkClient {
       contentLength: this.parseResponseContentLength(response),
       resolvedUrl: response.url || url,
     };
+  }
+
+  private async buildProbeResultWithImageSize(url: string, response: ImpitResponse): Promise<ProbeResult> {
+    return await this.mergeProbeImageSize(this.toProbeResult(url, response), response);
+  }
+
+  private async probeWithImageSize(url: string, init: Omit<ProbeOptions, "captureImageSize">): Promise<ProbeResult> {
+    const firstAttempt = await this.requestProbeWithImageSize(url, init, IMAGE_METADATA_PROBE_BYTES);
+    if (!this.shouldRetryProbeWithImageSize(firstAttempt.response, firstAttempt.result, IMAGE_METADATA_PROBE_BYTES)) {
+      return firstAttempt.result;
+    }
+
+    const secondAttempt = await this.requestProbeWithImageSize(url, init, IMAGE_METADATA_PROBE_RETRY_BYTES);
+    return secondAttempt.result;
+  }
+
+  private async requestProbeWithImageSize(
+    url: string,
+    init: Omit<ProbeOptions, "captureImageSize">,
+    byteCount: number,
+  ): Promise<{ response: ImpitResponse; result: ProbeResult }> {
+    const response = await this.requestForProbe(url, {
+      ...init,
+      method: "GET",
+      headers: this.buildProbeHeaders(init.headers, this.buildProbeRangeValue(byteCount)),
+    });
+
+    return {
+      response,
+      result: await this.buildProbeResultWithImageSize(url, response),
+    };
+  }
+
+  private shouldRetryProbeWithImageSize(response: ImpitResponse, result: ProbeResult, byteCount: number): boolean {
+    if (this.hasProbeImageSize(result) || !result.ok || byteCount >= IMAGE_METADATA_PROBE_RETRY_BYTES) {
+      return false;
+    }
+
+    if (response.status !== 206) {
+      return false;
+    }
+
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    return !contentType || contentType.startsWith("image/jpeg");
+  }
+
+  private async mergeProbeImageSize(result: ProbeResult, response: ImpitResponse): Promise<ProbeResult> {
+    const dimensions = await this.tryParseProbeImageSize(response);
+    return dimensions ? { ...result, ...dimensions } : result;
+  }
+
+  private hasProbeImageSize(result: ProbeResult): result is ProbeResult & { width: number; height: number } {
+    return (
+      typeof result.width === "number" && result.width > 0 && typeof result.height === "number" && result.height > 0
+    );
   }
 
   private async request(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
@@ -275,10 +342,41 @@ export class NetworkClient {
     return new Error(`HTTP ${response.status} ${response.statusText} for ${url}`);
   }
 
-  private buildProbeFallbackHeaders(headersInit: ImpitRequestInit["headers"]): Headers {
+  private buildProbeRangeValue(byteCount: number): string {
+    return `bytes=0-${Math.max(0, byteCount - 1)}`;
+  }
+
+  private buildProbeHeaders(headersInit: ImpitRequestInit["headers"], rangeValue: string): Headers {
     const headers = new Headers(headersInit);
-    headers.set("range", headers.get("range") ?? "bytes=0-0");
+    headers.set("range", headers.get("range") ?? rangeValue);
     return headers;
+  }
+
+  private async tryParseProbeImageSize(response: ImpitResponse): Promise<{ width: number; height: number } | null> {
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? null;
+    if (contentType && !contentType.startsWith("image/")) {
+      return null;
+    }
+
+    if (!this.shouldReadProbeBody(response)) {
+      return null;
+    }
+
+    try {
+      const dimensions = parseImageDimensions(await response.bytes());
+      return dimensions ? { width: dimensions.width, height: dimensions.height } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private shouldReadProbeBody(response: ImpitResponse): boolean {
+    if (response.status === 206) {
+      return true;
+    }
+
+    const bodyLength = this.parseContentLength(response.headers.get("content-length"));
+    return bodyLength !== null && bodyLength <= IMAGE_METADATA_PROBE_RETRY_BYTES;
   }
 
   private parseContentLength(value: string | null): number | null {

@@ -1,3 +1,4 @@
+import { buildDmmAwsImageCandidates, isDmmAwsPlaceholderUrl, toDmmAwsProbeUrl } from "@main/utils/dmmImage";
 import type { CrawlerData } from "@shared/types";
 import type { CheerioAPI } from "cheerio";
 
@@ -7,20 +8,6 @@ import type { FetchOptions } from "../../FetchGateway";
 
 import { classifyDmmDetailFailure } from "./failureClassifier";
 import { buildDmmHttpOptions, normalizeDmmCookieHeader } from "./SessionVault";
-
-const AWS_PLACEHOLDER_KEYWORDS = ["now_printing", "nowprinting", "noimage", "nopic", "media_violation"];
-
-const toAwsProbeUrl = (value: string): string => {
-  const url = new URL(value);
-  url.searchParams.set("w", "120");
-  url.searchParams.set("h", "90");
-  return url.toString();
-};
-
-const isAwsPlaceholderUrl = (value: string): boolean => {
-  const resolvedUrl = value.toLowerCase();
-  return AWS_PLACEHOLDER_KEYWORDS.some((keyword) => resolvedUrl.includes(keyword));
-};
 
 /**
  * Shared base for DMM and DMM_TV crawlers.
@@ -73,19 +60,17 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
   protected async optimizeAwsImages(
     data: Partial<CrawlerData>,
     context: Context,
-    number00?: string,
-    numberNo00?: string,
+    rawNumber?: string,
   ): Promise<Partial<CrawlerData>> {
     const thumbUrl = data.thumb_url;
-    if (!thumbUrl || !thumbUrl.includes("pics.dmm.co.jp")) {
+    if (!thumbUrl) {
       return data;
     }
 
-    const awsCandidates = [
-      thumbUrl.replace("pics.dmm.co.jp", "awsimgsrc.dmm.co.jp/pics_dig").replace("/adult/", "/"),
-      number00 ? `https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/${number00}/${number00}pl.jpg` : null,
-      numberNo00 ? `https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/${numberNo00}/${numberNo00}pl.jpg` : null,
-    ].filter((url): url is string => Boolean(url));
+    const awsCandidates = buildDmmAwsImageCandidates(thumbUrl, rawNumber);
+    if (awsCandidates.length === 0) {
+      return data;
+    }
 
     const results = await Promise.all(
       awsCandidates.map(async (awsUrl) => {
@@ -111,10 +96,10 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
   }
 
   private async isValidAwsImage(awsUrl: string, context: Context): Promise<boolean> {
-    const probe = await this.gateway.probeUrl(toAwsProbeUrl(awsUrl), {
+    const probe = await this.gateway.probeUrl(toDmmAwsProbeUrl(awsUrl), {
       ...this.createFetchOptions(context),
       method: "GET",
     });
-    return probe.ok && !isAwsPlaceholderUrl(probe.resolvedUrl);
+    return probe.ok && !isDmmAwsPlaceholderUrl(probe.resolvedUrl);
   }
 }

@@ -52,6 +52,12 @@ const seedFiles = async (root: string, files: Record<string, string>): Promise<v
   );
 };
 
+const writeDownloadedFile = async (outputPath: string, url: string): Promise<string> => {
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `downloaded:${url}`, "utf8");
+  return outputPath;
+};
+
 const createDownloadSubject = async (
   files: Record<string, string> = {},
   options: {
@@ -83,12 +89,109 @@ const mockImageValidation = (valid: boolean) =>
         },
   );
 
-class FakeNetworkClient {
-  readonly download = vi.fn(async (url: string, outputPath: string) => {
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, `downloaded:${url}`, "utf8");
-    return outputPath;
+const mockResolutionAwarePrimaryValidation = () =>
+  vi.spyOn(imageUtils, "validateImage").mockImplementation(async (filePath: string) => {
+    const content = await readFile(filePath, "utf8");
+    if (content.includes("thumb-tiny")) {
+      return { valid: true, width: 400, height: 300 };
+    }
+    if (content.includes("thumb-low")) {
+      return { valid: true, width: 800, height: 600 };
+    }
+    if (content.includes("thumb-high")) {
+      return { valid: true, width: 1_600, height: 1_200 };
+    }
+    if (content.includes("poster-tiny")) {
+      return { valid: true, width: 300, height: 450 };
+    }
+    if (content.includes("poster-low")) {
+      return { valid: true, width: 600, height: 900 };
+    }
+    if (content.includes("poster-high")) {
+      return { valid: true, width: 1_200, height: 1_800 };
+    }
+
+    return { valid: false, width: 0, height: 0, reason: "parse_failed" };
   });
+
+const mockPrimaryProbe = (
+  networkClient: FakeNetworkClient,
+  options: {
+    includeDimensions: boolean;
+    withoutDimensions?: string[];
+  },
+) => {
+  networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
+    const variant = url.includes("-tiny.") ? "tiny" : url.includes("-low.") ? "low" : "high";
+    const isThumb = url.includes("thumb");
+    const shouldIncludeDimensions = options.includeDimensions && !options.withoutDimensions?.includes(url);
+    return {
+      ok: true,
+      status: 200,
+      contentLength: variant === "high" ? 20_000 : variant === "low" ? 10_000 : 1_000,
+      resolvedUrl: url,
+      ...(shouldIncludeDimensions
+        ? {
+            width:
+              variant === "high"
+                ? isThumb
+                  ? 1_600
+                  : 1_200
+                : variant === "low"
+                  ? isThumb
+                    ? 800
+                    : 600
+                  : isThumb
+                    ? 400
+                    : 300,
+            height:
+              variant === "high"
+                ? isThumb
+                  ? 1_200
+                  : 1_800
+                : variant === "low"
+                  ? isThumb
+                    ? 600
+                    : 900
+                  : isThumb
+                    ? 300
+                    : 450,
+          }
+        : {}),
+    };
+  });
+};
+
+const createPrimaryImageConfig = () =>
+  createDownloadConfig({
+    keepThumb: false,
+    keepPoster: false,
+    downloadFanart: false,
+    downloadSceneImages: false,
+    downloadTrailer: false,
+  });
+
+const downloadPrimaryAssets = (
+  manager: DownloadManager,
+  root: string,
+  data: Partial<CrawlerData>,
+  alternatives: { thumb_url?: string[]; poster_url?: string[] } = {},
+) => manager.downloadAll(root, createCrawlerData(data), createPrimaryImageConfig(), alternatives);
+
+const expectPrimaryAssets = async (
+  root: string,
+  assets: Awaited<ReturnType<DownloadManager["downloadAll"]>>,
+  expectedThumbUrl: string,
+  expectedPosterUrl: string,
+) => {
+  expect(assets.thumb).toBe(join(root, "thumb.jpg"));
+  expect(assets.poster).toBe(join(root, "poster.jpg"));
+  await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(`downloaded:${expectedThumbUrl}`);
+  await expect(readFile(join(root, "poster.jpg"), "utf8")).resolves.toBe(`downloaded:${expectedPosterUrl}`);
+};
+
+class FakeNetworkClient {
+  readonly download = vi.fn(async (url: string, outputPath: string) => await writeDownloadedFile(outputPath, url));
 
   readonly probe = vi.fn(
     async (url: string): Promise<ProbeResult> => ({
@@ -393,60 +496,174 @@ describe("DownloadManager keep flags", () => {
     await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe("old-thumb");
   });
 
-  it("keeps downloading primary image candidates until it finds the highest-resolution poster and thumb", async () => {
+  it("downloads only the AWS-backed primary images even when the original image comes from another site", async () => {
     const { root, manager, networkClient } = await createDownloadSubject();
+    mockImageValidation(true);
     networkClient.probe.mockImplementation(
       async (url: string): Promise<ProbeResult> => ({
         ok: true,
         status: 200,
-        contentLength: url.includes("-low.") ? 10_000 : 1_000,
+        contentLength: url.includes("awsimgsrc.dmm.co.jp") ? 20_000 : 1_000,
         resolvedUrl: url,
+        width: url.endsWith("pl.jpg")
+          ? url.includes("awsimgsrc.dmm.co.jp")
+            ? 2_184
+            : 1_472
+          : url.includes("awsimgsrc.dmm.co.jp")
+            ? 1_032
+            : 147,
+        height: url.endsWith("pl.jpg")
+          ? url.includes("awsimgsrc.dmm.co.jp")
+            ? 1_468
+            : 200
+          : url.includes("awsimgsrc.dmm.co.jp")
+            ? 1_468
+            : 200,
       }),
     );
-    vi.spyOn(imageUtils, "validateImage").mockImplementation(async (filePath: string) => {
-      const content = await readFile(filePath, "utf8");
-      if (content.includes("thumb-low")) {
-        return { valid: true, width: 800, height: 1_200 };
-      }
-      if (content.includes("thumb-high")) {
-        return { valid: true, width: 1_600, height: 2_400 };
-      }
-      if (content.includes("poster-low")) {
-        return { valid: true, width: 600, height: 900 };
-      }
-      if (content.includes("poster-high")) {
-        return { valid: true, width: 1_200, height: 1_800 };
-      }
 
-      return { valid: false, width: 0, height: 0, reason: "parse_failed" };
+    const assets = await downloadPrimaryAssets(manager, root, {
+      number: "EBWH-241",
+      thumb_url: "https://image.example.com/library/ebwh00241pl.jpg",
+      poster_url: "https://image.example.com/library/ebwh00241ps.jpg",
     });
 
-    const assets = await manager.downloadAll(
+    await expectPrimaryAssets(
       root,
-      createCrawlerData({
+      assets,
+      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
+      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
+    );
+    expect(networkClient.probe).toHaveBeenCalledTimes(6);
+    expect(networkClient.download).toHaveBeenCalledTimes(2);
+    expect(networkClient.probe.mock.calls.map(([url]) => url)).toEqual(
+      expect.arrayContaining([
+        "https://image.example.com/library/ebwh00241pl.jpg",
+        "https://image.example.com/library/ebwh00241ps.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh241/ebwh241pl.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh241/ebwh241ps.jpg",
+      ]),
+    );
+    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(
+      expect.arrayContaining([
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
+      ]),
+    );
+  });
+
+  it("does not cool down the AWS image host after speculative 404 misses, so later titles can still use valid AWS mirrors", async () => {
+    const storeRoot = await createTempDir();
+    const storePath = join(storeRoot, "image-host-cooldowns.json");
+    const hostStore = new PersistentCooldownStore({
+      filePath: storePath,
+      loggerName: "DownloadManagerPrimaryAwsCooldownTestStore",
+    });
+    const { root, manager, networkClient } = await createDownloadSubject({}, { imageHostCooldownStore: hostStore });
+    mockImageValidation(true);
+    networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
+      if (url.includes("awsimgsrc.dmm.co.jp") && (url.includes("abf00075") || url.includes("abf075"))) {
+        return {
+          ok: false,
+          status: 404,
+          contentLength: null,
+          resolvedUrl: url,
+        };
+      }
+
+      if (url.includes("awsimgsrc.dmm.co.jp") && url.includes("ebwh00241")) {
+        return {
+          ok: true,
+          status: 200,
+          contentLength: 20_000,
+          resolvedUrl: url,
+          width: url.endsWith("pl.jpg") ? 2_184 : 1_032,
+          height: 1_468,
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        contentLength: 1_000,
+        resolvedUrl: url,
+        width: url.endsWith("pl.jpg") ? 840 : 147,
+        height: url.endsWith("pl.jpg") ? 566 : 200,
+      };
+    });
+    networkClient.download.mockImplementation(async (url: string, outputPath: string) => {
+      if (url.includes("awsimgsrc.dmm.co.jp") && (url.includes("abf00075") || url.includes("abf075"))) {
+        throw new Error(`HTTP 404 Not Found for ${url}`);
+      }
+
+      return await writeDownloadedFile(outputPath, url);
+    });
+
+    const firstRoot = join(root, "ABF-075");
+    const firstAssets = await downloadPrimaryAssets(manager, firstRoot, {
+      number: "ABF-075",
+      thumb_url: "https://image.example.com/library/abf00075pl.jpg",
+      poster_url: "https://image.example.com/library/abf00075ps.jpg",
+    });
+
+    await expectPrimaryAssets(
+      firstRoot,
+      firstAssets,
+      "https://image.example.com/library/abf00075pl.jpg",
+      "https://image.example.com/library/abf00075ps.jpg",
+    );
+    expect(hostStore.getActiveCooldown("awsimgsrc.dmm.co.jp")).toBeUndefined();
+
+    const secondRoot = join(root, "EBWH-241");
+    const secondAssets = await downloadPrimaryAssets(manager, secondRoot, {
+      number: "EBWH-241",
+      thumb_url: "https://image.example.com/library/ebwh00241pl.jpg",
+      poster_url: "https://image.example.com/library/ebwh00241ps.jpg",
+    });
+
+    await expectPrimaryAssets(
+      secondRoot,
+      secondAssets,
+      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
+      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
+    );
+    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(
+      expect.arrayContaining([
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf00075/abf00075pl.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf00075/abf00075ps.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf075/abf075pl.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf075/abf075ps.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
+      ]),
+    );
+  });
+
+  it("falls back to downloading and comparing all primary image candidates when probe metadata is incomplete", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject();
+    mockPrimaryProbe(networkClient, { includeDimensions: false });
+    mockResolutionAwarePrimaryValidation();
+
+    const assets = await downloadPrimaryAssets(
+      manager,
+      root,
+      {
         thumb_url: "https://example.com/thumb-low.jpg",
         poster_url: "https://example.com/poster-low.jpg",
-      }),
-      createDownloadConfig({
-        keepThumb: false,
-        keepPoster: false,
-        downloadFanart: false,
-        downloadSceneImages: false,
-        downloadTrailer: false,
-      }),
+      },
       {
         thumb_url: ["https://cdn.example.com/thumb-high.jpg"],
         poster_url: ["https://cdn.example.com/poster-high.jpg"],
       },
     );
 
-    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
-    expect(assets.poster).toBe(join(root, "poster.jpg"));
-    await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(
-      "downloaded:https://cdn.example.com/thumb-high.jpg",
-    );
-    await expect(readFile(join(root, "poster.jpg"), "utf8")).resolves.toBe(
-      "downloaded:https://cdn.example.com/poster-high.jpg",
+    await expectPrimaryAssets(
+      root,
+      assets,
+      "https://cdn.example.com/thumb-high.jpg",
+      "https://cdn.example.com/poster-high.jpg",
     );
     expect(networkClient.probe).toHaveBeenCalledTimes(4);
     expect(networkClient.download).toHaveBeenCalledTimes(4);
@@ -457,6 +674,49 @@ describe("DownloadManager keep flags", () => {
         "https://example.com/poster-low.jpg",
         "https://cdn.example.com/poster-high.jpg",
       ]),
+    );
+  });
+
+  it("skips downloading probe-proven smaller primary candidates while still checking unresolved ones", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject();
+    mockPrimaryProbe(networkClient, {
+      includeDimensions: true,
+      withoutDimensions: ["https://cdn.example.com/thumb-high.jpg", "https://cdn.example.com/poster-high.jpg"],
+    });
+    mockResolutionAwarePrimaryValidation();
+
+    const assets = await downloadPrimaryAssets(
+      manager,
+      root,
+      {
+        thumb_url: "https://example.com/thumb-low.jpg",
+        poster_url: "https://example.com/poster-low.jpg",
+      },
+      {
+        thumb_url: ["https://cdn.example.com/thumb-tiny.jpg", "https://cdn.example.com/thumb-high.jpg"],
+        poster_url: ["https://cdn.example.com/poster-tiny.jpg", "https://cdn.example.com/poster-high.jpg"],
+      },
+    );
+
+    await expectPrimaryAssets(
+      root,
+      assets,
+      "https://cdn.example.com/thumb-high.jpg",
+      "https://cdn.example.com/poster-high.jpg",
+    );
+    expect(networkClient.probe).toHaveBeenCalledTimes(6);
+    expect(networkClient.download).toHaveBeenCalledTimes(4);
+    const downloadedUrls = networkClient.download.mock.calls.map(([url]) => url);
+    expect(downloadedUrls).toEqual(
+      expect.arrayContaining([
+        "https://example.com/thumb-low.jpg",
+        "https://cdn.example.com/thumb-high.jpg",
+        "https://example.com/poster-low.jpg",
+        "https://cdn.example.com/poster-high.jpg",
+      ]),
+    );
+    expect(downloadedUrls).not.toEqual(
+      expect.arrayContaining(["https://cdn.example.com/thumb-tiny.jpg", "https://cdn.example.com/poster-tiny.jpg"]),
     );
   });
 

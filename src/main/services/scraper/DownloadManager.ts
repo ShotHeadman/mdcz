@@ -5,6 +5,7 @@ import type { Configuration } from "@main/services/config";
 import { type CooldownFailurePolicy, PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient, ProbeResult } from "@main/services/network";
+import { buildDmmAwsImageCandidates } from "@main/utils/dmmImage";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
 import type { CrawlerData, DownloadedAssets, MaintenanceAssetDecisions } from "@shared/types";
@@ -72,6 +73,7 @@ type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
 type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 type ProbedImageCandidate = ProbeResult & { index: number; url: string };
+type ProbedImageCandidateWithDimensions = ProbedImageCandidate & { width: number; height: number };
 type DownloadedImageCandidate = {
   url: string;
   path: string;
@@ -90,6 +92,7 @@ const IMAGE_HOST_FAILURE_POLICY: CooldownFailurePolicy = {
   windowMs: IMAGE_HOST_COOLDOWN_MS,
   cooldownMs: IMAGE_HOST_COOLDOWN_MS,
 };
+const IMAGE_HOST_COOLDOWN_STATUS_CODES = new Set([408, 429]);
 
 const getNormalizedSceneImageUrls = (values: string[]): string[] => {
   const seen = new Set<string>();
@@ -142,6 +145,25 @@ const getUrlHost = (url: string): string | null => {
   } catch {
     return null;
   }
+};
+
+const parseHttpStatus = (message?: string): number | null => {
+  const match = message?.match(/\bHTTP (\d{3})\b/u);
+  if (!match) {
+    return null;
+  }
+
+  const status = Number.parseInt(match[1], 10);
+  return Number.isFinite(status) ? status : null;
+};
+
+const shouldRecordImageHostFailure = (status?: number, reason?: string): boolean => {
+  const resolvedStatus = typeof status === "number" && status > 0 ? status : parseHttpStatus(reason);
+  if (resolvedStatus === null) {
+    return true;
+  }
+
+  return IMAGE_HOST_COOLDOWN_STATUS_CODES.has(resolvedStatus) || resolvedStatus >= 500;
 };
 
 const createFailedProbeCandidate = (url: string, index: number): ProbedImageCandidate => ({
@@ -494,6 +516,7 @@ export class DownloadManager {
       "thumb",
       config.download.downloadThumb,
       config.download.keepThumb,
+      data.number,
       data.thumb_url,
       imageAlternatives.thumb_url,
       join(outputDir, "thumb.jpg"),
@@ -503,6 +526,7 @@ export class DownloadManager {
       "poster",
       config.download.downloadPoster,
       config.download.keepPoster,
+      data.number,
       data.poster_url,
       imageAlternatives.poster_url,
       join(outputDir, "poster.jpg"),
@@ -516,6 +540,7 @@ export class DownloadManager {
     key: PrimaryImageKey,
     enabled: boolean,
     keepExisting: boolean,
+    number: string | undefined,
     primaryUrl: string | undefined,
     alternatives: string[] | undefined,
     path: string,
@@ -524,22 +549,28 @@ export class DownloadManager {
       return;
     }
 
-    const candidates = this.buildImageCandidates(primaryUrl, alternatives);
+    const candidates = this.buildImageCandidates(primaryUrl, alternatives, number);
     tasks.push({ key, candidates, path, keepExisting });
   }
 
-  private buildImageCandidates(primaryUrl?: string, alternatives?: string[]): string[] {
+  private buildImageCandidates(primaryUrl?: string, alternatives?: string[], rawNumber?: string): string[] {
     const seen = new Set<string>();
     const candidates: string[] = [];
 
     for (const url of [primaryUrl, ...(alternatives ?? [])]) {
       const normalized = normalizeUrl(url);
-      if (!normalized || seen.has(normalized)) {
+      if (!normalized) {
         continue;
       }
 
-      seen.add(normalized);
-      candidates.push(normalized);
+      for (const candidate of [normalized, ...buildDmmAwsImageCandidates(normalized, rawNumber)]) {
+        if (seen.has(candidate)) {
+          continue;
+        }
+
+        seen.add(candidate);
+        candidates.push(candidate);
+      }
     }
 
     return candidates;
@@ -600,24 +631,50 @@ export class DownloadManager {
       return undefined;
     }
 
+    const probedCandidates = await this.orderImageCandidatesByProbe(candidates, signal, true);
+    if (this.canSelectBestImageFromProbe(probedCandidates)) {
+      for (const candidate of probedCandidates) {
+        throwIfAborted(signal);
+        const downloadedPath = await this.downloadAndValidateImage(candidate.url, outputPath, { signal });
+        if (downloadedPath) {
+          return candidate.url;
+        }
+      }
+
+      return undefined;
+    }
+
+    return await this.downloadBestImageByComparison(probedCandidates, outputPath, signal);
+  }
+
+  private async downloadBestImageByComparison(
+    candidates: ProbedImageCandidate[],
+    outputPath: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
     let bestCandidate: DownloadedImageCandidate | null = null;
     const tempPaths = new Set<string>();
 
     try {
-      for (const [rank, url] of (await this.orderImageCandidatesByProbe(candidates, signal)).entries()) {
+      for (const [rank, candidate] of candidates.entries()) {
         throwIfAborted(signal);
-        const tempPath = `${outputPath}.candidate-${rank + 1}.part`;
-        const candidate = await this.downloadValidatedImageCandidate(url, tempPath, { signal });
-        if (!candidate) {
+        if (bestCandidate && this.canSkipCandidateDownload(candidate, bestCandidate)) {
           continue;
         }
 
-        tempPaths.add(candidate.path);
+        const url = candidate.url;
+        const tempPath = `${outputPath}.candidate-${rank + 1}.part`;
+        const downloaded = await this.downloadValidatedImageCandidate(url, tempPath, { signal });
+        if (!downloaded) {
+          continue;
+        }
+
+        tempPaths.add(downloaded.path);
         const downloadedCandidate: DownloadedImageCandidate = {
           url,
-          path: candidate.path,
-          width: candidate.width,
-          height: candidate.height,
+          path: downloaded.path,
+          width: downloaded.width,
+          height: downloaded.height,
           rank,
         };
 
@@ -694,47 +751,98 @@ export class DownloadManager {
     candidate: DownloadedImageCandidate,
     currentBest: DownloadedImageCandidate,
   ): boolean {
+    const resolutionComparison = this.compareImageResolution(candidate, currentBest);
+    return resolutionComparison < 0 || (resolutionComparison === 0 && candidate.rank < currentBest.rank);
+  }
+
+  private canSkipCandidateDownload(candidate: ProbedImageCandidate, currentBest: DownloadedImageCandidate): boolean {
+    return this.hasProbeDimensions(candidate) && this.compareImageResolution(candidate, currentBest) >= 0;
+  }
+
+  private hasProbeDimensions(candidate: ProbedImageCandidate): candidate is ProbedImageCandidateWithDimensions {
+    return (
+      typeof candidate.width === "number" &&
+      candidate.width > 0 &&
+      typeof candidate.height === "number" &&
+      candidate.height > 0
+    );
+  }
+
+  private canSelectBestImageFromProbe(
+    candidates: ProbedImageCandidate[],
+  ): candidates is ProbedImageCandidateWithDimensions[] {
+    return candidates.length > 0 && candidates.every((candidate) => candidate.ok && this.hasProbeDimensions(candidate));
+  }
+
+  private compareImageResolution(
+    candidate: Pick<DownloadedImageCandidate, "width" | "height">,
+    currentBest: Pick<DownloadedImageCandidate, "width" | "height">,
+  ): number {
     const candidatePixels = candidate.width * candidate.height;
     const bestPixels = currentBest.width * currentBest.height;
 
     if (candidatePixels !== bestPixels) {
-      return candidatePixels > bestPixels;
+      return bestPixels - candidatePixels;
     }
 
     if (candidate.width !== currentBest.width) {
-      return candidate.width > currentBest.width;
+      return currentBest.width - candidate.width;
     }
 
     if (candidate.height !== currentBest.height) {
-      return candidate.height > currentBest.height;
+      return currentBest.height - candidate.height;
     }
 
-    return candidate.rank < currentBest.rank;
+    return 0;
   }
 
-  private async orderImageCandidatesByProbe(candidates: string[], signal?: AbortSignal): Promise<string[]> {
+  private compareProbedImageCandidates(a: ProbedImageCandidate, b: ProbedImageCandidate): number {
+    const aHasDimensions = this.hasProbeDimensions(a);
+    const bHasDimensions = this.hasProbeDimensions(b);
+
+    if (aHasDimensions && bHasDimensions) {
+      const resolutionComparison = this.compareImageResolution(a, b);
+      if (resolutionComparison !== 0) {
+        return resolutionComparison;
+      }
+    } else if (aHasDimensions !== bHasDimensions) {
+      return aHasDimensions ? -1 : 1;
+    }
+
+    if (a.ok !== b.ok) {
+      return a.ok ? -1 : 1;
+    }
+
+    return (b.contentLength ?? 0) - (a.contentLength ?? 0) || a.index - b.index;
+  }
+
+  private async orderImageCandidatesByProbe(
+    candidates: string[],
+    signal?: AbortSignal,
+    captureImageSize = false,
+  ): Promise<ProbedImageCandidate[]> {
     throwIfAborted(signal);
     const probedCandidates = await Promise.all(
-      candidates.map((url, index) => this.probeImageCandidate(url, index, signal)),
+      candidates.map((url, index) => this.probeImageCandidate(url, index, signal, captureImageSize)),
     );
-    const successfulUrls = probedCandidates
-      .filter((candidate) => candidate.ok)
-      .sort((a, b) => (b.contentLength ?? 0) - (a.contentLength ?? 0) || a.index - b.index)
-      .map((candidate) => candidate.url);
 
-    const attemptedUrls = new Set(successfulUrls);
-    return [...successfulUrls, ...candidates.filter((url) => !attemptedUrls.has(url))];
+    return [...probedCandidates].sort((a, b) => this.compareProbedImageCandidates(a, b));
   }
 
-  private async probeImageCandidate(url: string, index: number, signal?: AbortSignal): Promise<ProbedImageCandidate> {
+  private async probeImageCandidate(
+    url: string,
+    index: number,
+    signal?: AbortSignal,
+    captureImageSize = false,
+  ): Promise<ProbedImageCandidate> {
     throwIfAborted(signal);
     if (this.isHostCoolingDown(url)) {
       return createFailedProbeCandidate(url, index);
     }
 
     try {
-      const result = await this.networkClient.probe(url, { signal });
-      if (!result.ok) {
+      const result = await this.networkClient.probe(url, { signal, captureImageSize });
+      if (!result.ok && shouldRecordImageHostFailure(result.status)) {
         this.recordImageHostFailure(url, `HTTP ${result.status}`);
       }
       return { ...result, index, url };
@@ -782,7 +890,9 @@ export class DownloadManager {
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
-      this.recordImageHostFailure(url, message);
+      if (shouldRecordImageHostFailure(undefined, message)) {
+        this.recordImageHostFailure(url, message);
+      }
       this.logger.warn(`Download failed for ${url}: ${message}`);
       return null;
     }
