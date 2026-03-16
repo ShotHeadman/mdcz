@@ -22,6 +22,7 @@ import type { SourceMap } from "../aggregation/types";
 import type { OrganizePlan } from "../FileOrganizer";
 import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
 import { prepareCrawlerDataForMovieOutput } from "../prepareCrawlerDataForMovieOutput";
+import { prepareImageAlternativesForDownload } from "../prepareImageAlternativesForDownload";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import type { MaintenancePreset } from "./presets";
@@ -133,11 +134,16 @@ export class MaintenanceFileScraper {
       if (steps.download && plan && preparedCrawlerData) {
         this.deps.signalService.showLogText(`[${fileInfo.number}] Downloading resources...`);
         const forceReplace = this.getForcedPrimaryImageRefresh(entry, preparedCrawlerData);
+        const downloadImageAlternatives = prepareImageAlternativesForDownload(
+          preparedCrawlerData,
+          imageAlternatives,
+          aggregationSources,
+        );
         assets = await this.deps.downloadManager.downloadAll(
           plan.outputDir,
           preparedCrawlerData,
           config,
-          imageAlternatives,
+          downloadImageAlternatives,
           {
             onSceneProgress: (downloaded, total) => {
               this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);

@@ -16,6 +16,7 @@ import type { DownloadManager } from "./DownloadManager";
 import type { FileOrganizer } from "./FileOrganizer";
 import type { NfoGenerator } from "./NfoGenerator";
 import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
+import { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
 import type { TranslateService } from "./TranslateService";
 
 export interface FileScraperDependencies {
@@ -118,11 +119,16 @@ export class FileScraper {
         step: "download",
       });
 
+      const downloadImageAlternatives = prepareImageAlternativesForDownload(
+        preparedOutputData.data,
+        aggregationResult.imageAlternatives,
+        aggregationResult.sources,
+      );
       const assets = await this.deps.downloadManager.downloadAll(
         plan.outputDir,
         preparedOutputData.data,
         configuration,
-        aggregationResult.imageAlternatives,
+        downloadImageAlternatives,
         {
           onSceneProgress: (downloaded, total) => {
             this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);

@@ -137,13 +137,11 @@ export class DmmCrawler extends BaseDmmCrawler {
     }
 
     const category = parseCategory(detailUrl);
-    let baseData = await this.parseCategoryData(category, $);
+    const baseData = await this.parseCategoryData(category, $);
     if (!baseData || !baseData.title) {
       return null;
     }
     const title = baseData.title;
-
-    baseData = await this.optimizeAwsImages(baseData, context, context.number);
 
     return {
       title,

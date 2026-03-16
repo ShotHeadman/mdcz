@@ -57,7 +57,6 @@ describe("DmmCrawler", () => {
     const fixtures = new Map<string, unknown>([
       [searchUrl, searchHtml],
       [detailUrl, detailHtml],
-      ["https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497pl.jpg", ""],
     ]);
 
     const networkClient = new FixtureNetworkClient(fixtures);
@@ -86,8 +85,8 @@ describe("DmmCrawler", () => {
     expect(data.publisher).toBe("Publisher A");
     expect(data.series).toBe("Series A");
     expect(data.director).toBe("Director A");
-    expect(data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497pl.jpg");
-    expect(data.poster_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497ps.jpg");
+    expect(data.thumb_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497pl.jpg");
+    expect(data.poster_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497ps.jpg");
     expect(data.trailer_url).toBe("https://cdn.example.com/trailer.mp4");
     expect(data.sample_images).toEqual([
       "https://img.example.com/1.jpg",
@@ -97,6 +96,7 @@ describe("DmmCrawler", () => {
 
     const dmmSearchRequest = networkClient.requests.find((request) => request.url === searchUrl);
     expect(dmmSearchRequest?.headers.get("accept-language")).toBe("ja-JP,ja;q=0.9");
+    expect(networkClient.requests.some((request) => request.url.includes("awsimgsrc.dmm.co.jp"))).toBe(false);
   });
 
   it("returns failure for tv.dmm detail pages after compatibility removal", async () => {
@@ -210,7 +210,7 @@ describe("DmmCrawler", () => {
     expect(response.result.error).toBe("DMM: unrendered shell");
   });
 
-  it("optimizes images using AWS CDN when available", async () => {
+  it("keeps original DMM image urls in crawler output", async () => {
     const number = "SSIS-027";
     const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=ssis00027/sort=ranking/";
     const detailUrl = "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00027/";
@@ -234,13 +234,13 @@ describe("DmmCrawler", () => {
       </body></html>
     `;
 
-    const fixtures = new Map<string, unknown>([
-      [searchUrl, searchHtml],
-      [detailUrl, detailHtml],
-      ["https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00027/ssis00027pl.jpg", ""],
-    ]);
-
-    const crawler = new DmmCrawler(withGateway(new FixtureNetworkClient(fixtures)));
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        [searchUrl, searchHtml],
+        [detailUrl, detailHtml],
+      ]),
+    );
+    const crawler = new DmmCrawler(withGateway(networkClient));
 
     const response = await crawler.crawl({
       number,
@@ -254,8 +254,9 @@ describe("DmmCrawler", () => {
 
     const data = response.result.data;
     expect(data.title).toBe("AWS Optimization Test");
-    expect(data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00027/ssis00027pl.jpg");
-    expect(data.poster_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00027/ssis00027ps.jpg");
+    expect(data.thumb_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00027/ssis00027pl.jpg");
+    expect(data.poster_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00027/ssis00027ps.jpg");
+    expect(networkClient.requests.some((request) => request.url.includes("awsimgsrc.dmm.co.jp"))).toBe(false);
   });
 
   it("does not hard-fail when legacy dmm tv graphql returns miss after unified miss", async () => {

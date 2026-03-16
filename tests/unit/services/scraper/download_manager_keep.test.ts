@@ -496,75 +496,11 @@ describe("DownloadManager keep flags", () => {
     await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe("old-thumb");
   });
 
-  it("downloads only the AWS-backed primary images even when the original image comes from another site", async () => {
+  it("does not fully download probe-proven missing primary candidates", async () => {
     const { root, manager, networkClient } = await createDownloadSubject();
-    mockImageValidation(true);
-    networkClient.probe.mockImplementation(
-      async (url: string): Promise<ProbeResult> => ({
-        ok: true,
-        status: 200,
-        contentLength: url.includes("awsimgsrc.dmm.co.jp") ? 20_000 : 1_000,
-        resolvedUrl: url,
-        width: url.endsWith("pl.jpg")
-          ? url.includes("awsimgsrc.dmm.co.jp")
-            ? 2_184
-            : 1_472
-          : url.includes("awsimgsrc.dmm.co.jp")
-            ? 1_032
-            : 147,
-        height: url.endsWith("pl.jpg")
-          ? url.includes("awsimgsrc.dmm.co.jp")
-            ? 1_468
-            : 200
-          : url.includes("awsimgsrc.dmm.co.jp")
-            ? 1_468
-            : 200,
-      }),
-    );
-
-    const assets = await downloadPrimaryAssets(manager, root, {
-      number: "EBWH-241",
-      thumb_url: "https://image.example.com/library/ebwh00241pl.jpg",
-      poster_url: "https://image.example.com/library/ebwh00241ps.jpg",
-    });
-
-    await expectPrimaryAssets(
-      root,
-      assets,
-      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
-      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
-    );
-    expect(networkClient.probe).toHaveBeenCalledTimes(6);
-    expect(networkClient.download).toHaveBeenCalledTimes(2);
-    expect(networkClient.probe.mock.calls.map(([url]) => url)).toEqual(
-      expect.arrayContaining([
-        "https://image.example.com/library/ebwh00241pl.jpg",
-        "https://image.example.com/library/ebwh00241ps.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh241/ebwh241pl.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh241/ebwh241ps.jpg",
-      ]),
-    );
-    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(
-      expect.arrayContaining([
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
-      ]),
-    );
-  });
-
-  it("does not cool down the AWS image host after speculative 404 misses, so later titles can still use valid AWS mirrors", async () => {
-    const storeRoot = await createTempDir();
-    const storePath = join(storeRoot, "image-host-cooldowns.json");
-    const hostStore = new PersistentCooldownStore({
-      filePath: storePath,
-      loggerName: "DownloadManagerPrimaryAwsCooldownTestStore",
-    });
-    const { root, manager, networkClient } = await createDownloadSubject({}, { imageHostCooldownStore: hostStore });
-    mockImageValidation(true);
+    mockResolutionAwarePrimaryValidation();
     networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
-      if (url.includes("awsimgsrc.dmm.co.jp") && (url.includes("abf00075") || url.includes("abf075"))) {
+      if (url.includes("-missing.")) {
         return {
           ok: false,
           status: 404,
@@ -573,71 +509,39 @@ describe("DownloadManager keep flags", () => {
         };
       }
 
-      if (url.includes("awsimgsrc.dmm.co.jp") && url.includes("ebwh00241")) {
-        return {
-          ok: true,
-          status: 200,
-          contentLength: 20_000,
-          resolvedUrl: url,
-          width: url.endsWith("pl.jpg") ? 2_184 : 1_032,
-          height: 1_468,
-        };
-      }
-
       return {
         ok: true,
         status: 200,
-        contentLength: 1_000,
+        contentLength: 20_000,
         resolvedUrl: url,
-        width: url.endsWith("pl.jpg") ? 840 : 147,
-        height: url.endsWith("pl.jpg") ? 566 : 200,
       };
     });
-    networkClient.download.mockImplementation(async (url: string, outputPath: string) => {
-      if (url.includes("awsimgsrc.dmm.co.jp") && (url.includes("abf00075") || url.includes("abf075"))) {
-        throw new Error(`HTTP 404 Not Found for ${url}`);
-      }
 
-      return await writeDownloadedFile(outputPath, url);
-    });
-
-    const firstRoot = join(root, "ABF-075");
-    const firstAssets = await downloadPrimaryAssets(manager, firstRoot, {
-      number: "ABF-075",
-      thumb_url: "https://image.example.com/library/abf00075pl.jpg",
-      poster_url: "https://image.example.com/library/abf00075ps.jpg",
-    });
+    const assets = await downloadPrimaryAssets(
+      manager,
+      root,
+      {
+        thumb_url: "https://example.com/thumb-missing.jpg",
+        poster_url: "https://example.com/poster-missing.jpg",
+      },
+      {
+        thumb_url: ["https://cdn.example.com/thumb-high.jpg"],
+        poster_url: ["https://cdn.example.com/poster-high.jpg"],
+      },
+    );
 
     await expectPrimaryAssets(
-      firstRoot,
-      firstAssets,
-      "https://image.example.com/library/abf00075pl.jpg",
-      "https://image.example.com/library/abf00075ps.jpg",
+      root,
+      assets,
+      "https://cdn.example.com/thumb-high.jpg",
+      "https://cdn.example.com/poster-high.jpg",
     );
-    expect(hostStore.getActiveCooldown("awsimgsrc.dmm.co.jp")).toBeUndefined();
-
-    const secondRoot = join(root, "EBWH-241");
-    const secondAssets = await downloadPrimaryAssets(manager, secondRoot, {
-      number: "EBWH-241",
-      thumb_url: "https://image.example.com/library/ebwh00241pl.jpg",
-      poster_url: "https://image.example.com/library/ebwh00241ps.jpg",
-    });
-
-    await expectPrimaryAssets(
-      secondRoot,
-      secondAssets,
-      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
-      "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
+    const downloadedUrls = networkClient.download.mock.calls.map(([url]) => url);
+    expect(downloadedUrls).toEqual(
+      expect.arrayContaining(["https://cdn.example.com/thumb-high.jpg", "https://cdn.example.com/poster-high.jpg"]),
     );
-    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(
-      expect.arrayContaining([
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf00075/abf00075pl.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf00075/abf00075ps.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf075/abf075pl.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf075/abf075ps.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241pl.jpg",
-        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ebwh00241/ebwh00241ps.jpg",
-      ]),
+    expect(downloadedUrls).not.toEqual(
+      expect.arrayContaining(["https://example.com/thumb-missing.jpg", "https://example.com/poster-missing.jpg"]),
     );
   });
 

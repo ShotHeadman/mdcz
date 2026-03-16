@@ -5,7 +5,6 @@ import type { Configuration } from "@main/services/config";
 import { type CooldownFailurePolicy, PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient, ProbeResult } from "@main/services/network";
-import { buildDmmAwsImageCandidates } from "@main/utils/dmmImage";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
 import type { CrawlerData, DownloadedAssets, MaintenanceAssetDecisions } from "@shared/types";
@@ -87,6 +86,7 @@ interface DownloadManagerOptions {
 
 const IMAGE_HOST_COOLDOWN_MS = 5 * 60 * 1000;
 const SCENE_IMAGE_ATTEMPT_TIMEOUT_MS = 1_500;
+const IMAGE_PROBE_TERMINAL_MISS_STATUS_CODES = new Set([404, 410]);
 const IMAGE_HOST_FAILURE_POLICY: CooldownFailurePolicy = {
   threshold: 2,
   windowMs: IMAGE_HOST_COOLDOWN_MS,
@@ -516,7 +516,6 @@ export class DownloadManager {
       "thumb",
       config.download.downloadThumb,
       config.download.keepThumb,
-      data.number,
       data.thumb_url,
       imageAlternatives.thumb_url,
       join(outputDir, "thumb.jpg"),
@@ -526,7 +525,6 @@ export class DownloadManager {
       "poster",
       config.download.downloadPoster,
       config.download.keepPoster,
-      data.number,
       data.poster_url,
       imageAlternatives.poster_url,
       join(outputDir, "poster.jpg"),
@@ -540,7 +538,6 @@ export class DownloadManager {
     key: PrimaryImageKey,
     enabled: boolean,
     keepExisting: boolean,
-    number: string | undefined,
     primaryUrl: string | undefined,
     alternatives: string[] | undefined,
     path: string,
@@ -549,28 +546,22 @@ export class DownloadManager {
       return;
     }
 
-    const candidates = this.buildImageCandidates(primaryUrl, alternatives, number);
+    const candidates = this.buildImageCandidates(primaryUrl, alternatives);
     tasks.push({ key, candidates, path, keepExisting });
   }
 
-  private buildImageCandidates(primaryUrl?: string, alternatives?: string[], rawNumber?: string): string[] {
+  private buildImageCandidates(primaryUrl?: string, alternatives?: string[]): string[] {
     const seen = new Set<string>();
     const candidates: string[] = [];
 
     for (const url of [primaryUrl, ...(alternatives ?? [])]) {
       const normalized = normalizeUrl(url);
-      if (!normalized) {
+      if (!normalized || seen.has(normalized)) {
         continue;
       }
 
-      for (const candidate of [normalized, ...buildDmmAwsImageCandidates(normalized, rawNumber)]) {
-        if (seen.has(candidate)) {
-          continue;
-        }
-
-        seen.add(candidate);
-        candidates.push(candidate);
-      }
+      seen.add(normalized);
+      candidates.push(normalized);
     }
 
     return candidates;
@@ -632,8 +623,15 @@ export class DownloadManager {
     }
 
     const probedCandidates = await this.orderImageCandidatesByProbe(candidates, signal, true);
-    if (this.canSelectBestImageFromProbe(probedCandidates)) {
-      for (const candidate of probedCandidates) {
+    const downloadableCandidates = probedCandidates.filter((candidate) =>
+      this.shouldAttemptCandidateDownload(candidate),
+    );
+    if (downloadableCandidates.length === 0) {
+      return undefined;
+    }
+
+    if (this.canSelectBestImageFromProbe(downloadableCandidates)) {
+      for (const candidate of downloadableCandidates) {
         throwIfAborted(signal);
         const downloadedPath = await this.downloadAndValidateImage(candidate.url, outputPath, { signal });
         if (downloadedPath) {
@@ -644,7 +642,7 @@ export class DownloadManager {
       return undefined;
     }
 
-    return await this.downloadBestImageByComparison(probedCandidates, outputPath, signal);
+    return await this.downloadBestImageByComparison(downloadableCandidates, outputPath, signal);
   }
 
   private async downloadBestImageByComparison(
@@ -757,6 +755,10 @@ export class DownloadManager {
 
   private canSkipCandidateDownload(candidate: ProbedImageCandidate, currentBest: DownloadedImageCandidate): boolean {
     return this.hasProbeDimensions(candidate) && this.compareImageResolution(candidate, currentBest) >= 0;
+  }
+
+  private shouldAttemptCandidateDownload(candidate: ProbedImageCandidate): boolean {
+    return !(candidate.status > 0 && IMAGE_PROBE_TERMINAL_MISS_STATUS_CODES.has(candidate.status));
   }
 
   private hasProbeDimensions(candidate: ProbedImageCandidate): candidate is ProbedImageCandidateWithDimensions {

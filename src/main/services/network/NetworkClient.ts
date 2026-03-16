@@ -225,10 +225,6 @@ export class NetworkClient {
     };
   }
 
-  private async buildProbeResultWithImageSize(url: string, response: ImpitResponse): Promise<ProbeResult> {
-    return await this.mergeProbeImageSize(this.toProbeResult(url, response), response);
-  }
-
   private async probeWithImageSize(url: string, init: Omit<ProbeOptions, "captureImageSize">): Promise<ProbeResult> {
     const firstAttempt = await this.requestProbeWithImageSize(url, init, IMAGE_METADATA_PROBE_BYTES);
     if (!this.shouldRetryProbeWithImageSize(firstAttempt.response, firstAttempt.result, IMAGE_METADATA_PROBE_BYTES)) {
@@ -252,7 +248,7 @@ export class NetworkClient {
 
     return {
       response,
-      result: await this.buildProbeResultWithImageSize(url, response),
+      result: await this.toProbeResultWithImageSize(url, response),
     };
   }
 
@@ -267,11 +263,6 @@ export class NetworkClient {
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     return !contentType || contentType.startsWith("image/jpeg");
-  }
-
-  private async mergeProbeImageSize(result: ProbeResult, response: ImpitResponse): Promise<ProbeResult> {
-    const dimensions = await this.tryParseProbeImageSize(response);
-    return dimensions ? { ...result, ...dimensions } : result;
   }
 
   private hasProbeImageSize(result: ProbeResult): result is ProbeResult & { width: number; height: number } {
@@ -352,21 +343,22 @@ export class NetworkClient {
     return headers;
   }
 
-  private async tryParseProbeImageSize(response: ImpitResponse): Promise<{ width: number; height: number } | null> {
+  private async toProbeResultWithImageSize(url: string, response: ImpitResponse): Promise<ProbeResult> {
+    const result = this.toProbeResult(url, response);
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? null;
     if (contentType && !contentType.startsWith("image/")) {
-      return null;
+      return result;
     }
 
     if (!this.shouldReadProbeBody(response)) {
-      return null;
+      return result;
     }
 
     try {
       const dimensions = parseImageDimensions(await response.bytes());
-      return dimensions ? { width: dimensions.width, height: dimensions.height } : null;
+      return dimensions ? { ...result, width: dimensions.width, height: dimensions.height } : result;
     } catch {
-      return null;
+      return result;
     }
   }
 

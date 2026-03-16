@@ -1,4 +1,3 @@
-const AWS_PLACEHOLDER_KEYWORDS = ["now_printing", "nowprinting", "noimage", "nopic", "media_violation"];
 const DMM_IMAGE_HOST = "pics.dmm.co.jp";
 const DMM_AWS_IMAGE_HOST = "awsimgsrc.dmm.co.jp";
 const DMM_PRIMARY_IMAGE_NAME_PATTERN = /([a-z0-9]+)(p[sl]\.jpg)$/iu;
@@ -78,16 +77,4 @@ export const buildDmmAwsImageCandidates = (value: string, rawNumber?: string): s
   }
 
   return candidates;
-};
-
-export const toDmmAwsProbeUrl = (value: string): string => {
-  const url = new URL(value);
-  url.searchParams.set("w", "120");
-  url.searchParams.set("h", "90");
-  return url.toString();
-};
-
-export const isDmmAwsPlaceholderUrl = (value: string): boolean => {
-  const resolvedUrl = value.toLowerCase();
-  return AWS_PLACEHOLDER_KEYWORDS.some((keyword) => resolvedUrl.includes(keyword));
 };
