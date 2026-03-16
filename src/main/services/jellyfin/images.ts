@@ -29,13 +29,14 @@ const uploadPrimaryImage = async (
   bytes: Uint8Array,
   contentType: string,
 ): Promise<void> => {
+  const body = Buffer.from(bytes).toString("base64");
   const headers = buildJellyfinHeaders(configuration, {
     "content-type": contentType,
   });
 
   const primaryPath = `/Items/${encodeURIComponent(personId)}/Images/Primary`;
   try {
-    await networkClient.postContent(buildJellyfinUrl(configuration, primaryPath), bytes, { headers });
+    await networkClient.postText(buildJellyfinUrl(configuration, primaryPath), body, { headers });
     return;
   } catch (error) {
     const status = getHttpStatus(error);
@@ -57,7 +58,7 @@ const uploadPrimaryImage = async (
   }
 
   try {
-    await networkClient.postContent(buildJellyfinUrl(configuration, `${primaryPath}/0`), bytes, { headers });
+    await networkClient.postText(buildJellyfinUrl(configuration, `${primaryPath}/0`), body, { headers });
   } catch (error) {
     throw toJellyfinServiceError(
       error,
@@ -99,21 +100,28 @@ export class JellyfinActorPhotoService {
 
     let processedCount = 0;
     let failedCount = 0;
-    let current = 0;
+    let completed = 0;
 
     this.deps.signalService.resetProgress();
 
     for (const person of persons) {
-      current += 1;
-      this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);
-
-      if (mode === "missing" && hasPrimaryImage(person)) {
-        continue;
-      }
+      const actorName = person.Name.trim();
 
       try {
-        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, person.Name);
-        logActorSourceWarnings(this.logger, person.Name, actorSource.warnings);
+        if (!actorName) {
+          failedCount += 1;
+          continue;
+        }
+
+        if (mode === "missing" && hasPrimaryImage(person)) {
+          continue;
+        }
+
+        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, {
+          name: actorName,
+          requiredField: "photo_url",
+        });
+        logActorSourceWarnings(this.logger, actorName, actorSource.warnings);
         const photoUrl = actorSource.profile.photo_url?.trim();
 
         let content: Uint8Array | undefined;
@@ -134,7 +142,7 @@ export class JellyfinActorPhotoService {
 
         if (!content || !contentType) {
           failedCount += 1;
-          this.deps.signalService.showLogText(`No Jellyfin actor photo source found for ${person.Name}`, "warn");
+          this.deps.signalService.showLogText(`No Jellyfin actor photo source found for ${actorName}`, "warn");
           continue;
         }
 
@@ -153,7 +161,7 @@ export class JellyfinActorPhotoService {
           }
         }
         processedCount += 1;
-        this.deps.signalService.showLogText(`Updated Jellyfin actor photo: ${person.Name}`);
+        this.deps.signalService.showLogText(`Updated Jellyfin actor photo: ${actorName}`);
       } catch (error) {
         failedCount += 1;
         const detail =
@@ -162,7 +170,10 @@ export class JellyfinActorPhotoService {
             : error instanceof Error
               ? error.message
               : String(error);
-        this.logger.warn(`Failed to update Jellyfin actor photo for ${person.Name}: ${detail}`);
+        this.logger.warn(`Failed to update Jellyfin actor photo for ${actorName}: ${detail}`);
+      } finally {
+        completed += 1;
+        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
       }
     }
 

@@ -337,7 +337,10 @@ describe("Emby actor services", () => {
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0 });
-    expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
+    expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), {
+      name: "神木麗",
+      requiredField: "photo_url",
+    });
     expect(networkClient.getContent).toHaveBeenCalledWith(
       "https://static.mgstage.com/mgs/img/common/actress/%E7%A5%9E%E6%9C%A8%E9%BA%97.jpg",
       {

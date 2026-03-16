@@ -67,7 +67,7 @@ export const checkConnection = async (
   }
 
   try {
-    await networkClient.getJson<Record<string, unknown>>(buildJellyfinUrl(configuration, "/Users/Me"), {
+    await networkClient.getJson<Record<string, unknown>>(buildJellyfinUrl(configuration, "/System/Info"), {
       headers: buildJellyfinHeaders(configuration, {
         accept: "application/json",
       }),

@@ -131,14 +131,16 @@ describe("Jellyfin services", () => {
   it("returns layered diagnostics for a healthy Jellyfin connection", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
-      const path = new URL(url).pathname;
+      const parsed = new URL(url);
+      const path = parsed.pathname;
       if (path === "/System/Info/Public") {
         return { ServerName: "Jellyfin", Version: "10.11.2" };
       }
-      if (path === "/Users/Me") {
-        return { Id: "user-1" };
+      if (path === "/System/Info") {
+        return { Version: "10.11.2" };
       }
       if (path === "/Persons") {
+        expect(parsed.searchParams.get("personTypes")).toBe("Actor");
         return { Items: [{ Id: "person-1", Name: "Actor A", Overview: "" }] };
       }
       if (path === "/Items/person-1/MetadataEditor") {
@@ -168,14 +170,14 @@ describe("Jellyfin services", () => {
     ]);
   });
 
-  it("marks auth failure and skips people checks when /Users/Me is unauthorized", async () => {
+  it("marks auth failure and skips people checks when /System/Info is unauthorized", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
       const path = new URL(url).pathname;
       if (path === "/System/Info/Public") {
         return { ServerName: "Jellyfin", Version: "10.11.2" };
       }
-      if (path === "/Users/Me") {
+      if (path === "/System/Info") {
         throw new Error(`HTTP 401 Unauthorized for ${url}`);
       }
       throw new Error(`Unexpected URL ${url}`);
@@ -201,14 +203,14 @@ describe("Jellyfin services", () => {
     ]);
   });
 
-  it("classifies /Users/Me server errors as service failures instead of auth failures", async () => {
+  it("classifies /System/Info server errors as service failures instead of auth failures", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
       const path = new URL(url).pathname;
       if (path === "/System/Info/Public") {
         return { ServerName: "Jellyfin", Version: "10.11.2" };
       }
-      if (path === "/Users/Me") {
+      if (path === "/System/Info") {
         throw new Error(`HTTP 500 Internal Server Error for ${url}`);
       }
       throw new Error(`Unexpected URL ${url}`);
@@ -391,7 +393,7 @@ describe("Jellyfin services", () => {
     });
   });
 
-  it("uploads actor photos as raw bytes and falls back to the indexed image endpoint", async () => {
+  it("uploads actor photos as base64 text and falls back to the indexed image endpoint", async () => {
     const root = await createTempDir();
     await createUserDataDir();
     const photoPath = join(root, "Actor A.jpg");
@@ -408,11 +410,11 @@ describe("Jellyfin services", () => {
       }
       throw new Error(`Unexpected URL ${url}`);
     });
-    networkClient.postContent
+    networkClient.postText
       .mockRejectedValueOnce(
         new Error("HTTP 405 Method Not Allowed for http://127.0.0.1:8096/Items/person-1/Images/Primary"),
       )
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce("");
 
     const service = new JellyfinActorPhotoService({
       signalService: new SignalService(null),
@@ -441,15 +443,17 @@ describe("Jellyfin services", () => {
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0 });
-    expect(networkClient.postContent).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText).toHaveBeenCalledTimes(1);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1/Refresh");
+    expect(networkClient.postContent).not.toHaveBeenCalled();
+    expect(networkClient.postText).toHaveBeenCalledTimes(3);
 
-    const [firstUrl, firstBody] = networkClient.postContent.mock.calls[0];
-    const [secondUrl] = networkClient.postContent.mock.calls[1];
+    const [firstUrl, firstBody] = networkClient.postText.mock.calls[0];
+    const [secondUrl, secondBody] = networkClient.postText.mock.calls[1];
+    const [refreshUrl] = networkClient.postText.mock.calls[2];
     expect(firstUrl).toContain("/Items/person-1/Images/Primary");
     expect(secondUrl).toContain("/Items/person-1/Images/Primary/0");
-    expect(Buffer.from(firstBody as Uint8Array)).toEqual(await readFile(photoPath));
+    expect(refreshUrl).toContain("/Items/person-1/Refresh");
+    expect(firstBody).toBe(Buffer.from(await readFile(photoPath)).toString("base64"));
+    expect(secondBody).toBe(firstBody);
   });
 
   it("fails fast when local actor photos use a relative path without mediaPath", async () => {

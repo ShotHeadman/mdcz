@@ -57,7 +57,7 @@ export const buildNfoReadCandidates = (path: string): string[] => {
     return [primaryPath];
   }
 
-  return dedupePaths([primaryPath, siblingPath(primaryPath, "movie.nfo")]);
+  return dedupePaths([siblingPath(primaryPath, "movie.nfo"), primaryPath]);
 };
 
 const shouldRetryWithAlternateNfo = (error: unknown): boolean => {

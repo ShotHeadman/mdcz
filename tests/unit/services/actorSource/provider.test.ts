@@ -54,8 +54,38 @@ describe("ActorSourceProvider image lookup", () => {
     expect(result.profile?.photo_url).toBe("https://official.example.com/actor-a.jpg");
     expect(result.profileSources.photo_url).toBe("official");
     expect(official.lookup).toHaveBeenCalledTimes(1);
-    expect(avbase.lookup).toHaveBeenCalledTimes(1);
-    expect(official.lookup.mock.invocationCallOrder[0]).toBeLessThan(avbase.lookup.mock.invocationCallOrder[0]);
+    expect(avbase.lookup).not.toHaveBeenCalled();
+  });
+
+  it("stops photo-only lookup once an earlier image source already returns photo_url", async () => {
+    const local = createSource("local", {
+      photo_url: "/tmp/Actor A.jpg",
+    });
+    const official = createSource("official", {
+      photo_url: "https://official.example.com/actor-a.jpg",
+    });
+
+    const provider = new ActorSourceProvider({
+      registry: new ActorSourceRegistry([local, official]),
+    });
+
+    const result = await provider.lookup(
+      createConfig({
+        personSync: {
+          ...defaultConfiguration.personSync,
+          personImageSources: ["local", "official"],
+        },
+      }),
+      {
+        name: "Actor A",
+        requiredField: "photo_url",
+      },
+    );
+
+    expect(result.profile?.photo_url).toBe("/tmp/Actor A.jpg");
+    expect(result.profileSources.photo_url).toBe("local");
+    expect(local.lookup).toHaveBeenCalledTimes(1);
+    expect(official.lookup).not.toHaveBeenCalled();
   });
 
   it("ignores avjoho photo_url while keeping its overview metadata in full lookups", async () => {

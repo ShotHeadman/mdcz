@@ -105,26 +105,27 @@ export class EmbyActorPhotoService {
 
     let processedCount = 0;
     let failedCount = 0;
-    let current = 0;
+    let completed = 0;
 
     this.deps.signalService.resetProgress();
 
     for (const person of persons) {
-      current += 1;
-      this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);
-
-      if (mode === "missing" && hasPrimaryImage(person)) {
-        continue;
-      }
-
       const actorName = person.Name.trim();
-      if (!actorName) {
-        failedCount += 1;
-        continue;
-      }
 
       try {
-        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, actorName);
+        if (mode === "missing" && hasPrimaryImage(person)) {
+          continue;
+        }
+
+        if (!actorName) {
+          failedCount += 1;
+          continue;
+        }
+
+        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, {
+          name: actorName,
+          requiredField: "photo_url",
+        });
         logActorSourceWarnings(this.logger, actorName, actorSource.warnings);
         const photoUrl = actorSource.profile.photo_url?.trim();
 
@@ -175,6 +176,9 @@ export class EmbyActorPhotoService {
               ? error.message
               : String(error);
         this.logger.warn(`Failed to update Emby actor photo for ${actorName}: ${detail}`);
+      } finally {
+        completed += 1;
+        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
       }
     }
 

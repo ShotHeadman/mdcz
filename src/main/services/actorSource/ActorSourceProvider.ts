@@ -1,6 +1,7 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { normalizeActorName, toUniqueActorNames } from "@main/utils/actor";
+import { hasActorProfileFieldValue } from "@main/utils/actorProfile";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { ActorProfileAggregator } from "./ActorProfileAggregator";
 import type { ActorSourceRegistry } from "./registry";
@@ -126,6 +127,13 @@ export class ActorSourceProvider {
       for (const sourceName of executionOrder) {
         const result = await this.lookupSource(sourceName, configuration, enrichedQuery);
         results.push(result);
+        if (
+          baseQuery.requiredField &&
+          result.success &&
+          hasActorProfileFieldValue(result.profile?.[baseQuery.requiredField])
+        ) {
+          break;
+        }
         enrichedQuery = mergeLookupQuery(enrichedQuery, result);
       }
 

@@ -150,6 +150,7 @@ export const fetchPersons = async (
 
   const url = buildJellyfinUrl(configuration, "/Persons", {
     userId: trimmedUserId || undefined,
+    personTypes: "Actor",
     Limit: options.limit !== undefined ? String(options.limit) : undefined,
     Fields: options.fields?.join(","),
   });
@@ -359,14 +360,11 @@ export class JellyfinActorInfoService {
 
     let processedCount = 0;
     let failedCount = 0;
-    let current = 0;
+    let completed = 0;
 
     this.deps.signalService.resetProgress();
 
     for (const person of persons) {
-      current += 1;
-      this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);
-
       try {
         const detail = await fetchPersonDetail(this.networkClient, configuration, person);
         const existing = normalizeExistingPersonSyncState({
@@ -416,6 +414,9 @@ export class JellyfinActorInfoService {
               ? error.message
               : String(error);
         this.logger.warn(`Failed to update Jellyfin actor info for ${person.Name}: ${detail}`);
+      } finally {
+        completed += 1;
+        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
       }
     }
 

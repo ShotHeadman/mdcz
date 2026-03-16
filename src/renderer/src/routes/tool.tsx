@@ -18,7 +18,7 @@ import {
   UserCheck,
   Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deleteFile } from "@/api/manual";
 import { createSymlink, listEntries, scrapeSingleFile } from "@/client/api";
 import { ipc } from "@/client/ipc";
@@ -68,6 +68,13 @@ type ConnectionCheckResult = JellyfinConnectionCheckResult | EmbyConnectionCheck
 
 const CLEANUP_PRESET_EXTENSIONS = [".html", ".url", ".txt", ".nfo", ".jpg", ".png", ".torrent", ".ass", ".srt"];
 const CLEANUP_MAX_SCANNED_DIRECTORIES = 50000;
+
+const clearProgressResetTimer = (timerRef: MutableRefObject<number | null>) => {
+  if (timerRef.current !== null) {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+};
 
 const TOOLS_TABS = [
   { id: "scraping", label: "数据刮削", icon: FileCheck },
@@ -384,6 +391,8 @@ function ToolComponent() {
   const [embySyncRunning, setEmbySyncRunning] = useState(false);
   const [jellyfinSyncProgress, setJellyfinSyncProgress] = useState(0);
   const [embySyncProgress, setEmbySyncProgress] = useState(0);
+  const jellyfinProgressResetTimerRef = useRef<number | null>(null);
+  const embyProgressResetTimerRef = useRef<number | null>(null);
   const anyPersonSyncRunning = jellyfinSyncRunning || embySyncRunning;
   const anyPersonCheckPending = checkJellyfinConnectionMut.isPending || checkEmbyConnectionMut.isPending;
   const [selectedPersonServer, setSelectedPersonServer] = useState<"jellyfin" | "emby">("jellyfin");
@@ -497,6 +506,13 @@ function ToolComponent() {
     });
   }, [embySyncRunning, jellyfinSyncRunning]);
 
+  useEffect(() => {
+    return () => {
+      clearProgressResetTimer(jellyfinProgressResetTimerRef);
+      clearProgressResetTimer(embyProgressResetTimerRef);
+    };
+  }, []);
+
   const handleScrapeSingleFile = async () => {
     if (!singleFilePath) {
       showError("请输入文件路径");
@@ -601,8 +617,9 @@ function ToolComponent() {
       return;
     }
 
+    clearProgressResetTimer(jellyfinProgressResetTimerRef);
+    setJellyfinSyncProgress(0);
     setJellyfinSyncRunning(true);
-    setJellyfinSyncProgress(5);
     showInfo("正在同步 Jellyfin 演员信息...");
     try {
       const result = await ipc.tool.syncJellyfinActorInfo(jellyfinActorInfoMode);
@@ -612,7 +629,11 @@ function ToolComponent() {
       showError(`Jellyfin 演员信息同步失败: ${formatError(error)}`);
     } finally {
       setJellyfinSyncRunning(false);
-      window.setTimeout(() => setJellyfinSyncProgress(0), 1200);
+      clearProgressResetTimer(jellyfinProgressResetTimerRef);
+      jellyfinProgressResetTimerRef.current = window.setTimeout(() => {
+        setJellyfinSyncProgress(0);
+        jellyfinProgressResetTimerRef.current = null;
+      }, 1200);
     }
   };
 
@@ -631,8 +652,9 @@ function ToolComponent() {
       return;
     }
 
+    clearProgressResetTimer(jellyfinProgressResetTimerRef);
+    setJellyfinSyncProgress(0);
     setJellyfinSyncRunning(true);
-    setJellyfinSyncProgress(5);
     showInfo("正在同步 Jellyfin 演员头像...");
     try {
       const result = await ipc.tool.syncJellyfinActorPhoto(jellyfinActorPhotoMode);
@@ -642,7 +664,11 @@ function ToolComponent() {
       showError(`Jellyfin 头像同步失败: ${formatError(error)}`);
     } finally {
       setJellyfinSyncRunning(false);
-      window.setTimeout(() => setJellyfinSyncProgress(0), 1200);
+      clearProgressResetTimer(jellyfinProgressResetTimerRef);
+      jellyfinProgressResetTimerRef.current = window.setTimeout(() => {
+        setJellyfinSyncProgress(0);
+        jellyfinProgressResetTimerRef.current = null;
+      }, 1200);
     }
   };
 
@@ -661,8 +687,9 @@ function ToolComponent() {
       return;
     }
 
+    clearProgressResetTimer(embyProgressResetTimerRef);
+    setEmbySyncProgress(0);
     setEmbySyncRunning(true);
-    setEmbySyncProgress(5);
     showInfo("正在同步 Emby 演员信息...");
     try {
       const result = await ipc.tool.syncEmbyActorInfo(embyActorInfoMode);
@@ -672,7 +699,11 @@ function ToolComponent() {
       showError(`Emby 演员信息同步失败: ${formatError(error)}`);
     } finally {
       setEmbySyncRunning(false);
-      window.setTimeout(() => setEmbySyncProgress(0), 1200);
+      clearProgressResetTimer(embyProgressResetTimerRef);
+      embyProgressResetTimerRef.current = window.setTimeout(() => {
+        setEmbySyncProgress(0);
+        embyProgressResetTimerRef.current = null;
+      }, 1200);
     }
   };
 
@@ -696,8 +727,9 @@ function ToolComponent() {
       showInfo(adminKeyStep.message);
     }
 
+    clearProgressResetTimer(embyProgressResetTimerRef);
+    setEmbySyncProgress(0);
     setEmbySyncRunning(true);
-    setEmbySyncProgress(5);
     showInfo("正在同步 Emby 演员头像...");
     try {
       const result = await ipc.tool.syncEmbyActorPhoto(embyActorPhotoMode);
@@ -707,7 +739,11 @@ function ToolComponent() {
       showError(`Emby 头像同步失败: ${formatError(error)}`);
     } finally {
       setEmbySyncRunning(false);
-      window.setTimeout(() => setEmbySyncProgress(0), 1200);
+      clearProgressResetTimer(embyProgressResetTimerRef);
+      embyProgressResetTimerRef.current = window.setTimeout(() => {
+        setEmbySyncProgress(0);
+        embyProgressResetTimerRef.current = null;
+      }, 1200);
     }
   };
 

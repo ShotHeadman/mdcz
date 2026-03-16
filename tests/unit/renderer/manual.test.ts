@@ -16,14 +16,14 @@ const nfoRead = vi.mocked(ipc.file.nfoRead);
 const nfoWrite = vi.mocked(ipc.file.nfoWrite);
 
 describe("buildNfoReadCandidates", () => {
-  it("prefers basename nfo before movie.nfo for video paths", () => {
-    expect(buildNfoReadCandidates("/media/ABC-123.mp4")).toEqual(["/media/ABC-123.nfo", "/media/movie.nfo"]);
+  it("prefers movie.nfo before basename nfo for video paths to mirror Jellyfin", () => {
+    expect(buildNfoReadCandidates("/media/ABC-123.mp4")).toEqual(["/media/movie.nfo", "/media/ABC-123.nfo"]);
   });
 
   it("keeps the current separator style for windows paths", () => {
     expect(buildNfoReadCandidates("C:\\media\\ABC-123.mp4")).toEqual([
-      "C:\\media\\ABC-123.nfo",
       "C:\\media\\movie.nfo",
+      "C:\\media\\ABC-123.nfo",
     ]);
   });
 
@@ -47,20 +47,20 @@ describe("readNfo", () => {
     nfoWrite.mockReset();
   });
 
-  it("falls back to movie.nfo only when the primary nfo is missing", async () => {
+  it("falls back to basename nfo only when movie.nfo is missing", async () => {
     nfoRead
       .mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "ENOENT" }))
       .mockResolvedValueOnce({ data: crawlerData });
 
     await expect(readNfo("/media/ABC-123.mp4")).resolves.toEqual({
       data: {
-        path: "/media/movie.nfo",
+        path: "/media/ABC-123.nfo",
         content: JSON.stringify(crawlerData, null, 2),
       },
     });
 
-    expect(nfoRead).toHaveBeenNthCalledWith(1, "/media/ABC-123.nfo");
-    expect(nfoRead).toHaveBeenNthCalledWith(2, "/media/movie.nfo");
+    expect(nfoRead).toHaveBeenNthCalledWith(1, "/media/movie.nfo");
+    expect(nfoRead).toHaveBeenNthCalledWith(2, "/media/ABC-123.nfo");
   });
 
   it("does not hide real nfo parsing errors behind the movie.nfo fallback", async () => {
