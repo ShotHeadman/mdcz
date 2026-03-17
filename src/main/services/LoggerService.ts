@@ -24,10 +24,14 @@ const formatLogLine = (input: {
 }): string => {
   const timestamp = typeof input.timestamp === "string" ? input.timestamp : new Date().toISOString();
   const level = typeof input.level === "string" ? input.level.toUpperCase() : "INFO";
-  const bodySource = input.stack ?? input.message;
-  const body = typeof bodySource === "string" ? bodySource : String(bodySource ?? "");
+  const body = getLogBody(input);
 
   return `${timestamp} ${level}: ${body}`;
+};
+
+const getLogBody = (input: { message?: unknown; stack?: unknown }): string => {
+  const bodySource = input.stack ?? input.message;
+  return typeof bodySource === "string" ? bodySource : String(bodySource ?? "");
 };
 
 export class LoggerService {
@@ -47,7 +51,7 @@ export class LoggerService {
     const relayToListeners = format((info) => {
       this.notifyListeners({
         level: typeof info.level === "string" ? info.level : "info",
-        text: formatLogLine(info),
+        text: getLogBody(info),
         timestamp: this.parseTimestamp(info.timestamp),
       });
       return info;

@@ -24,21 +24,3 @@ export const normalizeContentIds = (value: string): string[] => {
 
   return Array.from(new Set(candidates.filter((item) => item.length > 0)));
 };
-
-export const normalizeNumberVariants = (raw: string): { number00: string; numberNo00: string } => {
-  let normalized = raw.toLowerCase();
-  const match = normalized.match(/\d*[a-z]+-?(\d+)/u);
-  if (match) {
-    const digits = match[1];
-    if (digits.length >= 5 && digits.startsWith("00")) {
-      normalized = normalized.replace(digits, digits.slice(2));
-    } else if (digits.length === 4) {
-      normalized = normalized.replace("-", "0");
-    }
-  }
-
-  return {
-    number00: normalized.replace("-", "00"),
-    numberNo00: normalized.replace("-", ""),
-  };
-};

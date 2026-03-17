@@ -22,6 +22,7 @@ export interface ScrapeResult {
   score?: string;
   poster_url?: string;
   thumb_url?: string;
+  fanart_url?: string;
   output_path?: string;
   scene_images?: string[];
   /** Maps field names to the website that provided the value. */

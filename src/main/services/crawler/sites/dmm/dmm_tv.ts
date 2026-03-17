@@ -110,7 +110,7 @@ const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<Cr
     plot: content.description,
     release_date: content.makerReleasedAt?.slice(0, 10) ?? content.deliveryStartDate?.slice(0, 10),
     rating: data?.reviewSummary?.average,
-    cover_url: content.packageImage?.largeUrl,
+    thumb_url: content.packageImage?.largeUrl,
     poster_url: content.packageImage?.mediumUrl,
     sample_images: (content.sampleImages ?? [])
       .map((item) => item.largeImageUrl)
@@ -220,7 +220,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
         plot: graphQlData.plot,
         release_date: graphQlData.release_date,
         rating: graphQlData.rating,
-        cover_url: graphQlData.cover_url,
+        thumb_url: graphQlData.thumb_url,
         poster_url: graphQlData.poster_url,
         fanart_url: graphQlData.fanart_url,
         sample_images: graphQlData.sample_images ?? [],
@@ -247,7 +247,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
       plot: parsed.plot,
       release_date: parsed.release_date,
       rating: parsed.rating,
-      cover_url: parsed.cover_url,
+      thumb_url: parsed.thumb_url,
       poster_url: parsed.poster_url,
       fanart_url: parsed.fanart_url,
       sample_images: parsed.sample_images ?? [],

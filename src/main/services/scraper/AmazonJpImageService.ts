@@ -16,8 +16,8 @@ const AMAZON_HEADERS = {
   host: "www.amazon.co.jp",
 };
 
-export interface AmazonJpCoverEnhanceResult {
-  cover_url?: string;
+export interface AmazonJpPosterEnhanceResult {
+  poster_url?: string;
   upgraded: boolean;
   reason: string;
 }
@@ -107,9 +107,9 @@ export class AmazonJpImageService {
 
   constructor(private readonly networkClient: NetworkClient) {}
 
-  async enhance(data: CrawlerData, coverSource?: Website): Promise<AmazonJpCoverEnhanceResult> {
-    const currentCover = data.cover_url?.trim();
-    const skipReason = this.getSkipReason(currentCover, coverSource);
+  async enhance(data: CrawlerData, posterSource?: Website): Promise<AmazonJpPosterEnhanceResult> {
+    const currentPoster = data.poster_url?.trim();
+    const skipReason = this.getSkipReason(currentPoster, posterSource);
     if (skipReason) {
       return { upgraded: false, reason: skipReason };
     }
@@ -144,7 +144,7 @@ export class AmazonJpImageService {
     let hadUnreachableImage = false;
 
     for (const candidate of detailCandidates) {
-      const imageUrl = await this.fetchDetailCover(session, candidate.detailPath);
+      const imageUrl = await this.fetchDetailPoster(session, candidate.detailPath);
       if (!imageUrl) {
         continue;
       }
@@ -157,9 +157,9 @@ export class AmazonJpImageService {
       }
 
       return {
-        cover_url: imageUrl,
-        upgraded: imageUrl !== currentCover,
-        reason: imageUrl === currentCover ? "已命中相同封面" : "已升级为Amazon商品封面",
+        poster_url: imageUrl,
+        upgraded: imageUrl !== currentPoster,
+        reason: imageUrl === currentPoster ? "已命中相同海报" : "已升级为Amazon商品海报",
       };
     }
 
@@ -169,21 +169,21 @@ export class AmazonJpImageService {
     };
   }
 
-  private getSkipReason(currentCover: string | undefined, coverSource?: Website): string | null {
-    if (!currentCover) {
-      return "skip: no current cover";
+  private getSkipReason(currentPoster: string | undefined, posterSource?: Website): string | null {
+    if (!currentPoster) {
+      return "skip: no current poster";
     }
 
-    if (coverSource === Website.DMM) {
-      return "skip: DMM cover source";
+    if (posterSource === Website.DMM) {
+      return "skip: DMM poster source";
     }
 
-    if (currentCover.includes("awsimgsrc.dmm.co.jp")) {
-      return "skip: AWS DMM cover";
+    if (currentPoster.includes("awsimgsrc.dmm.co.jp")) {
+      return "skip: AWS DMM poster";
     }
 
-    if (currentCover.includes(AMAZON_IMAGE_HOST)) {
-      return "skip: already using Amazon cover";
+    if (currentPoster.includes(AMAZON_IMAGE_HOST)) {
+      return "skip: already using Amazon poster";
     }
 
     return null;
@@ -261,7 +261,7 @@ export class AmazonJpImageService {
     return null;
   }
 
-  private async fetchDetailCover(session: NetworkSession, detailPath: string): Promise<string | null> {
+  private async fetchDetailPoster(session: NetworkSession, detailPath: string): Promise<string | null> {
     const detailUrl = new URL(detailPath, AMAZON_ORIGIN).toString();
 
     let html: string;
@@ -276,10 +276,10 @@ export class AmazonJpImageService {
       return null;
     }
 
-    return this.extractDetailCoverUrl(html);
+    return this.extractDetailPosterUrl(html);
   }
 
-  private extractDetailCoverUrl(html: string): string | null {
+  private extractDetailPosterUrl(html: string): string | null {
     const $ = load(html);
     const selectors = [
       "#leftCol #imageBlock img",

@@ -1,26 +1,25 @@
-import type { ActionContext } from "@egoist/tipc/main";
 import type { Configuration } from "./config";
 import type { Website } from "./enums";
 import { IpcChannel } from "./IpcChannel";
-import type { CrawlerData, ScraperStatus } from "./types";
-
-export type IpcProcedure<TInput = unknown, TOutput = unknown> = {
-  action: (options: { context: ActionContext; input: TInput }) => Promise<TOutput>;
-};
-
-export type AppInfo = {
-  version: string;
-  arch: string;
-  platform: string;
-  isPackaged: boolean;
-};
-
-export type TranslateTestLlmInput = {
-  llmModelName?: string;
-  llmApiKey?: string;
-  llmBaseUrl?: string;
-  llmTemperature?: number;
-};
+import type {
+  AmazonPosterApplyResultItem,
+  AmazonPosterLookupResult,
+  AmazonPosterScanItem,
+  AppInfo,
+  EmbyConnectionCheckResult,
+  IpcProcedure,
+  JellyfinConnectionCheckResult,
+  TranslateTestLlmInput,
+} from "./ipcTypes";
+import type {
+  CrawlerData,
+  LocalScanEntry,
+  MaintenanceCommitItem,
+  MaintenancePresetId,
+  MaintenancePreviewResult,
+  MaintenanceStatus,
+  ScraperStatus,
+} from "./types";
 
 export type IpcRouterContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
@@ -80,6 +79,13 @@ export type IpcRouterContract = {
   [IpcChannel.File_NfoRead]: IpcProcedure<{ nfoPath?: string }, { data: CrawlerData }>;
   [IpcChannel.File_NfoWrite]: IpcProcedure<{ nfoPath?: string; data?: CrawlerData }, { success: true }>;
 
+  [IpcChannel.Tool_AmazonPosterScan]: IpcProcedure<{ directory?: string }, { items: AmazonPosterScanItem[] }>;
+  [IpcChannel.Tool_AmazonPosterLookup]: IpcProcedure<{ nfoPath?: string; title?: string }, AmazonPosterLookupResult>;
+  [IpcChannel.Tool_AmazonPosterApply]: IpcProcedure<
+    { items?: Array<{ directory: string; amazonPosterUrl: string }> },
+    { results: AmazonPosterApplyResultItem[] }
+  >;
+
   [IpcChannel.Tool_CreateSymlink]: IpcProcedure<
     {
       sourceDir?: string;
@@ -91,14 +97,35 @@ export type IpcRouterContract = {
     },
     { message: string }
   >;
-  [IpcChannel.Tool_ServerCheckConnection]: IpcProcedure<void, { success: true }>;
-  [IpcChannel.Tool_ActorPhotoSync]: IpcProcedure<
+  [IpcChannel.Tool_JellyfinServerCheckConnection]: IpcProcedure<void, JellyfinConnectionCheckResult>;
+  [IpcChannel.Tool_JellyfinActorPhotoSync]: IpcProcedure<
     { mode?: "all" | "missing" },
     { processedCount: number; failedCount: number }
   >;
-  [IpcChannel.Tool_ActorInfoSync]: IpcProcedure<
+  [IpcChannel.Tool_JellyfinActorInfoSync]: IpcProcedure<
+    { mode?: "all" | "missing" },
+    { processedCount: number; failedCount: number }
+  >;
+  [IpcChannel.Tool_EmbyServerCheckConnection]: IpcProcedure<void, EmbyConnectionCheckResult>;
+  [IpcChannel.Tool_EmbyActorPhotoSync]: IpcProcedure<
+    { mode?: "all" | "missing" },
+    { processedCount: number; failedCount: number }
+  >;
+  [IpcChannel.Tool_EmbyActorInfoSync]: IpcProcedure<
     { mode?: "all" | "missing" },
     { processedCount: number; failedCount: number }
   >;
   [IpcChannel.Tool_ToggleDevTools]: IpcProcedure<void, { success: true }>;
+
+  [IpcChannel.Maintenance_Scan]: IpcProcedure<{ dirPath?: string }, { entries: LocalScanEntry[] }>;
+  [IpcChannel.Maintenance_Preview]: IpcProcedure<
+    { entries?: LocalScanEntry[]; presetId?: MaintenancePresetId },
+    MaintenancePreviewResult
+  >;
+  [IpcChannel.Maintenance_Execute]: IpcProcedure<
+    { items?: MaintenanceCommitItem[]; presetId?: MaintenancePresetId },
+    { success: true }
+  >;
+  [IpcChannel.Maintenance_Stop]: IpcProcedure<void, { success: true }>;
+  [IpcChannel.Maintenance_GetStatus]: IpcProcedure<void, MaintenanceStatus>;
 };

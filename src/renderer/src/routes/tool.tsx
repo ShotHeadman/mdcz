@@ -1,4 +1,5 @@
 import type { Website } from "@shared/enums";
+import type { AmazonPosterScanItem, EmbyConnectionCheckResult, JellyfinConnectionCheckResult } from "@shared/ipcTypes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -12,15 +13,17 @@ import {
   Link2,
   Search,
   Settings2,
+  ShoppingCart,
   Trash2,
   UserCheck,
   Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deleteFile } from "@/api/manual";
 import { createSymlink, listEntries, scrapeSingleFile } from "@/client/api";
 import { ipc } from "@/client/ipc";
 import type { CreateSoftlinksBody, FileItem, ScrapeFileBody } from "@/client/types";
+import { AmazonPosterDialog } from "@/components/AmazonPosterDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -60,8 +63,18 @@ interface CleanupCandidate {
   lastModified: string | null;
 }
 
+type SyncMode = "all" | "missing";
+type ConnectionCheckResult = JellyfinConnectionCheckResult | EmbyConnectionCheckResult;
+
 const CLEANUP_PRESET_EXTENSIONS = [".html", ".url", ".txt", ".nfo", ".jpg", ".png", ".torrent", ".ass", ".srt"];
 const CLEANUP_MAX_SCANNED_DIRECTORIES = 50000;
+
+const clearProgressResetTimer = (timerRef: MutableRefObject<number | null>) => {
+  if (timerRef.current !== null) {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+};
 
 const TOOLS_TABS = [
   { id: "scraping", label: "数据刮削", icon: FileCheck },
@@ -112,6 +125,32 @@ function formatError(error: unknown) {
   return String(error);
 }
 
+function getFirstDiagnosticError(result: ConnectionCheckResult) {
+  return result.steps.find((step) => step.status === "error");
+}
+
+function getFirstDiagnosticBlocker(result: ConnectionCheckResult) {
+  return getFirstDiagnosticError(result) ?? result.steps.find((step) => step.status !== "ok");
+}
+
+function canRunPersonSync(result: ConnectionCheckResult | null): result is ConnectionCheckResult {
+  return Boolean(result?.success);
+}
+
+function getDiagnosticHeadline(result: ConnectionCheckResult) {
+  if (!result.success) {
+    return "存在阻塞项";
+  }
+  if (result.personCount === 0) {
+    return "人物库为空";
+  }
+  return "可以执行人物同步";
+}
+
+function getEmptyPersonLibraryMessage(serverName: "Jellyfin" | "Emby", targetLabel: "人物信息" | "人物头像") {
+  return `${serverName} 人物库为空。已确认连接与权限状态正常，当前无法执行${targetLabel}同步。请先在 ${serverName} 中生成人物条目后重试。`;
+}
+
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -122,6 +161,201 @@ function formatBytes(bytes: number) {
     index += 1;
   }
   return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+}
+
+interface PersonToolCardProps {
+  title: string;
+  description: string;
+  diagnosticLabel: string;
+  checkResult: ConnectionCheckResult | null;
+  checkPending: boolean;
+  busy: boolean;
+  infoSyncRunning: boolean;
+  photoSyncRunning: boolean;
+  syncProgress: number;
+  infoMode: SyncMode;
+  photoMode: SyncMode;
+  infoMissingText: string;
+  infoAllText: string;
+  photoMissingText: string;
+  photoAllText: string;
+  photoNotice?: string;
+  headerExtra?: React.ReactNode;
+  className?: string;
+  onCheck: () => void;
+  onInfoModeChange: (value: SyncMode) => void;
+  onPhotoModeChange: (value: SyncMode) => void;
+  onSyncInfo: () => void;
+  onSyncPhoto: () => void;
+}
+
+function PersonToolCard({
+  title,
+  description,
+  diagnosticLabel,
+  checkResult,
+  checkPending,
+  busy,
+  infoSyncRunning,
+  photoSyncRunning,
+  syncProgress,
+  infoMode,
+  photoMode,
+  infoMissingText,
+  infoAllText,
+  photoMissingText,
+  photoAllText,
+  photoNotice,
+  headerExtra,
+  className,
+  onCheck,
+  onInfoModeChange,
+  onPhotoModeChange,
+  onSyncInfo,
+  onSyncPhoto,
+}: PersonToolCardProps) {
+  return (
+    <Card className={cn("rounded-xl border shadow-sm", className)}>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="p-1.5 bg-primary/8 rounded-lg">
+              <UserCheck className="h-5 w-5 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="text-sm font-medium">{title}</CardTitle>
+              <CardDescription className="text-xs">{description}</CardDescription>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {headerExtra}
+            <Button
+              variant="outline"
+              onClick={onCheck}
+              disabled={checkPending || busy}
+              className="rounded-lg shrink-0 h-9 text-sm"
+            >
+              {checkPending ? "诊断中..." : "连接诊断"}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {checkResult && (
+          <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">{diagnosticLabel}</div>
+                {(checkResult.serverInfo?.serverName || checkResult.serverInfo?.version) && (
+                  <div className="text-sm">
+                    {[checkResult.serverInfo?.serverName, checkResult.serverInfo?.version].filter(Boolean).join(" ")}
+                  </div>
+                )}
+              </div>
+              <div
+                className={cn(
+                  "text-xs font-medium",
+                  !checkResult.success && "text-amber-600",
+                  checkResult.success && checkResult.personCount === 0 && "text-muted-foreground",
+                  checkResult.success && checkResult.personCount !== 0 && "text-emerald-600",
+                )}
+              >
+                {getDiagnosticHeadline(checkResult)}
+              </div>
+            </div>
+            <div className="grid gap-2">
+              {checkResult.steps.map((step) => (
+                <div
+                  key={step.key}
+                  className="flex items-start justify-between gap-3 rounded-lg bg-background/70 px-3 py-2"
+                >
+                  <div>
+                    <div className="text-xs font-medium">{step.label}</div>
+                    <div className="text-xs text-muted-foreground">{step.message}</div>
+                  </div>
+                  <div
+                    className={cn(
+                      "text-[11px] font-medium shrink-0",
+                      step.status === "ok" && "text-emerald-600",
+                      step.status === "error" && "text-red-600",
+                      step.status === "skipped" && "text-muted-foreground",
+                    )}
+                  >
+                    {step.status === "ok" ? "通过" : step.status === "error" ? "失败" : "跳过"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div className="grid gap-2">
+            <Label className="text-xs font-medium text-muted-foreground">演员资料同步</Label>
+            <div className="flex gap-2">
+              <Select value={infoMode} onValueChange={(value) => onInfoModeChange(value as SyncMode)}>
+                <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="missing">仅补全空白资料</SelectItem>
+                  <SelectItem value="all">更新已有资料</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                onClick={onSyncInfo}
+                disabled={busy || checkPending}
+                className="flex-1 rounded-lg h-9 text-sm"
+              >
+                {infoSyncRunning ? "同步中..." : "同步信息"}
+              </Button>
+            </div>
+            <div className="text-[11px] leading-relaxed text-muted-foreground">
+              {infoMode === "missing" ? infoMissingText : infoAllText}
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label className="text-xs font-medium text-muted-foreground">演员头像同步</Label>
+            <div className="flex gap-2">
+              <Select value={photoMode} onValueChange={(value) => onPhotoModeChange(value as SyncMode)}>
+                <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="missing">仅补全缺失头像</SelectItem>
+                  <SelectItem value="all">重新同步头像</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                onClick={onSyncPhoto}
+                disabled={busy || checkPending}
+                className="flex-1 rounded-lg h-9 text-sm"
+              >
+                {photoSyncRunning ? "同步中..." : "同步头像"}
+              </Button>
+            </div>
+            <div className="text-[11px] leading-relaxed text-muted-foreground">
+              {photoMode === "missing" ? photoMissingText : photoAllText}
+            </div>
+            {photoNotice && <div className="text-[11px] leading-relaxed text-amber-700">{photoNotice}</div>}
+          </div>
+
+          {syncProgress > 0 && (
+            <div className="grid gap-2">
+              <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                <span>任务进度</span>
+                <span>{Math.round(syncProgress)}%</span>
+              </div>
+              <Progress value={syncProgress} className="h-2 bg-muted/30" />
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function ToolComponent() {
@@ -143,13 +377,31 @@ function ToolComponent() {
   });
 
   // 演员相关
-  const checkServerConnectionMut = useMutation({
-    mutationFn: async () => ipc.tool.checkServerConnection(),
+  const checkJellyfinConnectionMut = useMutation({
+    mutationFn: async () => ipc.tool.checkJellyfinConnection(),
   });
-  const [actorInfoMode, setActorInfoMode] = useState<"all" | "missing">("missing");
-  const [actorPhotoMode, setActorPhotoMode] = useState<"all" | "missing">("missing");
-  const [syncRunning, setSyncRunning] = useState(false);
-  const [syncProgress, setSyncProgress] = useState(0);
+  const checkEmbyConnectionMut = useMutation({
+    mutationFn: async () => ipc.tool.checkEmbyConnection(),
+  });
+  const [jellyfinCheckResult, setJellyfinCheckResult] = useState<JellyfinConnectionCheckResult | null>(null);
+  const [embyCheckResult, setEmbyCheckResult] = useState<EmbyConnectionCheckResult | null>(null);
+  const [jellyfinActorInfoMode, setJellyfinActorInfoMode] = useState<SyncMode>("missing");
+  const [jellyfinActorPhotoMode, setJellyfinActorPhotoMode] = useState<SyncMode>("missing");
+  const [embyActorInfoMode, setEmbyActorInfoMode] = useState<SyncMode>("missing");
+  const [embyActorPhotoMode, setEmbyActorPhotoMode] = useState<SyncMode>("missing");
+  const [jellyfinInfoSyncRunning, setJellyfinInfoSyncRunning] = useState(false);
+  const [jellyfinPhotoSyncRunning, setJellyfinPhotoSyncRunning] = useState(false);
+  const [embyInfoSyncRunning, setEmbyInfoSyncRunning] = useState(false);
+  const [embyPhotoSyncRunning, setEmbyPhotoSyncRunning] = useState(false);
+  const [jellyfinSyncProgress, setJellyfinSyncProgress] = useState(0);
+  const [embySyncProgress, setEmbySyncProgress] = useState(0);
+  const jellyfinProgressResetTimerRef = useRef<number | null>(null);
+  const embyProgressResetTimerRef = useRef<number | null>(null);
+  const jellyfinSyncRunning = jellyfinInfoSyncRunning || jellyfinPhotoSyncRunning;
+  const embySyncRunning = embyInfoSyncRunning || embyPhotoSyncRunning;
+  const anyPersonSyncRunning = jellyfinSyncRunning || embySyncRunning;
+  const anyPersonCheckPending = checkJellyfinConnectionMut.isPending || checkEmbyConnectionMut.isPending;
+  const [selectedPersonServer, setSelectedPersonServer] = useState<"jellyfin" | "emby">("jellyfin");
 
   // 缺番查找
   const [missingPrefix, setMissingPrefix] = useState("");
@@ -193,6 +445,10 @@ function ToolComponent() {
     elapsed: number;
   } | null>(null);
   const [crawlerTesting, setCrawlerTesting] = useState(false);
+  const [amazonDir, setAmazonDir] = useState("");
+  const [amazonPosterDialogOpen, setAmazonPosterDialogOpen] = useState(false);
+  const [amazonPosterScanItems, setAmazonPosterScanItems] = useState<AmazonPosterScanItem[]>([]);
+  const [amazonScanning, setAmazonScanning] = useState(false);
 
   // Navigation arrows logic
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -244,6 +500,25 @@ function ToolComponent() {
     return () => el.removeEventListener("wheel", onWheelNative);
   }, []);
 
+  useEffect(() => {
+    return ipc.on.progress((payload) => {
+      if (jellyfinSyncRunning) {
+        setJellyfinSyncProgress(payload.value);
+        return;
+      }
+      if (embySyncRunning) {
+        setEmbySyncProgress(payload.value);
+      }
+    });
+  }, [embySyncRunning, jellyfinSyncRunning]);
+
+  useEffect(() => {
+    return () => {
+      clearProgressResetTimer(jellyfinProgressResetTimerRef);
+      clearProgressResetTimer(embyProgressResetTimerRef);
+    };
+  }, []);
+
   const handleScrapeSingleFile = async () => {
     if (!singleFilePath) {
       showError("请输入文件路径");
@@ -281,65 +556,200 @@ function ToolComponent() {
     }
   };
 
-  const runServerConnectionCheck = async (silentSuccess = false): Promise<boolean> => {
+  const runJellyfinConnectionCheck = async (silentSuccess = false): Promise<JellyfinConnectionCheckResult | null> => {
     try {
-      await checkServerConnectionMut.mutateAsync();
-      if (!silentSuccess) {
-        showSuccess("服务器连通性测试通过");
+      const result = await checkJellyfinConnectionMut.mutateAsync();
+      setJellyfinCheckResult(result);
+
+      const firstError = getFirstDiagnosticError(result);
+      if (!firstError) {
+        if (!silentSuccess) {
+          showSuccess("Jellyfin 连接诊断通过");
+        }
+      } else if (!silentSuccess) {
+        showError(`${firstError.label}: ${firstError.message}`);
       }
-      return true;
+      return result;
     } catch (error) {
-      showError(`服务器连通性测试失败: ${formatError(error)}`);
-      return false;
+      showError(`Jellyfin 连通性测试失败: ${formatError(error)}`);
+      setJellyfinCheckResult(null);
+      return null;
     }
   };
 
-  const handleCheckServerConnection = async () => {
-    showInfo("正在测试 Emby/Jellyfin 连通性...");
-    await runServerConnectionCheck();
+  const runEmbyConnectionCheck = async (silentSuccess = false): Promise<EmbyConnectionCheckResult | null> => {
+    try {
+      const result = await checkEmbyConnectionMut.mutateAsync();
+      setEmbyCheckResult(result);
+
+      const firstError = getFirstDiagnosticError(result);
+      if (!firstError) {
+        if (!silentSuccess) {
+          showSuccess("Emby 连接诊断通过");
+        }
+      } else if (!silentSuccess) {
+        showError(`${firstError.label}: ${firstError.message}`);
+      }
+      return result;
+    } catch (error) {
+      showError(`Emby 连通性测试失败: ${formatError(error)}`);
+      setEmbyCheckResult(null);
+      return null;
+    }
   };
 
-  const handleSyncActorInfo = async () => {
-    showInfo("正在测试服务器连接...");
-    const connected = await runServerConnectionCheck(true);
-    if (!connected) {
+  const handleCheckJellyfinConnection = async () => {
+    showInfo("正在诊断 Jellyfin 连接状态...");
+    await runJellyfinConnectionCheck();
+  };
+
+  const handleCheckEmbyConnection = async () => {
+    showInfo("正在诊断 Emby 连接状态...");
+    await runEmbyConnectionCheck();
+  };
+
+  const handleSyncJellyfinActorInfo = async () => {
+    showInfo("正在诊断 Jellyfin 连接状态...");
+    const diagnostic = await runJellyfinConnectionCheck(true);
+    if (!canRunPersonSync(diagnostic)) {
+      const blocker = diagnostic ? getFirstDiagnosticBlocker(diagnostic) : undefined;
+      if (blocker) {
+        showError(`${blocker.label}: ${blocker.message}`);
+      }
+      return;
+    }
+    if (diagnostic.personCount === 0) {
+      showInfo(getEmptyPersonLibraryMessage("Jellyfin", "人物信息"));
       return;
     }
 
-    setSyncRunning(true);
-    setSyncProgress(5);
-    showInfo("正在同步演员信息...");
+    clearProgressResetTimer(jellyfinProgressResetTimerRef);
+    setJellyfinSyncProgress(0);
+    setJellyfinInfoSyncRunning(true);
+    showInfo("正在同步 Jellyfin 演员信息...");
     try {
-      const result = await ipc.tool.syncActorInfo(actorInfoMode);
-      setSyncProgress(100);
-      showSuccess(`演员信息同步完成: 成功 ${result.processedCount}，失败 ${result.failedCount}`);
+      const result = await ipc.tool.syncJellyfinActorInfo(jellyfinActorInfoMode);
+      setJellyfinSyncProgress(100);
+      showSuccess(`Jellyfin 演员信息同步完成: 成功 ${result.processedCount}，失败 ${result.failedCount}`);
     } catch (error) {
-      showError(`演员信息同步失败: ${formatError(error)}`);
+      showError(`Jellyfin 演员信息同步失败: ${formatError(error)}`);
     } finally {
-      setSyncRunning(false);
-      window.setTimeout(() => setSyncProgress(0), 1200);
+      setJellyfinInfoSyncRunning(false);
+      clearProgressResetTimer(jellyfinProgressResetTimerRef);
+      jellyfinProgressResetTimerRef.current = window.setTimeout(() => {
+        setJellyfinSyncProgress(0);
+        jellyfinProgressResetTimerRef.current = null;
+      }, 1200);
     }
   };
 
-  const handleSyncPhotos = async () => {
-    showInfo("正在测试服务器连接...");
-    const connected = await runServerConnectionCheck(true);
-    if (!connected) {
+  const handleSyncJellyfinPhotos = async () => {
+    showInfo("正在诊断 Jellyfin 连接状态...");
+    const diagnostic = await runJellyfinConnectionCheck(true);
+    if (!canRunPersonSync(diagnostic)) {
+      const blocker = diagnostic ? getFirstDiagnosticBlocker(diagnostic) : undefined;
+      if (blocker) {
+        showError(`${blocker.label}: ${blocker.message}`);
+      }
+      return;
+    }
+    if (diagnostic.personCount === 0) {
+      showInfo(getEmptyPersonLibraryMessage("Jellyfin", "人物头像"));
       return;
     }
 
-    setSyncRunning(true);
-    setSyncProgress(5);
-    showInfo("正在同步演员头像...");
+    clearProgressResetTimer(jellyfinProgressResetTimerRef);
+    setJellyfinSyncProgress(0);
+    setJellyfinPhotoSyncRunning(true);
+    showInfo("正在同步 Jellyfin 演员头像...");
     try {
-      const result = await ipc.tool.syncActorPhoto(actorPhotoMode);
-      setSyncProgress(100);
-      showSuccess(`头像同步完成: 成功 ${result.processedCount}，失败 ${result.failedCount}`);
+      const result = await ipc.tool.syncJellyfinActorPhoto(jellyfinActorPhotoMode);
+      setJellyfinSyncProgress(100);
+      showSuccess(`Jellyfin 头像同步完成: 成功 ${result.processedCount}，失败 ${result.failedCount}`);
     } catch (error) {
-      showError(`头像同步失败: ${formatError(error)}`);
+      showError(`Jellyfin 头像同步失败: ${formatError(error)}`);
     } finally {
-      setSyncRunning(false);
-      window.setTimeout(() => setSyncProgress(0), 1200);
+      setJellyfinPhotoSyncRunning(false);
+      clearProgressResetTimer(jellyfinProgressResetTimerRef);
+      jellyfinProgressResetTimerRef.current = window.setTimeout(() => {
+        setJellyfinSyncProgress(0);
+        jellyfinProgressResetTimerRef.current = null;
+      }, 1200);
+    }
+  };
+
+  const handleSyncEmbyActorInfo = async () => {
+    showInfo("正在诊断 Emby 连接状态...");
+    const diagnostic = await runEmbyConnectionCheck(true);
+    if (!canRunPersonSync(diagnostic)) {
+      const blocker = diagnostic ? getFirstDiagnosticBlocker(diagnostic) : undefined;
+      if (blocker) {
+        showError(`${blocker.label}: ${blocker.message}`);
+      }
+      return;
+    }
+    if (diagnostic.personCount === 0) {
+      showInfo(getEmptyPersonLibraryMessage("Emby", "人物信息"));
+      return;
+    }
+
+    clearProgressResetTimer(embyProgressResetTimerRef);
+    setEmbySyncProgress(0);
+    setEmbyInfoSyncRunning(true);
+    showInfo("正在同步 Emby 演员信息...");
+    try {
+      const result = await ipc.tool.syncEmbyActorInfo(embyActorInfoMode);
+      setEmbySyncProgress(100);
+      showSuccess(`Emby 演员信息同步完成: 成功 ${result.processedCount}，失败 ${result.failedCount}`);
+    } catch (error) {
+      showError(`Emby 演员信息同步失败: ${formatError(error)}`);
+    } finally {
+      setEmbyInfoSyncRunning(false);
+      clearProgressResetTimer(embyProgressResetTimerRef);
+      embyProgressResetTimerRef.current = window.setTimeout(() => {
+        setEmbySyncProgress(0);
+        embyProgressResetTimerRef.current = null;
+      }, 1200);
+    }
+  };
+
+  const handleSyncEmbyPhotos = async () => {
+    showInfo("正在诊断 Emby 连接状态...");
+    const diagnostic = await runEmbyConnectionCheck(true);
+    if (!canRunPersonSync(diagnostic)) {
+      const blocker = diagnostic ? getFirstDiagnosticBlocker(diagnostic) : undefined;
+      if (blocker) {
+        showError(`${blocker.label}: ${blocker.message}`);
+      }
+      return;
+    }
+    if (diagnostic.personCount === 0) {
+      showInfo(getEmptyPersonLibraryMessage("Emby", "人物头像"));
+      return;
+    }
+
+    const adminKeyStep = diagnostic.steps.find((step) => step.key === "adminKey");
+    if (adminKeyStep?.message) {
+      showInfo(adminKeyStep.message);
+    }
+
+    clearProgressResetTimer(embyProgressResetTimerRef);
+    setEmbySyncProgress(0);
+    setEmbyPhotoSyncRunning(true);
+    showInfo("正在同步 Emby 演员头像...");
+    try {
+      const result = await ipc.tool.syncEmbyActorPhoto(embyActorPhotoMode);
+      setEmbySyncProgress(100);
+      showSuccess(`Emby 头像同步完成: 成功 ${result.processedCount}，失败 ${result.failedCount}`);
+    } catch (error) {
+      showError(`Emby 头像同步失败: ${formatError(error)}`);
+    } finally {
+      setEmbyPhotoSyncRunning(false);
+      clearProgressResetTimer(embyProgressResetTimerRef);
+      embyProgressResetTimerRef.current = window.setTimeout(() => {
+        setEmbySyncProgress(0);
+        embyProgressResetTimerRef.current = null;
+      }, 1200);
     }
   };
 
@@ -550,12 +960,87 @@ function ToolComponent() {
     }
   };
 
+  const handleBrowseAmazonDir = async () => {
+    const result = await ipc.file.browse("directory");
+    if (result.paths && result.paths.length > 0) {
+      setAmazonDir(result.paths[0]);
+    }
+  };
+
+  const handleAmazonPosterScan = async () => {
+    const directory = amazonDir.trim();
+    if (!directory) {
+      showError("请输入需要扫描的媒体目录");
+      return;
+    }
+
+    setAmazonScanning(true);
+    try {
+      const result = await ipc.tool.amazonPosterScan(directory);
+      setAmazonPosterScanItems(result.items);
+      setAmazonPosterDialogOpen(true);
+
+      if (result.items.length === 0) {
+        showInfo("扫描完成，但未找到可处理的 NFO 条目。");
+      } else {
+        showSuccess(`扫描完成，共找到 ${result.items.length} 个条目。`);
+      }
+    } catch (error) {
+      showError(`Amazon 海报扫描失败: ${formatError(error)}`);
+    } finally {
+      setAmazonScanning(false);
+    }
+  };
+
   const cleanupTotalSize = useMemo(
     () => cleanupCandidates.reduce((sum, item) => sum + (Number.isFinite(item.size) ? item.size : 0), 0),
     [cleanupCandidates],
   );
   const cleanupPreviewRows = cleanupCandidates.slice(0, 400);
   const missingPreviewRows = missingRows.slice(0, 300);
+
+  const personToolProps =
+    selectedPersonServer === "jellyfin"
+      ? {
+          diagnosticLabel: "Jellyfin 诊断结果",
+          checkResult: jellyfinCheckResult,
+          checkPending: checkJellyfinConnectionMut.isPending,
+          infoSyncRunning: jellyfinInfoSyncRunning,
+          photoSyncRunning: jellyfinPhotoSyncRunning,
+          syncProgress: jellyfinSyncProgress,
+          infoMode: jellyfinActorInfoMode,
+          photoMode: jellyfinActorPhotoMode,
+          infoMissingText: "仅补全缺失的演员简介与基础资料。",
+          infoAllText: "按当前抓取结果更新演员简介与基础资料。",
+          photoMissingText: "仅为缺少头像的演员补充头像。",
+          photoAllText: "按当前抓取结果重新同步演员头像。",
+          photoNotice: undefined as string | undefined,
+          onCheck: handleCheckJellyfinConnection,
+          onInfoModeChange: setJellyfinActorInfoMode,
+          onPhotoModeChange: setJellyfinActorPhotoMode,
+          onSyncInfo: handleSyncJellyfinActorInfo,
+          onSyncPhoto: handleSyncJellyfinPhotos,
+        }
+      : {
+          diagnosticLabel: "Emby 诊断结果",
+          checkResult: embyCheckResult,
+          checkPending: checkEmbyConnectionMut.isPending,
+          infoSyncRunning: embyInfoSyncRunning,
+          photoSyncRunning: embyPhotoSyncRunning,
+          syncProgress: embySyncProgress,
+          infoMode: embyActorInfoMode,
+          photoMode: embyActorPhotoMode,
+          infoMissingText: "仅补全缺失的演员简介与基础资料，并保留未变更字段。",
+          infoAllText: "按当前抓取结果更新演员简介与基础资料，并按同步字段写回 Emby。",
+          photoMissingText: "仅为缺少头像的演员补充头像。",
+          photoAllText: "按当前抓取结果重新同步演员头像。",
+          photoNotice: "人物头像上传通常需要管理员 API Key。若返回 401 或 403，请改用管理员 API Key 后重试。",
+          onCheck: handleCheckEmbyConnection,
+          onInfoModeChange: setEmbyActorInfoMode,
+          onPhotoModeChange: setEmbyActorPhotoMode,
+          onSyncInfo: handleSyncEmbyActorInfo,
+          onSyncPhoto: handleSyncEmbyPhotos,
+        };
 
   return (
     <div className="h-full w-full overflow-y-auto relative scroll-smooth">
@@ -778,6 +1263,53 @@ function ToolComponent() {
                 )}
               </CardContent>
             </Card>
+
+            <Card className="rounded-xl border shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-primary/8 rounded-lg">
+                    <ShoppingCart className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm font-medium">Amazon 海报增强</CardTitle>
+                    <CardDescription className="text-xs">从 Amazon.co.jp 查询高质量竖版海报图片</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="amazon-poster-dir" className="text-xs font-medium text-muted-foreground">
+                    目标目录
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="amazon-poster-dir"
+                      value={amazonDir}
+                      onChange={(e) => setAmazonDir(e.target.value)}
+                      placeholder="输入已刮削完成的输出目录"
+                      className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={handleBrowseAmazonDir}
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={handleAmazonPosterScan}
+                  disabled={amazonScanning}
+                  className="w-full rounded-lg h-9 text-sm font-medium"
+                >
+                  {amazonScanning ? "正在扫描..." : "开始扫描"}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -790,87 +1322,28 @@ function ToolComponent() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
-              {/* 演员工具 */}
-              <Card className="rounded-xl border shadow-sm md:col-span-2">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 bg-primary/8 rounded-lg">
-                        <UserCheck className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-sm font-medium">演员工具</CardTitle>
-                        <CardDescription className="text-xs">同步演员头像与元数据</CardDescription>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={handleCheckServerConnection}
-                      disabled={checkServerConnectionMut.isPending || syncRunning}
-                      className="rounded-lg shrink-0 h-9 text-sm"
-                    >
-                      {checkServerConnectionMut.isPending ? "测试中..." : "测试连通"}
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="grid gap-2">
-                      <Label className="text-xs font-medium text-muted-foreground">信息同步</Label>
-                      <div className="flex gap-2">
-                        <Select value={actorInfoMode} onValueChange={(v) => setActorInfoMode(v as "all" | "missing")}>
-                          <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="missing">仅缺失</SelectItem>
-                            <SelectItem value="all">全部</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="secondary"
-                          onClick={handleSyncActorInfo}
-                          disabled={syncRunning || checkServerConnectionMut.isPending}
-                          className="flex-1 rounded-lg h-9 text-sm"
-                        >
-                          {syncRunning ? "同步中..." : "同步信息"}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <div className="flex justify-between text-xs text-muted-foreground font-medium">
-                        <span>任务进度</span>
-                        <span>{Math.round(syncProgress)}%</span>
-                      </div>
-                      <Progress value={syncProgress} className="h-2 bg-muted/30" />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label className="text-xs font-medium text-muted-foreground">头像同步</Label>
-                      <div className="flex gap-2">
-                        <Select value={actorPhotoMode} onValueChange={(v) => setActorPhotoMode(v as "all" | "missing")}>
-                          <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="missing">仅缺失</SelectItem>
-                            <SelectItem value="all">全部</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="secondary"
-                          onClick={handleSyncPhotos}
-                          disabled={syncRunning || checkServerConnectionMut.isPending}
-                          className="flex-1 rounded-lg h-9 text-sm"
-                        >
-                          {syncRunning ? "同步中..." : "同步头像"}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <PersonToolCard
+                title="人物工具"
+                description="诊断连接状态并同步人物头像与简介"
+                headerExtra={
+                  <Select
+                    value={selectedPersonServer}
+                    onValueChange={(v) => setSelectedPersonServer(v as "jellyfin" | "emby")}
+                    disabled={anyPersonSyncRunning || anyPersonCheckPending}
+                  >
+                    <SelectTrigger className="h-9 w-[140px] rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="jellyfin">Jellyfin</SelectItem>
+                      <SelectItem value="emby">Emby</SelectItem>
+                    </SelectContent>
+                  </Select>
+                }
+                {...personToolProps}
+                busy={anyPersonSyncRunning}
+                className="md:col-span-2"
+              />
 
               <Card className="rounded-xl border shadow-sm md:col-span-2">
                 <CardHeader>
@@ -1246,6 +1719,12 @@ function ToolComponent() {
         {/* Bottom spacing */}
         <div className="h-10" />
       </div>
+
+      <AmazonPosterDialog
+        open={amazonPosterDialogOpen}
+        onOpenChange={setAmazonPosterDialogOpen}
+        items={amazonPosterScanItems}
+      />
 
       <Dialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
         <DialogContent className="rounded-xl">

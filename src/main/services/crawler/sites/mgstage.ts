@@ -84,8 +84,8 @@ export class MGStageCrawler extends BaseCrawler {
 
     const plot = $("p.txt.introduction").text().trim() || undefined;
 
-    const coverUrl = $("a.enlarge_image").first().attr("href") ?? $("img.enlarge_image").first().attr("src");
-    const coverUrlAbsolute = coverUrl ? toAbsoluteUrl(MGSTAGE_BASE_URL, coverUrl) : undefined;
+    const thumbUrl = $("a.enlarge_image").first().attr("href") ?? $("img.enlarge_image").first().attr("src");
+    const thumbUrlAbsolute = thumbUrl ? toAbsoluteUrl(MGSTAGE_BASE_URL, thumbUrl) : undefined;
 
     const sampleImages = $("a.sample_image")
       .toArray()
@@ -110,7 +110,7 @@ export class MGStageCrawler extends BaseCrawler {
       plot,
       release_date: releaseDate,
       rating,
-      cover_url: coverUrlAbsolute,
+      thumb_url: thumbUrlAbsolute,
       poster_url: undefined,
       fanart_url: undefined,
       sample_images: sampleImages,

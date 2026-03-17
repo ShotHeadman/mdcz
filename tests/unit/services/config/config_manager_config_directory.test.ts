@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -61,5 +61,84 @@ describe("ConfigManager configDirectory", () => {
     const configuration = (await reloaded.get()) as { paths: { configDirectory: string } };
     expect(configuration.paths.configDirectory).toBe("custom-config");
     expect(reloaded.list().dataDir).toBe(join(mockUserDataPath, "custom-config"));
+  });
+
+  it("creates, switches, and deletes profiles in the active config directory", async () => {
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    await manager.createProfile("windows-dev");
+
+    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(true);
+
+    const createdProfiles = await manager.listProfiles();
+    expect(createdProfiles.profiles).toEqual(expect.arrayContaining(["default", "windows-dev"]));
+    expect(createdProfiles.active).toBe("default");
+
+    await manager.switchProfile("windows-dev");
+
+    const switchedProfiles = await manager.listProfiles();
+    expect(switchedProfiles.active).toBe("windows-dev");
+    expect(manager.list().configPath).toBe(join(mockUserDataPath, "config", "windows-dev.json"));
+
+    await expect(manager.deleteProfile("windows-dev")).rejects.toThrow("Cannot delete the active profile");
+
+    await manager.switchProfile("default");
+    await manager.deleteProfile("windows-dev");
+
+    const deletedProfiles = await manager.listProfiles();
+    expect(deletedProfiles.profiles).toEqual(["default"]);
+    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(false);
+  });
+
+  it("does not overwrite an unreadable active config file", async () => {
+    const configDir = join(mockUserDataPath, "config");
+    const configPath = join(configDir, "default.json");
+    await mkdir(configDir, { recursive: true });
+
+    const futureConfig = {
+      configVersion: 99,
+      paths: {
+        configDirectory: "config",
+      },
+    };
+    await writeFile(configPath, JSON.stringify(futureConfig, null, 2), "utf8");
+
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    const configuration = (await manager.get()) as { paths: { configDirectory: string } };
+    const persisted = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(configuration.paths.configDirectory).toBe("config");
+    expect(persisted).toEqual(futureConfig);
+  });
+
+  it("preserves other profiles with unsupported future config versions during cleanup", async () => {
+    const configDir = join(mockUserDataPath, "config");
+    const futureProfilePath = join(configDir, "windows-dev.json");
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      futureProfilePath,
+      JSON.stringify(
+        {
+          configVersion: 99,
+          paths: {
+            configDirectory: "config",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    const profiles = await manager.listProfiles();
+
+    expect(profiles.profiles).toContain("windows-dev");
+    expect(await fileExists(futureProfilePath)).toBe(true);
   });
 });

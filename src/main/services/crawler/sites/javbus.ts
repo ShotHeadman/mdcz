@@ -25,17 +25,17 @@ const isAgeVerificationPage = ($: CheerioAPI): boolean => {
   return modalTitle.includes("你是否已經成年");
 };
 
-const buildPosterUrl = (coverUrl: string | undefined): string | undefined => {
-  if (!coverUrl) {
+const buildPosterUrl = (thumbUrl: string | undefined): string | undefined => {
+  if (!thumbUrl) {
     return undefined;
   }
 
-  if (coverUrl.includes("/pics/")) {
-    return coverUrl.replace("/cover/", "/thumb/").replace("_b.jpg", ".jpg");
+  if (thumbUrl.includes("/pics/")) {
+    return thumbUrl.replace("/cover/", "/thumb/").replace("_b.jpg", ".jpg");
   }
 
-  if (coverUrl.includes("/imgs/")) {
-    return coverUrl.replace("/cover/", "/thumbs/").replace("_b.jpg", ".jpg");
+  if (thumbUrl.includes("/imgs/")) {
+    return thumbUrl.replace("/cover/", "/thumbs/").replace("_b.jpg", ".jpg");
   }
 
   return undefined;
@@ -127,9 +127,9 @@ export class JavbusCrawler extends BaseCrawler {
       .get()
       .filter((name: string) => name.length > 0);
 
-    const coverUrl = $("a.bigImage").first().attr("href") ?? undefined;
-    const coverUrlAbsolute = toAbsoluteUrl(JAVBUS_BASE_URL, coverUrl);
-    const posterUrl = buildPosterUrl(coverUrlAbsolute);
+    const thumbUrl = $("a.bigImage").first().attr("href") ?? undefined;
+    const thumbUrlAbsolute = toAbsoluteUrl(JAVBUS_BASE_URL, thumbUrl);
+    const posterUrl = buildPosterUrl(thumbUrlAbsolute);
 
     const studio = $("a[href*='/studio/']").first().text().trim() || undefined;
     const publisherText = $("a[href*='/label/']").first().text().trim();
@@ -158,7 +158,7 @@ export class JavbusCrawler extends BaseCrawler {
       plot: undefined,
       release_date: release,
       rating: undefined,
-      cover_url: coverUrlAbsolute,
+      thumb_url: thumbUrlAbsolute,
       poster_url: posterUrl,
       fanart_url: undefined,
       sample_images: sampleImageUrls,

@@ -12,8 +12,8 @@ export class DahliaCrawler extends BaseLabelCrawler {
       const slug = number.toLowerCase().replaceAll("-", "");
       return `${baseUrl}/works/${slug}/`;
     },
-    coverToPoster: (coverUrl) =>
-      coverUrl.replace("_web_h4", "_h1").replace("_1200.jpg", "_2125.jpg").replace("_tsp.jpg", "_actor.jpg"),
+    thumbToPoster: (thumbUrl) =>
+      thumbUrl.replace("_web_h4", "_h1").replace("_1200.jpg", "_2125.jpg").replace("_tsp.jpg", "_actor.jpg"),
   };
 
   protected async generateSearchUrl(context: Context): Promise<string | null> {

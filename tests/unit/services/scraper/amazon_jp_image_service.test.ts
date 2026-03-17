@@ -11,7 +11,7 @@ const baseCrawlerData: CrawlerData = {
   genres: [],
   sample_images: [],
   website: Website.JAVDB,
-  cover_url: "https://javdb.com/cover.jpg",
+  poster_url: "https://javdb.com/poster.jpg",
 };
 
 class FakeNetworkClient {
@@ -89,9 +89,9 @@ describe("AmazonJpImageService", () => {
     );
 
     expect(result).toEqual({
-      cover_url: imageUrl,
+      poster_url: imageUrl,
       upgraded: true,
-      reason: "已升级为Amazon商品封面",
+      reason: "已升级为Amazon商品海报",
     });
     expect(extractKeywordFromSearchUrl(networkClient.sessionUrls[0])).toBe(rawTitle);
     expect(networkClient.sessionUrls[0]).not.toContain("Actor");
@@ -137,7 +137,7 @@ describe("AmazonJpImageService", () => {
 
     const result = await service.enhance(baseCrawlerData, Website.JAVDB);
 
-    expect(result.cover_url).toBe(large);
+    expect(result.poster_url).toBe(large);
     expect(result.upgraded).toBe(true);
   });
 });

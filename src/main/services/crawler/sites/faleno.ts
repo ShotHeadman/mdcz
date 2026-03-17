@@ -14,8 +14,8 @@ export class FalenoCrawler extends BaseLabelCrawler {
       const keyword = number.toLowerCase().replace("-", " ");
       return `${baseUrl}/top/?s=${encodeURIComponent(keyword)}`;
     },
-    coverToPoster: (coverUrl) =>
-      coverUrl
+    thumbToPoster: (thumbUrl) =>
+      thumbUrl
         .replace("_1200.jpg", "_2125.jpg")
         .replace("_tsp.jpg", "_actor.jpg")
         .replace("1200_re", "2125")

@@ -2,6 +2,7 @@ import { normalize, sep } from "node:path";
 
 const ILLEGAL_SEGMENT_CHARS = /[<>:"/\\|?*]/gu;
 const REPLACED_WHITESPACE = /\s+/gu;
+const TEMPLATE_EDGE_SEPARATORS = /^[\s._-]+|[\s._-]+$/gu;
 
 export interface TemplateData {
   title?: string;
@@ -48,7 +49,7 @@ export const buildSafePath = (template: string, data: TemplateData): string => {
 
   return rendered
     .split(/[\\/]/u)
-    .map((segment) => sanitizePathSegment(segment))
+    .map((segment) => sanitizePathSegment(segment.replace(TEMPLATE_EDGE_SEPARATORS, "")))
     .filter((segment) => segment.length > 0)
     .join(sep);
 };

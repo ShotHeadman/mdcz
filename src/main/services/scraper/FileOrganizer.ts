@@ -1,16 +1,27 @@
-import { readdir, rm, stat, unlink } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join, normalize, parse, resolve } from "node:path";
 
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
-import { ensureParentDirectory, hasEnoughDiskSpace, moveFileSafely } from "@main/utils/file";
+import {
+  ensureParentDirectory,
+  hasEnoughDiskSpace,
+  listVideoFiles,
+  moveFileSafely,
+  resolveAvailablePath,
+} from "@main/utils/file";
 import { buildSafePath, sanitizePathSegment } from "@main/utils/path";
-import type { CrawlerData, DownloadedAssets, FileInfo } from "@shared/types";
+import type { CrawlerData, FileInfo } from "@shared/types";
+import { isGeneratedSidecarVideo } from "./sidecars";
 
 export interface OrganizePlan {
   outputDir: string;
   targetVideoPath: string;
   nfoPath: string;
+}
+
+interface ResolveOutputPlanOptions {
+  createDirectories?: boolean;
 }
 
 const UNCENSORED_NUMBER_PATTERNS = [/^FC2-\d+/iu, /^HEYZO-\d+/iu, /^(?:1PON|10MU|CARIB|PACO|MURA|KIN8)[-_]?\d+/iu];
@@ -145,19 +156,23 @@ export class FileOrganizer {
       studio: data.studio,
     };
 
-    const relativeOutput = truncatePathSegments(
-      buildSafePath(config.naming.folderTemplate, templateData),
-      config.naming.folderNameMax,
-    );
-    const baseOutput = this.resolveBaseOutput(fileInfo, config);
-    const outputDir = join(baseOutput, relativeOutput);
+    const sourceVideo = parse(fileInfo.filePath);
+    const outputDir = config.behavior.successFileMove
+      ? join(
+          this.resolveBaseOutput(fileInfo, config),
+          truncatePathSegments(buildSafePath(config.naming.folderTemplate, templateData), config.naming.folderNameMax),
+        )
+      : sourceVideo.dir;
 
     const fileBaseName = truncateSegment(
       sanitizePathSegment(buildSafePath(config.naming.fileTemplate, templateData)) || styledNumber,
       config.naming.fileNameMax,
     );
-    const targetVideoPath = join(outputDir, `${fileBaseName}${fileInfo.extension}`);
-    const nfoPath = join(outputDir, `${fileBaseName}.nfo`);
+    const targetVideoFileName = config.behavior.successFileRename
+      ? `${fileBaseName}${fileInfo.extension}`
+      : sourceVideo.base;
+    const targetVideoPath = join(outputDir, targetVideoFileName);
+    const nfoPath = join(outputDir, `${parse(targetVideoPath).name}.nfo`);
 
     return {
       outputDir,
@@ -166,33 +181,66 @@ export class FileOrganizer {
     };
   }
 
-  async ensureOutputReady(plan: OrganizePlan, sourceFilePath: string): Promise<void> {
-    await ensureParentDirectory(plan.targetVideoPath);
-    const stats = await stat(sourceFilePath);
+  async ensureOutputReady(plan: OrganizePlan, sourceFilePath: string): Promise<OrganizePlan> {
+    return this.resolveOutputPlan(plan, sourceFilePath, { createDirectories: true });
+  }
+
+  async resolveOutputPlan(
+    plan: OrganizePlan,
+    sourceFilePath: string,
+    options: ResolveOutputPlanOptions = {},
+  ): Promise<OrganizePlan> {
+    if (options.createDirectories) {
+      await ensureParentDirectory(plan.targetVideoPath);
+    }
 
     const outputRoot = dirname(plan.targetVideoPath);
-    const ok = await hasEnoughDiskSpace(outputRoot, stats.size);
-    if (!ok) {
-      throw new Error(`Not enough disk space to move file to ${outputRoot}`);
+    const sourceDir = resolve(dirname(sourceFilePath));
+    const sameDirectoryOutput = sourceDir === resolve(outputRoot);
+
+    if (sameDirectoryOutput) {
+      const videoFiles = await listVideoFiles(sourceDir, false);
+      const otherVideos = videoFiles.filter(
+        (filePath) => resolve(filePath) !== resolve(sourceFilePath) && !isGeneratedSidecarVideo(filePath),
+      );
+      if (otherVideos.length > 0) {
+        this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
+        throw new Error("成功后不移动文件时，仅支持源目录内存在单个视频文件");
+      }
     }
+
+    if (!sameDirectoryOutput) {
+      const stats = await stat(sourceFilePath);
+      const diskCheckPath = options.createDirectories ? outputRoot : await this.resolveExistingDirectory(outputRoot);
+      const ok = await hasEnoughDiskSpace(diskCheckPath, stats.size);
+      if (!ok) {
+        throw new Error(`Not enough disk space to move file to ${outputRoot}`);
+      }
+    }
+
+    const targetVideoPath = await resolveAvailablePath(plan.targetVideoPath, sourceFilePath);
+    const outputDir = dirname(targetVideoPath);
+    const nfoPath = join(outputDir, `${parse(targetVideoPath).name}.nfo`);
+
+    return {
+      outputDir,
+      targetVideoPath,
+      nfoPath,
+    };
   }
 
   async organizeVideo(fileInfo: FileInfo, plan: OrganizePlan, config: Configuration): Promise<string> {
     if (!config.behavior.successFileMove) {
-      this.logger.info(`successFileMove disabled; leaving file at ${fileInfo.filePath}`);
-      return fileInfo.filePath;
+      if (!config.behavior.successFileRename) {
+        this.logger.info(`successFileMove disabled; leaving file at ${fileInfo.filePath}`);
+        return fileInfo.filePath;
+      }
+
+      return moveFileSafely(fileInfo.filePath, plan.targetVideoPath);
     }
 
     const sourceDir = dirname(fileInfo.filePath);
-    let result: string;
-
-    if (!config.behavior.successFileRename) {
-      const parsed = parse(fileInfo.filePath);
-      const targetPath = join(plan.outputDir, `${parsed.base}`);
-      result = await moveFileSafely(fileInfo.filePath, targetPath);
-    } else {
-      result = await moveFileSafely(fileInfo.filePath, plan.targetVideoPath);
-    }
+    const result = await moveFileSafely(fileInfo.filePath, plan.targetVideoPath);
 
     if (config.behavior.deleteEmptyFolder) {
       const mediaRoot = resolve(config.paths.mediaPath.trim() || dirname(fileInfo.filePath));
@@ -213,42 +261,31 @@ export class FileOrganizer {
     this.logger.info(`Moved failed file to ${failedDir}: ${fileInfo.fileName}`);
   }
 
-  async cleanupUnwantedFiles(assets: DownloadedAssets, nfoPath: string, config: Configuration): Promise<void> {
-    const tryDelete = async (filePath: string | undefined) => {
-      if (!filePath) return;
-      try {
-        await unlink(filePath);
-      } catch {
-        /* file may not exist */
-      }
-    };
-
-    if (!config.download.keepCover) await tryDelete(assets.cover);
-    if (!config.download.keepPoster) await tryDelete(assets.poster);
-    if (!config.download.keepFanart) await tryDelete(assets.fanart);
-    if (!config.download.keepTrailer) await tryDelete(assets.trailer);
-    if (!config.download.keepNfo) await tryDelete(nfoPath);
-
-    if (!config.download.keepSceneImages) {
-      for (const img of assets.sceneImages) {
-        await tryDelete(img);
-      }
-      if (assets.sceneImages.length > 0) {
-        const sceneDir = dirname(assets.sceneImages[0]);
-        try {
-          const remaining = await readdir(sceneDir);
-          if (remaining.length === 0) await rm(sceneDir, { recursive: true });
-        } catch {
-          /* directory may not exist */
-        }
-      }
-    }
-  }
-
   private resolveBaseOutput(fileInfo: FileInfo, config: Configuration): string {
     const mediaRoot = config.paths.mediaPath.trim();
     const base = mediaRoot.length > 0 ? mediaRoot : dirname(fileInfo.filePath);
     return join(base, config.paths.successOutputFolder);
+  }
+
+  private async resolveExistingDirectory(dirPath: string): Promise<string> {
+    let current = resolve(dirPath);
+
+    while (true) {
+      try {
+        const info = await stat(current);
+        if (info.isDirectory()) {
+          return current;
+        }
+      } catch {
+        // Keep walking up to the nearest existing directory.
+      }
+
+      const parent = dirname(current);
+      if (parent === current) {
+        return current;
+      }
+      current = parent;
+    }
   }
 
   /**

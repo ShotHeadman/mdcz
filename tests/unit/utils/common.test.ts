@@ -6,6 +6,33 @@ describe("toErrorMessage", () => {
     expect(toErrorMessage(new Error("boom"))).toBe("boom");
   });
 
+  it("summarizes impit connect errors from upstream ConnectError messages", () => {
+    expect(
+      toErrorMessage(
+        new Error(`ConnectError: Failed to connect to the server.
+Reason: hyper_util::client::legacy::Error(
+    Connect,
+    Custom {
+        kind: Other,
+        error: Custom {
+            kind: UnexpectedEof,
+            error: "tls handshake eof",
+        },
+    },
+)`),
+      ),
+    ).toBe("ConnectError: tls handshake eof");
+  });
+
+  it("summarizes impit connect errors when wrapped with an impit prefix", () => {
+    expect(
+      toErrorMessage(`impit error: Failed to connect to the server.
+Reason: Custom {
+    message: "Operation not permitted",
+}`),
+    ).toBe("ConnectError: Operation not permitted");
+  });
+
   it("returns string errors directly", () => {
     expect(toErrorMessage("just a string")).toBe("just a string");
   });

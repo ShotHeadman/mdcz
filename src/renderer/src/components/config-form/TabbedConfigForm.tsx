@@ -65,7 +65,7 @@ const TABS: TabDef[] = [
   { key: "download", label: "下载选项", icon: Download },
   { key: "naming", label: "命名规则", icon: Type },
   { key: "translate", label: "翻译服务", icon: Languages },
-  { key: "server", label: "Emby / Jellyfin", icon: Server },
+  { key: "personSync", label: "人物同步", icon: Server },
   { key: "shortcuts", label: "快捷键", icon: Keyboard },
   { key: "ui", label: "界面设置", icon: Monitor },
   { key: "behavior", label: "文件行为", icon: FileCog },
@@ -77,6 +77,8 @@ const TRANSLATE_ENGINE_OPTIONS: EnumOption[] = [
   { value: "google", label: "Google 翻译（免费）" },
 ];
 const LANGUAGE_OPTIONS = ["zh-CN", "zh-TW", "ja-JP", "en-US"];
+const ACTOR_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"];
+const ACTOR_IMAGE_SOURCE_OPTIONS = ["local", "gfriends", "official", "avbase"];
 
 // ── Field registry for search/filter ──
 
@@ -89,6 +91,7 @@ interface FieldEntry {
 const FIELD_REGISTRY: FieldEntry[] = [
   // paths
   { key: "paths.mediaPath", label: "媒体目录", section: "paths" },
+  { key: "paths.actorPhotoFolder", label: "演员头像库目录", section: "paths" },
   { key: "paths.softlinkPath", label: "软链接目录", section: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", section: "paths" },
   { key: "paths.failedOutputFolder", label: "失败输出目录", section: "paths" },
@@ -110,16 +113,15 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "network.javdbCookie", label: "JavDB 凭证", section: "network" },
   { key: "network.javbusCookie", label: "JavBus 凭证", section: "network" },
   // download
-  { key: "download.downloadCover", label: "下载封面图", section: "download" },
+  { key: "download.downloadThumb", label: "下载横版缩略图", section: "download" },
   { key: "download.downloadPoster", label: "下载海报", section: "download" },
-  { key: "download.downloadFanart", label: "下载同人画", section: "download" },
+  { key: "download.downloadFanart", label: "下载背景图", section: "download" },
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
   { key: "download.downloadNfo", label: "下载 NFO", section: "download" },
-  { key: "download.amazonJpCoverEnhance", label: "Amazon封面图片增强", section: "download" },
-  { key: "download.keepCover", label: "保留已有封面图", section: "download" },
+  { key: "download.keepThumb", label: "保留已有横版缩略图", section: "download" },
   { key: "download.keepPoster", label: "保留已有海报", section: "download" },
-  { key: "download.keepFanart", label: "保留已有同人画", section: "download" },
+  { key: "download.keepFanart", label: "保留已有背景图", section: "download" },
   { key: "download.keepSceneImages", label: "保留已有剧照", section: "download" },
   { key: "download.keepTrailer", label: "保留已有预告片", section: "download" },
   { key: "download.keepNfo", label: "保留已有 NFO", section: "download" },
@@ -149,11 +151,18 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "translate.enableGoogleFallback", label: "启用 Google 翻译回退", section: "translate" },
   { key: "translate.titleLanguage", label: "标题目标语言", section: "translate" },
   { key: "translate.plotLanguage", label: "简介目标语言", section: "translate" },
-  // server
-  { key: "server.url", label: "服务器地址", section: "server" },
-  { key: "server.apiKey", label: "接口密钥", section: "server" },
-  { key: "server.userId", label: "用户 ID", section: "server" },
-  { key: "server.actorPhotoFolder", label: "演员头像目录", section: "server" },
+  // person sync
+  { key: "personSync.personOverviewSources", label: "人物简介来源", section: "personSync" },
+  { key: "personSync.personImageSources", label: "人物头像来源", section: "personSync" },
+  { key: "jellyfin.url", label: "Jellyfin 服务器地址", section: "personSync" },
+  { key: "jellyfin.apiKey", label: "Jellyfin API Key", section: "personSync" },
+  { key: "jellyfin.userId", label: "Jellyfin 用户 ID", section: "personSync" },
+  { key: "jellyfin.refreshPersonAfterSync", label: "Jellyfin 同步后刷新人物", section: "personSync" },
+  { key: "jellyfin.lockOverviewAfterSync", label: "Jellyfin 锁定人物简介", section: "personSync" },
+  { key: "emby.url", label: "Emby 服务器地址", section: "personSync" },
+  { key: "emby.apiKey", label: "Emby API Key", section: "personSync" },
+  { key: "emby.userId", label: "Emby 用户 ID", section: "personSync" },
+  { key: "emby.refreshPersonAfterSync", label: "Emby 同步后刷新人物", section: "personSync" },
   // shortcuts
   { key: "shortcuts.startOrStopScrape", label: "开始/停止刮削", section: "shortcuts" },
   { key: "shortcuts.searchByNumber", label: "按番号重刮", section: "shortcuts" },
@@ -181,13 +190,13 @@ const FIELD_REGISTRY: FieldEntry[] = [
 // ── Section descriptions ──
 
 const SECTION_DESCRIPTIONS: Record<string, string> = {
-  paths: "配置媒体库及输出目录路径",
+  paths: "配置媒体库、本地演员头像库及输出目录路径",
   scrape: "配置刮削行为、站点及并发策略",
   network: "代理、超时、重试及 Cookie 设置",
-  download: "控制缩略图、海报、NFO 等资源的下载与保留",
+  download: "控制缩略图、海报、背景图、剧照与 NFO 的下载与保留",
   naming: "文件和文件夹的命名模板与规则",
   translate: "LLM 翻译引擎配置",
-  server: "服务器连接与演员数据设置",
+  personSync: "共享人物来源顺序，以及 Jellyfin 与 Emby 的人物同步设置",
   shortcuts: "自定义快捷键，留空可禁用（工作台快捷键仅在工作台页生效）",
   ui: "调整界面显示选项",
   behavior: "控制刮削后的文件操作行为",
@@ -291,6 +300,12 @@ function PathsSection(_props: SectionRenderProps) {
   return (
     <>
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
+      <PathFieldWrapper
+        name="paths.actorPhotoFolder"
+        label="演员头像库目录"
+        description="建议放在媒体库目录下。这里的头像会优先使用；如果希望优先使用在线头像，请在“人物头像来源顺序”中调整“本地”的位置或移除它。"
+        isDirectory
+      />
       <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />
       <PathFieldWrapper name="paths.successOutputFolder" label="成功输出目录" isDirectory />
       <PathFieldWrapper name="paths.failedOutputFolder" label="失败输出目录" isDirectory />
@@ -328,25 +343,39 @@ function NetworkSection(_props: SectionRenderProps) {
 }
 
 function DownloadSection(_props: SectionRenderProps) {
+  const form = useFormContext<FieldValues>();
+  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, downloadNfo] = form.watch(
+    [
+      "download.downloadThumb",
+      "download.downloadPoster",
+      "download.downloadFanart",
+      "download.downloadSceneImages",
+      "download.downloadTrailer",
+      "download.downloadNfo",
+    ],
+  ) as [
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+  ];
+
   return (
     <>
-      <BoolField name="download.downloadCover" label="下载封面图" />
+      <BoolField name="download.downloadThumb" label="下载横版缩略图" />
       <BoolField name="download.downloadPoster" label="下载海报" />
-      <BoolField name="download.downloadFanart" label="下载同人画" />
+      <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
       <BoolField name="download.downloadNfo" label="下载 NFO" />
-      <BoolField
-        name="download.amazonJpCoverEnhance"
-        label="Amazon封面图片增强"
-        description="使用日本Amazon的商品封面来优化封面显示，使用该功能一般需要日本IP"
-      />
-      <BoolField name="download.keepCover" label="保留已有封面图" />
-      <BoolField name="download.keepPoster" label="保留已有海报" />
-      <BoolField name="download.keepFanart" label="保留已有同人画" />
-      <BoolField name="download.keepSceneImages" label="保留已有剧照" />
-      <BoolField name="download.keepTrailer" label="保留已有预告片" />
-      <BoolField name="download.keepNfo" label="保留已有 NFO" />
+      {downloadThumb && <BoolField name="download.keepThumb" label="保留已有横版缩略图" />}
+      {downloadPoster && <BoolField name="download.keepPoster" label="保留已有海报" />}
+      {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
+      {downloadSceneImages && <BoolField name="download.keepSceneImages" label="保留已有剧照" />}
+      {downloadTrailer && <BoolField name="download.keepTrailer" label="保留已有预告片" />}
+      {downloadNfo && <BoolField name="download.keepNfo" label="保留已有 NFO" />}
     </>
   );
 }
@@ -443,13 +472,68 @@ function TranslateSection(_props: SectionRenderProps) {
   );
 }
 
-function ServerSection(_props: SectionRenderProps) {
+function PersonSyncSection(_props: SectionRenderProps) {
   return (
     <>
-      <UrlField name="server.url" label="服务器地址" />
-      <CookieFieldWrapper name="server.apiKey" label="接口密钥" />
-      <TextField name="server.userId" label="用户 ID" />
-      <PathFieldWrapper name="server.actorPhotoFolder" label="演员头像目录" isDirectory />
+      <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-medium">共享人物资料源</h3>
+          <p className="text-xs text-muted-foreground">
+            同时服务 Jellyfin 和 Emby。人物简介会按顺序选择一个质量达标的主资料源。
+          </p>
+        </div>
+        <ChipArrayFieldWrapper
+          name="personSync.personOverviewSources"
+          label="人物简介来源顺序"
+          options={ACTOR_OVERVIEW_SOURCE_OPTIONS}
+        />
+        <ChipArrayFieldWrapper
+          name="personSync.personImageSources"
+          label="人物头像来源顺序"
+          options={ACTOR_IMAGE_SOURCE_OPTIONS}
+        />
+      </div>
+
+      <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-medium">Jellyfin</h3>
+          <p className="text-xs text-muted-foreground">用于 Jellyfin 人物信息和头像同步。</p>
+        </div>
+        <UrlField name="jellyfin.url" label="Jellyfin 服务器地址" />
+        <CookieFieldWrapper name="jellyfin.apiKey" label="Jellyfin API Key" />
+        <TextField
+          name="jellyfin.userId"
+          label="Jellyfin 用户 ID"
+          description="必须是 UUID。用于人物列表读取，留空则按服务端默认处理。"
+        />
+        <BoolField
+          name="jellyfin.refreshPersonAfterSync"
+          label="同步后刷新人物"
+          description="同步简介或头像后，额外请求 Jellyfin 刷新人物元数据与图片。"
+        />
+        <BoolField
+          name="jellyfin.lockOverviewAfterSync"
+          label="同步后锁定人物简介"
+          description="写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。"
+        />
+      </div>
+
+      <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-medium">Emby</h3>
+          <p className="text-xs text-muted-foreground">
+            用于 Emby 人物信息和头像同步。头像上传按官方接口要求通常需要管理员 API Key。
+          </p>
+        </div>
+        <UrlField name="emby.url" label="Emby 服务器地址" />
+        <CookieFieldWrapper name="emby.apiKey" label="Emby API Key" />
+        <TextField name="emby.userId" label="Emby 用户 ID" description="用于人物列表读取，留空则按服务端默认处理。" />
+        <BoolField
+          name="emby.refreshPersonAfterSync"
+          label="同步后刷新人物"
+          description="同步简介或头像后，额外请求 Emby 刷新人物元数据与图片。"
+        />
+      </div>
     </>
   );
 }
@@ -501,7 +585,7 @@ const SECTION_COMPONENTS: Record<string, (props: SectionRenderProps) => React.JS
   download: DownloadSection,
   naming: NamingSection,
   translate: TranslateSection,
-  server: ServerSection,
+  personSync: PersonSyncSection,
   shortcuts: ShortcutsSection,
   ui: UiSection,
   behavior: BehaviorSection,
@@ -705,7 +789,10 @@ export function TabbedConfigForm({
             extra={
               <div className="flex items-center gap-3">
                 {configPath && (
-                  <div className="hidden xl:flex items-center gap-1.5 opacity-20 text-[9px] font-mono truncate max-w-[200px] hover:opacity-100 transition-opacity">
+                  <div
+                    className="hidden lg:flex min-w-0 flex-1 items-center gap-1.5 text-[10px] font-mono text-muted-foreground/70 max-w-[280px] truncate hover:text-muted-foreground transition-colors"
+                    title={configPath}
+                  >
                     <FileText className="h-2.5 w-2.5" />
                     <span className="truncate">{configPath}</span>
                   </div>

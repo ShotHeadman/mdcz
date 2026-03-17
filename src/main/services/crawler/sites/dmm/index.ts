@@ -1,3 +1,4 @@
+import { normalizeDmmNumberVariants } from "@main/utils/dmmImage";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
@@ -5,7 +6,6 @@ import { type CheerioAPI, load } from "cheerio";
 import type { Context, CrawlerInput } from "../../base/types";
 
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
-import { normalizeNumberVariants } from "./contentId";
 import { classifyDmmDetailFailure } from "./failureClassifier";
 import { DmmCategory, parseCategory, parseDigitalDetail, parseMonoLikeDetail } from "./parsers";
 
@@ -77,7 +77,7 @@ export class DmmCrawler extends BaseDmmCrawler {
 
   protected override newContext(input: CrawlerInput): DmmContext {
     const context = super.newContext(input) as DmmContext;
-    const variants = normalizeNumberVariants(input.number);
+    const variants = normalizeDmmNumberVariants(input.number);
     context.number00 = variants.number00;
     context.numberNo00 = variants.numberNo00;
     return context;
@@ -137,13 +137,11 @@ export class DmmCrawler extends BaseDmmCrawler {
     }
 
     const category = parseCategory(detailUrl);
-    let baseData = await this.parseCategoryData(category, $);
+    const baseData = await this.parseCategoryData(category, $);
     if (!baseData || !baseData.title) {
       return null;
     }
     const title = baseData.title;
-
-    baseData = await this.optimizeAwsImages(baseData, context.number00, context.numberNo00);
 
     return {
       title,
@@ -157,8 +155,8 @@ export class DmmCrawler extends BaseDmmCrawler {
       plot: baseData.plot,
       release_date: baseData.release_date,
       rating: baseData.rating,
-      cover_url: baseData.cover_url,
-      poster_url: baseData.poster_url ?? baseData.cover_url?.replace("pl.jpg", "ps.jpg"),
+      thumb_url: baseData.thumb_url,
+      poster_url: baseData.poster_url ?? baseData.thumb_url?.replace("pl.jpg", "ps.jpg"),
       fanart_url: baseData.fanart_url,
       sample_images: baseData.sample_images ?? [],
       trailer_url: baseData.trailer_url,

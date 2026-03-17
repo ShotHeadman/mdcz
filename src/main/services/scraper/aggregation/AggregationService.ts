@@ -1,6 +1,7 @@
 import type { Configuration } from "@main/services/config";
 import type { CrawlerProvider } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
+import { toErrorMessage } from "@main/utils/common";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { buildCrawlerOptions } from "../crawlerOptions";
@@ -15,6 +16,7 @@ interface CacheEntry {
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.JAVDB]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
+const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
 export class AggregationService {
   private readonly logger = loggerService.getLogger("AggregationService");
@@ -40,8 +42,8 @@ export class AggregationService {
 
     const globalStart = Date.now();
     const { maxParallelCrawlers, perCrawlerTimeoutMs, globalTimeoutMs } = config.aggregation;
+    const fieldAggregator = this.createFieldAggregator(config);
 
-    // Execute all crawlers in parallel with semaphore and global timeout
     const siteResults = await this.executeWithGlobalTimeout(
       enabledSites,
       number,
@@ -49,6 +51,7 @@ export class AggregationService {
       maxParallelCrawlers,
       perCrawlerTimeoutMs,
       globalTimeoutMs,
+      fieldAggregator,
       signal,
     );
 
@@ -58,6 +61,7 @@ export class AggregationService {
     const successes = new Map<Website, CrawlerData>();
     let successCount = 0;
     let failedCount = 0;
+    const skippedCount = Math.max(0, enabledSites.length - siteResults.length);
 
     for (const result of siteResults) {
       if (result.success && result.data) {
@@ -69,13 +73,14 @@ export class AggregationService {
     }
 
     this.logger.info(
-      `Crawl complete for ${number}: ${successCount} succeeded, ${failedCount} failed in ${totalElapsedMs}ms`,
+      `Crawl complete for ${number}: ${successCount} succeeded, ${failedCount} failed, ${skippedCount} skipped in ${totalElapsedMs}ms`,
     );
 
     const stats: AggregationStats = {
       totalSites: enabledSites.length,
       successCount,
       failedCount,
+      skippedCount,
       siteResults,
       totalElapsedMs,
     };
@@ -85,14 +90,11 @@ export class AggregationService {
       return null;
     }
 
-    // Aggregate fields from all successful sources
-    const aggregator = new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
-    const { data, sources, imageAlternatives } = aggregator.aggregate(successes);
+    const { data, sources, imageAlternatives } = fieldAggregator.aggregate(successes);
 
-    // Validate minimum threshold: number + title + (cover_url OR poster_url)
-    if (!data.number || !data.title || (!data.cover_url && !data.poster_url)) {
+    if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
-        `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, cover=${!!data.cover_url}, poster=${!!data.poster_url})`,
+        `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
       );
       return null;
     }
@@ -117,11 +119,14 @@ export class AggregationService {
       this.logger.info(`FC2 number detected for ${number}; limiting sites to: ${candidates.join(", ") || "(none)"}`);
     }
 
-    // Filter out sites with open circuit breakers
     return candidates.filter((site) => {
-      const state = this.crawlerProvider.getCircuitState(site);
-      if (state === "open") {
-        this.logger.info(`Skipping ${site}: circuit breaker open`);
+      const activeCooldown = this.crawlerProvider.getSiteCooldown(site);
+      if (activeCooldown) {
+        this.logger.info(
+          `Skipping ${site}: site cooldown active (${activeCooldown.remainingMs}ms remaining until ${new Date(
+            activeCooldown.cooldownUntil,
+          ).toISOString()})`,
+        );
         return false;
       }
       return true;
@@ -135,18 +140,33 @@ export class AggregationService {
     maxConcurrent: number,
     perCrawlerTimeoutMs: number,
     globalTimeoutMs: number,
+    fieldAggregator: FieldAggregator,
     signal?: AbortSignal,
   ): Promise<SiteCrawlResult[]> {
     const abortController = new AbortController();
     const combinedSignal = signal ? AbortSignal.any([signal, abortController.signal]) : abortController.signal;
+    const abortAggregation = (): void => {
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+    };
 
     const globalTimer = setTimeout(() => {
       this.logger.warn(`Global timeout (${globalTimeoutMs}ms) reached for ${number}`);
-      abortController.abort();
+      abortAggregation();
     }, globalTimeoutMs);
 
     try {
-      return await this.executeCrawlers(sites, number, config, maxConcurrent, perCrawlerTimeoutMs, combinedSignal);
+      return await this.executeCrawlers(
+        sites,
+        number,
+        config,
+        maxConcurrent,
+        perCrawlerTimeoutMs,
+        combinedSignal,
+        abortAggregation,
+        fieldAggregator,
+      );
     } finally {
       clearTimeout(globalTimer);
     }
@@ -159,48 +179,96 @@ export class AggregationService {
     maxConcurrent: number,
     perCrawlerTimeoutMs: number,
     signal: AbortSignal,
+    abortAggregation: () => void,
+    fieldAggregator: FieldAggregator,
   ): Promise<SiteCrawlResult[]> {
     const results: SiteCrawlResult[] = [];
-    let running = 0;
-    let nextIndex = 0;
+    const successes = new Map<Website, CrawlerData>();
+    const inFlightSites = new Set<Website>();
+    if (sites.length === 0) {
+      return results;
+    }
 
-    return new Promise((resolve) => {
-      const tryLaunchNext = (): void => {
-        while (running < maxConcurrent && nextIndex < sites.length) {
-          const site = sites[nextIndex++];
-          running++;
+    const state: { nextIndex: number; stopEarly: boolean } = {
+      nextIndex: 0,
+      stopEarly: false,
+    };
+    const workerCount = Math.min(sites.length, Math.max(1, maxConcurrent));
 
-          this.crawlSite(site, number, config, perCrawlerTimeoutMs, signal)
-            .then((result) => {
-              results.push(result);
-            })
-            .catch((err) => {
-              // Should not happen since crawlSite catches internally
-              results.push({
-                site,
-                success: false,
-                error: err instanceof Error ? err.message : String(err),
-                elapsedMs: 0,
-              });
-            })
-            .finally(() => {
-              running--;
-              if (results.length === sites.length) {
-                resolve(results);
-              } else {
-                tryLaunchNext();
-              }
-            });
-        }
+    await Promise.all(
+      Array.from({ length: workerCount }, () =>
+        this.runCrawlerWorker(
+          sites,
+          number,
+          config,
+          perCrawlerTimeoutMs,
+          signal,
+          abortAggregation,
+          fieldAggregator,
+          results,
+          successes,
+          inFlightSites,
+          state,
+        ),
+      ),
+    );
 
-        // If no sites at all
-        if (sites.length === 0) {
-          resolve(results);
-        }
-      };
+    return results;
+  }
 
-      tryLaunchNext();
-    });
+  private async runCrawlerWorker(
+    sites: Website[],
+    number: string,
+    config: Configuration,
+    perCrawlerTimeoutMs: number,
+    signal: AbortSignal,
+    abortAggregation: () => void,
+    fieldAggregator: FieldAggregator,
+    results: SiteCrawlResult[],
+    successes: Map<Website, CrawlerData>,
+    inFlightSites: Set<Website>,
+    state: { nextIndex: number; stopEarly: boolean },
+  ): Promise<void> {
+    while (!state.stopEarly && !signal.aborted) {
+      const site = sites[state.nextIndex];
+      if (!site) {
+        return;
+      }
+      state.nextIndex += 1;
+      inFlightSites.add(site);
+
+      let result: SiteCrawlResult;
+      try {
+        result = await this.crawlSite(site, number, config, perCrawlerTimeoutMs, signal);
+      } catch (error) {
+        result = {
+          site,
+          success: false,
+          error: toErrorMessage(error),
+          elapsedMs: 0,
+        };
+      } finally {
+        inFlightSites.delete(site);
+      }
+
+      if (state.stopEarly) {
+        continue;
+      }
+
+      results.push(result);
+      if (!result.success || !result.data || signal.aborted) {
+        continue;
+      }
+
+      successes.set(result.site, result.data);
+
+      const pendingSites = [...inFlightSites, ...sites.slice(state.nextIndex)];
+      if (this.shouldStopEarly(successes, pendingSites, fieldAggregator, config)) {
+        state.stopEarly = true;
+        this.logger.info(`Early stop triggered for ${number} after ${successes.size} successful site(s)`);
+        abortAggregation();
+      }
+    }
   }
 
   private async crawlSite(
@@ -211,9 +279,18 @@ export class AggregationService {
     signal: AbortSignal,
   ): Promise<SiteCrawlResult> {
     const start = Date.now();
-    const options = buildCrawlerOptions({ site, configuration: config, signal });
+    const siteTimeoutController = new AbortController();
+    const siteSignal = AbortSignal.any([signal, siteTimeoutController.signal]);
+    let siteTimedOut = false;
+    const siteTimer = setTimeout(() => {
+      siteTimedOut = true;
+      siteTimeoutController.abort();
+    }, perCrawlerTimeoutMs);
+
+    const options = buildCrawlerOptions({ site, configuration: config, signal: siteSignal });
     const configuredTimeoutMs = options.timeoutMs ?? perCrawlerTimeoutMs;
     options.timeoutMs = Math.max(1, Math.min(configuredTimeoutMs, perCrawlerTimeoutMs));
+    const timeoutMessage = `${site} exceeded crawler budget (${perCrawlerTimeoutMs}ms)`;
 
     try {
       const response = await this.crawlerProvider.crawl({
@@ -239,16 +316,17 @@ export class AggregationService {
         };
       }
 
-      this.logger.warn(`${site} failed for ${number}: ${response.result.error} (${elapsedMs}ms)`);
+      const error = siteTimedOut && !signal.aborted ? timeoutMessage : response.result.error;
+      this.logger.warn(`${site} failed for ${number}: ${error} (${elapsedMs}ms)`);
       return {
         site,
         success: false,
-        error: response.result.error,
+        error,
         elapsedMs,
       };
     } catch (error) {
       const elapsedMs = Date.now() - start;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = siteTimedOut && !signal.aborted ? timeoutMessage : toErrorMessage(error);
       this.logger.warn(`${site} threw for ${number}: ${message} (${elapsedMs}ms)`);
       return {
         site,
@@ -256,7 +334,66 @@ export class AggregationService {
         error: message,
         elapsedMs,
       };
+    } finally {
+      clearTimeout(siteTimer);
     }
+  }
+
+  private shouldStopEarly(
+    successes: Map<Website, CrawlerData>,
+    pendingSites: Website[],
+    fieldAggregator: FieldAggregator,
+    config: Configuration,
+  ): boolean {
+    if (config.download.downloadSceneImages || config.download.downloadNfo) {
+      return false;
+    }
+
+    if (successes.size === 0) {
+      return false;
+    }
+
+    const { data, sources } = fieldAggregator.aggregate(successes);
+    if (!this.meetsMinimumThreshold(data)) {
+      return false;
+    }
+
+    if (!sources.title || !this.isWinningSourceFinal("title", sources.title, pendingSites, config)) {
+      return false;
+    }
+
+    return EARLY_STOP_IMAGE_FIELDS.some((field) => {
+      const winner = sources[field];
+      return Boolean(data[field] && winner && this.isWinningSourceFinal(field, winner, pendingSites, config));
+    });
+  }
+
+  private meetsMinimumThreshold(data: CrawlerData): boolean {
+    return Boolean(data.number && data.title && (data.thumb_url || data.poster_url));
+  }
+
+  private isWinningSourceFinal(
+    field: "title" | "thumb_url" | "poster_url",
+    winner: Website,
+    pendingSites: Website[],
+    config: Configuration,
+  ): boolean {
+    const fieldPriorities = config.aggregation.fieldPriorities as Partial<Record<string, Website[]>>;
+    const priorityOrder = fieldPriorities[field] ?? config.scrape.siteOrder;
+    const winnerRank = priorityOrder.indexOf(winner);
+
+    if (winnerRank === -1) {
+      return pendingSites.length === 0;
+    }
+
+    return pendingSites.every((site) => {
+      const siteRank = priorityOrder.indexOf(site);
+      return siteRank === -1 || siteRank > winnerRank;
+    });
+  }
+
+  private createFieldAggregator(config: Configuration): FieldAggregator {
+    return new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
   }
 
   private getFromCache(key: string): AggregationResult | null {

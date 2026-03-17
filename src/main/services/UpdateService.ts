@@ -40,7 +40,7 @@ export class UpdateService {
       const hasUpdate = this.isNewerVersion(currentVersion, latestVersion);
 
       if (hasUpdate) {
-        this.logger.info(`Update available: ${currentVersion} → ${latestVersion}`);
+        this.logger.info(`Update available: ${currentVersion} -> ${latestVersion}`);
       } else {
         this.logger.info(`Current version ${currentVersion} is up to date`);
       }

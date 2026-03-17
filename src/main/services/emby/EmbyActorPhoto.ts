@@ -1,64 +1,99 @@
-import { access, readFile } from "node:fs/promises";
-import { join } from "node:path";
-
+import { readFile } from "node:fs/promises";
+import type { ActorSourceProvider } from "@main/services/actorSource";
+import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
+import { assertLocalActorImageSourceReady } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
-
+import { imageContentTypeFromPath, pathExists } from "@main/utils/file";
 import {
-  buildApiUrl,
+  buildEmbyHeaders,
+  buildEmbyUrl,
   type EmbyBatchResult,
   type EmbyMode,
   EmbyServiceError,
   fetchPersons,
+  getHttpStatus,
   hasPrimaryImage,
+  refreshPerson,
+  toEmbyServiceError,
 } from "./common";
-
-interface GfriendsResponse {
-  Content?: Record<string, Record<string, string>>;
-}
 
 export interface EmbyActorPhotoDependencies {
   signalService: SignalService;
   networkClient: NetworkClient;
-  actorMapUrl?: string;
+  actorSourceProvider: ActorSourceProvider;
 }
 
-const DEFAULT_GFRIENDS_FILETREE_URL = "https://raw.githubusercontent.com/gfriends/gfriends/master/Filetree.json";
+const uploadPrimaryImage = async (
+  networkClient: NetworkClient,
+  configuration: Configuration,
+  personId: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<void> => {
+  const body = Buffer.from(bytes).toString("base64");
+  const headers = buildEmbyHeaders(configuration, {
+    "content-type": contentType,
+  });
+  const primaryPath = `/Items/${encodeURIComponent(personId)}/Images/Primary`;
 
-const hasFile = async (path: string): Promise<boolean> => {
   try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
+    await networkClient.postText(buildEmbyUrl(configuration, primaryPath), body, { headers });
+    return;
+  } catch (error) {
+    const status = getHttpStatus(error);
+    if (status !== 400 && status !== 404 && status !== 405) {
+      throw toEmbyServiceError(
+        error,
+        {
+          400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
+          401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
+          403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
+          415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
+        },
+        {
+          code: "EMBY_WRITE_FAILED",
+          message: "上传 Emby 人物头像失败",
+        },
+      );
+    }
+  }
+
+  try {
+    await networkClient.postText(buildEmbyUrl(configuration, primaryPath, { Index: "0" }), body, { headers });
+  } catch (error) {
+    throw toEmbyServiceError(
+      error,
+      {
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
+        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
+        404: { code: "EMBY_NOT_FOUND", message: "Emby 无法找到需要写入头像的人物" },
+        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
+      },
+      {
+        code: "EMBY_WRITE_FAILED",
+        message: "上传 Emby 人物头像失败",
+      },
+    );
   }
 };
 
-const contentTypeFromPath = (path: string): string => {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".png")) {
-    return "image/png";
-  }
-  return "image/jpeg";
-};
-
-export class EmbyActorPhoto {
+export class EmbyActorPhotoService {
   private readonly logger = loggerService.getLogger("EmbyActorPhoto");
 
   private readonly networkClient: NetworkClient;
 
-  private readonly actorMapUrl: string;
-
   constructor(private readonly deps: EmbyActorPhotoDependencies) {
     this.networkClient = deps.networkClient;
-    this.actorMapUrl = deps.actorMapUrl ?? DEFAULT_GFRIENDS_FILETREE_URL;
   }
 
   async run(configuration: Configuration, mode: EmbyMode): Promise<EmbyBatchResult> {
+    assertLocalActorImageSourceReady(configuration);
+
     const persons = await fetchPersons(this.networkClient, configuration);
-    const actorMap = await this.loadActorMap();
     const total = persons.length;
 
     if (total === 0) {
@@ -70,121 +105,90 @@ export class EmbyActorPhoto {
 
     let processedCount = 0;
     let failedCount = 0;
-    let current = 0;
+    let completed = 0;
+
+    this.deps.signalService.resetProgress();
 
     for (const person of persons) {
-      current += 1;
-      this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);
-
-      if (mode === "missing" && hasPrimaryImage(person)) {
-        continue;
-      }
-
       const actorName = person.Name.trim();
-      if (!actorName) {
-        failedCount += 1;
-        continue;
-      }
 
       try {
-        const localPhotoPath = await this.resolveLocalPhotoPath(configuration, actorName);
-        const remotePhotoUrl = actorMap.get(actorName) ?? actorMap.get(actorName.replaceAll(" ", ""));
+        if (mode === "missing" && hasPrimaryImage(person)) {
+          continue;
+        }
 
-        let content: Buffer;
-        let contentType: string;
+        if (!actorName) {
+          failedCount += 1;
+          continue;
+        }
 
-        if (localPhotoPath) {
-          content = await readFile(localPhotoPath);
-          contentType = contentTypeFromPath(localPhotoPath);
-        } else if (remotePhotoUrl) {
-          const bytes = await this.networkClient.getContent(remotePhotoUrl, {
+        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, {
+          name: actorName,
+          requiredField: "photo_url",
+        });
+        logActorSourceWarnings(this.logger, actorName, actorSource.warnings);
+        const photoUrl = actorSource.profile.photo_url?.trim();
+
+        let content: Buffer | Uint8Array | undefined;
+        let contentType: string | undefined;
+
+        if (photoUrl && (await pathExists(photoUrl))) {
+          content = await readFile(photoUrl);
+          contentType = imageContentTypeFromPath(photoUrl);
+        } else if (photoUrl) {
+          content = await this.networkClient.getContent(photoUrl, {
             headers: {
               accept: "image/*",
             },
           });
-          content = Buffer.from(bytes);
-          contentType = contentTypeFromPath(remotePhotoUrl);
-        } else {
+          contentType = imageContentTypeFromPath(photoUrl);
+        }
+
+        if (!content || !contentType) {
           failedCount += 1;
-          this.deps.signalService.showLogText(`No actor photo source found for ${actorName}`, "warn");
+          this.deps.signalService.showLogText(`No Emby actor photo source found for ${actorName}`, "warn");
           continue;
         }
 
-        const uploadUrl = buildApiUrl(configuration, `/Items/${encodeURIComponent(person.Id)}/Images/Primary`);
-        await this.networkClient.postText(uploadUrl, content.toString("base64"), {
-          headers: {
-            "content-type": contentType,
-          },
-        });
+        await uploadPrimaryImage(this.networkClient, configuration, person.Id, content, contentType);
+        if (configuration.emby.refreshPersonAfterSync) {
+          try {
+            await refreshPerson(this.networkClient, configuration, person.Id);
+          } catch (error) {
+            const detail =
+              error instanceof EmbyServiceError
+                ? `${error.code}: ${error.message}`
+                : error instanceof Error
+                  ? error.message
+                  : String(error);
+            this.logger.warn(`Failed to refresh Emby actor ${person.Name} after photo sync: ${detail}`);
+          }
+        }
 
         processedCount += 1;
-        this.deps.signalService.showLogText(`Updated actor photo: ${actorName}`);
+        this.deps.signalService.showLogText(`Updated Emby actor photo: ${actorName}`);
       } catch (error) {
         failedCount += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Failed to update actor photo for ${actorName}: ${message}`);
+        const detail =
+          error instanceof EmbyServiceError
+            ? `${error.code}: ${error.message}`
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        this.logger.warn(`Failed to update Emby actor photo for ${actorName}: ${detail}`);
+      } finally {
+        completed += 1;
+        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
       }
     }
 
     this.deps.signalService.showLogText(
-      `Actor photo sync completed. Success: ${processedCount}, Failed: ${failedCount}`,
+      `Emby actor photo sync completed. Success: ${processedCount}, Failed: ${failedCount}`,
     );
 
     return {
       processedCount,
       failedCount,
     };
-  }
-
-  private async loadActorMap(): Promise<Map<string, string>> {
-    const rawBase = this.actorMapUrl.replace(/\/Filetree\.json$/u, "").replace(/\/+$/u, "");
-
-    try {
-      const payload = await this.networkClient.getJson<GfriendsResponse>(this.actorMapUrl);
-      const map = new Map<string, string>();
-
-      if (!payload.Content) {
-        return map;
-      }
-
-      for (const [folder, files] of Object.entries(payload.Content)) {
-        for (const [actorName, fileName] of Object.entries(files)) {
-          if (!actorName || !fileName || map.has(actorName)) {
-            continue;
-          }
-          map.set(actorName, `${rawBase}/Content/${folder}/${fileName}`);
-        }
-      }
-
-      return map;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new EmbyServiceError("EMBY_UNREACHABLE", `Failed to load actor photo index: ${message}`);
-    }
-  }
-
-  private async resolveLocalPhotoPath(configuration: Configuration, actorName: string): Promise<string | null> {
-    const photoFolder = configuration.server.actorPhotoFolder.trim();
-    if (!photoFolder) {
-      return null;
-    }
-
-    const candidates = [
-      `${actorName}.jpg`,
-      `${actorName}.jpeg`,
-      `${actorName}.png`,
-      `${actorName.replaceAll(" ", "")}.jpg`,
-      `${actorName.replaceAll(" ", "")}.jpeg`,
-      `${actorName.replaceAll(" ", "")}.png`,
-    ];
-
-    for (const fileName of candidates) {
-      const filePath = join(photoFolder, fileName);
-      if (await hasFile(filePath)) {
-        return filePath;
-      }
-    }
-
-    return null;
   }
 }

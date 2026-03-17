@@ -1,5 +1,5 @@
 import { mkdir, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
-import { dirname, extname, join, parse } from "node:path";
+import { dirname, extname, join, parse, resolve } from "node:path";
 
 const DEFAULT_VIDEO_EXTENSIONS = new Set([
   ".mp4",
@@ -16,13 +16,24 @@ const DEFAULT_VIDEO_EXTENSIONS = new Set([
   ".strm",
 ]);
 
-const exists = async (path: string): Promise<boolean> => {
+export const pathExists = async (path: string): Promise<boolean> => {
   try {
     await stat(path);
     return true;
   } catch {
     return false;
   }
+};
+
+export const imageContentTypeFromPath = (path: string): string => {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) {
+    return "image/png";
+  }
+  if (lower.endsWith(".webp")) {
+    return "image/webp";
+  }
+  return "image/jpeg";
 };
 
 const resolveDirectoryKey = async (dirPath: string): Promise<string> => {
@@ -80,12 +91,16 @@ const walkDirectory = async (dirPath: string, recursive: boolean, visitedDirs: S
   return files;
 };
 
+export const listFiles = async (dirPath: string, recursive = false): Promise<string[]> => {
+  return walkDirectory(dirPath, recursive, new Set<string>());
+};
+
 export const listVideoFiles = async (
   dirPath: string,
   recursive = false,
   extensions: Set<string> = DEFAULT_VIDEO_EXTENSIONS,
 ): Promise<string[]> => {
-  const files = await walkDirectory(dirPath, recursive, new Set<string>());
+  const files = await listFiles(dirPath, recursive);
   return files.filter((filePath) => extensions.has(extname(filePath).toLowerCase()));
 };
 
@@ -93,17 +108,27 @@ export const ensureParentDirectory = async (targetPath: string): Promise<void> =
   await mkdir(dirname(targetPath), { recursive: true });
 };
 
-export const moveFileSafely = async (sourcePath: string, targetPath: string): Promise<string> => {
-  await ensureParentDirectory(targetPath);
-
+export const resolveAvailablePath = async (targetPath: string, ignoreExistingPath?: string): Promise<string> => {
   const parsed = parse(targetPath);
-  let resolved = targetPath;
+  const ignored = ignoreExistingPath ? resolve(ignoreExistingPath) : null;
+  let resolvedPath = targetPath;
   let suffix = 1;
 
-  while (await exists(resolved)) {
-    resolved = join(parsed.dir, `${parsed.name} (${suffix})${parsed.ext}`);
+  while (await pathExists(resolvedPath)) {
+    if (ignored && resolve(resolvedPath) === ignored) {
+      return resolvedPath;
+    }
+
+    resolvedPath = join(parsed.dir, `${parsed.name} (${suffix})${parsed.ext}`);
     suffix += 1;
   }
+
+  return resolvedPath;
+};
+
+export const moveFileSafely = async (sourcePath: string, targetPath: string): Promise<string> => {
+  await ensureParentDirectory(targetPath);
+  const resolved = await resolveAvailablePath(targetPath, sourcePath);
 
   await rename(sourcePath, resolved);
   return resolved;

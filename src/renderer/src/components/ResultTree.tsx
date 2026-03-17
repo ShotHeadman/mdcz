@@ -1,22 +1,10 @@
-import { CheckCircle2, ChevronDown, ChevronRight, Copy, FileText, Trash2, XCircle } from "lucide-react";
-import { useState } from "react";
+import { Copy, FileText, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeByUrl } from "@/api/manual";
-import { Badge } from "@/components/ui/Badge";
+import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/Collapsible";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuShortcut,
-  ContextMenuTrigger,
-} from "@/components/ui/ContextMenu";
-import { ScrollArea } from "@/components/ui/ScrollArea";
-import { TreeButton } from "@/components/ui/TreeButton";
-import { cn } from "@/lib/utils";
+import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
 import type { ScrapeResult } from "@/store/scrapeStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
@@ -32,9 +20,7 @@ function getFileNameFromPath(filePath: string) {
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
 
-function ResultItem({ result }: { result: ScrapeResult }) {
-  const { selectedResultId, setSelectedResultId } = useUIStore();
-
+function buildMenuContent(result: ScrapeResult) {
   const handleCopyNumber = async () => {
     if (!result.number) {
       toast.error("Number is empty");
@@ -93,8 +79,7 @@ function ResultItem({ result }: { result: ScrapeResult }) {
 
   const handleOpenFolder = () => {
     if (window.electron?.openPath) {
-      const dir = getDirFromPath(result.path);
-      window.electron.openPath(dir);
+      window.electron.openPath(getDirFromPath(result.path));
     } else {
       toast.info("Open folder is only available in desktop mode");
     }
@@ -112,176 +97,90 @@ function ResultItem({ result }: { result: ScrapeResult }) {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: result.path } }));
   };
 
-  const isSelected = selectedResultId === result.id;
-
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <TreeButton
-          isSelected={isSelected}
-          className="group flex-col items-start"
-          onClick={() => setSelectedResultId(result.id)}
-        >
-          <div className="flex items-center gap-2 w-full">
-            {result.status === "success" ? (
-              <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-            ) : (
-              <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="font-medium truncate">
-                {result.number || "Unknown"}
-                <span className="text-muted-foreground font-normal ml-2">
-                  {result.title || getFileNameFromPath(result.path)}
-                </span>
-              </div>
-              {result.error_msg && <div className="text-xs text-red-500 truncate mt-0.5">{result.error_msg}</div>}
-            </div>
-          </div>
-        </TreeButton>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onClick={handleCopyNumber}>
-          Copy number
-          <ContextMenuShortcut>
-            <Copy className="h-3.5 w-3.5" />
-          </ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={handleRescrapeByNumber}>
-          Re-scrape by number
-          <ContextMenuShortcut>N</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleRescrapeByUrl}>
-          Re-scrape by URL
-          <ContextMenuShortcut>U</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
-          Delete file
-          <ContextMenuShortcut>D</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
-          Delete file and folder
-          <ContextMenuShortcut>A</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={handleOpenFolder}>
-          Open folder
-          <ContextMenuShortcut>F</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleOpenNfo}>
-          Edit NFO
-          <ContextMenuShortcut>
-            <FileText className="h-3.5 w-3.5" />
-          </ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handlePlay}>
-          Play
-          <ContextMenuShortcut>P</ContextMenuShortcut>
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-function ResultGroup({
-  title,
-  icon,
-  results,
-  badgeClass,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  results: ScrapeResult[];
-  badgeClass: string;
-}) {
-  const [isOpen, setIsOpen] = useState(true);
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <CollapsibleTrigger className="flex items-center gap-2 w-full p-2 hover:bg-accent/50 rounded-md text-sm font-medium">
-        {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        {icon}
-        <span>{title === "Success" ? "处理成功" : "处理失败"}</span>
-        <Badge variant="outline" className={cn("ml-auto text-xs", badgeClass)}>
-          {results.length}
-        </Badge>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="ml-4 space-y-0.5">
-          {results.map((result) => (
-            <ResultItem key={result.id} result={result} />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+    <>
+      <ContextMenuItem onClick={handleCopyNumber}>
+        Copy number
+        <ContextMenuShortcut>
+          <Copy className="h-3.5 w-3.5" />
+        </ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={handleRescrapeByNumber}>
+        Re-scrape by number
+        <ContextMenuShortcut>N</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem onClick={handleRescrapeByUrl}>
+        Re-scrape by URL
+        <ContextMenuShortcut>U</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
+        Delete file
+        <ContextMenuShortcut>D</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
+        Delete file and folder
+        <ContextMenuShortcut>A</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={handleOpenFolder}>
+        Open folder
+        <ContextMenuShortcut>F</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem onClick={handleOpenNfo}>
+        Edit NFO
+        <ContextMenuShortcut>
+          <FileText className="h-3.5 w-3.5" />
+        </ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem onClick={handlePlay}>
+        Play
+        <ContextMenuShortcut>P</ContextMenuShortcut>
+      </ContextMenuItem>
+    </>
   );
 }
 
 export function ResultTree() {
   const { results, clearResults } = useScrapeStore();
+  const { selectedResultId, setSelectedResultId } = useUIStore();
+  const [filter, setFilter] = useState<MediaBrowserFilter>("all");
 
-  const successResults = results.filter((r) => r.status === "success");
-  const failedResults = results.filter((r) => r.status === "failed");
+  const items = useMemo(
+    () =>
+      results.map((result) => ({
+        id: result.id,
+        active: selectedResultId === result.id,
+        title: result.number || "Unknown",
+        subtitle: result.title || getFileNameFromPath(result.path),
+        errorText: result.error_msg,
+        status: result.status,
+        onClick: () => setSelectedResultId(result.id),
+        menuContent: buildMenuContent(result),
+      })),
+    [results, selectedResultId, setSelectedResultId],
+  );
 
   return (
-    <Card className="flex h-full flex-col gap-2 border-0 bg-transparent pt-4 shadow-none rounded-none">
-      <CardHeader className="border-b shrink-0 pb-2!">
-        <CardTitle className="flex items-center justify-between gap-2 text-sm font-bold tracking-tight">
-          <span>处理结果列表</span>
-          <div className="flex items-center">
-            <div className="flex gap-2">
-              <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 dark:bg-green-950/30">
-                成功 {successResults.length}
-              </Badge>
-              <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50 dark:bg-red-950/30">
-                失败 {failedResults.length}
-              </Badge>
-            </div>
-            {results.length > 0 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 hover:text-destructive"
-                onClick={clearResults}
-                title="清空结果"
-              >
-                <Trash2 />
-              </Button>
-            )}
-          </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 min-h-0 overflow-hidden p-0">
-        <ScrollArea className="h-full">
-          <div className="space-y-1 p-3">
-            {results.length === 0 && (
-              <div className="text-center text-muted-foreground py-12 text-xs opacity-60">
-                暂无结果。启动刮削任务后，处理项将显示在此处。
-              </div>
-            )}
-
-            {successResults.length > 0 && (
-              <ResultGroup
-                title="Success"
-                icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
-                results={successResults}
-                badgeClass="text-green-600 border-green-200"
-              />
-            )}
-
-            {failedResults.length > 0 && (
-              <ResultGroup
-                title="Failed"
-                icon={<XCircle className="h-4 w-4 text-red-500" />}
-                results={failedResults}
-                badgeClass="text-red-600 border-red-200"
-              />
-            )}
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+    <MediaBrowserList
+      items={items}
+      filter={filter}
+      onFilterChange={setFilter}
+      emptyMessage="暂无结果。启动刮削任务后，处理项将显示在此处。"
+      headerTrailing={
+        results.length > 0 ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 hover:text-destructive"
+            onClick={clearResults}
+            title="清空结果"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }

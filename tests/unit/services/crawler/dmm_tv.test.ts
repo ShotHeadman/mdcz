@@ -169,7 +169,7 @@ describe("DmmTvCrawler", () => {
     expect(response.result.data.number).toBe("STARS-804");
     expect(response.result.data.durationSeconds).toBe(5400);
     expect(response.result.data.actors).toEqual(["Actor TV"]);
-    expect(response.result.data.cover_url).toBe("https://cdn.example.com/cover.jpg");
+    expect(response.result.data.thumb_url).toBe("https://cdn.example.com/cover.jpg");
     expect(response.result.data.trailer_url).toBe("https://video.example.com/stars804.mp4");
   });
 });

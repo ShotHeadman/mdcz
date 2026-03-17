@@ -2,16 +2,29 @@ import { bootstrap } from "@main/bootstrap";
 import type { ServiceContainer } from "@main/container";
 import { registerIpcHandlers } from "@main/ipc";
 import { registerLocalFileHandler, registerLocalFileScheme } from "@main/localFileProtocol";
+import { ActorImageService } from "@main/services/ActorImageService";
+import {
+  ActorSourceProvider,
+  ActorSourceRegistry,
+  AvbaseActorSource,
+  AvjohoActorSource,
+  GfriendsActorSource,
+  LocalActorSource,
+  OfficialActorSource,
+} from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import { EmbyActorInfo, EmbyActorPhoto } from "@main/services/emby";
+import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/emby";
+import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
 import { loggerService } from "@main/services/LoggerService";
 import { NetworkClient } from "@main/services/network";
 import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper";
+import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
+import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { TrayService } from "@main/services/TrayService";
-import { SymlinkService } from "@main/services/tools";
+import { AmazonPosterToolService, SymlinkService } from "@main/services/tools";
 import { UpdateService } from "@main/services/UpdateService";
 import { WindowService } from "@main/services/WindowService";
 import { app, BrowserWindow } from "electron";
@@ -45,17 +58,46 @@ const ensureMainWindow = async (): Promise<void> => {
     const crawlerProvider = new CrawlerProvider({
       fetchGateway,
     });
+    const amazonJpImageService = new AmazonJpImageService(networkClient);
+    const actorImageService = new ActorImageService({ networkClient });
+    const actorSourceProvider = new ActorSourceProvider({
+      registry: new ActorSourceRegistry([
+        new LocalActorSource(actorImageService),
+        new OfficialActorSource({ networkClient }),
+        new GfriendsActorSource({ networkClient }),
+        new AvjohoActorSource({ networkClient }),
+        new AvbaseActorSource({ networkClient }),
+      ]),
+    });
 
     const container: ServiceContainer = {
       signalService,
       windowService,
       networkClient,
       fetchGateway,
-      scraperService: new ScraperService(signalService, networkClient, crawlerProvider),
+      scraperService: new ScraperService(
+        signalService,
+        networkClient,
+        crawlerProvider,
+        actorImageService,
+        actorSourceProvider,
+      ),
+      maintenanceService: new MaintenanceService(
+        signalService,
+        networkClient,
+        crawlerProvider,
+        actorImageService,
+        actorSourceProvider,
+      ),
       crawlerProvider,
-      actorPhotoService: new EmbyActorPhoto({ signalService, networkClient }),
-      actorInfoService: new EmbyActorInfo({ signalService, networkClient }),
+      actorSourceProvider,
+      actorImageService,
+      jellyfinActorPhotoService: new JellyfinActorPhotoService({ signalService, networkClient, actorSourceProvider }),
+      jellyfinActorInfoService: new JellyfinActorInfoService({ signalService, networkClient, actorSourceProvider }),
+      embyActorPhotoService: new EmbyActorPhotoService({ signalService, networkClient, actorSourceProvider }),
+      embyActorInfoService: new EmbyActorInfoService({ signalService, networkClient, actorSourceProvider }),
       symlinkService: new SymlinkService({ signalService }),
+      amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
     };
 
     registerIpcHandlers(container);

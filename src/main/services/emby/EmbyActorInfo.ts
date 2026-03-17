@@ -1,36 +1,38 @@
+import type { ActorSourceProvider } from "@main/services/actorSource";
+import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
-import type { SignalService } from "@main/services/SignalService";
-
 import {
-  buildApiUrl,
+  normalizeExistingPersonSyncState,
+  type PlannedPersonSyncState,
+  planPersonSync,
+} from "@main/services/personSync/planner";
+import type { SignalService } from "@main/services/SignalService";
+import {
+  buildEmbyHeaders,
+  buildEmbyUrl,
   type EmbyBatchResult,
   type EmbyMode,
   type EmbyPerson,
   EmbyServiceError,
+  fetchPersonDetail,
   fetchPersons,
-  hasOverview,
+  type ItemDetail,
+  refreshPerson,
+  toEmbyServiceError,
   toStringArray,
   toStringRecord,
+  toStringValue,
 } from "./common";
-
-type ItemDetail = Record<string, unknown>;
 
 export interface EmbyActorInfoDependencies {
   signalService: SignalService;
   networkClient: NetworkClient;
+  actorSourceProvider: ActorSourceProvider;
 }
 
-const toStringValue = (value: unknown): string | undefined => {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-};
-
-const toNumberValue = (value: unknown): number | undefined => {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-};
-
-export class EmbyActorInfo {
+export class EmbyActorInfoService {
   private readonly logger = loggerService.getLogger("EmbyActorInfo");
 
   private readonly networkClient: NetworkClient;
@@ -40,7 +42,9 @@ export class EmbyActorInfo {
   }
 
   async run(configuration: Configuration, mode: EmbyMode): Promise<EmbyBatchResult> {
-    const persons = await fetchPersons(this.networkClient, configuration);
+    const persons = await fetchPersons(this.networkClient, configuration, {
+      fields: ["Overview"],
+    });
     const total = persons.length;
 
     if (total === 0) {
@@ -52,45 +56,63 @@ export class EmbyActorInfo {
 
     let processedCount = 0;
     let failedCount = 0;
-    let current = 0;
+    let completed = 0;
+
+    this.deps.signalService.resetProgress();
 
     for (const person of persons) {
-      current += 1;
-      this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);
-
       try {
-        const detail = await this.fetchDetail(configuration, person);
-        const overview = toStringValue(detail.Overview);
+        const detail = await fetchPersonDetail(this.networkClient, configuration, person);
+        const existing = normalizeExistingPersonSyncState({
+          overview: toStringValue(detail.Overview) ?? person.Overview,
+          tags: toStringArray(detail.Tags),
+          taglines: toStringArray(detail.Taglines),
+          premiereDate: toStringValue(detail.PremiereDate),
+          productionYear: typeof detail.ProductionYear === "number" ? detail.ProductionYear : undefined,
+          productionLocations: toStringArray(detail.ProductionLocations),
+        });
 
-        if (mode === "missing" && overview) {
+        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, person.Name);
+        logActorSourceWarnings(this.logger, person.Name, actorSource.warnings);
+        const synced = planPersonSync(actorSource.profile, existing, mode);
+        if (!synced.shouldUpdate) {
           continue;
         }
 
-        const nextOverview =
-          overview ??
-          (await this.fetchBiography(person.Name)) ??
-          `${person.Name} - metadata updated by MDCz Emby tool.`;
-
-        const payload = this.buildUpdatePayload(person, detail, nextOverview);
-        const updateUrl = buildApiUrl(configuration, `/Items/${encodeURIComponent(person.Id)}`);
-
-        await this.networkClient.postText(updateUrl, JSON.stringify(payload), {
-          headers: {
-            "content-type": "application/json",
-          },
-        });
+        await this.updatePersonInfo(configuration, person, detail, synced);
+        if (configuration.emby.refreshPersonAfterSync) {
+          try {
+            await refreshPerson(this.networkClient, configuration, person.Id);
+          } catch (error) {
+            const detail =
+              error instanceof EmbyServiceError
+                ? `${error.code}: ${error.message}`
+                : error instanceof Error
+                  ? error.message
+                  : String(error);
+            this.logger.warn(`Failed to refresh Emby actor ${person.Name} after info sync: ${detail}`);
+          }
+        }
 
         processedCount += 1;
-        this.deps.signalService.showLogText(`Updated actor profile: ${person.Name}`);
+        this.deps.signalService.showLogText(`Updated Emby actor info: ${person.Name}`);
       } catch (error) {
         failedCount += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Failed to update actor profile for ${person.Name}: ${message}`);
+        const detail =
+          error instanceof EmbyServiceError
+            ? `${error.code}: ${error.message}`
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        this.logger.warn(`Failed to update Emby actor info for ${person.Name}: ${detail}`);
+      } finally {
+        completed += 1;
+        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
       }
     }
 
     this.deps.signalService.showLogText(
-      `Actor info sync completed. Success: ${processedCount}, Failed: ${failedCount}`,
+      `Emby actor info sync completed. Success: ${processedCount}, Failed: ${failedCount}`,
     );
 
     return {
@@ -99,65 +121,80 @@ export class EmbyActorInfo {
     };
   }
 
-  private async fetchDetail(configuration: Configuration, person: EmbyPerson): Promise<ItemDetail> {
-    const detailUrl = buildApiUrl(configuration, `/Items/${encodeURIComponent(person.Id)}`);
-
-    try {
-      const detail = await this.networkClient.getJson<ItemDetail>(detailUrl, {
-        headers: {
-          accept: "application/json",
-        },
-      });
-
-      return detail;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new EmbyServiceError("EMBY_UNREACHABLE", `Failed to fetch actor detail for ${person.Name}: ${message}`);
-    }
-  }
-
-  private buildUpdatePayload(person: EmbyPerson, detail: ItemDetail, overview: string): Record<string, unknown> {
-    const premiereDate = toStringValue(detail.PremiereDate) ?? "0000-00-00";
-    const productionYear = toNumberValue(detail.ProductionYear) ?? 0;
-
-    const taglines = toStringArray(detail.Taglines);
-    if (!hasOverview(overview) && taglines.length === 0) {
-      taglines.push("MDCz actor profile");
-    }
-
-    return {
-      Name: toStringValue(detail.Name) ?? person.Name,
-      ServerId: toStringValue(detail.ServerId) ?? person.ServerId ?? "",
+  private buildUpdatePayload(
+    person: EmbyPerson,
+    detail: ItemDetail,
+    synced: PlannedPersonSyncState,
+  ): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
       Id: person.Id,
-      Genres: toStringArray(detail.Genres),
-      Tags: toStringArray(detail.Tags),
-      ProviderIds: toStringRecord(detail.ProviderIds),
-      ProductionLocations: toStringArray(detail.ProductionLocations),
-      PremiereDate: premiereDate,
-      ProductionYear: productionYear,
-      Overview: overview,
-      Taglines: taglines,
+      Name: toStringValue(detail.Name) ?? person.Name,
+      Overview: synced.overview ?? toStringValue(detail.Overview) ?? "",
     };
-  }
 
-  private async fetchBiography(name: string): Promise<string | null> {
-    const summaryUrl = `https://zh.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`;
-
-    try {
-      const response = await this.networkClient.getJson<{ extract?: string }>(summaryUrl, {
-        headers: {
-          accept: "application/json",
-        },
-      });
-
-      if (typeof response.extract === "string" && response.extract.trim().length > 0) {
-        return response.extract.trim();
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.debug(`Wikipedia summary fetch failed for ${name}: ${message}`);
+    const serverId = toStringValue(detail.ServerId) ?? person.ServerId;
+    if (serverId) {
+      payload.ServerId = serverId;
     }
 
-    return null;
+    const genres = toStringArray(detail.Genres);
+    if (genres.length > 0) {
+      payload.Genres = genres;
+    }
+
+    payload.Tags = synced.tags;
+
+    const providerIds = toStringRecord(detail.ProviderIds);
+    if (Object.keys(providerIds).length > 0) {
+      payload.ProviderIds = providerIds;
+    }
+
+    payload.Taglines = synced.taglines;
+
+    if (synced.productionLocations && synced.productionLocations.length > 0) {
+      payload.ProductionLocations = synced.productionLocations;
+    }
+
+    if (synced.premiereDate) {
+      payload.PremiereDate = synced.premiereDate;
+    }
+
+    if (synced.productionYear !== undefined) {
+      payload.ProductionYear = synced.productionYear;
+    }
+
+    return payload;
+  }
+
+  private async updatePersonInfo(
+    configuration: Configuration,
+    person: EmbyPerson,
+    detail: ItemDetail,
+    synced: PlannedPersonSyncState,
+  ): Promise<void> {
+    const payload = this.buildUpdatePayload(person, detail, synced);
+    const updateUrl = buildEmbyUrl(configuration, `/Items/${encodeURIComponent(person.Id)}`);
+
+    try {
+      await this.networkClient.postText(updateUrl, JSON.stringify(payload), {
+        headers: buildEmbyHeaders(configuration, {
+          "content-type": "application/json",
+        }),
+      });
+    } catch (error) {
+      throw toEmbyServiceError(
+        error,
+        {
+          400: { code: "EMBY_BAD_REQUEST", message: `Emby 拒绝更新人物信息：${person.Name}` },
+          401: { code: "EMBY_AUTH_FAILED", message: "Emby 凭据无效，无法写入人物信息" },
+          403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭据没有人物写入权限" },
+          404: { code: "EMBY_NOT_FOUND", message: `Emby 中不存在人物 ${person.Name}` },
+        },
+        {
+          code: "EMBY_WRITE_FAILED",
+          message: `写入 Emby 人物信息失败：${person.Name}`,
+        },
+      );
+    }
   }
 }

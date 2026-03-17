@@ -60,7 +60,13 @@ describe("JavdbCrawler", () => {
           <span>135 minute(s)</span>
         </div>
 
-        <span><strong class="female"></strong><a>Actor1</a><a>Actor2</a></span>
+        <div class="panel-block">
+          <strong>演員:</strong>
+          <span class="value">
+            <a>Actor1</a><strong class="symbol female">♀</strong>
+            <a>Actor2</a><strong class="symbol female">♀</strong>
+          </span>
+        </div>
 
         <img class="video-cover" src="/covers/cover1.jpg" />
 
@@ -104,9 +110,61 @@ describe("JavdbCrawler", () => {
     expect(data.series).toBe("SeriesA");
     expect(data.director).toBe("DirectorA");
     expect(data.release_date).toBe("2021-02-03");
-    expect(data.cover_url).toBe("https://javdb.com/covers/cover1.jpg");
+    expect(data.thumb_url).toBe("https://javdb.com/covers/cover1.jpg");
     expect(data.poster_url).toBe("https://javdb.com/thumbs/cover1.jpg");
     expect(data.trailer_url).toBe("https://cdn.example.com/trailer.mp4");
     expect(data.sample_images).toEqual(["https://javdb.com/images/1.jpg", "https://javdb.com/images/2.jpg"]);
+  });
+
+  it("keeps only female actors when a mixed-gender row is marked per actor", async () => {
+    const number = "ABF-075";
+
+    const searchUrl = `https://javdb.com/search?q=${encodeURIComponent(number)}&locale=zh`;
+    const detailUrl = "https://javdb.com/v/ner5DV";
+
+    const searchHtml = `
+      <html><body>
+        <a class="box" href="/v/ner5DV">
+          <div class="video-title"><strong>${number}</strong></div>
+          <div class="meta">2024-02-08</div>
+        </a>
+      </body></html>
+    `;
+
+    const detailHtml = `
+      <html><body>
+        <h2 class="title is-4">
+          <strong class="current-title">ABF-075 Title</strong>
+        </h2>
+        <a class="button is-white copy-to-clipboard" data-clipboard-text="${number}">copy</a>
+        <div class="panel-block">
+          <strong>演員:</strong>
+          <span class="value">
+            <a href="/actors/a">吉村卓</a><strong class="symbol male">♂</strong>&nbsp;
+            <a href="/actors/b">貞松大輔</a><strong class="symbol male">♂</strong>&nbsp;
+            <a href="/actors/c">瀧本雫葉</a><strong class="symbol female">♀</strong>&nbsp;
+          </span>
+        </div>
+      </body></html>
+    `;
+
+    const fixtures = new Map<string, string>([
+      [searchUrl, searchHtml],
+      [detailUrl, detailHtml],
+    ]);
+    const networkClient = new FixtureNetworkClient(fixtures);
+    const crawler = new JavdbCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number,
+      site: Website.JAVDB,
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
+    }
+
+    expect(response.result.data.actors).toEqual(["瀧本雫葉"]);
   });
 });

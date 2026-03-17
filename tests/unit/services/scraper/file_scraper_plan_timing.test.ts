@@ -1,0 +1,110 @@
+import type { ActorImageService } from "@main/services/ActorImageService";
+import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { SignalService } from "@main/services/SignalService";
+import type { AggregationService } from "@main/services/scraper/aggregation";
+import type { DownloadManager } from "@main/services/scraper/DownloadManager";
+import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
+import { FileScraper } from "@main/services/scraper/FileScraper";
+import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
+import type { TranslateService } from "@main/services/scraper/TranslateService";
+import { Website } from "@shared/enums";
+import type { CrawlerData } from "@shared/types";
+import { describe, expect, it, vi } from "vitest";
+import { TestConfigManager } from "./helpers";
+
+const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
+  title: "Original Title",
+  number: "ABC-123",
+  actors: ["Actor A"],
+  genres: [],
+  sample_images: [],
+  website: Website.DMM,
+  ...overrides,
+});
+
+describe("FileScraper plan timing", () => {
+  it("plans output paths from translated metadata so naming stays aligned with maintenance", async () => {
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      download: {
+        ...defaultConfiguration.download,
+        downloadNfo: false,
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      },
+      naming: {
+        ...defaultConfiguration.naming,
+        folderTemplate: "{number}-{title}",
+        fileTemplate: "{number}-{title}",
+      },
+    });
+    const aggregatedData = createCrawlerData();
+    const translatedData = createCrawlerData({
+      title_zh: "翻译标题",
+    });
+    const plan: OrganizePlan = {
+      outputDir: "/output/translated",
+      targetVideoPath: "/output/translated/ABC-123.mp4",
+      nfoPath: "/output/translated/ABC-123.nfo",
+    };
+    const fileOrganizer = {
+      plan: vi.fn().mockReturnValue(plan),
+      ensureOutputReady: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
+      organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
+    } as unknown as FileOrganizer;
+    const actorImageService = {
+      prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ActorImageService;
+    const scraper = new FileScraper({
+      configManager: new TestConfigManager(config),
+      aggregationService: {
+        aggregate: vi.fn().mockResolvedValue({
+          data: aggregatedData,
+          sources: {},
+          imageAlternatives: {
+            thumb_url: [],
+            poster_url: [],
+            fanart_url: [],
+            sample_images: [],
+          },
+          stats: {
+            totalSites: 1,
+            successCount: 1,
+            failedCount: 0,
+            skippedCount: 0,
+            siteResults: [],
+            totalElapsedMs: 1,
+          },
+        }),
+      } as unknown as AggregationService,
+      translateService: {
+        translateCrawlerData: vi.fn().mockResolvedValue(translatedData),
+      } as unknown as TranslateService,
+      nfoGenerator: {
+        writeNfo: vi.fn(),
+      } as unknown as NfoGenerator,
+      downloadManager: {
+        downloadAll: vi.fn().mockResolvedValue({
+          downloaded: [],
+          sceneImages: [],
+        }),
+      } as unknown as DownloadManager,
+      fileOrganizer,
+      signalService: new SignalService(null),
+      actorImageService,
+    });
+
+    await scraper.scrapeFile("/tmp/ABC-123.mp4", { fileIndex: 1, totalFiles: 1 });
+
+    expect(fileOrganizer.plan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        number: "ABC-123",
+      }),
+      translatedData,
+      expect.any(Object),
+    );
+  });
+});

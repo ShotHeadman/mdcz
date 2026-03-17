@@ -16,11 +16,11 @@ describe("image utils", () => {
   it("builds sibling fallback when output path is missing", () => {
     const result = buildImageSourceCandidates({
       filePath: "D:\\videos\\MIDE-001.mp4",
-      fileName: "cover.jpg",
+      fileName: "thumb.jpg",
     });
 
-    expect(result.primary).toBe("D:\\videos\\cover.jpg");
-    expect(result.fallback).toBe("D:\\videos\\cover.jpg");
+    expect(result.primary).toBe("D:\\videos\\thumb.jpg");
+    expect(result.fallback).toBe("D:\\videos\\thumb.jpg");
   });
 
   it("extracts local path from file-api wrapper url", () => {
@@ -45,10 +45,15 @@ describe("image utils", () => {
   });
 
   it("keeps remote urls unchanged and converts local paths to local-file urls", () => {
-    expect(getImageSrc("https://img.example.com/cover.jpg")).toBe("https://img.example.com/cover.jpg");
+    expect(getImageSrc("https://img.example.com/thumb.jpg")).toBe("https://img.example.com/thumb.jpg");
     expect(getImageSrc("data:image/png;base64,AAAA")).toBe("data:image/png;base64,AAAA");
     expect(getImageSrc("blob:https://localhost/abc")).toBe("blob:https://localhost/abc");
     expect(getImageSrc("C:\\covers\\poster.jpg")).toBe("local-file:///C:/covers/poster.jpg");
     expect(getImageSrc("/home/user/covers/poster.jpg")).toBe("local-file:///home/user/covers/poster.jpg");
+  });
+
+  it("drops unsupported explicit schemes instead of treating them as file paths", () => {
+    expect(getImageSrc("javascript:void(0)")).toBe("");
+    expect(getImageSrc("about:blank")).toBe("");
   });
 });

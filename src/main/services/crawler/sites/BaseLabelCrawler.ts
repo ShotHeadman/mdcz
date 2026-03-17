@@ -20,8 +20,8 @@ export interface LabelCrawlerConfig {
   website: Website;
   /** Generate search URL from the context number */
   buildSearchUrl: (baseUrl: string, number: string) => string;
-  /** Transform cover URL to poster URL (site-specific crop rules) */
-  coverToPoster: (coverUrl: string) => string;
+  /** Transform thumb URL to poster URL (site-specific crop rules) */
+  thumbToPoster: (thumbUrl: string) => string;
 }
 
 /**
@@ -29,7 +29,7 @@ export interface LabelCrawlerConfig {
  *
  * These sites share identical HTML structure:
  * - h1 title with actor names embedded
- * - `a.pop_sample img` for cover images
+ * - `a.pop_sample img` for thumb images
  * - `a.genre` for genre links
  * - extractByLabel for metadata fields
  * - `.box_works01_text p` for plot
@@ -66,11 +66,11 @@ export abstract class BaseLabelCrawler extends BaseCrawler {
       title = title.replace(` ${actor}`, "");
     });
 
-    const coverUrl = toAbsoluteUrl(
+    const thumbUrl = toAbsoluteUrl(
       this.config.baseUrl,
       $("a.pop_sample img").first().attr("src")?.replace("?output-quality=60", ""),
     );
-    const posterUrl = coverUrl ? this.config.coverToPoster(coverUrl) : undefined;
+    const posterUrl = thumbUrl ? this.config.thumbToPoster(thumbUrl) : undefined;
 
     const studio = extractByLabel($, "メーカー") ?? this.config.defaultStudio;
 
@@ -89,7 +89,7 @@ export abstract class BaseLabelCrawler extends BaseCrawler {
       plot: $(".box_works01_text p").first().text().trim() || undefined,
       release_date: parseDate(extractByLabel($, "配信開始日")) ?? undefined,
       rating: undefined,
-      cover_url: coverUrl,
+      thumb_url: thumbUrl,
       poster_url: posterUrl,
       fanart_url: undefined,
       sample_images: $("a.pop_img")

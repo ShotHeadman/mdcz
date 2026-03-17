@@ -2,8 +2,19 @@ import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@shared/config";
 import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
-import type { AppInfo, IpcRouterContract, TranslateTestLlmInput } from "@shared/ipcContract";
-import type { CrawlerData, FileInfo, ScrapeResult } from "@shared/types";
+import type { IpcRouterContract } from "@shared/ipcContract";
+import type { AppInfo, TranslateTestLlmInput } from "@shared/ipcTypes";
+import type {
+  CrawlerData,
+  FileInfo,
+  LocalScanEntry,
+  MaintenanceCommitItem,
+  MaintenanceItemResult,
+  MaintenancePresetId,
+  MaintenancePreviewResult,
+  MaintenanceStatus,
+  ScrapeResult,
+} from "@shared/types";
 
 type Unsubscribe = () => void;
 
@@ -100,10 +111,28 @@ export const ipc = {
       copyFiles?: boolean;
       copy_files?: boolean;
     }) => client[IpcChannel.Tool_CreateSymlink](payload),
-    checkServerConnection: () => client[IpcChannel.Tool_ServerCheckConnection](undefined),
-    syncActorPhoto: (mode: "all" | "missing") => client[IpcChannel.Tool_ActorPhotoSync]({ mode }),
-    syncActorInfo: (mode: "all" | "missing") => client[IpcChannel.Tool_ActorInfoSync]({ mode }),
+    checkJellyfinConnection: () => client[IpcChannel.Tool_JellyfinServerCheckConnection](undefined),
+    syncJellyfinActorPhoto: (mode: "all" | "missing") => client[IpcChannel.Tool_JellyfinActorPhotoSync]({ mode }),
+    syncJellyfinActorInfo: (mode: "all" | "missing") => client[IpcChannel.Tool_JellyfinActorInfoSync]({ mode }),
+    checkEmbyConnection: () => client[IpcChannel.Tool_EmbyServerCheckConnection](undefined),
+    syncEmbyActorPhoto: (mode: "all" | "missing") => client[IpcChannel.Tool_EmbyActorPhotoSync]({ mode }),
+    syncEmbyActorInfo: (mode: "all" | "missing") => client[IpcChannel.Tool_EmbyActorInfoSync]({ mode }),
+    amazonPosterScan: (directory: string) => client[IpcChannel.Tool_AmazonPosterScan]({ directory }),
+    amazonPosterLookup: (nfoPath: string, title: string) =>
+      client[IpcChannel.Tool_AmazonPosterLookup]({ nfoPath, title }),
+    amazonPosterApply: (items: Array<{ directory: string; amazonPosterUrl: string }>) =>
+      client[IpcChannel.Tool_AmazonPosterApply]({ items }),
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
+  },
+  maintenance: {
+    scan: (dirPath: string) =>
+      client[IpcChannel.Maintenance_Scan]({ dirPath }) as Promise<{ entries: LocalScanEntry[] }>,
+    preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Preview]({ entries, presetId }) as Promise<MaintenancePreviewResult>,
+    execute: (items: MaintenanceCommitItem[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Execute]({ items, presetId }),
+    stop: () => client[IpcChannel.Maintenance_Stop](undefined),
+    getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined) as Promise<MaintenanceStatus>,
   },
   on: {
     log: (callback: (payload: LogPayload) => void): Unsubscribe => window.api.on(IpcChannel.Event_Log, callback),
@@ -119,5 +148,7 @@ export const ipc = {
       window.api.on(IpcChannel.Event_ButtonStatus, callback),
     shortcut: (callback: (payload: ShortcutPayload) => void): Unsubscribe =>
       window.api.on(IpcChannel.Event_Shortcut, callback),
+    maintenanceItemResult: (callback: (payload: MaintenanceItemResult) => void): Unsubscribe =>
+      window.api.on(IpcChannel.Event_MaintenanceItemResult, callback),
   },
 };

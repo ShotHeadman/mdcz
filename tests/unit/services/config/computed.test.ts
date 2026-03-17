@@ -1,6 +1,6 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
 import { configurationSchema } from "@main/services/config/models";
-import { ProxyType } from "@shared/enums";
+import { ProxyType, Website } from "@shared/enums";
 import { describe, expect, it } from "vitest";
 
 describe("buildComputedConfiguration", () => {
@@ -54,5 +54,84 @@ describe("buildComputedConfiguration", () => {
     const computed = buildComputedConfiguration(configuration);
     expect(computed.networkTimeoutMs).toBe(25_000);
     expect(computed.networkRetryCount).toBe(4);
+  });
+
+  it("requires folderTemplate to include {number} when successFileMove is enabled", () => {
+    const result = configurationSchema.safeParse({
+      naming: {
+        folderTemplate: "{actor}",
+      },
+      behavior: {
+        successFileMove: true,
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ["naming", "folderTemplate"],
+          message: "开启成功后移动文件时，文件夹模板必须包含 {number}",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects local as a person overview source", () => {
+    const result = configurationSchema.safeParse({
+      personSync: {
+        personOverviewSources: ["official", "local"],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("uses actor_photo as the default actor photo folder under paths", () => {
+    const configuration = configurationSchema.parse({});
+
+    expect(configuration.paths.actorPhotoFolder).toBe("actor_photo");
+    expect(configuration.aggregation.fieldPriorities.durationSeconds).toEqual([Website.AVBASE, Website.DMM_TV]);
+    expect(configuration.aggregation.fieldPriorities.rating).not.toContain(Website.AVBASE);
+    expect(configuration.aggregation.fieldPriorities.trailer_url).not.toContain(Website.AVBASE);
+  });
+
+  it("does not read legacy personSync.actorPhotoFolder values", () => {
+    const configuration = configurationSchema.parse({
+      personSync: {
+        actorPhotoFolder: "/legacy/actor-library",
+        personOverviewSources: ["official"],
+        personImageSources: ["local", "official"],
+      },
+    });
+
+    expect(configuration.paths.actorPhotoFolder).toBe("actor_photo");
+    expect(configuration.personSync).not.toHaveProperty("actorPhotoFolder");
+  });
+
+  it("requires Jellyfin userId to be a UUID when provided", () => {
+    const result = configurationSchema.safeParse({
+      jellyfin: {
+        userId: "not-a-uuid",
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ["jellyfin", "userId"],
+          message: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
+        }),
+      ]),
+    );
   });
 });

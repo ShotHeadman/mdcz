@@ -42,9 +42,23 @@ export enum IpcChannel {
   App_Info = "app:info",
   App_OpenExternal = "app:open-external",
 
-  Tool_ActorPhotoSync = "tool:actor-photo-sync",
-  Tool_ActorInfoSync = "tool:actor-info-sync",
-  Tool_ServerCheckConnection = "tool:server-check-connection",
+  Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
+  Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",
+  Tool_JellyfinServerCheckConnection = "tool:jellyfin-server-check-connection",
+  Tool_EmbyActorPhotoSync = "tool:emby-actor-photo-sync",
+  Tool_EmbyActorInfoSync = "tool:emby-actor-info-sync",
+  Tool_EmbyServerCheckConnection = "tool:emby-server-check-connection",
   Tool_CreateSymlink = "tool:create-symlink",
+  Tool_AmazonPosterScan = "tool:amazon-poster-scan",
+  Tool_AmazonPosterLookup = "tool:amazon-poster-lookup",
+  Tool_AmazonPosterApply = "tool:amazon-poster-apply",
   Tool_ToggleDevTools = "tool:toggle-devtools",
+
+  Maintenance_Scan = "maintenance:scan",
+  Maintenance_Preview = "maintenance:preview",
+  Maintenance_Execute = "maintenance:execute",
+  Maintenance_Stop = "maintenance:stop",
+  Maintenance_GetStatus = "maintenance:get-status",
+
+  Event_MaintenanceItemResult = "event:maintenance-item-result",
 }

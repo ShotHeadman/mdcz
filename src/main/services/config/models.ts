@@ -1,3 +1,5 @@
+import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@main/services/actorSource/types";
+import { CURRENT_CONFIG_VERSION } from "@main/services/config/migrator";
 import { ProxyType, ThemeMode, TranslateEngine, UiLanguage, Website } from "@shared/enums";
 import { z } from "zod";
 
@@ -13,6 +15,7 @@ const DEFAULT_ENABLED_SITES: Website[] = [
   Website.JAVBUS,
   Website.JAV321,
   Website.KM_PRODUCE,
+  Website.AVBASE,
 ];
 
 const DEFAULT_SITE_ORDER: Website[] = [...DEFAULT_ENABLED_SITES];
@@ -21,7 +24,7 @@ const networkSchema = z.object({
   proxyType: z.enum(ProxyType).default(ProxyType.NONE),
   proxy: z.string().default(""),
   useProxy: z.boolean().default(false),
-  timeout: z.number().int().min(1).max(300).default(20),
+  timeout: z.number().int().min(1).max(300).default(10),
   retryCount: z.number().int().min(0).max(10).default(3),
   javdbCookie: z.string().default(""),
   javbusCookie: z.string().default(""),
@@ -72,15 +75,14 @@ const translateSchema = z.object({
 });
 
 const downloadSchema = z.object({
-  downloadCover: z.boolean().default(true),
+  downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   downloadNfo: z.boolean().default(true),
-  amazonJpCoverEnhance: z.boolean().default(false),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
-  keepCover: z.boolean().default(true),
+  keepThumb: z.boolean().default(true),
   keepPoster: z.boolean().default(true),
   keepFanart: z.boolean().default(true),
   keepSceneImages: z.boolean().default(true),
@@ -88,11 +90,24 @@ const downloadSchema = z.object({
   keepNfo: z.boolean().default(true),
 });
 
-const serverSchema = z.object({
+const personSyncSchema = z.object({
+  personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["official", "avjoho", "avbase"]),
+  personImageSources: z.array(z.enum(ACTOR_IMAGE_SOURCE_OPTIONS)).default(["local", "gfriends", "official", "avbase"]),
+});
+
+const jellyfinSchema = z.object({
   url: z.url().or(z.literal("")).default("http://127.0.0.1:8096"),
   apiKey: z.string().default(""),
   userId: z.string().default(""),
-  actorPhotoFolder: z.string().default(""),
+  refreshPersonAfterSync: z.boolean().default(true),
+  lockOverviewAfterSync: z.boolean().default(false),
+});
+
+const embySchema = z.object({
+  url: z.url().or(z.literal("")).default(""),
+  apiKey: z.string().default(""),
+  userId: z.string().default(""),
+  refreshPersonAfterSync: z.boolean().default(true),
 });
 
 const shortcutsSchema = z.object({
@@ -117,10 +132,11 @@ const uiSchema = z.object({
 
 const pathsSchema = z.object({
   mediaPath: z.string().default(""),
+  actorPhotoFolder: z.string().default("actor_photo"),
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),
   failedOutputFolder: z.string().default("failed"),
-  sceneImagesFolder: z.string().default("samples"),
+  sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
 });
 
@@ -138,40 +154,40 @@ const fieldPrioritiesSchema = z.object({
   title: z
     .array(z.enum(Website))
     .default([
-      Website.DMM,
+      Website.AVBASE,
       Website.MGSTAGE,
+      Website.DMM,
       Website.DMM_TV,
-      Website.FC2,
       Website.JAVDB,
       Website.JAVBUS,
       Website.JAV321,
-      Website.KM_PRODUCE,
+      Website.FC2,
     ]),
-  plot: z.array(z.enum(Website)).default([Website.MGSTAGE, Website.DMM, Website.DMM_TV, Website.FC2, Website.JAV321]),
+  plot: z
+    .array(z.enum(Website))
+    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.DMM_TV, Website.JAV321, Website.FC2]),
   actors: z
     .array(z.enum(Website))
-    .default([Website.JAVDB, Website.DMM, Website.JAVBUS, Website.MGSTAGE, Website.KM_PRODUCE]),
-  actor_profiles: z.array(z.enum(Website)).default([Website.JAVDB, Website.MGSTAGE, Website.DMM]),
-  genres: z
+    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
+  genres: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+  thumb_url: z
     .array(z.enum(Website))
-    .default([Website.JAVDB, Website.FC2, Website.DMM, Website.JAVBUS, Website.KM_PRODUCE]),
-  cover_url: z
-    .array(z.enum(Website))
-    .default([Website.DMM, Website.FC2, Website.JAVDB, Website.JAVBUS, Website.KM_PRODUCE]),
+    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
   poster_url: z
     .array(z.enum(Website))
-    .default([Website.DMM, Website.FC2, Website.JAVDB, Website.JAVBUS, Website.KM_PRODUCE]),
-  sample_images: z.array(z.enum(Website)).default([Website.MGSTAGE, Website.DMM, Website.JAVBUS, Website.JAVDB]),
-  studio: z
+    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+  sample_images: z
     .array(z.enum(Website))
-    .default([Website.DMM, Website.FC2, Website.JAVDB, Website.JAVBUS, Website.KM_PRODUCE]),
-  director: z.array(z.enum(Website)).default([Website.DMM, Website.JAVDB]),
-  publisher: z.array(z.enum(Website)).default([Website.DMM, Website.FC2, Website.JAVDB]),
-  series: z.array(z.enum(Website)).default([Website.DMM, Website.JAVDB, Website.JAVBUS]),
+    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
+  studio: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+  director: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB]),
+  publisher: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.FC2]),
+  series: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
   release_date: z
     .array(z.enum(Website))
-    .default([Website.DMM, Website.FC2, Website.JAVDB, Website.JAVBUS, Website.KM_PRODUCE]),
-  rating: z.array(z.enum(Website)).default([Website.JAVDB, Website.DMM]),
+    .default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+  durationSeconds: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM_TV]),
+  rating: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.JAVDB]),
   trailer_url: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.JAVBUS]),
 });
 
@@ -200,19 +216,43 @@ const aggregationSchema = z
     }
   });
 
-export const configurationSchema = z.object({
-  network: networkSchema.default(() => networkSchema.parse({})),
-  scrape: scrapeSchema.default(() => scrapeSchema.parse({})),
-  naming: namingSchema.default(() => namingSchema.parse({})),
-  translate: translateSchema.default(() => translateSchema.parse({})),
-  download: downloadSchema.default(() => downloadSchema.parse({})),
-  server: serverSchema.default(() => serverSchema.parse({})),
-  shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
-  ui: uiSchema.default(() => uiSchema.parse({})),
-  paths: pathsSchema.default(() => pathsSchema.parse({})),
-  behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
-  aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),
-});
+export const configurationSchema = z
+  .object({
+    configVersion: z.number().int().default(CURRENT_CONFIG_VERSION),
+    network: networkSchema.default(() => networkSchema.parse({})),
+    scrape: scrapeSchema.default(() => scrapeSchema.parse({})),
+    naming: namingSchema.default(() => namingSchema.parse({})),
+    translate: translateSchema.default(() => translateSchema.parse({})),
+    download: downloadSchema.default(() => downloadSchema.parse({})),
+    personSync: personSyncSchema.default(() => personSyncSchema.parse({})),
+    jellyfin: jellyfinSchema.default(() => jellyfinSchema.parse({})),
+    emby: embySchema.default(() => embySchema.parse({})),
+    shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
+    ui: uiSchema.default(() => uiSchema.parse({})),
+    paths: pathsSchema.default(() => pathsSchema.parse({})),
+    behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
+    aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),
+  })
+  .superRefine((data, ctx) => {
+    if (data.behavior.successFileMove && !data.naming.folderTemplate.includes("{number}")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["naming", "folderTemplate"],
+        message: "开启成功后移动文件时，文件夹模板必须包含 {number}",
+      });
+    }
+
+    if (
+      data.jellyfin.userId.trim().length > 0 &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(data.jellyfin.userId.trim())
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["jellyfin", "userId"],
+        message: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
+      });
+    }
+  });
 
 export type Configuration = z.infer<typeof configurationSchema>;
 

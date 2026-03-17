@@ -129,6 +129,52 @@ describe("TranslateService term consistency", () => {
     expect(translated.genres).toEqual(["小花暖"]);
   });
 
+  it("keeps actor profile photos attached after actor alias normalization", async () => {
+    const completionCreate = vi.fn();
+    const openAiFactory = () =>
+      ({
+        chat: {
+          completions: {
+            create: completionCreate,
+          },
+        },
+      }) as unknown as OpenAI;
+
+    vi.mocked(findMappedActorName).mockResolvedValue("小花暖");
+
+    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const config = createBaseConfig();
+
+    const translated = await service.translateCrawlerData(
+      {
+        title: " ",
+        number: "DLDSS-463",
+        actors: ["小花のん"],
+        actor_profiles: [
+          {
+            name: "小花のん",
+            photo_url: "https://img.example.com/actor-a.jpg",
+          },
+        ],
+        genres: [],
+        sample_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(completionCreate).not.toHaveBeenCalled();
+    expect(vi.mocked(findMappedActorName)).toHaveBeenCalledTimes(1);
+    expect(translated.actors).toEqual(["小花暖"]);
+    expect(translated.actor_profiles).toEqual([
+      {
+        name: "小花暖",
+        aliases: ["小花のん"],
+        photo_url: "https://img.example.com/actor-a.jpg",
+      },
+    ]);
+  });
+
   it("retries OpenAI request once when 429 includes Retry-After and caps wait to 15s", async () => {
     const rateLimitedError = Object.assign(new Error("rate limited"), {
       status: 429,
@@ -160,7 +206,7 @@ describe("TranslateService term consistency", () => {
 
     expect(completionCreate).toHaveBeenCalledTimes(2);
     expect(sleepMock).toHaveBeenCalledTimes(1);
-    expect(sleepMock).toHaveBeenCalledWith(15_000);
+    expect(sleepMock).toHaveBeenCalledWith(15_000, undefined, undefined);
   });
 
   it("does not retry OpenAI request for non-429 errors", async () => {

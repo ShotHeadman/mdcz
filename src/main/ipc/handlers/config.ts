@@ -39,10 +39,12 @@ export const createConfigHandlers = (): Pick<
       return { success: true as const };
     } catch (error) {
       if (error instanceof ConfigValidationError) {
-        throw createIpcError(IpcErrorCode.CONFIG_VALIDATION_ERROR, error.message, {
-          fields: error.fields,
-          fieldErrors: error.fieldErrors,
-        });
+        throw asSerializableIpcError(
+          createIpcError(IpcErrorCode.CONFIG_VALIDATION_ERROR, error.message, {
+            fields: error.fields,
+            fieldErrors: error.fieldErrors,
+          }),
+        );
       }
       throw asSerializableIpcError(createIpcError(IpcErrorCode.CONFIG_SAVE_ERROR, toErrorMessage(error)));
     }

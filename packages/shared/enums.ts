@@ -10,6 +10,7 @@ export enum Website {
   KM_PRODUCE = "km_produce",
   MGSTAGE = "mgstage",
   PRESTIGE = "prestige",
+  AVBASE = "avbase",
 }
 
 export enum ProxyType {

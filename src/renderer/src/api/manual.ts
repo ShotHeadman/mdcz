@@ -33,6 +33,46 @@ const asNfoPath = (path: string): string => {
   return `${path}.nfo`;
 };
 
+const siblingPath = (path: string, name: string): string => {
+  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (slash < 0) {
+    return name;
+  }
+
+  return `${path.slice(0, slash + 1)}${name}`;
+};
+
+const dedupePaths = (paths: string[]): string[] => {
+  return [...new Set(paths.filter((value) => value.trim().length > 0))];
+};
+
+export const buildNfoReadCandidates = (path: string): string[] => {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const primaryPath = asNfoPath(trimmed);
+  if (primaryPath.toLowerCase().endsWith("movie.nfo")) {
+    return [primaryPath];
+  }
+
+  return dedupePaths([siblingPath(primaryPath, "movie.nfo"), primaryPath]);
+};
+
+const shouldRetryWithAlternateNfo = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const code =
+    typeof (error as Error & { code?: unknown }).code === "string"
+      ? String((error as Error & { code?: unknown }).code)
+      : error.name;
+
+  return code === "ENOENT" || code === "ENOTDIR";
+};
+
 const toProgress = (completedFiles: number, totalFiles: number): number => {
   if (totalFiles <= 0) {
     return 0;
@@ -111,17 +151,44 @@ export const deleteFileAndFolder = async (path: string) => {
 };
 
 export const readNfo = async (path: string) => {
-  const nfoPath = asNfoPath(path);
-  const response = await ipc.file.nfoRead(nfoPath);
-  const data: NfoResponse = {
-    path: nfoPath,
-    content: JSON.stringify(response.data, null, 2),
-  };
-  return { data };
+  const candidates = buildNfoReadCandidates(path);
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await ipc.file.nfoRead(candidate);
+      const data: NfoResponse = {
+        path: candidate,
+        content: JSON.stringify(response.data, null, 2),
+      };
+      return { data };
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryWithAlternateNfo(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("NFO path is required");
 };
 
-export const updateNfo = async (path: string, content: string) => {
+export const resolveNfoWritePath = (path: string, videoPath?: string): string => {
   const nfoPath = asNfoPath(path);
+  if (!nfoPath.toLowerCase().endsWith("movie.nfo")) {
+    return nfoPath;
+  }
+
+  const normalizedVideoPath = videoPath?.trim();
+  if (!normalizedVideoPath) {
+    return nfoPath;
+  }
+
+  return asNfoPath(normalizedVideoPath);
+};
+
+export const updateNfo = async (path: string, content: string, videoPath?: string) => {
+  const nfoPath = resolveNfoWritePath(path, videoPath);
   const crawlerData = parseCrawlerData(content);
   const data = await ipc.file.nfoWrite(nfoPath, crawlerData);
   return { data };

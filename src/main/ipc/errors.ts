@@ -10,15 +10,65 @@ export interface IpcError {
   details?: unknown;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+const toStringRecord = (value: unknown): Record<string, string> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries);
+};
+
+export class SerializableIpcError extends Error implements IpcError {
+  readonly code: string;
+  readonly details?: unknown;
+  readonly fields?: string[];
+  readonly fieldErrors?: Record<string, string>;
+
+  constructor(error: IpcError) {
+    super(error.message);
+    this.name = error.code;
+    this.code = error.code;
+    this.details = error.details;
+
+    if (isRecord(error.details)) {
+      const fields = toStringArray(error.details.fields);
+      if (fields.length > 0) {
+        this.fields = fields;
+      }
+
+      const fieldErrors = toStringRecord(error.details.fieldErrors);
+      if (fieldErrors) {
+        this.fieldErrors = fieldErrors;
+      }
+    }
+  }
+}
+
 /**
  * Creates a standardized IPC error object
  */
-export function createIpcError(code: string, message: string, details?: unknown): IpcError {
-  return {
+export function createIpcError(code: string, message: string, details?: unknown): SerializableIpcError {
+  return new SerializableIpcError({
     code,
     message,
     ...(details !== undefined && { details }),
-  };
+  });
 }
 
 /**
@@ -53,6 +103,13 @@ export function toIpcError(error: unknown): IpcError {
 
   // Unknown error
   return createIpcError("UNKNOWN_ERROR", toErrorMessage(error));
+}
+
+export function toSerializableIpcError(error: unknown): SerializableIpcError {
+  if (error instanceof SerializableIpcError) {
+    return error;
+  }
+  return new SerializableIpcError(toIpcError(error));
 }
 
 /**

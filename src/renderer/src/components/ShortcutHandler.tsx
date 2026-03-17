@@ -64,13 +64,14 @@ export function ShortcutHandler() {
       }
 
       const action = payload.action as ShortcutAction;
-      if (WORKBENCH_ONLY_SHORTCUTS.has(action) && pathname !== "/") {
+      const uiState = useUIStore.getState();
+
+      if (WORKBENCH_ONLY_SHORTCUTS.has(action) && (pathname !== "/" || uiState.workbenchMode !== "scrape")) {
         return;
       }
 
       void (async () => {
         const scrapeState = useScrapeStore.getState();
-        const uiState = useUIStore.getState();
         const selectedItem = scrapeState.results.find((item) => item.id === uiState.selectedResultId);
 
         switch (action) {

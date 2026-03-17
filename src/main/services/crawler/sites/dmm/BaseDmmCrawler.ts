@@ -1,4 +1,3 @@
-import type { CrawlerData } from "@shared/types";
 import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../../base/BaseCrawler";
@@ -8,24 +7,10 @@ import type { FetchOptions } from "../../FetchGateway";
 import { classifyDmmDetailFailure } from "./failureClassifier";
 import { buildDmmHttpOptions, normalizeDmmCookieHeader } from "./SessionVault";
 
-const AWS_PLACEHOLDER_KEYWORDS = ["now_printing", "nowprinting", "noimage", "nopic", "media_violation"];
-
-const toAwsProbeUrl = (value: string): string => {
-  const url = new URL(value);
-  url.searchParams.set("w", "120");
-  url.searchParams.set("h", "90");
-  return url.toString();
-};
-
-const isAwsPlaceholderUrl = (value: string): boolean => {
-  const resolvedUrl = value.toLowerCase();
-  return AWS_PLACEHOLDER_KEYWORDS.some((keyword) => resolvedUrl.includes(keyword));
-};
-
 /**
  * Shared base for DMM and DMM_TV crawlers.
  * Encapsulates cookie management, failure classification,
- * fetch option building, and AWS image optimization.
+ * and fetch option building for DMM-family crawlers.
  */
 export abstract class BaseDmmCrawler extends BaseCrawler {
   protected abstract dmmSiteLabel(): "DMM" | "DMM_TV";
@@ -68,49 +53,5 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
       signal: context.options.signal,
       headers,
     });
-  }
-
-  protected async optimizeAwsImages(
-    data: Partial<CrawlerData>,
-    number00?: string,
-    numberNo00?: string,
-  ): Promise<Partial<CrawlerData>> {
-    const coverUrl = data.cover_url;
-    if (!coverUrl || !coverUrl.includes("pics.dmm.co.jp")) {
-      return data;
-    }
-
-    const awsCandidates = [
-      coverUrl.replace("pics.dmm.co.jp", "awsimgsrc.dmm.co.jp/pics_dig").replace("/adult/", "/"),
-      number00 ? `https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/${number00}/${number00}pl.jpg` : null,
-      numberNo00 ? `https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/${numberNo00}/${numberNo00}pl.jpg` : null,
-    ].filter((url): url is string => Boolean(url));
-
-    const results = await Promise.all(
-      awsCandidates.map(async (awsUrl) => {
-        try {
-          return (await this.isValidAwsImage(awsUrl)) ? awsUrl : null;
-        } catch {
-          return null;
-        }
-      }),
-    );
-
-    const validUrl = results.find((url): url is string => url !== null);
-    if (validUrl) {
-      this.logger.debug(`Using AWS high-quality image: ${validUrl}`);
-      return {
-        ...data,
-        cover_url: validUrl,
-        poster_url: validUrl.replace("pl.jpg", "ps.jpg"),
-      };
-    }
-
-    return data;
-  }
-
-  private async isValidAwsImage(awsUrl: string): Promise<boolean> {
-    const probe = await this.gateway.probeUrl(toAwsProbeUrl(awsUrl), { method: "GET" });
-    return probe.ok && !isAwsPlaceholderUrl(probe.resolvedUrl);
   }
 }

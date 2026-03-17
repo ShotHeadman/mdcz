@@ -8,10 +8,14 @@ export interface RuntimeLog {
   message: string | object | null;
 }
 
-export const createRuntimeLog = (level: string, message: string | object | null): RuntimeLog => {
+export const createRuntimeLog = (
+  level: string,
+  message: string | object | null,
+  timestamp: string | number = new Date().toISOString(),
+): RuntimeLog => {
   return {
     id: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
+    timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : timestamp,
     level,
     message,
   };

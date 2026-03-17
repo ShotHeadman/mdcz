@@ -1,3 +1,5 @@
+import { ActorImageService } from "@main/services/ActorImageService";
+import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager, configurationSchema } from "@main/services/config";
 import type { CrawlerProvider } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
@@ -5,7 +7,6 @@ import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { listVideoFiles } from "@main/utils/file";
 import type { ScraperStatus } from "@shared/types";
-import { AmazonJpImageService } from "./AmazonJpImageService";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { FileOrganizer } from "./FileOrganizer";
@@ -137,6 +138,8 @@ export class ScraperService {
     private readonly signalService: SignalService,
     networkClient: NetworkClient,
     crawlerProvider: CrawlerProvider,
+    private readonly actorImageService = new ActorImageService(),
+    private readonly actorSourceProvider?: ActorSourceProvider,
   ) {
     this.sharedNetworkClient = networkClient;
     this.sharedCrawlerProvider = crawlerProvider;
@@ -318,11 +321,12 @@ export class ScraperService {
       configManager,
       aggregationService: new AggregationService(this.sharedCrawlerProvider),
       translateService: new TranslateService(this.sharedNetworkClient),
-      amazonJpImageService: new AmazonJpImageService(this.sharedNetworkClient),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.sharedNetworkClient),
       fileOrganizer: new FileOrganizer(),
       signalService: this.signalService,
+      actorImageService: this.actorImageService,
+      actorSourceProvider: this.actorSourceProvider,
     };
   }
 
@@ -353,7 +357,7 @@ export class ScraperService {
     this.restGate = this.createRestGate(configuration);
 
     this.signalService.setButtonStatus(false, true);
-    this.signalService.setProgress(0, 0, filePaths.length);
+    this.signalService.resetProgress();
 
     const fileScraper = new FileScraper(this.createFileScraperDependencies());
 

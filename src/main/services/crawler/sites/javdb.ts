@@ -54,6 +54,18 @@ const findStrongLinks = ($: CheerioAPI, labels: string[]): string[] => {
   return Array.from(new Set(links));
 };
 
+const findActorLinksBySymbol = ($: CheerioAPI, symbolClass: "female" | "male"): string[] => {
+  const selectors = [`strong.${symbolClass}`, `strong.symbol.${symbolClass}`];
+  const links = selectors.flatMap((selector) =>
+    $(selector)
+      .toArray()
+      .map((element: CheerioInput) => $(element).prevAll("a").first().text().trim())
+      .filter((name: string) => name.length > 0),
+  );
+
+  return Array.from(new Set(links));
+};
+
 export class JavdbCrawler extends BaseCrawler {
   site(): Website {
     return Website.JAVDB;
@@ -129,19 +141,11 @@ export class JavdbCrawler extends BaseCrawler {
     const number =
       extractAttr($, "a.button.is-white.copy-to-clipboard", "data-clipboard-text")?.trim() || context.number;
 
-    const actorsPrimary = $("strong.female")
-      .toArray()
-      .flatMap((element: CheerioInput) => $(element).parent().find("a").toArray())
-      .map((element: CheerioInput) => $(element).text().trim())
-      .filter((name: string) => name.length > 0);
-
-    const actorsFallback = $("strong.male")
-      .toArray()
-      .flatMap((element: CheerioInput) => $(element).parent().find("a").toArray())
-      .map((element: CheerioInput) => $(element).text().trim())
-      .filter((name: string) => name.length > 0);
-
-    const actors = actorsPrimary.length > 0 ? actorsPrimary : actorsFallback;
+    const actorsPrimary = findActorLinksBySymbol($, "female");
+    const actorsFallback = findActorLinksBySymbol($, "male");
+    const actorsUnmarked = findStrongLinks($, ["演員:", "Actors:", "演员:"]);
+    const actors =
+      actorsPrimary.length > 0 ? actorsPrimary : actorsFallback.length > 0 ? actorsFallback : actorsUnmarked;
 
     const genres = findStrongLinks($, ["類別:", "Tags:", "类别:"]);
 
@@ -151,9 +155,9 @@ export class JavdbCrawler extends BaseCrawler {
     const director = findStrongRow($, ["導演:", "Director:"])?.trim() || undefined;
     const release = parseDate(findStrongRow($, ["日期:", "Released Date:"])) ?? undefined;
 
-    const coverUrl = extractAttr($, "img.video-cover", "src");
-    const coverUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, coverUrl);
-    const posterUrl = coverUrlAbsolute?.replace("/covers/", "/thumbs/");
+    const thumbUrl = extractAttr($, "img.video-cover", "src");
+    const thumbUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, thumbUrl);
+    const posterUrl = thumbUrlAbsolute?.replace("/covers/", "/thumbs/");
 
     const trailerUrl = extractAttr($, "video#preview-video source", "src") ?? undefined;
     const trailerUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, trailerUrl);
@@ -164,6 +168,18 @@ export class JavdbCrawler extends BaseCrawler {
       .filter((href: string | undefined): href is string => typeof href === "string" && href.length > 0)
       .map((href: string) => toAbsoluteUrl(JAVDB_BASE_URL, href))
       .filter((href): href is string => Boolean(href));
+
+    const ratingText = findStrongRow($, ["評分:", "Rating:"]);
+    let ratingValue: number | undefined;
+    if (ratingText) {
+      const match = ratingText.match(/([\d.]+)/u);
+      if (match) {
+        const parsed = Number.parseFloat(match[1]);
+        if (Number.isFinite(parsed)) {
+          ratingValue = parsed;
+        }
+      }
+    }
 
     return {
       title,
@@ -176,8 +192,8 @@ export class JavdbCrawler extends BaseCrawler {
       series,
       plot: undefined,
       release_date: release,
-      rating: undefined,
-      cover_url: coverUrlAbsolute,
+      rating: ratingValue,
+      thumb_url: thumbUrlAbsolute,
       poster_url: posterUrl,
       fanart_url: undefined,
       sample_images: sampleImageUrls,

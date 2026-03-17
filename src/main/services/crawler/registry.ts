@@ -1,6 +1,7 @@
 import { Website } from "@shared/enums";
 
 import type { SiteAdapterConstructor } from "./base/types";
+import { AvbaseCrawler } from "./sites/avbase";
 import { DahliaCrawler } from "./sites/dahlia";
 import { DmmCrawler } from "./sites/dmm";
 import { DmmTvCrawler } from "./sites/dmm/dmm_tv";
@@ -40,3 +41,4 @@ registerCrawler(Website.FC2, Fc2Crawler);
 registerCrawler(Website.MGSTAGE, MGStageCrawler);
 registerCrawler(Website.JAV321, Jav321Crawler);
 registerCrawler(Website.KM_PRODUCE, KMProduceCrawler);
+registerCrawler(Website.AVBASE, AvbaseCrawler);

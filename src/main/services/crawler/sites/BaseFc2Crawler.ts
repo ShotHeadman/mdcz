@@ -44,7 +44,7 @@ export abstract class BaseFc2Crawler extends BaseCrawler {
       title: string;
       studio?: string;
       genres?: string[];
-      coverUrl?: string;
+      thumbUrl?: string;
       posterUrl?: string;
       plot?: string;
       releaseDate?: string;
@@ -67,7 +67,7 @@ export abstract class BaseFc2Crawler extends BaseCrawler {
       plot: fields.plot,
       release_date: fields.releaseDate,
       rating: fields.rating,
-      cover_url: fields.coverUrl,
+      thumb_url: fields.thumbUrl,
       poster_url: fields.posterUrl,
       fanart_url: undefined,
       sample_images: fields.sampleImageUrls ?? [],

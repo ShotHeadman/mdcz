@@ -1,9 +1,9 @@
 import { loggerService } from "@main/services/LoggerService";
+import { toErrorMessage } from "@main/utils/common";
 import type { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
-
-import type { FetchGateway } from "../FetchGateway";
+import type { FetchGateway, FetchOptions } from "../FetchGateway";
 
 import type {
   AdapterDependencies,
@@ -16,7 +16,7 @@ import type {
 } from "./types";
 
 const DEFAULT_OPTIONS = {
-  timeoutMs: 20_000,
+  timeoutMs: 10_000,
   cookies: undefined,
   referer: undefined,
   userAgent: undefined,
@@ -148,7 +148,7 @@ export abstract class BaseCrawler implements SiteAdapter {
         try {
           classifiedMessage = this.classifyDetailFailure(context, detailHtml, detailDoc, detailUrl);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = toErrorMessage(error);
           this.logger.warn(`Detail failure classifier failed for ${context.number}: ${message}`);
         }
 
@@ -164,7 +164,7 @@ export abstract class BaseCrawler implements SiteAdapter {
         data: this.normalizeCrawlerData(context, data),
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Crawler pipeline failed for ${context.number}: ${message}`);
       return {
         success: false,
@@ -176,13 +176,7 @@ export abstract class BaseCrawler implements SiteAdapter {
   }
 
   protected async fetch(url: string, context: Context): Promise<string> {
-    const headers = this.buildHeaders(context);
-    return this.gateway.fetchHtml(url, {
-      timeout: context.options.timeoutMs,
-      headers,
-      signal: context.options.signal,
-      cookies: context.options.cookies,
-    });
+    return this.gateway.fetchHtml(url, this.createFetchOptions(context));
   }
 
   protected buildHeaders(context: Context): Record<string, string> {
@@ -201,6 +195,15 @@ export abstract class BaseCrawler implements SiteAdapter {
     }
 
     return headers;
+  }
+
+  protected createFetchOptions(context: Context): FetchOptions {
+    return {
+      timeout: context.options.timeoutMs,
+      headers: this.buildHeaders(context),
+      signal: context.options.signal,
+      cookies: context.options.cookies,
+    };
   }
 
   private normalizeCrawlerData(context: Context, data: CrawlerData): CrawlerData {

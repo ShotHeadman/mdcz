@@ -7,6 +7,7 @@ import { loggerService } from "@main/services/LoggerService";
 import { getProperty, setProperty } from "@main/utils/common";
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
+import { ConfigMigrationError, runMigrations } from "./migrator";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "./models";
 
 const ACTIVE_PROFILE_META_FILE = ".active-profile.json";
@@ -163,6 +164,7 @@ export class ConfigManager extends EventEmitter {
   private activeProfileName = "default";
 
   async listProfiles(): Promise<{ profiles: string[]; active: string }> {
+    await this.ensureLoaded();
     const dataDir = this.getDataDirectory();
     await mkdir(dataDir, { recursive: true });
     const entries = await readdir(dataDir);
@@ -177,6 +179,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   async createProfile(name: string): Promise<void> {
+    await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
     const filePath = join(this.getDataDirectory(), `${profileName}.json`);
     if (existsSync(filePath)) throw new Error(`Profile "${profileName}" already exists`);
@@ -186,6 +189,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   async switchProfile(name: string): Promise<void> {
+    await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
     const filePath = join(this.getDataDirectory(), `${profileName}.json`);
     if (!existsSync(filePath)) throw new Error(`Profile "${profileName}" not found`);
@@ -198,6 +202,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   async deleteProfile(name: string): Promise<void> {
+    await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
     if (profileName === this.activeProfileName) throw new Error("Cannot delete the active profile");
     const filePath = join(this.getDataDirectory(), `${profileName}.json`);
@@ -315,6 +320,12 @@ export class ConfigManager extends EventEmitter {
       try {
         const content = await readFile(configPath, "utf8");
         const raw = JSON.parse(content) as Record<string, unknown>;
+        const migrationResult = runMigrations(raw);
+        if (migrationResult.migrated) {
+          this.logger.info(
+            `Config migrated: v${migrationResult.fromVersion} → v${migrationResult.toVersion} (${migrationResult.applied.join(", ")})`,
+          );
+        }
         const parsed = configurationSchema.parse(raw);
         this.configuration = parsed;
         this.syncConfigDirectoryFromConfiguration();
@@ -323,7 +334,11 @@ export class ConfigManager extends EventEmitter {
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Failed to load default.json, falling back to defaults: ${message}`);
+        this.logger.warn(`Failed to load config file ${configPath}; using in-memory defaults: ${message}`);
+        this.configuration = defaultConfiguration;
+        this.syncConfigDirectoryFromConfiguration();
+        this.computedConfig.invalidate();
+        return;
       }
     }
 
@@ -337,6 +352,7 @@ export class ConfigManager extends EventEmitter {
    * Remove legacy config files that are no longer used.
    * Old versions stored configs as `fc2.json`, `default.json` (with legacy schema), etc.
    * This method validates each profile file; if it fails schema parsing, it is removed.
+   * Profiles with unsupported config versions are preserved.
    */
   private async cleanupLegacyFiles(): Promise<void> {
     const dataDir = this.getDataDirectory();
@@ -352,8 +368,13 @@ export class ConfigManager extends EventEmitter {
         try {
           const content = await readFile(filePath, "utf8");
           const raw = JSON.parse(content) as Record<string, unknown>;
+          runMigrations(raw);
           configurationSchema.parse(raw);
-        } catch {
+        } catch (error) {
+          if (error instanceof ConfigMigrationError) {
+            this.logger.warn(`Skipping cleanup for config file ${entry}: ${error.message}`);
+            continue;
+          }
           this.logger.info(`Removing legacy config file: ${entry}`);
           try {
             await unlink(filePath);

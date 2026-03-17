@@ -5,9 +5,11 @@ import type { CrawlerData } from "@shared/types";
 export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
 
 export interface ImageAlternatives {
-  cover_url: string[];
+  thumb_url: string[];
   poster_url: string[];
-  fanart_url: string[];
+  sample_images: string[][];
+  sample_images_source?: Website;
+  sample_image_sources?: Website[];
 }
 
 /** Result of aggregating crawler data from multiple sources. */
@@ -32,6 +34,7 @@ export interface AggregationStats {
   totalSites: number;
   successCount: number;
   failedCount: number;
+  skippedCount: number;
   siteResults: SiteCrawlResult[];
   totalElapsedMs: number;
 }
@@ -49,19 +52,17 @@ export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStra
   publisher: "first_non_null",
   series: "first_non_null",
   release_date: "first_non_null",
-  release_year: "first_non_null",
   durationSeconds: "first_non_null",
   rating: "first_non_null",
-  cover_url: "highest_quality",
+  thumb_url: "highest_quality",
   poster_url: "highest_quality",
-  fanart_url: "highest_quality",
+  fanart_url: "first_non_null",
   trailer_url: "first_non_null",
   website: "first_non_null",
   content_type: "first_non_null",
   plot: "longest",
   plot_zh: "longest",
-  actors: "union",
-  actor_profiles: "union",
-  genres: "union",
+  actors: "first_non_empty",
+  genres: "first_non_empty",
   sample_images: "first_non_empty",
 };

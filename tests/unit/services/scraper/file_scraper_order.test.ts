@@ -3,7 +3,6 @@ import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import type { CrawlerInput, CrawlerResponse } from "@main/services/crawler/base/types";
 import { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
-import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
 import { AggregationService } from "@main/services/scraper/aggregation";
 import { DownloadManager } from "@main/services/scraper/DownloadManager";
 import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
@@ -54,7 +53,6 @@ describe("FileScraper site aggregation", () => {
       configManager: new TestConfigManager(createConfig()),
       aggregationService: new AggregationService(crawlerProvider),
       translateService: new TranslateService(new NetworkClient()),
-      amazonJpImageService: new AmazonJpImageService(new NetworkClient()),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(new NetworkClient()),
       fileOrganizer: new FileOrganizer(),

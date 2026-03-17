@@ -1,3 +1,4 @@
-export { checkConnection, EmbyServiceError, parseMode } from "./common";
-export { EmbyActorInfo } from "./EmbyActorInfo";
-export { EmbyActorPhoto } from "./EmbyActorPhoto";
+export { EmbyServiceError, parseMode } from "./common";
+export { checkConnection } from "./connection";
+export { EmbyActorInfoService, EmbyActorInfoService as EmbyActorInfo } from "./EmbyActorInfo";
+export { EmbyActorPhotoService, EmbyActorPhotoService as EmbyActorPhoto } from "./EmbyActorPhoto";

@@ -1,4 +1,4 @@
-import type { AppInfo } from "@shared/ipcContract";
+import type { AppInfo } from "@shared/ipcTypes";
 import { createFileRoute } from "@tanstack/react-router";
 import { Bug, ExternalLink, Github } from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";

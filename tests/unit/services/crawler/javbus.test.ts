@@ -72,7 +72,7 @@ describe("JavbusCrawler", () => {
     expect(data.actors).toEqual(["Actor A", "Actor B"]);
     expect(data.genres).toEqual(["Genre A", "Genre B"]);
     expect(data.release_date).toBe("2020-01-02");
-    expect(data.cover_url).toBe("https://www.javbus.com/pics/cover/abc_b.jpg");
+    expect(data.thumb_url).toBe("https://www.javbus.com/pics/cover/abc_b.jpg");
     expect(data.poster_url).toBe("https://www.javbus.com/pics/thumb/abc.jpg");
     expect(data.studio).toBe("StudioName");
     expect(data.publisher).toBe("PublisherName");

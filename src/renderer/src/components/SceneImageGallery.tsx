@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, ImageIcon, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/Dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/Dialog";
 import { getImageSrc } from "@/utils/image";
 
 interface SceneImageGalleryProps {
@@ -58,7 +58,13 @@ export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGall
           <button
             key={imagePath}
             type="button"
-            onClick={() => openLightbox(index)}
+            onClick={(event) => {
+              event.stopPropagation();
+              openLightbox(index);
+            }}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+            }}
             className="shrink-0 w-20 h-14 rounded-md border bg-muted/20 hover:ring-2 hover:ring-primary/50 transition-all cursor-pointer"
           >
             <LazyImage src={imagePath} alt={`Scene ${index + 1}`} />
@@ -67,7 +73,13 @@ export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGall
         {remainingCount > 0 && (
           <button
             type="button"
-            onClick={() => openLightbox(maxThumbnails)}
+            onClick={(event) => {
+              event.stopPropagation();
+              openLightbox(maxThumbnails);
+            }}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+            }}
             className="shrink-0 w-20 h-14 rounded-md overflow-hidden border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer flex items-center justify-center"
           >
             <span className="text-xs text-muted-foreground font-medium">+{remainingCount}</span>
@@ -86,6 +98,11 @@ export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGall
           showCloseButton={false}
           className="max-w-[90vw] max-h-[90vh] p-0 border-0 bg-black/95 overflow-hidden"
         >
+          <DialogTitle className="sr-only">场景图预览</DialogTitle>
+          <DialogDescription className="sr-only">
+            查看场景图大图预览，当前第 {lightboxIndex + 1} 张，共 {images.length} 张，可使用左右方向键切换。
+          </DialogDescription>
+
           {/* Close button */}
           <button
             type="button"

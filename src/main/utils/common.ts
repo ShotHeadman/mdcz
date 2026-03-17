@@ -2,17 +2,56 @@
  * Shared utility functions used across the application
  */
 
+const normalizeWhitespace = (value: string): string => value.replace(/\s+/gu, " ").trim();
+const stripImpitPrefix = (value: string): string => value.replace(/^impit error:\s*/iu, "").trim();
+
+const extractLastMatch = (value: string, pattern: RegExp): string | undefined => {
+  const matches = Array.from(value.matchAll(pattern));
+  return matches.at(-1)?.[1];
+};
+
+const summarizeImpitError = (message: string): string | null => {
+  const flattened = normalizeWhitespace(message);
+  const normalized = stripImpitPrefix(flattened);
+  const nestedError = extractLastMatch(normalized, /\berror:\s*"([^"]+)"/giu);
+  const osMessage = extractLastMatch(normalized, /\bmessage:\s*"([^"]+)"/giu);
+  const detail = nestedError ?? osMessage;
+
+  if (/^(?:ConnectError:\s*)?Failed to connect to the server\.?/iu.test(normalized)) {
+    return detail ? `ConnectError: ${detail}` : "ConnectError: failed to connect to the server";
+  }
+
+  if (/^impit error:/iu.test(flattened)) {
+    return normalized;
+  }
+
+  return null;
+};
+
+export function formatErrorMessage(message: string): string {
+  const summarizedImpitError = summarizeImpitError(message);
+  if (summarizedImpitError) {
+    return summarizedImpitError;
+  }
+
+  return normalizeWhitespace(message);
+}
+
 /**
  * Converts an unknown error to a string message
  */
 export function toErrorMessage(error: unknown): string {
+  let message: string;
+
   if (error instanceof Error) {
-    return error.message;
+    message = error.message;
+  } else if (typeof error === "string") {
+    message = error;
+  } else {
+    message = String(error);
   }
-  if (typeof error === "string") {
-    return error;
-  }
-  return String(error);
+
+  return formatErrorMessage(message);
 }
 
 /**
@@ -80,4 +119,20 @@ export function setProperty(obj: Record<string, unknown>, path: string, value: u
   if (tail) {
     current[tail] = value;
   }
+}
+
+/**
+ * Builds a URL with optional query parameters.
+ */
+export function buildUrl(baseUrl: string, pathname = "/", query: Record<string, string | undefined> = {}): string {
+  const url = new URL(pathname, `${baseUrl}/`);
+
+  for (const [key, value] of Object.entries(query)) {
+    if (!value) {
+      continue;
+    }
+    url.searchParams.set(key, value);
+  }
+
+  return url.toString();
 }

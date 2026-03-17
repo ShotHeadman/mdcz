@@ -1,11 +1,11 @@
 import { tipc } from "@egoist/tipc/main";
-import { type IpcError, isIpcError, toIpcError } from "./errors";
+import { SerializableIpcError, toSerializableIpcError } from "./errors";
 
 export const t = tipc.create();
 
-export const asSerializableIpcError = (error: unknown): IpcError => {
-  if (isIpcError(error)) {
+export const asSerializableIpcError = (error: unknown): SerializableIpcError => {
+  if (error instanceof SerializableIpcError) {
     return error;
   }
-  return toIpcError(error);
+  return toSerializableIpcError(error);
 };

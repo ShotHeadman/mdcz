@@ -26,9 +26,14 @@ const deferred = <T>() => {
   return { promise, resolve, reject };
 };
 
-const waitForIdle = async (service: ScraperService): Promise<void> => {
+const waitForIdle = async (service: ScraperService, signalService?: CaptureSignalService): Promise<void> => {
   for (let i = 0; i < 60; i += 1) {
-    if (!service.getStatus().running) {
+    const idle = !service.getStatus().running;
+    const buttonsReset =
+      !signalService ||
+      (signalService.buttonStatusEvents.at(-1)?.startEnabled === true &&
+        signalService.buttonStatusEvents.at(-1)?.stopEnabled === false);
+    if (idle && buttonsReset) {
       return;
     }
     await new Promise((resolve) => {
@@ -86,7 +91,7 @@ describe("ScraperService stop flow", () => {
       },
     });
 
-    await waitForIdle(service);
+    await waitForIdle(service, signalService);
 
     expect(service.getStatus().running).toBe(false);
     expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });
@@ -134,7 +139,7 @@ describe("ScraperService stop flow", () => {
       },
     });
 
-    await waitForIdle(service);
+    await waitForIdle(service, signalService);
     expect(service.getStatus().state).toBe("idle");
   });
 });

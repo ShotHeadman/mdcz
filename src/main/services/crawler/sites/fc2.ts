@@ -32,8 +32,8 @@ export class Fc2Crawler extends BaseFc2Crawler {
       return null;
     }
 
-    const cover = $("ul.items_article_SampleImagesArea li a").first().attr("href");
-    const coverUrl = toAbsoluteUrl(BASE_URL, cover);
+    const thumb = $("ul.items_article_SampleImagesArea li a").first().attr("href");
+    const thumbUrl = toAbsoluteUrl(BASE_URL, thumb);
     const posterUrl = toAbsoluteUrl(BASE_URL, $("div.items_article_MainitemThumb img").first().attr("src"));
     const genres = $("p.card-text a[href*='/tag/']")
       .toArray()
@@ -46,7 +46,7 @@ export class Fc2Crawler extends BaseFc2Crawler {
       title,
       studio,
       genres,
-      coverUrl,
+      thumbUrl,
       posterUrl,
       plot: $("meta[name='description']").attr("content")?.trim(),
       releaseDate: parseDate($("div.items_article_Releasedate p").first().text()) ?? undefined,

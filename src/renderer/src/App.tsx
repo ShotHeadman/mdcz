@@ -11,6 +11,7 @@ import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
 import { routeTree } from "./routeTree.gen";
 import { createRuntimeLog, useLogStore } from "./store/logStore";
+import { useMaintenanceStore } from "./store/maintenanceStore";
 import { type ScrapeResult, useScrapeStore } from "./store/scrapeStore";
 
 const shouldUseHashHistory = typeof window !== "undefined" && window.location.protocol === "file:";
@@ -49,8 +50,9 @@ const formatBitrate = (bitrateBps: number | undefined): string | undefined => {
 const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
   const data = payload.crawlerData;
   const assets = payload.assets;
-  const remotePoster = data?.poster_url ?? data?.cover_url;
-  const remoteCover = data?.cover_url ?? data?.poster_url;
+  const remotePoster = data?.poster_url;
+  const remoteThumb = data?.thumb_url ?? data?.fanart_url;
+  const remoteFanart = data?.fanart_url ?? data?.thumb_url;
 
   return {
     id: crypto.randomUUID(),
@@ -75,7 +77,8 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     publisher: data?.publisher,
     score: typeof data?.rating === "number" ? String(data.rating) : undefined,
     poster_url: assets?.poster ?? remotePoster,
-    thumb_url: assets?.cover ?? remoteCover,
+    thumb_url: assets?.thumb ?? assets?.fanart ?? remoteThumb,
+    fanart_url: assets?.fanart ?? assets?.thumb ?? remoteFanart,
     output_path: payload.outputPath,
     scene_images: assets?.sceneImages,
     sources: payload.sources as Record<string, string> | undefined,
@@ -94,6 +97,7 @@ const App = () => {
     let interval: number | undefined;
     const logStore = useLogStore.getState();
     const scrapeStore = useScrapeStore.getState();
+    const maintenanceStore = useMaintenanceStore.getState();
     const unsubscribers: Array<() => void> = [];
 
     const bootstrap = async () => {
@@ -121,20 +125,31 @@ const App = () => {
       };
 
       const syncStatusNow = async () => {
-        const status = await ipc.scraper.getStatus();
-        applyStatusSnapshot(status);
+        const [scrapeStatus, maintenanceStatus] = await Promise.all([
+          ipc.scraper.getStatus(),
+          ipc.maintenance.getStatus(),
+        ]);
+        applyStatusSnapshot(scrapeStatus);
+        maintenanceStore.applyStatusSnapshot(maintenanceStatus);
       };
 
       try {
         unsubscribers.push(
           ipc.on.log((payload) => {
-            logStore.addLog(createRuntimeLog(payload.level ?? "info", payload.text));
+            logStore.addLog(createRuntimeLog(payload.level ?? "info", payload.text, payload.timestamp));
           }),
         );
 
         unsubscribers.push(
           ipc.on.scrapeInfo((payload) => {
             scrapeStore.setCurrentFilePath(payload.fileInfo.filePath);
+          }),
+        );
+
+        unsubscribers.push(
+          ipc.on.maintenanceItemResult((payload) => {
+            maintenanceStore.applyItemResult(payload);
+            void syncStatusNow();
           }),
         );
 
@@ -156,6 +171,15 @@ const App = () => {
 
         unsubscribers.push(
           ipc.on.progress((payload) => {
+            const latestMaintenanceState = useMaintenanceStore.getState();
+            if (
+              latestMaintenanceState.executionStatus === "executing" ||
+              latestMaintenanceState.executionStatus === "stopping"
+            ) {
+              latestMaintenanceState.setProgress(payload.value, payload.current, payload.total);
+              return;
+            }
+
             scrapeStore.updateProgress(payload.value, 100);
           }),
         );

@@ -37,7 +37,7 @@ export class KMProduceCrawler extends BaseCrawler {
       return null;
     }
 
-    const coverUrl = toAbsoluteUrl(baseUrl, extractAttr($, "img[src*='/img/title']", "src"));
+    const thumbUrl = toAbsoluteUrl(baseUrl, extractAttr($, "img[src*='/img/title']", "src"));
 
     const actors = uniqueStrings(
       $("a[href*='/works/category/']")
@@ -75,10 +75,9 @@ export class KMProduceCrawler extends BaseCrawler {
       plot: undefined,
       plot_zh: undefined,
       release_date: releaseDate,
-      release_year: undefined,
       durationSeconds,
       rating: undefined,
-      cover_url: coverUrl,
+      thumb_url: thumbUrl,
       poster_url: undefined,
       fanart_url: undefined,
       sample_images: [],

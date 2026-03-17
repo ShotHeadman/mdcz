@@ -24,6 +24,54 @@ export const Route = createFileRoute("/settings")({
   component: SettingsComponent,
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+const toFieldErrors = (value: unknown): Record<string, string> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (isRecord(error) && typeof error.message === "string" && error.message) {
+    return error.message;
+  }
+
+  return String(error);
+};
+
+const getValidationErrorState = (error: unknown): { fields: string[]; fieldErrors: Record<string, string> } => {
+  if (!isRecord(error)) {
+    return { fields: [], fieldErrors: {} };
+  }
+
+  const details = isRecord(error.details) ? error.details : undefined;
+  const rootFields = toStringArray(error.fields);
+  const rootFieldErrors = toFieldErrors(error.fieldErrors);
+
+  return {
+    fields: rootFields.length > 0 ? rootFields : toStringArray(details?.fields),
+    fieldErrors: Object.keys(rootFieldErrors).length > 0 ? rootFieldErrors : toFieldErrors(details?.fieldErrors),
+  };
+};
+
 function SettingsComponent() {
   const queryClient = useQueryClient();
   const [serverErrors, setServerErrors] = useState<string[]>([]);
@@ -67,19 +115,19 @@ function SettingsComponent() {
       toast.success("设置已保存");
     },
     onError: (error) => {
-      const ipcErr = error as Error & { code?: string; fields?: string[]; fieldErrors?: Record<string, string> };
-      if (ipcErr.fields?.length) {
-        setServerErrors(ipcErr.fields);
-        setServerFieldErrors(ipcErr.fieldErrors ?? {});
+      const { fields, fieldErrors } = getValidationErrorState(error);
+      if (fields.length > 0) {
+        setServerErrors(fields);
+        setServerFieldErrors(fieldErrors);
         const firstMessage =
-          (ipcErr.fieldErrors &&
-            ipcErr.fields.map((field) => ipcErr.fieldErrors?.[field]).find((item) => Boolean(item))) ??
+          (Object.keys(fieldErrors).length > 0 &&
+            fields.map((field) => fieldErrors[field]).find((item) => Boolean(item))) ??
           undefined;
-        toast.error(firstMessage ? `校验失败：${firstMessage}` : `校验失败：${ipcErr.fields.length} 个字段有误`);
+        toast.error(firstMessage ? `校验失败：${firstMessage}` : `校验失败：${fields.length} 个字段有误`);
       } else {
         setServerErrors([]);
         setServerFieldErrors({});
-        toast.error(`保存失败: ${error.message}`);
+        toast.error(`保存失败: ${getErrorMessage(error)}`);
       }
     },
   });
@@ -93,7 +141,7 @@ function SettingsComponent() {
       toast.success("已恢复默认设置");
       setResetDialogOpen(false);
     } catch (error) {
-      toast.error(`重置失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      toast.error(`重置失败: ${getErrorMessage(error)}`);
     }
   };
 
@@ -107,7 +155,7 @@ function SettingsComponent() {
       setNewProfileName("");
       setNewProfileDialogOpen(false);
     } catch (error) {
-      toast.error(`创建失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      toast.error(`创建失败: ${getErrorMessage(error)}`);
     }
   };
 
@@ -125,7 +173,7 @@ function SettingsComponent() {
       setServerFieldErrors({});
       toast.success(`已切换到配置档案 "${name}"`);
     } catch (error) {
-      toast.error(`切换失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      toast.error(`切换失败: ${getErrorMessage(error)}`);
     }
   };
 
@@ -138,7 +186,7 @@ function SettingsComponent() {
       setDeleteProfileDialogOpen(false);
       setDeleteProfileName("");
     } catch (error) {
-      toast.error(`删除失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      toast.error(`删除失败: ${getErrorMessage(error)}`);
     }
   };
 
@@ -207,7 +255,7 @@ function SettingsComponent() {
             <DialogTitle>恢复默认设置</DialogTitle>
             <DialogDescription>确定要将所有设置恢复为默认值吗？此操作不可撤销。</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>
@@ -233,7 +281,7 @@ function SettingsComponent() {
               if (e.key === "Enter") handleCreateProfile();
             }}
           />
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>
@@ -263,7 +311,7 @@ function SettingsComponent() {
               ))}
             </SelectContent>
           </Select>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>
@@ -286,7 +334,7 @@ function SettingsComponent() {
             <DialogTitle>未保存的更改</DialogTitle>
             <DialogDescription>您有未保存的设置更改。确定要离开吗？未保存的更改将会丢失。</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" onClick={() => reset?.()}>
                 继续编辑

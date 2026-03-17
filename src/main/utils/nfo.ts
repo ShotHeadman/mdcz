@@ -1,4 +1,5 @@
 import { toArray } from "@main/utils/common";
+import { parseManagedMovieTags } from "@main/utils/movieMetadata";
 import { Website } from "@shared/enums";
 import type { ActorProfile, CrawlerData } from "@shared/types";
 import { XMLParser } from "fast-xml-parser";
@@ -23,6 +24,66 @@ const toStringValue = (value: unknown): string | undefined => {
   return undefined;
 };
 
+interface ThumbEntry {
+  aspect?: string;
+  value: string;
+}
+
+const parseThumbEntries = (value: unknown): ThumbEntry[] => {
+  return toArray(value)
+    .map((item): ThumbEntry | null => {
+      if (typeof item === "string") {
+        const text = toStringValue(item);
+        return text ? { value: text } : null;
+      }
+
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const node = item as Record<string, unknown>;
+      const text = toStringValue(node["#text"]);
+      if (!text) {
+        return null;
+      }
+
+      return {
+        aspect: toStringValue(node["@_aspect"])?.toLowerCase(),
+        value: text,
+      };
+    })
+    .filter((item): item is ThumbEntry => item !== null);
+};
+
+const pickThumbByAspect = (thumbs: ThumbEntry[], aspects: string[]): string | undefined => {
+  const normalizedAspects = aspects.map((aspect) => aspect.toLowerCase());
+  return thumbs.find((entry) => entry.aspect && normalizedAspects.includes(entry.aspect))?.value;
+};
+
+const toRecord = (value: unknown): Record<string, unknown> | undefined => {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+};
+
+const toStringArray = (value: unknown): string[] => {
+  return toArray(value)
+    .map((item) => toStringValue(item) ?? "")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+};
+
+const parseDurationSeconds = (movieNode: Record<string, unknown>): number | undefined => {
+  const fileinfo = toRecord(movieNode.fileinfo);
+  const streamdetails = toRecord(fileinfo?.streamdetails);
+  const video = toRecord(streamdetails?.video);
+  const durationValue = toStringValue(video?.durationinseconds);
+  if (!durationValue) {
+    return undefined;
+  }
+
+  const durationSeconds = Number.parseInt(durationValue, 10);
+  return Number.isFinite(durationSeconds) ? durationSeconds : undefined;
+};
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -44,7 +105,8 @@ export const parseNfo = (xml: string): CrawlerData => {
   const originaltitle = toStringValue(movieNode.originaltitle);
   const plot = toStringValue(movieNode.plot);
   const premiered = toStringValue(movieNode.premiered);
-  const yearText = toStringValue(movieNode.year);
+  const releasedate = toStringValue(movieNode.releasedate);
+  const releaseDate = premiered ?? releasedate;
   const ratingText = toStringValue(movieNode.rating);
 
   const uniqueidNode = movieNode.uniqueid;
@@ -55,10 +117,9 @@ export const parseNfo = (xml: string): CrawlerData => {
   const number = toStringValue(uniqueid) ?? "";
 
   const website =
-    parseWebsite(movieNode.website) ??
-    (uniqueidNode && typeof uniqueidNode === "object"
+    uniqueidNode && typeof uniqueidNode === "object"
       ? parseWebsite((uniqueidNode as Record<string, unknown>)["@_type"])
-      : null);
+      : null;
 
   if (!website) {
     throw new Error("NFO missing website");
@@ -89,37 +150,52 @@ export const parseNfo = (xml: string): CrawlerData => {
         return null;
       }
 
-      const name = toStringValue((node as Record<string, unknown>).name);
+      const fields = node as Record<string, unknown>;
+      const name = toStringValue(fields.name);
       if (!name) {
         return null;
       }
 
       return {
         name,
-        cover_url: toStringValue((node as Record<string, unknown>).thumb),
+        photo_url: toStringValue(fields.thumb),
       };
     })
     .filter((item): item is ActorProfile => item !== null);
 
-  const genres = toArray(movieNode.genre)
-    .map((item) => toStringValue(item) ?? "")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+  const genres = toStringArray(movieNode.genre);
+  const tags = toStringArray(movieNode.tag);
+  const managedMovieTags = parseManagedMovieTags(tags);
 
-  const coverUrl = toArray(movieNode.thumb)
-    .map((item) => {
-      if (typeof item === "string") {
-        return item;
-      }
-      if (item && typeof item === "object") {
-        return toStringValue((item as Record<string, unknown>)["#text"]) ?? "";
-      }
-      return "";
-    })
-    .find((item) => item.trim().length > 0);
+  const thumbs = parseThumbEntries(movieNode.thumb);
+  const posterUrl = pickThumbByAspect(thumbs, ["poster"]);
+  const thumbUrl =
+    pickThumbByAspect(thumbs, ["thumb", "landscape"]) ??
+    thumbs.find((entry) => !entry.aspect)?.value ??
+    thumbs[0]?.value;
+
+  const fanartThumbs =
+    movieNode.fanart && typeof movieNode.fanart === "object"
+      ? toArray((movieNode.fanart as Record<string, unknown>).thumb)
+          .map((item) => {
+            if (typeof item === "string") {
+              return toStringValue(item) ?? "";
+            }
+            if (item && typeof item === "object") {
+              return toStringValue((item as Record<string, unknown>)["#text"]) ?? "";
+            }
+            return "";
+          })
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      : [];
+  const fanartUrl = fanartThumbs[0];
+  const mdczNode = toRecord(movieNode.mdcz);
+  const mdczSampleImagesNode = toRecord(mdczNode?.sample_images);
 
   const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
-  const releaseYear = yearText ? Number.parseInt(yearText, 10) : undefined;
+  const durationSeconds = parseDurationSeconds(movieNode);
+  const outline = toStringValue(movieNode.outline);
 
   return {
     title: originaltitle ?? title,
@@ -131,17 +207,22 @@ export const parseNfo = (xml: string): CrawlerData => {
     studio: toStringValue(movieNode.studio),
     director: toStringValue(movieNode.director),
     publisher: toStringValue(movieNode.publisher),
-    series: toStringValue(movieNode.series),
-    plot,
-    plot_zh: plot,
-    release_date: premiered,
-    release_year: Number.isFinite(releaseYear) ? releaseYear : undefined,
+    series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
+    plot: plot ?? outline,
+    plot_zh: plot ?? outline,
+    release_date: releaseDate,
+    durationSeconds,
     rating: Number.isFinite(rating) ? rating : undefined,
-    cover_url: coverUrl,
-    poster_url: undefined,
-    fanart_url: undefined,
-    sample_images: [],
-    trailer_url: undefined,
+    content_type: managedMovieTags.content_type,
+    thumb_url: thumbUrl,
+    poster_url: posterUrl,
+    fanart_url: fanartUrl,
+    thumb_source_url: toStringValue(mdczNode?.thumb_source_url),
+    poster_source_url: toStringValue(mdczNode?.poster_source_url),
+    fanart_source_url: toStringValue(mdczNode?.fanart_source_url),
+    trailer_source_url: toStringValue(mdczNode?.trailer_source_url),
+    sample_images: toStringArray(mdczSampleImagesNode?.image),
+    trailer_url: toStringValue(movieNode.trailer),
     website,
   };
 };

@@ -15,6 +15,97 @@ interface Jav321Context extends Context {
   postBody?: string;
 }
 
+const splitActorText = (value: string | undefined): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  const normalized = value
+    .replace(/&nbsp;/giu, " ")
+    .replace(/[♀♂]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const parts = normalized
+    .split(/[、,，/&＆]/u)
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+
+  if (parts.length > 1) {
+    return uniqueStrings(parts);
+  }
+
+  return [normalized];
+};
+
+const extractOnErrorFallbackUrl = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = value.match(/this\.src\s*=\s*['"]([^'"]+)['"]/iu);
+  return match?.[1];
+};
+
+const normalizeJav321Url = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  return value.replace(/^(https?:\/\/[^/]+)\/{2,}/iu, "$1/");
+};
+
+const JAV321_SCENE_IMAGE_PATTERN = /jp-\d+\.(?:jpe?g|png|webp)$/iu;
+
+const isJav321SnapshotImageUrl = (value: string): boolean => JAV321_SCENE_IMAGE_PATTERN.test(value);
+
+const isJav321SameOriginUrl = (value: string): boolean => value.startsWith(`${JAV321_BASE_URL}/`);
+
+const buildSnapshotImageUrl = (href: string | undefined): string | undefined => {
+  if (!href) {
+    return undefined;
+  }
+
+  const match = href.match(/^\/snapshot\/([^/]+)\/\d+\/(\d+)$/iu);
+  if (!match) {
+    return undefined;
+  }
+
+  const [, contentId, index] = match;
+  return `${JAV321_BASE_URL}/digital/video/${contentId}/${contentId}jp-${index}.jpg`;
+};
+
+const resolveSnapshotImageUrl = (
+  href: string | undefined,
+  ...candidates: Array<string | undefined>
+): string | undefined => {
+  const normalizedCandidates = candidates
+    .map((candidate) => normalizeJav321Url(candidate))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  const directSceneImage = normalizedCandidates.find(
+    (candidate) => !isJav321SameOriginUrl(candidate) && isJav321SnapshotImageUrl(candidate),
+  );
+  if (directSceneImage) {
+    return directSceneImage;
+  }
+
+  const mirroredSceneImage = normalizedCandidates.find((candidate) => isJav321SnapshotImageUrl(candidate));
+  if (mirroredSceneImage) {
+    return mirroredSceneImage;
+  }
+
+  const sameOriginCandidate = normalizedCandidates.find((candidate) => isJav321SameOriginUrl(candidate));
+  if (sameOriginCandidate) {
+    return buildSnapshotImageUrl(href) ?? sameOriginCandidate;
+  }
+
+  return normalizedCandidates[0] ?? buildSnapshotImageUrl(href);
+};
+
 export class Jav321Crawler extends BaseCrawler {
   site(): Website {
     return Website.JAV321;
@@ -88,7 +179,7 @@ export class Jav321Crawler extends BaseCrawler {
     const infoHtml = $("div.col-md-9").first().html() ?? "";
 
     const extractField = (label: string): string | undefined => {
-      const regex = new RegExp(`<b>${label}</b>\\s*(.+?)(?:<br|<\\/div|$)`, "iu");
+      const regex = new RegExp(`<b>${label}</b>\\s*:?\\s*(.+?)(?:<br|<\\/div|$)`, "iu");
       const match = infoHtml.match(regex);
       if (!match?.[1]) {
         return undefined;
@@ -99,7 +190,7 @@ export class Jav321Crawler extends BaseCrawler {
     };
 
     const extractFieldLinks = (label: string): string[] => {
-      const regex = new RegExp(`<b>${label}</b>\\s*(.+?)(?:<br|<\\/div|$)`, "iu");
+      const regex = new RegExp(`<b>${label}</b>\\s*:?\\s*(.+?)(?:<br|<\\/div|$)`, "iu");
       const match = infoHtml.match(regex);
       if (!match?.[1]) {
         return [];
@@ -122,22 +213,32 @@ export class Jav321Crawler extends BaseCrawler {
         .filter((name: string) => name.length > 0),
     );
 
-    const actors = uniqueStrings(
+    const linkedActors = uniqueStrings(
       $("a[href*='/star/']")
         .toArray()
         .map((element: CheerioInput) => $(element).text().trim())
         .filter((name: string) => name.length > 0),
     );
+    const actors =
+      linkedActors.length > 0 ? linkedActors : splitActorText(extractField("出演者") ?? extractField("女優"));
 
-    const coverUrl = $("img.img-responsive").first().attr("src");
-    const coverUrlAbsolute = coverUrl ? toAbsoluteUrl(JAV321_BASE_URL, coverUrl) : undefined;
+    const thumbUrl = $("img.img-responsive").first().attr("src");
+    const thumbUrlAbsolute = thumbUrl ? toAbsoluteUrl(JAV321_BASE_URL, thumbUrl) : undefined;
 
-    const sampleImages = $("a[href*='/snapshot/']")
-      .toArray()
-      .map((element: CheerioInput) => $(element).attr("href"))
-      .filter((href: string | undefined): href is string => Boolean(href))
-      .map((href: string) => toAbsoluteUrl(JAV321_BASE_URL, href))
-      .filter((url): url is string => Boolean(url));
+    const sampleImages = uniqueStrings(
+      $("a[href*='/snapshot/']")
+        .toArray()
+        .map((element: CheerioInput) => {
+          const href = $(element).attr("href");
+          const image = $(element).find("img").first();
+          return resolveSnapshotImageUrl(
+            href,
+            toAbsoluteUrl(JAV321_BASE_URL, image.attr("data-original")),
+            toAbsoluteUrl(JAV321_BASE_URL, image.attr("src")),
+            toAbsoluteUrl(JAV321_BASE_URL, extractOnErrorFallbackUrl(image.attr("onerror"))),
+          );
+        }),
+    );
 
     // Extract plot - typically in a multi-level div after the info section
     const plot = extractText($, "div.panel-body div.row div.col-md-12") ?? undefined;
@@ -154,7 +255,7 @@ export class Jav321Crawler extends BaseCrawler {
       plot,
       release_date: releaseDate,
       rating: undefined,
-      cover_url: coverUrlAbsolute,
+      thumb_url: thumbUrlAbsolute,
       poster_url: undefined,
       fanart_url: undefined,
       sample_images: sampleImages,

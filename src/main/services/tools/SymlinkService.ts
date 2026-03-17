@@ -171,8 +171,9 @@ export class SymlinkService {
 
     const copyExtensions = new Set([".nfo", ".jpg", ".png", ...DEFAULT_SUBTITLE_EXTENSIONS]);
 
-    this.deps.signalService.showLogText("🍯 🍯 🍯 开始创建符号链接");
-    this.deps.signalService.showLogText(`📁 源路径: ${sourceDir}\n📁 目标路径: ${destDir}\n`);
+    this.deps.signalService.showLogText("Starting symlink task");
+    this.deps.signalService.showLogText(`Symlink source: ${sourceDir}`);
+    this.deps.signalService.showLogText(`Symlink destination: ${destDir}`);
 
     const result: SymlinkTaskResult = {
       total: 0,
@@ -203,14 +204,14 @@ export class SymlinkService {
 
       const destinationState = await getDestinationState(destinationPath);
       if (destinationState === "existing") {
-        this.deps.signalService.showLogText(`${result.total} 🟠 跳过: 已存在文件或有效符号链接\n${sourcePath}`);
+        this.deps.signalService.showLogText(`Skipped existing target: ${sourcePath}`);
         result.skipped += 1;
         continue;
       }
 
       if (destinationState === "broken_symlink") {
         await unlink(destinationPath).catch(() => undefined);
-        this.deps.signalService.showLogText(`${result.total} 🔴 删除: 无效的符号链接\n${destinationPath}`);
+        this.deps.signalService.showLogText(`Removed broken symlink: ${destinationPath}`);
       }
 
       if (copyExtensions.has(extension)) {
@@ -220,19 +221,19 @@ export class SymlinkService {
 
         try {
           await copyFile(sourcePath, destinationPath);
-          this.deps.signalService.showLogText(`${result.total} 🍀 Copy done!\n${sourcePath}`);
+          this.deps.signalService.showLogText(`Copied sidecar asset: ${sourcePath}`);
           result.copied += 1;
         } catch (error) {
           result.failed += 1;
           const message = toErrorMessage(error);
-          this.deps.signalService.showLogText(`${result.total} 🔴 Copy failed: ${message}\n${sourcePath}`, "warn");
+          this.deps.signalService.showLogText(`Failed to copy sidecar asset: ${sourcePath}. ${message}`, "warn");
         }
         continue;
       }
 
       const sourceKey = resolve(sourcePath);
       if (linkedSources.has(sourceKey)) {
-        this.deps.signalService.showLogText(`${result.total} 🟠 Link skip: duplicate source\n${sourcePath}`);
+        this.deps.signalService.showLogText(`Skipped duplicate source: ${sourcePath}`);
         result.skipped += 1;
         continue;
       }
@@ -240,20 +241,17 @@ export class SymlinkService {
 
       try {
         await symlink(sourcePath, destinationPath);
-        this.deps.signalService.showLogText(`${result.total} 🍀 Link done!\n${sourcePath}`);
+        this.deps.signalService.showLogText(`Created symlink: ${sourcePath}`);
         result.linked += 1;
       } catch (error) {
         result.failed += 1;
         const message = toErrorMessage(error);
-        this.deps.signalService.showLogText(`${result.total} 🔴 Link failed: ${message}\n${sourcePath}`, "warn");
+        this.deps.signalService.showLogText(`Failed to create symlink: ${sourcePath}. ${message}`, "warn");
       }
     }
 
     this.deps.signalService.showLogText(
-      `\n🎉 全部完成! Total ${result.total}, Linked ${result.linked}, Copied ${result.copied}, Skipped ${result.skipped}, Failed ${result.failed}`,
-    );
-    this.deps.signalService.showLogText(
-      "================================================================================",
+      `Symlink task completed. Total: ${result.total}, Linked: ${result.linked}, Copied: ${result.copied}, Skipped: ${result.skipped}, Failed: ${result.failed}`,
     );
 
     return result;
