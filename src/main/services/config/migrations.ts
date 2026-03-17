@@ -35,10 +35,20 @@ const renameKey = (raw: Record<string, unknown>, section: string, oldKey: string
 };
 
 const DEFAULT_FOLDER_TEMPLATE = "{actor}/{number}";
-const V040_PERSON_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"] as const;
-const V040_PERSON_IMAGE_SOURCE_OPTIONS = ["local", "gfriends", "official", "avbase"] as const;
-const V040_PERSON_IMAGE_SOURCE_DEFAULTS = ["local", "official", "gfriends", "avbase"] as const;
-const CURRENT_PERSON_IMAGE_SOURCE_DEFAULTS = ["local", "gfriends", "official", "avbase"] as const;
+const LEGACY_ENABLED_SITES = [
+  "dmm",
+  "dmm_tv",
+  "mgstage",
+  "prestige",
+  "faleno",
+  "dahlia",
+  "fc2",
+  "javdb",
+  "javbus",
+  "jav321",
+  "km_produce",
+] as const;
+const CURRENT_ENABLED_SITES = [...LEGACY_ENABLED_SITES, "avbase"] as const;
 
 const LEGACY_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
@@ -106,26 +116,18 @@ const migrateFolderTemplate = (raw: Record<string, unknown>): void => {
   }
 };
 
-const sanitizePersonSyncSources = (raw: Record<string, unknown>): void => {
-  const personSync = raw.personSync;
-  if (!isRecord(personSync)) {
+const normalizeScrapeSiteDefaults = (raw: Record<string, unknown>): void => {
+  const scrape = raw.scrape;
+  if (!isRecord(scrape)) {
     return;
   }
 
-  if (Array.isArray(personSync.personImageSources)) {
-    personSync.personImageSources = personSync.personImageSources.filter(
-      (value): value is string =>
-        typeof value === "string" &&
-        V040_PERSON_IMAGE_SOURCE_OPTIONS.includes(value as (typeof V040_PERSON_IMAGE_SOURCE_OPTIONS)[number]),
-    );
+  if (isStringArray(scrape.enabledSites) && stringArraysEqual(scrape.enabledSites, LEGACY_ENABLED_SITES)) {
+    scrape.enabledSites = [...CURRENT_ENABLED_SITES];
   }
 
-  if (Array.isArray(personSync.personOverviewSources)) {
-    personSync.personOverviewSources = personSync.personOverviewSources.filter(
-      (value): value is string =>
-        typeof value === "string" &&
-        V040_PERSON_OVERVIEW_SOURCE_OPTIONS.includes(value as (typeof V040_PERSON_OVERVIEW_SOURCE_OPTIONS)[number]),
-    );
+  if (isStringArray(scrape.siteOrder) && stringArraysEqual(scrape.siteOrder, LEGACY_ENABLED_SITES)) {
+    scrape.siteOrder = [...CURRENT_ENABLED_SITES];
   }
 };
 
@@ -146,22 +148,6 @@ const normalizeFieldPriorityDefaults = (raw: Record<string, unknown>): void => {
     if (isStringArray(value) && stringArraysEqual(value, legacySites)) {
       fieldPriorities[key] = [...currentSites];
     }
-  }
-};
-
-const normalizePersonImageSourceDefaults = (raw: Record<string, unknown>): void => {
-  const personSync = raw.personSync;
-  if (!isRecord(personSync)) {
-    return;
-  }
-
-  const personImageSources = personSync.personImageSources;
-  if (!isStringArray(personImageSources)) {
-    return;
-  }
-
-  if (stringArraysEqual(personImageSources, V040_PERSON_IMAGE_SOURCE_DEFAULTS)) {
-    personSync.personImageSources = [...CURRENT_PERSON_IMAGE_SOURCE_DEFAULTS];
   }
 };
 
@@ -203,10 +189,6 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   const aggregation = raw.aggregation;
   if (isRecord(aggregation)) {
     renameKey(aggregation, "fieldPriorities", "cover_url", "thumb_url");
-    const fieldPriorities = aggregation.fieldPriorities;
-    if (isRecord(fieldPriorities)) {
-      delete fieldPriorities.actor_profiles;
-    }
   }
 
   // 6. paths.sceneImagesFolder: "samples" → "extrafanart"
@@ -218,34 +200,11 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   // 7. Ensure folderTemplate stays valid under the new successFileMove rule
   migrateFolderTemplate(raw);
 
-  // 8. Sanitize legacy personSync source arrays against the v0.4 option snapshot
-  sanitizePersonSyncSources(raw);
+  // 8. Normalize untouched legacy enabledSites / siteOrder arrays to the current defaults
+  normalizeScrapeSiteDefaults(raw);
 
-  // 9. Append the newly introduced default site to enabledSites / siteOrder
-  const scrape = raw.scrape;
-  if (isRecord(scrape)) {
-    if (isStringArray(scrape.enabledSites)) {
-      for (const site of ["avbase"]) {
-        if (!scrape.enabledSites.includes(site)) {
-          scrape.enabledSites.push(site);
-        }
-      }
-    }
-    if (isStringArray(scrape.siteOrder)) {
-      for (const site of ["avbase"]) {
-        if (!scrape.siteOrder.includes(site)) {
-          scrape.siteOrder.push(site);
-        }
-      }
-    }
-  }
-
-  // 10. Normalize untouched legacy fieldPriorities arrays to the current v0.4 defaults
+  // 9. Normalize untouched legacy fieldPriorities arrays to the current v0.4 defaults
   normalizeFieldPriorityDefaults(raw);
-
-  // 11. Promote gfriends ahead of lower-quality fallback image sources when the
-  // legacy default image order is still untouched.
-  normalizePersonImageSourceDefaults(raw);
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────

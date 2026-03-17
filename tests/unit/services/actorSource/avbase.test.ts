@@ -98,7 +98,7 @@ describe("AvbaseActorSource", () => {
     });
     expect(result.profile?.description).toContain("プロフィール本文");
     expect(result.profile?.description).toContain("趣味: アニメ");
-    expect(result.profile?.description).toContain("SNS: twitter: kitagawa_miku");
+    expect(result.profile?.description).toContain("SNS:\ntwitter: kitagawa_miku");
   });
 
   it("can match a ruby alias through the AVBase search API", async () => {

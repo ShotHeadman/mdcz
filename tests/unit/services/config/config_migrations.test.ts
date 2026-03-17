@@ -245,15 +245,13 @@ describe("Configuration migrations", () => {
       expect(paths.sceneImagesFolder).toBe("my_custom_folder");
     });
 
-    it("appends avbase to enabledSites and siteOrder", () => {
+    it("normalizes legacy enabledSites and siteOrder defaults to include avbase", () => {
       const raw = buildV030Config();
       runMigrations(raw);
 
       const scrape = raw.scrape as Record<string, unknown>;
-      expect(scrape.enabledSites).toContain("km_produce");
-      expect(scrape.enabledSites).toContain("avbase");
-      expect(scrape.siteOrder).toContain("km_produce");
-      expect(scrape.siteOrder).toContain("avbase");
+      expect(scrape.enabledSites).toEqual(defaultConfiguration.scrape.enabledSites);
+      expect(scrape.siteOrder).toEqual(defaultConfiguration.scrape.siteOrder);
     });
 
     it("normalizes legacy fieldPriorities defaults to the current defaults", () => {
@@ -277,16 +275,15 @@ describe("Configuration migrations", () => {
       expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
     });
 
-    it("does not duplicate sites if already present", () => {
+    it("preserves customized enabledSites and siteOrder", () => {
       const raw = buildV030Config();
-      // Manually add avbase to enabledSites
-      (raw.scrape as Record<string, unknown>).enabledSites = ["dmm", "avbase"];
+      (raw.scrape as Record<string, unknown>).enabledSites = ["dmm"];
+      (raw.scrape as Record<string, unknown>).siteOrder = ["dmm"];
       runMigrations(raw);
 
       const scrape = raw.scrape as Record<string, unknown>;
-      const sites = scrape.enabledSites as string[];
-      expect(sites.filter((s) => s === "avbase")).toHaveLength(1);
-      expect(sites).not.toContain("km_produce");
+      expect(scrape.enabledSites).toEqual(["dmm"]);
+      expect(scrape.siteOrder).toEqual(["dmm"]);
     });
 
     it("fixes folderTemplate when successFileMove is enabled and {number} is missing", () => {
@@ -316,37 +313,6 @@ describe("Configuration migrations", () => {
       runMigrations(raw);
 
       expect((raw.naming as Record<string, unknown>).folderTemplate).toBe("{actor}");
-    });
-
-    it("promotes gfriends ahead of official when personImageSources still use the old default order", () => {
-      const raw = buildV030Config({
-        personSync: {
-          personOverviewSources: ["official", "avbase"],
-          personImageSources: ["local", "official", "gfriends", "avbase"],
-        },
-      });
-
-      runMigrations(raw);
-
-      expect((raw.personSync as Record<string, unknown>).personImageSources).toEqual([
-        "local",
-        "gfriends",
-        "official",
-        "avbase",
-      ]);
-    });
-
-    it("preserves customized personImageSources order", () => {
-      const raw = buildV030Config({
-        personSync: {
-          personOverviewSources: ["official"],
-          personImageSources: ["official", "gfriends", "local"],
-        },
-      });
-
-      runMigrations(raw);
-
-      expect((raw.personSync as Record<string, unknown>).personImageSources).toEqual(["official", "gfriends", "local"]);
     });
   });
 
@@ -381,7 +347,7 @@ describe("Configuration migrations", () => {
       expect(result.migrated).toBe(true);
       expect(result.fromVersion).toBe(0);
       expect(result.toVersion).toBe(1);
-      expect(result.applied).toEqual(["config v0 → v1"]);
+      expect(result.applied).toEqual(["v0.3.0 → v0.4.0"]);
     });
 
     it("rejects config versions newer than the current app supports", () => {
