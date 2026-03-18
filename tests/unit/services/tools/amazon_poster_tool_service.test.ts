@@ -85,54 +85,38 @@ describe("AmazonPosterToolService", () => {
     );
   });
 
-  it("returns empty items for an empty directory", async () => {
-    const root = await createTempDir();
-    const { service } = createService();
-
-    const items = await service.scan(root);
-
-    expect(items).toEqual([]);
-  });
-
-  it("recursively finds .nfo files in nested directories", async () => {
+  it("scans nested NFOs, prefers original titles, and reports poster metadata when available", async () => {
     const root = await createTempDir();
     const nested = join(root, "nested", "child");
+    const posterPath = join(root, "poster.jpg");
+    const posterContent = Buffer.alloc(12_345, 1);
+
     await mkdir(nested, { recursive: true });
-    await writeFile(join(root, "AAA-001.nfo"), createNfoXml({ title: "Title A", number: "AAA-001" }), "utf8");
+    await writeFile(
+      join(root, "AAA-001.nfo"),
+      createNfoXml({
+        title: "中文标题",
+        originaltitle: "天然成分由来 瀧本雫葉汁 120% 83",
+        number: "AAA-001",
+      }),
+      "utf8",
+    );
     await writeFile(join(nested, "BBB-002.nfo"), createNfoXml({ title: "Title B", number: "BBB-002" }), "utf8");
+    await writeFile(posterPath, posterContent);
+    validateImageMock.mockResolvedValueOnce({ valid: true, width: 1500, height: 1012 });
 
     const { service } = createService();
     const items = await service.scan(root);
 
     expect(items.map((item) => item.number)).toEqual(["AAA-001", "BBB-002"]);
-  });
-
-  it("uses originaltitle when parsing NFO titles", async () => {
-    const root = await createTempDir();
-    await writeFile(
-      join(root, "ABF-075.nfo"),
-      createNfoXml({
-        title: "中文标题",
-        originaltitle: "天然成分由来 瀧本雫葉汁 120% 83",
-        number: "ABF-075",
-      }),
-      "utf8",
-    );
-
-    const { service } = createService();
-    const items = await service.scan(root);
-
-    expect(items[0]?.title).toBe("天然成分由来 瀧本雫葉汁 120% 83");
-  });
-
-  it("returns null poster info when poster.jpg is missing", async () => {
-    const root = await createTempDir();
-    await writeFile(join(root, "ABC-123.nfo"), createNfoXml({ title: "Title", number: "ABC-123" }), "utf8");
-
-    const { service } = createService();
-    const items = await service.scan(root);
-
     expect(items[0]).toMatchObject({
+      title: "天然成分由来 瀧本雫葉汁 120% 83",
+      currentPosterPath: posterPath,
+      currentPosterWidth: 1500,
+      currentPosterHeight: 1012,
+      currentPosterSize: posterContent.length,
+    });
+    expect(items[1]).toMatchObject({
       currentPosterPath: null,
       currentPosterWidth: 0,
       currentPosterHeight: 0,
@@ -140,51 +124,36 @@ describe("AmazonPosterToolService", () => {
     });
   });
 
-  it("returns existing poster dimensions and file size", async () => {
+  it("returns empty scan results for empty directories", async () => {
     const root = await createTempDir();
-    const posterPath = join(root, "poster.jpg");
-    const posterContent = Buffer.alloc(12_345, 1);
-    await writeFile(join(root, "ABC-123.nfo"), createNfoXml({ title: "Title", number: "ABC-123" }), "utf8");
-    await writeFile(posterPath, posterContent);
-    validateImageMock.mockResolvedValueOnce({ valid: true, width: 1500, height: 1012 });
-
     const { service } = createService();
-    const items = await service.scan(root);
 
-    expect(items[0]).toMatchObject({
-      currentPosterPath: posterPath,
-      currentPosterWidth: 1500,
-      currentPosterHeight: 1012,
-      currentPosterSize: posterContent.length,
-    });
+    await expect(service.scan(root)).resolves.toEqual([]);
   });
 
-  it("returns null amazon url when lookup finds no result", async () => {
-    const root = await createTempDir();
-    const enhance = vi.fn(async () => ({ upgraded: false, reason: "搜索无结果" }));
-    const { service } = createService({ enhance });
+  it("returns lookup misses without writing posters and reports successful Amazon hits", async () => {
+    const missRoot = await createTempDir();
+    const missEnhance = vi.fn(async () => ({ upgraded: false, reason: "搜索无结果" }));
+    const missService = createService({ enhance: missEnhance }).service;
 
-    const result = await service.lookup(join(root, "ABC-123.nfo"), "Lookup Title");
+    const missResult = await missService.lookup(join(missRoot, "ABC-123.nfo"), "Lookup Title");
+    expect(missResult.amazonPosterUrl).toBeNull();
+    expect(missResult.reason).toBe("搜索无结果");
 
-    expect(result.amazonPosterUrl).toBeNull();
-    expect(result.reason).toBe("搜索无结果");
-  });
-
-  it("returns amazon url on hit and does not write poster.jpg during lookup", async () => {
-    const root = await createTempDir();
-    const posterPath = join(root, "poster.jpg");
-    const enhance = vi.fn(async () => ({
+    const hitRoot = await createTempDir();
+    const posterPath = join(hitRoot, "poster.jpg");
+    const hitEnhance = vi.fn(async () => ({
       upgraded: true,
       reason: "已升级为Amazon商品海报",
       poster_url: "https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg",
     }));
-    const { service } = createService({ enhance });
+    const { service } = createService({ enhance: hitEnhance });
 
-    const result = await service.lookup(join(root, "ABC-123.nfo"), "Lookup Title");
+    const hitResult = await service.lookup(join(hitRoot, "ABC-123.nfo"), "Lookup Title");
 
-    expect(result.amazonPosterUrl).toBe("https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg");
-    expect(enhance).toHaveBeenCalledTimes(1);
-    const firstCall = enhance.mock.calls.at(0) as unknown[] | undefined;
+    expect(hitResult.amazonPosterUrl).toBe("https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg");
+    expect(hitEnhance).toHaveBeenCalledTimes(1);
+    const firstCall = hitEnhance.mock.calls.at(0) as unknown[] | undefined;
     expect(firstCall?.[0] as Record<string, unknown> | undefined).toMatchObject({
       title: "Lookup Title",
       poster_url: "lookup",
@@ -193,73 +162,69 @@ describe("AmazonPosterToolService", () => {
     await expect(stat(posterPath)).rejects.toThrow();
   });
 
-  it("replaces an existing poster.jpg during apply", async () => {
-    const root = await createTempDir();
-    const existingPosterPath = join(root, "poster.jpg");
+  it("applies poster downloads by replacing, creating, or reporting failures", async () => {
+    const replaceRoot = await createTempDir();
+    const existingPosterPath = join(replaceRoot, "poster.jpg");
     await writeFile(existingPosterPath, Buffer.from("old-poster"));
-
-    const newCoverContent = Buffer.alloc(14_000, 2);
-    const download = vi.fn(async (_url: string, outputPath: string) => {
+    const replacementContent = Buffer.alloc(14_000, 2);
+    const replaceDownload = vi.fn(async (_url: string, outputPath: string) => {
       await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, newCoverContent);
+      await writeFile(outputPath, replacementContent);
       return outputPath;
     });
     validateImageMock.mockResolvedValueOnce({ valid: true, width: 1500, height: 1012 });
+    const replaceService = createService({ download: replaceDownload }).service;
 
-    const { service } = createService({ download });
-    const results = await service.apply([{ directory: root, amazonPosterUrl: "https://example.com/poster.jpg" }]);
-    const savedContent = await readFile(existingPosterPath);
-
-    expect(results[0]).toMatchObject({
-      directory: root,
+    const replaceResults = await replaceService.apply([
+      { directory: replaceRoot, amazonPosterUrl: "https://example.com/poster.jpg" },
+    ]);
+    expect(replaceResults[0]).toMatchObject({
+      directory: replaceRoot,
       success: true,
       savedPosterPath: existingPosterPath,
       replacedExisting: true,
-      fileSize: newCoverContent.length,
+      fileSize: replacementContent.length,
     });
-    expect(savedContent).toEqual(newCoverContent);
-  });
+    await expect(readFile(existingPosterPath)).resolves.toEqual(replacementContent);
 
-  it("creates a new poster.jpg during apply when none exists", async () => {
-    const root = await createTempDir();
-    const createdPosterPath = join(root, "poster.jpg");
-    const newCoverContent = Buffer.alloc(15_000, 3);
-
-    const download = vi.fn(async (_url: string, outputPath: string) => {
+    const createRoot = await createTempDir();
+    const createdPosterPath = join(createRoot, "poster.jpg");
+    const createContent = Buffer.alloc(15_000, 3);
+    const createDownload = vi.fn(async (_url: string, outputPath: string) => {
       await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, newCoverContent);
+      await writeFile(outputPath, createContent);
       return outputPath;
     });
     validateImageMock.mockResolvedValueOnce({ valid: true, width: 1200, height: 800 });
+    const createServiceResult = createService({ download: createDownload }).service;
 
-    const { service } = createService({ download });
-    const results = await service.apply([{ directory: root, amazonPosterUrl: "https://example.com/new-poster.jpg" }]);
-
-    expect(results[0]).toMatchObject({
-      directory: root,
+    const createResults = await createServiceResult.apply([
+      { directory: createRoot, amazonPosterUrl: "https://example.com/new-poster.jpg" },
+    ]);
+    expect(createResults[0]).toMatchObject({
+      directory: createRoot,
       success: true,
       savedPosterPath: createdPosterPath,
       replacedExisting: false,
-      fileSize: newCoverContent.length,
+      fileSize: createContent.length,
     });
     await expect(stat(createdPosterPath)).resolves.toBeTruthy();
-  });
 
-  it("returns failure details when apply download fails", async () => {
-    const root = await createTempDir();
-    const download = vi.fn(async () => {
+    const failureRoot = await createTempDir();
+    const failureDownload = vi.fn(async () => {
       throw new Error("download failed");
     });
+    const failureService = createService({ download: failureDownload }).service;
 
-    const { service } = createService({ download });
-    const results = await service.apply([{ directory: root, amazonPosterUrl: "https://example.com/fail.jpg" }]);
-
-    expect(results[0]).toMatchObject({
-      directory: root,
+    const failureResults = await failureService.apply([
+      { directory: failureRoot, amazonPosterUrl: "https://example.com/fail.jpg" },
+    ]);
+    expect(failureResults[0]).toMatchObject({
+      directory: failureRoot,
       success: false,
       replacedExisting: false,
       fileSize: 0,
     });
-    expect(results[0]?.error).toContain("download failed");
+    expect(failureResults[0]?.error).toContain("download failed");
   });
 });

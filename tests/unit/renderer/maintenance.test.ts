@@ -113,7 +113,7 @@ describe("buildCommittedCrawlerData", () => {
 });
 
 describe("buildMaintenanceCommitItem", () => {
-  it("keeps image alternatives only for fields that still use the preview value", () => {
+  it("keeps only selected preview image alternatives and derives asset decisions from the chosen side", () => {
     const entry = createEntry(
       createCrawlerData({
         poster_url: "https://example.com/old-poster.jpg",
@@ -184,16 +184,14 @@ describe("buildMaintenanceCommitItem", () => {
     expect(item.assetDecisions).toEqual({
       fanart: "replace",
     });
-  });
 
-  it("preserves local scene images when selecting the old scene-image set", () => {
-    const entry = createEntry(
+    const sceneEntry = createEntry(
       createCrawlerData({
         scene_images: [],
       }),
     );
-    const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+    const scenePreview: MaintenancePreviewItem = {
+      entryId: sceneEntry.id,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         scene_images: ["https://example.com/new-scene.jpg"],
@@ -215,17 +213,15 @@ describe("buildMaintenanceCommitItem", () => {
       ],
     };
 
-    const item = buildMaintenanceCommitItem(entry, preview, {
+    const sceneItem = buildMaintenanceCommitItem(sceneEntry, scenePreview, {
       scene_images: "old",
     });
 
-    expect(item.crawlerData?.scene_images).toEqual([]);
-    expect(item.assetDecisions).toEqual({
+    expect(sceneItem.crawlerData?.scene_images).toEqual([]);
+    expect(sceneItem.assetDecisions).toEqual({
       sceneImages: "preserve",
     });
-  });
 
-  it("updates or clears trailer source metadata based on the selected side", () => {
     const remoteEntry = createEntry(
       createCrawlerData({
         trailer_url: "https://example.com/trailer-old.mp4",
@@ -293,7 +289,7 @@ describe("buildMaintenanceCommitItem", () => {
     });
   });
 
-  it("replays selected local poster/thumb assets back into the committed crawler data when NFO parsing failed", () => {
+  it("replays selected local poster and thumb assets when NFO parsing failed", () => {
     const entry: LocalScanEntry = {
       ...createEntry(),
       scanError: "NFO 解析失败: NFO missing website",
@@ -360,8 +356,8 @@ describe("buildMaintenanceCommitItem", () => {
 });
 
 describe("resolveMaintenanceDiffImageSrc", () => {
-  it("prefers discovered local artwork for old maintenance images", () => {
-    const diff = createImageDiff({
+  it("prefers discovered local artwork and falls back to thumb-based fanart previews", () => {
+    const posterDiff = createImageDiff({
       field: "poster_url",
       label: "海报",
       oldValue: "poster.jpg",
@@ -377,12 +373,10 @@ describe("resolveMaintenanceDiffImageSrc", () => {
       },
     });
 
-    expect(resolveMaintenanceDiffImageSrc(diff, "old")).toBe("/media/poster.jpg");
-    expect(resolveMaintenanceDiffImageSrc(diff, "new")).toBe("https://example.com/new-poster.jpg");
-  });
+    expect(resolveMaintenanceDiffImageSrc(posterDiff, "old")).toBe("/media/poster.jpg");
+    expect(resolveMaintenanceDiffImageSrc(posterDiff, "new")).toBe("https://example.com/new-poster.jpg");
 
-  it("falls back to the scanned local asset even when the old NFO image field is empty", () => {
-    const diff = createImageDiff({
+    const fanartDiff = createImageDiff({
       field: "fanart_url",
       label: "背景图",
       oldValue: undefined,
@@ -398,11 +392,9 @@ describe("resolveMaintenanceDiffImageSrc", () => {
       },
     });
 
-    expect(resolveMaintenanceDiffImageSrc(diff, "old")).toBe("/media/fanart.jpg");
-  });
+    expect(resolveMaintenanceDiffImageSrc(fanartDiff, "old")).toBe("/media/fanart.jpg");
 
-  it("falls back to thumb artwork for fanart previews instead of sample images", () => {
-    const diff = createImageDiff({
+    const thumbFallbackDiff = createImageDiff({
       field: "fanart_url",
       label: "背景图",
       oldValue: undefined,
@@ -418,11 +410,11 @@ describe("resolveMaintenanceDiffImageSrc", () => {
       },
     });
 
-    expect(resolveMaintenanceDiffImageOption(diff, "old")).toEqual({
+    expect(resolveMaintenanceDiffImageOption(thumbFallbackDiff, "old")).toEqual({
       src: "/media/thumb.jpg",
       fallbackSrcs: [],
     });
-    expect(resolveMaintenanceDiffImageOption(diff, "new")).toEqual({
+    expect(resolveMaintenanceDiffImageOption(thumbFallbackDiff, "new")).toEqual({
       src: "https://example.com/new-thumb.jpg",
       fallbackSrcs: ["https://example.com/new-thumb-alt.jpg"],
     });
@@ -430,7 +422,7 @@ describe("resolveMaintenanceDiffImageSrc", () => {
 });
 
 describe("useMaintenanceStore", () => {
-  it("keeps preview diffs while an item transitions into processing", () => {
+  it("preserves preview diffs during optimistic execution, clears stale results on new previews, and can roll back execution state", () => {
     const fieldDiff = createValueDiff({
       field: "title" as const,
       label: "标题",
@@ -481,9 +473,7 @@ describe("useMaintenanceStore", () => {
       unchangedFieldDiffs: [unchangedFieldDiff],
       pathDiff,
     });
-  });
 
-  it("clears previous execution results when a new preview is applied", () => {
     useMaintenanceStore.getState().applyItemResult({
       entryId: "entry-1",
       status: "success",
@@ -528,28 +518,6 @@ describe("useMaintenanceStore", () => {
         changed: false,
       }),
     ]);
-  });
-
-  it("rolls back optimistic execution state without wiping preview data", () => {
-    useMaintenanceStore.getState().applyPreviewResult({
-      items: [
-        {
-          entryId: "entry-1",
-          status: "ready",
-          fieldDiffs: [
-            createValueDiff({
-              field: "title",
-              label: "标题",
-              oldValue: "Old Title",
-              newValue: "New Title",
-              changed: true,
-            }),
-          ],
-        },
-      ],
-      readyCount: 1,
-      blockedCount: 0,
-    });
 
     useMaintenanceStore.getState().beginExecution(["entry-1"]);
     useMaintenanceStore.getState().rollbackExecutionStart();
@@ -557,13 +525,13 @@ describe("useMaintenanceStore", () => {
     expect(useMaintenanceStore.getState().executionStatus).toBe("idle");
     expect(useMaintenanceStore.getState().progressTotal).toBe(0);
     expect(useMaintenanceStore.getState().itemResults).toEqual({});
-    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.fieldDiffs).toEqual([
+    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.unchangedFieldDiffs).toEqual([
       createValueDiff({
         field: "title",
         label: "标题",
-        oldValue: "Old Title",
-        newValue: "New Title",
-        changed: true,
+        oldValue: "Same Title",
+        newValue: "Same Title",
+        changed: false,
       }),
     ]);
   });

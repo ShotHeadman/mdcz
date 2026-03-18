@@ -85,183 +85,175 @@ describe("FileOrganizer naming settings", () => {
     );
   });
 
-  it("applies subtitle/umr/leak/uncensored markers to the rendered number", () => {
-    const config = createConfig({
-      naming: {
-        cnwordStyle: "-SUB",
-        umrStyle: "-UMR",
-        leakStyle: "-LEAK",
-        uncensoredStyle: "-UNC",
-        censoredStyle: "-CEN",
+  it("renders file and folder names with markers, release dates, and empty template fields", () => {
+    const cases = [
+      {
+        config: createConfig({
+          naming: {
+            cnwordStyle: "-SUB",
+            umrStyle: "-UMR",
+            leakStyle: "-LEAK",
+            uncensoredStyle: "-UNC",
+            censoredStyle: "-CEN",
+          },
+        }),
+        fileInfo: createFileInfo({
+          isSubtitled: true,
+        }),
+        crawlerData: createCrawlerData({
+          number: "FC2-123456",
+          genres: ["流出", "破解"],
+        }),
+        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
+          expect(parse(plan.targetVideoPath).name).toBe("FC2-123456-SUB-UMR-LEAK-UNC");
+        },
       },
-    });
+      {
+        config: createConfig({
+          naming: {
+            folderTemplate: "{date}-{number}",
+            fileTemplate: "{date}-{number}",
+            releaseRule: "YYYY.MM.DD",
+            folderNameMax: 12,
+            fileNameMax: 12,
+          },
+        }),
+        fileInfo: createFileInfo(),
+        crawlerData: createCrawlerData({
+          number: "ABCD-1234",
+          release_date: "2024-1-2",
+        }),
+        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
+          const folderName = parse(plan.outputDir).base;
+          const renderedFileName = parse(plan.targetVideoPath).name;
+          expect(folderName.startsWith("2024.01.02")).toBe(true);
+          expect(renderedFileName.startsWith("2024.01.02")).toBe(true);
+          expect(folderName.length).toBeLessThanOrEqual(12);
+          expect(renderedFileName.length).toBeLessThanOrEqual(12);
+        },
+      },
+      {
+        config: createConfig({
+          naming: {
+            folderTemplate: "{studio}/{number}",
+            fileTemplate: "{studio} - {number}",
+          },
+        }),
+        fileInfo: createFileInfo({
+          filePath: "/input/source.mp4",
+          fileName: "source",
+        }),
+        crawlerData: createCrawlerData({
+          number: "XYZ-999",
+          studio: undefined,
+        }),
+        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
+          expect(parse(plan.outputDir).base).toBe("XYZ-999-CEN");
+          expect(parse(plan.targetVideoPath).name).toBe("XYZ-999-CEN");
+        },
+      },
+    ];
 
     const organizer = new FileOrganizer();
-    const plan = organizer.plan(
-      createFileInfo({
-        isSubtitled: true,
-      }),
-      createCrawlerData({
-        number: "FC2-123456",
-        genres: ["流出", "破解"],
-      }),
-      config,
-    );
 
-    const renderedFileName = parse(plan.targetVideoPath).name;
-    expect(renderedFileName).toBe("FC2-123456-SUB-UMR-LEAK-UNC");
+    for (const { config, fileInfo, crawlerData, assert } of cases) {
+      assert(organizer.plan(fileInfo, crawlerData, config));
+    }
   });
 
-  it("applies release date formatting and max length limits", () => {
-    const config = createConfig({
-      naming: {
-        folderTemplate: "{date}-{number}",
-        fileTemplate: "{date}-{number}",
-        releaseRule: "YYYY.MM.DD",
-        folderNameMax: 12,
-        fileNameMax: 12,
+  it("keeps video and NFO basenames aligned across move and rename modes", () => {
+    const cases = [
+      {
+        config: createConfig({
+          naming: {
+            folderTemplate: "{number}",
+            fileTemplate: "{number}",
+          },
+          behavior: {
+            successFileMove: true,
+            successFileRename: false,
+          },
+        }),
+        fileInfo: createFileInfo({
+          filePath: "/input/raw-source.mp4",
+          fileName: "raw-source",
+        }),
+        crawlerData: createCrawlerData({
+          number: "XYZ-999",
+        }),
+        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
+          expect(parse(plan.targetVideoPath).base).toBe("raw-source.mp4");
+          expect(parse(plan.nfoPath).base).toBe("raw-source.nfo");
+        },
       },
-    });
+      {
+        config: createConfig({
+          naming: {
+            folderTemplate: "{number}",
+            fileTemplate: "{number}",
+          },
+          behavior: {
+            successFileMove: false,
+            successFileRename: false,
+          },
+        }),
+        fileInfo: createFileInfo({
+          filePath: "/input/original-name.mp4",
+          fileName: "original-name",
+        }),
+        crawlerData: createCrawlerData({
+          number: "XYZ-999",
+        }),
+        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
+          expect(plan.outputDir).toBe("/input");
+          expect(plan.targetVideoPath).toBe(join("/input", "original-name.mp4"));
+          expect(plan.nfoPath).toBe(join("/input", "original-name.nfo"));
+        },
+      },
+      {
+        config: createConfig({
+          naming: {
+            folderTemplate: "{number}",
+            fileTemplate: "{number}",
+          },
+          behavior: {
+            successFileMove: false,
+            successFileRename: true,
+          },
+        }),
+        fileInfo: createFileInfo({
+          filePath: "/input/original-name.mp4",
+          fileName: "original-name",
+        }),
+        crawlerData: createCrawlerData({
+          number: "XYZ-999",
+        }),
+        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
+          expect(plan.outputDir).toBe("/input");
+          expect(plan.targetVideoPath).toBe(join("/input", "XYZ-999-CEN.mp4"));
+          expect(plan.nfoPath).toBe(join("/input", "XYZ-999-CEN.nfo"));
+        },
+      },
+    ];
 
     const organizer = new FileOrganizer();
-    const plan = organizer.plan(
-      createFileInfo(),
-      createCrawlerData({
-        number: "ABCD-1234",
-        release_date: "2024-1-2",
-      }),
-      config,
-    );
 
-    const folderName = parse(plan.outputDir).base;
-    const renderedFileName = parse(plan.targetVideoPath).name;
-    expect(folderName.startsWith("2024.01.02")).toBe(true);
-    expect(renderedFileName.startsWith("2024.01.02")).toBe(true);
-    expect(folderName.length).toBeLessThanOrEqual(12);
-    expect(renderedFileName.length).toBeLessThanOrEqual(12);
+    for (const { config, fileInfo, crawlerData, assert } of cases) {
+      assert(organizer.plan(fileInfo, crawlerData, config));
+    }
   });
 
-  it("keeps NFO aligned with the final video basename when rename is disabled", () => {
-    const config = createConfig({
-      naming: {
-        folderTemplate: "{number}",
-        fileTemplate: "{number}",
-      },
-      behavior: {
-        successFileMove: true,
-        successFileRename: false,
-      },
-    });
-
-    const organizer = new FileOrganizer();
-    const plan = organizer.plan(
-      createFileInfo({
-        filePath: "/input/raw-source.mp4",
-        fileName: "raw-source",
-      }),
-      createCrawlerData({
-        number: "XYZ-999",
-      }),
-      config,
-    );
-
-    expect(parse(plan.targetVideoPath).base).toBe("raw-source.mp4");
-    expect(parse(plan.nfoPath).base).toBe("raw-source.nfo");
-  });
-
-  it("removes dangling separators when a template field is empty", () => {
-    const config = createConfig({
-      naming: {
-        folderTemplate: "{studio}/{number}",
-        fileTemplate: "{studio} - {number}",
-      },
-    });
-
-    const organizer = new FileOrganizer();
-    const plan = organizer.plan(
-      createFileInfo({
-        filePath: "/input/source.mp4",
-        fileName: "source",
-      }),
-      createCrawlerData({
-        number: "XYZ-999",
-        studio: undefined,
-      }),
-      config,
-    );
-
-    expect(parse(plan.outputDir).base).toBe("XYZ-999-CEN");
-    expect(parse(plan.targetVideoPath).name).toBe("XYZ-999-CEN");
-  });
-
-  it("keeps local metadata beside the source video when move is disabled", () => {
-    const config = createConfig({
-      naming: {
-        folderTemplate: "{number}",
-        fileTemplate: "{number}",
-      },
-      behavior: {
-        successFileMove: false,
-        successFileRename: false,
-      },
-    });
-
-    const organizer = new FileOrganizer();
-    const plan = organizer.plan(
-      createFileInfo({
-        filePath: "/input/original-name.mp4",
-        fileName: "original-name",
-      }),
-      createCrawlerData({
-        number: "XYZ-999",
-      }),
-      config,
-    );
-
-    expect(plan.outputDir).toBe("/input");
-    expect(plan.targetVideoPath).toBe(join("/input", "original-name.mp4"));
-    expect(plan.nfoPath).toBe(join("/input", "original-name.nfo"));
-  });
-
-  it("supports renaming in place when move is disabled", () => {
-    const config = createConfig({
-      naming: {
-        folderTemplate: "{number}",
-        fileTemplate: "{number}",
-      },
-      behavior: {
-        successFileMove: false,
-        successFileRename: true,
-      },
-    });
-
-    const organizer = new FileOrganizer();
-    const plan = organizer.plan(
-      createFileInfo({
-        filePath: "/input/original-name.mp4",
-        fileName: "original-name",
-      }),
-      createCrawlerData({
-        number: "XYZ-999",
-      }),
-      config,
-    );
-
-    expect(plan.outputDir).toBe("/input");
-    expect(plan.targetVideoPath).toBe(join("/input", "XYZ-999-CEN.mp4"));
-    expect(plan.nfoPath).toBe(join("/input", "XYZ-999-CEN.nfo"));
-  });
-
-  it("resolves target collisions before writing NFO so basenames stay aligned", async () => {
+  it("prepares output paths for collisions and valid in-place renames", async () => {
     const root = await createTempDir();
-    const sourcePath = join(root, "source.mp4");
+
+    const collisionSourcePath = join(root, "source.mp4");
     const existingTargetPath = join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.mp4");
-    await writeFile(sourcePath, "video", "utf8");
+    await writeFile(collisionSourcePath, "video", "utf8");
     await mkdir(join(root, "output", "XYZ-999-CEN"), { recursive: true });
     await writeFile(existingTargetPath, "existing", "utf8");
 
     const organizer = new FileOrganizer();
-    const config = createConfig({
+    const collisionConfig = createConfig({
       paths: {
         mediaPath: root,
         successOutputFolder: "output",
@@ -276,29 +268,26 @@ describe("FileOrganizer naming settings", () => {
       },
     });
 
-    const plan = organizer.plan(
+    const collisionPlan = organizer.plan(
       createFileInfo({
-        filePath: sourcePath,
+        filePath: collisionSourcePath,
         fileName: "source",
       }),
       createCrawlerData({
         number: "XYZ-999",
       }),
-      config,
+      collisionConfig,
     );
-    const prepared = await organizer.ensureOutputReady(plan, sourcePath);
+    const preparedCollision = await organizer.ensureOutputReady(collisionPlan, collisionSourcePath);
 
-    expect(prepared.targetVideoPath).toBe(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN (1).mp4"));
-    expect(prepared.nfoPath).toBe(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN (1).nfo"));
-  });
+    expect(preparedCollision.targetVideoPath).toBe(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN (1).mp4"));
+    expect(preparedCollision.nfoPath).toBe(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN (1).nfo"));
 
-  it("renames in place when move is disabled but rename is enabled", async () => {
-    const root = await createTempDir();
-    const sourcePath = join(root, "source.mp4");
+    const inPlaceRoot = await createTempDir();
+    const sourcePath = join(inPlaceRoot, "source.mp4");
     await writeFile(sourcePath, "video", "utf8");
 
-    const organizer = new FileOrganizer();
-    const config = createConfig({
+    const inPlaceConfig = createConfig({
       naming: {
         fileTemplate: "{number}",
       },
@@ -308,28 +297,29 @@ describe("FileOrganizer naming settings", () => {
       },
     });
 
-    const fileInfo = createFileInfo({
+    const inPlaceFileInfo = createFileInfo({
       filePath: sourcePath,
       fileName: "source",
     });
-    const plan = organizer.plan(
-      fileInfo,
+    const inPlacePlan = organizer.plan(
+      inPlaceFileInfo,
       createCrawlerData({
         number: "XYZ-999",
       }),
-      config,
+      inPlaceConfig,
     );
-    const prepared = await organizer.ensureOutputReady(plan, sourcePath);
-    const resultPath = await organizer.organizeVideo(fileInfo, prepared, config);
+    const preparedInPlace = await organizer.ensureOutputReady(inPlacePlan, sourcePath);
+    const resultPath = await organizer.organizeVideo(inPlaceFileInfo, preparedInPlace, inPlaceConfig);
 
-    expect(resultPath).toBe(join(root, "XYZ-999-CEN.mp4"));
+    expect(resultPath).toBe(join(inPlaceRoot, "XYZ-999-CEN.mp4"));
     await expectPathExists(resultPath);
   });
 
-  it("skips disk space checks when metadata stays beside the source video", async () => {
-    const root = await createTempDir();
-    const sourcePath = join(root, "source.mp4");
-    await writeFile(sourcePath, "video", "utf8");
+  it("skips disk checks for valid in-place renames and still rejects multiple source videos", async () => {
+    const validRoot = await createTempDir();
+    const validSourcePath = join(validRoot, "source.mp4");
+    await writeFile(validSourcePath, "video", "utf8");
+    await writeFile(join(validRoot, "trailer.mp4"), "video", "utf8");
 
     const diskSpaceSpy = vi.spyOn(fileUtils, "hasEnoughDiskSpace").mockResolvedValue(false);
 
@@ -344,9 +334,9 @@ describe("FileOrganizer naming settings", () => {
       },
     });
 
-    const plan = organizer.plan(
+    const validPlan = organizer.plan(
       createFileInfo({
-        filePath: sourcePath,
+        filePath: validSourcePath,
         fileName: "source",
       }),
       createCrawlerData({
@@ -355,34 +345,20 @@ describe("FileOrganizer naming settings", () => {
       config,
     );
 
-    await expect(organizer.ensureOutputReady(plan, sourcePath)).resolves.toMatchObject({
-      targetVideoPath: join(root, "XYZ-999-CEN.mp4"),
-      nfoPath: join(root, "XYZ-999-CEN.nfo"),
+    await expect(organizer.ensureOutputReady(validPlan, validSourcePath)).resolves.toMatchObject({
+      targetVideoPath: join(validRoot, "XYZ-999-CEN.mp4"),
+      nfoPath: join(validRoot, "XYZ-999-CEN.nfo"),
     });
     expect(diskSpaceSpy).not.toHaveBeenCalled();
-  });
 
-  it("rejects in-place scraping when the source folder contains multiple videos", async () => {
-    const root = await createTempDir();
-    const sourcePath = join(root, "source.mp4");
-    const siblingPath = join(root, "another.mkv");
-    await writeFile(sourcePath, "video", "utf8");
-    await writeFile(siblingPath, "video", "utf8");
+    const invalidRoot = await createTempDir();
+    const invalidSourcePath = join(invalidRoot, "source.mp4");
+    await writeFile(invalidSourcePath, "video", "utf8");
+    await writeFile(join(invalidRoot, "another.mkv"), "video", "utf8");
 
-    const organizer = new FileOrganizer();
-    const config = createConfig({
-      naming: {
-        fileTemplate: "{number}",
-      },
-      behavior: {
-        successFileMove: false,
-        successFileRename: true,
-      },
-    });
-
-    const plan = organizer.plan(
+    const invalidPlan = organizer.plan(
       createFileInfo({
-        filePath: sourcePath,
+        filePath: invalidSourcePath,
         fileName: "source",
       }),
       createCrawlerData({
@@ -391,43 +367,8 @@ describe("FileOrganizer naming settings", () => {
       config,
     );
 
-    await expect(organizer.ensureOutputReady(plan, sourcePath)).rejects.toThrow(
+    await expect(organizer.ensureOutputReady(invalidPlan, invalidSourcePath)).rejects.toThrow(
       "成功后不移动文件时，仅支持源目录内存在单个视频文件",
     );
-  });
-
-  it("ignores generated trailer sidecars when validating in-place scraping", async () => {
-    const root = await createTempDir();
-    const sourcePath = join(root, "source.mp4");
-    const trailerPath = join(root, "trailer.mp4");
-    await writeFile(sourcePath, "video", "utf8");
-    await writeFile(trailerPath, "video", "utf8");
-
-    const organizer = new FileOrganizer();
-    const config = createConfig({
-      naming: {
-        fileTemplate: "{number}",
-      },
-      behavior: {
-        successFileMove: false,
-        successFileRename: true,
-      },
-    });
-
-    const plan = organizer.plan(
-      createFileInfo({
-        filePath: sourcePath,
-        fileName: "source",
-      }),
-      createCrawlerData({
-        number: "XYZ-999",
-      }),
-      config,
-    );
-
-    await expect(organizer.ensureOutputReady(plan, sourcePath)).resolves.toMatchObject({
-      targetVideoPath: join(root, "XYZ-999-CEN.mp4"),
-      nfoPath: join(root, "XYZ-999-CEN.nfo"),
-    });
   });
 });
