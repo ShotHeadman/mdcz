@@ -145,4 +145,29 @@ describe("CrawlerProvider cooldowns", () => {
 
     await store.flush();
   });
+
+  it("treats Cloudflare challenge failures as deterministic cooldowns", async () => {
+    const root = await createTempDir();
+    const store = new PersistentCooldownStore({
+      filePath: join(root, "crawler-site-cooldowns.json"),
+      loggerName: "CrawlerProviderCloudflareStore",
+    });
+    const provider = new StubCrawlerProvider(
+      [
+        {
+          success: false,
+          error: "FC2HUB blocked by Cloudflare challenge",
+          failureReason: "unknown",
+        },
+      ],
+      store,
+    );
+
+    await provider.crawl({
+      number: "FC2-4515706",
+      site: Website.FC2HUB,
+    });
+
+    expect(provider.isSiteCoolingDown(Website.FC2HUB)).toBe(true);
+  });
 });

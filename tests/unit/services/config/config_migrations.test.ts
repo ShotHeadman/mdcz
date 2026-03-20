@@ -204,7 +204,18 @@ describe("Configuration migrations", () => {
       expect(paths.sceneImagesFolder).toBe("extrafanart");
       expect(scrape.enabledSites).toEqual(defaultConfiguration.scrape.enabledSites);
       expect(scrape.siteOrder).toEqual(defaultConfiguration.scrape.siteOrder);
-      expect(parsed.aggregation.fieldPriorities).toEqual(defaultConfiguration.aggregation.fieldPriorities);
+      expect(parsed.aggregation.fieldPriorities.actors).toEqual(
+        defaultConfiguration.aggregation.fieldPriorities.actors,
+      );
+      expect(parsed.aggregation.fieldPriorities.thumb_url).toEqual(
+        defaultConfiguration.aggregation.fieldPriorities.thumb_url,
+      );
+      expect(parsed.aggregation.fieldPriorities.poster_url).toEqual(
+        defaultConfiguration.aggregation.fieldPriorities.poster_url,
+      );
+      expect(parsed.aggregation.fieldPriorities.release_date).toEqual(
+        defaultConfiguration.aggregation.fieldPriorities.release_date,
+      );
     });
 
     it("preserves customized values instead of resetting them", () => {
@@ -272,7 +283,7 @@ describe("Configuration migrations", () => {
   describe("migrator behavior", () => {
     it("skips migration for current version", () => {
       const raw = buildV030Config();
-      raw.configVersion = 1;
+      raw.configVersion = 2;
       delete (raw.download as Record<string, unknown>).downloadCover;
       delete (raw.download as Record<string, unknown>).keepCover;
       delete raw.server;
@@ -284,8 +295,8 @@ describe("Configuration migrations", () => {
 
       expect(result).toEqual({
         migrated: false,
-        fromVersion: 1,
-        toVersion: 1,
+        fromVersion: 2,
+        toVersion: 2,
         applied: [],
       });
     });
@@ -293,12 +304,12 @@ describe("Configuration migrations", () => {
     it("stamps configVersion and returns migration metadata", () => {
       const { raw, result } = migrate();
 
-      expect(raw.configVersion).toBe(1);
+      expect(raw.configVersion).toBe(2);
       expect(result).toEqual({
         migrated: true,
         fromVersion: 0,
-        toVersion: 1,
-        applied: ["v0.3.0 → v0.4.0"],
+        toVersion: 2,
+        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.4.1"],
       });
     });
 

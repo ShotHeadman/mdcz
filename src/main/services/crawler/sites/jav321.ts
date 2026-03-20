@@ -4,7 +4,7 @@ import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractText, parseDate } from "../base/parser";
-import type { Context, CrawlerInput } from "../base/types";
+import type { Context, CrawlerInput, SearchPageResolution } from "../base/types";
 import { pickSearchResultDetailUrl, toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const JAV321_BASE_URL = "https://www.jav321.com";
@@ -135,12 +135,16 @@ export class Jav321Crawler extends BaseCrawler {
     return super.fetch(url, context);
   }
 
-  protected async parseSearchPage(context: Jav321Context, $: CheerioAPI, _searchUrl: string): Promise<string | null> {
+  protected async parseSearchPage(
+    context: Jav321Context,
+    $: CheerioAPI,
+    _searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
     // JAV321 search redirects to detail page or shows results
     // Check if we're already on a detail page
     const panelHeading = $("div.panel-heading h3").first().text().trim();
     if (panelHeading) {
-      return _searchUrl;
+      return this.reuseSearchDocument(_searchUrl);
     }
 
     const candidates = $("a[href*='/video/']")

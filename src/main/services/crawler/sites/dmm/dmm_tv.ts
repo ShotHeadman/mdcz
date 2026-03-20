@@ -2,7 +2,7 @@ import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import type { CheerioAPI } from "cheerio";
 
-import type { Context, CrawlerInput } from "../../base/types";
+import type { Context, CrawlerInput, SearchPageResolution } from "../../base/types";
 import type { FetchOptions } from "../../FetchGateway";
 import { toAbsoluteUrl } from "../helpers";
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
@@ -147,9 +147,13 @@ export class DmmTvCrawler extends BaseDmmCrawler {
     return buildDetailUrl(firstCandidate);
   }
 
-  protected async parseSearchPage(context: DmmTvContext, $: CheerioAPI, searchUrl: string): Promise<string | null> {
+  protected async parseSearchPage(
+    context: DmmTvContext,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
     if (isVideoDetailUrl(searchUrl)) {
-      return searchUrl;
+      return this.reuseSearchDocument(searchUrl);
     }
 
     const links = new Set<string>();

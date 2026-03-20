@@ -3,7 +3,7 @@ import type { CrawlerData } from "@shared/types";
 import type { CheerioAPI } from "cheerio";
 
 import { parseDate } from "../base/parser";
-import type { Context } from "../base/types";
+import type { Context, SearchPageResolution } from "../base/types";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
 import { toAbsoluteUrl } from "./helpers";
 
@@ -18,10 +18,14 @@ export class Fc2Crawler extends BaseFc2Crawler {
     return `${BASE_URL}/article/${context.number}/`;
   }
 
-  protected async parseSearchPage(_context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
+  protected async parseSearchPage(
+    _context: Context,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
     const title = $("div[data-section='userInfo'] h3").first().text();
     if (!title.includes("お探しの商品が見つかりません")) {
-      return searchUrl;
+      return this.reuseSearchDocument(searchUrl);
     }
     return null;
   }

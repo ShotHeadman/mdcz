@@ -12,6 +12,7 @@ import type {
   CrawlerResponse,
   CrawlerResult,
   FailureReason,
+  SearchPageResolution,
   SiteAdapter,
 } from "./types";
 
@@ -32,6 +33,10 @@ const toFailureReason = (message: string): FailureReason => {
 
   if (lowered.includes("login wall")) {
     return "login_wall";
+  }
+
+  if (lowered.includes("cloudflare challenge")) {
+    return "region_blocked";
   }
 
   if (
@@ -91,7 +96,11 @@ export abstract class BaseCrawler implements SiteAdapter {
 
   protected abstract generateSearchUrl(context: Context): Promise<string | null>;
 
-  protected abstract parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null>;
+  protected abstract parseSearchPage(
+    context: Context,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null>;
 
   protected abstract parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null>;
 
@@ -102,6 +111,13 @@ export abstract class BaseCrawler implements SiteAdapter {
     _detailUrl: string,
   ): string | null {
     return null;
+  }
+
+  protected reuseSearchDocument(detailUrl: string): SearchPageResolution {
+    return {
+      detailUrl,
+      reuseSearchDocument: true,
+    };
   }
 
   async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
@@ -130,8 +146,8 @@ export abstract class BaseCrawler implements SiteAdapter {
 
       const searchHtml = await this.fetch(searchUrl, context);
       const searchDoc = load(searchHtml);
-      const detailUrl = await this.parseSearchPage(context, searchDoc, searchUrl);
-      if (!detailUrl) {
+      const searchResolution = await this.parseSearchPage(context, searchDoc, searchUrl);
+      if (!searchResolution) {
         return {
           success: false,
           error: `Detail URL not found for ${context.number}`,
@@ -139,14 +155,21 @@ export abstract class BaseCrawler implements SiteAdapter {
         };
       }
 
-      const detailHtml = await this.fetch(detailUrl, context);
-      const detailDoc = load(detailHtml);
-      const data = await this.parseDetailPage(context, detailDoc, detailUrl);
+      const detailRequest =
+        typeof searchResolution === "string"
+          ? { detailUrl: searchResolution, reuseSearchDocument: false }
+          : searchResolution;
+
+      const detailHtml = detailRequest.reuseSearchDocument
+        ? searchHtml
+        : await this.fetch(detailRequest.detailUrl, context);
+      const detailDoc = detailRequest.reuseSearchDocument ? searchDoc : load(detailHtml);
+      const data = await this.parseDetailPage(context, detailDoc, detailRequest.detailUrl);
 
       if (!data) {
         let classifiedMessage: string | null = null;
         try {
-          classifiedMessage = this.classifyDetailFailure(context, detailHtml, detailDoc, detailUrl);
+          classifiedMessage = this.classifyDetailFailure(context, detailHtml, detailDoc, detailRequest.detailUrl);
         } catch (error) {
           const message = toErrorMessage(error);
           this.logger.warn(`Detail failure classifier failed for ${context.number}: ${message}`);

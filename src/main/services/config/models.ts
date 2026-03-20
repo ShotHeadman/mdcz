@@ -11,6 +11,7 @@ const DEFAULT_ENABLED_SITES: Website[] = [
   Website.FALENO,
   Website.DAHLIA,
   Website.FC2,
+  Website.FC2HUB,
   Website.JAVDB,
   Website.JAVBUS,
   Website.JAV321,
@@ -160,36 +161,75 @@ const fieldPrioritiesSchema = z.object({
       Website.MGSTAGE,
       Website.DMM,
       Website.DMM_TV,
+      Website.FC2,
+      Website.FC2HUB,
       Website.JAVDB,
       Website.JAVBUS,
       Website.JAV321,
-      Website.FC2,
     ]),
   plot: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.DMM_TV, Website.JAV321, Website.FC2]),
+    .default([
+      Website.AVBASE,
+      Website.MGSTAGE,
+      Website.DMM,
+      Website.DMM_TV,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAV321,
+    ]),
   actors: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
-  genres: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
+  genres: z
+    .array(z.enum(Website))
+    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
   thumb_url: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+    .default([
+      Website.AVBASE,
+      Website.MGSTAGE,
+      Website.DMM,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
   poster_url: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+    .default([
+      Website.AVBASE,
+      Website.MGSTAGE,
+      Website.DMM,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
   scene_images: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
-  studio: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
+    .default([
+      Website.AVBASE,
+      Website.MGSTAGE,
+      Website.DMM,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
+  studio: z
+    .array(z.enum(Website))
+    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
   director: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB]),
-  publisher: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.FC2]),
+  publisher: z
+    .array(z.enum(Website))
+    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB]),
   series: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
   release_date: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.FC2]),
-  durationSeconds: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM_TV]),
-  rating: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.JAVDB]),
+    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
+  durationSeconds: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM_TV, Website.FC2HUB]),
+  rating: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.FC2HUB, Website.JAVDB]),
   trailer_url: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.JAVBUS]),
 });
 

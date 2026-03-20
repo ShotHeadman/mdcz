@@ -112,8 +112,32 @@ describe("buildComputedConfiguration", () => {
   it("keeps actor photo defaults under paths and ignores legacy personSync.actorPhotoFolder", () => {
     const defaultConfiguration = configurationSchema.parse({});
     expect(defaultConfiguration.paths.actorPhotoFolder).toBe("actor_photo");
-    expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([Website.AVBASE, Website.DMM_TV]);
-    expect(defaultConfiguration.aggregation.fieldPriorities.rating).not.toContain(Website.AVBASE);
+    expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([
+      Website.AVBASE,
+      Website.DMM_TV,
+      Website.FC2HUB,
+    ]);
+    expect(defaultConfiguration.aggregation.fieldPriorities.rating).toEqual([
+      Website.DMM_TV,
+      Website.DMM,
+      Website.FC2HUB,
+      Website.JAVDB,
+    ]);
+    expect(defaultConfiguration.aggregation.fieldPriorities.studio).toEqual([
+      Website.AVBASE,
+      Website.DMM,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]);
+    expect(defaultConfiguration.aggregation.fieldPriorities.publisher).toEqual([
+      Website.AVBASE,
+      Website.DMM,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+    ]);
     expect(defaultConfiguration.aggregation.fieldPriorities.trailer_url).not.toContain(Website.AVBASE);
 
     const legacyConfiguration = configurationSchema.parse({

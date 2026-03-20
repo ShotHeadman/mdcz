@@ -38,6 +38,11 @@ export interface CrawlerErrorResult {
 
 export type CrawlerResult = CrawlerSuccessResult | CrawlerErrorResult;
 
+export interface SearchPageResolution {
+  detailUrl: string;
+  reuseSearchDocument?: boolean;
+}
+
 export type FailureReason = "not_found" | "region_blocked" | "login_wall" | "timeout" | "parse_error" | "unknown";
 
 export interface CrawlerResponse {

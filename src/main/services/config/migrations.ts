@@ -35,7 +35,7 @@ const renameKey = (raw: Record<string, unknown>, section: string, oldKey: string
 };
 
 const DEFAULT_FOLDER_TEMPLATE = "{actor}/{number}";
-const LEGACY_ENABLED_SITES = [
+const V0_ENABLED_SITES = [
   "dmm",
   "dmm_tv",
   "mgstage",
@@ -48,9 +48,10 @@ const LEGACY_ENABLED_SITES = [
   "jav321",
   "km_produce",
 ] as const;
-const CURRENT_ENABLED_SITES = [...LEGACY_ENABLED_SITES, "avbase"] as const;
+const V1_ENABLED_SITES = [...V0_ENABLED_SITES, "avbase"] as const;
+const V2_ENABLED_SITES = [...V0_ENABLED_SITES.slice(0, 7), "fc2hub", ...V0_ENABLED_SITES.slice(7), "avbase"] as const;
 
-const LEGACY_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+const V0_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
   plot: ["mgstage", "dmm", "dmm_tv", "fc2", "jav321"],
   actors: ["javdb", "dmm", "javbus", "mgstage", "km_produce"],
@@ -66,7 +67,7 @@ const LEGACY_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   rating: ["javdb", "dmm"],
 };
 
-const CURRENT_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+const V1_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["avbase", "mgstage", "dmm", "dmm_tv", "javdb", "javbus", "jav321", "fc2"],
   plot: ["avbase", "mgstage", "dmm", "dmm_tv", "jav321", "fc2"],
   actors: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
@@ -80,6 +81,15 @@ const CURRENT_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   series: ["avbase", "dmm", "javdb", "javbus"],
   release_date: ["avbase", "dmm", "javdb", "javbus", "fc2"],
   rating: ["dmm_tv", "dmm", "javdb"],
+};
+
+const V2_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+  ...V1_FIELD_PRIORITY_DEFAULTS,
+  actors: ["avbase", "mgstage", "dmm", "fc2hub", "javdb", "javbus"],
+  thumb_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  poster_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  scene_images: ["avbase", "mgstage", "dmm", "fc2hub", "javdb", "javbus"],
+  release_date: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
 };
 
 const appendPathSegment = (template: string, segment: string): string => {
@@ -116,22 +126,30 @@ const migrateFolderTemplate = (raw: Record<string, unknown>): void => {
   }
 };
 
-const normalizeScrapeSiteDefaults = (raw: Record<string, unknown>): void => {
+const normalizeScrapeSiteDefaults = (
+  raw: Record<string, unknown>,
+  previousDefaults: readonly string[],
+  nextDefaults: readonly string[],
+): void => {
   const scrape = raw.scrape;
   if (!isRecord(scrape)) {
     return;
   }
 
-  if (isStringArray(scrape.enabledSites) && stringArraysEqual(scrape.enabledSites, LEGACY_ENABLED_SITES)) {
-    scrape.enabledSites = [...CURRENT_ENABLED_SITES];
+  if (isStringArray(scrape.enabledSites) && stringArraysEqual(scrape.enabledSites, previousDefaults)) {
+    scrape.enabledSites = [...nextDefaults];
   }
 
-  if (isStringArray(scrape.siteOrder) && stringArraysEqual(scrape.siteOrder, LEGACY_ENABLED_SITES)) {
-    scrape.siteOrder = [...CURRENT_ENABLED_SITES];
+  if (isStringArray(scrape.siteOrder) && stringArraysEqual(scrape.siteOrder, previousDefaults)) {
+    scrape.siteOrder = [...nextDefaults];
   }
 };
 
-const normalizeFieldPriorityDefaults = (raw: Record<string, unknown>): void => {
+const normalizeFieldPriorityDefaults = (
+  raw: Record<string, unknown>,
+  previousDefaults: Record<string, readonly string[]>,
+  nextDefaults: Record<string, readonly string[]>,
+): void => {
   const aggregation = raw.aggregation;
   if (!isRecord(aggregation)) {
     return;
@@ -142,10 +160,10 @@ const normalizeFieldPriorityDefaults = (raw: Record<string, unknown>): void => {
     return;
   }
 
-  for (const [key, legacySites] of Object.entries(LEGACY_FIELD_PRIORITY_DEFAULTS)) {
-    const currentSites = CURRENT_FIELD_PRIORITY_DEFAULTS[key];
+  for (const [key, previousSites] of Object.entries(previousDefaults)) {
+    const currentSites = nextDefaults[key];
     const value = fieldPriorities[key];
-    if (isStringArray(value) && stringArraysEqual(value, legacySites)) {
+    if (isStringArray(value) && stringArraysEqual(value, previousSites)) {
       fieldPriorities[key] = [...currentSites];
     }
   }
@@ -201,10 +219,17 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   migrateFolderTemplate(raw);
 
   // 8. Normalize untouched legacy enabledSites / siteOrder arrays to the current defaults
-  normalizeScrapeSiteDefaults(raw);
+  normalizeScrapeSiteDefaults(raw, V0_ENABLED_SITES, V1_ENABLED_SITES);
 
   // 9. Normalize untouched legacy fieldPriorities arrays to the current v0.4 defaults
-  normalizeFieldPriorityDefaults(raw);
+  normalizeFieldPriorityDefaults(raw, V0_FIELD_PRIORITY_DEFAULTS, V1_FIELD_PRIORITY_DEFAULTS);
+}
+
+// ── v0.4.0 → v0.4.1 ─────────────────────────────────────────────────────────
+
+function migrateV040ToV041(raw: Record<string, unknown>): void {
+  normalizeScrapeSiteDefaults(raw, V1_ENABLED_SITES, V2_ENABLED_SITES);
+  normalizeFieldPriorityDefaults(raw, V1_FIELD_PRIORITY_DEFAULTS, V2_FIELD_PRIORITY_DEFAULTS);
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
@@ -215,5 +240,11 @@ export const migrations: Migration[] = [
     toVersion: 1,
     description: "v0.3.0 → v0.4.0",
     migrate: migrateV030ToV040,
+  },
+  {
+    fromVersion: 1,
+    toVersion: 2,
+    description: "v0.4.0 → v0.4.1",
+    migrate: migrateV040ToV041,
   },
 ];

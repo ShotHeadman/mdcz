@@ -9,13 +9,12 @@ import { normalizeFc2Number } from "./helpers";
  *
  * Shared behavior:
  * - Number normalization via `normalizeFc2Number`
- * - Common CrawlerData fields: `series: "FC2系列"`, `actors` derived from `studio`,
+ * - Common CrawlerData fields: `series: "FC2系列"`,
  *   `publisher === studio`, FC2-prefixed number formatting
  *
  * Subclasses must implement:
  * - `site()` — return the Website enum value
- * - `fc2BaseUrl()` — return the site base URL
- * - `generateSearchUrl()` / `parseSearchPage()` / `parseFc2DetailPage()` — site-specific parsing
+ * - `generateSearchUrl()` / `parseSearchPage()` / `parseDetailPage()` — site-specific parsing
  */
 export abstract class BaseFc2Crawler extends BaseCrawler {
   protected static readonly FC2_SERIES = "FC2系列";
@@ -42,12 +41,14 @@ export abstract class BaseFc2Crawler extends BaseCrawler {
     context: Context,
     fields: {
       title: string;
+      actors?: string[];
       studio?: string;
       genres?: string[];
       thumbUrl?: string;
       posterUrl?: string;
       plot?: string;
       releaseDate?: string;
+      durationSeconds?: number;
       rating?: number;
       sceneImageUrls?: string[];
       trailerUrl?: string;
@@ -58,7 +59,7 @@ export abstract class BaseFc2Crawler extends BaseCrawler {
     return {
       title: fields.title,
       number: this.formatFc2Number(context.number),
-      actors: studio ? [studio] : [],
+      actors: fields.actors ?? [],
       genres: fields.genres ?? [],
       studio,
       director: undefined,
@@ -66,6 +67,7 @@ export abstract class BaseFc2Crawler extends BaseCrawler {
       series: BaseFc2Crawler.FC2_SERIES,
       plot: fields.plot,
       release_date: fields.releaseDate,
+      durationSeconds: fields.durationSeconds,
       rating: fields.rating,
       thumb_url: fields.thumbUrl,
       poster_url: fields.posterUrl,

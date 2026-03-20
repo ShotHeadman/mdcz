@@ -407,7 +407,7 @@ export function NamingSection(_props: SectionRenderProps) {
       <EnumField
         name="naming.partStyle"
         label="裸数字分盘样式"
-        description="仅对原文件名是 -1 / -2 这类裸数字分盘时生效"
+        description="仅对原文件名是 -1..-9 这类裸数字分盘时生效"
         options={PART_STYLE_OPTIONS}
       />
     </>

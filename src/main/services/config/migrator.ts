@@ -6,7 +6,7 @@
  */
 import { migrations } from "./migrations";
 
-export const CURRENT_CONFIG_VERSION = 1;
+export const CURRENT_CONFIG_VERSION = 2;
 
 export class ConfigMigrationError extends Error {
   constructor(

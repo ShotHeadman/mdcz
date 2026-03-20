@@ -4,7 +4,7 @@ import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractAttr, extractText, parseDate } from "../base/parser";
-import type { Context } from "../base/types";
+import type { Context, SearchPageResolution } from "../base/types";
 import { toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const KM_PRODUCE_BASE_URL = "https://www.km-produce.com";
@@ -26,8 +26,12 @@ export class KMProduceCrawler extends BaseCrawler {
     return `${baseUrl}/works/${number.toLowerCase()}`;
   }
 
-  protected async parseSearchPage(_context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
-    return $("h1").length > 0 ? searchUrl : null;
+  protected async parseSearchPage(
+    _context: Context,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
+    return $("h1").length > 0 ? this.reuseSearchDocument(searchUrl) : null;
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI): Promise<CrawlerData | null> {

@@ -339,6 +339,63 @@ describe("AggregationService", () => {
     expect(result?.sources.durationSeconds).toBe(Website.DMM_TV);
   });
 
+  it("prefers FC2HUB ahead of JAVDB for FC2 family metadata under the default priorities", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          number: "FC2-4515706",
+          thumb_url: "https://fc2hub.example/thumb.jpg",
+          studio: "Seller FC2HUB",
+          publisher: "Seller FC2HUB",
+          durationSeconds: 8_068,
+          rating: 4.7,
+          website: Website.FC2HUB,
+        }),
+      ],
+      [
+        Website.JAVDB,
+        makeCrawlerData({
+          title: "JAVDB Title",
+          number: "FC2-4515706",
+          thumb_url: "https://javdb.example/thumb.jpg",
+          studio: "Seller JAVDB",
+          publisher: "Publisher JAVDB",
+          durationSeconds: 7_200,
+          rating: 4.1,
+          website: Website.JAVDB,
+        }),
+      ],
+    ]);
+
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.FC2HUB, Website.JAVDB],
+        siteOrder: [Website.FC2HUB, Website.JAVDB],
+      },
+    });
+
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "FC2-4515706",
+      config,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("FC2HUB Title");
+    expect(result?.data.studio).toBe("Seller FC2HUB");
+    expect(result?.data.publisher).toBe("Seller FC2HUB");
+    expect(result?.data.durationSeconds).toBe(8_068);
+    expect(result?.data.rating).toBe(4.7);
+    expect(result?.sources.title).toBe(Website.FC2HUB);
+    expect(result?.sources.studio).toBe(Website.FC2HUB);
+    expect(result?.sources.publisher).toBe(Website.FC2HUB);
+    expect(result?.sources.durationSeconds).toBe(Website.FC2HUB);
+    expect(result?.sources.rating).toBe(Website.FC2HUB);
+  });
+
   it("returns null when no result clears the aggregation threshold", async () => {
     const cases = [
       {
@@ -434,7 +491,7 @@ describe("AggregationService", () => {
     expect(provider.calledSites).toEqual([Website.DMM]);
   });
 
-  it("limits FC2 numbers to fc2 and javdb sites only", async () => {
+  it("limits FC2 numbers to the FC2 crawler family only", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
         Website.FC2,
@@ -443,6 +500,14 @@ describe("AggregationService", () => {
           number: "FC2-4775286",
           thumb_url: "https://fc2.example/thumb.jpg",
           website: Website.FC2,
+        }),
+      ],
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          number: "FC2-4775286",
+          website: Website.FC2HUB,
         }),
       ],
       [
@@ -461,14 +526,14 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.JAVDB, Website.JAVBUS],
-          siteOrder: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.JAVDB, Website.JAVBUS],
+          enabledSites: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS],
+          siteOrder: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS],
         },
       }),
     );
 
     expect(result).not.toBeNull();
-    expect(provider.calledSites.sort()).toEqual([Website.FC2, Website.JAVDB].sort());
+    expect(provider.calledSites.sort()).toEqual([Website.FC2, Website.FC2HUB, Website.JAVDB].sort());
   });
 
   it("aborts a slow crawler once its wall-clock budget is exhausted", async () => {

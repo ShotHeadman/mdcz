@@ -18,7 +18,13 @@ const TRANSIENT_SITE_FAILURE_POLICY: CooldownFailurePolicy = {
   windowMs: SITE_COOLDOWN_MS,
   cooldownMs: SITE_COOLDOWN_MS,
 };
-const DETERMINISTIC_FAILURE_PATTERNS = [/http 403\b/iu, /\bforbidden\b/iu, /region blocked/iu, /login wall/iu];
+const DETERMINISTIC_FAILURE_PATTERNS = [
+  /http 403\b/iu,
+  /\bforbidden\b/iu,
+  /region blocked/iu,
+  /login wall/iu,
+  /cloudflare challenge/iu,
+];
 const TRANSIENT_FAILURE_PATTERNS = [
   /timeout/iu,
   /timed out/iu,
