@@ -27,7 +27,7 @@ const TRAILING_SUBTITLE_PATTERN = new RegExp(`${FILENAME_DELIMITER_SOURCE}(?:${S
 const TRAILING_UNCENSORED_PATTERN = /[-_.\s]U$/iu;
 const TRAILING_PART_PATTERN = /[-_.\s](?:CD|PART|EP)[-_\s]?\d{1,2}$/iu;
 const TRAILING_FC2_JP_PART_PATTERN = /[-_.\s](?:前番|前編|後番|後編)$/u;
-const TRAILING_BARE_PART_PATTERN = /[-_.\s][12]$/u;
+const TRAILING_BARE_PART_PATTERN = /[-_.\s][1-9]$/u;
 
 const SHORT_TOKEN_PATTERNS = [
   "4K",
@@ -189,7 +189,7 @@ const detectNamedPart = (stem: string, number: string): FileInfo["part"] | undef
 };
 
 const TRAILING_RAW_BARE_PART_PATTERN = new RegExp(
-  String.raw`([-_.\s][12])(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
+  String.raw`([-_.\s][1-9])(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
   "iu",
 );
 
@@ -210,8 +210,8 @@ const detectBareNumericPart = (
   }
 
   const remainder = normalizedProbe.slice(numberIndex + normalizedNumber.length);
-  const remainderMatch = remainder.match(/^-(\d)$/u);
-  if (!remainderMatch || !["1", "2"].includes(remainderMatch[1])) {
+  const remainderMatch = remainder.match(/^-([1-9])$/u);
+  if (!remainderMatch) {
     return undefined;
   }
 

@@ -8,7 +8,9 @@ describe("extractNumber", () => {
       { input: "ABC-123-中文字幕", expected: "ABC-123" },
       { input: "FC2-PPV-123456-U", expected: "FC2-123456" },
       { input: "FC2-123456-1", expected: "FC2-123456" },
+      { input: "FC2-123456-4", expected: "FC2-123456" },
       { input: "FC2-123456-前番", expected: "FC2-123456" },
+      { input: "IDBD-905-4", expected: "IDBD-905" },
       { input: "123-456", expected: "123-456" },
     ];
 
@@ -72,6 +74,24 @@ describe("parseFileInfo", () => {
         suffix: "-1",
       },
     });
+
+    expect(parseFileInfo("/tmp/FC2-123456-4-中文字幕.mp4")).toMatchObject({
+      number: "FC2-123456",
+      isSubtitled: true,
+      subtitleTag: "中文字幕",
+      part: {
+        number: 4,
+        suffix: "-4",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/IDBD-905-4.mkv")).toMatchObject({
+      number: "IDBD-905",
+      part: {
+        number: 4,
+        suffix: "-4",
+      },
+    });
   });
 
   it("distinguishes uncensored and subtitle suffixes and keeps resolution metadata", () => {
@@ -125,6 +145,16 @@ describe("parseFileInfo", () => {
   it("does not misread numeric identifiers as bare multipart suffixes", () => {
     expect(parseFileInfo("/tmp/123-456.mp4")).toMatchObject({
       number: "123-456",
+      part: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/FC2-123456-10.mp4")).toMatchObject({
+      number: "FC2-123456",
+      part: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/IDBD-905-12.mkv")).toMatchObject({
+      number: "IDBD-905",
       part: undefined,
     });
   });

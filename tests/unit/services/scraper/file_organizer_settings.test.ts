@@ -207,11 +207,11 @@ describe("FileOrganizer naming settings", () => {
 
     const numericPartPlan = organizer.plan(
       createFileInfo({
-        filePath: "/input/XYZ-999-2.mp4",
-        fileName: "XYZ-999-2",
+        filePath: "/input/XYZ-999-4.mp4",
+        fileName: "XYZ-999-4",
         part: {
-          number: 2,
-          suffix: "-2",
+          number: 4,
+          suffix: "-4",
         },
       }),
       createCrawlerData({
@@ -225,7 +225,7 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
 
-    expect(parse(numericPartPlan.targetVideoPath).name).toBe("XYZ-999-CEN-disc2");
+    expect(parse(numericPartPlan.targetVideoPath).name).toBe("XYZ-999-CEN-disc4");
     expect(parse(numericPartPlan.nfoPath).name).toBe("XYZ-999-CEN");
   });
 

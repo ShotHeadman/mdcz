@@ -54,7 +54,7 @@ const appendMarker = (markers: string[], value: string): void => {
   markers.push(marker);
 };
 
-const isBareNumericPartSuffix = (suffix: string): boolean => /^[-_.\s][12]$/u.test(suffix.trimEnd());
+const isBareNumericPartSuffix = (suffix: string): boolean => /^[-_.\s][1-9]$/u.test(suffix.trimEnd());
 
 const formatPartSuffix = (fileInfo: FileInfo, config: Configuration): string => {
   if (!fileInfo.part) {

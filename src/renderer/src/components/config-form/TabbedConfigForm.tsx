@@ -85,6 +85,9 @@ const PART_STYLE_OPTIONS: EnumOption[] = [
   { value: "disc", label: "disc1 / disc2" },
 ];
 
+export const NAMING_TEMPLATE_DESCRIPTION =
+  "可用占位符：{actor} {number} {date} {title} {studio}；其中 {date} 使用“发行日期格式”设置。";
+
 // ── Field registry for search/filter ──
 
 interface FieldEntry {
@@ -386,11 +389,11 @@ function DownloadSection(_props: SectionRenderProps) {
   );
 }
 
-function NamingSection(_props: SectionRenderProps) {
+export function NamingSection(_props: SectionRenderProps) {
   return (
     <>
-      <TextField name="naming.folderTemplate" label="文件夹模板" />
-      <TextField name="naming.fileTemplate" label="文件名模板" />
+      <TextField name="naming.folderTemplate" label="文件夹模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <TextField name="naming.fileTemplate" label="文件名模板" description={NAMING_TEMPLATE_DESCRIPTION} />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
       <TextField name="naming.releaseRule" label="发行日期格式" />

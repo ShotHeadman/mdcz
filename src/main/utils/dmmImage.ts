@@ -1,6 +1,7 @@
 const DMM_IMAGE_HOST = "pics.dmm.co.jp";
 const DMM_AWS_IMAGE_HOST = "awsimgsrc.dmm.co.jp";
 const DMM_PRIMARY_IMAGE_NAME_PATTERN = /([a-z0-9]+)(p[sl]\.jpg)$/iu;
+const DMM_IMAGE_HOSTS = new Set([DMM_IMAGE_HOST, DMM_AWS_IMAGE_HOST]);
 
 const appendUnique = (values: string[], value: string | null | undefined): void => {
   if (!value || values.includes(value)) {
@@ -28,10 +29,23 @@ export const normalizeDmmNumberVariants = (raw: string): { number00: string; num
   };
 };
 
+export const isDmmImageUrl = (value?: string | null): boolean => {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return DMM_IMAGE_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
 const toAwsMirrorUrl = (value: string): string | null => {
   try {
     const url = new URL(value);
-    if (url.hostname !== DMM_IMAGE_HOST) {
+    if (url.hostname.toLowerCase() !== DMM_IMAGE_HOST) {
       return null;
     }
 
