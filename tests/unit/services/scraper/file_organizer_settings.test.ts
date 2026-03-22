@@ -472,6 +472,57 @@ describe("FileOrganizer naming settings", () => {
     await expect(access(subtitlePath)).rejects.toThrow();
   });
 
+  it("moves generated FC2 feature videos alongside successful movie moves", async () => {
+    const root = await createTempDir();
+    const sourcePath = join(root, "FC2-PPV-123456.mp4");
+    const featurePath = join(root, "FC2-PPV-123456-花絮.mp4");
+    const giftPath = join(root, "FC2-PPV-123456_gift.mp4");
+
+    await writeFile(sourcePath, "video", "utf8");
+    await writeFile(featurePath, "feature", "utf8");
+    await writeFile(giftPath, "gift", "utf8");
+
+    const organizer = new FileOrganizer();
+    const successConfig = createConfig({
+      paths: {
+        mediaPath: root,
+        successOutputFolder: "output",
+      },
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "FC2-PPV-123456",
+      number: "FC2-123456",
+    });
+    const plan = organizer.plan(
+      fileInfo,
+      createCrawlerData({
+        number: "FC2-123456",
+        website: Website.FC2,
+      }),
+      successConfig,
+    );
+    const preparedPlan = await organizer.ensureOutputReady(plan, sourcePath);
+    const movieBaseName = parse(preparedPlan.nfoPath).name;
+
+    await organizer.organizeVideo(fileInfo, preparedPlan, successConfig);
+
+    await expectPathExists(preparedPlan.targetVideoPath);
+    await expectPathExists(join(preparedPlan.outputDir, `${movieBaseName}-花絮.mp4`));
+    await expectPathExists(join(preparedPlan.outputDir, `${movieBaseName}_gift.mp4`));
+    await expect(access(featurePath)).rejects.toThrow();
+    await expect(access(giftPath)).rejects.toThrow();
+  });
+
   it("moves matching subtitle sidecars alongside failed video moves", async () => {
     const organizer = new FileOrganizer();
     const failedRoot = await createTempDir();
@@ -498,6 +549,42 @@ describe("FileOrganizer naming settings", () => {
     await expectPathExists(join(failedRoot, "failed", "FAIL-001.mp4"));
     await expectPathExists(join(failedRoot, "failed", "FAIL-001.ass"));
     await expect(access(failedSubtitlePath)).rejects.toThrow();
+  });
+
+  it("moves generated FC2 feature videos alongside failed movie moves", async () => {
+    const organizer = new FileOrganizer();
+    const failedRoot = await createTempDir();
+    const failedVideoPath = join(failedRoot, "FC2-123456-1.mp4");
+    const failedFeaturePath = join(failedRoot, "FC2-123456-花絮.mp4");
+    const failedGiftPath = join(failedRoot, "FC2-123456_gift.mp4");
+    await writeFile(failedVideoPath, "video", "utf8");
+    await writeFile(failedFeaturePath, "feature", "utf8");
+    await writeFile(failedGiftPath, "gift", "utf8");
+
+    const failedFileInfo = createFileInfo({
+      filePath: failedVideoPath,
+      fileName: "FC2-123456-1",
+      number: "FC2-123456",
+      extension: ".mp4",
+      part: {
+        number: 1,
+        suffix: "-1",
+      },
+    });
+    const failedConfig = createConfig({
+      paths: {
+        mediaPath: failedRoot,
+        failedOutputFolder: "failed",
+      },
+    });
+
+    await organizer.moveToFailedFolder(failedFileInfo, failedConfig);
+
+    await expectPathExists(join(failedRoot, "failed", "FC2-123456-1.mp4"));
+    await expectPathExists(join(failedRoot, "failed", "FC2-123456-花絮.mp4"));
+    await expectPathExists(join(failedRoot, "failed", "FC2-123456_gift.mp4"));
+    await expect(access(failedFeaturePath)).rejects.toThrow();
+    await expect(access(failedGiftPath)).rejects.toThrow();
   });
 
   it("rolls back the video move when a subtitle sidecar move fails", async () => {
@@ -552,6 +639,66 @@ describe("FileOrganizer naming settings", () => {
     await expectPathExists(subtitlePath);
     await expect(access(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.mp4"))).rejects.toThrow();
     await expect(access(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.zh.srt"))).rejects.toThrow();
+  });
+
+  it("rolls back the movie move when a generated FC2 feature move fails", async () => {
+    const organizer = new FileOrganizer();
+    const root = await createTempDir();
+    const sourcePath = join(root, "FC2-123456-1.mp4");
+    const featurePath = join(root, "FC2-123456-花絮.mp4");
+
+    await writeFile(sourcePath, "video", "utf8");
+    await writeFile(featurePath, "feature", "utf8");
+
+    const config = createConfig({
+      paths: {
+        mediaPath: root,
+        successOutputFolder: "output",
+      },
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "FC2-123456-1",
+      number: "FC2-123456",
+      part: {
+        number: 1,
+        suffix: "-1",
+      },
+    });
+    const plan = await organizer.ensureOutputReady(
+      organizer.plan(
+        fileInfo,
+        createCrawlerData({
+          number: "FC2-123456",
+          website: Website.FC2,
+        }),
+        config,
+      ),
+      sourcePath,
+    );
+
+    const originalMoveFileSafely = fileUtils.moveFileSafely;
+    vi.spyOn(fileUtils, "moveFileSafely").mockImplementation(async (fromPath, toPath) => {
+      if (fromPath === featurePath) {
+        throw new Error("mock generated sidecar move failure");
+      }
+
+      return originalMoveFileSafely(fromPath, toPath);
+    });
+
+    await expect(organizer.organizeVideo(fileInfo, plan, config)).rejects.toThrow("Failed to move bundled media");
+    await expectPathExists(sourcePath);
+    await expectPathExists(featurePath);
+    await expect(access(join(root, "output", "FC2-123456", "FC2-123456-cd1.mp4"))).rejects.toThrow();
+    await expect(access(join(root, "output", "FC2-123456", "FC2-123456-花絮.mp4"))).rejects.toThrow();
   });
 
   it("keeps video and subtitle sidecar basenames aligned when resolving collisions", async () => {

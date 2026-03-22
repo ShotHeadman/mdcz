@@ -36,6 +36,11 @@ interface NamingLayout {
   nfoFileName: string;
 }
 
+interface GeneratedVideoSidecarMatch {
+  path: string;
+  suffix: string;
+}
+
 const pickActorFolder = (config: Configuration, actors: string[]): string => {
   const cleaned = actors.map((actor) => actor.trim()).filter((actor) => actor.length > 0);
   if (cleaned.length === 0) {
@@ -348,12 +353,22 @@ export class FileOrganizer {
         return fileInfo.filePath;
       }
 
-      const renamedPath = await this.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, plan.subtitleSidecars);
+      const renamedPath = await this.moveBundledMedia(
+        fileInfo.filePath,
+        plan.targetVideoPath,
+        plan.subtitleSidecars,
+        parse(plan.nfoPath).name,
+      );
       return renamedPath;
     }
 
     const sourceDir = dirname(fileInfo.filePath);
-    const result = await this.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, plan.subtitleSidecars);
+    const result = await this.moveBundledMedia(
+      fileInfo.filePath,
+      plan.targetVideoPath,
+      plan.subtitleSidecars,
+      parse(plan.nfoPath).name,
+    );
 
     if (config.behavior.deleteEmptyFolder) {
       const mediaRoot = resolve(config.paths.mediaPath.trim() || dirname(fileInfo.filePath));
@@ -377,6 +392,7 @@ export class FileOrganizer {
       fileInfo.filePath,
       resolvedPaths.targetVideoPath,
       resolvedPaths.subtitleSidecars,
+      fileInfo.number,
     );
     this.logger.info(`Moved failed file to ${failedDir}: ${fileInfo.fileName}`);
     return movedPath;
@@ -386,9 +402,16 @@ export class FileOrganizer {
     sourceVideoPath: string,
     targetVideoPath: string,
     subtitleSidecars?: SubtitleSidecarMatch[],
+    bundledMovieBaseName?: string,
   ): Promise<string> {
     const resolvedSubtitleSidecars = subtitleSidecars ?? (await findSubtitleSidecars(sourceVideoPath));
-    const movedArtifacts: Array<{ sourcePath: string; targetPath: string }> = [];
+    const resolvedGeneratedVideoSidecars = await this.findGeneratedVideoSidecars(sourceVideoPath);
+    const resolvedBundledMovieBaseName = this.deriveBundledMovieBaseName(
+      sourceVideoPath,
+      targetVideoPath,
+      bundledMovieBaseName,
+    );
+    const movedArtifacts: Array<{ sourcePath: string; targetPath: string; label: string }> = [];
     let movedVideoPath: string | undefined;
 
     try {
@@ -400,8 +423,24 @@ export class FileOrganizer {
         movedArtifacts.push({
           sourcePath: subtitleSidecar.path,
           targetPath: movedSubtitlePath,
+          label: "subtitle",
         });
         this.logger.info(`Moved subtitle sidecar to ${movedSubtitlePath}`);
+      }
+
+      for (const generatedVideoSidecar of resolvedGeneratedVideoSidecars) {
+        const targetSidecarPath = this.buildGeneratedVideoSidecarTargetPath(
+          generatedVideoSidecar,
+          dirname(movedVideoPath),
+          resolvedBundledMovieBaseName,
+        );
+        const movedSidecarPath = await moveFileSafely(generatedVideoSidecar.path, targetSidecarPath);
+        movedArtifacts.push({
+          sourcePath: generatedVideoSidecar.path,
+          targetPath: movedSidecarPath,
+          label: "generated sidecar",
+        });
+        this.logger.info(`Moved generated video sidecar to ${movedSidecarPath}`);
       }
 
       return movedVideoPath;
@@ -413,7 +452,7 @@ export class FileOrganizer {
           await moveFileSafely(artifact.targetPath, artifact.sourcePath);
         } catch (rollbackError) {
           const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
-          rollbackErrors.push(`subtitle ${artifact.targetPath}: ${rollbackMessage}`);
+          rollbackErrors.push(`${artifact.label} ${artifact.targetPath}: ${rollbackMessage}`);
         }
       }
 
@@ -497,6 +536,81 @@ export class FileOrganizer {
     }
 
     return !ignoredExistingPaths.has(resolve(targetPath));
+  }
+
+  private deriveBundledMovieBaseName(
+    sourceVideoPath: string,
+    targetVideoPath: string,
+    preferredBaseName?: string,
+  ): string {
+    if (preferredBaseName?.trim()) {
+      return preferredBaseName;
+    }
+
+    const sourceFileInfo = parseFileInfo(sourceVideoPath);
+    if (sourceFileInfo.part) {
+      return sourceFileInfo.number;
+    }
+
+    return parse(targetVideoPath).name;
+  }
+
+  private async findGeneratedVideoSidecars(sourceVideoPath: string): Promise<GeneratedVideoSidecarMatch[]> {
+    const sourceFileInfo = parseFileInfo(sourceVideoPath);
+    if (!sourceFileInfo.number.toUpperCase().startsWith("FC2-")) {
+      return [];
+    }
+
+    const candidates = await listVideoFiles(dirname(sourceVideoPath), false);
+    const matches = candidates
+      .filter(
+        (candidatePath) =>
+          resolve(candidatePath) !== resolve(sourceVideoPath) && isGeneratedSidecarVideo(candidatePath),
+      )
+      .map((candidatePath) => {
+        const candidateFileInfo = parseFileInfo(candidatePath);
+        if (candidateFileInfo.number.toUpperCase() !== sourceFileInfo.number.toUpperCase()) {
+          return undefined;
+        }
+
+        const suffix = this.extractGeneratedVideoSidecarSuffix(candidatePath, sourceFileInfo.number);
+        if (!suffix) {
+          return undefined;
+        }
+
+        return {
+          path: candidatePath,
+          suffix,
+        } satisfies GeneratedVideoSidecarMatch;
+      })
+      .filter((match): match is GeneratedVideoSidecarMatch => Boolean(match));
+
+    matches.sort((left, right) => left.path.localeCompare(right.path));
+    return matches;
+  }
+
+  private extractGeneratedVideoSidecarSuffix(filePath: string, fc2Number: string): string | undefined {
+    const rawName = parse(filePath).name.normalize("NFC");
+    const digits = fc2Number.match(/FC2-(\d{5,})/iu)?.[1];
+    if (!digits) {
+      return undefined;
+    }
+
+    const digitIndex = rawName.toUpperCase().indexOf(digits.toUpperCase());
+    if (digitIndex < 0) {
+      return undefined;
+    }
+
+    const suffix = rawName.slice(digitIndex + digits.length);
+    return suffix || undefined;
+  }
+
+  private buildGeneratedVideoSidecarTargetPath(
+    sidecar: GeneratedVideoSidecarMatch,
+    targetDirectory: string,
+    movieBaseName: string,
+  ): string {
+    return join(targetDirectory, `${movieBaseName}${sidecar.suffix}${parse(sidecar.path).ext}`);
   }
 
   private resolveBaseOutput(fileInfo: FileInfo, config: Configuration): string {
