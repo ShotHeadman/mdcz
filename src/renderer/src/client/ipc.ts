@@ -101,6 +101,7 @@ export const ipc = {
   },
   file: {
     listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
+    exists: (path: string) => client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),

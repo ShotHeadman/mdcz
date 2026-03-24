@@ -20,6 +20,7 @@ export const createFileHandlers = (
 ): Pick<
   IpcRouterContract,
   | typeof IpcChannel.File_ListEntries
+  | typeof IpcChannel.File_Exists
   | typeof IpcChannel.File_Browse
   | typeof IpcChannel.File_Delete
   | typeof IpcChannel.File_NfoRead
@@ -97,6 +98,19 @@ export const createFileHandlers = (
         }
       },
     ),
+    [IpcChannel.File_Exists]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
+      const targetPath = input?.path?.trim();
+      if (!targetPath) {
+        return { exists: false };
+      }
+
+      try {
+        const stats = await stat(targetPath);
+        return { exists: stats.isFile() };
+      } catch {
+        return { exists: false };
+      }
+    }),
     [IpcChannel.File_Browse]: t.procedure
       .input<{ type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> }>()
       .action(async ({ input }) => {

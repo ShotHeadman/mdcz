@@ -1,8 +1,8 @@
 import { ImageIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { useResolvedImageCandidates } from "@/hooks/useResolvedImageSources";
 import { cn } from "@/lib/utils";
-import { getImageSrc } from "@/utils/image";
 
 export interface ImageOptionCardProps {
   src: string;
@@ -50,16 +50,13 @@ export function ImageOptionCard({
   const [naturalSize, setNaturalSize] = useState<{ src: string; width: number; height: number } | null>(null);
   const [candidateIndex, setCandidateIndex] = useState(0);
 
-  const renderCandidates = useMemo(() => {
+  const rawCandidates = useMemo(() => {
     if (empty || !src.trim()) {
-      return fallbackSrcs
-        .map((candidate) => getImageSrc(candidate))
-        .filter((candidate, index, candidates) => candidate.length > 0 && candidates.indexOf(candidate) === index);
+      return fallbackSrcs;
     }
-    return [src, ...fallbackSrcs]
-      .map((candidate) => getImageSrc(candidate))
-      .filter((candidate, index, candidates) => candidate.length > 0 && candidates.indexOf(candidate) === index);
+    return [src, ...fallbackSrcs];
   }, [empty, fallbackSrcs, src]);
+  const renderCandidates = useResolvedImageCandidates(rawCandidates);
   const firstRenderCandidate = renderCandidates[0] ?? "";
 
   useEffect(() => {

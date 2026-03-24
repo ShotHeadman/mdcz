@@ -362,4 +362,36 @@ describe("diffCrawlerData", () => {
       },
     });
   });
+
+  it("resolves relative scene image paths against the scanned directory when local assets are missing", () => {
+    const entry = {
+      ...createEntry(
+        createCrawlerData({
+          scene_images: ["extrafanart/scene-a.jpg"],
+        }),
+      ),
+      assets: {
+        ...createEntry(createCrawlerData()).assets,
+        sceneImages: [],
+      },
+    };
+
+    const result = partitionCrawlerDataWithOptions(
+      getEntryCrawlerData(entry),
+      createCrawlerData({
+        scene_images: ["https://example.com/new-scene.jpg"],
+      }),
+      { entry },
+    );
+
+    expect(result.fieldDiffs.find((diff) => diff.field === "scene_images")).toMatchObject({
+      kind: "imageCollection",
+      oldPreview: {
+        items: ["/media/extrafanart/scene-a.jpg"],
+      },
+      newPreview: {
+        items: ["https://example.com/new-scene.jpg"],
+      },
+    });
+  });
 });

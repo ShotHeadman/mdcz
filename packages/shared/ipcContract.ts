@@ -76,6 +76,7 @@ export type IpcRouterContract = {
       }>;
     }
   >;
+  [IpcChannel.File_Exists]: IpcProcedure<{ path?: string }, { exists: boolean }>;
   [IpcChannel.File_Browse]: IpcProcedure<
     { type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> },
     { paths: string[] | null }

@@ -28,6 +28,7 @@ export enum IpcChannel {
 
   Translate_TestLlm = "translate:test-llm",
   File_ListEntries = "file:list-entries",
+  File_Exists = "file:exists",
   File_Browse = "file:browse",
   File_Delete = "file:delete",
   File_NfoRead = "file:nfo-read",

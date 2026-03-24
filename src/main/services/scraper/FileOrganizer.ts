@@ -230,18 +230,6 @@ const NAMING_PREVIEW_SAMPLES: Array<{
     data: previewData("ABC-456", { title_zh: "中文字幕示例", actors: ["演员B"], studio: "Studio X" }),
   },
   {
-    label: "破解",
-    fileInfo: previewFileInfo("ABC-789"),
-    data: previewData("ABC-789", { title_zh: "破解作品", actors: ["演员C"], studio: "Studio Y" }),
-    localState: { uncensoredChoice: "umr" },
-  },
-  {
-    label: "流出",
-    fileInfo: previewFileInfo("DEF-001"),
-    data: previewData("DEF-001", { title_zh: "流出作品", actors: ["演员D"], studio: "Studio Z" }),
-    localState: { uncensoredChoice: "leak" },
-  },
-  {
     label: "多演员",
     fileInfo: previewFileInfo("DEF-012"),
     data: previewData("DEF-012", {

@@ -17,8 +17,8 @@ import {
 import { Progress } from "@/components/ui/Progress";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { useToast } from "@/contexts/ToastProvider";
+import { useResolvedImageSrc } from "@/hooks/useResolvedImageSources";
 import { cn } from "@/lib/utils";
-import { getImageSrc } from "@/utils/image";
 
 const LOOKUP_CONCURRENCY = 2;
 
@@ -70,9 +70,21 @@ function SummaryThumb({
     );
   }
 
-  return (
-    <img src={getImageSrc(src)} alt="thumbnail" className="h-[22px] w-8 rounded-md border bg-muted/20 object-cover" />
-  );
+  return <SummaryThumbImage src={src} />;
+}
+
+function SummaryThumbImage({ src }: { src: string }) {
+  const resolvedSrc = useResolvedImageSrc([src]);
+
+  if (!resolvedSrc) {
+    return (
+      <div className="flex h-[22px] w-8 items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/20">
+        <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
+      </div>
+    );
+  }
+
+  return <img src={resolvedSrc} alt="thumbnail" className="h-[22px] w-8 rounded-md border bg-muted/20 object-cover" />;
 }
 
 function getStatusBadge(state: ItemState): {

@@ -1,14 +1,15 @@
 import { ChevronLeft, ChevronRight, ImageIcon, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/Dialog";
-import { getImageSrc } from "@/utils/image";
+import { useResolvedImageSrc } from "@/hooks/useResolvedImageSources";
 
 interface SceneImageGalleryProps {
   images: string[];
   maxThumbnails?: number;
+  baseDir?: string;
 }
 
-export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGalleryProps) {
+export function SceneImageGallery({ images, maxThumbnails = 10, baseDir }: SceneImageGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const isOpen = lightboxIndex >= 0;
 
@@ -67,7 +68,7 @@ export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGall
             }}
             className="shrink-0 w-20 h-14 rounded-md border bg-muted/20 hover:ring-2 hover:ring-primary/50 transition-all cursor-pointer"
           >
-            <LazyImage src={imagePath} alt={`Scene ${index + 1}`} />
+            <LazyImage src={imagePath} alt={`Scene ${index + 1}`} baseDir={baseDir} />
           </button>
         ))}
         {remainingCount > 0 && (
@@ -140,11 +141,7 @@ export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGall
           {/* Main image */}
           <div className="flex items-center justify-center w-full h-[80vh]">
             {lightboxIndex >= 0 && lightboxIndex < images.length && (
-              <img
-                src={getImageSrc(images[lightboxIndex])}
-                alt={`Scene ${lightboxIndex + 1}`}
-                className="max-w-full max-h-full object-contain"
-              />
+              <LightboxImage src={images[lightboxIndex]} index={lightboxIndex} baseDir={baseDir} />
             )}
           </div>
         </DialogContent>
@@ -153,11 +150,37 @@ export function SceneImageGallery({ images, maxThumbnails = 10 }: SceneImageGall
   );
 }
 
-function LazyImage({ src, alt }: { src: string; alt: string }) {
+function LightboxImage({ src, index, baseDir }: { src: string; index: number; baseDir?: string }) {
+  const resolvedSrc = useResolvedImageSrc([src], baseDir);
+
+  if (!resolvedSrc) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <ImageIcon className="h-8 w-8 text-white/25" />
+      </div>
+    );
+  }
+
+  return <img src={resolvedSrc} alt={`Scene ${index + 1}`} className="max-w-full max-h-full object-contain" />;
+}
+
+function LazyImage({ src, alt, baseDir }: { src: string; alt: string; baseDir?: string }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const resolvedSrc = useResolvedImageSrc([src], baseDir);
 
-  if (error) {
+  useEffect(() => {
+    if (resolvedSrc) {
+      setLoaded(false);
+      setError(false);
+      return;
+    }
+
+    setLoaded(false);
+    setError(false);
+  }, [resolvedSrc]);
+
+  if (error || !resolvedSrc) {
     return (
       <div className="w-full h-full flex items-center justify-center">
         <ImageIcon className="h-4 w-4 text-muted-foreground/30" />
@@ -169,7 +192,7 @@ function LazyImage({ src, alt }: { src: string; alt: string }) {
     <div className="w-full h-full overflow-hidden rounded-md">
       {!loaded && <div className="w-full h-full bg-muted/30 animate-pulse" />}
       <img
-        src={getImageSrc(src)}
+        src={resolvedSrc}
         alt={alt}
         onLoad={() => setLoaded(true)}
         onError={() => setError(true)}

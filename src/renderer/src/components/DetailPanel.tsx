@@ -48,6 +48,12 @@ function DetailPathBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
+function getDirFromPath(filePath: string): string {
+  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  if (slash <= 0) return filePath;
+  return filePath.slice(0, slash);
+}
+
 function DetailErrorBlock({ value }: { value: string }) {
   return (
     <div>
@@ -305,7 +311,10 @@ export function DetailPanel({
                 {item.sceneImages && item.sceneImages.length > 0 && (
                   <>
                     <Separator />
-                    <SceneImageGallery images={item.sceneImages} />
+                    <SceneImageGallery
+                      images={item.sceneImages}
+                      baseDir={item.outputPath ?? (item.path ? getDirFromPath(item.path) : undefined)}
+                    />
                   </>
                 )}
 

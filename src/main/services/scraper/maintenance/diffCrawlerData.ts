@@ -179,10 +179,12 @@ const buildImagePreview = (
   return { src, fallbackSrcs };
 };
 
-const buildSceneImagePreview = (items: unknown): FieldDiffImageCollectionPreview => {
+const buildSceneImagePreview = (items: unknown, entry?: LocalScanEntry): FieldDiffImageCollectionPreview => {
   return {
     items: Array.isArray(items)
-      ? items.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      ? items
+          .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          .map((item) => resolveImageValue(item, entry))
       : [],
   };
 };
@@ -282,8 +284,8 @@ const buildImageCollectionFieldDiff = (
   const oldValue = normalizeImageCollectionValue(oldData[field]);
   const newValue = normalizeImageCollectionValue(newData[field]);
   const hasLocalSceneImages = (entry?.assets.sceneImages.length ?? 0) > 0;
-  const oldPreview = buildSceneImagePreview(hasLocalSceneImages ? entry?.assets.sceneImages : oldValue);
-  const newPreview = buildSceneImagePreview(newValue);
+  const oldPreview = buildSceneImagePreview(hasLocalSceneImages ? entry?.assets.sceneImages : oldValue, entry);
+  const newPreview = buildSceneImagePreview(newValue, entry);
 
   return {
     kind: "imageCollection",

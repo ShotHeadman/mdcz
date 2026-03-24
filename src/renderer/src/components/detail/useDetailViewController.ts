@@ -2,20 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { readNfo, updateNfo } from "@/api/manual";
 import type { DetailViewItem } from "@/components/detail/types";
-import { buildImageSourceCandidates, getImageSrc } from "@/utils/image";
+import { useResolvedImageCandidates } from "@/hooks/useResolvedImageSources";
+import { buildImageSourceCandidates } from "@/utils/image";
 
 function getDirFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   if (slash <= 0) return filePath;
   return filePath.slice(0, slash);
-}
-
-function toRenderableSrc(path: string | undefined): string {
-  if (!path) {
-    return "";
-  }
-
-  return getImageSrc(path);
 }
 
 export function useDetailViewController(item?: DetailViewItem | null) {
@@ -26,6 +19,8 @@ export function useDetailViewController(item?: DetailViewItem | null) {
   const [nfoSaving, setNfoSaving] = useState(false);
   const [posterSrc, setPosterSrc] = useState("");
   const [thumbSrc, setThumbSrc] = useState("");
+  const [posterCandidateIndex, setPosterCandidateIndex] = useState(0);
+  const [thumbCandidateIndex, setThumbCandidateIndex] = useState(0);
 
   const posterCandidates = useMemo(
     () =>
@@ -48,14 +43,34 @@ export function useDetailViewController(item?: DetailViewItem | null) {
       }),
     [item?.fanartUrl, item?.outputPath, item?.path, item?.thumbUrl],
   );
+  const posterRenderableCandidates = useResolvedImageCandidates([posterCandidates.primary, posterCandidates.fallback]);
+  const thumbRenderableCandidates = useResolvedImageCandidates([thumbCandidates.primary, thumbCandidates.fallback]);
 
   useEffect(() => {
-    setPosterSrc(toRenderableSrc(posterCandidates.primary));
-  }, [posterCandidates.primary]);
+    if (posterCandidates.primary || posterCandidates.fallback) {
+      setPosterCandidateIndex(0);
+      return;
+    }
+
+    setPosterCandidateIndex(0);
+  }, [posterCandidates.fallback, posterCandidates.primary]);
 
   useEffect(() => {
-    setThumbSrc(toRenderableSrc(thumbCandidates.primary));
-  }, [thumbCandidates.primary]);
+    if (thumbCandidates.primary || thumbCandidates.fallback) {
+      setThumbCandidateIndex(0);
+      return;
+    }
+
+    setThumbCandidateIndex(0);
+  }, [thumbCandidates.fallback, thumbCandidates.primary]);
+
+  useEffect(() => {
+    setPosterSrc(posterRenderableCandidates[posterCandidateIndex] ?? "");
+  }, [posterCandidateIndex, posterRenderableCandidates]);
+
+  useEffect(() => {
+    setThumbSrc(thumbRenderableCandidates[thumbCandidateIndex] ?? "");
+  }, [thumbCandidateIndex, thumbRenderableCandidates]);
 
   const openNfoEditor = useCallback(async (path: string) => {
     try {
@@ -118,18 +133,12 @@ export function useDetailViewController(item?: DetailViewItem | null) {
   }, [item?.nfoPath, item?.path, openNfoEditor]);
 
   const handlePosterError = useCallback(() => {
-    const localPoster = toRenderableSrc(posterCandidates.fallback);
-    if (localPoster && localPoster !== posterSrc) {
-      setPosterSrc(localPoster);
-    }
-  }, [posterCandidates.fallback, posterSrc]);
+    setPosterCandidateIndex((currentIndex) => Math.min(currentIndex + 1, posterRenderableCandidates.length));
+  }, [posterRenderableCandidates.length]);
 
   const handleThumbError = useCallback(() => {
-    const localThumb = toRenderableSrc(thumbCandidates.fallback);
-    if (localThumb && localThumb !== thumbSrc) {
-      setThumbSrc(localThumb);
-    }
-  }, [thumbCandidates.fallback, thumbSrc]);
+    setThumbCandidateIndex((currentIndex) => Math.min(currentIndex + 1, thumbRenderableCandidates.length));
+  }, [thumbRenderableCandidates.length]);
 
   useEffect(() => {
     const listener = (event: Event) => {

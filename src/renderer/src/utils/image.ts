@@ -11,7 +11,11 @@ export function normalizeImageSourcePath(rawPath: string): string {
       }
     }
 
-    if (parsed.protocol === "file:") {
+    if (parsed.protocol === "file:" || parsed.protocol === "local-file:") {
+      if (parsed.host) {
+        return `//${parsed.host}${decodeURIComponent(parsed.pathname)}`;
+      }
+
       const pathname = decodeURIComponent(parsed.pathname);
       if (/^\/[A-Za-z]:\//u.test(pathname)) {
         return pathname.slice(1);
@@ -48,6 +52,35 @@ const hasExplicitUnsupportedScheme = (value: string): boolean => {
   return /^[a-z][a-z\d+.-]*:/iu.test(value);
 };
 
+const isDirectRenderableRemoteImageSource = (value: string): boolean => {
+  return (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:")
+  );
+};
+
+const isAbsoluteLocalPath = (value: string): boolean => {
+  return /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+};
+
+const joinRelativePath = (baseDir: string, relativePath: string): string => {
+  const separator = baseDir.lastIndexOf("\\") > baseDir.lastIndexOf("/") ? "\\" : "/";
+  const normalizedBase = baseDir.replace(/[\\/]+$/u, "");
+  const normalizedRelative = relativePath.replace(/^[\\/]+/u, "");
+
+  if (!normalizedBase) {
+    return normalizedRelative;
+  }
+
+  if (!normalizedRelative) {
+    return normalizedBase;
+  }
+
+  return `${normalizedBase}${separator}${normalizedRelative}`;
+};
+
 const buildSiblingPath = (filePath: string, fileName: string): string => {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   const separator = filePath.lastIndexOf("\\") > filePath.lastIndexOf("/") ? "\\" : "/";
@@ -56,6 +89,23 @@ const buildSiblingPath = (filePath: string, fileName: string): string => {
   }
 
   return `${filePath.slice(0, slash)}${separator}${fileName}`;
+};
+
+const getImageBaseDir = (filePath: string | undefined, outputPath: string | undefined): string => {
+  if (outputPath) {
+    return outputPath;
+  }
+
+  if (!filePath) {
+    return "";
+  }
+
+  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  if (slash < 0) {
+    return "";
+  }
+
+  return filePath.slice(0, slash) || filePath[0] || "";
 };
 
 export const buildLocalImageCandidate = (
@@ -86,11 +136,44 @@ export const buildImageSourceCandidates = (
   input: ImageSourceCandidatesInput,
 ): { primary: string; fallback: string } => {
   const fallback = buildLocalImageCandidate(input.filePath, input.outputPath, input.fileName);
+  const baseDir = getImageBaseDir(input.filePath, input.outputPath);
+  const primary = resolveImagePath(input.remotePath, baseDir) || fallback;
+
   return {
-    primary: input.remotePath || fallback,
+    primary,
     fallback,
   };
 };
+
+export function resolveImagePath(rawPath: string | undefined, baseDir?: string): string {
+  if (!rawPath) {
+    return "";
+  }
+
+  const path = normalizeImageSourcePath(rawPath);
+  if (!path) {
+    return "";
+  }
+
+  if (isSupportedRemoteImageScheme(path) || isAbsoluteLocalPath(path) || hasExplicitUnsupportedScheme(path)) {
+    return path;
+  }
+
+  return baseDir ? joinRelativePath(baseDir, path) : path;
+}
+
+export function getLocalImagePath(rawPath: string | undefined, baseDir?: string): string {
+  const path = resolveImagePath(rawPath, baseDir);
+  if (!path || hasExplicitUnsupportedScheme(path) || isDirectRenderableRemoteImageSource(path)) {
+    return "";
+  }
+
+  if (path.startsWith("file://") || path.startsWith("local-file://")) {
+    return normalizeImageSourcePath(path);
+  }
+
+  return path;
+}
 
 /**
  * Convert an absolute file path into a `local-file://` URL.
@@ -134,7 +217,7 @@ function toFileUrl(path: string): string {
 }
 
 export function getImageSrc(rawPath: string): string {
-  const path = normalizeImageSourcePath(rawPath);
+  const path = resolveImagePath(rawPath);
   if (!path) return "";
   if (isSupportedRemoteImageScheme(path)) {
     return path;

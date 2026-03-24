@@ -247,8 +247,6 @@ describe("FileOrganizer naming settings", () => {
     );
 
     expect(previews.find((item) => item.label === "中文字幕")?.file).toContain("-SUB");
-    expect(previews.find((item) => item.label === "破解")?.file).toContain("-UMR");
-    expect(previews.find((item) => item.label === "流出")?.file).toContain("-LEAK");
     expect(previews.find((item) => item.label === "多演员")?.folder).toContain("等演员");
   });
 

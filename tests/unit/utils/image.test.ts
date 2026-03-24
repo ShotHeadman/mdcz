@@ -27,6 +27,28 @@ describe("image utils", () => {
       },
       {
         input: {
+          remotePath: "poster.jpg",
+          outputPath: "/tmp/out",
+          fileName: "poster.jpg",
+        },
+        expected: {
+          primary: "/tmp/out/poster.jpg",
+          fallback: "/tmp/out/poster.jpg",
+        },
+      },
+      {
+        input: {
+          remotePath: "extrafanart/scene1.jpg",
+          outputPath: "/tmp/out",
+          fileName: "thumb.jpg",
+        },
+        expected: {
+          primary: "/tmp/out/extrafanart/scene1.jpg",
+          fallback: "/tmp/out/thumb.jpg",
+        },
+      },
+      {
+        input: {
           fileName: "poster.jpg",
         },
         expected: {

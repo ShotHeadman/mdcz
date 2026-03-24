@@ -62,12 +62,12 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: "paths", label: "目录与路径", icon: FolderOpen },
-  { key: "scrape", label: "刮削设置", icon: FileCheck },
-  { key: "network", label: "网络连接", icon: Globe },
-  { key: "download", label: "下载选项", icon: Download },
   { key: "naming", label: "命名规则", icon: Type },
+  { key: "scrape", label: "刮削设置", icon: FileCheck },
   { key: "translate", label: "翻译服务", icon: Languages },
   { key: "personSync", label: "人物同步", icon: Server },
+  { key: "network", label: "网络连接", icon: Globe },
+  { key: "download", label: "下载选项", icon: Download },
   { key: "shortcuts", label: "快捷键", icon: Keyboard },
   { key: "ui", label: "界面设置", icon: Monitor },
   { key: "behavior", label: "文件行为", icon: FileCog },
@@ -88,8 +88,7 @@ const PART_STYLE_OPTIONS: EnumOption[] = [
   { value: "DISC", label: "统一为 DISC1 / DISC2" },
 ];
 
-export const NAMING_TEMPLATE_DESCRIPTION =
-  "可用占位符：{actor} {number} {date} {title} {studio}；其中 {date} 使用“发行日期格式”设置。";
+export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
 
 // ── Field registry for search/filter ──
 
@@ -485,7 +484,7 @@ export function NamingSection(_props: SectionRenderProps) {
       <EnumField
         name="naming.partStyle"
         label="分盘样式"
-        description="控制识别为分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格"
+        description="分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格"
         options={PART_STYLE_OPTIONS}
       />
     </>
