@@ -1,4 +1,4 @@
-import type { LocalScanEntry, MaintenanceItemResult } from "@shared/types";
+import type { LocalScanEntry } from "@shared/types";
 import { FileText, FolderOpen, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
@@ -10,30 +10,31 @@ import {
 } from "@/components/shared/MediaBrowserList";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ContextMenuItem } from "@/components/ui/ContextMenu";
+import { buildMaintenanceEntryGroups, type MaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
 import { type MaintenanceFilter, useMaintenanceStore } from "@/store/maintenanceStore";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
 
-const getEntryStatus = (entry: LocalScanEntry, result?: MaintenanceItemResult): MediaBrowserItemStatus => {
-  if (result?.status === "success") return "success";
-  if (result?.status === "failed") return "failed";
-  if (result?.status === "processing") return "processing";
-  if (entry.scanError) return "failed";
-  return "idle";
-};
-
-const statusWeight = (entry: LocalScanEntry, result?: MaintenanceItemResult): number => {
-  const status = getEntryStatus(entry, result);
+const statusWeight = (status: MediaBrowserItemStatus): number => {
   if (status === "success") return 0;
   if (status === "failed") return 1;
   if (status === "processing") return 2;
   return 3;
 };
 
-const matchesFilter = (filter: MaintenanceFilter, entry: LocalScanEntry, result?: MaintenanceItemResult): boolean => {
+const matchesFilter = (filter: MaintenanceFilter, status: MediaBrowserItemStatus): boolean => {
   if (filter === "all") return true;
-  return getEntryStatus(entry, result) === filter;
+  return status === filter;
+};
+
+const buildGroupSubtitle = (group: MaintenanceEntryGroup): string => {
+  const baseTitle = getTitle(group.representative);
+  if (group.items.length <= 1) {
+    return baseTitle;
+  }
+
+  return `${baseTitle} · 共 ${group.items.length} 个分盘文件`;
 };
 
 function buildMenuContent(entry: LocalScanEntry) {
@@ -86,9 +87,9 @@ export default function MaintenanceEntryList() {
     itemResults,
     executionStatus,
     setFilter,
+    toggleSelectedIds,
     toggleSelectAll,
     setActiveId,
-    toggleSelected,
   } = useMaintenanceStore(
     useShallow((state) => ({
       entries: state.entries,
@@ -98,55 +99,62 @@ export default function MaintenanceEntryList() {
       itemResults: state.itemResults,
       executionStatus: state.executionStatus,
       setFilter: state.setFilter,
+      toggleSelectedIds: state.toggleSelectedIds,
       toggleSelectAll: state.toggleSelectAll,
       setActiveId: state.setActiveId,
-      toggleSelected: state.toggleSelected,
     })),
   );
 
   const selectionLocked = executionStatus === "executing" || executionStatus === "stopping";
+  const groupedEntries = useMemo(() => buildMaintenanceEntryGroups(entries, { itemResults }), [entries, itemResults]);
 
   const sortedEntries = useMemo(
     () =>
-      [...entries].sort((left, right) => {
-        const weightDiff = statusWeight(left, itemResults[left.id]) - statusWeight(right, itemResults[right.id]);
+      [...groupedEntries].sort((left, right) => {
+        const weightDiff = statusWeight(left.status) - statusWeight(right.status);
         if (weightDiff !== 0) return weightDiff;
-        return left.fileInfo.number.localeCompare(right.fileInfo.number);
+        return left.representative.fileInfo.number.localeCompare(right.representative.fileInfo.number);
       }),
-    [entries, itemResults],
+    [groupedEntries],
   );
 
-  const visibleEntries = sortedEntries.filter((entry) => matchesFilter(filter, entry, itemResults[entry.id]));
-  const visibleIds = visibleEntries.map((entry) => entry.id);
-  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
-  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.includes(id)).length;
-
-  const items = useMemo<MediaBrowserItem[]>(
-    () =>
-      sortedEntries.map((entry) => {
-        const result = itemResults[entry.id];
-
-        return {
-          id: entry.id,
-          active: activeId === entry.id,
-          title: entry.fileInfo.number,
-          subtitle: getTitle(entry),
-          errorText: result?.error ?? entry.scanError,
-          status: getEntryStatus(entry, result),
-          selectionControl: (
-            <Checkbox
-              checked={selectedIds.includes(entry.id)}
-              disabled={selectionLocked}
-              onCheckedChange={() => toggleSelected(entry.id)}
-              onClick={(event) => event.stopPropagation()}
-            />
-          ),
-          onClick: () => setActiveId(entry.id),
-          menuContent: buildMenuContent(entry),
-        };
-      }),
-    [activeId, itemResults, selectedIds, selectionLocked, setActiveId, sortedEntries, toggleSelected],
+  const visibleEntries = sortedEntries.filter((group) => matchesFilter(filter, group.status));
+  const visibleIds = visibleEntries.flatMap((group) => group.items.map((entry) => entry.id));
+  const isGroupFullySelected = (group: MaintenanceEntryGroup): boolean =>
+    group.items.every((entry) => selectedIds.includes(entry.id));
+  const isGroupPartiallySelected = (group: MaintenanceEntryGroup): boolean =>
+    group.items.some((entry) => selectedIds.includes(entry.id)) && !isGroupFullySelected(group);
+  const allVisibleSelected = visibleEntries.length > 0 && visibleEntries.every((group) => isGroupFullySelected(group));
+  const someVisibleSelected = visibleEntries.some(
+    (group) => isGroupPartiallySelected(group) || isGroupFullySelected(group),
   );
+  const selectedVisibleCount = visibleEntries.filter((group) => isGroupFullySelected(group)).length;
+
+  const items: MediaBrowserItem[] = sortedEntries.map((group) => {
+    const representative = group.representative;
+    const checkedState = isGroupFullySelected(group) ? true : isGroupPartiallySelected(group) ? "indeterminate" : false;
+
+    return {
+      id: group.id,
+      active: group.items.some((entry) => activeId === entry.id),
+      title: representative.fileInfo.number,
+      subtitle: buildGroupSubtitle(group),
+      errorText: group.errorText,
+      status: group.status,
+      selectionControl: (
+        <Checkbox
+          checked={checkedState}
+          disabled={selectionLocked}
+          onCheckedChange={() => {
+            toggleSelectedIds(group.items.map((entry) => entry.id));
+          }}
+          onClick={(event) => event.stopPropagation()}
+        />
+      ),
+      onClick: () => setActiveId(group.items.find((entry) => entry.id === activeId)?.id ?? representative.id),
+      menuContent: buildMenuContent(group.items.find((entry) => entry.id === activeId) ?? representative),
+    };
+  });
 
   return (
     <MediaBrowserList
@@ -158,7 +166,7 @@ export default function MaintenanceEntryList() {
         <>
           <Checkbox
             id="maintenance-select-all"
-            checked={allVisibleSelected}
+            checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
             disabled={selectionLocked || visibleIds.length === 0}
             onCheckedChange={() => toggleSelectAll(visibleIds)}
           />

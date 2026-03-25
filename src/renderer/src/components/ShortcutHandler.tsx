@@ -10,6 +10,11 @@ import {
   stopScrape,
 } from "@/api/manual";
 import { ipc } from "@/client/ipc";
+import {
+  findScrapeResultGroup,
+  findScrapeResultGroupItem,
+  getScrapeResultGroupNfoPath,
+} from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -72,7 +77,11 @@ export function ShortcutHandler() {
 
       void (async () => {
         const scrapeState = useScrapeStore.getState();
-        const selectedItem = scrapeState.results.find((item) => item.id === uiState.selectedResultId);
+        const selectedGroup = findScrapeResultGroup(scrapeState.results, uiState.selectedResultId);
+        const selectedItem =
+          (selectedGroup && findScrapeResultGroupItem(selectedGroup, uiState.selectedResultId)) ??
+          selectedGroup?.representative;
+        const selectedNfoPath = selectedGroup ? getScrapeResultGroupNfoPath(selectedGroup) : undefined;
 
         switch (action) {
           case "start-or-stop-scrape": {
@@ -210,7 +219,7 @@ export function ShortcutHandler() {
             navigate({ to: "/" });
             window.dispatchEvent(
               new CustomEvent("app:open-nfo", {
-                detail: { path: selectedItem.path },
+                detail: { path: selectedNfoPath ?? selectedItem.path },
               }),
             );
             return;

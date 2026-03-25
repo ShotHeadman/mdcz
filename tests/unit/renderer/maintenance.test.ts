@@ -7,6 +7,13 @@ import {
   resolveMaintenanceDiffImageOption,
   resolveMaintenanceDiffImageSrc,
 } from "@/lib/maintenance";
+import {
+  buildMaintenanceEntryGroups,
+  findMaintenanceEntryGroup,
+  formatMaintenanceIdleStatusText,
+  summarizeMaintenanceExecutionGroups,
+  summarizeMaintenancePreviewGroups,
+} from "@/lib/maintenanceGrouping";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
@@ -65,6 +72,323 @@ const createImageCollectionDiff = (overrides: ImageCollectionDiffInput): FieldDi
 
 afterEach(() => {
   useMaintenanceStore.getState().reset();
+});
+
+describe("maintenance multipart grouping", () => {
+  it("collapses same-directory multipart files into one display group", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(createCrawlerData({ number: "FC2-123456" })),
+      id: "entry-1",
+      videoPath: "/media/FC2-123456-1.mp4",
+      fileInfo: {
+        filePath: "/media/FC2-123456-1.mp4",
+        fileName: "FC2-123456-1",
+        extension: ".mp4",
+        number: "FC2-123456",
+        isSubtitled: false,
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      id: "entry-2",
+      videoPath: "/media/FC2-123456-2.mp4",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+    const standalone: LocalScanEntry = {
+      ...createEntry(createCrawlerData({ number: "ABC-123" })),
+      id: "entry-3",
+    };
+
+    const groups = buildMaintenanceEntryGroups([part2, standalone, part1]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.find((group) => group.representative.id === "entry-3")).toMatchObject({
+      representative: standalone,
+    });
+    expect(groups.find((group) => group.items.length === 2)?.items.map((entry) => entry.id)).toEqual([
+      "entry-1",
+      "entry-2",
+    ]);
+    expect(formatMaintenanceIdleStatusText([part1, part2])).toBe("已扫描 1 项");
+  });
+
+  it("uses the same same-directory same-number grouping rule as normal scrape results", () => {
+    const first: LocalScanEntry = {
+      ...createEntry(createCrawlerData({ number: "ABC-123" })),
+      id: "entry-a",
+      videoPath: "/media/ABC-123-copy-a.mp4",
+      fileInfo: {
+        filePath: "/media/ABC-123-copy-a.mp4",
+        fileName: "ABC-123-copy-a.mp4",
+        extension: ".mp4",
+        number: "ABC-123",
+        isSubtitled: false,
+      },
+      currentDir: "/media",
+    };
+    const second: LocalScanEntry = {
+      ...first,
+      id: "entry-b",
+      videoPath: "/media/ABC-123-copy-b.mp4",
+      fileInfo: {
+        ...first.fileInfo,
+        filePath: "/media/ABC-123-copy-b.mp4",
+        fileName: "ABC-123-copy-b.mp4",
+      },
+    };
+
+    const groups = buildMaintenanceEntryGroups([first, second]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.items.map((entry) => entry.id)).toEqual(["entry-a", "entry-b"]);
+  });
+
+  it("derives grouped status and error text from child maintenance results", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      id: "entry-1",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      id: "entry-2",
+      scanError: "NFO 解析失败",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+
+    const itemResults = {
+      "entry-1": {
+        entryId: "entry-1",
+        status: "success" as const,
+      },
+      "entry-2": {
+        entryId: "entry-2",
+        status: "failed" as const,
+        error: "维护失败",
+      },
+    };
+
+    const [group] = buildMaintenanceEntryGroups([part1, part2], { itemResults });
+    expect(group).toBeDefined();
+
+    if (!group) {
+      throw new Error("Expected multipart group");
+    }
+
+    expect(group.status).toBe("failed");
+    expect(group.errorText).toBe("维护失败");
+    expect(group.compareResult).toMatchObject({
+      entryId: "entry-2",
+      status: "failed",
+      error: "维护失败",
+    });
+  });
+
+  it("marks the whole group as failed immediately when any child file fails", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      id: "entry-1",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      id: "entry-2",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+
+    const [group] = buildMaintenanceEntryGroups([part1, part2], {
+      itemResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "processing",
+        },
+        "entry-2": {
+          entryId: "entry-2",
+          status: "failed",
+          error: "第二个分盘维护失败",
+        },
+      },
+    });
+
+    expect(group?.status).toBe("failed");
+    expect(group?.errorText).toBe("第二个分盘维护失败");
+    expect(group?.compareResult).toMatchObject({
+      entryId: "entry-2",
+      status: "failed",
+      error: "第二个分盘维护失败",
+    });
+  });
+
+  it("summarizes preview counts by grouped movie instead of raw file count", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      id: "entry-1",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      id: "entry-2",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+
+    expect(
+      summarizeMaintenancePreviewGroups([part1, part2], {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "ready",
+        },
+        "entry-2": {
+          entryId: "entry-2",
+          status: "ready",
+        },
+      }),
+    ).toEqual({
+      totalCount: 1,
+      readyCount: 1,
+      blockedCount: 0,
+    });
+  });
+
+  it("summarizes execution counts by grouped movie instead of raw file count", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      id: "entry-1",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      id: "entry-2",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+
+    expect(
+      summarizeMaintenanceExecutionGroups([part1, part2], {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "success",
+        },
+        "entry-2": {
+          entryId: "entry-2",
+          status: "success",
+        },
+      }),
+    ).toEqual({
+      totalCount: 1,
+      completedCount: 1,
+      successCount: 1,
+      failedCount: 0,
+      activeCount: 0,
+    });
+  });
+
+  it("finds a grouped entry by any child entry id", () => {
+    const first: LocalScanEntry = {
+      ...createEntry(createCrawlerData({ number: "ABC-123" })),
+      id: "entry-a",
+      videoPath: "/media/ABC-123-part1.mp4",
+      fileInfo: {
+        filePath: "/media/ABC-123-part1.mp4",
+        fileName: "ABC-123-part1.mp4",
+        extension: ".mp4",
+        number: "ABC-123",
+        isSubtitled: false,
+      },
+      currentDir: "/media",
+    };
+    const second: LocalScanEntry = {
+      ...first,
+      id: "entry-b",
+      videoPath: "/media/ABC-123-part2.mp4",
+      fileInfo: {
+        ...first.fileInfo,
+        filePath: "/media/ABC-123-part2.mp4",
+        fileName: "ABC-123-part2.mp4",
+      },
+    };
+
+    const group = findMaintenanceEntryGroup([first, second], "entry-b");
+
+    expect(group?.id).toBe("/media::ABC-123");
+    expect(group?.representative.id).toBe("entry-a");
+    expect(group?.items.map((entry) => entry.id)).toEqual(["entry-a", "entry-b"]);
+  });
 });
 
 describe("buildCommittedCrawlerData", () => {

@@ -4,7 +4,11 @@ import { ipc } from "@/client/ipc";
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import type { ScrapeResult } from "@/store/scrapeStore";
+import {
+  buildUncensoredConfirmItemsForScrapeGroups,
+  type ScrapeResultGroup,
+  summarizeUncensoredConfirmResultForScrapeGroups,
+} from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 type UncensoredChoice = "umr" | "leak" | "uncensored";
@@ -12,7 +16,7 @@ type UncensoredChoice = "umr" | "leak" | "uncensored";
 interface UncensoredConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  items: ScrapeResult[];
+  items: ScrapeResultGroup[];
 }
 
 const CHOICE_OPTIONS: Array<{ value: UncensoredChoice; label: string }> = [
@@ -36,8 +40,8 @@ export function UncensoredConfirmDialog({ open, onOpenChange, items }: Uncensore
 
     setChoices((prev) => {
       const nextChoices: Record<string, UncensoredChoice> = {};
-      for (const item of items) {
-        nextChoices[item.id] = prev[item.id] ?? DEFAULT_CHOICE;
+      for (const group of items) {
+        nextChoices[group.id] = prev[group.id] ?? DEFAULT_CHOICE;
       }
       return nextChoices;
     });
@@ -48,13 +52,7 @@ export function UncensoredConfirmDialog({ open, onOpenChange, items }: Uncensore
   };
 
   const handleSubmit = async () => {
-    const confirmItems = items
-      .filter((item): item is ScrapeResult & { nfoPath: string } => Boolean(item.nfoPath))
-      .map((item) => ({
-        nfoPath: item.nfoPath,
-        videoPath: item.path,
-        choice: choices[item.id] ?? DEFAULT_CHOICE,
-      }));
+    const confirmItems = buildUncensoredConfirmItemsForScrapeGroups(items, choices);
 
     if (confirmItems.length === 0) {
       toast.info("没有可提交的条目");
@@ -64,10 +62,9 @@ export function UncensoredConfirmDialog({ open, onOpenChange, items }: Uncensore
     setSubmitting(true);
     try {
       const result = await ipc.scraper.confirmUncensored(confirmItems);
-      const successCount = result.updatedCount;
-      const failedCount = confirmItems.length - successCount;
+      const { successCount, failedCount } = summarizeUncensoredConfirmResultForScrapeGroups(items, result.items);
 
-      if (successCount > 0) {
+      if (result.updatedCount > 0) {
         resolveUncensoredResults(result.items);
       }
 
@@ -123,20 +120,22 @@ export function UncensoredConfirmDialog({ open, onOpenChange, items }: Uncensore
         </div>
         <ScrollArea className="max-h-[50vh]">
           <div className="space-y-2">
-            {items.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
+            {items.map((group) => (
+              <div key={group.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{item.number}</div>
-                  {item.title && <div className="text-xs text-muted-foreground truncate">{item.title}</div>}
+                  <div className="text-sm font-medium truncate">{group.display.number}</div>
+                  {group.display.title && (
+                    <div className="text-xs text-muted-foreground truncate">{group.display.title}</div>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-1">
                   {CHOICE_OPTIONS.map((opt) => (
                     <Button
                       key={opt.value}
                       size="sm"
-                      variant={(choices[item.id] ?? DEFAULT_CHOICE) === opt.value ? "default" : "outline"}
+                      variant={(choices[group.id] ?? DEFAULT_CHOICE) === opt.value ? "default" : "outline"}
                       className="h-7 px-2.5 text-xs"
-                      onClick={() => handleChoiceChange(item.id, opt.value)}
+                      onClick={() => handleChoiceChange(group.id, opt.value)}
                     >
                       {opt.label}
                     </Button>

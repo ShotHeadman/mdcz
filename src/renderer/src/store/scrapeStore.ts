@@ -1,7 +1,8 @@
-import type { UncensoredConfirmResultItem } from "@shared/types";
+import type { FileInfo, UncensoredConfirmResultItem } from "@shared/types";
 import type { StateCreator } from "zustand";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { deriveMultipartDirectoryFromPath } from "@/lib/multipartDisplay";
 
 export interface ScrapeResult {
   id: string;
@@ -34,6 +35,10 @@ export interface ScrapeResult {
   uncensoredAmbiguous?: boolean;
   /** NFO path for post-scrape operations like uncensored confirmation. */
   nfoPath?: string;
+  /** Directory key used by the shared multipart display grouping rule. */
+  multipartDirectory?: string;
+  /** Multipart metadata preserved from the backend file info. */
+  multipartPart?: FileInfo["part"];
 }
 
 interface ScrapeState {
@@ -67,79 +72,6 @@ const noopStorage = {
   removeItem: () => undefined,
 };
 
-// Renderer builds without a path polyfill, so keep this dirname logic local.
-const deriveOutputPathFromVideoPath = (videoPath: string): string | undefined => {
-  const normalizedPath = videoPath.trim();
-  if (!normalizedPath) {
-    return undefined;
-  }
-
-  const slash = Math.max(normalizedPath.lastIndexOf("/"), normalizedPath.lastIndexOf("\\"));
-  if (slash < 0) {
-    return undefined;
-  }
-
-  if (slash === 0) {
-    return normalizedPath[0];
-  }
-
-  return normalizedPath.slice(0, slash);
-};
-
-const shouldGroupMultipartResult = (existing: ScrapeResult, incoming: ScrapeResult): boolean => {
-  return (
-    existing.status === "success" &&
-    incoming.status === "success" &&
-    existing.number === incoming.number &&
-    Boolean(existing.outputPath) &&
-    existing.outputPath === incoming.outputPath
-  );
-};
-
-const pickLongerArray = <T>(incoming: T[] | undefined, existing: T[] | undefined): T[] | undefined => {
-  if (!incoming?.length) {
-    return existing;
-  }
-
-  if (!existing?.length || incoming.length >= existing.length) {
-    return incoming;
-  }
-
-  return existing;
-};
-
-const mergeGroupedMultipartResult = (existing: ScrapeResult, incoming: ScrapeResult): ScrapeResult => {
-  return {
-    id: existing.id,
-    status: existing.status,
-    number: existing.number,
-    path: existing.path || incoming.path,
-    title: incoming.title ?? existing.title,
-    actors: incoming.actors ?? existing.actors,
-    outline: incoming.outline ?? existing.outline,
-    tags: incoming.tags ?? existing.tags,
-    release: incoming.release ?? existing.release,
-    duration: incoming.duration ?? existing.duration,
-    resolution: incoming.resolution ?? existing.resolution,
-    codec: incoming.codec ?? existing.codec,
-    bitrate: incoming.bitrate ?? existing.bitrate,
-    directors: incoming.directors ?? existing.directors,
-    series: incoming.series ?? existing.series,
-    studio: incoming.studio ?? existing.studio,
-    publisher: incoming.publisher ?? existing.publisher,
-    score: incoming.score ?? existing.score,
-    posterUrl: incoming.posterUrl ?? existing.posterUrl,
-    thumbUrl: incoming.thumbUrl ?? existing.thumbUrl,
-    fanartUrl: incoming.fanartUrl ?? existing.fanartUrl,
-    outputPath: existing.outputPath || incoming.outputPath,
-    sceneImages: pickLongerArray(incoming.sceneImages, existing.sceneImages),
-    sources: incoming.sources ?? existing.sources,
-    errorMessage: incoming.errorMessage ?? existing.errorMessage,
-    uncensoredAmbiguous: incoming.uncensoredAmbiguous ?? existing.uncensoredAmbiguous,
-    nfoPath: incoming.nfoPath ?? existing.nfoPath,
-  };
-};
-
 const storeCreator: StateCreator<ScrapeState> = (set) => ({
   isScraping: false,
   scrapeStatus: "idle",
@@ -160,16 +92,9 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
       progress: total > 0 ? (current / total) * 100 : 0,
     }),
   addResult: (result) =>
-    set((state) => {
-      const groupedIndex = state.results.findIndex((existing) => shouldGroupMultipartResult(existing, result));
-      if (groupedIndex < 0) {
-        return { results: [...state.results, result] };
-      }
-
-      const nextResults = [...state.results];
-      nextResults[groupedIndex] = mergeGroupedMultipartResult(nextResults[groupedIndex], result);
-      return { results: nextResults };
-    }),
+    set((state) => ({
+      results: [...state.results, result],
+    })),
   clearResults: () =>
     set({
       results: [],
@@ -194,7 +119,8 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
             ...result,
             path: matched.targetVideoPath,
             nfoPath: matched.targetNfoPath,
-            outputPath: deriveOutputPathFromVideoPath(matched.targetVideoPath),
+            outputPath: deriveMultipartDirectoryFromPath(matched.targetVideoPath),
+            multipartDirectory: deriveMultipartDirectoryFromPath(matched.targetVideoPath),
             uncensoredAmbiguous: false,
           };
         }),

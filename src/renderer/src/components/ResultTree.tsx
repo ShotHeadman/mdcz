@@ -5,7 +5,11 @@ import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeBy
 import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
 import { Button } from "@/components/ui/Button";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
-import type { ScrapeResult } from "@/store/scrapeStore";
+import {
+  buildScrapeResultGroups,
+  getScrapeResultGroupNfoPath,
+  type ScrapeResultGroup,
+} from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -20,7 +24,10 @@ function getFileNameFromPath(filePath: string) {
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
 
-function buildMenuContent(result: ScrapeResult) {
+function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | null) {
+  const result = group.items.find((item) => item.id === selectedResultId) ?? group.representative;
+  const nfoPath = getScrapeResultGroupNfoPath(group) ?? result.path;
+
   const handleCopyNumber = async () => {
     if (!result.number) {
       toast.error("Number is empty");
@@ -94,7 +101,7 @@ function buildMenuContent(result: ScrapeResult) {
   };
 
   const handleOpenNfo = () => {
-    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: result.path } }));
+    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: nfoPath } }));
   };
 
   return (
@@ -146,20 +153,22 @@ export function ResultTree() {
   const { results, clearResults } = useScrapeStore();
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
+  const resultGroups = useMemo(() => buildScrapeResultGroups(results), [results]);
 
   const items = useMemo(
     () =>
-      results.map((result) => ({
-        id: result.id,
-        active: selectedResultId === result.id,
-        title: result.number || "Unknown",
-        subtitle: result.title || getFileNameFromPath(result.path),
-        errorText: result.errorMessage,
-        status: result.status,
-        onClick: () => setSelectedResultId(result.id),
-        menuContent: buildMenuContent(result),
+      resultGroups.map((group) => ({
+        id: group.id,
+        active: group.items.some((item) => item.id === selectedResultId),
+        title: group.display.number || "Unknown",
+        subtitle: group.display.title || getFileNameFromPath(group.display.path),
+        errorText: group.display.errorMessage,
+        status: group.display.status,
+        onClick: () =>
+          setSelectedResultId(group.items.find((item) => item.id === selectedResultId)?.id ?? group.representative.id),
+        menuContent: buildMenuContent(group, selectedResultId),
       })),
-    [results, selectedResultId, setSelectedResultId],
+    [resultGroups, selectedResultId, setSelectedResultId],
   );
 
   return (
@@ -169,7 +178,7 @@ export function ResultTree() {
       onFilterChange={setFilter}
       emptyMessage="暂无结果。启动刮削任务后，处理项将显示在此处。"
       headerTrailing={
-        results.length > 0 ? (
+        resultGroups.length > 0 ? (
           <Button
             variant="ghost"
             size="icon"

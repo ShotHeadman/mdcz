@@ -16,6 +16,11 @@ import {
 } from "@/components/ui/Dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { buildMaintenanceCommitItem } from "@/lib/maintenance";
+import {
+  buildMaintenanceEntryGroups,
+  countMaintenanceDisplayItems,
+  summarizeMaintenancePreviewGroups,
+} from "@/lib/maintenanceGrouping";
 import { cn } from "@/lib/utils";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
 import { useScrapeStore } from "@/store/scrapeStore";
@@ -43,6 +48,26 @@ const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 };
 
+const isPreviewGroupReady = (
+  group: ReturnType<typeof buildMaintenanceEntryGroups>[number],
+  previewResults: Record<string, MaintenancePreviewItem>,
+): boolean => {
+  const previews = group.items.flatMap((entry) => {
+    const preview = previewResults[entry.id];
+    return preview ? [preview] : [];
+  });
+
+  return previews.length === group.items.length && previews.every((preview) => preview.status === "ready");
+};
+
+const buildExecutableEntries = (
+  entries: Parameters<typeof buildMaintenanceEntryGroups>[0],
+  previewResults: Record<string, MaintenancePreviewItem>,
+) =>
+  buildMaintenanceEntryGroups(entries).flatMap((group) =>
+    isPreviewGroupReady(group, previewResults) ? group.items : [],
+  );
+
 export default function MaintenanceBatchBar({ mediaPath, className }: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
   const {
@@ -56,8 +81,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     executeDialogOpen,
     previewPending,
     previewResults,
-    previewReadyCount,
-    previewBlockedCount,
     setEntries,
     setExecutionStatus,
     setCurrentPath,
@@ -80,8 +103,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       executeDialogOpen: state.executeDialogOpen,
       previewPending: state.previewPending,
       previewResults: state.previewResults,
-      previewReadyCount: state.previewReadyCount,
-      previewBlockedCount: state.previewBlockedCount,
       setEntries: state.setEntries,
       setExecutionStatus: state.setExecutionStatus,
       setCurrentPath: state.setCurrentPath,
@@ -102,12 +123,17 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
   const executing = executionStatus === "executing" || executionStatus === "stopping";
   const scanning = executionStatus === "scanning";
-  const entriesCount = entries.length;
-  const selectedCount = selectedIds.length;
   const hasPreviewResults = Object.keys(previewResults).length > 0;
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedIds.includes(entry.id)),
     [entries, selectedIds],
+  );
+  const groupedSelectedEntries = useMemo(() => buildMaintenanceEntryGroups(selectedEntries), [selectedEntries]);
+  const entriesCount = useMemo(() => countMaintenanceDisplayItems(entries), [entries]);
+  const selectedCount = useMemo(() => countMaintenanceDisplayItems(selectedEntries), [selectedEntries]);
+  const previewSummary = useMemo(
+    () => summarizeMaintenancePreviewGroups(selectedEntries, previewResults),
+    [selectedEntries, previewResults],
   );
   const previewActionLabel = previewPending
     ? "正在预览..."
@@ -147,7 +173,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     try {
       const result = await ipc.maintenance.scan(dirPath);
       setEntries(result.entries, dirPath);
-      toast.success(`扫描完成，共发现 ${result.entries.length} 个项目`);
+      toast.success(`扫描完成，共发现 ${countMaintenanceDisplayItems(result.entries)} 个项目`);
     } catch (error) {
       setExecutionStatus("idle");
       setCurrentPath(dirPath);
@@ -173,7 +199,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
     clearPreviewResults();
     setPreviewPending(true);
-    setStatusText(`正在预览 ${selectedEntries.length} 项...`);
+    setStatusText(`正在预览 ${countMaintenanceDisplayItems(selectedEntries)} 项...`);
     const requestedPresetId = presetId;
     const requestedEntries = selectedEntries;
 
@@ -192,10 +218,12 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       }
 
       applyPreviewResult(preview);
-      setStatusText(formatPreviewStatusText(preview.readyCount, preview.blockedCount));
+      const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
+      const previewSummary = summarizeMaintenancePreviewGroups(requestedEntries, previewMap);
+      setStatusText(formatPreviewStatusText(previewSummary.readyCount, previewSummary.blockedCount));
       if (usesDiffView) {
         toast.info(
-          preview.readyCount > 0
+          previewSummary.readyCount > 0
             ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
             : "预览完成，请在右侧数据对比中查看阻塞项。",
         );
@@ -237,9 +265,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     const effectivePreviewResults = previewMapOverride ?? liveState.previewResults;
     const effectiveFieldSelections = liveState.fieldSelections;
     const latestSelectedEntries = liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id));
-    const executableEntries = latestSelectedEntries.filter(
-      (entry) => effectivePreviewResults[entry.id]?.status === "ready",
-    );
+    const executableEntries = buildExecutableEntries(latestSelectedEntries, effectivePreviewResults);
     const commitItems = executableEntries.map((entry) =>
       buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.id], effectiveFieldSelections[entry.id]),
     );
@@ -251,11 +277,11 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
     beginExecution(commitItems.map((item) => item.entry.id));
     setCurrentPath(commitItems[0]?.entry.videoPath ?? currentPath);
-    setStatusText(`正在执行 ${commitItems.length} 项...`);
+    setStatusText(`正在执行 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项...`);
 
     try {
       await ipc.maintenance.execute(commitItems, presetId);
-      toast.success(`维护任务已启动，共 ${commitItems.length} 项`);
+      toast.success(`维护任务已启动，共 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项`);
     } catch (error) {
       rollbackExecutionStart();
       setStatusText("启动失败");
@@ -340,7 +366,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <Button
                 variant="secondary"
                 onClick={() => setExecuteDialogOpen(true)}
-                disabled={previewPending || !hasPreviewResults || previewReadyCount === 0}
+                disabled={previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
                 className="h-9 rounded-lg px-4"
               >
                 数据替换
@@ -376,9 +402,9 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                   {selectedCount} / {entriesCount} 项
                 </span>
                 <span className="text-muted-foreground">可执行</span>
-                <span>{previewReadyCount} 项</span>
+                <span>{previewSummary.readyCount} 项</span>
                 <span className="text-muted-foreground">阻塞</span>
-                <span>{previewBlockedCount} 项</span>
+                <span>{previewSummary.blockedCount} 项</span>
               </div>
 
               <div className="space-y-2">
@@ -393,33 +419,46 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               </div>
 
               <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
-                {selectedEntries.map((entry) => {
-                  const preview = previewResults[entry.id];
-                  const diffCount = preview?.fieldDiffs?.length ?? 0;
-                  const hasPathChange = Boolean(preview?.pathDiff?.changed);
+                {groupedSelectedEntries.map((group) => {
+                  const previews = group.items.flatMap((entry) => {
+                    const preview = previewResults[entry.id];
+                    return preview ? [preview] : [];
+                  });
+                  const blockedPreview = previews.find((preview) => preview.status === "blocked");
+                  const ready = isPreviewGroupReady(group, previewResults);
+                  const diffCount = Math.max(0, ...previews.map((preview) => preview.fieldDiffs?.length ?? 0));
+                  const changedPathItems = group.items.flatMap((entry) => {
+                    const preview = previewResults[entry.id];
+                    return preview?.pathDiff?.changed ? [{ entry, pathDiff: preview.pathDiff }] : [];
+                  });
+                  const hasPathChange = changedPathItems.length > 0;
 
                   return (
-                    <div key={entry.id} className="min-w-0 rounded-lg border bg-muted/20 px-3 py-2">
+                    <div key={group.id} className="min-w-0 rounded-lg border bg-muted/20 px-3 py-2">
                       <div className="flex min-w-0 items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium">{entry.fileInfo.number}</div>
+                          <div className="font-medium">{group.representative.fileInfo.number}</div>
                           <div className="break-all text-xs text-muted-foreground">
-                            {entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName}
+                            {group.representative.crawlerData?.title_zh ??
+                              group.representative.crawlerData?.title ??
+                              group.representative.fileInfo.fileName}
                           </div>
                         </div>
                         <div
                           className={
-                            preview?.status === "blocked"
+                            !ready
                               ? "shrink-0 whitespace-nowrap text-xs font-medium text-destructive"
                               : "shrink-0 whitespace-nowrap text-xs font-medium text-emerald-600"
                           }
                         >
-                          {preview?.status === "blocked" ? "阻塞" : "可执行"}
+                          {ready ? "可执行" : "阻塞"}
                         </div>
                       </div>
 
-                      {preview?.status === "blocked" ? (
-                        <div className="mt-2 break-all text-xs text-destructive">{preview.error}</div>
+                      {!ready ? (
+                        <div className="mt-2 break-all text-xs text-destructive">
+                          {blockedPreview?.error ?? "部分分盘文件无法完成预览"}
+                        </div>
                       ) : (
                         <>
                           <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -427,20 +466,29 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                             {hasPathChange && <span>路径将调整</span>}
                             {!hasPathChange && diffCount === 0 && <span>无额外变更</span>}
                           </div>
-                          {hasPathChange && preview?.pathDiff && (
-                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                              <div className="min-w-0 rounded-md border bg-background/70 p-2">
-                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">当前路径</div>
-                                <div className="break-all font-mono text-[11px] leading-relaxed">
-                                  {preview.pathDiff.currentVideoPath}
+                          {hasPathChange && (
+                            <div className="mt-3 space-y-2">
+                              {changedPathItems.map(({ entry, pathDiff }) => (
+                                <div key={entry.id} className="rounded-md border bg-background/50 p-2">
+                                  <div className="mb-2 text-[11px] font-medium text-muted-foreground">
+                                    {entry.fileInfo.fileName}
+                                  </div>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <div className="min-w-0 rounded-md border bg-background/70 p-2">
+                                      <div className="mb-1 text-[11px] font-medium text-muted-foreground">当前路径</div>
+                                      <div className="break-all font-mono text-[11px] leading-relaxed">
+                                        {pathDiff.currentVideoPath}
+                                      </div>
+                                    </div>
+                                    <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 p-2">
+                                      <div className="mb-1 text-[11px] font-medium text-muted-foreground">目标路径</div>
+                                      <div className="break-all font-mono text-[11px] leading-relaxed">
+                                        {pathDiff.targetVideoPath}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 p-2">
-                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">目标路径</div>
-                                <div className="break-all font-mono text-[11px] leading-relaxed">
-                                  {preview.pathDiff.targetVideoPath}
-                                </div>
-                              </div>
+                              ))}
                             </div>
                           )}
                         </>
@@ -456,13 +504,13 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               取消
             </Button>
             <Button
-              disabled={previewPending || previewReadyCount === 0}
+              disabled={previewPending || previewSummary.readyCount === 0}
               onClick={() => {
                 setExecuteDialogOpen(false);
                 void handleExecute();
               }}
             >
-              {previewReadyCount === 0 ? "无可执行项" : `开始批量执行 ${previewReadyCount} 项`}
+              {previewSummary.readyCount === 0 ? "无可执行项" : `开始批量执行 ${previewSummary.readyCount} 项`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -73,7 +73,6 @@ describe("subtitleSidecars", () => {
   it("recognizes subtitle symlinks that point to real files", async () => {
     const root = await createTempDir();
     const videoPath = join(root, "ABC-123.mp4");
-    const subtitleTargetPath = join(root, "linked-subtitle.srt");
     const subtitleLinkPath = join(root, "ABC-123.zh.srt");
 
     const fakeDirent = {
@@ -82,10 +81,10 @@ describe("subtitleSidecars", () => {
       isDirectory: () => false,
       isSymbolicLink: () => true,
     } as Dirent;
-    vi.mocked(fsPromises.readdir).mockResolvedValue([fakeDirent] as any);
+    vi.mocked(fsPromises.readdir).mockResolvedValue([fakeDirent] as Awaited<ReturnType<typeof fsPromises.readdir>>);
     vi.mocked(fsPromises.stat).mockResolvedValue({
       isFile: () => true,
-    } as any);
+    } as Awaited<ReturnType<typeof fsPromises.stat>>);
 
     const sidecars = await findSubtitleSidecars(videoPath);
 

@@ -6,6 +6,7 @@ import MaintenanceEntryList from "@/components/maintenance/MaintenanceEntryList"
 import { WorkbenchFooter } from "@/components/shared/WorkbenchFooter";
 import { Progress } from "@/components/ui/Progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/Resizable";
+import { findMaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
 
 export default function MaintenanceWorkbench() {
@@ -34,15 +35,37 @@ export default function MaintenanceWorkbench() {
   );
 
   const showProgress = executionStatus === "executing" || executionStatus === "stopping";
-  const activeEntry = entries.find((entry) => entry.id === activeId) ?? null;
-  const activePreview = activeEntry ? previewResults[activeEntry.id] : undefined;
-  const activeResult = activeEntry ? itemResults[activeEntry.id] : undefined;
-  const displayResult = activeResult ?? activePreview;
-  const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
-  const detailItem = useMemo(
-    () => (activeEntry ? toDetailViewItemFromMaintenanceEntry(activeEntry, displayResult) : null),
-    [activeEntry, displayResult],
+  const activeGroup = useMemo(
+    () => findMaintenanceEntryGroup(entries, activeId, { itemResults, previewResults }) ?? null,
+    [activeId, entries, itemResults, previewResults],
   );
+  const compareResult = activeGroup?.compareResult;
+  const detailEntry = useMemo(() => {
+    if (!activeGroup) {
+      return null;
+    }
+
+    const comparedEntryId = compareResult && "entryId" in compareResult ? compareResult.entryId : undefined;
+    return (
+      activeGroup.items.find((entry) => entry.id === comparedEntryId) ??
+      activeGroup.items.find((entry) => entry.id === activeId) ??
+      activeGroup.representative
+    );
+  }, [activeGroup, activeId, compareResult]);
+  const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
+  const detailItem = useMemo(() => {
+    if (!activeGroup || !detailEntry) {
+      return null;
+    }
+
+    const baseItem = toDetailViewItemFromMaintenanceEntry(detailEntry, compareResult);
+    return {
+      ...baseItem,
+      status:
+        activeGroup.status === "failed" ? "failed" : activeGroup.status === "success" ? "success" : baseItem.status,
+      errorMessage: activeGroup.errorText ?? baseItem.errorMessage,
+    };
+  }, [activeGroup, compareResult, detailEntry]);
   const activeLabel =
     executionStatus === "idle"
       ? undefined
@@ -87,7 +110,7 @@ export default function MaintenanceWorkbench() {
               compare={
                 usesDiffView
                   ? {
-                      result: displayResult,
+                      result: compareResult,
                       badgeLabel: "数据对比",
                     }
                   : undefined

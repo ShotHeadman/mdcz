@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
+import { findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -76,8 +77,8 @@ export function DetailPanel({
       explicitItem !== undefined
         ? explicitItem
         : (() => {
-            const selectedResult = results.find((result) => result.id === selectedResultId);
-            return selectedResult ? toDetailViewItemFromScrapeResult(selectedResult) : null;
+            const selectedGroup = findScrapeResultGroup(results, selectedResultId);
+            return selectedGroup ? toDetailViewItemFromScrapeResult(selectedGroup.display) : null;
           })(),
     [explicitItem, results, selectedResultId],
   );

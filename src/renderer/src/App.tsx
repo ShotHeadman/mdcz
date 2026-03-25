@@ -9,6 +9,7 @@ import { Toaster } from "./components/ui/Sonner";
 import { TooltipProvider } from "./components/ui/Tooltip";
 import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
+import { deriveMultipartDirectoryFromPath } from "./lib/multipartDisplay";
 import { routeTree } from "./routeTree.gen";
 import { createRuntimeLog, useLogStore } from "./store/logStore";
 import { useMaintenanceStore } from "./store/maintenanceStore";
@@ -53,6 +54,7 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
   const remotePoster = data?.poster_url;
   const remoteThumb = data?.thumb_url ?? data?.fanart_url;
   const remoteFanart = data?.fanart_url ?? data?.thumb_url;
+  const multipartDirectory = payload.outputPath ?? deriveMultipartDirectoryFromPath(payload.fileInfo.filePath);
 
   return {
     id: crypto.randomUUID(),
@@ -85,6 +87,8 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     errorMessage: payload.error,
     uncensoredAmbiguous: payload.uncensoredAmbiguous,
     nfoPath: payload.nfoPath,
+    multipartDirectory,
+    multipartPart: payload.fileInfo.part,
   };
 };
 

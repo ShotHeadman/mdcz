@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { TabButton } from "@/components/ui/TabButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
+import { buildAmbiguousUncensoredScrapeGroups } from "@/lib/scrapeResultGrouping";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
@@ -87,6 +88,7 @@ function Index() {
   );
 
   const maintenanceBusy = maintenanceStatus !== "idle";
+  const ambiguousItems = useMemo(() => buildAmbiguousUncensoredScrapeGroups(results), [results]);
 
   // Detect scrape completion and check for ambiguous uncensored items
   const prevScrapeStatusRef = useRef(scrapeStatus);
@@ -94,15 +96,10 @@ function Index() {
     const prev = prevScrapeStatusRef.current;
     prevScrapeStatusRef.current = scrapeStatus;
 
-    if ((prev === "running" || prev === "stopping") && scrapeStatus === "idle") {
-      const ambiguousItems = results.filter((r) => r.uncensoredAmbiguous && r.nfoPath);
-      if (ambiguousItems.length > 0) {
-        setUncensoredDialogOpen(true);
-      }
+    if ((prev === "running" || prev === "stopping") && scrapeStatus === "idle" && ambiguousItems.length > 0) {
+      setUncensoredDialogOpen(true);
     }
-  }, [scrapeStatus, results]);
-
-  const ambiguousItems = useMemo(() => results.filter((r) => r.uncensoredAmbiguous && r.nfoPath), [results]);
+  }, [ambiguousItems, scrapeStatus]);
 
   const handleStartScrape = async () => {
     if (maintenanceBusy) {
