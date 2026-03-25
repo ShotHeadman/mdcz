@@ -236,8 +236,6 @@ export interface MaintenancePreviewItem {
 
 export interface MaintenancePreviewResult {
   items: MaintenancePreviewItem[];
-  readyCount: number;
-  blockedCount: number;
 }
 
 export interface MaintenanceImageAlternatives {

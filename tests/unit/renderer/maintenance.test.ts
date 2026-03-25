@@ -9,6 +9,7 @@ import {
 } from "@/lib/maintenance";
 import {
   buildMaintenanceEntryGroups,
+  countMaintenanceDisplayItems,
   findMaintenanceEntryGroup,
   formatMaintenanceIdleStatusText,
   summarizeMaintenanceExecutionGroups,
@@ -356,6 +357,72 @@ describe("maintenance multipart grouping", () => {
       failedCount: 0,
       activeCount: 0,
     });
+  });
+
+  it("keeps multipart groups stable while a child entry has already moved to the target directory", () => {
+    const sourceDir = "/media";
+    const targetDir = "/organized/FC2-123456";
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      id: "entry-1",
+      videoPath: `${targetDir}/FC2-123456-1.mp4`,
+      currentDir: targetDir,
+      fileInfo: {
+        ...createEntry().fileInfo,
+        filePath: `${targetDir}/FC2-123456-1.mp4`,
+        fileName: "FC2-123456-1",
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+    };
+    const part2: LocalScanEntry = {
+      ...createEntry(),
+      id: "entry-2",
+      videoPath: `${sourceDir}/FC2-123456-2.mp4`,
+      currentDir: sourceDir,
+      fileInfo: {
+        ...createEntry().fileInfo,
+        filePath: `${sourceDir}/FC2-123456-2.mp4`,
+        fileName: "FC2-123456-2",
+        number: "FC2-123456",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+    const itemResults = {
+      "entry-1": {
+        entryId: "entry-1",
+        status: "success" as const,
+        pathDiff: {
+          entryId: "entry-1",
+          currentVideoPath: `${sourceDir}/FC2-123456-1.mp4`,
+          targetVideoPath: `${targetDir}/FC2-123456-1.mp4`,
+          currentDir: sourceDir,
+          targetDir,
+          changed: true,
+        },
+      },
+      "entry-2": {
+        entryId: "entry-2",
+        status: "processing" as const,
+        pathDiff: {
+          entryId: "entry-2",
+          currentVideoPath: `${sourceDir}/FC2-123456-2.mp4`,
+          targetVideoPath: `${targetDir}/FC2-123456-2.mp4`,
+          currentDir: sourceDir,
+          targetDir,
+          changed: true,
+        },
+      },
+    };
+
+    expect(countMaintenanceDisplayItems([part1, part2], { itemResults })).toBe(1);
+    expect(buildMaintenanceEntryGroups([part1, part2], { itemResults })).toHaveLength(1);
   });
 
   it("finds a grouped entry by any child entry id", () => {
@@ -780,8 +847,6 @@ describe("useMaintenanceStore", () => {
           pathDiff,
         },
       ],
-      readyCount: 1,
-      blockedCount: 0,
     });
 
     useMaintenanceStore.getState().beginExecution(["entry-1"]);
@@ -828,8 +893,6 @@ describe("useMaintenanceStore", () => {
           ],
         },
       ],
-      readyCount: 1,
-      blockedCount: 0,
     });
 
     expect(useMaintenanceStore.getState().itemResults).toEqual({});

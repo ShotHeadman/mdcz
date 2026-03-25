@@ -4,12 +4,7 @@ import { readNfo, updateNfo } from "@/api/manual";
 import type { DetailViewItem } from "@/components/detail/types";
 import { useResolvedImageCandidates } from "@/hooks/useResolvedImageSources";
 import { buildImageSourceCandidates } from "@/utils/image";
-
-function getDirFromPath(filePath: string) {
-  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
-  if (slash <= 0) return filePath;
-  return filePath.slice(0, slash);
-}
+import { getDirFromPath } from "@/utils/path";
 
 export function useDetailViewController(item?: DetailViewItem | null) {
   const [nfoOpen, setNfoOpen] = useState(false);

@@ -474,6 +474,12 @@ export function NamingSection(_props: SectionRenderProps) {
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
       <TextField name="naming.releaseRule" label="发行日期格式" />
+      <EnumField
+        name="naming.partStyle"
+        label="分盘样式"
+        description="分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格"
+        options={PART_STYLE_OPTIONS}
+      />
       <NumberField name="naming.folderNameMax" label="文件夹名最大长度" min={10} max={255} />
       <NumberField name="naming.fileNameMax" label="文件名最大长度" min={10} max={255} />
       <TextField name="naming.cnwordStyle" label="中文字幕标记" />
@@ -481,12 +487,6 @@ export function NamingSection(_props: SectionRenderProps) {
       <TextField name="naming.leakStyle" label="流出标记" />
       <TextField name="naming.uncensoredStyle" label="无码标记" />
       <TextField name="naming.censoredStyle" label="有码标记" />
-      <EnumField
-        name="naming.partStyle"
-        label="分盘样式"
-        description="分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格"
-        options={PART_STYLE_OPTIONS}
-      />
     </>
   );
 }

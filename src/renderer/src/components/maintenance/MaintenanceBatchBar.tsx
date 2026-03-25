@@ -81,6 +81,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     executeDialogOpen,
     previewPending,
     previewResults,
+    itemResults,
     setEntries,
     setExecutionStatus,
     setCurrentPath,
@@ -103,6 +104,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       executeDialogOpen: state.executeDialogOpen,
       previewPending: state.previewPending,
       previewResults: state.previewResults,
+      itemResults: state.itemResults,
       setEntries: state.setEntries,
       setExecutionStatus: state.setExecutionStatus,
       setCurrentPath: state.setCurrentPath,
@@ -128,9 +130,18 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     () => entries.filter((entry) => selectedIds.includes(entry.id)),
     [entries, selectedIds],
   );
-  const groupedSelectedEntries = useMemo(() => buildMaintenanceEntryGroups(selectedEntries), [selectedEntries]);
-  const entriesCount = useMemo(() => countMaintenanceDisplayItems(entries), [entries]);
-  const selectedCount = useMemo(() => countMaintenanceDisplayItems(selectedEntries), [selectedEntries]);
+  const groupedSelectedEntries = useMemo(
+    () => buildMaintenanceEntryGroups(selectedEntries, { itemResults, previewResults }),
+    [itemResults, previewResults, selectedEntries],
+  );
+  const entriesCount = useMemo(
+    () => countMaintenanceDisplayItems(entries, { itemResults, previewResults }),
+    [entries, itemResults, previewResults],
+  );
+  const selectedCount = useMemo(
+    () => countMaintenanceDisplayItems(selectedEntries, { itemResults, previewResults }),
+    [itemResults, previewResults, selectedEntries],
+  );
   const previewSummary = useMemo(
     () => summarizeMaintenancePreviewGroups(selectedEntries, previewResults),
     [selectedEntries, previewResults],

@@ -138,8 +138,9 @@ export const startBatchScrape = async () => {
   return { data };
 };
 
-export const deleteFile = async (path: string) => {
-  const data = await ipc.file.delete([path]);
+export const deleteFile = async (path: string | string[]) => {
+  const filePaths = Array.isArray(path) ? path : [path];
+  const data = await ipc.file.delete(filePaths);
   return { data };
 };
 
@@ -194,8 +195,9 @@ export const updateNfo = async (path: string, content: string, videoPath?: strin
   return { data };
 };
 
-export const requeueScrapeByNumber = async (path: string, _number: string) => {
-  const result = await ipc.scraper.requeue([path]);
+export const requeueScrapeByNumber = async (path: string | string[], _number: string) => {
+  const filePaths = Array.isArray(path) ? path : [path];
+  const result = await ipc.scraper.requeue(filePaths);
   const data: RequeueResponse = {
     message: `Requeued ${result.requeuedCount} file(s).`,
     running: false,
@@ -204,8 +206,9 @@ export const requeueScrapeByNumber = async (path: string, _number: string) => {
   return { data };
 };
 
-export const requeueScrapeByUrl = async (path: string, _url: string) => {
-  const result = await ipc.scraper.requeue([path]);
+export const requeueScrapeByUrl = async (path: string | string[], _url: string) => {
+  const filePaths = Array.isArray(path) ? path : [path];
+  const result = await ipc.scraper.requeue(filePaths);
   const data: RequeueResponse = {
     message: `Requeued ${result.requeuedCount} file(s).`,
     running: false,

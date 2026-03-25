@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/Separator";
 import { findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
+import { getDirFromPath } from "@/utils/path";
 
 const EMPTY_RESULTS: ReturnType<typeof useScrapeStore.getState>["results"] = [];
 
@@ -47,12 +48,6 @@ function DetailPathBlock({ label, value }: { label: string; value: string }) {
       <div className="break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-[10px] opacity-70">{value}</div>
     </div>
   );
-}
-
-function getDirFromPath(filePath: string): string {
-  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
-  if (slash <= 0) return filePath;
-  return filePath.slice(0, slash);
 }
 
 function DetailErrorBlock({ value }: { value: string }) {

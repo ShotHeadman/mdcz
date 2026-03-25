@@ -4,6 +4,12 @@ import type { ScrapeResult } from "@/store/scrapeStore";
 
 export type ScrapeResultGroup = RendererGroup<ScrapeResult, ScrapeResult>;
 
+export interface ScrapeResultGroupActionContext {
+  selectedItem: ScrapeResult;
+  nfoPath?: string;
+  videoPaths: string[];
+}
+
 const scrapeResultMultipartSelectors = {
   getDirectory: (result: ScrapeResult) =>
     result.status === "success" ? (result.multipartDirectory ?? result.outputPath) : undefined,
@@ -93,6 +99,21 @@ export const findScrapeResultGroupItem = (
   }
 
   return group.items.find((item) => item.id === itemId);
+};
+
+export const getScrapeResultGroupVideoPaths = (group: ScrapeResultGroup): string[] => {
+  return Array.from(new Set(group.items.map((item) => item.path).filter((value) => value.length > 0)));
+};
+
+export const buildScrapeResultGroupActionContext = (
+  group: ScrapeResultGroup,
+  itemId: string | null | undefined,
+): ScrapeResultGroupActionContext => {
+  return {
+    selectedItem: findScrapeResultGroupItem(group, itemId) ?? group.representative,
+    nfoPath: getScrapeResultGroupNfoPath(group),
+    videoPaths: getScrapeResultGroupVideoPaths(group),
+  };
 };
 
 export const buildUncensoredConfirmItemsForScrapeGroups = (

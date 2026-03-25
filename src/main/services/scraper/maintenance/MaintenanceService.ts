@@ -126,11 +126,8 @@ export class MaintenanceService {
       ),
     );
 
-    const readyCount = items.filter((item) => item.status === "ready").length;
     return {
       items,
-      readyCount,
-      blockedCount: items.length - readyCount,
     };
   }
 

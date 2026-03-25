@@ -13,7 +13,6 @@ import {
   countMaintenanceDisplayItems,
   formatMaintenanceIdleStatusText,
   summarizeMaintenanceExecutionGroups,
-  summarizeMaintenancePreviewGroups,
 } from "@/lib/maintenanceGrouping";
 
 export type MaintenanceFilter = "all" | "success" | "failed";
@@ -26,8 +25,6 @@ const createPreviewResetState = () => ({
   executeDialogOpen: false,
   previewPending: false,
   previewResults: {} as Record<string, MaintenancePreviewItem>,
-  previewReadyCount: 0,
-  previewBlockedCount: 0,
   fieldSelections: {} as Record<string, Record<string, MaintenanceFieldSelectionSide>>,
 });
 
@@ -151,8 +148,6 @@ type PersistedMaintenanceState = Pick<
   | "currentPath"
   | "lastScannedDir"
   | "previewResults"
-  | "previewReadyCount"
-  | "previewBlockedCount"
   | "fieldSelections"
   | "itemResults"
 >;
@@ -176,8 +171,6 @@ const partializeMaintenanceState = (state: MaintenanceState): PersistedMaintenan
   currentPath: state.currentPath,
   lastScannedDir: state.lastScannedDir,
   previewResults: state.previewResults,
-  previewReadyCount: state.previewReadyCount,
-  previewBlockedCount: state.previewBlockedCount,
   fieldSelections: state.fieldSelections,
   itemResults: state.itemResults,
 });
@@ -220,8 +213,6 @@ export interface MaintenanceState {
   executeDialogOpen: boolean;
   previewPending: boolean;
   previewResults: Record<string, MaintenancePreviewItem>;
-  previewReadyCount: number;
-  previewBlockedCount: number;
   fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
   itemResults: Record<string, MaintenanceItemResult>;
 
@@ -332,16 +323,10 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
   applyPreviewResult: (result) =>
     set((state) => {
       const previewResults = Object.fromEntries(result.items.map((item) => [item.entryId, item]));
-      const previewSummary = summarizeMaintenancePreviewGroups(
-        state.entries.filter((entry) => Boolean(previewResults[entry.id])),
-        previewResults,
-      );
 
       return {
         previewPending: false,
         previewResults,
-        previewReadyCount: previewSummary.readyCount,
-        previewBlockedCount: previewSummary.blockedCount,
         fieldSelections: {},
         itemResults: {},
         activeId:

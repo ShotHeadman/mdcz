@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildAmbiguousUncensoredScrapeGroups,
+  buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
   buildUncensoredConfirmItemsForScrapeGroups,
   summarizeUncensoredConfirmResultForScrapeGroups,
@@ -313,6 +314,45 @@ describe("buildScrapeResultGroups", () => {
 
     expect(groups).toHaveLength(2);
     expect(groups.map((group) => group.id)).toEqual(["/library/ABC-123::ABC-123", "standalone:failed"]);
+  });
+
+  it("builds grouped action targets from every raw file in a multipart result", () => {
+    const [group] = buildScrapeResultGroups([
+      {
+        id: "part-1",
+        status: "success",
+        number: "FC2-123456",
+        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        outputPath: "/library/FC2-123456",
+        nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+        multipartDirectory: "/library/FC2-123456",
+        multipartPart: {
+          number: 1,
+          suffix: "-cd1",
+        },
+      },
+      {
+        id: "part-2",
+        status: "success",
+        number: "FC2-123456",
+        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        outputPath: "/library/FC2-123456",
+        nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+        multipartDirectory: "/library/FC2-123456",
+        multipartPart: {
+          number: 2,
+          suffix: "-cd2",
+        },
+      },
+    ]);
+
+    expect(buildScrapeResultGroupActionContext(group, null)).toEqual({
+      selectedItem: expect.objectContaining({
+        id: "part-1",
+      }),
+      nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+      videoPaths: ["/library/FC2-123456/FC2-123456-cd1.mp4", "/library/FC2-123456/FC2-123456-cd2.mp4"],
+    });
   });
 
   it("expands grouped uncensored confirmation to all raw files in the group", () => {

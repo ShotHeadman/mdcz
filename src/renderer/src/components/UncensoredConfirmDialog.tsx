@@ -1,3 +1,4 @@
+import type { UncensoredChoice } from "@shared/types";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
@@ -10,8 +11,6 @@ import {
   summarizeUncensoredConfirmResultForScrapeGroups,
 } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
-
-type UncensoredChoice = "umr" | "leak" | "uncensored";
 
 interface UncensoredConfirmDialogProps {
   open: boolean;

@@ -27,13 +27,24 @@ interface MaintenancePreviewGroupSummary {
   blockedCount: number;
 }
 
-const maintenanceMultipartSelectors = {
-  getDirectory: (entry: LocalScanEntry) => entry.currentDir,
+const resolveMaintenanceGroupingDirectory = (
+  entry: LocalScanEntry,
+  options: BuildMaintenanceEntryGroupsOptions,
+): string | undefined => {
+  return (
+    options.itemResults?.[entry.id]?.pathDiff?.currentDir ??
+    options.previewResults?.[entry.id]?.pathDiff?.currentDir ??
+    entry.currentDir
+  );
+};
+
+const createMaintenanceMultipartSelectors = (options: BuildMaintenanceEntryGroupsOptions) => ({
+  getDirectory: (entry: LocalScanEntry) => resolveMaintenanceGroupingDirectory(entry, options),
   getFileName: (entry: LocalScanEntry) => entry.fileInfo.fileName,
   getItemKey: (entry: LocalScanEntry) => entry.id,
   getNumber: (entry: LocalScanEntry) => entry.fileInfo.number,
   getPart: (entry: LocalScanEntry) => entry.fileInfo.part,
-};
+});
 
 const getMaintenanceGroupStatus = (
   group: MultipartDisplayGroup<LocalScanEntry>,
@@ -91,7 +102,7 @@ export const buildMaintenanceEntryGroups = (
   const previewResults = options.previewResults ?? {};
 
   return buildRendererGroups(entries, {
-    selectors: maintenanceMultipartSelectors,
+    selectors: createMaintenanceMultipartSelectors(options),
     buildStatus: (group) => getMaintenanceGroupStatus(group, itemResults),
     buildErrorText: (group) =>
       group.items
@@ -116,8 +127,10 @@ export const buildMaintenanceEntryGroups = (
   });
 };
 
-export const countMaintenanceDisplayItems = (entries: LocalScanEntry[]): number =>
-  countMultipartDisplayGroups(entries, maintenanceMultipartSelectors);
+export const countMaintenanceDisplayItems = (
+  entries: LocalScanEntry[],
+  options: BuildMaintenanceEntryGroupsOptions = {},
+): number => countMultipartDisplayGroups(entries, createMaintenanceMultipartSelectors(options));
 
 export const formatMaintenanceIdleStatusText = (entries: LocalScanEntry[], emptyText = "就绪"): string => {
   if (entries.length === 0) {

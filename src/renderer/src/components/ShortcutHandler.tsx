@@ -10,11 +10,7 @@ import {
   stopScrape,
 } from "@/api/manual";
 import { ipc } from "@/client/ipc";
-import {
-  findScrapeResultGroup,
-  findScrapeResultGroupItem,
-  getScrapeResultGroupNfoPath,
-} from "@/lib/scrapeResultGrouping";
+import { buildScrapeResultGroupActionContext, findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -78,10 +74,12 @@ export function ShortcutHandler() {
       void (async () => {
         const scrapeState = useScrapeStore.getState();
         const selectedGroup = findScrapeResultGroup(scrapeState.results, uiState.selectedResultId);
-        const selectedItem =
-          (selectedGroup && findScrapeResultGroupItem(selectedGroup, uiState.selectedResultId)) ??
-          selectedGroup?.representative;
-        const selectedNfoPath = selectedGroup ? getScrapeResultGroupNfoPath(selectedGroup) : undefined;
+        const actionContext = selectedGroup
+          ? buildScrapeResultGroupActionContext(selectedGroup, uiState.selectedResultId)
+          : undefined;
+        const selectedItem = actionContext?.selectedItem;
+        const selectedNfoPath = actionContext?.nfoPath;
+        const groupedVideoPaths = actionContext?.videoPaths ?? [];
 
         switch (action) {
           case "start-or-stop-scrape": {
@@ -122,7 +120,7 @@ export function ShortcutHandler() {
               return;
             }
             try {
-              const response = await requeueScrapeByNumber(selectedItem.path, number);
+              const response = await requeueScrapeByNumber(groupedVideoPaths, number);
               toast.success(response.data.message);
             } catch (error) {
               toast.error(`重试失败: ${asMessage(error)}`);
@@ -141,7 +139,7 @@ export function ShortcutHandler() {
               return;
             }
             try {
-              const response = await requeueScrapeByUrl(selectedItem.path, url);
+              const response = await requeueScrapeByUrl(groupedVideoPaths, url);
               toast.success(response.data.message);
             } catch (error) {
               toast.error(`重试失败: ${asMessage(error)}`);
@@ -154,12 +152,18 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            if (!window.confirm(`确定删除文件吗？\n${selectedItem.path}`)) {
+            if (
+              !window.confirm(
+                groupedVideoPaths.length > 1
+                  ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${selectedItem.number}`
+                  : `确定删除文件吗？\n${selectedItem.path}`,
+              )
+            ) {
               return;
             }
             try {
-              await deleteFile(selectedItem.path);
-              toast.success("文件已删除");
+              await deleteFile(groupedVideoPaths);
+              toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "文件已删除");
             } catch (error) {
               toast.error(`删除失败: ${asMessage(error)}`);
             }

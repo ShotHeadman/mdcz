@@ -6,18 +6,13 @@ import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/M
 import { Button } from "@/components/ui/Button";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
 import {
+  buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
-  getScrapeResultGroupNfoPath,
   type ScrapeResultGroup,
 } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
-
-function getDirFromPath(filePath: string) {
-  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
-  if (slash <= 0) return filePath;
-  return filePath.slice(0, slash);
-}
+import { getDirFromPath } from "@/utils/path";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
@@ -25,8 +20,10 @@ function getFileNameFromPath(filePath: string) {
 }
 
 function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | null) {
-  const result = group.items.find((item) => item.id === selectedResultId) ?? group.representative;
-  const nfoPath = getScrapeResultGroupNfoPath(group) ?? result.path;
+  const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
+  const result = actionContext.selectedItem;
+  const nfoPath = actionContext.nfoPath ?? result.path;
+  const groupedVideoPaths = actionContext.videoPaths;
 
   const handleCopyNumber = async () => {
     if (!result.number) {
@@ -46,7 +43,7 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
     const number = window.prompt("输入番号重新刮削", defaultNumber)?.trim();
     if (!number) return;
     try {
-      const response = await requeueScrapeByNumber(result.path, number);
+      const response = await requeueScrapeByNumber(groupedVideoPaths, number);
       toast.success(response.data?.message ?? "Queued re-scrape by number");
     } catch {
       toast.error("Failed to queue re-scrape by number");
@@ -57,7 +54,7 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
     const url = window.prompt("输入网址重新刮削", "")?.trim();
     if (!url) return;
     try {
-      const response = await requeueScrapeByUrl(result.path, url);
+      const response = await requeueScrapeByUrl(groupedVideoPaths, url);
       toast.success(response.data?.message ?? "Queued re-scrape by URL");
     } catch {
       toast.error("Failed to queue re-scrape by URL");
@@ -65,10 +62,18 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
   };
 
   const handleDeleteFile = async () => {
-    if (!window.confirm(`确定删除文件吗？\n${result.path}`)) return;
+    if (
+      !window.confirm(
+        groupedVideoPaths.length > 1
+          ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${result.number}`
+          : `确定删除文件吗？\n${result.path}`,
+      )
+    ) {
+      return;
+    }
     try {
-      await deleteFile(result.path);
-      toast.success("File deleted");
+      await deleteFile(groupedVideoPaths);
+      toast.success(groupedVideoPaths.length > 1 ? `Deleted ${groupedVideoPaths.length} files` : "File deleted");
     } catch {
       toast.error("Failed to delete file");
     }

@@ -81,7 +81,9 @@ describe("subtitleSidecars", () => {
       isDirectory: () => false,
       isSymbolicLink: () => true,
     } as Dirent;
-    vi.mocked(fsPromises.readdir).mockResolvedValue([fakeDirent] as Awaited<ReturnType<typeof fsPromises.readdir>>);
+    vi.mocked(fsPromises.readdir).mockResolvedValue([fakeDirent] as unknown as Awaited<
+      ReturnType<typeof fsPromises.readdir>
+    >);
     vi.mocked(fsPromises.stat).mockResolvedValue({
       isFile: () => true,
     } as Awaited<ReturnType<typeof fsPromises.stat>>);
