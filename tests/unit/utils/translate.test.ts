@@ -56,7 +56,7 @@ describe("translate mapping auto promotion", () => {
     await mkdir(bundledDir, { recursive: true });
     await mkdir(userDataDir, { recursive: true });
 
-    mockAppPath = join(workspaceDir, "app.asar");
+    mockAppPath = workspaceDir;
     mockUserDataPath = userDataDir;
 
     vi.resetModules();

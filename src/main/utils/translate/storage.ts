@@ -1,5 +1,5 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { app } from "electron";
 import { normalizeKeyword } from "./normalization";
 import { toActorEntry, toInfoEntry, toJsonRows } from "./parsing";
@@ -21,11 +21,7 @@ export const MAPPING_USER_FILE: Record<MappingCandidateCategory, string> = {
 
 export const resolveMappingDirectory = (): string => {
   if (app.isPackaged) {
-    const packagedResourcesPath =
-      typeof process.resourcesPath === "string" && process.resourcesPath.length > 0
-        ? process.resourcesPath
-        : join(dirname(app.getAppPath()), "resources");
-    return join(packagedResourcesPath, "mapping_table");
+    return join(app.getAppPath(), "resources", "mapping_table");
   }
 
   return join(process.cwd(), "resources", "mapping_table");

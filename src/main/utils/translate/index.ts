@@ -81,11 +81,12 @@ const pickLanguageValue = (entry: MappingEntry, language: LanguageTarget): strin
 
 const lookupMappedValue = async (
   value: string,
-  index: Map<string, MappingEntry>,
+  category: MappingCandidateCategory,
   language: LanguageTarget,
 ): Promise<string | null> => {
   await ensureMappingsLoaded();
 
+  const index = getIndexByCategory(category);
   const normalized = normalizeKeyword(value);
   const entry = index.get(normalized);
   if (!entry) {
@@ -98,10 +99,10 @@ const lookupMappedValue = async (
 
 const mapByKeyword = async (
   value: string,
-  index: Map<string, MappingEntry>,
+  category: MappingCandidateCategory,
   language: LanguageTarget,
 ): Promise<string> => {
-  const mapped = await lookupMappedValue(value, index, language);
+  const mapped = await lookupMappedValue(value, category, language);
   if (mapped) {
     return mapped;
   }
@@ -234,8 +235,7 @@ const tryAutoPromoteCandidate = async (record: MappingCandidateRecord, occurrenc
 
   await ensureMappingsLoaded();
 
-  const index = getIndexByCategory(record.category);
-  const current = await lookupMappedValue(record.keyword, index, record.target);
+  const current = await lookupMappedValue(record.keyword, record.category, record.target);
 
   if (current === record.mapped) {
     return;
@@ -323,23 +323,23 @@ export const appendMappingCandidate = async (input: {
 };
 
 export const mapActorName = async (value: string, language: LanguageTarget = "zh_cn"): Promise<string> => {
-  return mapByKeyword(value, actorIndex, language);
+  return mapByKeyword(value, "actor", language);
 };
 
 export const mapGenreName = async (value: string, language: LanguageTarget = "zh_cn"): Promise<string> => {
-  return mapByKeyword(value, infoIndex, language);
+  return mapByKeyword(value, "genre", language);
 };
 
 export const findMappedActorName = async (
   value: string,
   language: LanguageTarget = "zh_cn",
 ): Promise<string | null> => {
-  return lookupMappedValue(value, actorIndex, language);
+  return lookupMappedValue(value, "actor", language);
 };
 
 export const findMappedGenreName = async (
   value: string,
   language: LanguageTarget = "zh_cn",
 ): Promise<string | null> => {
-  return lookupMappedValue(value, infoIndex, language);
+  return lookupMappedValue(value, "genre", language);
 };
