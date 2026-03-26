@@ -7,7 +7,6 @@ export interface ComputedConfiguration {
   networkRetryCount: number;
   enabledSites: Set<Website>;
   orderedSites: Website[];
-  googleFallbackEnabled: boolean;
 }
 
 const normalizeProxyUrl = (configuration: Configuration): string | undefined => {
@@ -44,7 +43,6 @@ export const buildComputedConfiguration = (configuration: Configuration): Comput
     networkRetryCount: Math.max(0, Math.trunc(configuration.network.retryCount)),
     enabledSites,
     orderedSites,
-    googleFallbackEnabled: configuration.translate.enableGoogleFallback,
   };
 };
 

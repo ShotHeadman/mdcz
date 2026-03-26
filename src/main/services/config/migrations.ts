@@ -102,6 +102,9 @@ const V2_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   rating: ["dmm_tv", "dmm", "fc2hub", "javdb"],
   trailer_url: ["dmm_tv", "dmm", "javbus"],
 };
+const V050_LEGACY_TRANSLATE_PROMPT = "请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}";
+const V052_DEFAULT_TRANSLATE_PROMPT =
+  "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。如果原文已经是目标语言，请润色后直接输出。只输出最终翻译结果，不要输出任何解释。\\n{content}";
 
 const appendPathSegment = (template: string, segment: string): string => {
   const trimmed = template.trim();
@@ -317,6 +320,32 @@ function migrateV040ToV050(raw: Record<string, unknown>): void {
   }
 }
 
+// ── v0.5.0 → v0.5.2 ─────────────────────────────────────────────────────────
+
+function migrateV050ToV052(raw: Record<string, unknown>): void {
+  // 1. translate.llmMaxTry → translate.llmMaxRetries
+  renameKey(raw, "translate", "llmMaxTry", "llmMaxRetries");
+
+  // 2. translate.titleLanguage + plotLanguage → targetLanguage (keep titleLanguage value)
+  const translate = raw.translate;
+  if (isRecord(translate)) {
+    if ("titleLanguage" in translate && !("targetLanguage" in translate)) {
+      translate.targetLanguage = translate.titleLanguage;
+    }
+
+    // 3. Upgrade untouched legacy prompt to the new default prompt
+    if (translate.llmPrompt === V050_LEGACY_TRANSLATE_PROMPT) {
+      translate.llmPrompt = V052_DEFAULT_TRANSLATE_PROMPT;
+    }
+
+    delete translate.titleLanguage;
+    delete translate.plotLanguage;
+
+    // 4. Remove enableGoogleFallback (no longer used)
+    delete translate.enableGoogleFallback;
+  }
+}
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 export const migrations: Migration[] = [
@@ -331,5 +360,11 @@ export const migrations: Migration[] = [
     toVersion: 2,
     description: "v0.4.0 → v0.5.0",
     migrate: migrateV040ToV050,
+  },
+  {
+    fromVersion: 2,
+    toVersion: 3,
+    description: "v0.5.0 → v0.5.2",
+    migrate: migrateV050ToV052,
   },
 ];

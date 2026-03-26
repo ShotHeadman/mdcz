@@ -385,8 +385,8 @@ describe("Configuration migrations", () => {
       expect(result).toEqual({
         migrated: true,
         fromVersion: 1,
-        toVersion: 2,
-        applied: ["v0.4.0 → v0.5.0"],
+        toVersion: 3,
+        applied: ["v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2"],
       });
 
       expect(download.generateNfo).toBe(true);
@@ -423,6 +423,87 @@ describe("Configuration migrations", () => {
     });
   });
 
+  describe("v0.5.0 → v0.5.2", () => {
+    function buildV050Config(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        configVersion: 2,
+        translate: {
+          enableTranslation: false,
+          engine: "openai",
+          llmModelName: "gpt-5.2",
+          llmApiKey: "",
+          llmBaseUrl: "",
+          llmPrompt: "请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}",
+          llmTemperature: 1.0,
+          llmMaxTry: 3,
+          llmMaxRequestsPerSecond: 1,
+          enableGoogleFallback: true,
+          titleLanguage: "zh-CN",
+          plotLanguage: "zh-CN",
+        },
+        ...overrides,
+      };
+    }
+
+    it("renames translate fields and removes obsolete ones", () => {
+      const { raw, result, parsed } = migrate(buildV050Config());
+      const translate = raw.translate as Record<string, unknown>;
+
+      expect(result).toEqual({
+        migrated: true,
+        fromVersion: 2,
+        toVersion: 3,
+        applied: ["v0.5.0 → v0.5.2"],
+      });
+
+      expect(translate.llmMaxRetries).toBe(3);
+      expect(translate).not.toHaveProperty("llmMaxTry");
+      expect(translate.targetLanguage).toBe("zh-CN");
+      expect(translate).not.toHaveProperty("titleLanguage");
+      expect(translate).not.toHaveProperty("plotLanguage");
+      expect(translate).not.toHaveProperty("enableGoogleFallback");
+      expect(translate.llmPrompt).toBe(
+        "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。如果原文已经是目标语言，请润色后直接输出。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+      );
+      expect(parsed.translate.llmMaxRetries).toBe(3);
+      expect(parsed.translate.targetLanguage).toBe("zh-CN");
+      expect(parsed.translate.llmPrompt).toBe(
+        "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。如果原文已经是目标语言，请润色后直接输出。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+      );
+    });
+
+    it("preserves customized titleLanguage as targetLanguage", () => {
+      const raw = buildV050Config({
+        translate: {
+          enableTranslation: true,
+          engine: "openai",
+          llmApiKey: "key",
+          llmMaxTry: 5,
+          titleLanguage: "zh-TW",
+          plotLanguage: "zh-CN",
+          enableGoogleFallback: false,
+        },
+      });
+
+      const parsed = migrate(raw).parsed;
+
+      expect(parsed.translate.targetLanguage).toBe("zh-TW");
+      expect(parsed.translate.llmMaxRetries).toBe(5);
+    });
+
+    it("preserves customized llmPrompt instead of resetting it", () => {
+      const parsed = migrate(
+        buildV050Config({
+          translate: {
+            llmPrompt: "自定义提示词：{lang}\\n{content}",
+          },
+        }),
+      ).parsed;
+
+      expect(parsed.translate.llmPrompt).toBe("自定义提示词：{lang}\\n{content}");
+    });
+  });
+
   describe("migrator behavior", () => {
     it("skips migration for current version", () => {
       const raw = configurationSchema.parse({}) as unknown as Record<string, unknown>;
@@ -445,7 +526,7 @@ describe("Configuration migrations", () => {
         migrated: true,
         fromVersion: 0,
         toVersion: CURRENT_CONFIG_VERSION,
-        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0"],
+        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2"],
       });
     });
 

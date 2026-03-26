@@ -33,8 +33,7 @@ const createBaseConfig = () => {
       engine: TranslateEngine.OPENAI,
       llmApiKey: "test-key",
       enableTranslation: true,
-      enableGoogleFallback: false,
-      llmMaxTry: 1,
+      llmMaxRetries: 1,
     },
   });
 };
@@ -227,12 +226,167 @@ describe("TranslateService term consistency", () => {
         },
       }) as unknown as OpenAI;
 
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const networkClient = new NetworkClient({});
+    vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
+
+    const service = new TranslateService(networkClient, openAiFactory);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
 
     expect(completionCreate).toHaveBeenCalledTimes(1);
     expect(sleepMock).not.toHaveBeenCalled();
+  });
+
+  it("does not write untranslated non-chinese source text into translated crawler fields", async () => {
+    const completionCreate = vi.fn().mockRejectedValue(new Error("openai failed"));
+    const openAiFactory = () =>
+      ({
+        chat: {
+          completions: {
+            create: completionCreate,
+          },
+        },
+      }) as unknown as OpenAI;
+
+    const networkClient = new NetworkClient({});
+    vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
+
+    const service = new TranslateService(networkClient, openAiFactory);
+    const config = createBaseConfig();
+
+    const translated = await service.translateCrawlerData(
+      {
+        title: "BEST OF 彼女の休日",
+        plot: "An English synopsis",
+        number: "DLDSS-463",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(translated.title_zh).toBeUndefined();
+    expect(translated.plot_zh).toBeUndefined();
+    expect(completionCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not call OpenAI for genre terms when the selected engine is google", async () => {
+    const completionCreate = vi.fn();
+    const openAiFactory = () =>
+      ({
+        chat: {
+          completions: {
+            create: completionCreate,
+          },
+        },
+      }) as unknown as OpenAI;
+
+    const networkClient = new NetworkClient({});
+    vi.spyOn(networkClient, "getJson").mockResolvedValue([[["剧情"]]] as unknown);
+
+    const service = new TranslateService(networkClient, openAiFactory);
+    const config = configurationSchema.parse({
+      translate: {
+        engine: TranslateEngine.GOOGLE,
+        llmApiKey: "test-key",
+        enableTranslation: true,
+      },
+    });
+
+    const translated = await service.translateCrawlerData(
+      {
+        title: " ",
+        number: "DLDSS-463",
+        actors: [],
+        genres: ["Drama"],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(completionCreate).not.toHaveBeenCalled();
+    expect(translated.genres).toEqual(["剧情"]);
+  });
+
+  it("normalizes unsupported translation target config values to zh-CN without migration", () => {
+    const config = configurationSchema.parse({
+      translate: {
+        targetLanguage: "ja-JP",
+      },
+    });
+
+    expect(config.translate.targetLanguage).toBe("zh-CN");
+  });
+
+  it("lets the LLM auto-detect mixed-language input and target traditional chinese directly", async () => {
+    const completionCreate = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "混合語言標題" } }],
+    });
+
+    const openAiFactory = () =>
+      ({
+        chat: {
+          completions: {
+            create: completionCreate,
+          },
+        },
+      }) as unknown as OpenAI;
+
+    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const config = configurationSchema.parse({
+      translate: {
+        engine: TranslateEngine.OPENAI,
+        llmApiKey: "test-key",
+        enableTranslation: true,
+        llmMaxRetries: 1,
+        targetLanguage: "zh-TW",
+      },
+    });
+
+    await expect(service.translateText("BEST OF 彼女の休日", "zh_tw", config)).resolves.toBe("混合語言標題");
+
+    expect(completionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("繁体中文"),
+          }),
+        ],
+      }),
+      { signal: undefined },
+    );
+  });
+
+  it("does not short-circuit chinese input and still delegates target conversion to the engine", async () => {
+    const completionCreate = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "繁體標題" } }],
+    });
+
+    const openAiFactory = () =>
+      ({
+        chat: {
+          completions: {
+            create: completionCreate,
+          },
+        },
+      }) as unknown as OpenAI;
+
+    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const config = configurationSchema.parse({
+      translate: {
+        engine: TranslateEngine.OPENAI,
+        llmApiKey: "test-key",
+        enableTranslation: true,
+        llmMaxRetries: 1,
+      },
+    });
+
+    await expect(service.translateText("简体标题", "zh_tw", config)).resolves.toBe("繁體標題");
+    expect(completionCreate).toHaveBeenCalledTimes(1);
   });
 });
