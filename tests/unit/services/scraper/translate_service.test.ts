@@ -362,7 +362,7 @@ describe("TranslateService term consistency", () => {
     );
   });
 
-  it("does not short-circuit chinese input and still delegates target conversion to the engine", async () => {
+  it("short-circuits chinese input and converts the target locally", async () => {
     const completionCreate = vi.fn().mockResolvedValue({
       choices: [{ message: { content: "繁體標題" } }],
     });
@@ -386,7 +386,7 @@ describe("TranslateService term consistency", () => {
       },
     });
 
-    await expect(service.translateText("简体标题", "zh_tw", config)).resolves.toBe("繁體標題");
-    expect(completionCreate).toHaveBeenCalledTimes(1);
+    await expect(service.translateText("简体标题", "zh_tw", config)).resolves.toBe("簡體標題");
+    expect(completionCreate).not.toHaveBeenCalled();
   });
 });

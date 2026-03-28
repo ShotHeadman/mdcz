@@ -1,4 +1,4 @@
-import { BrowserWindow, type Cookie } from "electron";
+import { BrowserWindow, type Cookie, type Event } from "electron";
 import { cookieDomainMatches, cookiePathMatches, normalizeCookieDomain, normalizeCookiePath } from "./cookieUtils";
 
 export interface ResolvedCookie {
@@ -63,19 +63,11 @@ const waitForResolvedCookies = (
   return new Promise<ResolvedCookie[]>((resolve, reject) => {
     let settled = false;
     let pollInFlight = false;
-    const addListener = browserWindow.webContents.on as unknown as (
-      eventName: string,
-      listener: (...args: unknown[]) => void,
-    ) => void;
-    const removeListener = browserWindow.webContents.removeListener as unknown as (
-      eventName: string,
-      listener: (...args: unknown[]) => void,
-    ) => void;
 
     const cleanup = () => {
       clearTimeout(timeoutHandle);
       clearInterval(intervalHandle);
-      removeListener("did-fail-load", handleLoadFailure);
+      browserWindow.webContents.removeListener("did-fail-load", handleLoadFailure);
     };
 
     const finish = (callback: () => void) => {
@@ -109,14 +101,13 @@ const waitForResolvedCookies = (
       }
     };
 
-    const handleLoadFailure = (...args: unknown[]) => {
-      const [, errorCode, errorDescription, validatedUrl, isMainFrame] = args as [
-        unknown,
-        number,
-        string,
-        string,
-        boolean,
-      ];
+    const handleLoadFailure = (
+      _event: Event,
+      errorCode: number,
+      errorDescription: string,
+      validatedUrl: string,
+      isMainFrame: boolean,
+    ) => {
       if (!isMainFrame) {
         return;
       }
@@ -139,7 +130,7 @@ const waitForResolvedCookies = (
       void pollCookies();
     }, COOKIE_POLL_INTERVAL_MS);
 
-    addListener("did-fail-load", handleLoadFailure);
+    browserWindow.webContents.on("did-fail-load", handleLoadFailure);
 
     void pollCookies();
   });

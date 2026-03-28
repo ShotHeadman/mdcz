@@ -1,5 +1,5 @@
 import { loggerService } from "@main/services/LoggerService";
-import type { NetworkClient, NetworkCookieJar, NetworkSession } from "@main/services/network";
+import { InMemoryCookieJar, type NetworkClient, type NetworkSession } from "@main/services/network";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { load } from "cheerio";
@@ -66,41 +66,6 @@ const normalizeAmazonDetailPath = (value: string): string | null => {
     return null;
   }
 };
-
-class InMemoryCookieJar implements NetworkCookieJar {
-  private readonly store = new Map<string, Map<string, string>>();
-
-  getCookieString(url: string): string {
-    const host = new URL(url).hostname;
-    const hostCookies = this.store.get(host);
-    if (!hostCookies) {
-      return "";
-    }
-
-    return Array.from(hostCookies.entries())
-      .map(([name, value]) => `${name}=${value}`)
-      .join("; ");
-  }
-
-  setCookie(cookie: string, url: string): void {
-    const host = new URL(url).hostname;
-    const [cookiePair] = cookie.split(";", 1);
-    const separatorIndex = cookiePair.indexOf("=");
-    if (separatorIndex <= 0) {
-      return;
-    }
-
-    const name = cookiePair.slice(0, separatorIndex).trim();
-    const value = cookiePair.slice(separatorIndex + 1).trim();
-    if (!name) {
-      return;
-    }
-
-    const hostCookies = this.store.get(host) ?? new Map<string, string>();
-    hostCookies.set(name, value);
-    this.store.set(host, hostCookies);
-  }
-}
 
 export class AmazonJpImageService {
   private readonly logger = loggerService.getLogger("AmazonJpImageService");

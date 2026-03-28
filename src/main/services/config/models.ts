@@ -78,7 +78,7 @@ const translateSchema = z.object({
   llmPrompt: z
     .string()
     .default(
-      "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。如果原文已经是目标语言，请润色后直接输出。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+      "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
     ),
   llmTemperature: z.number().min(0).max(2).default(1.0),
   llmMaxRetries: z.number().int().min(1).max(20).default(3),

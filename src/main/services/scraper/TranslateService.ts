@@ -5,7 +5,7 @@ import type { NetworkClient } from "@main/services/network";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { toErrorMessage } from "@main/utils/common";
 import { parseRetryAfterMs, readRetryAfterHeader } from "@main/utils/http";
-import { detectLanguage } from "@main/utils/language";
+import { convertToSimplified, convertToTraditional, detectLanguage } from "@main/utils/language";
 import { appendMappingCandidate, findMappedActorName, findMappedGenreName } from "@main/utils/translate";
 import type { TranslationTarget } from "@shared/enums";
 import type { ActorProfile, CrawlerData } from "@shared/types";
@@ -27,6 +27,14 @@ const normalizeNewlines = (value: string): string => value.replace(/\r\n?/gu, "\
 
 const normalizeTermKey = (value: string): string => {
   return value.normalize("NFKC").trim().toLowerCase();
+};
+
+const ensureTargetChinese = (text: string, target: LanguageTarget): string => {
+  if (target === "zh_tw") {
+    return convertToTraditional(text);
+  }
+
+  return convertToSimplified(text);
 };
 
 const googleTranslateResponseSchema = z.array(z.unknown());
@@ -202,12 +210,12 @@ export class TranslateService {
       const mapped = await findMappedGenreName(normalized, target);
 
       if (mapped) {
-        return mapped.trim();
+        return ensureTargetChinese(mapped.trim(), target);
       }
 
       const llmTerm = await this.translateGenreWithOpenAiTerm(normalized, target, config, signal);
       const translated = llmTerm ?? (await this.translateText(normalized, target, config, signal));
-      const normalizedResult = translated.trim();
+      const normalizedResult = ensureTargetChinese(translated.trim(), target);
 
       if (llmTerm) {
         try {
@@ -301,22 +309,31 @@ export class TranslateService {
 
     throwIfAborted(signal);
 
+    const detected = detectLanguage(text);
+    if (detected === target) {
+      return text;
+    }
+
+    if (detected === "zh_cn" || detected === "zh_tw") {
+      return ensureTargetChinese(text, target);
+    }
+
     const engine = config.translate.engine;
 
     if (engine === "google") {
       const google = await this.translateWithGoogle(text, target, signal);
       if (google) {
-        return google.trim();
+        return ensureTargetChinese(google.trim(), target);
       }
     } else {
       const openAi = await this.translateWithOpenAi(text, target, config, signal);
       if (openAi) {
-        return openAi.trim();
+        return ensureTargetChinese(openAi.trim(), target);
       }
 
       const google = await this.translateWithGoogle(text, target, signal);
       if (google) {
-        return google.trim();
+        return ensureTargetChinese(google.trim(), target);
       }
     }
 

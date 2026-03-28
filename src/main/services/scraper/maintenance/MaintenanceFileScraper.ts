@@ -335,7 +335,7 @@ export class MaintenanceFileScraper {
     preparedCrawlerData: CrawlerData | undefined,
     assets: DownloadedAssets,
     aggregationSources: PreparedMaintenanceFile["aggregationSources"],
-    config?: Configuration,
+    config: Configuration,
   ): Promise<string | undefined> {
     if (!(this.preset.steps.generateNfo && plan && preparedCrawlerData)) {
       return undefined;
@@ -355,8 +355,8 @@ export class MaintenanceFileScraper {
       videoMeta,
       fileInfo,
       localState: entry.nfoLocalState,
-      nfoNaming: config?.download.nfoNaming,
-      nfoTitleTemplate: config?.naming.nfoTitleTemplate,
+      nfoNaming: config.download.nfoNaming,
+      nfoTitleTemplate: config.naming.nfoTitleTemplate,
     });
   }
 
