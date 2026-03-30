@@ -10,6 +10,7 @@ import {
 } from "@/lib/maintenance";
 import {
   buildMaintenanceEntryGroups,
+  buildMaintenanceEntryViewModel,
   countMaintenanceDisplayItems,
   findMaintenanceEntryGroup,
   formatMaintenanceIdleStatusText,
@@ -316,6 +317,89 @@ describe("maintenance multipart grouping", () => {
       totalCount: 1,
       readyCount: 1,
       blockedCount: 0,
+    });
+  });
+
+  it("treats a ready preview as the effective status when local scanError has been recovered", () => {
+    const entry: LocalScanEntry = {
+      ...createEntry(),
+      scanError: "NFO 解析失败: NFO missing website",
+      crawlerData: undefined,
+    };
+
+    const [group] = buildMaintenanceEntryGroups([entry], {
+      previewResults: {
+        [entry.fileId]: {
+          fileId: entry.fileId,
+          status: "ready",
+        },
+      },
+    });
+
+    expect(group?.status).toBe("success");
+    expect(group?.errorText).toBeUndefined();
+  });
+
+  it("builds a unified batch view model with grouped preview state and executable entries", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      fileId: "entry-1",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      fileId: "entry-2",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+
+    const viewModel = buildMaintenanceEntryViewModel([part1, part2], {
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+          fieldDiffs: [createValueDiff({ field: "title", label: "标题", oldValue: "A", newValue: "B", changed: true })],
+          pathDiff: {
+            fileId: "entry-1",
+            currentVideoPath: "/media/FC2-123456-1.mp4",
+            targetVideoPath: "/organized/FC2-123456-1.mp4",
+            currentDir: "/media",
+            targetDir: "/organized",
+            changed: true,
+          },
+        },
+        "entry-2": {
+          fileId: "entry-2",
+          status: "ready",
+        },
+      },
+    });
+
+    expect(viewModel.previewSummary).toEqual({
+      totalCount: 1,
+      readyCount: 1,
+      blockedCount: 0,
+    });
+    expect(viewModel.executableEntries.map((entry) => entry.fileId)).toEqual(["entry-1", "entry-2"]);
+    expect(viewModel.groups[0]?.previewState).toMatchObject({
+      ready: true,
+      diffCount: 1,
+      hasPathChange: true,
     });
   });
 

@@ -1,5 +1,4 @@
-import type { LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
-import { countMultipartDisplayGroups, type MultipartDisplayGroup } from "@/lib/multipartDisplay";
+import type { LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem, PathDiff } from "@shared/types";
 import { buildRendererGroups, findRendererGroup, type RendererGroup } from "@/lib/rendererGroupModel";
 
 export interface MaintenanceEntryGroup extends RendererGroup<LocalScanEntry> {
@@ -26,6 +25,38 @@ interface MaintenancePreviewGroupSummary {
   readyCount: number;
   blockedCount: number;
 }
+
+interface MaintenanceGroupExecutionState {
+  active: boolean;
+  completed: boolean;
+  failed: boolean;
+  hasResults: boolean;
+  success: boolean;
+}
+
+interface MaintenanceGroupPreviewState {
+  blockedPreview?: MaintenancePreviewItem;
+  changedPathItems: Array<{ entry: LocalScanEntry; pathDiff: PathDiff }>;
+  diffCount: number;
+  hasPathChange: boolean;
+  hasPreview: boolean;
+  ready: boolean;
+}
+
+export interface MaintenanceEntryGroupViewModel extends MaintenanceEntryGroup {
+  executableItems: LocalScanEntry[];
+  executionState: MaintenanceGroupExecutionState;
+  previewState: MaintenanceGroupPreviewState;
+}
+
+export interface MaintenanceEntryCollectionViewModel {
+  displayCount: number;
+  executableEntries: LocalScanEntry[];
+  executionSummary: MaintenanceExecutionGroupSummary;
+  groups: MaintenanceEntryGroupViewModel[];
+  previewSummary: MaintenancePreviewGroupSummary;
+}
+
 const maintenanceMultipartSelectors = {
   getDirectory: (entry: LocalScanEntry) => entry.groupingDirectory ?? entry.currentDir,
   getFileName: (entry: LocalScanEntry) => entry.fileInfo.fileName,
@@ -34,11 +65,50 @@ const maintenanceMultipartSelectors = {
   getPart: (entry: LocalScanEntry) => entry.fileInfo.part,
 };
 
+const getMaintenanceEntryStatus = (
+  entry: LocalScanEntry,
+  result?: MaintenanceItemResult,
+  preview?: MaintenancePreviewItem,
+): MaintenanceItemResult["status"] | "idle" => {
+  if (result?.status === "processing") {
+    return "processing";
+  }
+
+  if (result?.status === "pending") {
+    return "pending";
+  }
+
+  if (result?.status === "failed") {
+    return "failed";
+  }
+
+  if (result?.status === "success") {
+    return "success";
+  }
+
+  if (preview?.status === "blocked") {
+    return "failed";
+  }
+
+  if (preview?.status === "ready") {
+    return "success";
+  }
+
+  if (entry.scanError) {
+    return "failed";
+  }
+
+  return "idle";
+};
+
 const getMaintenanceGroupStatus = (
-  group: MultipartDisplayGroup<LocalScanEntry>,
+  group: RendererGroup<LocalScanEntry>["items"],
   itemResults: Record<string, MaintenanceItemResult>,
+  previewResults: Record<string, MaintenancePreviewItem>,
 ): MaintenanceEntryGroup["status"] => {
-  const statuses = group.items.map((entry) => getMaintenanceEntryStatus(entry, itemResults[entry.fileId]));
+  const statuses = group.map((entry) =>
+    getMaintenanceEntryStatus(entry, itemResults[entry.fileId], previewResults[entry.fileId]),
+  );
   if (statuses.some((value) => value === "failed")) {
     return "failed";
   }
@@ -52,6 +122,30 @@ const getMaintenanceGroupStatus = (
   }
 
   return "idle";
+};
+
+const getMaintenanceEntryErrorText = (
+  entry: LocalScanEntry,
+  result?: MaintenanceItemResult,
+  preview?: MaintenancePreviewItem,
+): string | undefined => {
+  if (result?.status === "failed") {
+    return result.error ?? preview?.error ?? entry.scanError;
+  }
+
+  if (result?.status === "success" || result?.status === "processing" || result?.status === "pending") {
+    return undefined;
+  }
+
+  if (preview?.status === "blocked") {
+    return preview.error ?? entry.scanError;
+  }
+
+  if (preview?.status === "ready") {
+    return undefined;
+  }
+
+  return entry.scanError;
 };
 
 const pickMaintenanceCompareResult = (
@@ -91,10 +185,10 @@ export const buildMaintenanceEntryGroups = (
 
   return buildRendererGroups(entries, {
     selectors: maintenanceMultipartSelectors,
-    buildStatus: (group) => getMaintenanceGroupStatus(group, itemResults),
+    buildStatus: (group) => getMaintenanceGroupStatus(group.items, itemResults, previewResults),
     buildErrorText: (group) =>
       group.items
-        .map((entry) => itemResults[entry.fileId]?.error ?? entry.scanError ?? previewResults[entry.fileId]?.error)
+        .map((entry) => getMaintenanceEntryErrorText(entry, itemResults[entry.fileId], previewResults[entry.fileId]))
         .find((value): value is string => Boolean(value)),
   }).map((group) => {
     const resultItems = group.items.flatMap((entry) => {
@@ -115,10 +209,130 @@ export const buildMaintenanceEntryGroups = (
   });
 };
 
+const buildPreviewState = (
+  group: MaintenanceEntryGroup,
+  previewResults: Record<string, MaintenancePreviewItem>,
+): MaintenanceGroupPreviewState => {
+  const changedPathItems = group.items.flatMap((entry) => {
+    const pathDiff = previewResults[entry.fileId]?.pathDiff;
+    return pathDiff?.changed ? [{ entry, pathDiff }] : [];
+  });
+  const ready =
+    group.previewItems.length === group.items.length &&
+    group.previewItems.every((preview) => preview.status === "ready");
+
+  return {
+    hasPreview: group.previewItems.length > 0,
+    ready,
+    blockedPreview: group.previewItems.find((preview) => preview.status === "blocked"),
+    diffCount: Math.max(0, ...group.previewItems.map((preview) => preview.fieldDiffs?.length ?? 0)),
+    changedPathItems,
+    hasPathChange: changedPathItems.length > 0,
+  };
+};
+
+const buildExecutionState = (group: MaintenanceEntryGroup): MaintenanceGroupExecutionState => {
+  if (group.resultItems.length === 0) {
+    return {
+      active: false,
+      completed: false,
+      failed: false,
+      hasResults: false,
+      success: false,
+    };
+  }
+
+  const statuses = group.resultItems.map((item) => item.status);
+  const allChildrenReported = group.resultItems.length === group.items.length;
+  const active = statuses.some((status) => status === "pending" || status === "processing");
+  const success = allChildrenReported && statuses.every((status) => status === "success");
+  const failed = allChildrenReported && !active && statuses.some((status) => status === "failed");
+
+  return {
+    active,
+    completed: success || failed,
+    failed,
+    hasResults: true,
+    success,
+  };
+};
+
+export const buildMaintenanceEntryViewModel = (
+  entries: LocalScanEntry[],
+  options: BuildMaintenanceEntryGroupsOptions = {},
+): MaintenanceEntryCollectionViewModel => {
+  const previewResults = options.previewResults ?? {};
+  let previewTotalCount = 0;
+  let previewReadyCount = 0;
+  let previewBlockedCount = 0;
+  let executionTotalCount = 0;
+  let executionCompletedCount = 0;
+  let executionSuccessCount = 0;
+  let executionFailedCount = 0;
+  let executionActiveCount = 0;
+  const executableEntries: LocalScanEntry[] = [];
+
+  const groups = buildMaintenanceEntryGroups(entries, options).map((group) => {
+    const previewState = buildPreviewState(group, previewResults);
+    const executionState = buildExecutionState(group);
+    const executableItems = previewState.ready ? group.items : [];
+
+    if (previewState.hasPreview) {
+      previewTotalCount += 1;
+      if (previewState.ready) {
+        previewReadyCount += 1;
+      } else {
+        previewBlockedCount += 1;
+      }
+    }
+
+    if (executionState.hasResults) {
+      executionTotalCount += 1;
+      if (executionState.completed) {
+        executionCompletedCount += 1;
+      }
+      if (executionState.success) {
+        executionSuccessCount += 1;
+      } else if (executionState.failed) {
+        executionFailedCount += 1;
+      } else {
+        executionActiveCount += 1;
+      }
+    }
+
+    executableEntries.push(...executableItems);
+
+    return {
+      ...group,
+      previewState,
+      executionState,
+      executableItems,
+    };
+  });
+
+  return {
+    groups,
+    displayCount: groups.length,
+    executableEntries,
+    previewSummary: {
+      totalCount: previewTotalCount,
+      readyCount: previewReadyCount,
+      blockedCount: previewBlockedCount,
+    },
+    executionSummary: {
+      totalCount: executionTotalCount,
+      completedCount: executionCompletedCount,
+      successCount: executionSuccessCount,
+      failedCount: executionFailedCount,
+      activeCount: executionActiveCount,
+    },
+  };
+};
+
 export const countMaintenanceDisplayItems = (
   entries: LocalScanEntry[],
   options: BuildMaintenanceEntryGroupsOptions = {},
-): number => countMultipartDisplayGroups(entries, maintenanceMultipartSelectors);
+): number => buildMaintenanceEntryViewModel(entries, options).displayCount;
 
 export const formatMaintenanceIdleStatusText = (entries: LocalScanEntry[], emptyText = "就绪"): string => {
   if (entries.length === 0) {
@@ -131,114 +345,12 @@ export const formatMaintenanceIdleStatusText = (entries: LocalScanEntry[], empty
 export const summarizeMaintenancePreviewGroups = (
   entries: LocalScanEntry[],
   previewResults: Record<string, MaintenancePreviewItem>,
-): MaintenancePreviewGroupSummary => {
-  let totalCount = 0;
-  let readyCount = 0;
-  let blockedCount = 0;
-
-  for (const group of buildMaintenanceEntryGroups(entries, { previewResults })) {
-    const groupPreviewItems = group.items.flatMap((entry) => {
-      const preview = previewResults[entry.fileId];
-      return preview ? [preview] : [];
-    });
-
-    if (groupPreviewItems.length === 0) {
-      continue;
-    }
-
-    totalCount += 1;
-    const ready =
-      groupPreviewItems.length === group.items.length && groupPreviewItems.every((item) => item.status === "ready");
-    if (ready) {
-      readyCount += 1;
-      continue;
-    }
-
-    blockedCount += 1;
-  }
-
-  return {
-    totalCount,
-    readyCount,
-    blockedCount,
-  };
-};
+): MaintenancePreviewGroupSummary => buildMaintenanceEntryViewModel(entries, { previewResults }).previewSummary;
 
 export const summarizeMaintenanceExecutionGroups = (
   entries: LocalScanEntry[],
   itemResults: Record<string, MaintenanceItemResult>,
-): MaintenanceExecutionGroupSummary => {
-  let totalCount = 0;
-  let completedCount = 0;
-  let successCount = 0;
-  let failedCount = 0;
-  let activeCount = 0;
-
-  for (const group of buildMaintenanceEntryGroups(entries, { itemResults })) {
-    const groupResultItems = group.items.flatMap((entry) => {
-      const result = itemResults[entry.fileId];
-      return result ? [result] : [];
-    });
-
-    if (groupResultItems.length === 0) {
-      continue;
-    }
-
-    totalCount += 1;
-
-    const statuses = groupResultItems.map((item) => item.status);
-    const allChildrenReported = groupResultItems.length === group.items.length;
-    const hasActiveChild = statuses.some((status) => status === "pending" || status === "processing");
-    const allSuccess = allChildrenReported && statuses.every((status) => status === "success");
-    const allTerminalWithFailure =
-      allChildrenReported && !hasActiveChild && statuses.some((status) => status === "failed");
-
-    if (allSuccess) {
-      completedCount += 1;
-      successCount += 1;
-      continue;
-    }
-
-    if (allTerminalWithFailure) {
-      completedCount += 1;
-      failedCount += 1;
-      continue;
-    }
-
-    activeCount += 1;
-  }
-
-  return {
-    totalCount,
-    completedCount,
-    successCount,
-    failedCount,
-    activeCount,
-  };
-};
-
-const getMaintenanceEntryStatus = (
-  entry: LocalScanEntry,
-  result?: MaintenanceItemResult,
-): MaintenanceItemResult["status"] | "idle" => {
-  if (result?.status === "processing") {
-    return "processing";
-  }
-
-  if (result?.status === "pending") {
-    return "pending";
-  }
-
-  if (result?.status === "failed" || entry.scanError) {
-    return "failed";
-  }
-
-  if (result?.status === "success") {
-    return "success";
-  }
-
-  return "idle";
-};
+): MaintenanceExecutionGroupSummary => buildMaintenanceEntryViewModel(entries, { itemResults }).executionSummary;
 
 export const findMaintenanceEntryGroup = (
   entries: LocalScanEntry[],

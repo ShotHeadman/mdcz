@@ -1,43 +1,10 @@
-import type { FileInfo, UncensoredConfirmResultItem } from "@shared/types";
+import type { ScrapeResult as SharedScrapeResult, UncensoredConfirmResultItem } from "@shared/types";
 import type { StateCreator } from "zustand";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
 
-export interface ScrapeResult {
-  fileId: string;
-  status: "success" | "failed";
-  number: string;
-  title?: string;
-  path: string;
-  actors?: string[];
-  outline?: string;
-  tags?: string[];
-  release?: string;
-  duration?: string;
-  resolution?: string;
-  codec?: string;
-  bitrate?: string;
-  directors?: string[];
-  series?: string;
-  studio?: string;
-  publisher?: string;
-  score?: string;
-  posterUrl?: string;
-  thumbUrl?: string;
-  fanartUrl?: string;
-  outputPath?: string;
-  sceneImages?: string[];
-  /** Maps field names to the website that provided the value. */
-  sources?: Record<string, string>;
-  errorMessage?: string;
-  /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
-  uncensoredAmbiguous?: boolean;
-  /** NFO path for post-scrape operations like uncensored confirmation. */
-  nfoPath?: string;
-  /** Multipart metadata preserved from the backend file info. */
-  part?: FileInfo["part"];
-}
+export type ScrapeResult = SharedScrapeResult;
 
 interface ScrapeState {
   isScraping: boolean;
@@ -68,6 +35,11 @@ const noopStorage = {
   getItem: () => null,
   setItem: () => undefined,
   removeItem: () => undefined,
+};
+
+const getFileNameFromPath = (filePath: string): string => {
+  const slashIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return slashIndex >= 0 ? filePath.slice(slashIndex + 1) : filePath;
 };
 
 const storeCreator: StateCreator<ScrapeState> = (set) => ({
@@ -115,7 +87,11 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
 
           return {
             ...result,
-            path: matched.targetVideoPath,
+            fileInfo: {
+              ...result.fileInfo,
+              filePath: matched.targetVideoPath,
+              fileName: getFileNameFromPath(matched.targetVideoPath) || result.fileInfo.fileName,
+            },
             nfoPath: matched.targetNfoPath,
             outputPath: deriveGroupingDirectoryFromPath(matched.targetVideoPath),
             uncensoredAmbiguous: false,

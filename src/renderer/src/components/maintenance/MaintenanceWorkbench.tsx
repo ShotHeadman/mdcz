@@ -74,7 +74,13 @@ export default function MaintenanceWorkbench() {
     return {
       ...baseItem,
       status:
-        activeGroup.status === "failed" ? "failed" : activeGroup.status === "success" ? "success" : baseItem.status,
+        activeGroup.status === "failed"
+          ? "failed"
+          : activeGroup.status === "success"
+            ? "success"
+            : activeGroup.status === "processing"
+              ? "processing"
+              : baseItem.status,
       errorMessage: activeGroup.errorText ?? baseItem.errorMessage,
     };
   }, [activeGroup, compareResult, detailEntry]);

@@ -1,3 +1,5 @@
+import { Website } from "@shared/enums";
+import type { FileInfo, ScrapeResult } from "@shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildAmbiguousUncensoredScrapeGroups,
@@ -6,43 +8,84 @@ import {
   buildUncensoredConfirmItemsForScrapeGroups,
   summarizeUncensoredConfirmResultForScrapeGroups,
 } from "@/lib/scrapeResultGrouping";
-import type { ScrapeResult } from "@/store/scrapeStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 afterEach(() => {
   useScrapeStore.getState().reset();
 });
 
+const getFileNameFromPath = (filePath: string): string => {
+  const slashIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return slashIndex >= 0 ? filePath.slice(slashIndex + 1) : filePath;
+};
+
+const createScrapeResult = (input: {
+  fileId: string;
+  filePath: string;
+  number: string;
+  assets?: ScrapeResult["assets"];
+  crawlerData?: ScrapeResult["crawlerData"];
+  error?: string;
+  nfoPath?: string;
+  outputPath?: string;
+  part?: FileInfo["part"];
+  status?: ScrapeResult["status"];
+  uncensoredAmbiguous?: boolean;
+}): ScrapeResult => ({
+  fileId: input.fileId,
+  status: input.status ?? "success",
+  fileInfo: {
+    filePath: input.filePath,
+    fileName: getFileNameFromPath(input.filePath),
+    extension: ".mp4",
+    number: input.number,
+    isSubtitled: false,
+    part: input.part,
+  },
+  crawlerData:
+    input.crawlerData ??
+    ({
+      title: input.number,
+      number: input.number,
+      actors: [],
+      genres: [],
+      scene_images: [],
+      website: Website.DMM,
+    } satisfies NonNullable<ScrapeResult["crawlerData"]>),
+  assets: input.assets,
+  error: input.error,
+  outputPath: input.outputPath,
+  nfoPath: input.nfoPath,
+  uncensoredAmbiguous: input.uncensoredAmbiguous,
+});
+
 describe("useScrapeStore.resolveUncensoredResults", () => {
   it("updates matched results and derives output directories from renamed target video paths", () => {
     const results: ScrapeResult[] = [
-      {
+      createScrapeResult({
         fileId: "unix-item",
-        status: "success",
         number: "ABC-123",
-        path: "/source/ABC-123.mp4",
+        filePath: "/source/ABC-123.mp4",
         outputPath: "/source",
         nfoPath: "/source/ABC-123.nfo",
         uncensoredAmbiguous: true,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "windows-item",
-        status: "success",
         number: "XYZ-789",
-        path: "C:\\source\\XYZ-789.mp4",
+        filePath: "C:\\source\\XYZ-789.mp4",
         outputPath: "C:\\source",
         nfoPath: "C:\\source\\XYZ-789.nfo",
         uncensoredAmbiguous: true,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "untouched-item",
-        status: "success",
         number: "KEEP-001",
-        path: "/keep/KEEP-001.mp4",
+        filePath: "/keep/KEEP-001.mp4",
         outputPath: "/keep",
         nfoPath: "/keep/KEEP-001.nfo",
         uncensoredAmbiguous: true,
-      },
+      }),
     ];
 
     useScrapeStore.setState({ results });
@@ -66,56 +109,51 @@ describe("useScrapeStore.resolveUncensoredResults", () => {
     ]);
 
     expect(useScrapeStore.getState().results).toEqual([
-      {
+      createScrapeResult({
         fileId: "unix-item",
-        status: "success",
         number: "ABC-123",
-        path: "/library/uncensored/ABC-123.mp4",
+        filePath: "/library/uncensored/ABC-123.mp4",
         outputPath: "/library/uncensored",
         nfoPath: "/library/uncensored/ABC-123.nfo",
         uncensoredAmbiguous: false,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "windows-item",
-        status: "success",
         number: "XYZ-789",
-        path: "D:\\library\\leak\\XYZ-789.mp4",
+        filePath: "D:\\library\\leak\\XYZ-789.mp4",
         outputPath: "D:/library/leak",
         nfoPath: "D:\\library\\leak\\XYZ-789.nfo",
         uncensoredAmbiguous: false,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "untouched-item",
-        status: "success",
         number: "KEEP-001",
-        path: "/keep/KEEP-001.mp4",
+        filePath: "/keep/KEEP-001.mp4",
         outputPath: "/keep",
         nfoPath: "/keep/KEEP-001.nfo",
         uncensoredAmbiguous: true,
-      },
+      }),
     ]);
   });
 
   it("updates multipart raw results independently when each source path is returned", () => {
     const results: ScrapeResult[] = [
-      {
+      createScrapeResult({
         fileId: "part-1",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         uncensoredAmbiguous: true,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "part-2",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         uncensoredAmbiguous: true,
-      },
+      }),
     ];
 
     useScrapeStore.setState({ results });
@@ -139,24 +177,22 @@ describe("useScrapeStore.resolveUncensoredResults", () => {
     ]);
 
     expect(useScrapeStore.getState().results).toEqual([
-      {
+      createScrapeResult({
         fileId: "part-1",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456-UMR/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456-UMR/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456-UMR",
         nfoPath: "/library/FC2-123456-UMR/FC2-123456.nfo",
         uncensoredAmbiguous: false,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "part-2",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456-UMR/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456-UMR/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456-UMR",
         nfoPath: "/library/FC2-123456-UMR/FC2-123456.nfo",
         uncensoredAmbiguous: false,
-      },
+      }),
     ]);
   });
 });
@@ -165,34 +201,56 @@ describe("useScrapeStore.addResult", () => {
   it("stores raw results without merging multipart entries in the store", () => {
     const store = useScrapeStore.getState();
 
-    store.addResult({
-      fileId: "part-1",
-      status: "success",
-      number: "FC2-123456",
-      title: "Multipart Title",
-      path: "/library/FC2-123456/FC2-123456-cd1.mp4",
-      outputPath: "/library/FC2-123456",
-      nfoPath: "/library/FC2-123456/FC2-123456.nfo",
-      part: {
-        number: 1,
-        suffix: "-cd1",
-      },
-      sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg"],
-    });
-    store.addResult({
-      fileId: "part-2",
-      status: "success",
-      number: "FC2-123456",
-      title: "Multipart Title",
-      path: "/library/FC2-123456/FC2-123456-cd2.mp4",
-      outputPath: "/library/FC2-123456",
-      nfoPath: "/library/FC2-123456/FC2-123456.nfo",
-      part: {
-        number: 2,
-        suffix: "-cd2",
-      },
-      sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg", "/library/FC2-123456/extrafanart/fanart2.jpg"],
-    });
+    store.addResult(
+      createScrapeResult({
+        fileId: "part-1",
+        number: "FC2-123456",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        outputPath: "/library/FC2-123456",
+        nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+        part: {
+          number: 1,
+          suffix: "-cd1",
+        },
+        crawlerData: {
+          title: "Multipart Title",
+          number: "FC2-123456",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.DMM,
+        },
+        assets: {
+          sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg"],
+          downloaded: [],
+        },
+      }),
+    );
+    store.addResult(
+      createScrapeResult({
+        fileId: "part-2",
+        number: "FC2-123456",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        outputPath: "/library/FC2-123456",
+        nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+        part: {
+          number: 2,
+          suffix: "-cd2",
+        },
+        crawlerData: {
+          title: "Multipart Title",
+          number: "FC2-123456",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.DMM,
+        },
+        assets: {
+          sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg", "/library/FC2-123456/extrafanart/fanart2.jpg"],
+          downloaded: [],
+        },
+      }),
+    );
 
     expect(useScrapeStore.getState().results).toHaveLength(2);
   });
@@ -201,38 +259,45 @@ describe("useScrapeStore.addResult", () => {
 describe("buildScrapeResultGroups", () => {
   it("preserves the original normal-scrape grouping behavior for same-directory same-number successes", () => {
     const groups = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "first",
-        status: "success",
         number: "ABC-123",
-        title: "Same Number",
-        path: "/library/ABC-123/ABC-123-copy-a.mp4",
+        filePath: "/library/ABC-123/ABC-123-copy-a.mp4",
         outputPath: "/library/ABC-123",
-      },
-      {
+        crawlerData: {
+          title: "Same Number",
+          number: "ABC-123",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.DMM,
+        },
+      }),
+      createScrapeResult({
         fileId: "second",
-        status: "success",
         number: "ABC-123",
-        title: "Same Number",
-        path: "/library/ABC-123/ABC-123-copy-b.mp4",
+        filePath: "/library/ABC-123/ABC-123-copy-b.mp4",
         outputPath: "/library/ABC-123",
-      },
+        crawlerData: {
+          title: "Same Number",
+          number: "ABC-123",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.DMM,
+        },
+      }),
     ]);
 
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({
       id: "/library/ABC-123::ABC-123",
-      items: [
-        {
-          fileId: "first",
-        },
-        {
-          fileId: "second",
-        },
-      ],
+      items: [{ fileId: "first" }, { fileId: "second" }],
       display: {
         fileId: "first",
-        number: "ABC-123",
+        fileInfo: {
+          number: "ABC-123",
+        },
         outputPath: "/library/ABC-123",
       },
     });
@@ -240,41 +305,38 @@ describe("buildScrapeResultGroups", () => {
 
   it("keeps the same group key when an earlier multipart part arrives later", () => {
     const lateFirstPart = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "second",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         part: {
           number: 2,
           suffix: "-cd2",
         },
-      },
+      }),
     ]);
     const completedGroup = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "second",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         part: {
           number: 2,
           suffix: "-cd2",
         },
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "first",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456",
         part: {
           number: 1,
           suffix: "-cd1",
         },
-      },
+      }),
     ]);
 
     expect(lateFirstPart[0]?.id).toBe("/library/FC2-123456::FC2-123456");
@@ -284,21 +346,20 @@ describe("buildScrapeResultGroups", () => {
 
   it("collapses same-directory same-number results into one failed group when any child fails", () => {
     const groups = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "success",
-        status: "success",
         number: "ABC-123",
-        path: "/library/ABC-123/ABC-123.mp4",
+        filePath: "/library/ABC-123/ABC-123.mp4",
         outputPath: "/library/ABC-123",
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "failed",
         status: "failed",
         number: "ABC-123",
-        path: "/library/ABC-123/ABC-123-failed.mp4",
+        filePath: "/library/ABC-123/ABC-123-failed.mp4",
         outputPath: "/library/ABC-123",
-        errorMessage: "failed",
-      },
+        error: "failed",
+      }),
     ]);
 
     expect(groups).toHaveLength(1);
@@ -312,30 +373,28 @@ describe("buildScrapeResultGroups", () => {
 
   it("builds grouped action targets from every raw file in a multipart result", () => {
     const [group] = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "part-1",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
           number: 1,
           suffix: "-cd1",
         },
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "part-2",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
           number: 2,
           suffix: "-cd2",
         },
-      },
+      }),
     ]);
 
     expect(buildScrapeResultGroupActionContext(group, null)).toEqual({
@@ -349,11 +408,10 @@ describe("buildScrapeResultGroups", () => {
 
   it("expands grouped uncensored confirmation to all raw files in the group", () => {
     const groups = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "part-1",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
@@ -361,12 +419,11 @@ describe("buildScrapeResultGroups", () => {
           suffix: "-cd1",
         },
         uncensoredAmbiguous: true,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "part-2",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
@@ -374,7 +431,7 @@ describe("buildScrapeResultGroups", () => {
           suffix: "-cd2",
         },
         uncensoredAmbiguous: true,
-      },
+      }),
     ]);
 
     expect(buildUncensoredConfirmItemsForScrapeGroups(groups, { [groups[0]?.id ?? ""]: "leak" })).toEqual([
@@ -395,11 +452,10 @@ describe("buildScrapeResultGroups", () => {
 
   it("keeps partially resolved multipart groups visible and only resubmits unresolved files", () => {
     const groups = buildAmbiguousUncensoredScrapeGroups([
-      {
+      createScrapeResult({
         fileId: "part-1",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
@@ -407,12 +463,11 @@ describe("buildScrapeResultGroups", () => {
           suffix: "-cd1",
         },
         uncensoredAmbiguous: false,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "part-2",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
@@ -420,7 +475,7 @@ describe("buildScrapeResultGroups", () => {
           suffix: "-cd2",
         },
         uncensoredAmbiguous: true,
-      },
+      }),
     ]);
 
     expect(groups).toHaveLength(1);
@@ -451,11 +506,10 @@ describe("buildScrapeResultGroups", () => {
 
   it("summarizes uncensored confirmation by grouped entry instead of raw file count", () => {
     const groups = buildScrapeResultGroups([
-      {
+      createScrapeResult({
         fileId: "part-1",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd1.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
@@ -463,12 +517,11 @@ describe("buildScrapeResultGroups", () => {
           suffix: "-cd1",
         },
         uncensoredAmbiguous: true,
-      },
-      {
+      }),
+      createScrapeResult({
         fileId: "part-2",
-        status: "success",
         number: "FC2-123456",
-        path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+        filePath: "/library/FC2-123456/FC2-123456-cd2.mp4",
         outputPath: "/library/FC2-123456",
         nfoPath: "/library/FC2-123456/FC2-123456.nfo",
         part: {
@@ -476,7 +529,7 @@ describe("buildScrapeResultGroups", () => {
           suffix: "-cd2",
         },
         uncensoredAmbiguous: true,
-      },
+      }),
     ]);
 
     expect(

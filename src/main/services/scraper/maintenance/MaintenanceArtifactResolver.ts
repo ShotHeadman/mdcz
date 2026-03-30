@@ -2,7 +2,7 @@ import { unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
 import { moveFileSafely, pathExists } from "@main/utils/file";
-import type { DiscoveredAssets, DownloadedAssets, LocalScanEntry, MaintenanceAssetDecisions } from "@shared/types";
+import type { DiscoveredAssets, LocalScanEntry, MaintenanceAssetDecisions } from "@shared/types";
 import type { OrganizePlan } from "../FileOrganizer";
 import { reconcileExistingNfoFiles, resolveCanonicalNfoPath } from "../NfoGenerator";
 
@@ -11,6 +11,8 @@ interface ResolvedMaintenanceArtifacts {
   assets: DiscoveredAssets;
 }
 
+type PreferredMaintenanceAssets = Pick<DiscoveredAssets, "thumb" | "poster" | "fanart" | "sceneImages" | "trailer">;
+
 export class MaintenanceArtifactResolver {
   private readonly logger = loggerService.getLogger("MaintenanceArtifactResolver");
 
@@ -18,22 +20,24 @@ export class MaintenanceArtifactResolver {
     entry: LocalScanEntry;
     plan?: OrganizePlan;
     outputVideoPath: string;
-    assets: DownloadedAssets;
+    preferredAssets?: PreferredMaintenanceAssets;
     savedNfoPath?: string;
     preparedActorPhotoPaths?: string[];
     assetDecisions?: MaintenanceAssetDecisions;
     nfoNaming?: "both" | "movie" | "filename";
   }): Promise<ResolvedMaintenanceArtifacts> {
+    const preferredAssets = input.preferredAssets ?? { sceneImages: [] };
+
     if (!input.plan) {
       const nfoPath = input.savedNfoPath ?? input.entry.nfoPath;
       return {
         nfoPath,
         assets: {
-          thumb: input.assets.thumb,
-          poster: input.assets.poster,
-          fanart: input.assets.fanart,
-          sceneImages: input.assets.sceneImages,
-          trailer: input.assets.trailer,
+          thumb: preferredAssets.thumb,
+          poster: preferredAssets.poster,
+          fanart: preferredAssets.fanart,
+          sceneImages: preferredAssets.sceneImages,
+          trailer: preferredAssets.trailer,
           actorPhotos:
             (input.preparedActorPhotoPaths?.length ?? 0) > 0
               ? (input.preparedActorPhotoPaths ?? [])
@@ -48,33 +52,23 @@ export class MaintenanceArtifactResolver {
     return {
       nfoPath,
       assets: {
-        thumb: await this.resolvePrimaryAsset(input.entry.assets.thumb, input.assets.thumb, outputDir),
-        poster: await this.resolvePrimaryAsset(input.entry.assets.poster, input.assets.poster, outputDir),
-        fanart: await this.resolvePrimaryAsset(input.entry.assets.fanart, input.assets.fanart, outputDir),
+        thumb: await this.resolvePrimaryAsset(input.entry.assets.thumb, preferredAssets.thumb, outputDir),
+        poster: await this.resolvePrimaryAsset(input.entry.assets.poster, preferredAssets.poster, outputDir),
+        fanart: await this.resolvePrimaryAsset(input.entry.assets.fanart, preferredAssets.fanart, outputDir),
         sceneImages: await this.resolveAssetCollection(
           input.entry.assets.sceneImages,
-          input.assets.sceneImages,
+          preferredAssets.sceneImages,
           outputDir,
         ),
-        trailer: await this.resolvePrimaryAsset(input.entry.assets.trailer, input.assets.trailer, outputDir, {
-          discardExisting: input.assetDecisions?.trailer === "replace" && !input.assets.trailer,
+        trailer: await this.resolvePrimaryAsset(input.entry.assets.trailer, preferredAssets.trailer, outputDir, {
+          discardExisting: input.assetDecisions?.trailer === "replace" && !preferredAssets.trailer,
         }),
-        actorPhotos:
-          (input.preparedActorPhotoPaths?.length ?? 0) > 0
-            ? (input.preparedActorPhotoPaths ?? [])
-            : await this.resolveAssetCollection(input.entry.assets.actorPhotos, [], outputDir),
+        actorPhotos: await this.resolveAssetCollection(
+          input.entry.assets.actorPhotos,
+          input.preparedActorPhotoPaths ?? [],
+          outputDir,
+        ),
       },
-    };
-  }
-
-  toDownloadedAssets(currentAssets: DownloadedAssets, resolvedAssets: DiscoveredAssets): DownloadedAssets {
-    return {
-      thumb: resolvedAssets.thumb,
-      poster: resolvedAssets.poster,
-      fanart: resolvedAssets.fanart,
-      sceneImages: resolvedAssets.sceneImages,
-      trailer: resolvedAssets.trailer,
-      downloaded: currentAssets.downloaded,
     };
   }
 
@@ -106,15 +100,23 @@ export class MaintenanceArtifactResolver {
       discardExisting?: boolean;
     } = {},
   ): Promise<string | undefined> {
+    const candidatePath = preferredPath ?? sourcePath;
+    if (!candidatePath) {
+      return undefined;
+    }
+
+    const targetPath = join(outputDir, basename(candidatePath));
+
     if (preferredPath) {
-      return preferredPath;
+      const resolvedPreferredPath = await this.moveKnownAsset(preferredPath, targetPath);
+      await this.removeStaleSourceAsset(sourcePath, resolvedPreferredPath);
+      return resolvedPreferredPath;
     }
 
     if (!sourcePath) {
       return undefined;
     }
 
-    const targetPath = join(outputDir, basename(sourcePath));
     if (options.discardExisting) {
       await this.removeKnownAsset(sourcePath, targetPath);
       return undefined;
@@ -129,7 +131,22 @@ export class MaintenanceArtifactResolver {
     outputDir: string,
   ): Promise<string[]> {
     if (preferredPaths.length > 0) {
-      return preferredPaths;
+      const resolvedPreferredPaths: string[] = [];
+      const seen = new Set<string>();
+
+      for (const preferredPath of preferredPaths) {
+        const targetPath = join(outputDir, basename(dirname(preferredPath)), basename(preferredPath));
+        const resolvedPreferredPath = await this.moveKnownAsset(preferredPath, targetPath);
+        if (!resolvedPreferredPath || seen.has(resolvedPreferredPath)) {
+          continue;
+        }
+
+        seen.add(resolvedPreferredPath);
+        resolvedPreferredPaths.push(resolvedPreferredPath);
+      }
+
+      await this.removeStaleCollectionAssets(sourcePaths, resolvedPreferredPaths);
+      return resolvedPreferredPaths;
     }
 
     const resolved: string[] = [];
@@ -141,6 +158,29 @@ export class MaintenanceArtifactResolver {
       }
     }
     return resolved;
+  }
+
+  private async removeStaleSourceAsset(
+    sourcePath: string | undefined,
+    resolvedPath: string | undefined,
+  ): Promise<void> {
+    if (!sourcePath || !resolvedPath || sourcePath === resolvedPath || !(await pathExists(sourcePath))) {
+      return;
+    }
+
+    await unlink(sourcePath).catch(() => undefined);
+  }
+
+  private async removeStaleCollectionAssets(sourcePaths: string[], keptPaths: string[]): Promise<void> {
+    const keptPathSet = new Set(keptPaths);
+
+    for (const sourcePath of sourcePaths) {
+      if (keptPathSet.has(sourcePath) || !(await pathExists(sourcePath))) {
+        continue;
+      }
+
+      await unlink(sourcePath).catch(() => undefined);
+    }
   }
 
   private async moveKnownAsset(sourcePath: string | undefined, targetPath: string): Promise<string | undefined> {

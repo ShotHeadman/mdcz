@@ -1,8 +1,19 @@
-import type { LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
+import type {
+  CrawlerData,
+  DiscoveredAssets,
+  DownloadedAssets,
+  LocalScanEntry,
+  MaintenanceItemResult,
+  MaintenancePreviewItem,
+  ScrapeResult,
+  VideoMeta,
+} from "@shared/types";
 import type { DetailViewItem } from "@/components/detail/types";
-import type { ScrapeResult } from "@/store/scrapeStore";
 
-const formatDuration = (durationSeconds: number | undefined): string | undefined => {
+type DetailLocalAssets = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages">;
+type DetailDownloadedAssets = Pick<DownloadedAssets, "poster" | "thumb" | "fanart" | "sceneImages">;
+
+export const formatDuration = (durationSeconds: number | undefined): string | undefined => {
   if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     return undefined;
   }
@@ -14,34 +25,102 @@ const formatDuration = (durationSeconds: number | undefined): string | undefined
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
+export const formatBitrate = (bitrateBps: number | undefined): string | undefined => {
+  if (typeof bitrateBps !== "number" || !Number.isFinite(bitrateBps) || bitrateBps <= 0) {
+    return undefined;
+  }
+
+  return `${(bitrateBps / 1_000_000).toFixed(1)} Mbps`;
+};
+
+const toDetailStatus = (
+  status: ScrapeResult["status"] | MaintenanceItemResult["status"] | MaintenancePreviewItem["status"] | undefined,
+): DetailViewItem["status"] => {
+  if (status === "processing" || status === "pending") {
+    return "processing";
+  }
+
+  return status === "failed" || status === "blocked" || status === "skipped" ? "failed" : "success";
+};
+
+const formatResolution = (
+  videoMeta: VideoMeta | undefined,
+  fallbackResolution: string | undefined,
+): string | undefined => {
+  if (videoMeta && videoMeta.width > 0 && videoMeta.height > 0) {
+    return `${videoMeta.width}x${videoMeta.height}`;
+  }
+
+  return fallbackResolution;
+};
+
+const resolveArtworkUrls = (
+  crawlerData: CrawlerData | undefined,
+  assets: DetailLocalAssets | DetailDownloadedAssets | undefined,
+) => ({
+  posterUrl: assets?.poster ?? crawlerData?.poster_url,
+  thumbUrl: assets?.thumb ?? assets?.fanart ?? crawlerData?.thumb_url ?? crawlerData?.fanart_url,
+  fanartUrl: assets?.fanart ?? assets?.thumb ?? crawlerData?.fanart_url ?? crawlerData?.thumb_url,
+});
+
+const resolveSceneImages = (
+  crawlerData: CrawlerData | undefined,
+  sceneImages: string[] | undefined,
+): string[] | undefined => {
+  if (sceneImages && sceneImages.length > 0) {
+    return sceneImages;
+  }
+
+  return crawlerData?.scene_images;
+};
+
+const buildDetailViewMetadata = (input: {
+  crawlerData?: CrawlerData;
+  videoMeta?: VideoMeta;
+  resolution?: string;
+  assets?: DetailLocalAssets | DetailDownloadedAssets;
+}) => {
+  const { crawlerData, videoMeta, resolution, assets } = input;
+
+  return {
+    title: crawlerData?.title_zh ?? crawlerData?.title,
+    actors: crawlerData?.actors,
+    outline: crawlerData?.plot_zh ?? crawlerData?.plot,
+    tags: crawlerData?.genres,
+    release: crawlerData?.release_date,
+    duration: formatDuration(videoMeta?.durationSeconds ?? crawlerData?.durationSeconds),
+    resolution: formatResolution(videoMeta, resolution),
+    codec: videoMeta?.codec,
+    bitrate: formatBitrate(videoMeta?.bitrate),
+    directors: crawlerData?.director ? [crawlerData.director] : undefined,
+    series: crawlerData?.series,
+    studio: crawlerData?.studio,
+    publisher: crawlerData?.publisher,
+    score: typeof crawlerData?.rating === "number" ? String(crawlerData.rating) : undefined,
+    ...resolveArtworkUrls(crawlerData, assets),
+    sceneImages: resolveSceneImages(crawlerData, assets?.sceneImages),
+  };
+};
+
+export const getScrapeResultTitle = (result: ScrapeResult): string | undefined =>
+  result.crawlerData?.title_zh ?? result.crawlerData?.title;
+
 export const getMaintenanceDetailTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
 
 export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailViewItem => ({
   id: result.fileId,
-  status: result.status,
-  number: result.number,
-  title: result.title,
-  path: result.path,
-  actors: result.actors,
-  outline: result.outline,
-  tags: result.tags,
-  release: result.release,
-  duration: result.duration,
-  resolution: result.resolution,
-  codec: result.codec,
-  bitrate: result.bitrate,
-  directors: result.directors,
-  series: result.series,
-  studio: result.studio,
-  publisher: result.publisher,
-  score: result.score,
-  posterUrl: result.posterUrl,
-  thumbUrl: result.thumbUrl,
-  fanartUrl: result.fanartUrl,
+  status: toDetailStatus(result.status),
+  number: result.fileInfo.number,
+  path: result.fileInfo.filePath,
+  nfoPath: result.nfoPath,
   outputPath: result.outputPath,
-  sceneImages: result.sceneImages,
-  errorMessage: result.errorMessage,
+  errorMessage: result.error,
+  ...buildDetailViewMetadata({
+    crawlerData: result.crawlerData,
+    videoMeta: result.videoMeta,
+    assets: result.assets,
+  }),
 });
 
 export const toDetailViewItemFromMaintenanceEntry = (
@@ -54,44 +133,39 @@ export const toDetailViewItemFromMaintenanceEntry = (
       : result && "crawlerData" in result
         ? result.crawlerData
         : undefined;
-  const data = entry.crawlerData ?? resultData;
+  const crawlerData = entry.crawlerData ?? resultData;
   const hasEntryError = Boolean(entry.scanError);
   const hasResultError = result?.status === "failed" || result?.status === "blocked";
   const minimalErrorView = hasEntryError && !entry.crawlerData && !resultData;
-  const errorMessage = hasResultError ? result?.error : !result && hasEntryError ? entry.scanError : undefined;
+
+  if (minimalErrorView) {
+    return {
+      id: entry.fileId,
+      status: "failed",
+      number: entry.fileInfo.number,
+      minimalErrorView: true,
+      path: entry.fileInfo.filePath,
+      nfoPath: entry.nfoPath,
+      resolution: entry.fileInfo.resolution,
+      title: entry.fileInfo.fileName,
+      errorMessage: hasResultError ? result?.error : entry.scanError,
+    };
+  }
 
   return {
     id: entry.fileId,
-    status: hasResultError || (!result && hasEntryError) ? "failed" : "success",
+    status: toDetailStatus(result?.status),
     number: entry.fileInfo.number,
-    minimalErrorView,
+    minimalErrorView: false,
     path: entry.fileInfo.filePath,
     nfoPath: entry.nfoPath,
-    title: data?.title_zh ?? data?.title ?? entry.fileInfo.fileName,
-    actors: data?.actors,
-    outline: data?.plot_zh ?? data?.plot,
-    tags: data?.genres,
-    release: data?.release_date,
-    duration: formatDuration(data?.durationSeconds),
-    resolution: entry.fileInfo.resolution,
-    directors: data?.director ? [data.director] : undefined,
-    series: data?.series,
-    studio: data?.studio,
-    publisher: data?.publisher,
-    score: typeof data?.rating === "number" ? String(data.rating) : undefined,
-    posterUrl: minimalErrorView ? undefined : (entry.assets.poster ?? data?.poster_url),
-    thumbUrl: minimalErrorView
-      ? undefined
-      : (entry.assets.thumb ?? entry.assets.fanart ?? data?.thumb_url ?? data?.fanart_url),
-    fanartUrl: minimalErrorView
-      ? undefined
-      : (entry.assets.fanart ?? entry.assets.thumb ?? data?.fanart_url ?? data?.thumb_url),
-    outputPath: minimalErrorView ? undefined : entry.currentDir,
-    sceneImages: minimalErrorView
-      ? undefined
-      : entry.assets.sceneImages.length > 0
-        ? entry.assets.sceneImages
-        : data?.scene_images,
-    errorMessage,
+    outputPath: entry.currentDir,
+    errorMessage: hasResultError ? result?.error : undefined,
+    ...buildDetailViewMetadata({
+      crawlerData,
+      resolution: entry.fileInfo.resolution,
+      assets: entry.assets,
+    }),
+    title: crawlerData?.title_zh ?? crawlerData?.title ?? entry.fileInfo.fileName,
   };
 };

@@ -5,7 +5,7 @@ import { SignalService } from "@main/services/SignalService";
 import { MaintenanceFileScraper } from "@main/services/scraper/maintenance/MaintenanceFileScraper";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { Website } from "@shared/enums";
-import type { MaintenanceCommitItem, MaintenanceItemResult, ScrapeResult } from "@shared/types";
+import type { MaintenanceCommitItem, MaintenanceItemResult } from "@shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class CaptureSignalService extends SignalService {
@@ -16,10 +16,6 @@ class CaptureSignalService extends SignalService {
     super.showMaintenanceItemResult(payload);
   }
 }
-
-type MaintenanceProcessLikeResult = {
-  scrapeResult: ScrapeResult;
-};
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -88,7 +84,7 @@ describe("MaintenanceService stop flow", () => {
         threadNumber: 1,
       },
     });
-    const runningTask = deferred<MaintenanceProcessLikeResult>();
+    const runningTask = deferred<MaintenanceItemResult>();
 
     vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
     vi.spyOn(configManager, "get").mockResolvedValue(config);
@@ -100,25 +96,16 @@ describe("MaintenanceService stop flow", () => {
     service.stop();
 
     runningTask.resolve({
-      scrapeResult: {
-        status: "success",
-        fileId: "abp-123",
-        fileInfo: {
-          filePath: "/tmp/abp-123.mp4",
-          fileName: "abp-123.mp4",
-          extension: ".mp4",
-          number: "ABP-123",
-          isSubtitled: false,
-        },
-        crawlerData: {
-          title: "ABP-123",
-          number: "ABP-123",
-          actors: [],
-          genres: [],
-          scene_images: [],
-          website: Website.DMM,
-        },
-      } satisfies ScrapeResult,
+      status: "success",
+      fileId: "abp-123",
+      crawlerData: {
+        title: "ABP-123",
+        number: "ABP-123",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM,
+      },
     });
 
     await waitForIdle(service);

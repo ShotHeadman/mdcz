@@ -1,7 +1,6 @@
 import type { MaintenanceStatus, ScraperStatus } from "@shared/types";
 import { useEffect, useState } from "react";
 import { ipc } from "@/client/ipc";
-import { normalizeResultItem } from "@/lib/normalizeResult";
 import { createRuntimeLog, useLogStore } from "@/store/logStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { applyMaintenanceExecutionItemResult, applyMaintenanceStatusSnapshot } from "@/store/maintenanceSession";
@@ -178,7 +177,7 @@ export const useIpcSync = () => {
               return;
             }
 
-            useScrapeStore.getState().addResult(normalizeResultItem(payload));
+            useScrapeStore.getState().addResult(payload);
             safeSync("scrape result", "scrape");
           }),
         );

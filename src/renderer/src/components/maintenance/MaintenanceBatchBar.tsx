@@ -16,11 +16,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { buildMaintenanceCommitItem } from "@/lib/maintenance";
-import {
-  buildMaintenanceEntryGroups,
-  countMaintenanceDisplayItems,
-  summarizeMaintenancePreviewGroups,
-} from "@/lib/maintenanceGrouping";
+import { buildMaintenanceEntryViewModel, countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
 import { cn } from "@/lib/utils";
 import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
@@ -57,26 +53,6 @@ const formatPreviewStatusText = (readyCount: number, blockedCount: number): stri
 const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 };
-
-const isPreviewGroupReady = (
-  group: ReturnType<typeof buildMaintenanceEntryGroups>[number],
-  previewResults: Record<string, MaintenancePreviewItem>,
-): boolean => {
-  const previews = group.items.flatMap((entry) => {
-    const preview = previewResults[entry.fileId];
-    return preview ? [preview] : [];
-  });
-
-  return previews.length === group.items.length && previews.every((preview) => preview.status === "ready");
-};
-
-const buildExecutableEntries = (
-  entries: Parameters<typeof buildMaintenanceEntryGroups>[0],
-  previewResults: Record<string, MaintenancePreviewItem>,
-) =>
-  buildMaintenanceEntryGroups(entries).flatMap((group) =>
-    isPreviewGroupReady(group, previewResults) ? group.items : [],
-  );
 
 export default function MaintenanceBatchBar({ mediaPath, className }: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
@@ -123,22 +99,18 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     () => entries.filter((entry) => selectedIds.includes(entry.fileId)),
     [entries, selectedIds],
   );
-  const groupedSelectedEntries = useMemo(
-    () => buildMaintenanceEntryGroups(selectedEntries, { itemResults, previewResults }),
-    [itemResults, previewResults, selectedEntries],
-  );
-  const entriesCount = useMemo(
-    () => countMaintenanceDisplayItems(entries, { itemResults, previewResults }),
+  const allEntriesViewModel = useMemo(
+    () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }),
     [entries, itemResults, previewResults],
   );
-  const selectedCount = useMemo(
-    () => countMaintenanceDisplayItems(selectedEntries, { itemResults, previewResults }),
+  const selectedEntriesViewModel = useMemo(
+    () => buildMaintenanceEntryViewModel(selectedEntries, { itemResults, previewResults }),
     [itemResults, previewResults, selectedEntries],
   );
-  const previewSummary = useMemo(
-    () => summarizeMaintenancePreviewGroups(selectedEntries, previewResults),
-    [selectedEntries, previewResults],
-  );
+  const groupedSelectedEntries = selectedEntriesViewModel.groups;
+  const entriesCount = allEntriesViewModel.displayCount;
+  const selectedCount = selectedEntriesViewModel.displayCount;
+  const previewSummary = selectedEntriesViewModel.previewSummary;
   const previewActionLabel = previewPending
     ? "正在预览..."
     : usesDiffView
@@ -226,7 +198,9 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
       applyMaintenancePreviewResult(preview);
       const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
-      const nextPreviewSummary = summarizeMaintenancePreviewGroups(requestedEntries, previewMap);
+      const nextPreviewSummary = buildMaintenanceEntryViewModel(requestedEntries, {
+        previewResults: previewMap,
+      }).previewSummary;
       setStatusText(formatPreviewStatusText(nextPreviewSummary.readyCount, nextPreviewSummary.blockedCount));
       if (usesDiffView) {
         toast.info(
@@ -272,7 +246,10 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     const latestSelectedEntries = liveEntryState.entries.filter((entry) =>
       liveEntryState.selectedIds.includes(entry.fileId),
     );
-    const executableEntries = buildExecutableEntries(latestSelectedEntries, effectivePreviewResults);
+    const executionViewModel = buildMaintenanceEntryViewModel(latestSelectedEntries, {
+      previewResults: effectivePreviewResults,
+    });
+    const executableEntries = executionViewModel.executableEntries;
     const commitItems = executableEntries.map((entry) =>
       buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.fileId], fieldSelections[entry.fileId]),
     );
@@ -282,7 +259,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
-    const displayCount = countMaintenanceDisplayItems(commitItems.map((item) => item.entry));
+    const displayCount = buildMaintenanceEntryViewModel(executableEntries).displayCount;
     beginMaintenanceExecution(
       commitItems.map((item) => item.entry.fileId),
       displayCount,
@@ -433,18 +410,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
               <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
                 {groupedSelectedEntries.map((group) => {
-                  const previews = group.items.flatMap((entry) => {
-                    const preview = previewResults[entry.fileId];
-                    return preview ? [preview] : [];
-                  });
-                  const blockedPreview = previews.find((preview) => preview.status === "blocked");
-                  const ready = isPreviewGroupReady(group, previewResults);
-                  const diffCount = Math.max(0, ...previews.map((preview) => preview.fieldDiffs?.length ?? 0));
-                  const changedPathItems = group.items.flatMap((entry) => {
-                    const preview = previewResults[entry.fileId];
-                    return preview?.pathDiff?.changed ? [{ entry, pathDiff: preview.pathDiff }] : [];
-                  });
-                  const hasPathChange = changedPathItems.length > 0;
+                  const { blockedPreview, changedPathItems, diffCount, hasPathChange, ready } = group.previewState;
 
                   return (
                     <div key={group.id} className="min-w-0 rounded-lg border bg-muted/20 px-3 py-2">

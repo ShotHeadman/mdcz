@@ -10,9 +10,10 @@ import {
 } from "@/components/shared/MediaBrowserList";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ContextMenuItem } from "@/components/ui/ContextMenu";
-import { buildMaintenanceEntryGroups, type MaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
+import { buildMaintenanceEntryViewModel, type MaintenanceEntryGroupViewModel } from "@/lib/maintenanceGrouping";
 import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
 import { toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
 
 const getTitle = (entry: LocalScanEntry) =>
@@ -30,7 +31,7 @@ const matchesFilter = (filter: MaintenanceFilter, status: MediaBrowserItemStatus
   return status === filter;
 };
 
-const buildGroupSubtitle = (group: MaintenanceEntryGroup): string => {
+const buildGroupSubtitle = (group: MaintenanceEntryGroupViewModel): string => {
   const baseTitle = getTitle(group.representative);
   if (group.items.length <= 1) {
     return baseTitle;
@@ -97,8 +98,12 @@ export default function MaintenanceEntryList() {
       executionStatus: state.executionStatus,
     })),
   );
+  const previewResults = useMaintenancePreviewStore((state) => state.previewResults);
   const selectionLocked = executionStatus === "executing" || executionStatus === "stopping";
-  const groupedEntries = useMemo(() => buildMaintenanceEntryGroups(entries, { itemResults }), [entries, itemResults]);
+  const groupedEntries = useMemo(
+    () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }).groups,
+    [entries, itemResults, previewResults],
+  );
 
   const sortedEntries = useMemo(
     () =>
@@ -112,9 +117,9 @@ export default function MaintenanceEntryList() {
 
   const visibleEntries = sortedEntries.filter((group) => matchesFilter(filter, group.status));
   const visibleIds = visibleEntries.flatMap((group) => group.items.map((entry) => entry.fileId));
-  const isGroupFullySelected = (group: MaintenanceEntryGroup): boolean =>
+  const isGroupFullySelected = (group: MaintenanceEntryGroupViewModel): boolean =>
     group.items.every((entry) => selectedIds.includes(entry.fileId));
-  const isGroupPartiallySelected = (group: MaintenanceEntryGroup): boolean =>
+  const isGroupPartiallySelected = (group: MaintenanceEntryGroupViewModel): boolean =>
     group.items.some((entry) => selectedIds.includes(entry.fileId)) && !isGroupFullySelected(group);
   const allVisibleSelected = visibleEntries.length > 0 && visibleEntries.every((group) => isGroupFullySelected(group));
   const someVisibleSelected = visibleEntries.some(

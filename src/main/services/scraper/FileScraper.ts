@@ -9,9 +9,8 @@ import type { SignalService } from "@main/services/SignalService";
 import { pathExists } from "@main/utils/file";
 import { classifyMovie, isLikelyUncensoredNumber } from "@main/utils/movieClassification";
 import { parseFileInfo } from "@main/utils/number";
-import { probeVideoMetadata } from "@main/utils/video";
 import { buildFileId } from "@shared/mediaIdentity";
-import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult, VideoMeta } from "@shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult } from "@shared/types";
 import { isAbortError, throwIfAborted } from "./abort";
 import type { AggregationResult, AggregationService } from "./aggregation";
 import type { DownloadManager } from "./DownloadManager";
@@ -19,9 +18,16 @@ import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
 import { resolveFileInfoWithSubtitles } from "./fileInfoWithSubtitles";
 import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
 import { LocalScanService } from "./maintenance/LocalScanService";
-import { type NfoGenerator, reconcileExistingNfoFiles } from "./NfoGenerator";
-import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
-import { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
+import type { NfoGenerator } from "./NfoGenerator";
+import {
+  applyResolvedSceneImageMetadata,
+  downloadCrawlerAssets,
+  organizePreparedVideo,
+  prepareOutputCrawlerData,
+  probeVideoMetadataOrWarn,
+  updateScrapeProgress,
+  writePreparedNfo,
+} from "./outputPipeline";
 import type { TranslateService } from "./TranslateService";
 
 export interface FileScraperDependencies {
@@ -112,14 +118,11 @@ export class FileScraper {
         }
 
         const crawlerData: CrawlerData = aggregationResult.data;
-        let videoMeta: VideoMeta | undefined;
-
-        try {
-          videoMeta = await probeVideoMetadata(fileInfo.filePath);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`Video probe failed: ${message}`);
-        }
+        const videoMeta = await probeVideoMetadataOrWarn({
+          logger: this.logger,
+          sourceVideoPath: fileInfo.filePath,
+          warningPrefix: "Video probe failed",
+        });
 
         this.setProgress(progress, 30);
         const translated = await this.translateCrawlerDataOrFallback(crawlerData, configuration, signal);
@@ -130,18 +133,16 @@ export class FileScraper {
         };
         plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
         throwIfAborted(signal);
-        const preparedOutputData = await prepareCrawlerDataForMovieOutput(
-          this.actorImageService,
-          configuration,
-          translated,
-          {
-            enabled: true,
-            movieDir: plan.outputDir,
-            sourceVideoPath: fileInfo.filePath,
-            actorSourceProvider: this.deps.actorSourceProvider,
-            signal,
-          },
-        );
+        const preparedOutputData = await prepareOutputCrawlerData({
+          actorImageService: this.actorImageService,
+          actorSourceProvider: this.deps.actorSourceProvider,
+          config: configuration,
+          crawlerData: translated,
+          enabled: true,
+          movieDir: plan.outputDir,
+          sourceVideoPath: fileInfo.filePath,
+          signal,
+        });
         throwIfAborted(signal);
         this.setProgress(progress, 50);
 
@@ -151,48 +152,42 @@ export class FileScraper {
           step: "download",
         });
 
-        const downloadImageAlternatives = prepareImageAlternativesForDownload(
-          preparedOutputData.data,
-          aggregationResult.imageAlternatives,
-          aggregationResult.sources,
-        );
         let resolvedSceneImageUrls: string[] | undefined;
-        const assets = await this.deps.downloadManager.downloadAll(
-          plan.outputDir,
-          preparedOutputData.data,
-          configuration,
-          downloadImageAlternatives,
-          {
-            onSceneProgress: (downloaded, total) => {
-              this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);
-            },
+        const assets = await downloadCrawlerAssets({
+          config: configuration,
+          crawlerData: preparedOutputData.data,
+          downloadManager: this.deps.downloadManager,
+          fileNumber: fileInfo.number,
+          imageAlternatives: aggregationResult.imageAlternatives,
+          outputDir: plan.outputDir,
+          signalService: this.deps.signalService,
+          sources: aggregationResult.sources,
+          callbacks: {
             onResolvedSceneImageUrls: (urls) => {
               resolvedSceneImageUrls = urls;
             },
             signal,
           },
-        );
+        });
         throwIfAborted(signal);
         this.setProgress(progress, 75);
 
-        const preparedData = this.applyDownloadedSceneImageMetadata(preparedOutputData.data, resolvedSceneImageUrls);
-        let savedNfoPath: string | undefined;
-        if (configuration.download.generateNfo) {
-          if (configuration.download.keepNfo) {
-            savedNfoPath = await reconcileExistingNfoFiles(plan.nfoPath, configuration.download.nfoNaming);
-          }
-          if (!savedNfoPath) {
-            savedNfoPath = await this.deps.nfoGenerator.writeNfo(plan.nfoPath, preparedData, {
-              assets,
-              sources: aggregationResult.sources,
-              videoMeta,
-              fileInfo,
-              localState: existingNfoLocalState,
-              nfoNaming: configuration.download.nfoNaming,
-              nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
-            });
-          }
-        }
+        const preparedData = applyResolvedSceneImageMetadata(preparedOutputData.data, resolvedSceneImageUrls);
+        const savedNfoPath = await writePreparedNfo({
+          assets,
+          config: configuration,
+          crawlerData: preparedData,
+          enabled: configuration.download.generateNfo,
+          fileInfo,
+          keepExisting: configuration.download.keepNfo,
+          localState: existingNfoLocalState,
+          logger: this.logger,
+          nfoGenerator: this.deps.nfoGenerator,
+          nfoPath: plan.nfoPath,
+          sourceVideoPath: fileInfo.filePath,
+          sources: aggregationResult.sources,
+          videoMeta,
+        });
         throwIfAborted(signal);
         this.setProgress(progress, 80);
 
@@ -203,7 +198,13 @@ export class FileScraper {
         });
 
         throwIfAborted(signal);
-        const outputVideoPath = await this.deps.fileOrganizer.organizeVideo(fileInfo, plan, configuration);
+        const outputVideoPath = await organizePreparedVideo({
+          config: configuration,
+          enabled: true,
+          fileInfo,
+          fileOrganizer: this.deps.fileOrganizer,
+          plan,
+        });
 
         this.setProgress(progress, 100);
 
@@ -351,13 +352,7 @@ export class FileScraper {
   }
 
   private setProgress(progress: FileScrapeProgress, stepPercent: number): void {
-    const normalizedPercent = Math.max(0, Math.min(100, stepPercent));
-    const fileIndex = Math.max(1, progress.fileIndex);
-    const totalFiles = Math.max(1, progress.totalFiles);
-    const globalValue = (fileIndex - 1 + normalizedPercent / 100) / totalFiles;
-    const value = Math.max(0, Math.min(100, Math.round(globalValue * 100)));
-
-    this.deps.signalService.setProgress(value, fileIndex, totalFiles);
+    updateScrapeProgress(this.deps.signalService, progress, stepPercent);
   }
 
   private async handleFailedFileMove(fileInfo: FileInfo, config: Configuration): Promise<FileInfo> {
@@ -383,20 +378,6 @@ export class FileScraper {
       this.logger.warn(`Failed to move file to failed folder: ${message}`);
       return fileInfo;
     }
-  }
-
-  private applyDownloadedSceneImageMetadata(
-    crawlerData: CrawlerData,
-    sceneImageUrls: string[] | undefined,
-  ): CrawlerData {
-    if (sceneImageUrls === undefined) {
-      return crawlerData;
-    }
-
-    return {
-      ...crawlerData,
-      scene_images: [...sceneImageUrls],
-    };
   }
 
   private async runExclusiveByNumber<T>(number: string, operation: () => Promise<T>): Promise<T> {

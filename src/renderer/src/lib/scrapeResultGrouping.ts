@@ -1,7 +1,12 @@
-import type { UncensoredConfirmItem, UncensoredConfirmResultItem } from "@shared/types";
+import type {
+  CrawlerData,
+  DownloadedAssets,
+  ScrapeResult,
+  UncensoredConfirmItem,
+  UncensoredConfirmResultItem,
+} from "@shared/types";
 import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
 import { buildRendererGroups, findRendererGroup, type RendererGroup } from "@/lib/rendererGroupModel";
-import type { ScrapeResult } from "@/store/scrapeStore";
 
 export type ScrapeResultGroup = RendererGroup<ScrapeResult, ScrapeResult>;
 
@@ -12,11 +17,12 @@ export interface ScrapeResultGroupActionContext {
 }
 
 const scrapeResultMultipartSelectors = {
-  getDirectory: (result: ScrapeResult) => result.outputPath ?? deriveGroupingDirectoryFromPath(result.path),
-  getFileName: (result: ScrapeResult) => result.path,
+  getDirectory: (result: ScrapeResult) =>
+    result.outputPath ?? deriveGroupingDirectoryFromPath(result.fileInfo.filePath),
+  getFileName: (result: ScrapeResult) => result.fileInfo.filePath,
   getItemKey: (result: ScrapeResult) => result.fileId,
-  getNumber: (result: ScrapeResult) => result.number,
-  getPart: (result: ScrapeResult) => result.part,
+  getNumber: (result: ScrapeResult) => result.fileInfo.number,
+  getPart: (result: ScrapeResult) => result.fileInfo.part,
 };
 
 const pickLongerArray = <T>(incoming: T[] | undefined, existing: T[] | undefined): T[] | undefined => {
@@ -31,44 +37,68 @@ const pickLongerArray = <T>(incoming: T[] | undefined, existing: T[] | undefined
   return existing;
 };
 
-const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult): ScrapeResult => {
+const mergeCrawlerData = (
+  existing: CrawlerData | undefined,
+  incoming: CrawlerData | undefined,
+): CrawlerData | undefined => {
+  if (!existing) {
+    return incoming;
+  }
+
+  if (!incoming) {
+    return existing;
+  }
+
   return {
-    fileId: existing.fileId,
-    status: existing.status,
-    number: existing.number,
-    path: existing.path || incoming.path,
-    title: incoming.title ?? existing.title,
-    actors: incoming.actors ?? existing.actors,
-    outline: incoming.outline ?? existing.outline,
-    tags: incoming.tags ?? existing.tags,
-    release: incoming.release ?? existing.release,
-    duration: incoming.duration ?? existing.duration,
-    resolution: incoming.resolution ?? existing.resolution,
-    codec: incoming.codec ?? existing.codec,
-    bitrate: incoming.bitrate ?? existing.bitrate,
-    directors: incoming.directors ?? existing.directors,
-    series: incoming.series ?? existing.series,
-    studio: incoming.studio ?? existing.studio,
-    publisher: incoming.publisher ?? existing.publisher,
-    score: incoming.score ?? existing.score,
-    posterUrl: incoming.posterUrl ?? existing.posterUrl,
-    thumbUrl: incoming.thumbUrl ?? existing.thumbUrl,
-    fanartUrl: incoming.fanartUrl ?? existing.fanartUrl,
-    outputPath: existing.outputPath || incoming.outputPath,
-    sceneImages: pickLongerArray(incoming.sceneImages, existing.sceneImages),
-    sources: incoming.sources ?? existing.sources,
-    errorMessage: incoming.errorMessage ?? existing.errorMessage,
-    uncensoredAmbiguous: incoming.uncensoredAmbiguous ?? existing.uncensoredAmbiguous,
-    nfoPath: incoming.nfoPath ?? existing.nfoPath,
-    part: existing.part ?? incoming.part,
+    ...existing,
+    ...incoming,
+    actors: pickLongerArray(incoming.actors, existing.actors) ?? existing.actors,
+    actor_profiles: pickLongerArray(incoming.actor_profiles, existing.actor_profiles),
+    genres: pickLongerArray(incoming.genres, existing.genres) ?? existing.genres,
+    scene_images: pickLongerArray(incoming.scene_images, existing.scene_images) ?? existing.scene_images,
   };
 };
 
-const getScrapeGroupStatus = (group: ScrapeResultGroup["items"]): ScrapeResult["status"] =>
+const mergeDownloadedAssets = (
+  existing: DownloadedAssets | undefined,
+  incoming: DownloadedAssets | undefined,
+): DownloadedAssets | undefined => {
+  if (!existing) {
+    return incoming;
+  }
+
+  if (!incoming) {
+    return existing;
+  }
+
+  return {
+    ...existing,
+    ...incoming,
+    sceneImages: pickLongerArray(incoming.sceneImages, existing.sceneImages) ?? existing.sceneImages,
+    downloaded: pickLongerArray(incoming.downloaded, existing.downloaded) ?? existing.downloaded,
+  };
+};
+
+const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult): ScrapeResult => {
+  return {
+    ...existing,
+    status: existing.status === "failed" || incoming.status === "failed" ? "failed" : "success",
+    crawlerData: mergeCrawlerData(existing.crawlerData, incoming.crawlerData),
+    videoMeta: incoming.videoMeta ?? existing.videoMeta,
+    error: incoming.error ?? existing.error,
+    outputPath: existing.outputPath ?? incoming.outputPath,
+    nfoPath: incoming.nfoPath ?? existing.nfoPath,
+    assets: mergeDownloadedAssets(existing.assets, incoming.assets),
+    sources: incoming.sources ? { ...existing.sources, ...incoming.sources } : existing.sources,
+    uncensoredAmbiguous: incoming.uncensoredAmbiguous ?? existing.uncensoredAmbiguous,
+  };
+};
+
+const getScrapeGroupStatus = (group: ScrapeResultGroup["items"]): "success" | "failed" =>
   group.some((item) => item.status === "failed") ? "failed" : "success";
 
 const getScrapeGroupErrorText = (group: ScrapeResultGroup["items"]): string | undefined =>
-  group.find((item) => item.status === "failed" && item.errorMessage)?.errorMessage;
+  group.find((item) => item.status === "failed" && item.error)?.error;
 
 export const buildScrapeResultGroups = (results: ScrapeResult[]): ScrapeResultGroup[] => {
   return buildRendererGroups(results, {
@@ -107,7 +137,7 @@ export const findScrapeResultGroupItem = (
 };
 
 export const getScrapeResultGroupVideoPaths = (group: ScrapeResultGroup): string[] => {
-  return Array.from(new Set(group.items.map((item) => item.path).filter((value) => value.length > 0)));
+  return Array.from(new Set(group.items.map((item) => item.fileInfo.filePath).filter((value) => value.length > 0)));
 };
 
 export const buildScrapeResultGroupActionContext = (
@@ -129,7 +159,7 @@ export const buildUncensoredConfirmItemsForScrapeGroups = (
     getAmbiguousUncensoredItemsForScrapeGroup(group).map((item) => ({
       fileId: item.fileId,
       nfoPath: item.nfoPath,
-      videoPath: item.path,
+      videoPath: item.fileInfo.filePath,
       choice: choicesByGroupId[group.id] ?? "uncensored",
     })),
   );
@@ -146,7 +176,7 @@ export const summarizeUncensoredConfirmResultForScrapeGroups = (
     .filter((group) => group.items.length > 0);
 
   const successCount = submittedGroups.filter((group) =>
-    group.items.every((item) => updatedSourcePaths.has(item.path)),
+    group.items.every((item) => updatedSourcePaths.has(item.fileInfo.filePath)),
   ).length;
   return {
     successCount,

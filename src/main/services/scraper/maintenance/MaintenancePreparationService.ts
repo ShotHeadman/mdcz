@@ -5,7 +5,7 @@ import type {
   CrawlerData,
   FieldDiff,
   LocalScanEntry,
-  MaintenanceAssetDecisions,
+  MaintenanceCommitItem,
   MaintenanceImageAlternatives,
   PathDiff,
 } from "@shared/types";
@@ -28,11 +28,7 @@ export interface PreparedMaintenanceFile {
   pathDiff?: PathDiff;
 }
 
-export interface CommittedMaintenanceFile {
-  crawlerData?: CrawlerData;
-  imageAlternatives?: MaintenanceImageAlternatives;
-  assetDecisions?: MaintenanceAssetDecisions;
-}
+export type CommittedMaintenanceFile = Omit<MaintenanceCommitItem, "entry">;
 
 interface MaintenancePreparationDependencies {
   aggregationService: AggregationService;

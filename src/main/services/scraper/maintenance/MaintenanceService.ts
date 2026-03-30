@@ -9,7 +9,6 @@ import type { SignalService } from "@main/services/SignalService";
 import type {
   LocalScanEntry,
   MaintenanceCommitItem,
-  MaintenanceItemResult,
   MaintenancePresetId,
   MaintenancePreviewResult,
   MaintenanceStatus,
@@ -58,6 +57,13 @@ const createIdleMaintenanceStatus = (): MaintenanceStatus => ({
   successCount: 0,
   failedCount: 0,
 });
+
+interface MaintenanceRunContext {
+  config: Configuration;
+  concurrency: number;
+  fileScraper: MaintenanceFileScraper;
+  preset: ReturnType<typeof getPreset>;
+}
 
 export class MaintenanceService {
   private readonly logger = loggerService.getLogger("MaintenanceService");
@@ -111,17 +117,12 @@ export class MaintenanceService {
       throw new Error("No entries to process");
     }
 
-    const { preset, config } = await this.preparePresetConfig(presetId);
-    if (!supportsMaintenanceExecution(preset)) {
-      throw new Error("当前预设仅用于扫描本地数据，无需执行");
-    }
-    const deps = this.createDependencies();
-    const fileScraper = new MaintenanceFileScraper(deps, preset);
-    const queue = new PQueue({ concurrency: Math.max(1, config.scrape.threadNumber) });
+    const runContext = await this.createRunContext(presetId);
+    const queue = new PQueue({ concurrency: runContext.concurrency });
     const items = await Promise.all(
       entries.map((entry) =>
         queue.add(async () => {
-          return fileScraper.previewFile(entry, config);
+          return runContext.fileScraper.previewFile(entry, runContext.config);
         }),
       ),
     );
@@ -140,14 +141,11 @@ export class MaintenanceService {
       throw new Error("No entries to process");
     }
 
-    const { preset, config } = await this.preparePresetConfig(presetId);
-    if (!supportsMaintenanceExecution(preset)) {
-      throw new Error("当前预设仅用于扫描本地数据，无需执行");
-    }
-    const execution = { items, preset, config };
+    const runContext = await this.createRunContext(presetId);
+    const execution = { items, ...runContext };
     this.controller = new AbortController();
     const totalItems = execution.items.length;
-    this.queue = new PQueue({ concurrency: Math.max(1, execution.config.scrape.threadNumber) });
+    this.queue = new PQueue({ concurrency: execution.concurrency });
 
     this.status = {
       state: "executing",
@@ -163,12 +161,8 @@ export class MaintenanceService {
     void this.runExecution(execution);
   }
 
-  private async runExecution(execution: {
-    items: MaintenanceCommitItem[];
-    preset: ReturnType<typeof getPreset>;
-    config: Configuration;
-  }): Promise<void> {
-    const { items, preset, config } = execution;
+  private async runExecution(execution: MaintenanceRunContext & { items: MaintenanceCommitItem[] }): Promise<void> {
+    const { items, config } = execution;
     const queue = this.queue;
     const completedFileIds = new Set<string>();
     if (!queue) {
@@ -176,9 +170,6 @@ export class MaintenanceService {
     }
 
     try {
-      const deps = this.createDependencies();
-      const fileScraper = new MaintenanceFileScraper(deps, preset);
-
       for (const [index, item] of items.entries()) {
         const entry = item.entry;
         const fileIndex = index + 1;
@@ -192,38 +183,23 @@ export class MaintenanceService {
           });
 
           try {
-            const result = await fileScraper.processFile(
+            const { entry, ...committed } = item;
+            const result = await execution.fileScraper.processFile(
               entry,
               config,
               { fileIndex, totalFiles: items.length },
               this.controller?.signal,
-              {
-                crawlerData: item.crawlerData,
-                imageAlternatives: item.imageAlternatives,
-                assetDecisions: item.assetDecisions,
-              },
+              committed,
             );
 
             this.status.completedEntries += 1;
-            if (result.scrapeResult.status === "success") {
+            if (result.status === "success") {
               this.status.successCount += 1;
             } else {
               this.status.failedCount += 1;
             }
             completedFileIds.add(entry.fileId);
-
-            const itemResult: MaintenanceItemResult = {
-              fileId: entry.fileId,
-              status: result.scrapeResult.status === "success" ? "success" : "failed",
-              error: result.scrapeResult.error,
-              crawlerData: result.scrapeResult.crawlerData,
-              updatedEntry: result.updatedEntry,
-              fieldDiffs: result.fieldDiffs,
-              unchangedFieldDiffs: result.unchangedFieldDiffs,
-              pathDiff: result.pathDiff,
-            };
-
-            this.signalService.showMaintenanceItemResult(itemResult);
+            this.signalService.showMaintenanceItemResult(result);
           } catch (error) {
             this.status.completedEntries += 1;
             this.status.failedCount += 1;
@@ -270,10 +246,7 @@ export class MaintenanceService {
     }
   }
 
-  private async preparePresetConfig(presetId: MaintenancePresetId): Promise<{
-    preset: ReturnType<typeof getPreset>;
-    config: Configuration;
-  }> {
+  private async createRunContext(presetId: MaintenancePresetId): Promise<MaintenanceRunContext> {
     if (this.status.state !== "idle") {
       throw new Error("Maintenance is already running");
     }
@@ -282,8 +255,16 @@ export class MaintenanceService {
     await configManager.ensureLoaded();
     const baseConfig = configurationSchema.parse(await configManager.get());
     const config = mergeDeep(baseConfig, preset.configOverrides as DeepPartial<Configuration>);
+    if (!supportsMaintenanceExecution(preset)) {
+      throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    }
 
-    return { preset, config };
+    return {
+      preset,
+      config,
+      fileScraper: new MaintenanceFileScraper(this.createDependencies(), preset),
+      concurrency: Math.max(1, config.scrape.threadNumber),
+    };
   }
 
   stop(): void {

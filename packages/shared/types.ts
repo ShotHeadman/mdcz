@@ -97,7 +97,7 @@ export interface ScrapeResult {
   nfoPath?: string;
   assets?: DownloadedAssets;
   /** Maps each CrawlerData field to the Website that provided the value. */
-  sources?: Partial<Record<string, Website>>;
+  sources?: Partial<Record<keyof CrawlerData, Website>>;
   /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
   uncensoredAmbiguous?: boolean;
 }

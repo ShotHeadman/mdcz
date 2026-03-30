@@ -5,6 +5,7 @@ import {
   FolderOpen,
   GitCompareArrows,
   ImageIcon,
+  LoaderCircle,
   MousePointerClick,
   Play,
   XCircle,
@@ -44,6 +45,18 @@ interface DetailPanelProps {
   item?: DetailViewItem | null;
   emptyMessage?: string;
   compare?: DetailPanelCompareProps;
+}
+
+function DetailStatusIcon({ status }: { status: DetailViewItem["status"] }) {
+  if (status === "success") {
+    return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+  }
+
+  if (status === "failed") {
+    return <XCircle className="h-4 w-4 text-red-500" />;
+  }
+
+  return <LoaderCircle className="h-4 w-4 animate-spin text-primary" />;
 }
 
 function EmptyState({ message }: { message: string }) {
@@ -126,11 +139,7 @@ export function DetailPanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
-                {item.status === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-500" />
-                )}
+                <DetailStatusIcon status={item.status} />
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 {compare?.titleOverride ?? item.title ?? item.number}
@@ -179,11 +188,7 @@ export function DetailPanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
-                {item.status === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-500" />
-                )}
+                <DetailStatusIcon status={item.status} />
               </div>
               {item.title && <p className="mt-1 text-sm text-muted-foreground">{item.title}</p>}
             </div>

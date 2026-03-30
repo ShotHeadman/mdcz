@@ -172,7 +172,7 @@ describe("MaintenanceFileScraper actor image parity", () => {
       actors: Record<string, { publicFileName?: string }>;
     };
 
-    expect(result.scrapeResult.status).toBe("success");
+    expect(result.status).toBe("success");
     expect(preparedData.actor_profiles).toEqual([{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }]);
     expect(result.updatedEntry?.assets.actorPhotos).toEqual([join(outputDir, ".actors", "Actor A.jpg")]);
     expect(await readFile(join(outputDir, ".actors", "Actor A.jpg"), "utf8")).toBe("manual-a");
@@ -300,7 +300,7 @@ describe("MaintenanceFileScraper actor image parity", () => {
       },
     );
 
-    expect(result.scrapeResult.status).toBe("success");
+    expect(result.status).toBe("success");
     expect(result.updatedEntry?.assets.trailer).toBeUndefined();
     await expect(readFile(oldTrailerPath, "utf8")).rejects.toThrow();
   });

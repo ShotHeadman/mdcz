@@ -1,7 +1,11 @@
 import { Website } from "@shared/enums";
-import type { ScrapeResult as BackendScrapeResult } from "@shared/types";
+import type { ScrapeResult } from "@shared/types";
 import { describe, expect, it } from "vitest";
-import { formatBitrate, formatDuration, normalizeResultItem } from "@/lib/normalizeResult";
+import {
+  formatBitrate,
+  formatDuration,
+  toDetailViewItemFromScrapeResult,
+} from "@/components/detail/detailViewAdapters";
 
 describe("formatDuration", () => {
   it("returns a hh:mm:ss string for positive finite durations", () => {
@@ -27,9 +31,9 @@ describe("formatBitrate", () => {
   });
 });
 
-describe("normalizeResultItem", () => {
-  it("maps backend scrape results into renderer-friendly items", () => {
-    const payload: BackendScrapeResult = {
+describe("toDetailViewItemFromScrapeResult", () => {
+  it("maps raw scrape results into detail-view fields", () => {
+    const payload: ScrapeResult = {
       fileId: "file:/library/ABC-123/ABC-123.mp4",
       status: "success",
       fileInfo: {
@@ -86,9 +90,8 @@ describe("normalizeResultItem", () => {
       uncensoredAmbiguous: true,
     };
 
-    const result = normalizeResultItem(payload);
-
-    expect(result).toMatchObject({
+    expect(toDetailViewItemFromScrapeResult(payload)).toMatchObject({
+      id: "file:/library/ABC-123/ABC-123.mp4",
       status: "success",
       number: "ABC-123",
       path: "/library/ABC-123/ABC-123.mp4",
@@ -103,18 +106,13 @@ describe("normalizeResultItem", () => {
       fanartUrl: "/art/fanart.jpg",
       sceneImages: ["/art/scene-1.jpg"],
       outputPath: "/output/ABC-123",
-      part: {
-        number: 1,
-        suffix: "-cd1",
-      },
-      uncensoredAmbiguous: true,
+      nfoPath: "/output/ABC-123/ABC-123.nfo",
       score: "4.6",
     });
-    expect(result.fileId).toBe("file:/library/ABC-123/ABC-123.mp4");
   });
 
-  it("falls back to derived directories and remote assets when downloaded assets are missing", () => {
-    const payload: BackendScrapeResult = {
+  it("falls back to remote assets and failure metadata when local assets are missing", () => {
+    const payload: ScrapeResult = {
       fileId: "file:C:/library/XYZ-789/XYZ-789.mp4",
       status: "failed",
       fileInfo: {
@@ -139,14 +137,11 @@ describe("normalizeResultItem", () => {
       error: "Lookup failed",
     };
 
-    const result = normalizeResultItem(payload);
-
-    expect(result).toMatchObject({
+    expect(toDetailViewItemFromScrapeResult(payload)).toMatchObject({
       status: "failed",
       posterUrl: "https://example.com/poster.jpg",
       thumbUrl: "https://example.com/thumb.jpg",
       fanartUrl: "https://example.com/fanart.jpg",
-      outputPath: "C:/library/XYZ-789",
       errorMessage: "Lookup failed",
     });
   });
