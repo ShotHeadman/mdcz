@@ -216,7 +216,7 @@ export const createToolHandlers = (
               symlinkTask = null;
             });
 
-          return { message: "Softlink creation task started. Check logs for progress." };
+          return { message: "软链接创建任务已启动" };
         } catch (error) {
           if (error instanceof SymlinkServiceError) {
             throw createIpcError(error.code, error.message);

@@ -132,10 +132,10 @@ function Index() {
       updateProgress(0, 0);
       clearResults();
       setSelectedResultId(null);
-      await startBatchScrape();
+      const response = await startBatchScrape();
       setScraping(true);
       await refreshCurrentConfig();
-      toast.success("刮削任务已启动");
+      toast.success(response.data.message);
     } catch (error) {
       const errorMessage = asMessage(error);
 

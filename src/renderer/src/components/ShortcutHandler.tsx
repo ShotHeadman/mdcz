@@ -91,8 +91,8 @@ export function ShortcutHandler() {
             scrapeState.updateProgress(0, 0);
             scrapeState.setScraping(true);
             try {
-              await startBatchScrape();
-              toast.success("刮削任务已启动");
+              const response = await startBatchScrape();
+              toast.success(response.data.message);
             } catch (error) {
               scrapeState.setScraping(false);
               toast.error(`启动失败: ${asMessage(error)}`);

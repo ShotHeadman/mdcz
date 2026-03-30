@@ -282,17 +282,18 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
+    const displayCount = countMaintenanceDisplayItems(commitItems.map((item) => item.entry));
     beginMaintenanceExecution(
       commitItems.map((item) => item.entry.id),
       effectivePreviewResults,
-      countMaintenanceDisplayItems(commitItems.map((item) => item.entry)),
+      displayCount,
     );
     setCurrentPath(commitItems[0]?.entry.videoPath ?? currentPath);
-    setStatusText(`正在执行 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项...`);
+    setStatusText(`正在执行 ${displayCount} 项...`);
 
     try {
       await ipc.maintenance.execute(commitItems, presetId);
-      toast.success(`维护任务已启动，共 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项`);
+      toast.success(`维护任务已启动，共 ${displayCount} 项`);
     } catch (error) {
       rollbackExecutionStart();
       setStatusText("启动失败");

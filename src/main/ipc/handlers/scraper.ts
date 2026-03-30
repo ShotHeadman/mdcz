@@ -3,6 +3,7 @@ import { configManager, configurationSchema } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
 import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
+import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
@@ -21,6 +22,8 @@ const defaultScraperStatus = (): ScraperStatus => ({
   failedCount: 0,
   skippedCount: 0,
 });
+
+const withLaunchMessage = (result: StartScrapeResult, message: string) => ({ ...result, message });
 
 export const createScraperHandlers = (
   context: ServiceContainer,
@@ -60,7 +63,7 @@ export const createScraperHandlers = (
     }),
     [IpcChannel.Scraper_RecoverSession]: t.procedure.action(async () => {
       try {
-        return await scraperService.recoverSession();
+        return withLaunchMessage(await scraperService.recoverSession(), "恢复任务已启动");
       } catch (error) {
         if (error instanceof ScraperServiceError) {
           throw createIpcError(error.code, error.message);
@@ -75,7 +78,10 @@ export const createScraperHandlers = (
         try {
           const mode = input?.mode ?? "single";
           const paths = input?.paths ?? [];
-          return await scraperService.start(mode, paths);
+          return withLaunchMessage(
+            await scraperService.start(mode, paths),
+            mode === "single" ? "单文件刮削任务已启动" : "刮削任务已启动",
+          );
         } catch (error) {
           if (error instanceof ScraperServiceError) {
             throw createIpcError(error.code, error.message);
@@ -123,7 +129,8 @@ export const createScraperHandlers = (
     }),
     [IpcChannel.Scraper_RetryFailed]: t.procedure.input<{ filePaths?: string[] }>().action(async ({ input }) => {
       try {
-        return await scraperService.retryFiles(input?.filePaths ?? []);
+        const result = await scraperService.retryFiles(input?.filePaths ?? []);
+        return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
       } catch (error) {
         if (error instanceof ScraperServiceError) {
           throw createIpcError(error.code, error.message);

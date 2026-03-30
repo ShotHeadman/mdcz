@@ -45,7 +45,7 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
   const handleRetrySingle = async (item: ScrapeResult) => {
     try {
       const result = await ipc.scraper.retryFailed([item.path]);
-      toast.success(`重试任务已启动，共 ${result.totalFiles} 个文件`);
+      toast.success(result.message);
       onOpenChange(false);
     } catch (_error) {
       toast.error("重试失败");
@@ -61,7 +61,7 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
 
     try {
       const result = await ipc.scraper.retryFailed(paths);
-      toast.success(`重试任务已启动，共 ${result.totalFiles} 个文件`);
+      toast.success(result.message);
       setSelectedFailedPaths(new Set());
       onOpenChange(false);
     } catch (_error) {
@@ -77,7 +77,7 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
 
     try {
       const result = await ipc.scraper.retryFailed(paths);
-      toast.success(`重试任务已启动，共 ${result.totalFiles} 个文件`);
+      toast.success(result.message);
       onOpenChange(false);
     } catch (_error) {
       toast.error("全部重试失败");

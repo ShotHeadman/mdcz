@@ -532,10 +532,10 @@ function ToolComponent() {
     }
     showInfo("正在启动单文件刮削任务...");
     try {
-      await scrapeSingleFileMut.mutateAsync({
+      const result = await scrapeSingleFileMut.mutateAsync({
         path: singleFilePath,
       });
-      showSuccess("单文件刮削任务已成功启动，正在跳转到日志页面...");
+      showSuccess(result.data.message);
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
       showError(`单文件刮削任务启动失败: ${error}`);
@@ -550,12 +550,12 @@ function ToolComponent() {
 
     showInfo("正在启动软链接创建任务...");
     try {
-      await createSymlinkMut.mutateAsync({
+      const result = await createSymlinkMut.mutateAsync({
         source_dir: sourceDir,
         dest_dir: destDir,
         copy_files: copyFiles,
       });
-      showSuccess("软链接创建任务已成功启动，正在跳转到日志页面...");
+      showSuccess(result.data.message);
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
       showError(`软链接创建任务启动失败: ${formatError(error)}`);
