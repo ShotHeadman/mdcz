@@ -156,8 +156,8 @@ function Index() {
     if (!window.confirm("确定要停止刮削吗？")) return;
     try {
       await stopScrape();
-      useScrapeStore.getState().reset();
-      useUIStore.getState().setSelectedResultId(null);
+      setScrapeStatus("stopping");
+      setStatusText("正在停止...");
       toast.info("正在停止...");
     } catch (_error) {
       toast.error("停止失败");

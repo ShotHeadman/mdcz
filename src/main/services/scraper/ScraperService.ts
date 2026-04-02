@@ -9,6 +9,7 @@ import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { listVideoFiles } from "@main/utils/file";
 import type { ScraperStatus } from "@shared/types";
+import { createAbortError } from "./abort";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { fileOrganizer } from "./FileOrganizer";
@@ -23,6 +24,12 @@ export type ScraperMode = "single" | "batch";
 export interface StartScrapeResult {
   taskId: string;
   totalFiles: number;
+}
+
+export interface RecoverableSessionInfo {
+  recoverable: boolean;
+  pendingCount: number;
+  failedCount: number;
 }
 
 export class ScraperServiceError extends Error {
@@ -48,7 +55,7 @@ const sleepWithAbort = (durationMs: number, signal?: AbortSignal): Promise<void>
     }
 
     if (signal.aborted) {
-      reject(new Error("Operation aborted"));
+      reject(createAbortError());
       return;
     }
 
@@ -60,7 +67,7 @@ const sleepWithAbort = (durationMs: number, signal?: AbortSignal): Promise<void>
     const onAbort = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
-      reject(new Error("Operation aborted"));
+      reject(createAbortError());
     };
 
     signal.addEventListener("abort", onAbort, { once: true });
@@ -177,8 +184,13 @@ export class ScraperService {
     return this.session.getFailedFiles();
   }
 
-  async hasRecoverableSession(): Promise<boolean> {
-    return this.session.hasRecoverableSession();
+  async getRecoverableSession(): Promise<RecoverableSessionInfo> {
+    const snapshot = await this.session.getRecoverableSnapshot();
+    return {
+      recoverable: Boolean(snapshot),
+      pendingCount: snapshot?.pendingFiles.length ?? 0,
+      failedCount: snapshot?.failedFiles.length ?? 0,
+    };
   }
 
   async recoverSession(): Promise<StartScrapeResult> {
@@ -197,6 +209,14 @@ export class ScraperService {
     }
 
     return this.retryFiles(files);
+  }
+
+  async discardRecoverableSession(): Promise<void> {
+    if (this.session.getStatus().running) {
+      throw new ScraperServiceError("ALREADY_RUNNING", "Scraper is already running");
+    }
+
+    await this.session.discardRecoverableSession();
   }
 
   async start(mode: ScraperMode, paths: string[]): Promise<StartScrapeResult> {

@@ -53,8 +53,14 @@ export type IpcRouterContract = {
     { filePaths?: string[] },
     { taskId: string; totalFiles: number; message: string }
   >;
-  [IpcChannel.Scraper_HasRecoverableSession]: IpcProcedure<void, { recoverable: boolean }>;
-  [IpcChannel.Scraper_RecoverSession]: IpcProcedure<void, { taskId: string; totalFiles: number; message: string }>;
+  [IpcChannel.Scraper_GetRecoverableSession]: IpcProcedure<
+    void,
+    { recoverable: boolean; pendingCount: number; failedCount: number }
+  >;
+  [IpcChannel.Scraper_ResolveRecoverableSession]: IpcProcedure<
+    { action?: "recover" | "discard" },
+    { success: true; message: string; taskId?: string; totalFiles?: number }
+  >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<{ items?: UncensoredConfirmItem[] }, UncensoredConfirmResponse>;
 
   [IpcChannel.Crawler_Test]: IpcProcedure<

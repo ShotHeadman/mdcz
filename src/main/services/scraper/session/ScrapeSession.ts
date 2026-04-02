@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { loggerService } from "@main/services/LoggerService";
 import PQueue from "p-queue";
+import { isAbortError } from "../abort";
 import { SessionProgressTracker } from "./SessionProgressTracker";
 import { hasRecoverableWork, toRecoverableSnapshot } from "./SessionRecovery";
 import { SessionStateStore } from "./SessionStateStore";
@@ -63,6 +64,14 @@ export class ScrapeSession {
     return toRecoverableSnapshot(await this.stateStore.read());
   }
 
+  async discardRecoverableSession(): Promise<void> {
+    if (this.getStatus().running) {
+      throw new Error("Scrape session is active");
+    }
+
+    await this.stateStore.clear();
+  }
+
   begin(files: string[], concurrency: number): string {
     if (this.getState() !== "idle") {
       throw new Error("Scrape session is already active");
@@ -97,7 +106,17 @@ export class ScrapeSession {
         return;
       }
 
-      const result = await task.taskFn(signal);
+      const result = await task.taskFn(signal).catch((error) => {
+        if (isAbortError(error)) {
+          return null;
+        }
+
+        throw error;
+      });
+      if (!result) {
+        return;
+      }
+
       const update = this.progress.applyResult(task.sourcePath, result, task.isRetry);
       this.stateStore.markDirty();
 

@@ -18,6 +18,9 @@ const DEFAULT_SECTION_ID = "2";
 
 type CheerioInput = Parameters<CheerioAPI>[0];
 
+const normalizeSokmilSearchText = (value: string | undefined | null): string =>
+  normalizeText(value).replace(/\s+/gu, "");
+
 const extractDtDdValue = ($: CheerioAPI, label: string): string | undefined => {
   const dt = $("dt")
     .filter((_i: number, el: CheerioInput) => $(el).text().trim() === label)
@@ -60,34 +63,27 @@ export class SokmilCrawler extends BaseCrawler {
     _searchUrl: string,
   ): Promise<string | SearchPageResolution | null> {
     const base = this.resolveBaseUrl(context, SOKMIL_BASE_URL);
-
-    // Products are marked with data-pid and schema.org Product itemscope
-    const products = $("div.product[data-pid]");
-    if (products.length === 0) {
+    const searchText = normalizeSokmilSearchText(context.number);
+    if (!searchText) {
       return null;
     }
 
-    // Find the best match by comparing title with the search query
-    const searchNumber = normalizeText(context.number) ?? "";
-    let bestHref: string | undefined;
+    const match = $("div.product[data-pid]")
+      .toArray()
+      .map((element: CheerioInput) => {
+        const root = $(element);
+        return {
+          href: root.find("a[href*='_item/item']").first().attr("href"),
+          title: root.find(".title").first().text().trim(),
+        };
+      })
+      .find((item) => normalizeSokmilSearchText(item.title) === searchText);
 
-    products.each((_i: number, el: CheerioInput) => {
-      if (bestHref) {
-        return;
-      }
-      const href = $(el).find("a[href*='_item/item']").first().attr("href");
-      if (href) {
-        bestHref = href;
-      }
-    });
-
-    if (!bestHref) {
+    if (!match?.href) {
       return null;
     }
 
-    // Strip affiliate ref param
-    const cleanHref = bestHref.split("?")[0];
-    return toAbsoluteUrl(base, cleanHref) ?? null;
+    return toAbsoluteUrl(base, match.href.split("?")[0]) ?? null;
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {

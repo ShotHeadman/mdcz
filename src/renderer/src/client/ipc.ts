@@ -57,8 +57,9 @@ export const ipc = {
     getFailedFiles: () => client[IpcChannel.Scraper_GetFailedFiles](undefined),
     requeue: (filePaths: string[]) => client[IpcChannel.Scraper_Requeue]({ filePaths }),
     retryFailed: (filePaths: string[]) => client[IpcChannel.Scraper_RetryFailed]({ filePaths }),
-    hasRecoverableSession: () => client[IpcChannel.Scraper_HasRecoverableSession](undefined),
-    recoverSession: () => client[IpcChannel.Scraper_RecoverSession](undefined),
+    getRecoverableSession: () => client[IpcChannel.Scraper_GetRecoverableSession](undefined),
+    resolveRecoverableSession: (action: "recover" | "discard") =>
+      client[IpcChannel.Scraper_ResolveRecoverableSession]({ action }),
     confirmUncensored: (items: UncensoredConfirmItem[]) =>
       client[IpcChannel.Scraper_ConfirmUncensored]({ items }) as Promise<UncensoredConfirmResponse>,
   },
