@@ -96,7 +96,8 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "filename", label: "仅 文件名.nfo" },
 ];
 
-export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
+export const NAMING_TEMPLATE_DESCRIPTION =
+  "可用占位符：{actor} {number} {date} {title} {studio}；可用 [{series}] 这种 [] 包裹单个路径片段内的可选内容，[] 内不能包含 / 或 \\";
 
 // ── Field registry for search/filter ──
 

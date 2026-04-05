@@ -1,7 +1,7 @@
 import { parse } from "node:path";
 import type { Configuration } from "@main/services/config";
 import { classifyMovie } from "@main/utils/movieClassification";
-import { buildSafePath, sanitizePathSegment } from "@main/utils/path";
+import { buildSafeFileName, buildSafePath } from "@main/utils/path";
 import { resolveFileInfoSubtitleTag } from "@main/utils/subtitles";
 import { Website } from "@shared/enums";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@shared/types";
@@ -192,7 +192,7 @@ export class NamingEngine {
       config.naming.folderNameMax,
     );
     const fileBaseName = truncateSegment(
-      sanitizePathSegment(buildSafePath(config.naming.fileTemplate, templateData)) || styledNumber,
+      buildSafeFileName(config.naming.fileTemplate, templateData) || styledNumber,
       config.naming.fileNameMax,
     );
     const nfoBaseName = fileInfo.part ? fileBaseName : parse(sourceVideo.base).name;

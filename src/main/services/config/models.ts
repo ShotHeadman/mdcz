@@ -23,6 +23,7 @@ const DEFAULT_ENABLED_SITES: Website[] = [
 const DEFAULT_SITE_ORDER: Website[] = [...DEFAULT_ENABLED_SITES];
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
 const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
+const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
 
 const networkSchema = z.object({
   proxyType: z.enum(ProxyType).default(ProxyType.NONE),
@@ -76,11 +77,7 @@ const translateSchema = z.object({
   llmModelName: z.string().default("gpt-5.2"),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
-  llmPrompt: z
-    .string()
-    .default(
-      "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
-    ),
+  llmPrompt: z.string().default("自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}"),
   llmTemperature: z.number().min(0).max(2).default(1.0),
   llmMaxRetries: z.number().int().min(1).max(20).default(3),
   llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
@@ -292,6 +289,21 @@ export const configurationSchema = z
         code: "custom",
         path: ["naming", "folderTemplate"],
         message: "开启成功后移动文件时，文件夹模板必须包含 {number}",
+      });
+    }
+
+    for (const [field, template] of [
+      ["folderTemplate", data.naming.folderTemplate],
+      ["fileTemplate", data.naming.fileTemplate],
+    ] as const) {
+      if (!OPTIONAL_GROUP_WITH_PATH_SEPARATOR.test(template)) {
+        continue;
+      }
+
+      ctx.addIssue({
+        code: "custom",
+        path: ["naming", field],
+        message: "[] 可选段不能包含路径分隔符，请仅在单个路径片段内使用可选内容",
       });
     }
 

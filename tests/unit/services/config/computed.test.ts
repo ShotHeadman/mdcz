@@ -109,6 +109,43 @@ describe("buildComputedConfiguration", () => {
     }
   });
 
+  it("rejects optional groups that try to span multiple path segments", () => {
+    const cases = [
+      {
+        result: configurationSchema.safeParse({
+          naming: {
+            folderTemplate: "{actor}[/{series}]/{number}",
+          },
+        }),
+        path: ["naming", "folderTemplate"],
+      },
+      {
+        result: configurationSchema.safeParse({
+          naming: {
+            fileTemplate: "[\\{series}]{number}",
+          },
+        }),
+        path: ["naming", "fileTemplate"],
+      },
+    ];
+
+    for (const { result, path } of cases) {
+      expect(result.success).toBe(false);
+      if (result.success) {
+        continue;
+      }
+
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path,
+            message: "[] 可选段不能包含路径分隔符，请仅在单个路径片段内使用可选内容",
+          }),
+        ]),
+      );
+    }
+  });
+
   it("keeps actor photo defaults under paths and ignores legacy personSync.actorPhotoFolder", () => {
     const defaultConfiguration = configurationSchema.parse({});
     expect(defaultConfiguration.paths.actorPhotoFolder).toBe("actor_photo");

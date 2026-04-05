@@ -72,6 +72,8 @@ const createConfig = (overrides: ConfigOverrides = {}) => {
   });
 };
 
+const splitSegments = (value: string): string[] => value.split(/[\\/]+/u).filter((segment) => segment.length > 0);
+
 const expectPathExists = async (path: string): Promise<void> => {
   await expect(access(path)).resolves.toBeUndefined();
 };
@@ -179,6 +181,40 @@ describe("FileOrganizer naming settings", () => {
     for (const { config, fileInfo, crawlerData, assert } of cases) {
       assert(organizer.plan(fileInfo, crawlerData, config));
     }
+  });
+
+  it("keeps slash characters inside metadata from creating nested folders", () => {
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/source.mp4",
+        fileName: "source",
+      }),
+      createCrawlerData({
+        number: "FC2-4532163",
+        title: "元标题",
+        title_zh:
+          "【初撮り／中出し】-sznjzpjo- しょ\\う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか\\ねを稼ぐ。",
+      }),
+      createConfig({
+        naming: {
+          folderTemplate: "{actor}[{series}][{number}] {title}",
+          fileTemplate: "[{series}]{number} {title}",
+          folderNameMax: 255,
+          fileNameMax: 255,
+          censoredStyle: "",
+        },
+      }),
+    );
+
+    expect(splitSegments(plan.outputDir)).toEqual([
+      "media",
+      "output",
+      "Unknown[FC2-4532163] 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
+    ]);
+    expect(parse(plan.targetVideoPath).name).toBe(
+      "FC2-4532163 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
+    );
   });
 
   it("formats multipart suffixes according to the configured style while keeping NFO on the base name", () => {

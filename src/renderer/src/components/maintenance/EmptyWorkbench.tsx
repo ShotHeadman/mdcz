@@ -17,7 +17,7 @@ export default function EmptyWorkbench({ variant, action }: EmptyWorkbenchProps)
 
         <h3 className="mb-2 text-base font-medium text-foreground tracking-tight">未配置媒体目录</h3>
         <p className="mb-6 max-w-[320px] text-center text-[13px] text-muted-foreground leading-relaxed">
-          请选择包含待处理媒体文件的根目录，以准备扫描和刮削。
+          请选择包含待处理媒体文件的根目录
         </p>
 
         {action && (

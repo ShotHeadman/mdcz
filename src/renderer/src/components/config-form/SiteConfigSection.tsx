@@ -1,7 +1,7 @@
 import type { Website } from "@shared/enums";
 import { useQuery } from "@tanstack/react-query";
 import type { FieldValues } from "react-hook-form";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, useWatch } from "react-hook-form";
 import { ipc } from "@/client/ipc";
 import { Row } from "@/components/shared/Row";
 import { Input } from "@/components/ui/Input";
@@ -15,6 +15,16 @@ interface SiteInfo {
 
 export function SiteConfigSection() {
   const form = useFormContext<FieldValues>();
+  const enabledSites =
+    (useWatch({
+      control: form.control,
+      name: "scrape.enabledSites",
+    }) as Website[] | undefined) ?? [];
+  const siteOrder =
+    (useWatch({
+      control: form.control,
+      name: "scrape.siteOrder",
+    }) as Website[] | undefined) ?? [];
 
   const sitesQ = useQuery({
     queryKey: ["crawler", "sites"],
@@ -22,10 +32,13 @@ export function SiteConfigSection() {
       const result = (await ipc.crawler.listSites()) as { sites: SiteInfo[] };
       return result.sites;
     },
+    staleTime: 60_000,
   });
 
-  const enabledSites = (sitesQ.data ?? []).filter((s) => s.enabled);
-  if (enabledSites.length === 0) return null;
+  const visibleSites = [...new Set([...siteOrder.filter((site) => enabledSites.includes(site)), ...enabledSites])];
+  const siteInfoMap = new Map((sitesQ.data ?? []).map((site) => [site.site, site]));
+
+  if (visibleSites.length === 0) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -35,12 +48,13 @@ export function SiteConfigSection() {
       </div>
 
       <div className="bg-card rounded-xl border shadow-sm overflow-hidden divide-y divide-border/50">
-        {enabledSites.map((site) => {
-          const urlKey = `scrape.siteConfigs.${site.site}.customUrl`;
+        {visibleSites.map((site) => {
+          const urlKey = `scrape.siteConfigs.${site}.customUrl`;
           const urlValue = (form.watch(urlKey) as string) ?? "";
+          const siteInfo = siteInfoMap.get(site);
 
           return (
-            <Row key={site.site} variant="form" label={site.name}>
+            <Row key={site} variant="form" label={siteInfo?.name ?? site}>
               <div className="flex items-center gap-6 flex-1 justify-end">
                 <Input
                   value={urlValue}
