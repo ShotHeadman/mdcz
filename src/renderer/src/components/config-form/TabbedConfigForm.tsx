@@ -25,7 +25,7 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -720,6 +720,8 @@ interface TabbedConfigFormProps {
   serverErrors?: string[];
   serverFieldErrors?: Record<string, string>;
   onDirtyChange?: (dirty: boolean) => void;
+  initialTab?: string;
+  onTabChange?: (tab: string) => void;
   // Profile management
   profiles?: string[];
   activeProfile?: string;
@@ -730,21 +732,33 @@ interface TabbedConfigFormProps {
   configPath?: string;
 }
 
-export function TabbedConfigForm({
-  data,
-  onSubmit,
-  serverErrors,
-  serverFieldErrors,
-  onDirtyChange,
-  profiles = [],
-  activeProfile = "",
-  onSwitchProfile,
-  onCreateProfile,
-  onDeleteProfile,
-  onResetConfig,
-  configPath,
-}: TabbedConfigFormProps) {
+export interface TabbedConfigFormHandle {
+  submit: () => Promise<boolean>;
+}
+
+export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigFormProps>(function TabbedConfigForm(
+  {
+    data,
+    onSubmit,
+    serverErrors,
+    serverFieldErrors,
+    onDirtyChange,
+    initialTab,
+    onTabChange,
+    profiles = [],
+    activeProfile = "",
+    onSwitchProfile,
+    onCreateProfile,
+    onDeleteProfile,
+    onResetConfig,
+    configPath,
+  }: TabbedConfigFormProps,
+  ref,
+) {
+  const defaultTab = TABS[0]?.key || "";
+  const resolvedInitialTab = initialTab && TABS.some((tab) => tab.key === initialTab) ? initialTab : defaultTab;
   const flatDefaults = useMemo(() => flattenConfig(data), [data]);
+  const submitPromiseRef = useRef<Promise<boolean> | null>(null);
 
   const form = useForm<FieldValues>({
     defaultValues: flatDefaults,
@@ -775,12 +789,55 @@ export function TabbedConfigForm({
     return Array.from(new Set([...fromApi, ...fromConfig]));
   }, [sitesQ.data, flatDefaults]);
 
-  const handleSubmit = async (values: FieldValues) => {
-    await onSubmit(unflattenConfig(values));
-    // Mark current values as the new baseline after successful save.
-    form.reset(values);
-    onDirtyChange?.(false);
-  };
+  const handleFormSubmit = useCallback(
+    async (values: FieldValues) => {
+      await onSubmit(unflattenConfig(values));
+      // Mark current values as the new baseline after successful save.
+      form.reset(values);
+      onDirtyChange?.(false);
+    },
+    [form, onDirtyChange, onSubmit],
+  );
+
+  const submit = useCallback(async () => {
+    if (submitPromiseRef.current) {
+      return submitPromiseRef.current;
+    }
+
+    const submission = (async () => {
+      let wasSuccessful = false;
+
+      await form.handleSubmit(
+        async (values) => {
+          try {
+            await handleFormSubmit(values);
+            wasSuccessful = true;
+          } catch {
+            wasSuccessful = false;
+          }
+        },
+        () => {
+          wasSuccessful = false;
+        },
+      )();
+
+      return wasSuccessful;
+    })();
+
+    submitPromiseRef.current = submission.finally(() => {
+      submitPromiseRef.current = null;
+    });
+
+    return submitPromiseRef.current;
+  }, [form, handleFormSubmit]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      submit,
+    }),
+    [submit],
+  );
 
   // Notify parent of dirty state
   const isDirty = form.formState.isDirty;
@@ -805,7 +862,11 @@ export function TabbedConfigForm({
   }, [serverErrors, serverFieldErrors, form]);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState(TABS[0]?.key || "");
+  const [activeTab, setActiveTab] = useState<string>(resolvedInitialTab);
+
+  useEffect(() => {
+    onTabChange?.(activeTab);
+  }, [activeTab, onTabChange]);
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -901,7 +962,13 @@ export function TabbedConfigForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="h-full w-full overflow-y-auto relative scroll-smooth">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+        className="h-full w-full overflow-y-auto relative scroll-smooth"
+      >
         <div className="sticky top-0 z-10 bg-background/60 backdrop-blur-xl border-b">
           <PageHeader
             title="设置"
@@ -1132,4 +1199,4 @@ export function TabbedConfigForm({
       </form>
     </Form>
   );
-}
+});

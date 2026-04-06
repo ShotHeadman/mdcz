@@ -50,6 +50,7 @@ import { TabButton } from "@/components/ui/TabButton";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/contexts/ToastProvider";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/store/uiStore";
 
 export const Route = createFileRoute("/tool")({
   component: ToolComponent,
@@ -367,7 +368,11 @@ function PersonToolCard({
 function ToolComponent() {
   const navigate = useNavigate();
   const { showSuccess, showError, showInfo } = useToast();
-  const [activeTab, setActiveTab] = useState<(typeof TOOLS_TABS)[number]["id"]>("scraping");
+  const toolActiveTab = useUIStore((state) => state.toolActiveTab);
+  const setToolActiveTab = useUIStore((state) => state.setToolActiveTab);
+  const activeTab: (typeof TOOLS_TABS)[number]["id"] = TOOLS_TABS.some((tab) => tab.id === toolActiveTab)
+    ? (toolActiveTab as (typeof TOOLS_TABS)[number]["id"])
+    : "scraping";
 
   // 单文件刮削
   const [singleFilePath, setSingleFilePath] = useState("");
@@ -1091,7 +1096,7 @@ function ToolComponent() {
               {TOOLS_TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
-                  <TabButton key={tab.id} isActive={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
+                  <TabButton key={tab.id} isActive={activeTab === tab.id} onClick={() => setToolActiveTab(tab.id)}>
                     <Icon className="h-3.5 w-3.5 mr-1.5" />
                     {tab.label}
                   </TabButton>

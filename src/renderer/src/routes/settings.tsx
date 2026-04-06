@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { updateConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
 import type { UpdateConfigData } from "@/client/types";
-import { TabbedConfigForm } from "@/components/config-form/TabbedConfigForm";
+import { TabbedConfigForm, type TabbedConfigFormHandle } from "@/components/config-form/TabbedConfigForm";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/Input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { useCurrentConfig } from "@/hooks/useCurrentConfig";
+import { useUIStore } from "@/store/uiStore";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsComponent,
@@ -75,9 +76,13 @@ const getValidationErrorState = (error: unknown): { fields: string[]; fieldError
 
 function SettingsComponent() {
   const queryClient = useQueryClient();
+  const settingsActiveTab = useUIStore((state) => state.settingsActiveTab);
+  const setSettingsActiveTab = useUIStore((state) => state.setSettingsActiveTab);
   const [serverErrors, setServerErrors] = useState<string[]>([]);
   const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
   const [isDirty, setIsDirty] = useState(false);
+  const settingsFormRef = useRef<TabbedConfigFormHandle>(null);
+  const [isSavingAndLeaving, setIsSavingAndLeaving] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileDialogOpen, setNewProfileDialogOpen] = useState(false);
@@ -193,6 +198,42 @@ function SettingsComponent() {
     condition: isDirty,
   });
 
+  const handleContinueEditing = useCallback(() => {
+    if (isSavingAndLeaving) {
+      return;
+    }
+    reset?.();
+  }, [isSavingAndLeaving, reset]);
+
+  const handleDiscardChanges = useCallback(() => {
+    if (isSavingAndLeaving) {
+      return;
+    }
+    proceed?.();
+  }, [isSavingAndLeaving, proceed]);
+
+  const handleSaveAndLeave = useCallback(async () => {
+    if (!settingsFormRef.current || isSavingAndLeaving) {
+      return;
+    }
+
+    setIsSavingAndLeaving(true);
+    let saved = false;
+
+    try {
+      saved = await settingsFormRef.current.submit();
+    } finally {
+      setIsSavingAndLeaving(false);
+    }
+
+    if (saved) {
+      proceed?.();
+      return;
+    }
+
+    reset?.();
+  }, [isSavingAndLeaving, proceed, reset]);
+
   const profiles = profilesQ.data?.profiles ?? [];
   const activeProfile = profilesQ.data?.active ?? "";
 
@@ -227,12 +268,15 @@ function SettingsComponent() {
       <div className="flex-1 overflow-hidden">
         {configQ.data && (
           <TabbedConfigForm
+            ref={settingsFormRef}
             key={activeProfile || "default"}
             data={configQ.data}
             onSubmit={(data) => mutation.mutateAsync(data as NonNullable<UpdateConfigData["body"]>)}
             serverErrors={serverErrors}
             serverFieldErrors={serverFieldErrors}
             onDirtyChange={onDirtyChange}
+            initialTab={settingsActiveTab}
+            onTabChange={setSettingsActiveTab}
             profiles={profiles}
             activeProfile={activeProfile}
             onSwitchProfile={handleSwitchProfile}
@@ -322,21 +366,25 @@ function SettingsComponent() {
       <Dialog
         open={status === "blocked"}
         onOpenChange={(open) => {
+          if (isSavingAndLeaving) {
+            return;
+          }
           if (!open) reset?.();
         }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>未保存的更改</DialogTitle>
-            <DialogDescription>您有未保存的设置更改。确定要离开吗？未保存的更改将会丢失。</DialogDescription>
+            <DialogDescription>您有未保存的设置更改。您可以保存后离开，或继续编辑当前表单。</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <DialogClose asChild>
-              <Button variant="outline" onClick={() => reset?.()}>
-                继续编辑
-              </Button>
-            </DialogClose>
-            <Button variant="destructive" onClick={() => proceed?.()}>
+            <Button variant="outline" onClick={handleContinueEditing} disabled={isSavingAndLeaving}>
+              继续编辑
+            </Button>
+            <Button onClick={handleSaveAndLeave} disabled={isSavingAndLeaving}>
+              {isSavingAndLeaving ? "保存中..." : "保存并离开"}
+            </Button>
+            <Button variant="destructive" onClick={handleDiscardChanges} disabled={isSavingAndLeaving}>
               放弃更改
             </Button>
           </DialogFooter>
