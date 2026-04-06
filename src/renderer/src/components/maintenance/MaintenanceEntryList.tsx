@@ -1,5 +1,5 @@
 import type { LocalScanEntry } from "@shared/types";
-import { FileText, FolderOpen, Play } from "lucide-react";
+import { FileText, FolderOpen, FolderSearch, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -10,8 +10,12 @@ import {
 } from "@/components/shared/MediaBrowserList";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ContextMenuItem } from "@/components/ui/ContextMenu";
-import { buildMaintenanceEntryGroups, type MaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
-import { type MaintenanceFilter, useMaintenanceStore } from "@/store/maintenanceStore";
+import { buildMaintenanceEntryViewModel, type MaintenanceEntryGroupViewModel } from "@/lib/maintenanceGrouping";
+import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import { toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
+import { playMediaPath } from "@/utils/playback";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
@@ -28,7 +32,7 @@ const matchesFilter = (filter: MaintenanceFilter, status: MediaBrowserItemStatus
   return status === filter;
 };
 
-const buildGroupSubtitle = (group: MaintenanceEntryGroup): string => {
+const buildGroupSubtitle = (group: MaintenanceEntryGroupViewModel): string => {
   const baseTitle = getTitle(group.representative);
   if (group.items.length <= 1) {
     return baseTitle;
@@ -43,21 +47,15 @@ function buildMenuContent(entry: LocalScanEntry) {
       toast.info("打开目录功能仅在桌面客户端可用");
       return;
     }
-    const slash = Math.max(entry.videoPath.lastIndexOf("/"), entry.videoPath.lastIndexOf("\\"));
-    const dir = slash > 0 ? entry.videoPath.slice(0, slash) : entry.videoPath;
-    void window.electron.openPath(dir);
+    void window.electron.openPath(entry.currentDir);
   };
 
-  const handlePlay = () => {
-    if (!window.electron?.openPath) {
-      toast.info("播放功能仅在桌面客户端可用");
-      return;
-    }
-    void window.electron.openPath(entry.videoPath);
-  };
+  const handlePlay = () => void playMediaPath(entry.fileInfo.filePath, "播放功能仅在桌面客户端可用");
 
   const handleOpenNfo = () => {
-    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: entry.nfoPath ?? entry.videoPath } }));
+    window.dispatchEvent(
+      new CustomEvent("app:open-nfo", { detail: { path: entry.nfoPath ?? entry.fileInfo.filePath } }),
+    );
   };
 
   return (
@@ -79,34 +77,28 @@ function buildMenuContent(entry: LocalScanEntry) {
 }
 
 export default function MaintenanceEntryList() {
-  const {
-    entries,
-    selectedIds,
-    activeId,
-    filter,
-    itemResults,
-    executionStatus,
-    setFilter,
-    toggleSelectedIds,
-    toggleSelectAll,
-    setActiveId,
-  } = useMaintenanceStore(
+  const { entries, selectedIds, activeId, filter, setFilter, setActiveId } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
-      itemResults: state.itemResults,
-      executionStatus: state.executionStatus,
       setFilter: state.setFilter,
-      toggleSelectedIds: state.toggleSelectedIds,
-      toggleSelectAll: state.toggleSelectAll,
       setActiveId: state.setActiveId,
     })),
   );
-
+  const { itemResults, executionStatus } = useMaintenanceExecutionStore(
+    useShallow((state) => ({
+      itemResults: state.itemResults,
+      executionStatus: state.executionStatus,
+    })),
+  );
+  const previewResults = useMaintenancePreviewStore((state) => state.previewResults);
   const selectionLocked = executionStatus === "executing" || executionStatus === "stopping";
-  const groupedEntries = useMemo(() => buildMaintenanceEntryGroups(entries, { itemResults }), [entries, itemResults]);
+  const groupedEntries = useMemo(
+    () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }).groups,
+    [entries, itemResults, previewResults],
+  );
 
   const sortedEntries = useMemo(
     () =>
@@ -119,11 +111,11 @@ export default function MaintenanceEntryList() {
   );
 
   const visibleEntries = sortedEntries.filter((group) => matchesFilter(filter, group.status));
-  const visibleIds = visibleEntries.flatMap((group) => group.items.map((entry) => entry.id));
-  const isGroupFullySelected = (group: MaintenanceEntryGroup): boolean =>
-    group.items.every((entry) => selectedIds.includes(entry.id));
-  const isGroupPartiallySelected = (group: MaintenanceEntryGroup): boolean =>
-    group.items.some((entry) => selectedIds.includes(entry.id)) && !isGroupFullySelected(group);
+  const visibleIds = visibleEntries.flatMap((group) => group.items.map((entry) => entry.fileId));
+  const isGroupFullySelected = (group: MaintenanceEntryGroupViewModel): boolean =>
+    group.items.every((entry) => selectedIds.includes(entry.fileId));
+  const isGroupPartiallySelected = (group: MaintenanceEntryGroupViewModel): boolean =>
+    group.items.some((entry) => selectedIds.includes(entry.fileId)) && !isGroupFullySelected(group);
   const allVisibleSelected = visibleEntries.length > 0 && visibleEntries.every((group) => isGroupFullySelected(group));
   const someVisibleSelected = visibleEntries.some(
     (group) => isGroupPartiallySelected(group) || isGroupFullySelected(group),
@@ -136,7 +128,7 @@ export default function MaintenanceEntryList() {
 
     return {
       id: group.id,
-      active: group.items.some((entry) => activeId === entry.id),
+      active: group.items.some((entry) => activeId === entry.fileId),
       title: representative.fileInfo.number,
       subtitle: buildGroupSubtitle(group),
       errorText: group.errorText,
@@ -146,13 +138,14 @@ export default function MaintenanceEntryList() {
           checked={checkedState}
           disabled={selectionLocked}
           onCheckedChange={() => {
-            toggleSelectedIds(group.items.map((entry) => entry.id));
+            toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
           }}
           onClick={(event) => event.stopPropagation()}
         />
       ),
-      onClick: () => setActiveId(group.items.find((entry) => entry.id === activeId)?.id ?? representative.id),
-      menuContent: buildMenuContent(group.items.find((entry) => entry.id === activeId) ?? representative),
+      onClick: () =>
+        setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
+      menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative),
     };
   });
 
@@ -161,14 +154,21 @@ export default function MaintenanceEntryList() {
       items={items}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
-      emptyMessage="扫描完成后，维护项目会显示在这里。"
+      emptyContent={
+        <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
+          <FolderSearch className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
+          <span className="text-[13px] text-muted-foreground/40 tracking-wider">无维护项目</span>
+        </div>
+      }
       headerLeading={
         <>
           <Checkbox
             id="maintenance-select-all"
             checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
             disabled={selectionLocked || visibleIds.length === 0}
-            onCheckedChange={() => toggleSelectAll(visibleIds)}
+            onCheckedChange={() => {
+              toggleMaintenanceSelectedIds(visibleIds);
+            }}
           />
           <label htmlFor="maintenance-select-all" className="cursor-pointer">
             全选 ({selectedVisibleCount}/{visibleEntries.length})

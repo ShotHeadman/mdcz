@@ -8,6 +8,8 @@
  * users have upgraded past the corresponding configVersion.
  */
 
+import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
+
 export interface Migration {
   fromVersion: number;
   toVersion: number;
@@ -107,8 +109,7 @@ const V3_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2hub", "fc2", "javdb", "javbus", "jav321"],
 };
 const V050_LEGACY_TRANSLATE_PROMPT = "请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}";
-const V052_DEFAULT_TRANSLATE_PROMPT =
-  "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}";
+const V052_DEFAULT_TRANSLATE_PROMPT = "自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}";
 
 const appendPathSegment = (template: string, segment: string): string => {
   const trimmed = template.trim();
@@ -353,6 +354,19 @@ function migrateV050ToV052(raw: Record<string, unknown>): void {
   normalizeFieldPriorityDefaults(raw, V2_FIELD_PRIORITY_DEFAULTS, V3_FIELD_PRIORITY_DEFAULTS);
 }
 
+// ── v0.5.2 → v0.6.0 ─────────────────────────────────────────────────────────
+
+function migrateV052ToV060(raw: Record<string, unknown>): void {
+  const translate = raw.translate;
+  if (!isRecord(translate)) {
+    return;
+  }
+
+  if (typeof translate.llmBaseUrl !== "string" || translate.llmBaseUrl.trim() === "") {
+    translate.llmBaseUrl = DEFAULT_LLM_BASE_URL;
+  }
+}
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 export const migrations: Migration[] = [
@@ -373,5 +387,11 @@ export const migrations: Migration[] = [
     toVersion: 3,
     description: "v0.5.0 → v0.5.2",
     migrate: migrateV050ToV052,
+  },
+  {
+    fromVersion: 3,
+    toVersion: 4,
+    description: "v0.5.2 → v0.6.0",
+    migrate: migrateV052ToV060,
   },
 ];

@@ -122,6 +122,33 @@ export function setProperty(obj: Record<string, unknown>, path: string, value: u
 }
 
 /**
+ * Recursively merges plain objects.
+ * Arrays and explicit values replace the base value; undefined leaves it unchanged.
+ */
+export function mergeDeep<T>(base: T, override: unknown): T {
+  if (override === undefined) {
+    return base;
+  }
+
+  if (Array.isArray(base) || Array.isArray(override)) {
+    return override as T;
+  }
+
+  if (isRecord(base) && isRecord(override)) {
+    const output: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(override)) {
+      if (value === undefined) {
+        continue;
+      }
+      output[key] = mergeDeep(output[key], value);
+    }
+    return output as T;
+  }
+
+  return override as T;
+}
+
+/**
  * Builds a URL with optional query parameters.
  */
 export function buildUrl(baseUrl: string, pathname = "/", query: Record<string, string | undefined> = {}): string {

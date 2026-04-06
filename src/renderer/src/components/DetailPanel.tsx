@@ -1,5 +1,15 @@
-import type { MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
-import { CheckCircle2, FileText, FolderOpen, GitCompareArrows, ImageIcon, Play, XCircle } from "lucide-react";
+import type { FieldDiff, LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
+import {
+  CheckCircle2,
+  FileText,
+  FolderOpen,
+  GitCompareArrows,
+  ImageIcon,
+  LoaderCircle,
+  MousePointerClick,
+  Play,
+  XCircle,
+} from "lucide-react";
 import { useMemo } from "react";
 import { toDetailViewItemFromScrapeResult } from "@/components/detail/detailViewAdapters";
 import type { DetailViewItem } from "@/components/detail/types";
@@ -13,6 +23,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
+import type { MaintenanceFieldSelectionSide } from "@/lib/maintenance";
 import { findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
@@ -24,6 +35,10 @@ interface DetailPanelCompareProps {
   result?: MaintenanceItemResult | MaintenancePreviewItem;
   badgeLabel?: string;
   titleOverride?: string;
+  entry?: LocalScanEntry;
+  preview?: MaintenancePreviewItem;
+  fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
+  onFieldSelectionChange?: (fileId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
 }
 
 interface DetailPanelProps {
@@ -32,11 +47,23 @@ interface DetailPanelProps {
   compare?: DetailPanelCompareProps;
 }
 
+function DetailStatusIcon({ status }: { status: DetailViewItem["status"] }) {
+  if (status === "success") {
+    return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+  }
+
+  if (status === "failed") {
+    return <XCircle className="h-4 w-4 text-red-500" />;
+  }
+
+  return <LoaderCircle className="h-4 w-4 animate-spin text-primary" />;
+}
+
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-sm opacity-60">
-      <FileText className="h-12 w-12 mb-2 opacity-20" />
-      {message}
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 select-none">
+      <MousePointerClick className="h-10 w-10 text-muted-foreground/30" strokeWidth={1.25} />
+      <span className="text-[13px] text-muted-foreground/50 tracking-wide">{message}</span>
     </div>
   );
 }
@@ -112,11 +139,7 @@ export function DetailPanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
-                {item.status === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-500" />
-                )}
+                <DetailStatusIcon status={item.status} />
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 {compare?.titleOverride ?? item.title ?? item.number}
@@ -139,10 +162,14 @@ export function DetailPanel({
 
             {shouldRenderDiffs && (
               <ChangeDiffView
-                entryId={item.id}
+                fileId={item.id}
                 diffs={compare?.result?.fieldDiffs ?? []}
                 unchangedDiffs={compare?.result?.unchangedFieldDiffs ?? []}
                 hasResult={hasComparedResult}
+                entry={compare?.entry}
+                preview={compare?.preview}
+                fieldSelections={compare?.fieldSelections}
+                onFieldSelectionChange={compare?.onFieldSelectionChange}
               />
             )}
 
@@ -161,11 +188,7 @@ export function DetailPanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
-                {item.status === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-500" />
-                )}
+                <DetailStatusIcon status={item.status} />
               </div>
               {item.title && <p className="mt-1 text-sm text-muted-foreground">{item.title}</p>}
             </div>

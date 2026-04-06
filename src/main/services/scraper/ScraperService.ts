@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { resolve, sep } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager, configurationSchema } from "@main/services/config";
@@ -9,13 +9,14 @@ import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { listVideoFiles } from "@main/utils/file";
 import type { ScraperStatus } from "@shared/types";
+import { createAbortError } from "./abort";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { fileOrganizer } from "./FileOrganizer";
-import { FileScraper } from "./FileScraper";
-import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
+import { createFileScraper } from "./FileScraper";
+import { isGeneratedSidecarVideo } from "./media";
 import { NfoGenerator } from "./NfoGenerator";
-import { ScrapeSession } from "./ScrapeSession";
+import { ScrapeSession } from "./session/ScrapeSession";
 import { TranslateService } from "./TranslateService";
 
 export type ScraperMode = "single" | "batch";
@@ -23,6 +24,12 @@ export type ScraperMode = "single" | "batch";
 export interface StartScrapeResult {
   taskId: string;
   totalFiles: number;
+}
+
+export interface RecoverableSessionInfo {
+  recoverable: boolean;
+  pendingCount: number;
+  failedCount: number;
 }
 
 export class ScraperServiceError extends Error {
@@ -48,7 +55,7 @@ const sleepWithAbort = (durationMs: number, signal?: AbortSignal): Promise<void>
     }
 
     if (signal.aborted) {
-      reject(new Error("Operation aborted"));
+      reject(createAbortError());
       return;
     }
 
@@ -60,7 +67,7 @@ const sleepWithAbort = (durationMs: number, signal?: AbortSignal): Promise<void>
     const onAbort = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
-      reject(new Error("Operation aborted"));
+      reject(createAbortError());
     };
 
     signal.addEventListener("abort", onAbort, { once: true });
@@ -177,8 +184,13 @@ export class ScraperService {
     return this.session.getFailedFiles();
   }
 
-  async hasRecoverableSession(): Promise<boolean> {
-    return this.session.hasRecoverableSession();
+  async getRecoverableSession(): Promise<RecoverableSessionInfo> {
+    const snapshot = await this.session.getRecoverableSnapshot();
+    return {
+      recoverable: Boolean(snapshot),
+      pendingCount: snapshot?.pendingFiles.length ?? 0,
+      failedCount: snapshot?.failedFiles.length ?? 0,
+    };
   }
 
   async recoverSession(): Promise<StartScrapeResult> {
@@ -197,6 +209,14 @@ export class ScraperService {
     }
 
     return this.retryFiles(files);
+  }
+
+  async discardRecoverableSession(): Promise<void> {
+    if (this.session.getStatus().running) {
+      throw new ScraperServiceError("ALREADY_RUNNING", "Scraper is already running");
+    }
+
+    await this.session.discardRecoverableSession();
   }
 
   async start(mode: ScraperMode, paths: string[]): Promise<StartScrapeResult> {
@@ -242,7 +262,7 @@ export class ScraperService {
     // Supports both single-item and batch manual retry from frontend.
     const pending = uniquePaths(filePaths);
     const totalFiles = Math.max(1, this.session.getStatus().totalFiles);
-    const fileScraper = new FileScraper(this.createFileScraperDependencies());
+    const fileScraper = createFileScraper(this.createFileScraperDependencies());
     const failedFiles = new Set(this.session.getFailedFiles());
 
     let requeuedCount = 0;
@@ -253,20 +273,23 @@ export class ScraperService {
         continue;
       }
 
-      requeuedCount += 1;
       const fileIndex = cursor;
-      cursor = Math.min(cursor + 1, totalFiles);
 
-      this.session.addTask({
-        sourcePath: filePath,
-        fileIndex,
-        totalFiles,
-        isRetry: true,
-        taskFn: async (signal) => {
-          await this.restGate?.waitBeforeStart(signal);
-          return fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal);
-        },
-      });
+      if (
+        !this.session.addTask({
+          sourcePath: filePath,
+          isRetry: true,
+          taskFn: async (signal) => {
+            await this.restGate?.waitBeforeStart(signal);
+            return fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal);
+          },
+        })
+      ) {
+        continue;
+      }
+
+      cursor = Math.min(cursor + 1, totalFiles);
+      requeuedCount += 1;
     }
 
     return { requeuedCount };
@@ -313,29 +336,55 @@ export class ScraperService {
     }
 
     const includeRealPathComparisons = configuration.behavior.scrapeSoftlinkPath;
-    // Build the set of resolved output directory paths to exclude.
-    // Only exclude output dirs that are direct children of each scan root
-    // (or of mediaPath if set), not arbitrary nested dirs with the same name.
+    const excludePaths = await this.buildExcludedOutputPaths(paths, configuration, includeRealPathComparisons);
+    const candidatePaths = await this.collectBatchCandidateFiles(paths, configuration);
+    const filteredOutputPaths = await this.filterExcludedBatchFiles(
+      candidatePaths,
+      excludePaths,
+      includeRealPathComparisons,
+    );
+    const skippedCount = candidatePaths.length - filteredOutputPaths.length;
+    if (skippedCount > 0) {
+      this.logger.info(
+        `Skipped ${skippedCount} file(s) in output directories or generated sidecars from batch scrape queue`,
+      );
+    }
+
+    return filteredOutputPaths;
+  }
+
+  private async buildExcludedOutputPaths(
+    scanRoots: string[],
+    configuration: Configuration,
+    includeRealPathComparisons: boolean,
+  ): Promise<Set<string>> {
     const excludePaths = new Set<string>();
     const successFolder = configuration.paths.successOutputFolder.trim();
     const failedFolder = configuration.paths.failedOutputFolder.trim();
     const mediaRoot = configuration.paths.mediaPath.trim();
 
-    for (const dirPath of paths) {
+    for (const dirPath of scanRoots) {
       const base = mediaRoot.length > 0 ? mediaRoot : dirPath;
-      if (successFolder) {
-        for (const excludePath of await collectComparablePaths(join(base, successFolder), includeRealPathComparisons)) {
-          excludePaths.add(excludePath);
+      for (const outputFolder of [successFolder, failedFolder]) {
+        if (!outputFolder) {
+          continue;
         }
-      }
-      if (failedFolder) {
-        for (const excludePath of await collectComparablePaths(join(base, failedFolder), includeRealPathComparisons)) {
-          excludePaths.add(excludePath);
+
+        for (const comparablePath of await collectComparablePaths(
+          resolve(base, outputFolder),
+          includeRealPathComparisons,
+        )) {
+          excludePaths.add(comparablePath);
         }
       }
     }
 
+    return excludePaths;
+  }
+
+  private async collectBatchCandidateFiles(paths: string[], configuration: Configuration): Promise<string[]> {
     const outputs: string[] = [];
+
     for (const dirPath of paths) {
       try {
         outputs.push(...(await listVideoFiles(dirPath, true)));
@@ -345,24 +394,18 @@ export class ScraperService {
       }
     }
 
-    // Also scan softlink directory if enabled
-    if (configuration.behavior.scrapeSoftlinkPath) {
-      const softlinkDir = configuration.paths.softlinkPath.trim();
-      if (softlinkDir) {
-        try {
-          const softlinkFiles = await listVideoFiles(softlinkDir, true);
-          outputs.push(...softlinkFiles);
-          this.logger.info(`Scanned softlink path "${softlinkDir}": found ${softlinkFiles.length} files`);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`Failed to scan softlink path "${softlinkDir}": ${message}`);
-        }
-      }
-    }
+    outputs.push(...(await this.collectSoftlinkFiles(configuration)));
+    return uniquePaths(outputs);
+  }
 
-    const uniqueOutputPaths = uniquePaths(outputs);
-    const filteredOutputPaths: string[] = [];
-    for (const filePath of uniqueOutputPaths) {
+  private async filterExcludedBatchFiles(
+    filePaths: string[],
+    excludePaths: Set<string>,
+    includeRealPathComparisons: boolean,
+  ): Promise<string[]> {
+    const filteredPaths: string[] = [];
+
+    for (const filePath of filePaths) {
       if (isGeneratedSidecarVideo(filePath)) {
         continue;
       }
@@ -374,20 +417,36 @@ export class ScraperService {
             return true;
           }
         }
+
         return false;
       });
       if (!isExcluded) {
-        filteredOutputPaths.push(filePath);
+        filteredPaths.push(filePath);
       }
     }
-    const skippedCount = uniqueOutputPaths.length - filteredOutputPaths.length;
-    if (skippedCount > 0) {
-      this.logger.info(
-        `Skipped ${skippedCount} file(s) in output directories or generated sidecars from batch scrape queue`,
-      );
+
+    return filteredPaths;
+  }
+
+  private async collectSoftlinkFiles(configuration: Configuration): Promise<string[]> {
+    if (!configuration.behavior.scrapeSoftlinkPath) {
+      return [];
     }
 
-    return filteredOutputPaths;
+    const softlinkDir = configuration.paths.softlinkPath.trim();
+    if (!softlinkDir) {
+      return [];
+    }
+
+    try {
+      const softlinkFiles = await listVideoFiles(softlinkDir, true);
+      this.logger.info(`Scanned softlink path "${softlinkDir}": found ${softlinkFiles.length} files`);
+      return softlinkFiles;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to scan softlink path "${softlinkDir}": ${message}`);
+      return [];
+    }
   }
 
   private createFileScraperDependencies() {
@@ -433,14 +492,12 @@ export class ScraperService {
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();
 
-    const fileScraper = new FileScraper(this.createFileScraperDependencies());
+    const fileScraper = createFileScraper(this.createFileScraperDependencies());
 
     for (const [index, filePath] of filePaths.entries()) {
       const fileIndex = index + 1;
       this.session.addTask({
         sourcePath: filePath,
-        fileIndex,
-        totalFiles: filePaths.length,
         isRetry: false,
         taskFn: async (signal) => {
           await this.restGate?.waitBeforeStart(signal);

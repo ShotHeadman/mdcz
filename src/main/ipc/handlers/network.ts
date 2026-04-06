@@ -19,7 +19,7 @@ export const createNetworkHandlers = (
       const javdbCookie = configuration.network.javdbCookie.trim();
       if (javdbCookie) {
         try {
-          const html = await networkClient.getText("https://javdb.com/users/home", {
+          const html = await networkClient.getText("https://javdb.com/users/profile", {
             headers: { cookie: javdbCookie },
           });
           const valid = !html.includes('href="/login"') && !html.includes("sign_in");

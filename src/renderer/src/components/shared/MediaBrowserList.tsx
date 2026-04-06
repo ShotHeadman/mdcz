@@ -24,7 +24,8 @@ interface MediaBrowserListProps {
   items: MediaBrowserItem[];
   filter: MediaBrowserFilter;
   onFilterChange: (filter: MediaBrowserFilter) => void;
-  emptyMessage: string;
+  emptyMessage?: string;
+  emptyContent?: ReactNode;
   headerLeading?: ReactNode;
   headerTrailing?: ReactNode;
 }
@@ -93,6 +94,7 @@ export function MediaBrowserList({
   filter,
   onFilterChange,
   emptyMessage,
+  emptyContent,
   headerLeading,
   headerTrailing,
 }: MediaBrowserListProps) {
@@ -137,8 +139,8 @@ export function MediaBrowserList({
         <ScrollArea className="h-full">
           <div className="space-y-2 p-3">
             {visibleItems.length === 0 ? (
-              <div className="flex min-h-40 items-center justify-center text-center text-xs text-muted-foreground opacity-70">
-                {emptyMessage}
+              <div className="flex min-h-40 flex-col items-center justify-center text-center">
+                {emptyContent || <span className="text-xs text-muted-foreground opacity-70">{emptyMessage}</span>}
               </div>
             ) : (
               visibleItems.map((item) => <MediaBrowserListItem key={item.id} item={item} />)

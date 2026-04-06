@@ -28,6 +28,7 @@ import type {
 export type IpcRouterContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
   [IpcChannel.App_OpenExternal]: IpcProcedure<{ url: string }, { success: true }>;
+  [IpcChannel.App_PlayMedia]: IpcProcedure<{ path?: string }, { success: true }>;
   [IpcChannel.Config_Get]: IpcProcedure<{ path?: string }, Configuration | unknown>;
   [IpcChannel.Config_Save]: IpcProcedure<{ config?: Partial<Configuration> }, { success: true }>;
   [IpcChannel.Config_List]: IpcProcedure<void, { configPath: string; dataDir: string }>;
@@ -40,7 +41,7 @@ export type IpcRouterContract = {
 
   [IpcChannel.Scraper_Start]: IpcProcedure<
     { mode?: "single" | "batch"; paths?: string[] },
-    { taskId: string; totalFiles: number }
+    { taskId: string; totalFiles: number; message: string }
   >;
   [IpcChannel.Scraper_Stop]: IpcProcedure<void, { success: true; pendingCount: number }>;
   [IpcChannel.Scraper_Pause]: IpcProcedure<void, { success: true }>;
@@ -48,9 +49,18 @@ export type IpcRouterContract = {
   [IpcChannel.Scraper_GetStatus]: IpcProcedure<void, ScraperStatus>;
   [IpcChannel.Scraper_GetFailedFiles]: IpcProcedure<void, { filePaths: string[] }>;
   [IpcChannel.Scraper_Requeue]: IpcProcedure<{ filePaths?: string[] }, { requeuedCount: number }>;
-  [IpcChannel.Scraper_RetryFailed]: IpcProcedure<{ filePaths?: string[] }, { taskId: string; totalFiles: number }>;
-  [IpcChannel.Scraper_HasRecoverableSession]: IpcProcedure<void, { recoverable: boolean }>;
-  [IpcChannel.Scraper_RecoverSession]: IpcProcedure<void, { taskId: string; totalFiles: number }>;
+  [IpcChannel.Scraper_RetryFailed]: IpcProcedure<
+    { filePaths?: string[] },
+    { taskId: string; totalFiles: number; message: string }
+  >;
+  [IpcChannel.Scraper_GetRecoverableSession]: IpcProcedure<
+    void,
+    { recoverable: boolean; pendingCount: number; failedCount: number }
+  >;
+  [IpcChannel.Scraper_ResolveRecoverableSession]: IpcProcedure<
+    { action?: "recover" | "discard" },
+    { success: true; message: string; taskId?: string; totalFiles?: number }
+  >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<{ items?: UncensoredConfirmItem[] }, UncensoredConfirmResponse>;
 
   [IpcChannel.Crawler_Test]: IpcProcedure<

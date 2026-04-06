@@ -4,6 +4,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
+import { toErrorMessage } from "@main/utils/common";
 import { validateImage } from "@main/utils/image";
 import { parseNfo } from "@main/utils/nfo";
 import { Website } from "@shared/enums";
@@ -11,8 +12,6 @@ import type { AmazonPosterApplyResultItem, AmazonPosterLookupResult, AmazonPoste
 import type { CrawlerData } from "@shared/types";
 
 const POSTER_FILE_NAME = "poster.jpg";
-
-const toErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 export class AmazonPosterToolService {
   private readonly logger = loggerService.getLogger("AmazonPosterToolService");

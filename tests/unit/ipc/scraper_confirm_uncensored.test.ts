@@ -30,10 +30,9 @@ const createAssets = (): DiscoveredAssets => ({
 });
 
 const createEntry = (overrides: Partial<LocalScanEntry>): LocalScanEntry => ({
-  id: overrides.id ?? "entry-1",
-  videoPath: overrides.videoPath ?? "/library/FC2-123456-cd1.mp4",
+  fileId: overrides.fileId ?? "entry-1",
   fileInfo: overrides.fileInfo ?? {
-    filePath: overrides.videoPath ?? "/library/FC2-123456-cd1.mp4",
+    filePath: "/library/FC2-123456-cd1.mp4",
     fileName: "FC2-123456-cd1",
     extension: ".mp4",
     number: "FC2-123456",
@@ -54,8 +53,7 @@ const createEntry = (overrides: Partial<LocalScanEntry>): LocalScanEntry => ({
 describe("confirmUncensoredItems", () => {
   it("writes one shared NFO for multipart files that share the same source NFO", async () => {
     const firstEntry = createEntry({
-      id: "part-1",
-      videoPath: "/library/FC2-123456-cd1.mp4",
+      fileId: "part-1",
       fileInfo: {
         filePath: "/library/FC2-123456-cd1.mp4",
         fileName: "FC2-123456-cd1",
@@ -69,8 +67,7 @@ describe("confirmUncensoredItems", () => {
       },
     });
     const secondEntry = createEntry({
-      id: "part-2",
-      videoPath: "/library/FC2-123456-cd2.mp4",
+      fileId: "part-2",
       fileInfo: {
         filePath: "/library/FC2-123456-cd2.mp4",
         fileName: "FC2-123456-cd2",
@@ -94,7 +91,6 @@ describe("confirmUncensoredItems", () => {
         fanart: undefined,
         sceneImages: [],
         trailer: undefined,
-        nfo: savedNfoPath,
         actorPhotos: [],
       },
       outputVideoPath,
@@ -103,11 +99,13 @@ describe("confirmUncensoredItems", () => {
     const result = await confirmUncensoredItems(
       [
         {
+          fileId: "part-1",
           nfoPath: "/library/FC2-123456.nfo",
           videoPath: "/library/FC2-123456-cd1.mp4",
           choice: "uncensored",
         },
         {
+          fileId: "part-2",
           nfoPath: "/library/FC2-123456.nfo",
           videoPath: "/library/FC2-123456-cd2.mp4",
           choice: "uncensored",
@@ -165,6 +163,7 @@ describe("confirmUncensoredItems", () => {
       updatedCount: 2,
       items: [
         {
+          fileId: "part-1",
           sourceVideoPath: "/library/FC2-123456-cd1.mp4",
           sourceNfoPath: "/library/FC2-123456.nfo",
           targetVideoPath: "/output/FC2-123456/FC2-123456-cd1.mp4",
@@ -172,6 +171,7 @@ describe("confirmUncensoredItems", () => {
           choice: "uncensored",
         },
         {
+          fileId: "part-2",
           sourceVideoPath: "/library/FC2-123456-cd2.mp4",
           sourceNfoPath: "/library/FC2-123456.nfo",
           targetVideoPath: "/output/FC2-123456/FC2-123456-cd2.mp4",

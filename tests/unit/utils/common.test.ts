@@ -1,4 +1,4 @@
-import { getProperty, isRecord, isString, setProperty, toArray, toErrorMessage } from "@main/utils/common";
+import { getProperty, isRecord, isString, mergeDeep, setProperty, toArray, toErrorMessage } from "@main/utils/common";
 import { describe, expect, it } from "vitest";
 
 describe("toErrorMessage", () => {
@@ -134,5 +134,38 @@ describe("setProperty", () => {
       setProperty(obj, path, value);
       expect(getProperty(obj, expectedPath)).toBe(expected);
     }
+  });
+});
+
+describe("mergeDeep", () => {
+  it("merges plain objects while replacing arrays and explicit values", () => {
+    const base = {
+      title: "base",
+      options: {
+        enabled: true,
+        retries: 2,
+      },
+      tags: ["a"],
+      extra: "keep",
+    };
+
+    const merged = mergeDeep(base, {
+      options: {
+        retries: 5,
+      },
+      tags: ["b"],
+      extra: null,
+      ignored: undefined,
+    });
+
+    expect(merged).toEqual({
+      title: "base",
+      options: {
+        enabled: true,
+        retries: 5,
+      },
+      tags: ["b"],
+      extra: null,
+    });
   });
 });

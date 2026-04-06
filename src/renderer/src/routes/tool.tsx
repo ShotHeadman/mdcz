@@ -178,24 +178,30 @@ interface PersonToolCardProps {
   diagnosticLabel: string;
   checkResult: ConnectionCheckResult | null;
   checkPending: boolean;
-  busy: boolean;
-  infoSyncRunning: boolean;
-  photoSyncRunning: boolean;
-  syncProgress: number;
-  infoMode: SyncMode;
-  photoMode: SyncMode;
-  infoMissingText: string;
-  infoAllText: string;
-  photoMissingText: string;
-  photoAllText: string;
-  photoNotice?: string;
+  syncState: {
+    busy: boolean;
+    infoSyncRunning: boolean;
+    photoSyncRunning: boolean;
+    progress: number;
+    infoMode: SyncMode;
+    photoMode: SyncMode;
+  };
+  texts: {
+    infoMissing: string;
+    infoAll: string;
+    photoMissing: string;
+    photoAll: string;
+    photoNotice?: string;
+  };
+  actions: {
+    onCheck: () => void;
+    onInfoModeChange: (value: SyncMode) => void;
+    onPhotoModeChange: (value: SyncMode) => void;
+    onSyncInfo: () => void;
+    onSyncPhoto: () => void;
+  };
   headerExtra?: React.ReactNode;
   className?: string;
-  onCheck: () => void;
-  onInfoModeChange: (value: SyncMode) => void;
-  onPhotoModeChange: (value: SyncMode) => void;
-  onSyncInfo: () => void;
-  onSyncPhoto: () => void;
 }
 
 function PersonToolCard({
@@ -204,25 +210,16 @@ function PersonToolCard({
   diagnosticLabel,
   checkResult,
   checkPending,
-  busy,
-  infoSyncRunning,
-  photoSyncRunning,
-  syncProgress,
-  infoMode,
-  photoMode,
-  infoMissingText,
-  infoAllText,
-  photoMissingText,
-  photoAllText,
-  photoNotice,
+  syncState,
+  texts,
+  actions,
   headerExtra,
   className,
-  onCheck,
-  onInfoModeChange,
-  onPhotoModeChange,
-  onSyncInfo,
-  onSyncPhoto,
 }: PersonToolCardProps) {
+  const { busy, infoSyncRunning, photoSyncRunning, progress, infoMode, photoMode } = syncState;
+  const { infoMissing, infoAll, photoMissing, photoAll, photoNotice } = texts;
+  const { onCheck, onInfoModeChange, onPhotoModeChange, onSyncInfo, onSyncPhoto } = actions;
+
   return (
     <Card className={cn("rounded-xl border shadow-sm", className)}>
       <CardHeader>
@@ -321,7 +318,7 @@ function PersonToolCard({
               </Button>
             </div>
             <div className="text-[11px] leading-relaxed text-muted-foreground">
-              {infoMode === "missing" ? infoMissingText : infoAllText}
+              {infoMode === "missing" ? infoMissing : infoAll}
             </div>
           </div>
 
@@ -347,18 +344,18 @@ function PersonToolCard({
               </Button>
             </div>
             <div className="text-[11px] leading-relaxed text-muted-foreground">
-              {photoMode === "missing" ? photoMissingText : photoAllText}
+              {photoMode === "missing" ? photoMissing : photoAll}
             </div>
             {photoNotice && <div className="text-[11px] leading-relaxed text-amber-700">{photoNotice}</div>}
           </div>
 
-          {syncProgress > 0 && (
+          {progress > 0 && (
             <div className="grid gap-2">
               <div className="flex justify-between text-xs text-muted-foreground font-medium">
                 <span>任务进度</span>
-                <span>{Math.round(syncProgress)}%</span>
+                <span>{Math.round(progress)}%</span>
               </div>
-              <Progress value={syncProgress} className="h-2 bg-muted/30" />
+              <Progress value={progress} className="h-2 bg-muted/30" />
             </div>
           )}
         </div>
@@ -535,10 +532,10 @@ function ToolComponent() {
     }
     showInfo("正在启动单文件刮削任务...");
     try {
-      await scrapeSingleFileMut.mutateAsync({
+      const result = await scrapeSingleFileMut.mutateAsync({
         path: singleFilePath,
       });
-      showSuccess("单文件刮削任务已成功启动，正在跳转到日志页面...");
+      showSuccess(result.data.message);
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
       showError(`单文件刮削任务启动失败: ${error}`);
@@ -553,12 +550,12 @@ function ToolComponent() {
 
     showInfo("正在启动软链接创建任务...");
     try {
-      await createSymlinkMut.mutateAsync({
+      const result = await createSymlinkMut.mutateAsync({
         source_dir: sourceDir,
         dest_dir: destDir,
         copy_files: copyFiles,
       });
-      showSuccess("软链接创建任务已成功启动，正在跳转到日志页面...");
+      showSuccess(result.data.message);
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
       showError(`软链接创建任务启动失败: ${formatError(error)}`);
@@ -1014,41 +1011,55 @@ function ToolComponent() {
           diagnosticLabel: "Jellyfin 诊断结果",
           checkResult: jellyfinCheckResult,
           checkPending: checkJellyfinConnectionMut.isPending,
-          infoSyncRunning: jellyfinInfoSyncRunning,
-          photoSyncRunning: jellyfinPhotoSyncRunning,
-          syncProgress: jellyfinSyncProgress,
-          infoMode: jellyfinActorInfoMode,
-          photoMode: jellyfinActorPhotoMode,
-          infoMissingText: "仅补全缺失的演员简介与基础资料。",
-          infoAllText: "按当前抓取结果更新演员简介与基础资料。",
-          photoMissingText: "仅为缺少头像的演员补充头像。",
-          photoAllText: "按当前抓取结果重新同步演员头像。",
-          photoNotice: undefined as string | undefined,
-          onCheck: handleCheckJellyfinConnection,
-          onInfoModeChange: setJellyfinActorInfoMode,
-          onPhotoModeChange: setJellyfinActorPhotoMode,
-          onSyncInfo: handleSyncJellyfinActorInfo,
-          onSyncPhoto: handleSyncJellyfinPhotos,
+          syncState: {
+            busy: anyPersonSyncRunning,
+            infoSyncRunning: jellyfinInfoSyncRunning,
+            photoSyncRunning: jellyfinPhotoSyncRunning,
+            progress: jellyfinSyncProgress,
+            infoMode: jellyfinActorInfoMode,
+            photoMode: jellyfinActorPhotoMode,
+          },
+          texts: {
+            infoMissing: "仅补全缺失的演员简介与基础资料。",
+            infoAll: "按当前抓取结果更新演员简介与基础资料。",
+            photoMissing: "仅为缺少头像的演员补充头像。",
+            photoAll: "按当前抓取结果重新同步演员头像。",
+            photoNotice: undefined as string | undefined,
+          },
+          actions: {
+            onCheck: handleCheckJellyfinConnection,
+            onInfoModeChange: setJellyfinActorInfoMode,
+            onPhotoModeChange: setJellyfinActorPhotoMode,
+            onSyncInfo: handleSyncJellyfinActorInfo,
+            onSyncPhoto: handleSyncJellyfinPhotos,
+          },
         }
       : {
           diagnosticLabel: "Emby 诊断结果",
           checkResult: embyCheckResult,
           checkPending: checkEmbyConnectionMut.isPending,
-          infoSyncRunning: embyInfoSyncRunning,
-          photoSyncRunning: embyPhotoSyncRunning,
-          syncProgress: embySyncProgress,
-          infoMode: embyActorInfoMode,
-          photoMode: embyActorPhotoMode,
-          infoMissingText: "仅补全缺失的演员简介与基础资料，并保留未变更字段。",
-          infoAllText: "按当前抓取结果更新演员简介与基础资料，并按同步字段写回 Emby。",
-          photoMissingText: "仅为缺少头像的演员补充头像。",
-          photoAllText: "按当前抓取结果重新同步演员头像。",
-          photoNotice: "人物头像上传通常需要管理员 API Key。若返回 401 或 403，请改用管理员 API Key 后重试。",
-          onCheck: handleCheckEmbyConnection,
-          onInfoModeChange: setEmbyActorInfoMode,
-          onPhotoModeChange: setEmbyActorPhotoMode,
-          onSyncInfo: handleSyncEmbyActorInfo,
-          onSyncPhoto: handleSyncEmbyPhotos,
+          syncState: {
+            busy: anyPersonSyncRunning,
+            infoSyncRunning: embyInfoSyncRunning,
+            photoSyncRunning: embyPhotoSyncRunning,
+            progress: embySyncProgress,
+            infoMode: embyActorInfoMode,
+            photoMode: embyActorPhotoMode,
+          },
+          texts: {
+            infoMissing: "仅补全缺失的演员简介与基础资料，并保留未变更字段。",
+            infoAll: "按当前抓取结果更新演员简介与基础资料，并按同步字段写回 Emby。",
+            photoMissing: "仅为缺少头像的演员补充头像。",
+            photoAll: "按当前抓取结果重新同步演员头像。",
+            photoNotice: "人物头像上传通常需要管理员 API Key。若返回 401 或 403，请改用管理员 API Key 后重试。",
+          },
+          actions: {
+            onCheck: handleCheckEmbyConnection,
+            onInfoModeChange: setEmbyActorInfoMode,
+            onPhotoModeChange: setEmbyActorPhotoMode,
+            onSyncInfo: handleSyncEmbyActorInfo,
+            onSyncPhoto: handleSyncEmbyPhotos,
+          },
         };
 
   return (
@@ -1350,7 +1361,6 @@ function ToolComponent() {
                   </Select>
                 }
                 {...personToolProps}
-                busy={anyPersonSyncRunning}
                 className="md:col-span-2"
               />
 

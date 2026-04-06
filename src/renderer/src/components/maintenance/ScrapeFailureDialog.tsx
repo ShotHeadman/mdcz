@@ -3,6 +3,7 @@ import { AlertTriangle, FileText, RotateCcw, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
+import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -37,15 +38,15 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
     }
 
     setSelectedFailedPaths((prev) => {
-      const validPaths = new Set(failedResults.map((result) => result.path));
+      const validPaths = new Set(failedResults.map((result) => result.fileInfo.filePath));
       return new Set([...prev].filter((path) => validPaths.has(path)));
     });
   }, [failedResults, open]);
 
   const handleRetrySingle = async (item: ScrapeResult) => {
     try {
-      const result = await ipc.scraper.retryFailed([item.path]);
-      toast.success(`重试任务已启动，共 ${result.totalFiles} 个文件`);
+      const result = await ipc.scraper.retryFailed([item.fileInfo.filePath]);
+      toast.success(result.message);
       onOpenChange(false);
     } catch (_error) {
       toast.error("重试失败");
@@ -61,7 +62,7 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
 
     try {
       const result = await ipc.scraper.retryFailed(paths);
-      toast.success(`重试任务已启动，共 ${result.totalFiles} 个文件`);
+      toast.success(result.message);
       setSelectedFailedPaths(new Set());
       onOpenChange(false);
     } catch (_error) {
@@ -70,14 +71,14 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
   };
 
   const handleRetryAll = async () => {
-    const paths = failedResults.map((result) => result.path);
+    const paths = failedResults.map((result) => result.fileInfo.filePath);
     if (paths.length === 0) {
       return;
     }
 
     try {
       const result = await ipc.scraper.retryFailed(paths);
-      toast.success(`重试任务已启动，共 ${result.totalFiles} 个文件`);
+      toast.success(result.message);
       onOpenChange(false);
     } catch (_error) {
       toast.error("全部重试失败");
@@ -102,7 +103,7 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
       return;
     }
 
-    setSelectedFailedPaths(new Set(failedResults.map((result) => result.path)));
+    setSelectedFailedPaths(new Set(failedResults.map((result) => result.fileInfo.filePath)));
   };
 
   return (
@@ -150,21 +151,23 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
           <div className="space-y-1 py-2">
             {failedResults.map((item) => (
               <div
-                key={item.id}
+                key={item.fileId}
                 className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors group"
               >
                 <Checkbox
-                  checked={selectedFailedPaths.has(item.path)}
-                  onCheckedChange={() => toggleFailedSelection(item.path)}
+                  checked={selectedFailedPaths.has(item.fileInfo.filePath)}
+                  onCheckedChange={() => toggleFailedSelection(item.fileInfo.filePath)}
                 />
                 <XCircle className="h-4 w-4 text-destructive shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm truncate">{item.number}</span>
-                    {item.title && <span className="text-xs text-muted-foreground truncate">{item.title}</span>}
+                    <span className="font-medium text-sm truncate">{item.fileInfo.number}</span>
+                    {getScrapeResultTitle(item) && (
+                      <span className="text-xs text-muted-foreground truncate">{getScrapeResultTitle(item)}</span>
+                    )}
                   </div>
-                  {item.errorMessage && <p className="text-xs text-destructive mt-0.5 truncate">{item.errorMessage}</p>}
-                  <p className="text-[10px] text-muted-foreground truncate mt-0.5">{item.path}</p>
+                  {item.error && <p className="text-xs text-destructive mt-0.5 truncate">{item.error}</p>}
+                  <p className="text-[10px] text-muted-foreground truncate mt-0.5">{item.fileInfo.filePath}</p>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRetrySingle(item)}>

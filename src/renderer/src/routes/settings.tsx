@@ -3,9 +3,9 @@ import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { getCurrentConfig, updateConfig } from "@/client/api";
+import { updateConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
-import type { ConfigOutput, UpdateConfigData } from "@/client/types";
+import type { UpdateConfigData } from "@/client/types";
 import { TabbedConfigForm } from "@/components/config-form/TabbedConfigForm";
 import { Button } from "@/components/ui/Button";
 import {
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { useCurrentConfig } from "@/hooks/useCurrentConfig";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsComponent,
@@ -83,12 +84,7 @@ function SettingsComponent() {
   const [deleteProfileDialogOpen, setDeleteProfileDialogOpen] = useState(false);
   const [deleteProfileName, setDeleteProfileName] = useState("");
 
-  const configQ = useQuery({
-    queryKey: ["config", "current"],
-    queryFn: async () => {
-      const response = await getCurrentConfig({ throwOnError: true });
-      return response.data as ConfigOutput;
-    },
+  const configQ = useCurrentConfig({
     refetchOnWindowFocus: false,
   });
 
@@ -232,7 +228,7 @@ function SettingsComponent() {
         {configQ.data && (
           <TabbedConfigForm
             key={activeProfile || "default"}
-            data={configQ.data as ConfigOutput}
+            data={configQ.data}
             onSubmit={(data) => mutation.mutateAsync(data as NonNullable<UpdateConfigData["body"]>)}
             serverErrors={serverErrors}
             serverFieldErrors={serverFieldErrors}

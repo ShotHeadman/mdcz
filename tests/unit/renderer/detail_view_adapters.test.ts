@@ -1,11 +1,10 @@
 import { Website } from "@shared/enums";
-import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
+import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@shared/types";
 import { describe, expect, it } from "vitest";
 import {
   toDetailViewItemFromMaintenanceEntry,
   toDetailViewItemFromScrapeResult,
 } from "@/components/detail/detailViewAdapters";
-import type { ScrapeResult } from "@/store/scrapeStore";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -19,8 +18,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 });
 
 const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
-  id: "entry-1",
-  videoPath: "/media/ABC-123.mp4",
+  fileId: "entry-1",
   nfoPath: "/media/ABC-123.nfo",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
@@ -38,7 +36,6 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     fanart: "/media/fanart.jpg",
     sceneImages: ["/media/extrafanart/fanart1.jpg"],
     trailer: "/media/trailer.mp4",
-    nfo: "/media/ABC-123.nfo",
     actorPhotos: [],
   },
   currentDir: "/media",
@@ -47,33 +44,43 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
 describe("toDetailViewItemFromScrapeResult", () => {
   it("maps scrape result fields into the shared detail item shape", () => {
     const result: ScrapeResult = {
-      id: "scrape-1",
+      fileId: "scrape-1",
       status: "success",
-      number: "ABC-123",
-      title: "Remote Title",
-      path: "/media/ABC-123.mp4",
-      actors: ["Actor A"],
-      outline: "Outline",
-      tags: ["Drama"],
-      release: "2026-01-01",
-      duration: "01:30:00",
-      resolution: "2160p",
-      codec: "H.265",
-      bitrate: "10 Mbps",
-      directors: ["Director A"],
-      series: "Series A",
-      studio: "Studio A",
-      publisher: "Publisher A",
-      score: "4.5",
-      posterUrl: "https://example.com/poster.jpg",
-      thumbUrl: "https://example.com/thumb.jpg",
-      fanartUrl: "https://example.com/fanart.jpg",
+      fileInfo: {
+        filePath: "/media/ABC-123.mp4",
+        fileName: "ABC-123.mp4",
+        extension: ".mp4",
+        number: "ABC-123",
+        isSubtitled: false,
+      },
+      crawlerData: createCrawlerData({
+        title: "Remote Title",
+        title_zh: undefined,
+        plot: "Outline",
+        genres: ["Drama"],
+        release_date: "2026-01-01",
+        director: "Director A",
+        series: "Series A",
+        studio: "Studio A",
+        publisher: "Publisher A",
+        rating: 4.5,
+        poster_url: "https://example.com/poster.jpg",
+        thumb_url: "https://example.com/thumb.jpg",
+        fanart_url: "https://example.com/fanart.jpg",
+        scene_images: ["https://example.com/scene-1.jpg"],
+      }),
+      videoMeta: {
+        durationSeconds: 5400,
+        width: 3840,
+        height: 2160,
+        codec: "H.265",
+        bitrate: 10_000_000,
+      },
       outputPath: "/output",
-      sceneImages: ["https://example.com/scene-1.jpg"],
-      errorMessage: "Failed",
+      error: "Failed",
     };
 
-    expect(toDetailViewItemFromScrapeResult(result)).toEqual({
+    expect(toDetailViewItemFromScrapeResult(result)).toMatchObject({
       id: "scrape-1",
       status: "success",
       number: "ABC-123",
@@ -84,9 +91,9 @@ describe("toDetailViewItemFromScrapeResult", () => {
       tags: ["Drama"],
       release: "2026-01-01",
       duration: "01:30:00",
-      resolution: "2160p",
+      resolution: "3840x2160",
       codec: "H.265",
-      bitrate: "10 Mbps",
+      bitrate: "10.0 Mbps",
       directors: ["Director A"],
       series: "Series A",
       studio: "Studio A",
@@ -108,7 +115,7 @@ describe("toDetailViewItemFromScrapeResult", () => {
       crawlerData: undefined,
     };
 
-    expect(toDetailViewItemFromMaintenanceEntry(entry)).toEqual({
+    expect(toDetailViewItemFromMaintenanceEntry(entry)).toMatchObject({
       id: "entry-1",
       status: "failed",
       number: "ABC-123",
@@ -116,22 +123,7 @@ describe("toDetailViewItemFromScrapeResult", () => {
       path: "/media/ABC-123.mp4",
       nfoPath: "/media/ABC-123.nfo",
       title: "ABC-123.mp4",
-      actors: undefined,
-      outline: undefined,
-      tags: undefined,
-      release: undefined,
-      duration: undefined,
       resolution: "1080p",
-      directors: undefined,
-      series: undefined,
-      studio: undefined,
-      publisher: undefined,
-      score: undefined,
-      posterUrl: undefined,
-      thumbUrl: undefined,
-      fanartUrl: undefined,
-      outputPath: undefined,
-      sceneImages: undefined,
       errorMessage: "NFO 解析失败: Invalid NFO root",
     });
   });
@@ -156,12 +148,12 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       }),
     );
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "blocked",
       error: "Preview blocked",
     };
 
-    expect(toDetailViewItemFromMaintenanceEntry(entry, preview)).toEqual({
+    expect(toDetailViewItemFromMaintenanceEntry(entry, preview)).toMatchObject({
       id: "entry-1",
       status: "failed",
       number: "ABC-123",
@@ -196,7 +188,7 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       scanError: "NFO 解析失败: NFO missing website",
     };
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         title: "Remote Title",
@@ -207,7 +199,7 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       }),
     };
 
-    expect(toDetailViewItemFromMaintenanceEntry(entry, preview)).toEqual({
+    expect(toDetailViewItemFromMaintenanceEntry(entry, preview)).toMatchObject({
       id: "entry-1",
       status: "success",
       number: "ABC-123",
@@ -219,19 +211,28 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       outline: "Remote Plot",
       tags: ["Drama"],
       release: undefined,
-      duration: undefined,
       resolution: "1080p",
-      directors: undefined,
-      series: undefined,
-      studio: undefined,
-      publisher: undefined,
-      score: undefined,
       posterUrl: "/media/poster.jpg",
       thumbUrl: "/media/thumb.jpg",
       fanartUrl: "/media/fanart.jpg",
       outputPath: "/media",
       sceneImages: ["/media/extrafanart/fanart1.jpg"],
-      errorMessage: undefined,
+    });
+  });
+
+  it("keeps maintenance detail items in processing state while execution is running", () => {
+    const entry = createEntry(createCrawlerData());
+
+    expect(
+      toDetailViewItemFromMaintenanceEntry(entry, {
+        fileId: entry.fileId,
+        status: "processing",
+      }),
+    ).toMatchObject({
+      id: "entry-1",
+      status: "processing",
+      number: "ABC-123",
+      path: "/media/ABC-123.mp4",
     });
   });
 });

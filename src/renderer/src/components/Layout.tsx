@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -15,14 +14,14 @@ import {
   Wrench,
 } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
-import { getCurrentConfig } from "@/client/api";
-import type { ConfigOutput } from "@/client/types";
+import AppLogo from "@/assets/images/logo.png";
 import { Button } from "@/components/ui/Button";
 import { NavButton } from "@/components/ui/NavButton";
 import { Separator } from "@/components/ui/Separator";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/Sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { useTheme } from "@/contexts/ThemeProvider";
+import { useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { cn } from "@/lib/utils";
 
 interface LayoutProps {
@@ -101,9 +100,12 @@ function NavContent({
       {/* Header / Branding */}
       <div className={cn("flex items-center h-14 shrink-0", collapsed ? "justify-center px-2" : "gap-2 px-4")}>
         {collapsed ? (
-          <span className="text-lg font-bold text-primary select-none">M</span>
+          <img src={AppLogo} alt="MDCz" className="h-5 w-5 rounded-md ring-1 ring-border/60 shadow-sm" />
         ) : (
-          <span className="text-lg font-semibold tracking-tight select-none">MDCz</span>
+          <div className="flex items-center gap-2.5">
+            <img src={AppLogo} alt="MDCz" className="h-6 w-6 rounded-lg ring-1 ring-border/60 shadow-sm" />
+            <span className="text-lg font-semibold tracking-tight select-none">MDCz</span>
+          </div>
         )}
       </div>
 
@@ -171,14 +173,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const pathname = location.pathname;
 
-  const configQ = useQuery({
-    queryKey: ["config", "current"],
-    queryFn: async () => {
-      const response = await getCurrentConfig({ throwOnError: true });
-      return response.data as ConfigOutput;
-    },
-    staleTime: 30_000,
-  });
+  const configQ = useCurrentConfig();
 
   const filteredSystemNav = useMemo(() => {
     const showLogsPanel = configQ.data?.ui?.showLogsPanel ?? true;

@@ -5,6 +5,7 @@ import type { DetailViewItem } from "@/components/detail/types";
 import { useResolvedImageCandidates } from "@/hooks/useResolvedImageSources";
 import { buildImageSourceCandidates } from "@/utils/image";
 import { getDirFromPath } from "@/utils/path";
+import { playMediaPath } from "@/utils/playback";
 
 export function useDetailViewController(item?: DetailViewItem | null) {
   const [nfoOpen, setNfoOpen] = useState(false);
@@ -99,11 +100,8 @@ export function useDetailViewController(item?: DetailViewItem | null) {
       toast.info("请先选择一个项目");
       return;
     }
-    if (window.electron?.openPath) {
-      window.electron.openPath(item.path);
-    } else {
-      toast.info("播放功能仅在桌面模式下可用");
-    }
+
+    void playMediaPath(item.path);
   }, [item?.path]);
 
   const handleOpenFolder = useCallback(() => {

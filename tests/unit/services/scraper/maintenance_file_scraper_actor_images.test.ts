@@ -49,8 +49,7 @@ const createEntry = (
   crawlerData: CrawlerData,
   overrides: Partial<LocalScanEntry> = {},
 ): LocalScanEntry => ({
-  id: "entry-1",
-  videoPath: join(root, "ABC-123.mp4"),
+  fileId: "entry-1",
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),
     fileName: "ABC-123.mp4",
@@ -63,7 +62,6 @@ const createEntry = (
   assets: {
     sceneImages: [],
     actorPhotos: [],
-    nfo: join(root, "ABC-123.nfo"),
     ...(overrides.assets ?? {}),
   },
   currentDir: root,
@@ -174,7 +172,7 @@ describe("MaintenanceFileScraper actor image parity", () => {
       actors: Record<string, { publicFileName?: string }>;
     };
 
-    expect(result.scrapeResult.status).toBe("success");
+    expect(result.status).toBe("success");
     expect(preparedData.actor_profiles).toEqual([{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }]);
     expect(result.updatedEntry?.assets.actorPhotos).toEqual([join(outputDir, ".actors", "Actor A.jpg")]);
     expect(await readFile(join(outputDir, ".actors", "Actor A.jpg"), "utf8")).toBe("manual-a");
@@ -285,7 +283,6 @@ describe("MaintenanceFileScraper actor image parity", () => {
           assets: {
             sceneImages: [],
             actorPhotos: [],
-            nfo: join(root, "ABC-123.nfo"),
             trailer: oldTrailerPath,
           },
         },
@@ -303,7 +300,7 @@ describe("MaintenanceFileScraper actor image parity", () => {
       },
     );
 
-    expect(result.scrapeResult.status).toBe("success");
+    expect(result.status).toBe("success");
     expect(result.updatedEntry?.assets.trailer).toBeUndefined();
     await expect(readFile(oldTrailerPath, "utf8")).rejects.toThrow();
   });

@@ -74,6 +74,7 @@ describe("ScraperService stop flow", () => {
 
     runningTask.resolve({
       status: "success",
+      fileId: "abp-123",
       fileInfo: {
         filePath: "/tmp/ABP-123.mp4",
         fileName: "ABP-123.mp4",
@@ -122,6 +123,7 @@ describe("ScraperService stop flow", () => {
 
     runningTask.resolve({
       status: "success",
+      fileId: "abp-456",
       fileInfo: {
         filePath: "/tmp/ABP-456.mp4",
         fileName: "ABP-456.mp4",
@@ -141,5 +143,72 @@ describe("ScraperService stop flow", () => {
 
     await waitForIdle(service, signalService);
     expect(service.getStatus().state).toBe("idle");
+  });
+
+  it("finishes cleanly when stop aborts a task waiting in the rest gate", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new ScraperService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        threadNumber: 2,
+        restAfterCount: 1,
+        restDuration: 60,
+      },
+    });
+    const firstTask = deferred<ScrapeResult>();
+    const filePaths = ["/tmp/ABP-777.mp4", "/tmp/ABP-888.mp4"];
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const scrapeFileSpy = vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation((filePath) => {
+      if (filePath === filePaths[0]) {
+        return firstTask.promise;
+      }
+
+      throw new Error(`Unexpected scrape start for ${filePath}`);
+    });
+
+    await service.retryFiles(filePaths);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    service.stop();
+
+    firstTask.resolve({
+      status: "success",
+      fileId: "abp-777",
+      fileInfo: {
+        filePath: filePaths[0],
+        fileName: "ABP-777.mp4",
+        extension: ".mp4",
+        number: "ABP-777",
+        isSubtitled: false,
+      },
+      crawlerData: {
+        title: "ABP-777",
+        number: "ABP-777",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: config.scrape.enabledSites[0],
+      },
+    });
+
+    await waitForIdle(service, signalService);
+
+    expect(scrapeFileSpy).toHaveBeenCalledTimes(1);
+    expect(scrapeFileSpy).toHaveBeenCalledWith(
+      filePaths[0],
+      { fileIndex: 1, totalFiles: filePaths.length },
+      expect.any(AbortSignal),
+    );
+    expect(service.getStatus().running).toBe(false);
   });
 });

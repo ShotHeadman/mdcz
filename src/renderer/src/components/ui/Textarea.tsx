@@ -13,6 +13,7 @@ function resizeTextarea(textarea: HTMLTextAreaElement) {
 
 function Textarea({ className, autoSize = true, onInput, value, defaultValue, ...props }: TextareaProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const renderedValue = value ?? defaultValue;
 
   React.useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -24,15 +25,10 @@ function Textarea({ className, autoSize = true, onInput, value, defaultValue, ..
       return;
     }
 
-    // Re-sync when the rendered value changes outside the input event path.
-    const renderedValue = value ?? defaultValue;
-    if (renderedValue !== undefined) {
-      resizeTextarea(textarea);
-      return;
-    }
-
+    // Re-sync height when the rendered value changes outside the input event path.
+    void renderedValue;
     resizeTextarea(textarea);
-  }, [autoSize, defaultValue, value]);
+  }, [autoSize, renderedValue]);
 
   return (
     <textarea

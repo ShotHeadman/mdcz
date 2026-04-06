@@ -1,5 +1,8 @@
 import type { Website } from "./enums";
 
+export type FileId = string;
+export type GroupId = string;
+
 export interface ActorProfile {
   name: string;
   aliases?: string[];
@@ -84,6 +87,7 @@ export interface DownloadedAssets {
 }
 
 export interface ScrapeResult {
+  fileId: FileId;
   fileInfo: FileInfo;
   status: ScrapeResultStatus;
   crawlerData?: CrawlerData;
@@ -93,7 +97,7 @@ export interface ScrapeResult {
   nfoPath?: string;
   assets?: DownloadedAssets;
   /** Maps each CrawlerData field to the Website that provided the value. */
-  sources?: Partial<Record<string, Website>>;
+  sources?: Partial<Record<keyof CrawlerData, Website>>;
   /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
   uncensoredAmbiguous?: boolean;
 }
@@ -106,12 +110,14 @@ export interface NfoLocalState {
 }
 
 export interface UncensoredConfirmItem {
+  fileId: FileId;
   nfoPath: string;
   videoPath: string;
   choice: UncensoredChoice;
 }
 
 export interface UncensoredConfirmResultItem {
+  fileId: FileId;
   sourceVideoPath: string;
   sourceNfoPath?: string;
   targetVideoPath: string;
@@ -158,14 +164,12 @@ export interface DiscoveredAssets {
   fanart?: string;
   sceneImages: string[];
   trailer?: string;
-  nfo?: string;
   actorPhotos: string[];
 }
 
 /** A single video entry produced by local directory scanning. */
 export interface LocalScanEntry {
-  id: string;
-  videoPath: string;
+  fileId: FileId;
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;
@@ -173,6 +177,7 @@ export interface LocalScanEntry {
   scanError?: string;
   assets: DiscoveredAssets;
   currentDir: string;
+  groupingDirectory?: string;
 }
 
 /** A single field-level difference between old and new CrawlerData. */
@@ -213,7 +218,7 @@ export type FieldDiff = ValueFieldDiff | ImageFieldDiff | ImageCollectionFieldDi
 
 /** Path migration plan for a single video. */
 export interface PathDiff {
-  entryId: string;
+  fileId: FileId;
   currentVideoPath: string;
   targetVideoPath: string;
   currentDir: string;
@@ -224,7 +229,7 @@ export interface PathDiff {
 export type MaintenancePreviewStatus = "ready" | "blocked";
 
 export interface MaintenancePreviewItem {
-  entryId: string;
+  fileId: FileId;
   status: MaintenancePreviewStatus;
   error?: string;
   fieldDiffs?: FieldDiff[];
@@ -261,7 +266,7 @@ export type MaintenanceItemStatus = "pending" | "processing" | "success" | "fail
 
 /** Per-item execution result pushed via IPC events. */
 export interface MaintenanceItemResult {
-  entryId: string;
+  fileId: FileId;
   status: MaintenanceItemStatus;
   error?: string;
   crawlerData?: CrawlerData;

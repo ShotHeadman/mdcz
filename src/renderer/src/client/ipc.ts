@@ -3,10 +3,17 @@ import type { Configuration } from "@shared/config";
 import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
+import type {
+  ButtonStatusPayload,
+  FailedInfoPayload,
+  LogPayload,
+  ProgressPayload,
+  ScrapeInfoPayload,
+  ShortcutPayload,
+} from "@shared/ipcEvents";
 import type { AppInfo, TranslateTestLlmInput } from "@shared/ipcTypes";
 import type {
   CrawlerData,
-  FileInfo,
   LocalScanEntry,
   MaintenanceCommitItem,
   MaintenanceItemResult,
@@ -20,40 +27,6 @@ import type {
 
 type Unsubscribe = () => void;
 
-type LogPayload = {
-  text: string;
-  level?: "info" | "warn" | "error";
-  timestamp: number;
-};
-
-type ProgressPayload = {
-  value: number;
-  current: number;
-  total: number;
-};
-
-type ScrapeInfoPayload = {
-  fileInfo: FileInfo;
-  site: Website;
-  step: "search" | "parse" | "download" | "organize";
-};
-
-type FailedInfoPayload = {
-  fileInfo: FileInfo;
-  error: string;
-  site?: Website;
-};
-
-type ButtonStatusPayload = {
-  startEnabled: boolean;
-  stopEnabled: boolean;
-};
-
-type ShortcutPayload = {
-  action: string;
-  shortcut?: string;
-};
-
 const client = createClient<IpcRouterContract>({
   ipcInvoke: (channel, payload) => window.api.invoke(channel as IpcChannel, payload),
 });
@@ -62,6 +35,7 @@ export const ipc = {
   app: {
     info: () => client[IpcChannel.App_Info](undefined) as Promise<AppInfo>,
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
+    playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
@@ -83,8 +57,9 @@ export const ipc = {
     getFailedFiles: () => client[IpcChannel.Scraper_GetFailedFiles](undefined),
     requeue: (filePaths: string[]) => client[IpcChannel.Scraper_Requeue]({ filePaths }),
     retryFailed: (filePaths: string[]) => client[IpcChannel.Scraper_RetryFailed]({ filePaths }),
-    hasRecoverableSession: () => client[IpcChannel.Scraper_HasRecoverableSession](undefined),
-    recoverSession: () => client[IpcChannel.Scraper_RecoverSession](undefined),
+    getRecoverableSession: () => client[IpcChannel.Scraper_GetRecoverableSession](undefined),
+    resolveRecoverableSession: (action: "recover" | "discard") =>
+      client[IpcChannel.Scraper_ResolveRecoverableSession]({ action }),
     confirmUncensored: (items: UncensoredConfirmItem[]) =>
       client[IpcChannel.Scraper_ConfirmUncensored]({ items }) as Promise<UncensoredConfirmResponse>,
   },

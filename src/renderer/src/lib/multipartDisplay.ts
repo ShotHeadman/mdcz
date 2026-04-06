@@ -1,3 +1,8 @@
+import {
+  buildStandaloneGroupId,
+  deriveGroupingDirectoryFromPath as deriveSharedGroupingDirectoryFromPath,
+  tryBuildGroupedGroupId,
+} from "@shared/mediaIdentity";
 import type { FileInfo } from "@shared/types";
 
 export interface MultipartDisplaySelectors<T> {
@@ -14,36 +19,8 @@ export interface MultipartDisplayGroup<T> {
   items: T[];
 }
 
-const normalizeMultipartDirectory = (directory: string): string => directory.replace(/[/\\]+$/u, "");
-
-export const deriveMultipartDirectoryFromPath = (filePath: string): string | undefined => {
-  const normalizedPath = filePath.trim();
-  if (!normalizedPath) {
-    return undefined;
-  }
-
-  const slash = Math.max(normalizedPath.lastIndexOf("/"), normalizedPath.lastIndexOf("\\"));
-  if (slash < 0) {
-    return undefined;
-  }
-
-  if (slash === 0) {
-    return normalizedPath[0];
-  }
-
-  return normalizedPath.slice(0, slash);
-};
-
-const buildMultipartDisplayBucketKey = (input: { directory?: string; number: string }): string | undefined => {
-  const number = input.number.trim().toUpperCase();
-  const directory = input.directory?.trim();
-
-  if (!number || !directory) {
-    return undefined;
-  }
-
-  return `${normalizeMultipartDirectory(directory)}::${number}`;
-};
+export const deriveGroupingDirectoryFromPath = (filePath: string): string | undefined =>
+  deriveSharedGroupingDirectoryFromPath(filePath);
 
 const compareMultipartDisplayItems = <T>(left: T, right: T, selectors: MultipartDisplaySelectors<T>): number => {
   const leftPart = selectors.getPart(left)?.number ?? 0;
@@ -81,7 +58,7 @@ export const buildMultipartDisplayGroups = <T>(
   >();
 
   for (const [index, item] of items.entries()) {
-    const key = buildMultipartDisplayBucketKey({
+    const key = tryBuildGroupedGroupId({
       directory: selectors.getDirectory(item),
       number: selectors.getNumber(item),
     });
@@ -90,7 +67,7 @@ export const buildMultipartDisplayGroups = <T>(
       standaloneGroups.push({
         firstIndex: index,
         group: {
-          key: `standalone:${selectors.getItemKey(item)}`,
+          key: buildStandaloneGroupId(selectors.getItemKey(item)),
           representative: item,
           items: [item],
         },

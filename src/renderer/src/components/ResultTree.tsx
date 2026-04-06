@@ -1,7 +1,8 @@
-import { Copy, FileText, Trash2 } from "lucide-react";
+import { Copy, FileText, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeByUrl } from "@/api/manual";
+import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
 import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
 import { Button } from "@/components/ui/Button";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
@@ -13,6 +14,7 @@ import {
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 import { getDirFromPath } from "@/utils/path";
+import { playMediaPath } from "@/utils/playback";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
@@ -22,16 +24,18 @@ function getFileNameFromPath(filePath: string) {
 function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | null) {
   const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
   const result = actionContext.selectedItem;
-  const nfoPath = actionContext.nfoPath ?? result.path;
+  const resultPath = result.fileInfo.filePath;
+  const resultNumber = result.fileInfo.number;
+  const nfoPath = actionContext.nfoPath ?? resultPath;
   const groupedVideoPaths = actionContext.videoPaths;
 
   const handleCopyNumber = async () => {
-    if (!result.number) {
+    if (!resultNumber) {
       toast.error("Number is empty");
       return;
     }
     try {
-      await navigator.clipboard.writeText(result.number);
+      await navigator.clipboard.writeText(resultNumber);
       toast.success("Number copied");
     } catch {
       toast.error("Failed to copy number");
@@ -39,7 +43,7 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
   };
 
   const handleRescrapeByNumber = async () => {
-    const defaultNumber = result.number || "";
+    const defaultNumber = resultNumber || "";
     const number = window.prompt("输入番号重新刮削", defaultNumber)?.trim();
     if (!number) return;
     try {
@@ -65,8 +69,8 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
     if (
       !window.confirm(
         groupedVideoPaths.length > 1
-          ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${result.number}`
-          : `确定删除文件吗？\n${result.path}`,
+          ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${resultNumber}`
+          : `确定删除文件吗？\n${resultPath}`,
       )
     ) {
       return;
@@ -80,9 +84,9 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
   };
 
   const handleDeleteFolder = async () => {
-    if (!window.confirm(`确定删除文件和所在文件夹吗？\n${result.path}`)) return;
+    if (!window.confirm(`确定删除文件和所在文件夹吗？\n${resultPath}`)) return;
     try {
-      await deleteFileAndFolder(result.path);
+      await deleteFileAndFolder(resultPath);
       toast.success("Folder deleted");
     } catch {
       toast.error("Failed to delete folder");
@@ -91,19 +95,13 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
 
   const handleOpenFolder = () => {
     if (window.electron?.openPath) {
-      window.electron.openPath(getDirFromPath(result.path));
+      window.electron.openPath(getDirFromPath(resultPath));
     } else {
       toast.info("Open folder is only available in desktop mode");
     }
   };
 
-  const handlePlay = () => {
-    if (window.electron?.openPath) {
-      window.electron.openPath(result.path);
-    } else {
-      toast.info("Play is only available in desktop mode");
-    }
-  };
+  const handlePlay = () => void playMediaPath(resultPath, "Play is only available in desktop mode", "Play failed");
 
   const handleOpenNfo = () => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: nfoPath } }));
@@ -164,13 +162,15 @@ export function ResultTree() {
     () =>
       resultGroups.map((group) => ({
         id: group.id,
-        active: group.items.some((item) => item.id === selectedResultId),
-        title: group.display.number || "Unknown",
-        subtitle: group.display.title || getFileNameFromPath(group.display.path),
-        errorText: group.display.errorMessage,
-        status: group.display.status,
+        active: group.items.some((item) => item.fileId === selectedResultId),
+        title: group.display.fileInfo.number || "Unknown",
+        subtitle: getScrapeResultTitle(group.display) || getFileNameFromPath(group.display.fileInfo.filePath),
+        errorText: group.errorText ?? group.display.error,
+        status: group.status,
         onClick: () =>
-          setSelectedResultId(group.items.find((item) => item.id === selectedResultId)?.id ?? group.representative.id),
+          setSelectedResultId(
+            group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,
+          ),
         menuContent: buildMenuContent(group, selectedResultId),
       })),
     [resultGroups, selectedResultId, setSelectedResultId],
@@ -181,7 +181,12 @@ export function ResultTree() {
       items={items}
       filter={filter}
       onFilterChange={setFilter}
-      emptyMessage="暂无结果。启动刮削任务后，处理项将显示在此处。"
+      emptyContent={
+        <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
+          <Search className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
+          <span className="text-[13px] text-muted-foreground/40 tracking-wider">暂无结果</span>
+        </div>
+      }
       headerTrailing={
         resultGroups.length > 0 ? (
           <Button

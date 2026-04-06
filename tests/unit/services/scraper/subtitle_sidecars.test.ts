@@ -6,7 +6,7 @@ import {
   buildSubtitleSidecarTargetPath,
   findSubtitleSidecars,
   getPreferredSubtitleTagFromSidecars,
-} from "@main/services/scraper/subtitleSidecars";
+} from "@main/services/scraper/media";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs/promises", async () => {

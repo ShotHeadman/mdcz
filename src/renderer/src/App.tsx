@@ -1,19 +1,19 @@
 import "./index.css";
-import type { ScrapeResult as BackendScrapeResult } from "@shared/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { ipc } from "./client/ipc";
 import { BootFallback } from "./components/BootFallback";
 import { Toaster } from "./components/ui/Sonner";
 import { TooltipProvider } from "./components/ui/Tooltip";
 import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
-import { deriveMultipartDirectoryFromPath } from "./lib/multipartDisplay";
+import { useIpcSync } from "./hooks/useIpcSync";
+import { useStylesReady } from "./hooks/useStylesReady";
 import { routeTree } from "./routeTree.gen";
-import { createRuntimeLog, useLogStore } from "./store/logStore";
-import { useMaintenanceStore } from "./store/maintenanceStore";
-import { type ScrapeResult, useScrapeStore } from "./store/scrapeStore";
+import { useScrapeStore } from "./store/scrapeStore";
+import { useUIStore } from "./store/uiStore";
 
 const shouldUseHashHistory = typeof window !== "undefined" && window.location.protocol === "file:";
 
@@ -28,240 +28,51 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const formatDuration = (durationSeconds: number | undefined): string | undefined => {
-  if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return undefined;
-  }
-
-  const totalSeconds = Math.round(durationSeconds);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-};
-
-const formatBitrate = (bitrateBps: number | undefined): string | undefined => {
-  if (typeof bitrateBps !== "number" || !Number.isFinite(bitrateBps) || bitrateBps <= 0) {
-    return undefined;
-  }
-
-  return `${(bitrateBps / 1_000_000).toFixed(1)} Mbps`;
-};
-
-const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
-  const data = payload.crawlerData;
-  const assets = payload.assets;
-  const remotePoster = data?.poster_url;
-  const remoteThumb = data?.thumb_url ?? data?.fanart_url;
-  const remoteFanart = data?.fanart_url ?? data?.thumb_url;
-  const multipartDirectory = payload.outputPath ?? deriveMultipartDirectoryFromPath(payload.fileInfo.filePath);
-
-  return {
-    id: crypto.randomUUID(),
-    status: payload.status === "failed" ? "failed" : "success",
-    number: payload.fileInfo.number,
-    path: payload.fileInfo.filePath,
-    title: data?.title_zh ?? data?.title,
-    actors: data?.actors,
-    outline: data?.plot_zh ?? data?.plot,
-    tags: data?.genres,
-    release: data?.release_date,
-    duration: formatDuration(payload.videoMeta?.durationSeconds ?? data?.durationSeconds),
-    resolution:
-      payload.videoMeta && payload.videoMeta.width > 0 && payload.videoMeta.height > 0
-        ? `${payload.videoMeta.width}x${payload.videoMeta.height}`
-        : undefined,
-    codec: payload.videoMeta?.codec,
-    bitrate: formatBitrate(payload.videoMeta?.bitrate),
-    directors: data?.director ? [data.director] : undefined,
-    series: data?.series,
-    studio: data?.studio,
-    publisher: data?.publisher,
-    score: typeof data?.rating === "number" ? String(data.rating) : undefined,
-    posterUrl: assets?.poster ?? remotePoster,
-    thumbUrl: assets?.thumb ?? assets?.fanart ?? remoteThumb,
-    fanartUrl: assets?.fanart ?? assets?.thumb ?? remoteFanart,
-    outputPath: payload.outputPath,
-    sceneImages: assets?.sceneImages,
-    sources: payload.sources as Record<string, string> | undefined,
-    errorMessage: payload.error,
-    uncensoredAmbiguous: payload.uncensoredAmbiguous,
-    nfoPath: payload.nfoPath,
-    multipartDirectory,
-    multipartPart: payload.fileInfo.part,
-  };
-};
-
 const App = () => {
   const queryClient = useMemo(() => new QueryClient(), []);
-  const [runtimeReady, setRuntimeReady] = useState(false);
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
-  const [stylesReady, setStylesReady] = useState(false);
+  const { runtimeReady, runtimeError } = useIpcSync();
+  const stylesReady = useStylesReady();
+  const recoveryCheckedRef = useRef(false);
 
   useEffect(() => {
-    let disposed = false;
-    let interval: number | undefined;
-    const logStore = useLogStore.getState();
-    const scrapeStore = useScrapeStore.getState();
-    const maintenanceStore = useMaintenanceStore.getState();
-    const unsubscribers: Array<() => void> = [];
+    if (!runtimeReady || recoveryCheckedRef.current) {
+      return;
+    }
 
-    const bootstrap = async () => {
-      if (!window.api) {
-        setRuntimeError("IPC bridge is unavailable. Please restart MDCz.");
-        setRuntimeReady(true);
-        return;
-      }
+    recoveryCheckedRef.current = true;
+    if (useScrapeStore.getState().scrapeStatus !== "idle") {
+      return;
+    }
 
-      const applyStatusSnapshot = (status: Awaited<ReturnType<typeof ipc.scraper.getStatus>>) => {
-        const activeState = status.state ?? (status.running ? "running" : "idle");
-        const active = activeState !== "idle";
-        const pending = Math.max(status.totalFiles - status.completedFiles, 0);
-        const shouldSyncProgressFromStatus = activeState === "idle" || activeState === "paused";
-
-        scrapeStore.setScraping(active);
-        scrapeStore.setScrapeStatus(activeState);
-        if (shouldSyncProgressFromStatus) {
-          scrapeStore.updateProgress(status.completedFiles, status.totalFiles);
-        }
-        scrapeStore.setFailedCount(status.failedCount);
-        scrapeStore.setStatusText(
-          `${activeState === "paused" ? "已暂停 | " : activeState === "stopping" ? "正在停止 | " : ""}待处理: ${pending} | 成功: ${status.successCount} | 失败: ${status.failedCount} | 跳过: ${status.skippedCount}`,
-        );
-      };
-
-      const syncStatusNow = async () => {
-        const [scrapeStatus, maintenanceStatus] = await Promise.all([
-          ipc.scraper.getStatus(),
-          ipc.maintenance.getStatus(),
-        ]);
-        applyStatusSnapshot(scrapeStatus);
-        maintenanceStore.applyStatusSnapshot(maintenanceStatus);
-      };
-
+    void (async () => {
       try {
-        unsubscribers.push(
-          ipc.on.log((payload) => {
-            logStore.addLog(createRuntimeLog(payload.level ?? "info", payload.text, payload.timestamp));
-          }),
+        const { recoverable, pendingCount, failedCount } = await ipc.scraper.getRecoverableSession();
+        if (!recoverable) {
+          return;
+        }
+
+        const shouldRecover = window.confirm(
+          `检测到上次未完成的刮削任务。\n待处理 ${pendingCount} 个，失败 ${failedCount} 个。\n选择“确定”恢复任务，选择“取消”放弃上次任务。`,
         );
+        useScrapeStore.getState().reset();
+        useUIStore.getState().setSelectedResultId(null);
 
-        unsubscribers.push(
-          ipc.on.scrapeInfo((payload) => {
-            scrapeStore.setCurrentFilePath(payload.fileInfo.filePath);
-          }),
-        );
+        if (!shouldRecover) {
+          const result = await ipc.scraper.resolveRecoverableSession("discard");
+          toast.info(result.message);
+          return;
+        }
 
-        unsubscribers.push(
-          ipc.on.maintenanceItemResult((payload) => {
-            maintenanceStore.applyItemResult(payload);
-            void syncStatusNow();
-          }),
-        );
-
-        unsubscribers.push(
-          ipc.on.scrapeResult((payload) => {
-            if (payload.status === "processing" || payload.status === "pending" || payload.status === "skipped") {
-              return;
-            }
-            scrapeStore.addResult(normalizeResultItem(payload));
-            void syncStatusNow();
-          }),
-        );
-
-        unsubscribers.push(
-          ipc.on.failedInfo(() => {
-            void syncStatusNow();
-          }),
-        );
-
-        unsubscribers.push(
-          ipc.on.progress((payload) => {
-            const latestMaintenanceState = useMaintenanceStore.getState();
-            if (
-              latestMaintenanceState.executionStatus === "executing" ||
-              latestMaintenanceState.executionStatus === "stopping"
-            ) {
-              latestMaintenanceState.setProgress(payload.value, payload.current, payload.total);
-              return;
-            }
-
-            scrapeStore.updateProgress(payload.value, 100);
-          }),
-        );
-
-        unsubscribers.push(
-          ipc.on.buttonStatus((payload) => {
-            const isRunning = !payload.startEnabled && payload.stopEnabled;
-            const isStopping = !payload.startEnabled && !payload.stopEnabled;
-            const active = isRunning || isStopping;
-
-            scrapeStore.setScraping(active);
-            scrapeStore.setScrapeStatus(isRunning ? "running" : isStopping ? "stopping" : "idle");
-            void syncStatusNow();
-          }),
-        );
+        const result = await ipc.scraper.resolveRecoverableSession("recover");
+        useScrapeStore.getState().setScraping(true);
+        useScrapeStore.getState().setScrapeStatus("running");
+        toast.success(result.message);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        setRuntimeError(`Failed to initialize IPC subscriptions: ${message}`);
-        setRuntimeReady(true);
-        return;
+        toast.error(`处理恢复任务失败: ${message}`);
       }
-
-      const poll = async () => {
-        try {
-          await syncStatusNow();
-        } catch (error) {
-          void error;
-        }
-      };
-
-      await poll();
-      interval = window.setInterval(() => {
-        void poll();
-      }, 1200);
-
-      if (!disposed) {
-        setRuntimeReady(true);
-      }
-    };
-
-    void bootstrap();
-
-    return () => {
-      disposed = true;
-      if (interval !== undefined) {
-        window.clearInterval(interval);
-      }
-      for (const unsubscribe of unsubscribers) {
-        unsubscribe();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const start = performance.now();
-
-    const checkStyles = () => {
-      if (cancelled) {
-        return;
-      }
-      const now = performance.now();
-      const computed = getComputedStyle(document.documentElement);
-      const hasStyles = computed.getPropertyValue("--card").trim().length > 0;
-      if (hasStyles || now - start >= 2500) {
-        setStylesReady(true);
-        return;
-      }
-      requestAnimationFrame(checkStyles);
-    };
-
-    checkStyles();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    })();
+  }, [runtimeReady]);
 
   if (runtimeError) {
     return <BootFallback message={runtimeError} />;

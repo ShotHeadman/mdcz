@@ -1,12 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { pauseScrape, resumeScrape, startBatchScrape, stopScrape } from "@/api/manual";
-import { getCurrentConfig } from "@/client/api";
-import type { ConfigOutput } from "@/client/types";
+import { chooseMediaDirectory, isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
 import MaintenanceBatchBar from "@/components/maintenance/MaintenanceBatchBar";
 import { ScrapeFailureDialog } from "@/components/maintenance/ScrapeFailureDialog";
 import { PageHeader } from "@/components/PageHeader";
@@ -15,8 +14,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { TabButton } from "@/components/ui/TabButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
+import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { buildAmbiguousUncensoredScrapeGroups } from "@/lib/scrapeResultGrouping";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -44,16 +44,19 @@ function DisabledModeButton({ label, tooltip, active }: { label: string; tooltip
   );
 }
 
+const asMessage = (error: unknown) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return String(error);
+};
+
 function Index() {
+  const queryClient = useQueryClient();
   const [failDialogOpen, setFailDialogOpen] = useState(false);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const configQ = useQuery({
-    queryKey: ["config", "current"],
-    queryFn: async () => {
-      const response = await getCurrentConfig({ throwOnError: true });
-      return response.data as ConfigOutput;
-    },
-  });
+  const configQ = useCurrentConfig();
 
   const {
     isScraping,
@@ -78,7 +81,7 @@ function Index() {
       clearResults: state.clearResults,
     })),
   );
-  const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
+  const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
   const { workbenchMode, setWorkbenchMode, setSelectedResultId } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,
@@ -89,6 +92,7 @@ function Index() {
 
   const maintenanceBusy = maintenanceStatus !== "idle";
   const ambiguousItems = useMemo(() => buildAmbiguousUncensoredScrapeGroups(results), [results]);
+  const mediaPath = configQ.data?.paths?.mediaPath?.trim() ?? "";
 
   // Detect scrape completion and check for ambiguous uncensored items
   const prevScrapeStatusRef = useRef(scrapeStatus);
@@ -101,6 +105,23 @@ function Index() {
     }
   }, [ambiguousItems, scrapeStatus]);
 
+  const refreshCurrentConfig = async () => {
+    await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
+  };
+
+  const handleChooseMediaDirectory = async () => {
+    try {
+      await chooseMediaDirectory(configQ.data);
+      await refreshCurrentConfig();
+      toast.success("媒体目录已更新");
+    } catch (error) {
+      if (isMediaDirectorySelectionCancelled(error)) {
+        return;
+      }
+      toast.error(`目录设置失败: ${asMessage(error)}`);
+    }
+  };
+
   const handleStartScrape = async () => {
     if (maintenanceBusy) {
       toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
@@ -108,15 +129,26 @@ function Index() {
     }
 
     try {
+      updateProgress(0, 0);
       clearResults();
       setSelectedResultId(null);
-      updateProgress(0, 0);
+      const response = await startBatchScrape();
       setScraping(true);
-      await startBatchScrape();
-      toast.success("刮削任务已启动");
-    } catch (_error) {
-      toast.error("启动失败");
-      setScraping(false);
+      await refreshCurrentConfig();
+      toast.success(response.data.message);
+    } catch (error) {
+      const errorMessage = asMessage(error);
+
+      if (isMediaDirectorySelectionCancelled(error)) {
+        return;
+      }
+
+      if (errorMessage.includes("NO_FILES")) {
+        toast.info("当前目录中没有需要刮削的媒体文件");
+        return;
+      }
+
+      toast.error(`启动失败: ${errorMessage}`);
     }
   };
 
@@ -191,7 +223,7 @@ function Index() {
         </Button>
       </>
     ) : (
-      <MaintenanceBatchBar mediaPath={configQ.data?.paths?.mediaPath} />
+      <MaintenanceBatchBar mediaPath={mediaPath} />
     );
 
   return (
@@ -200,12 +232,10 @@ function Index() {
         title="工作台"
         icon={LayoutDashboard}
         subtitle={
-          configQ.data?.paths?.mediaPath ? (
+          mediaPath ? (
             <span className="flex items-baseline gap-1">
               当前目录:
-              <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
-                {configQ.data.paths.mediaPath}
-              </code>
+              <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{mediaPath}</code>
             </span>
           ) : (
             "尚未配置媒体目录"
@@ -273,7 +303,15 @@ function Index() {
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">加载中...</div>
           }
         >
-          {workbenchMode === "scrape" ? <ScrapeWorkbench /> : <MaintenanceWorkbench />}
+          {workbenchMode === "scrape" ? (
+            <ScrapeWorkbench
+              mediaPath={mediaPath}
+              onChooseMediaDirectory={handleChooseMediaDirectory}
+              onStartScrape={handleStartScrape}
+            />
+          ) : (
+            <MaintenanceWorkbench />
+          )}
         </Suspense>
       </div>
 

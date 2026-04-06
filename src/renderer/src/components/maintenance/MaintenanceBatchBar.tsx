@@ -16,13 +16,19 @@ import {
 } from "@/components/ui/Dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { buildMaintenanceCommitItem } from "@/lib/maintenance";
-import {
-  buildMaintenanceEntryGroups,
-  countMaintenanceDisplayItems,
-  summarizeMaintenancePreviewGroups,
-} from "@/lib/maintenanceGrouping";
+import { buildMaintenanceEntryViewModel, countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
 import { cn } from "@/lib/utils";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import {
+  applyMaintenancePreviewResult,
+  applyMaintenanceScanResult,
+  beginMaintenanceExecution,
+  beginMaintenancePreviewRequest,
+  changeMaintenancePreset,
+  setMaintenancePreviewPending,
+} from "@/store/maintenanceSession";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 interface MaintenanceBatchBarProps {
@@ -48,75 +54,38 @@ const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 };
 
-const isPreviewGroupReady = (
-  group: ReturnType<typeof buildMaintenanceEntryGroups>[number],
-  previewResults: Record<string, MaintenancePreviewItem>,
-): boolean => {
-  const previews = group.items.flatMap((entry) => {
-    const preview = previewResults[entry.id];
-    return preview ? [preview] : [];
-  });
-
-  return previews.length === group.items.length && previews.every((preview) => preview.status === "ready");
-};
-
-const buildExecutableEntries = (
-  entries: Parameters<typeof buildMaintenanceEntryGroups>[0],
-  previewResults: Record<string, MaintenancePreviewItem>,
-) =>
-  buildMaintenanceEntryGroups(entries).flatMap((group) =>
-    isPreviewGroupReady(group, previewResults) ? group.items : [],
-  );
-
 export default function MaintenanceBatchBar({ mediaPath, className }: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
-  const {
-    entries,
-    selectedIds,
-    presetId,
-    setPresetId,
-    executionStatus,
-    lastScannedDir,
-    currentPath,
-    executeDialogOpen,
-    previewPending,
-    previewResults,
-    itemResults,
-    setEntries,
-    setExecutionStatus,
-    setCurrentPath,
-    setStatusText,
-    setExecuteDialogOpen,
-    setPreviewPending,
-    applyPreviewResult,
-    clearPreviewResults,
-    beginExecution,
-    rollbackExecutionStart,
-  } = useMaintenanceStore(
+  const { entries, selectedIds, presetId, lastScannedDir, currentPath, setCurrentPath } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
       presetId: state.presetId,
-      setPresetId: state.setPresetId,
-      executionStatus: state.executionStatus,
       lastScannedDir: state.lastScannedDir,
       currentPath: state.currentPath,
-      executeDialogOpen: state.executeDialogOpen,
-      previewPending: state.previewPending,
-      previewResults: state.previewResults,
-      itemResults: state.itemResults,
-      setEntries: state.setEntries,
-      setExecutionStatus: state.setExecutionStatus,
       setCurrentPath: state.setCurrentPath,
-      setStatusText: state.setStatusText,
-      setExecuteDialogOpen: state.setExecuteDialogOpen,
-      setPreviewPending: state.setPreviewPending,
-      applyPreviewResult: state.applyPreviewResult,
-      clearPreviewResults: state.clearPreviewResults,
-      beginExecution: state.beginExecution,
-      rollbackExecutionStart: state.rollbackExecutionStart,
     })),
   );
+  const { executionStatus, itemResults, setExecutionStatus, setStatusText, rollbackExecutionStart } =
+    useMaintenanceExecutionStore(
+      useShallow((state) => ({
+        executionStatus: state.executionStatus,
+        itemResults: state.itemResults,
+        setExecutionStatus: state.setExecutionStatus,
+        setStatusText: state.setStatusText,
+        rollbackExecutionStart: state.rollbackExecutionStart,
+      })),
+    );
+  const { previewPending, previewResults, fieldSelections, executeDialogOpen, setExecuteDialogOpen } =
+    useMaintenancePreviewStore(
+      useShallow((state) => ({
+        previewPending: state.previewPending,
+        previewResults: state.previewResults,
+        fieldSelections: state.fieldSelections,
+        executeDialogOpen: state.executeDialogOpen,
+        setExecuteDialogOpen: state.setExecuteDialogOpen,
+      })),
+    );
 
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
 
@@ -127,25 +96,21 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const scanning = executionStatus === "scanning";
   const hasPreviewResults = Object.keys(previewResults).length > 0;
   const selectedEntries = useMemo(
-    () => entries.filter((entry) => selectedIds.includes(entry.id)),
+    () => entries.filter((entry) => selectedIds.includes(entry.fileId)),
     [entries, selectedIds],
   );
-  const groupedSelectedEntries = useMemo(
-    () => buildMaintenanceEntryGroups(selectedEntries, { itemResults, previewResults }),
-    [itemResults, previewResults, selectedEntries],
-  );
-  const entriesCount = useMemo(
-    () => countMaintenanceDisplayItems(entries, { itemResults, previewResults }),
+  const allEntriesViewModel = useMemo(
+    () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }),
     [entries, itemResults, previewResults],
   );
-  const selectedCount = useMemo(
-    () => countMaintenanceDisplayItems(selectedEntries, { itemResults, previewResults }),
+  const selectedEntriesViewModel = useMemo(
+    () => buildMaintenanceEntryViewModel(selectedEntries, { itemResults, previewResults }),
     [itemResults, previewResults, selectedEntries],
   );
-  const previewSummary = useMemo(
-    () => summarizeMaintenancePreviewGroups(selectedEntries, previewResults),
-    [selectedEntries, previewResults],
-  );
+  const groupedSelectedEntries = selectedEntriesViewModel.groups;
+  const entriesCount = allEntriesViewModel.displayCount;
+  const selectedCount = selectedEntriesViewModel.displayCount;
+  const previewSummary = selectedEntriesViewModel.previewSummary;
   const previewActionLabel = previewPending
     ? "正在预览..."
     : usesDiffView
@@ -177,13 +142,17 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
+    setExecuteDialogOpen(false);
     setExecutionStatus("scanning");
     setCurrentPath(dirPath);
     setStatusText("正在扫描目录...");
 
     try {
       const result = await ipc.maintenance.scan(dirPath);
-      setEntries(result.entries, dirPath);
+      applyMaintenanceScanResult(result.entries, dirPath);
+      if (result.entries.length === 0) {
+        setStatusText("未发现可维护项目");
+      }
       toast.success(`扫描完成，共发现 ${countMaintenanceDisplayItems(result.entries)} 个项目`);
     } catch (error) {
       setExecutionStatus("idle");
@@ -208,19 +177,18 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return false;
     }
 
-    clearPreviewResults();
-    setPreviewPending(true);
+    beginMaintenancePreviewRequest();
     setStatusText(`正在预览 ${countMaintenanceDisplayItems(selectedEntries)} 项...`);
     const requestedPresetId = presetId;
     const requestedEntries = selectedEntries;
 
     try {
       const preview = await ipc.maintenance.preview(selectedEntries, presetId);
-      const liveState = useMaintenanceStore.getState();
+      const liveState = useMaintenanceEntryStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
-          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id)),
+          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.fileId)),
           requestedEntries,
         );
 
@@ -228,24 +196,26 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
         return null;
       }
 
-      applyPreviewResult(preview);
-      const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
-      const previewSummary = summarizeMaintenancePreviewGroups(requestedEntries, previewMap);
-      setStatusText(formatPreviewStatusText(previewSummary.readyCount, previewSummary.blockedCount));
+      applyMaintenancePreviewResult(preview);
+      const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
+      const nextPreviewSummary = buildMaintenanceEntryViewModel(requestedEntries, {
+        previewResults: previewMap,
+      }).previewSummary;
+      setStatusText(formatPreviewStatusText(nextPreviewSummary.readyCount, nextPreviewSummary.blockedCount));
       if (usesDiffView) {
         toast.info(
-          previewSummary.readyCount > 0
+          nextPreviewSummary.readyCount > 0
             ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
             : "预览完成，请在右侧数据对比中查看阻塞项。",
         );
       }
       return preview;
     } catch (error) {
-      const liveState = useMaintenanceStore.getState();
+      const liveState = useMaintenanceEntryStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
-          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id)),
+          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.fileId)),
           requestedEntries,
         );
 
@@ -253,9 +223,8 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
         return null;
       }
 
-      setPreviewPending(false);
+      setMaintenancePreviewPending(false);
       setStatusText("预览失败");
-      clearPreviewResults();
       toast.error(`预览失败: ${asMessage(error)}`);
       return null;
     }
@@ -272,13 +241,17 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
-    const liveState = useMaintenanceStore.getState();
-    const effectivePreviewResults = previewMapOverride ?? liveState.previewResults;
-    const effectiveFieldSelections = liveState.fieldSelections;
-    const latestSelectedEntries = liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id));
-    const executableEntries = buildExecutableEntries(latestSelectedEntries, effectivePreviewResults);
+    const liveEntryState = useMaintenanceEntryStore.getState();
+    const effectivePreviewResults = previewMapOverride ?? previewResults;
+    const latestSelectedEntries = liveEntryState.entries.filter((entry) =>
+      liveEntryState.selectedIds.includes(entry.fileId),
+    );
+    const executionViewModel = buildMaintenanceEntryViewModel(latestSelectedEntries, {
+      previewResults: effectivePreviewResults,
+    });
+    const executableEntries = executionViewModel.executableEntries;
     const commitItems = executableEntries.map((entry) =>
-      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.id], effectiveFieldSelections[entry.id]),
+      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.fileId], fieldSelections[entry.fileId]),
     );
 
     if (commitItems.length === 0) {
@@ -286,13 +259,17 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
-    beginExecution(commitItems.map((item) => item.entry.id));
-    setCurrentPath(commitItems[0]?.entry.videoPath ?? currentPath);
-    setStatusText(`正在执行 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项...`);
+    const displayCount = buildMaintenanceEntryViewModel(executableEntries).displayCount;
+    beginMaintenanceExecution(
+      commitItems.map((item) => item.entry.fileId),
+      displayCount,
+    );
+    setCurrentPath(commitItems[0]?.entry.fileInfo.filePath ?? currentPath);
+    setStatusText(`正在执行 ${displayCount} 项...`);
 
     try {
       await ipc.maintenance.execute(commitItems, presetId);
-      toast.success(`维护任务已启动，共 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项`);
+      toast.success(`维护任务已启动，共 ${displayCount} 项`);
     } catch (error) {
       rollbackExecutionStart();
       setStatusText("启动失败");
@@ -319,7 +296,9 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <span className="text-xs font-medium text-muted-foreground">预设</span>
             <Select
               value={presetId}
-              onValueChange={(value) => setPresetId(value as typeof presetId)}
+              onValueChange={(value) => {
+                changeMaintenancePreset(value as typeof presetId);
+              }}
               disabled={executing}
             >
               <SelectTrigger className="border-0 bg-transparent px-0 shadow-none focus:ring-0">
@@ -347,7 +326,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <Button
               variant="outline"
               onClick={handleScan}
-              disabled={isScraping || scanning}
+              disabled={isScraping || scanning || previewPending}
               className="h-9 rounded-lg px-4"
             >
               <RefreshCw className={cn("mr-2 h-4 w-4", scanning && "animate-spin")} />
@@ -358,7 +337,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                 onClick={async () => {
                   const preview = await handlePreview();
                   if (preview && !usesDiffView) {
-                    const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
+                    const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
                     void handleExecute(previewMap);
                   }
                 }}
@@ -377,7 +356,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <Button
                 variant="secondary"
                 onClick={() => setExecuteDialogOpen(true)}
-                disabled={previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
+                disabled={scanning || previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
                 className="h-9 rounded-lg px-4"
               >
                 数据替换
@@ -431,18 +410,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
               <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
                 {groupedSelectedEntries.map((group) => {
-                  const previews = group.items.flatMap((entry) => {
-                    const preview = previewResults[entry.id];
-                    return preview ? [preview] : [];
-                  });
-                  const blockedPreview = previews.find((preview) => preview.status === "blocked");
-                  const ready = isPreviewGroupReady(group, previewResults);
-                  const diffCount = Math.max(0, ...previews.map((preview) => preview.fieldDiffs?.length ?? 0));
-                  const changedPathItems = group.items.flatMap((entry) => {
-                    const preview = previewResults[entry.id];
-                    return preview?.pathDiff?.changed ? [{ entry, pathDiff: preview.pathDiff }] : [];
-                  });
-                  const hasPathChange = changedPathItems.length > 0;
+                  const { blockedPreview, changedPathItems, diffCount, hasPathChange, ready } = group.previewState;
 
                   return (
                     <div key={group.id} className="min-w-0 rounded-lg border bg-muted/20 px-3 py-2">
@@ -480,7 +448,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                           {hasPathChange && (
                             <div className="mt-3 space-y-2">
                               {changedPathItems.map(({ entry, pathDiff }) => (
-                                <div key={entry.id} className="rounded-md border bg-background/50 p-2">
+                                <div key={entry.fileId} className="rounded-md border bg-background/50 p-2">
                                   <div className="mb-2 text-[11px] font-medium text-muted-foreground">
                                     {entry.fileInfo.fileName}
                                   </div>

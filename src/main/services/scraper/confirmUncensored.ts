@@ -7,7 +7,6 @@ import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
 import type {
-  DownloadedAssets,
   FileInfo,
   LocalScanEntry,
   NfoLocalState,
@@ -19,11 +18,6 @@ import type {
 const logger = loggerService.getLogger("ConfirmUncensored");
 const localScanService = new LocalScanService();
 const artifactResolver = new MaintenanceArtifactResolver();
-
-const EMPTY_DOWNLOADED_ASSETS = (): DownloadedAssets => ({
-  sceneImages: [],
-  downloaded: [],
-});
 
 interface PreparedUncensoredConfirmItem {
   item: UncensoredConfirmItem;
@@ -198,12 +192,12 @@ export const confirmUncensoredItems = async (
           },
           plan: processed.plan,
           outputVideoPath: processed.outputVideoPath,
-          assets: EMPTY_DOWNLOADED_ASSETS(),
           savedNfoPath,
         });
 
         updatedCount += 1;
         updatedItems.push({
+          fileId: processed.item.fileId,
           sourceVideoPath: processed.item.videoPath,
           sourceNfoPath: processed.effectiveNfoPath,
           targetVideoPath: processed.outputVideoPath,

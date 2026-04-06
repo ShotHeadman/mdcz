@@ -141,4 +141,39 @@ describe("ConfigManager configDirectory", () => {
     expect(profiles.profiles).toContain("windows-dev");
     expect(await fileExists(futureProfilePath)).toBe(true);
   });
+
+  it("retries ensureLoaded after an initial load failure", async () => {
+    let failOnce = true;
+    const expectedDataDir = join(mockUserDataPath, "config");
+
+    vi.doMock("node:fs/promises", async () => {
+      const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+
+      return {
+        ...actual,
+        mkdir: vi.fn(async (...args: Parameters<typeof actual.mkdir>) => {
+          if (failOnce && args[0] === expectedDataDir) {
+            failOnce = false;
+            throw new Error("Injected config load failure");
+          }
+
+          return actual.mkdir(...args);
+        }),
+      };
+    });
+
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+
+    await expect(manager.ensureLoaded()).rejects.toThrow("Injected config load failure");
+    await expect(manager.ensureLoaded()).resolves.toBeUndefined();
+    await expect(manager.get()).resolves.toMatchObject({
+      paths: {
+        configDirectory: "config",
+      },
+    });
+
+    vi.doUnmock("node:fs/promises");
+  });
 });

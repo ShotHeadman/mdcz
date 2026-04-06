@@ -237,11 +237,7 @@ const tryAutoPromoteCandidate = async (record: MappingCandidateRecord, occurrenc
 
   const current = await lookupMappedValue(record.keyword, record.category, record.target);
 
-  if (current === record.mapped) {
-    return;
-  }
-
-  if (current && current !== record.mapped) {
+  if (current) {
     return;
   }
 

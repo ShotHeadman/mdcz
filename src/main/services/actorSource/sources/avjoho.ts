@@ -50,6 +50,12 @@ interface AvjohoRequestContext {
   cookieResolver?: CookieResolver;
 }
 
+interface ChallengeRetryResult {
+  html: string;
+  warnings: string[];
+  resolved: boolean;
+}
+
 const parseActorTitle = (value: string): ParsedActorTitle => {
   const displayName = normalizeText(value);
   const matched = displayName.match(/^(.*?)[(（]([^()（）]+)[)）]$/u);
@@ -94,6 +100,90 @@ const isChallengePage = (html: string): boolean => {
   );
 };
 
+const handleChallengeWithSession = async (
+  context: AvjohoRequestContext,
+  url: string,
+  requestHeaders: Record<string, string>,
+  warnings: string[],
+): Promise<ChallengeRetryResult> => {
+  const nextWarnings = [...warnings, `AVJOHO retrying request with session cookies for ${url}`];
+  const sessionRetriedHtml = await context.session.getText(url, {
+    headers: requestHeaders,
+  });
+
+  if (!isChallengePage(sessionRetriedHtml)) {
+    nextWarnings.push(`AVJOHO resolved browser challenge via session retry for ${url}`);
+    return {
+      html: sessionRetriedHtml,
+      warnings: nextWarnings,
+      resolved: true,
+    };
+  }
+
+  nextWarnings.push(`AVJOHO browser challenge persisted after session retry for ${url}`);
+  return {
+    html: sessionRetriedHtml,
+    warnings: nextWarnings,
+    resolved: false,
+  };
+};
+
+const handleChallengeWithCookieResolver = async (
+  context: AvjohoRequestContext,
+  url: string,
+  requestHeaders: Record<string, string>,
+  challengeHtml: string,
+  warnings: string[],
+): Promise<HtmlLoadResult> => {
+  if (!context.cookieResolver) {
+    return {
+      html: challengeHtml,
+      warnings: [...warnings, `AVJOHO cookie resolver is unavailable for ${url}`],
+      challengeTriggered: true,
+    };
+  }
+
+  const nextWarnings = [...warnings, `AVJOHO resolving browser challenge cookies for ${url}`];
+
+  try {
+    const cookies = await context.cookieResolver(url);
+    if (cookies.length === 0) {
+      nextWarnings.push(`AVJOHO cookie resolver returned no cookies for ${url}`);
+      return {
+        html: challengeHtml,
+        warnings: nextWarnings,
+        challengeTriggered: true,
+      };
+    }
+
+    context.cookieJar.setResolvedCookies(cookies, url);
+    const retriedHtml = await context.session.getText(url, {
+      headers: requestHeaders,
+    });
+    if (isChallengePage(retriedHtml)) {
+      nextWarnings.push(`AVJOHO browser challenge persisted after retry for ${url}`);
+      return {
+        html: retriedHtml,
+        warnings: nextWarnings,
+        challengeTriggered: true,
+      };
+    }
+
+    nextWarnings.push(`AVJOHO resolved browser challenge and retried successfully for ${url}`);
+    return {
+      html: retriedHtml,
+      warnings: nextWarnings,
+    };
+  } catch (error) {
+    nextWarnings.push(`AVJOHO failed to resolve browser challenge for ${url}: ${toErrorMessage(error)}`);
+    return {
+      html: challengeHtml,
+      warnings: nextWarnings,
+      challengeTriggered: true,
+    };
+  }
+};
+
 const getHtml = async (
   context: AvjohoRequestContext,
   url: string,
@@ -114,69 +204,17 @@ const getHtml = async (
     };
   }
 
-  const warnings = [`AVJOHO browser challenge detected for ${url}`];
-  warnings.push(`AVJOHO retrying request with session cookies for ${url}`);
-
-  const sessionRetriedHtml = await context.session.getText(url, {
-    headers: requestHeaders,
-  });
-  if (!isChallengePage(sessionRetriedHtml)) {
-    warnings.push(`AVJOHO resolved browser challenge via session retry for ${url}`);
+  const sessionRetry = await handleChallengeWithSession(context, url, requestHeaders, [
+    `AVJOHO browser challenge detected for ${url}`,
+  ]);
+  if (sessionRetry.resolved) {
     return {
-      html: sessionRetriedHtml,
-      warnings,
+      html: sessionRetry.html,
+      warnings: sessionRetry.warnings,
     };
   }
 
-  warnings.push(`AVJOHO browser challenge persisted after session retry for ${url}`);
-  if (!context.cookieResolver) {
-    warnings.push(`AVJOHO cookie resolver is unavailable for ${url}`);
-    return {
-      html: sessionRetriedHtml,
-      warnings,
-      challengeTriggered: true,
-    };
-  }
-
-  warnings.push(`AVJOHO resolving browser challenge cookies for ${url}`);
-
-  try {
-    const cookies = await context.cookieResolver(url);
-    if (cookies.length === 0) {
-      warnings.push(`AVJOHO cookie resolver returned no cookies for ${url}`);
-      return {
-        html: sessionRetriedHtml,
-        warnings,
-        challengeTriggered: true,
-      };
-    }
-
-    context.cookieJar.setResolvedCookies(cookies, url);
-    const retriedHtml = await context.session.getText(url, {
-      headers: requestHeaders,
-    });
-    if (isChallengePage(retriedHtml)) {
-      warnings.push(`AVJOHO browser challenge persisted after retry for ${url}`);
-      return {
-        html: retriedHtml,
-        warnings,
-        challengeTriggered: true,
-      };
-    }
-
-    warnings.push(`AVJOHO resolved browser challenge and retried successfully for ${url}`);
-    return {
-      html: retriedHtml,
-      warnings,
-    };
-  } catch (error) {
-    warnings.push(`AVJOHO failed to resolve browser challenge for ${url}: ${toErrorMessage(error)}`);
-    return {
-      html: sessionRetriedHtml,
-      warnings,
-      challengeTriggered: true,
-    };
-  }
+  return handleChallengeWithCookieResolver(context, url, requestHeaders, sessionRetry.html, sessionRetry.warnings);
 };
 
 const readProfileFields = (html: string): Map<string, string> => {

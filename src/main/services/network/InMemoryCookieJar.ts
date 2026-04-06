@@ -1,5 +1,5 @@
 import type { ResolvedCookie } from "./CookieResolver";
-import { cookieDomainMatches, cookiePathMatches, normalizeCookieDomain, normalizeCookiePath } from "./cookieUtils";
+import { filterCookiesForUrl, normalizeCookieDomain, resolveCookieAttributePath } from "./cookieUtils";
 import type { NetworkCookieJar } from "./NetworkClient";
 
 interface ParsedSetCookie extends ResolvedCookie {
@@ -68,7 +68,7 @@ const parseSetCookie = (cookieHeader: string, url: string): ParsedSetCookie | nu
     name,
     value,
     domain: normalizeCookieDomain(domain),
-    path: normalizeCookiePath(path, "/"),
+    path: resolveCookieAttributePath(path, defaultCookiePath(targetUrl.pathname)),
     expired,
   };
 };
@@ -78,11 +78,8 @@ export class InMemoryCookieJar implements NetworkCookieJar {
 
   getCookieString(url: string): string {
     const targetUrl = new URL(url);
-    const host = targetUrl.hostname.toLowerCase();
-    const requestPath = normalizeCookiePath(targetUrl.pathname, "/");
 
-    return Array.from(this.store.values())
-      .filter((cookie) => cookieDomainMatches(host, cookie.domain) && cookiePathMatches(requestPath, cookie.path))
+    return filterCookiesForUrl(Array.from(this.store.values()), targetUrl)
       .map((cookie) => `${cookie.name}=${cookie.value}`)
       .join("; ");
   }
@@ -111,7 +108,7 @@ export class InMemoryCookieJar implements NetworkCookieJar {
         name: cookie.name.trim(),
         value: cookie.value,
         domain: normalizeCookieDomain(cookie.domain || targetUrl.hostname),
-        path: normalizeCookiePath(cookie.path, fallbackPath),
+        path: resolveCookieAttributePath(cookie.path, fallbackPath),
       };
 
       if (!normalized.name) {

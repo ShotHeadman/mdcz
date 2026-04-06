@@ -6,7 +6,7 @@ import { SignalService } from "@main/services/SignalService";
 import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
-import { FileScraper } from "@main/services/scraper/FileScraper";
+import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
@@ -68,7 +68,7 @@ describe("FileScraper subtitle sidecars", () => {
   });
 
   const createScraper = (plan: OrganizePlan, writeNfo: ReturnType<typeof vi.fn>) =>
-    new FileScraper({
+    createFileScraper({
       configManager: new TestConfigManager(config),
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData())),

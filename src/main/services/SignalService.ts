@@ -1,33 +1,16 @@
 import { EventEmitter } from "node:events";
-import type { Website } from "@shared/enums";
-
 import { IpcChannel } from "@shared/IpcChannel";
-import type { FileInfo, MaintenanceItemResult, ScrapeResult } from "@shared/types";
+import type {
+  ButtonStatusPayload,
+  EventChannel,
+  EventPayloadByChannel,
+  FailedInfoPayload,
+  ProgressPayload,
+  ScrapeInfoPayload,
+} from "@shared/ipcEvents";
+import type { MaintenanceItemResult, ScrapeResult } from "@shared/types";
 import type { BrowserWindow } from "electron";
 import { type LoggerEventPayload, loggerService } from "./LoggerService";
-
-export interface ProgressPayload {
-  value: number;
-  current: number;
-  total: number;
-}
-
-export interface ScrapeInfoPayload {
-  fileInfo: FileInfo;
-  site: Website;
-  step: "search" | "parse" | "download" | "organize";
-}
-
-export interface FailedInfoPayload {
-  fileInfo: FileInfo;
-  error: string;
-  site?: Website;
-}
-
-export interface ButtonStatusPayload {
-  startEnabled: boolean;
-  stopEnabled: boolean;
-}
 
 export class SignalService extends EventEmitter {
   private mainWindow: BrowserWindow | null;
@@ -103,7 +86,7 @@ export class SignalService extends EventEmitter {
     this.send(IpcChannel.Event_MaintenanceItemResult, payload);
   }
 
-  private send<TPayload>(channel: IpcChannel, payload: TPayload): void {
+  private send<TChannel extends EventChannel>(channel: TChannel, payload: EventPayloadByChannel[TChannel]): void {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) {
       return;
     }

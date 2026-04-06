@@ -1,5 +1,4 @@
-import type { ActorProfile, CrawlerData, FieldDiff } from "@shared/types";
-import { useShallow } from "zustand/react/shallow";
+import type { ActorProfile, CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
 import { ImageOptionCard } from "@/components/ImageOptionCard";
 import { SceneImageGallery } from "@/components/SceneImageGallery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -7,11 +6,11 @@ import {
   getDefaultMaintenanceFieldSelection,
   hasMaintenanceDiffSideValue,
   hasMaintenanceFieldValue,
+  type MaintenanceFieldSelectionSide,
   resolveMaintenanceDiffImageCollection,
   resolveMaintenanceDiffImageOption,
 } from "@/lib/maintenance";
 import { cn } from "@/lib/utils";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
 
 const toJoinedProfileNames = (profiles: ActorProfile[]) => profiles.map((profile) => profile.name).join(", ");
 const IMAGE_SOURCE_FIELD_MAP = {
@@ -159,27 +158,30 @@ function SceneImageOption({
 }
 
 export default function ChangeDiffView({
-  entryId,
+  fileId,
   diffs,
   unchangedDiffs = [],
   hasResult = false,
+  entry,
+  preview,
+  fieldSelections,
+  onFieldSelectionChange,
 }: {
-  entryId: string;
+  fileId: string;
   diffs: FieldDiff[];
   unchangedDiffs?: FieldDiff[];
   hasResult?: boolean;
+  entry?: LocalScanEntry;
+  preview?: MaintenancePreviewItem;
+  fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
+  onFieldSelectionChange?: (fileId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
 }) {
-  const { entry, entrySelections, preview, setFieldSelection } = useMaintenanceStore(
-    useShallow((state) => ({
-      entry: state.entries.find((candidate) => candidate.id === entryId),
-      entrySelections: state.fieldSelections[entryId],
-      preview: state.previewResults[entryId],
-      setFieldSelection: state.setFieldSelection,
-    })),
-  );
+  const selectField = (field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => {
+    onFieldSelectionChange?.(fileId, field, side);
+  };
 
   const renderChangedOptions = (diff: FieldDiff) => {
-    const selectedSide = entrySelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
+    const selectedSide = fieldSelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
     const hasOldValue = hasMaintenanceDiffSideValue(diff, "old");
     const hasNewValue = hasMaintenanceDiffSideValue(diff, "new");
 
@@ -200,7 +202,7 @@ export default function ChangeDiffView({
             sourceRows={[
               { label: "图片来源", value: resolveImageSourceValue(entry?.crawlerData, diff, "old", oldImage.src) },
             ]}
-            onClick={hasOldValue && hasNewValue ? () => setFieldSelection(entryId, diff.field, "old") : undefined}
+            onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "old") : undefined}
           />
           <ImageOptionCard
             src={newImage.src}
@@ -216,7 +218,7 @@ export default function ChangeDiffView({
                 value: resolveImageSourceValue(preview?.proposedCrawlerData, diff, "new", newImage.src),
               },
             ]}
-            onClick={hasOldValue && hasNewValue ? () => setFieldSelection(entryId, diff.field, "new") : undefined}
+            onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "new") : undefined}
           />
         </div>
       );
@@ -234,7 +236,7 @@ export default function ChangeDiffView({
             selected={selectedSide === "old"}
             disabled={!hasOldValue}
             emptyText="当前没有本地剧照"
-            onClick={hasOldValue && hasNewValue ? () => setFieldSelection(entryId, diff.field, "old") : undefined}
+            onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "old") : undefined}
           />
           <SceneImageOption
             title="新 (预览)"
@@ -242,7 +244,7 @@ export default function ChangeDiffView({
             selected={selectedSide === "new"}
             disabled={!hasNewValue}
             emptyText="新值为空"
-            onClick={hasOldValue && hasNewValue ? () => setFieldSelection(entryId, diff.field, "new") : undefined}
+            onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "new") : undefined}
           />
         </div>
       );
@@ -255,14 +257,14 @@ export default function ChangeDiffView({
           value={diff.oldValue}
           selected={selectedSide === "old"}
           disabled={!hasOldValue}
-          onClick={() => setFieldSelection(entryId, diff.field, "old")}
+          onClick={() => selectField(diff.field, "old")}
         />
         <DiffOption
           title="新 (预览)"
           value={diff.newValue}
           selected={selectedSide === "new"}
           disabled={!hasNewValue}
-          onClick={() => setFieldSelection(entryId, diff.field, "new")}
+          onClick={() => selectField(diff.field, "new")}
         />
       </div>
     );
@@ -302,7 +304,7 @@ export default function ChangeDiffView({
 
   const renderDiffCard = (diff: FieldDiff, mode: "changed" | "unchanged") => {
     return (
-      <Card key={`${entryId}-${mode}-${diff.field}`} className="rounded-xl border shadow-sm">
+      <Card key={`${fileId}-${mode}-${diff.field}`} className="rounded-xl border shadow-sm">
         <CardHeader className="pb-0">
           <CardTitle className="text-sm font-semibold">{diff.label}</CardTitle>
         </CardHeader>

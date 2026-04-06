@@ -1,13 +1,19 @@
 import { configManager, configurationSchema } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
+import { NetworkClient } from "@main/services/network";
+import {
+  isMissingRequiredLlmApiKey,
+  LlmApiClient,
+  normalizeLlmBaseUrl,
+} from "@main/services/scraper/translate/engines/LlmApiClient";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type { TranslateTestLlmInput } from "@shared/ipcTypes";
-import OpenAI from "openai";
 import { t } from "../shared";
 
 const logger = loggerService.getLogger("TranslateTestLlm");
+const llmApiClient = new LlmApiClient(new NetworkClient({ timeoutMs: 10_000 }));
 
 export const createTranslateHandlers = (): Pick<IpcRouterContract, typeof IpcChannel.Translate_TestLlm> => {
   return {
@@ -26,31 +32,21 @@ export const createTranslateHandlers = (): Pick<IpcRouterContract, typeof IpcCha
         return { success: false, message: "请先填写 LLM 模型名称" };
       }
 
-      if (!llmApiKey.trim()) {
-        return { success: false, message: "请先填写 LLM 密钥" };
+      if (isMissingRequiredLlmApiKey(llmBaseUrl, llmApiKey)) {
+        return { success: false, message: "请先填写 LLM 密钥（默认 OpenAI 地址需要）" };
       }
 
-      logger.info(`Test LLM connectivity: model=${llmModelName}, baseURL=${llmBaseUrl || "(default)"}`);
-
-      const client = new OpenAI({
-        apiKey: llmApiKey,
-        baseURL: llmBaseUrl || undefined,
-        timeout: 10_000,
-      });
+      const normalizedBaseUrl = normalizeLlmBaseUrl(llmBaseUrl);
+      logger.info(`Test LLM connectivity: model=${llmModelName}, baseURL=${normalizedBaseUrl}`);
 
       try {
-        const response = await client.chat.completions.create({
+        const content = await llmApiClient.generateText({
           model: llmModelName,
+          apiKey: llmApiKey,
+          baseUrl: normalizedBaseUrl,
           temperature: Math.min(2, Math.max(0, llmTemperature)),
-          messages: [
-            {
-              role: "user",
-              content: "请直接说出一个比1大的质数",
-            },
-          ],
+          prompt: "请直接说出一个比1大的质数",
         });
-
-        const content = response.choices[0]?.message?.content;
         logger.info(`Test LLM connectivity: Success, reply="${content}"`);
 
         if (typeof content === "string" && content.trim().length > 0) {

@@ -1,45 +1,10 @@
-import type { FileInfo, UncensoredConfirmResultItem } from "@shared/types";
+import type { ScrapeResult as SharedScrapeResult, UncensoredConfirmResultItem } from "@shared/types";
 import type { StateCreator } from "zustand";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { deriveMultipartDirectoryFromPath } from "@/lib/multipartDisplay";
+import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
 
-export interface ScrapeResult {
-  id: string;
-  status: "success" | "failed";
-  number: string;
-  title?: string;
-  path: string;
-  actors?: string[];
-  outline?: string;
-  tags?: string[];
-  release?: string;
-  duration?: string;
-  resolution?: string;
-  codec?: string;
-  bitrate?: string;
-  directors?: string[];
-  series?: string;
-  studio?: string;
-  publisher?: string;
-  score?: string;
-  posterUrl?: string;
-  thumbUrl?: string;
-  fanartUrl?: string;
-  outputPath?: string;
-  sceneImages?: string[];
-  /** Maps field names to the website that provided the value. */
-  sources?: Record<string, string>;
-  errorMessage?: string;
-  /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
-  uncensoredAmbiguous?: boolean;
-  /** NFO path for post-scrape operations like uncensored confirmation. */
-  nfoPath?: string;
-  /** Directory key used by the shared multipart display grouping rule. */
-  multipartDirectory?: string;
-  /** Multipart metadata preserved from the backend file info. */
-  multipartPart?: FileInfo["part"];
-}
+export type ScrapeResult = SharedScrapeResult;
 
 interface ScrapeState {
   isScraping: boolean;
@@ -70,6 +35,11 @@ const noopStorage = {
   getItem: () => null,
   setItem: () => undefined,
   removeItem: () => undefined,
+};
+
+const getFileNameFromPath = (filePath: string): string => {
+  const slashIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return slashIndex >= 0 ? filePath.slice(slashIndex + 1) : filePath;
 };
 
 const storeCreator: StateCreator<ScrapeState> = (set) => ({
@@ -107,20 +77,23 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
   setFailedCount: (count) => set({ failedCount: Math.max(0, count) }),
   resolveUncensoredResults: (updates) =>
     set((state) => {
-      const updateBySourcePath = new Map(updates.map((item) => [item.sourceVideoPath, item]));
+      const updateByFileId = new Map(updates.map((item) => [item.fileId, item]));
       return {
         results: state.results.map((result) => {
-          const matched = updateBySourcePath.get(result.path);
+          const matched = updateByFileId.get(result.fileId);
           if (!matched) {
             return result;
           }
 
           return {
             ...result,
-            path: matched.targetVideoPath,
+            fileInfo: {
+              ...result.fileInfo,
+              filePath: matched.targetVideoPath,
+              fileName: getFileNameFromPath(matched.targetVideoPath) || result.fileInfo.fileName,
+            },
             nfoPath: matched.targetNfoPath,
-            outputPath: deriveMultipartDirectoryFromPath(matched.targetVideoPath),
-            multipartDirectory: deriveMultipartDirectoryFromPath(matched.targetVideoPath),
+            outputPath: deriveGroupingDirectoryFromPath(matched.targetVideoPath),
             uncensoredAmbiguous: false,
           };
         }),

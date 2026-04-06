@@ -8,7 +8,7 @@ import { SignalService } from "@main/services/SignalService";
 import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
-import { FileScraper } from "@main/services/scraper/FileScraper";
+import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import * as imageUtils from "@main/utils/image";
@@ -104,7 +104,7 @@ describe("FileScraper actor image library", () => {
       },
     });
     const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
-    const scraper = new FileScraper({
+    const scraper = createFileScraper({
       configManager: new TestConfigManager(config),
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData())),
@@ -175,7 +175,7 @@ describe("FileScraper actor image library", () => {
       },
     });
     const writeNfo = vi.fn();
-    const scraper = new FileScraper({
+    const scraper = createFileScraper({
       configManager: new TestConfigManager(config),
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData())),
@@ -250,7 +250,7 @@ describe("FileScraper actor image library", () => {
       },
     });
     const writeNfo = vi.fn().mockResolvedValue(nfoPath);
-    const scraper = new FileScraper({
+    const scraper = createFileScraper({
       configManager: new TestConfigManager(config),
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(
@@ -409,7 +409,7 @@ describe("FileScraper actor image library", () => {
       },
     });
     const writeNfo = vi.fn().mockResolvedValue(nfoPath);
-    const scraper = new FileScraper({
+    const scraper = createFileScraper({
       configManager: new TestConfigManager(config),
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(

@@ -1,4 +1,4 @@
-export type DetailViewStatus = "success" | "failed";
+export type DetailViewStatus = "success" | "failed" | "processing";
 
 export interface DetailViewItem {
   id: string;

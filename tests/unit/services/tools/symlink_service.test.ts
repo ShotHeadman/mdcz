@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SignalService } from "@main/services/SignalService";
@@ -44,5 +44,63 @@ describe("SymlinkService", () => {
       skipped: 1,
       failed: 0,
     });
+  });
+
+  it("copies relative .strm files instead of symlinking them", async () => {
+    const sourceDir = await createTempDir();
+    const destDir = await createTempDir();
+    const sourcePath = join(sourceDir, "movie.strm");
+    const destPath = join(destDir, "movie.strm");
+    await writeFile(sourcePath, "../videos/movie.mp4", "utf8");
+
+    const signalService = {
+      showLogText: vi.fn(),
+    } as unknown as SignalService;
+
+    const result = await new SymlinkService({ signalService }).run({
+      sourceDir,
+      destDir,
+      copyFiles: false,
+    });
+
+    expect(result).toEqual({
+      total: 1,
+      linked: 0,
+      copied: 1,
+      skipped: 0,
+      failed: 0,
+    });
+    await expect(readFile(destPath, "utf8")).resolves.toBe("../videos/movie.mp4");
+    await expect(lstat(destPath)).resolves.toMatchObject({
+      isSymbolicLink: expect.any(Function),
+    });
+    expect((await lstat(destPath)).isSymbolicLink()).toBe(false);
+  });
+
+  it("keeps KODIPROP-backed stream .strm files as symlinks", async () => {
+    const sourceDir = await createTempDir();
+    const destDir = await createTempDir();
+    const sourcePath = join(sourceDir, "movie.strm");
+    const destPath = join(destDir, "movie.strm");
+    await writeFile(sourcePath, "#KODIPROP:rtsp_transport=tcp\nrtsp://example.com/live", "utf8");
+
+    const signalService = {
+      showLogText: vi.fn(),
+    } as unknown as SignalService;
+
+    const result = await new SymlinkService({ signalService }).run({
+      sourceDir,
+      destDir,
+      copyFiles: false,
+    });
+
+    expect(result).toEqual({
+      total: 1,
+      linked: 1,
+      copied: 0,
+      skipped: 0,
+      failed: 0,
+    });
+    expect((await lstat(destPath)).isSymbolicLink()).toBe(true);
   });
 });

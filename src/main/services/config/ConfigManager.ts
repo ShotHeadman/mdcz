@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
-import { getProperty, setProperty } from "@main/utils/common";
+import { getProperty, mergeDeep, setProperty } from "@main/utils/common";
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import { ConfigMigrationError, runMigrations } from "./migrator";
@@ -25,22 +25,6 @@ export class ConfigValidationError extends Error {
     super(message);
   }
 }
-
-const mergeDeep = (base: unknown, override: unknown): unknown => {
-  if (Array.isArray(base) || Array.isArray(override)) {
-    return override ?? base;
-  }
-
-  if (base && override && typeof base === "object" && typeof override === "object") {
-    const output: Record<string, unknown> = { ...(base as Record<string, unknown>) };
-    for (const [key, value] of Object.entries(override as Record<string, unknown>)) {
-      output[key] = mergeDeep(output[key], value);
-    }
-    return output;
-  }
-
-  return override ?? base;
-};
 
 const PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
 
@@ -68,7 +52,10 @@ export class ConfigManager extends EventEmitter {
 
   async ensureLoaded(): Promise<void> {
     if (!this.initializePromise) {
-      this.initializePromise = this.loadInternal();
+      this.initializePromise = this.loadInternal().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
     }
 
     await this.initializePromise;

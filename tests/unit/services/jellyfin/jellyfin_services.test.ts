@@ -10,7 +10,11 @@ import {
 } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
-import { checkConnection, JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
+import {
+  checkConnection,
+  JellyfinActorInfoService,
+  JellyfinActorPhotoService,
+} from "@main/services/mediaServer/jellyfin";
 import type { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
 import { app } from "electron";

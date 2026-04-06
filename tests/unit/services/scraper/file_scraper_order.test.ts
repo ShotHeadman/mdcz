@@ -6,7 +6,7 @@ import { SignalService } from "@main/services/SignalService";
 import { AggregationService } from "@main/services/scraper/aggregation";
 import { DownloadManager } from "@main/services/scraper/DownloadManager";
 import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
-import { FileScraper } from "@main/services/scraper/FileScraper";
+import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
@@ -49,7 +49,7 @@ const createConfig = (): Configuration => {
 describe("FileScraper site aggregation", () => {
   it("attempts all enabled sites via aggregation", async () => {
     const crawlerProvider = new OrderedStubCrawlerProvider();
-    const scraper = new FileScraper({
+    const scraper = createFileScraper({
       configManager: new TestConfigManager(createConfig()),
       aggregationService: new AggregationService(crawlerProvider),
       translateService: new TranslateService(new NetworkClient()),

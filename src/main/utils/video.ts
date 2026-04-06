@@ -1,9 +1,10 @@
 import { open } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { VideoMeta } from "@shared/types";
 import { app } from "electron";
 import { isTrackType, type MediaInfoResult, mediaInfoFactory } from "mediainfo.js";
+import { isStrmFile } from "./strm";
 
 export const CHUNK_SIZE = 64 * 1024;
 
@@ -97,10 +98,8 @@ export const runWithMediaInfo = async <T>(
   }
 };
 
-const isStreamFile = (filePath: string): boolean => extname(filePath).toLowerCase() === ".strm";
-
 export const probeVideoMetadata = async (filePath: string): Promise<VideoMeta | undefined> => {
-  if (isStreamFile(filePath)) {
+  if (isStrmFile(filePath)) {
     return undefined;
   }
 

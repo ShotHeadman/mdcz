@@ -30,6 +30,12 @@ type ResolvedActorImage = {
   imagePath: string | undefined;
 };
 
+type ActorImageResolutionState = {
+  profile: ActorProfile | undefined;
+  lookupNames: string[];
+  imagePath: string | undefined;
+};
+
 const hasActorPhoto = (profile: ActorProfile | undefined): boolean => Boolean(profile?.photo_url?.trim());
 const isRemoteUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
 
@@ -132,73 +138,137 @@ export class ActorImageService {
     seedProfile: ActorProfile | undefined,
     input: PrepareActorProfilesInput,
   ): Promise<ResolvedActorImage> {
-    let workingProfile = seedProfile;
-    let lookupNames = this.buildLookupNames(actorName, workingProfile);
-    let resolvedImagePath = await this.resolveStoredImage(configuration, lookupNames, input, workingProfile?.photo_url);
+    let state = this.createResolutionState(actorName, seedProfile);
 
-    if (!resolvedImagePath) {
-      workingProfile = await this.resolveActorProfile(
-        configuration,
-        actorName,
-        seedProfile,
-        input.actorSourceProvider,
-        input.sourceHints,
-        input.signal,
-      );
-      lookupNames = this.buildLookupNames(actorName, workingProfile);
-      resolvedImagePath = await this.resolveStoredImage(configuration, lookupNames, input, workingProfile?.photo_url);
+    state = await this.lookupStoredActorImage(configuration, input, state);
+    if (state.imagePath) {
+      return this.toResolvedActorImage(state);
     }
 
-    if (!resolvedImagePath) {
-      resolvedImagePath = await this.fileStore.cacheActorImage(
-        configuration,
-        lookupNames,
-        workingProfile?.photo_url,
-        {
-          fallbackBaseDir: input.actorPhotoBaseDir,
-        },
-        input.signal,
-      );
+    state = await this.lookupActorProfileAndStoredImage(configuration, actorName, seedProfile, input, state);
+    if (state.imagePath) {
+      return this.toResolvedActorImage(state);
     }
 
-    if (!resolvedImagePath) {
-      const refreshedProfile = await this.resolveActorProfile(
-        configuration,
-        actorName,
-        workingProfile,
-        input.actorSourceProvider,
-        input.sourceHints,
-        input.signal,
-        { forceLookup: true },
-      );
-
-      if (refreshedProfile?.photo_url && refreshedProfile.photo_url !== workingProfile?.photo_url) {
-        workingProfile = refreshedProfile;
-        lookupNames = this.buildLookupNames(actorName, workingProfile);
-        resolvedImagePath = await this.resolveStoredImage(configuration, lookupNames, input, workingProfile.photo_url);
-
-        if (!resolvedImagePath) {
-          resolvedImagePath = await this.fileStore.cacheActorImage(
-            configuration,
-            lookupNames,
-            workingProfile.photo_url,
-            {
-              fallbackBaseDir: input.actorPhotoBaseDir,
-            },
-            input.signal,
-          );
-        }
-      }
+    state = await this.cacheProfilePhoto(configuration, input, state);
+    if (state.imagePath) {
+      return this.toResolvedActorImage(state);
     }
 
-    return {
-      profile: workingProfile,
-      imagePath: resolvedImagePath,
-    };
+    state = await this.refreshActorProfileAndStoredImage(configuration, actorName, input, state);
+    if (state.imagePath) {
+      return this.toResolvedActorImage(state);
+    }
+
+    state = await this.cacheProfilePhoto(configuration, input, state);
+    return this.toResolvedActorImage(state);
   }
 
   private buildLookupNames(actorName: string, profile: ActorProfile | undefined): string[] {
     return toUniqueActorNames([actorName, profile?.name, ...(profile?.aliases ?? [])]);
+  }
+
+  private createResolutionState(
+    actorName: string,
+    profile: ActorProfile | undefined,
+    imagePath?: string,
+  ): ActorImageResolutionState {
+    return {
+      profile,
+      lookupNames: this.buildLookupNames(actorName, profile),
+      imagePath,
+    };
+  }
+
+  private toResolvedActorImage(state: ActorImageResolutionState): ResolvedActorImage {
+    return {
+      profile: state.profile,
+      imagePath: state.imagePath,
+    };
+  }
+
+  private async lookupStoredActorImage(
+    configuration: Configuration,
+    input: PrepareActorProfilesInput,
+    state: ActorImageResolutionState,
+  ): Promise<ActorImageResolutionState> {
+    if (state.imagePath) {
+      return state;
+    }
+
+    const imagePath = await this.resolveStoredImage(configuration, state.lookupNames, input, state.profile?.photo_url);
+    return {
+      ...state,
+      imagePath,
+    };
+  }
+
+  private async lookupActorProfileAndStoredImage(
+    configuration: Configuration,
+    actorName: string,
+    existingProfile: ActorProfile | undefined,
+    input: PrepareActorProfilesInput,
+    state: ActorImageResolutionState,
+  ): Promise<ActorImageResolutionState> {
+    const profile = await this.resolveActorProfile(
+      configuration,
+      actorName,
+      existingProfile,
+      input.actorSourceProvider,
+      input.sourceHints,
+      input.signal,
+    );
+    const nextState = this.createResolutionState(actorName, profile, state.imagePath);
+    return await this.lookupStoredActorImage(configuration, input, nextState);
+  }
+
+  private async cacheProfilePhoto(
+    configuration: Configuration,
+    input: PrepareActorProfilesInput,
+    state: ActorImageResolutionState,
+  ): Promise<ActorImageResolutionState> {
+    if (state.imagePath) {
+      return state;
+    }
+
+    const imagePath = await this.fileStore.cacheActorImage(
+      configuration,
+      state.lookupNames,
+      state.profile?.photo_url,
+      {
+        fallbackBaseDir: input.actorPhotoBaseDir,
+      },
+      input.signal,
+    );
+
+    return {
+      ...state,
+      imagePath,
+    };
+  }
+
+  private async refreshActorProfileAndStoredImage(
+    configuration: Configuration,
+    actorName: string,
+    input: PrepareActorProfilesInput,
+    state: ActorImageResolutionState,
+  ): Promise<ActorImageResolutionState> {
+    const refreshedProfile = await this.resolveActorProfile(
+      configuration,
+      actorName,
+      state.profile,
+      input.actorSourceProvider,
+      input.sourceHints,
+      input.signal,
+      { forceLookup: true },
+    );
+
+    if (!refreshedProfile?.photo_url || refreshedProfile.photo_url === state.profile?.photo_url) {
+      return state;
+    }
+
+    const refreshedState = this.createResolutionState(actorName, refreshedProfile, state.imagePath);
+    return await this.lookupStoredActorImage(configuration, input, refreshedState);
   }
 
   private async resolveStoredImage(

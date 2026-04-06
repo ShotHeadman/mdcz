@@ -1,5 +1,6 @@
 import type { CrawlerData } from "@shared/types";
 import { ipc } from "@/client/ipc";
+import { ensureMediaPathConfigured } from "@/client/mediaPath";
 import type { ConfigOutput } from "@/client/types";
 
 export interface ScrapeStatusResponse {
@@ -112,28 +113,7 @@ export const getScrapeStatus = async () => {
 
 export const startBatchScrape = async () => {
   const currentConfig = (await ipc.config.get()) as ConfigOutput;
-  let mediaPath = currentConfig.paths?.mediaPath?.trim() ?? "";
-
-  if (!mediaPath) {
-    const selection = await ipc.file.browse("directory");
-    const paths = selection.paths ?? [];
-    if (paths.length === 0) {
-      throw new Error("No directory selected.");
-    }
-
-    mediaPath = paths[0]?.trim() ?? "";
-    if (!mediaPath) {
-      throw new Error("No directory selected.");
-    }
-
-    await ipc.config.save({
-      paths: {
-        ...(currentConfig.paths ?? {}),
-        mediaPath,
-      },
-    });
-  }
-
+  const mediaPath = await ensureMediaPathConfigured(currentConfig);
   const data = await ipc.scraper.start("batch", [mediaPath]);
   return { data };
 };

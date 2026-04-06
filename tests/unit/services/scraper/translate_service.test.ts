@@ -1,8 +1,8 @@
 import { configurationSchema } from "@main/services/config";
 import { NetworkClient } from "@main/services/network";
 import { TranslateService } from "@main/services/scraper/TranslateService";
+import type { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
 import { TranslateEngine, Website } from "@shared/enums";
-import type OpenAI from "openai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sleepMock } = vi.hoisted(() => {
@@ -38,6 +38,12 @@ const createBaseConfig = () => {
   });
 };
 
+const createLlmApiClient = (generateText = vi.fn()) => {
+  return {
+    generateText,
+  } as unknown as LlmApiClient;
+};
+
 describe("TranslateService term consistency", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -48,23 +54,10 @@ describe("TranslateService term consistency", () => {
   });
 
   it("keeps actor original term and only translates genre term", async () => {
-    const completionCreate = vi.fn().mockResolvedValue({
-      choices: [{ message: { content: "统一译名" } }],
-    });
+    const generateText = vi.fn().mockResolvedValue("统一译名");
+    const llmApiClient = createLlmApiClient(generateText);
 
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
-
-    vi.mocked(findMappedActorName).mockResolvedValue(null);
-    vi.mocked(findMappedGenreName).mockResolvedValue(null);
-
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -79,7 +72,7 @@ describe("TranslateService term consistency", () => {
       config,
     );
 
-    expect(completionCreate).toHaveBeenCalledTimes(1);
+    expect(generateText).toHaveBeenCalledTimes(1);
     expect(vi.mocked(appendMappingCandidate)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(appendMappingCandidate)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -92,20 +85,13 @@ describe("TranslateService term consistency", () => {
   });
 
   it("prefers mapped actor/genre names and avoids llm", async () => {
-    const completionCreate = vi.fn();
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
+    const generateText = vi.fn();
+    const llmApiClient = createLlmApiClient(generateText);
 
     vi.mocked(findMappedActorName).mockResolvedValue("小花暖");
     vi.mocked(findMappedGenreName).mockResolvedValue("小花暖");
 
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -120,7 +106,7 @@ describe("TranslateService term consistency", () => {
       config,
     );
 
-    expect(completionCreate).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
     expect(vi.mocked(appendMappingCandidate)).not.toHaveBeenCalled();
     expect(vi.mocked(findMappedActorName)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(findMappedGenreName)).toHaveBeenCalledTimes(1);
@@ -129,19 +115,12 @@ describe("TranslateService term consistency", () => {
   });
 
   it("keeps actor profile photos attached after actor alias normalization", async () => {
-    const completionCreate = vi.fn();
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
+    const generateText = vi.fn();
+    const llmApiClient = createLlmApiClient(generateText);
 
     vi.mocked(findMappedActorName).mockResolvedValue("小花暖");
 
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -162,7 +141,7 @@ describe("TranslateService term consistency", () => {
       config,
     );
 
-    expect(completionCreate).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
     expect(vi.mocked(findMappedActorName)).toHaveBeenCalledTimes(1);
     expect(translated.actors).toEqual(["小花暖"]);
     expect(translated.actor_profiles).toEqual([
@@ -174,7 +153,7 @@ describe("TranslateService term consistency", () => {
     ]);
   });
 
-  it("retries OpenAI request once when 429 includes Retry-After and caps wait to 15s", async () => {
+  it("retries llm request once when 429 includes Retry-After and caps wait to 15s", async () => {
     const rateLimitedError = Object.assign(new Error("rate limited"), {
       status: 429,
       headers: new Headers({
@@ -182,33 +161,20 @@ describe("TranslateService term consistency", () => {
       }),
     });
 
-    const completionCreate = vi
-      .fn()
-      .mockRejectedValueOnce(rateLimitedError)
-      .mockResolvedValueOnce({
-        choices: [{ message: { content: "Retry 成功" } }],
-      });
+    const generateText = vi.fn().mockRejectedValueOnce(rateLimitedError).mockResolvedValueOnce("Retry 成功");
+    const llmApiClient = createLlmApiClient(generateText);
 
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
-
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("Retry 成功");
 
-    expect(completionCreate).toHaveBeenCalledTimes(2);
+    expect(generateText).toHaveBeenCalledTimes(2);
     expect(sleepMock).toHaveBeenCalledTimes(1);
     expect(sleepMock).toHaveBeenCalledWith(15_000, undefined, undefined);
   });
 
-  it("does not retry OpenAI request for non-429 errors", async () => {
+  it("does not retry llm request for non-429 errors", async () => {
     const serverError = Object.assign(new Error("server error"), {
       status: 500,
       headers: new Headers({
@@ -216,43 +182,27 @@ describe("TranslateService term consistency", () => {
       }),
     });
 
-    const completionCreate = vi.fn().mockRejectedValue(serverError);
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
-
+    const generateText = vi.fn().mockRejectedValue(serverError);
+    const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
 
-    const service = new TranslateService(networkClient, openAiFactory);
+    const service = new TranslateService(networkClient, llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
 
-    expect(completionCreate).toHaveBeenCalledTimes(1);
+    expect(generateText).toHaveBeenCalledTimes(1);
     expect(sleepMock).not.toHaveBeenCalled();
   });
 
   it("does not write untranslated non-chinese source text into translated crawler fields", async () => {
-    const completionCreate = vi.fn().mockRejectedValue(new Error("openai failed"));
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
-
+    const generateText = vi.fn().mockRejectedValue(new Error("llm failed"));
+    const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
 
-    const service = new TranslateService(networkClient, openAiFactory);
+    const service = new TranslateService(networkClient, llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -270,24 +220,16 @@ describe("TranslateService term consistency", () => {
 
     expect(translated.title_zh).toBeUndefined();
     expect(translated.plot_zh).toBeUndefined();
-    expect(completionCreate).toHaveBeenCalledTimes(2);
+    expect(generateText).toHaveBeenCalledTimes(2);
   });
 
-  it("does not call OpenAI for genre terms when the selected engine is google", async () => {
-    const completionCreate = vi.fn();
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
-
+  it("does not call llm for genre terms when the selected engine is google", async () => {
+    const generateText = vi.fn();
+    const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockResolvedValue([[["剧情"]]] as unknown);
 
-    const service = new TranslateService(networkClient, openAiFactory);
+    const service = new TranslateService(networkClient, llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.GOOGLE,
@@ -308,7 +250,7 @@ describe("TranslateService term consistency", () => {
       config,
     );
 
-    expect(completionCreate).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
     expect(translated.genres).toEqual(["剧情"]);
   });
 
@@ -322,21 +264,11 @@ describe("TranslateService term consistency", () => {
     expect(config.translate.targetLanguage).toBe("zh-CN");
   });
 
-  it("lets the LLM auto-detect mixed-language input and target traditional chinese directly", async () => {
-    const completionCreate = vi.fn().mockResolvedValue({
-      choices: [{ message: { content: "混合語言標題" } }],
-    });
+  it("lets the llm auto-detect mixed-language input and target traditional chinese directly", async () => {
+    const generateText = vi.fn().mockResolvedValue("混合語言標題");
+    const llmApiClient = createLlmApiClient(generateText);
 
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
-
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
@@ -349,34 +281,65 @@ describe("TranslateService term consistency", () => {
 
     await expect(service.translateText("BEST OF 彼女の休日", "zh_tw", config)).resolves.toBe("混合語言標題");
 
-    expect(completionCreate).toHaveBeenCalledWith(
+    expect(generateText).toHaveBeenCalledWith(
       expect.objectContaining({
-        messages: [
-          expect.objectContaining({
-            role: "user",
-            content: expect.stringContaining("繁体中文"),
-          }),
-        ],
+        prompt: expect.stringContaining("繁体中文"),
       }),
-      { signal: undefined },
+      undefined,
     );
   });
 
-  it("short-circuits chinese input and converts the target locally", async () => {
-    const completionCreate = vi.fn().mockResolvedValue({
-      choices: [{ message: { content: "繁體標題" } }],
+  it("allows custom base url without api key", async () => {
+    const generateText = vi.fn().mockResolvedValue("本地翻译");
+    const llmApiClient = createLlmApiClient(generateText);
+
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const config = configurationSchema.parse({
+      translate: {
+        engine: TranslateEngine.OPENAI,
+        llmApiKey: "",
+        llmBaseUrl: "http://127.0.0.1:11434/v1",
+        enableTranslation: true,
+        llmMaxRetries: 1,
+      },
     });
 
-    const openAiFactory = () =>
-      ({
-        chat: {
-          completions: {
-            create: completionCreate,
-          },
-        },
-      }) as unknown as OpenAI;
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("本地翻译");
 
-    const service = new TranslateService(new NetworkClient({}), openAiFactory);
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "",
+        baseUrl: "http://127.0.0.1:11434/v1",
+      }),
+      undefined,
+    );
+  });
+
+  it("skips llm calls for the default OpenAI base url when api key is empty", async () => {
+    const generateText = vi.fn();
+    const llmApiClient = createLlmApiClient(generateText);
+    const networkClient = new NetworkClient({});
+    vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
+
+    const service = new TranslateService(networkClient, llmApiClient);
+    const config = configurationSchema.parse({
+      translate: {
+        engine: TranslateEngine.OPENAI,
+        llmApiKey: "",
+        enableTranslation: true,
+        llmMaxRetries: 1,
+      },
+    });
+
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits chinese input and converts the target locally", async () => {
+    const generateText = vi.fn();
+    const llmApiClient = createLlmApiClient(generateText);
+
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
@@ -387,6 +350,6 @@ describe("TranslateService term consistency", () => {
     });
 
     await expect(service.translateText("简体标题", "zh_tw", config)).resolves.toBe("簡體標題");
-    expect(completionCreate).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
   });
 });

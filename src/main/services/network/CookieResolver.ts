@@ -1,5 +1,5 @@
 import { BrowserWindow, type Cookie, type Event } from "electron";
-import { cookieDomainMatches, cookiePathMatches, normalizeCookieDomain, normalizeCookiePath } from "./cookieUtils";
+import { filterCookiesForUrl, normalizeCookieDomain, normalizeCookiePath } from "./cookieUtils";
 
 export interface ResolvedCookie {
   name: string;
@@ -27,15 +27,6 @@ const toResolvedCookie = (cookie: Cookie): ResolvedCookie => ({
   domain: normalizeCookieDomain(cookie.domain ?? ""),
   path: normalizeCookiePath(cookie.path),
 });
-
-const filterCookiesForUrl = (cookies: Cookie[], targetUrl: URL): ResolvedCookie[] => {
-  const host = targetUrl.hostname.toLowerCase();
-  const requestPath = normalizeCookiePath(targetUrl.pathname);
-
-  return cookies
-    .map(toResolvedCookie)
-    .filter((cookie) => cookieDomainMatches(host, cookie.domain) && cookiePathMatches(requestPath, cookie.path));
-};
 
 const createResolverPartition = (): string => {
   resolverSequence += 1;
@@ -87,7 +78,7 @@ const waitForResolvedCookies = (
 
       try {
         const cookies = await browserWindow.webContents.session.cookies.get({ url: cookieLookupUrl.toString() });
-        const resolvedCookies = filterCookiesForUrl(cookies, targetUrl);
+        const resolvedCookies = filterCookiesForUrl(cookies.map(toResolvedCookie), targetUrl);
         const hasExpectedCookie =
           expectedCookieNames.size > 0 && resolvedCookies.some((cookie) => expectedCookieNames.has(cookie.name));
 

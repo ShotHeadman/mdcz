@@ -14,9 +14,9 @@ import {
 } from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/emby";
-import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
 import { loggerService } from "@main/services/LoggerService";
+import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
+import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
 import { createElectronCookieResolver, NetworkClient } from "@main/services/network";
 import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
@@ -30,6 +30,12 @@ import { WindowService } from "@main/services/WindowService";
 import { app, BrowserWindow } from "electron";
 
 const signalService = new SignalService();
+const sharedNetworkClient = new NetworkClient({
+  getProxyUrl: () => configManager.getComputed().proxyUrl,
+  getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
+  getRetryCount: () => configManager.getComputed().networkRetryCount,
+});
+const updateService = new UpdateService(sharedNetworkClient);
 let windowService: WindowService | null = null;
 const trayService = new TrayService();
 const shortcutService = new ShortcutService();
@@ -49,45 +55,40 @@ const ensureMainWindow = async (): Promise<void> => {
   signalService.setMainWindow(mainWindow);
 
   if (!ipcRegistered) {
-    const networkClient = new NetworkClient({
-      getProxyUrl: () => configManager.getComputed().proxyUrl,
-      getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
-      getRetryCount: () => configManager.getComputed().networkRetryCount,
-    });
-    const fetchGateway = new FetchGateway(networkClient);
+    const fetchGateway = new FetchGateway(sharedNetworkClient);
     const crawlerProvider = new CrawlerProvider({
       fetchGateway,
     });
-    const amazonJpImageService = new AmazonJpImageService(networkClient);
-    const actorImageService = new ActorImageService({ networkClient });
+    const amazonJpImageService = new AmazonJpImageService(sharedNetworkClient);
+    const actorImageService = new ActorImageService({ networkClient: sharedNetworkClient });
     const avjohoCookieResolver = createElectronCookieResolver({
       expectedCookieNames: ["wsidchk"],
     });
     const actorSourceProvider = new ActorSourceProvider({
       registry: new ActorSourceRegistry([
         new LocalActorSource(actorImageService),
-        new OfficialActorSource({ networkClient }),
-        new GfriendsActorSource({ networkClient }),
-        new AvjohoActorSource({ networkClient, cookieResolver: avjohoCookieResolver }),
-        new AvbaseActorSource({ networkClient }),
+        new OfficialActorSource({ networkClient: sharedNetworkClient }),
+        new GfriendsActorSource({ networkClient: sharedNetworkClient }),
+        new AvjohoActorSource({ networkClient: sharedNetworkClient, cookieResolver: avjohoCookieResolver }),
+        new AvbaseActorSource({ networkClient: sharedNetworkClient }),
       ]),
     });
 
     const container: ServiceContainer = {
       signalService,
       windowService,
-      networkClient,
+      networkClient: sharedNetworkClient,
       fetchGateway,
       scraperService: new ScraperService(
         signalService,
-        networkClient,
+        sharedNetworkClient,
         crawlerProvider,
         actorImageService,
         actorSourceProvider,
       ),
       maintenanceService: new MaintenanceService(
         signalService,
-        networkClient,
+        sharedNetworkClient,
         crawlerProvider,
         actorImageService,
         actorSourceProvider,
@@ -95,12 +96,28 @@ const ensureMainWindow = async (): Promise<void> => {
       crawlerProvider,
       actorSourceProvider,
       actorImageService,
-      jellyfinActorPhotoService: new JellyfinActorPhotoService({ signalService, networkClient, actorSourceProvider }),
-      jellyfinActorInfoService: new JellyfinActorInfoService({ signalService, networkClient, actorSourceProvider }),
-      embyActorPhotoService: new EmbyActorPhotoService({ signalService, networkClient, actorSourceProvider }),
-      embyActorInfoService: new EmbyActorInfoService({ signalService, networkClient, actorSourceProvider }),
+      jellyfinActorPhotoService: new JellyfinActorPhotoService({
+        signalService,
+        networkClient: sharedNetworkClient,
+        actorSourceProvider,
+      }),
+      jellyfinActorInfoService: new JellyfinActorInfoService({
+        signalService,
+        networkClient: sharedNetworkClient,
+        actorSourceProvider,
+      }),
+      embyActorPhotoService: new EmbyActorPhotoService({
+        signalService,
+        networkClient: sharedNetworkClient,
+        actorSourceProvider,
+      }),
+      embyActorInfoService: new EmbyActorInfoService({
+        signalService,
+        networkClient: sharedNetworkClient,
+        actorSourceProvider,
+      }),
       symlinkService: new SymlinkService({ signalService }),
-      amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
+      amazonPosterToolService: new AmazonPosterToolService(sharedNetworkClient, amazonJpImageService),
     };
 
     registerIpcHandlers(container);
@@ -166,12 +183,6 @@ if (!app.requestSingleInstanceLock()) {
 
         // Check for updates on startup (after a short delay to avoid blocking)
         if (initialConfig.behavior.updateCheck) {
-          const networkClient = new NetworkClient({
-            getProxyUrl: () => configManager.getComputed().proxyUrl,
-            getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
-            getRetryCount: () => configManager.getComputed().networkRetryCount,
-          });
-          const updateService = new UpdateService(networkClient);
           setTimeout(() => {
             void updateService.checkAndNotify(signalService);
           }, 5000);

@@ -81,4 +81,31 @@ describe("ScraperService path filtering", () => {
 
     expect(filePaths).toEqual([keepVideoPath]);
   });
+
+  it("excludes videos inside an absolute success output directory", async () => {
+    const root = await createTempDir();
+    const mediaRoot = join(root, "media");
+    const outputDir = join(mediaRoot, "custom-output");
+    const libraryDir = join(mediaRoot, "library");
+    const keepVideoPath = join(libraryDir, "ABC-123.mp4");
+    const outputVideoPath = join(outputDir, "XYZ-999.mp4");
+
+    await mkdir(outputDir, { recursive: true });
+    await mkdir(libraryDir, { recursive: true });
+    await writeFile(keepVideoPath, "", "utf8");
+    await writeFile(outputVideoPath, "", "utf8");
+
+    const configuration = configurationSchema.parse({
+      ...defaultConfiguration,
+      paths: {
+        ...defaultConfiguration.paths,
+        mediaPath: mediaRoot,
+        successOutputFolder: outputDir,
+      },
+    });
+
+    const filePaths = await resolveFilePaths(createService(), "batch", [mediaRoot], configuration);
+
+    expect(filePaths).toEqual([keepVideoPath]);
+  });
 });

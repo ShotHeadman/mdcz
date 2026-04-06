@@ -2,6 +2,7 @@ import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { WindowService } from "@main/services/WindowService";
 import { IpcChannel } from "@shared/IpcChannel";
+import type { RendererShortcutAction, ShortcutPayload } from "@shared/ipcEvents";
 import type { BrowserWindow, Event, Input } from "electron";
 
 const DEFAULT_SHORTCUTS = {
@@ -25,13 +26,6 @@ const RENDERER_SHORTCUT_BINDINGS = [
   { key: "editNfo", action: "edit-nfo" },
   { key: "playVideo", action: "play-video" },
 ] as const;
-
-type RendererShortcutAction = (typeof RENDERER_SHORTCUT_BINDINGS)[number]["action"];
-
-interface ShortcutPayload {
-  action: RendererShortcutAction;
-  shortcut?: string;
-}
 
 interface ShortcutMatcher {
   key: string;

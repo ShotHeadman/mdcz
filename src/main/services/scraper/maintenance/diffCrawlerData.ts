@@ -139,7 +139,7 @@ const resolveImageValue = (value: unknown, entry: LocalScanEntry | undefined): s
     return rawValue;
   }
 
-  const baseDir = getParentDir(entry?.nfoPath) || entry?.currentDir || getParentDir(entry?.videoPath);
+  const baseDir = getParentDir(entry?.nfoPath) || entry?.currentDir;
   if (baseDir) {
     return joinPath(baseDir, rawValue);
   }

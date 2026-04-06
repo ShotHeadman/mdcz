@@ -48,6 +48,15 @@ export interface ProbeResult {
   height?: number;
 }
 
+export interface NetworkJsonResponse<T = unknown> {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  resolvedUrl: string;
+  headers: Headers;
+  data: T | string | null;
+}
+
 interface RequestBehavior {
   allowNonOkResponse?: boolean;
   retryLogPrefix?: string;
@@ -133,6 +142,36 @@ export class NetworkClient {
     });
 
     return response.json() as Promise<TResponse>;
+  }
+
+  async postJsonDetailed<TResponse>(
+    url: string,
+    payload: unknown,
+    init: Omit<ImpitRequestInit, "method" | "body"> = {},
+  ): Promise<NetworkJsonResponse<TResponse>> {
+    const headers = new Headers(init.headers);
+    headers.set("content-type", "application/json");
+
+    const response = await this.executeRequest(
+      url,
+      {
+        ...init,
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      },
+      undefined,
+      { allowNonOkResponse: true },
+    );
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      resolvedUrl: response.url || url,
+      headers: response.headers,
+      data: await this.parseJsonResponseBody<TResponse>(response),
+    };
   }
 
   async postContent(
@@ -331,6 +370,20 @@ export class NetworkClient {
 
   private toHttpError(url: string, response: ImpitResponse): Error {
     return new Error(`HTTP ${response.status} ${response.statusText} for ${url}`);
+  }
+
+  private async parseJsonResponseBody<T>(response: ImpitResponse): Promise<T | string | null> {
+    if (response.status === 204) {
+      return null;
+    }
+
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.includes("json")) {
+      return (await response.json()) as T;
+    }
+
+    const text = await response.text();
+    return text.trim().length > 0 ? text : null;
   }
 
   private buildProbeRangeValue(byteCount: number): string {

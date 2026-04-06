@@ -11,9 +11,11 @@ import { Fc2HubCrawler } from "./sites/fc2hub";
 import { Jav321Crawler } from "./sites/jav321";
 import { JavbusCrawler } from "./sites/javbus";
 import { JavdbCrawler } from "./sites/javdb";
+import { KingdomCrawler } from "./sites/kingdom";
 import { KMProduceCrawler } from "./sites/kmproduce";
 import { MGStageCrawler } from "./sites/mgstage";
 import { PrestigeCrawler } from "./sites/prestige";
+import { SokmilCrawler } from "./sites/sokmil";
 
 export type CrawlerConstructor = SiteAdapterConstructor;
 
@@ -44,3 +46,5 @@ registerCrawler(Website.MGSTAGE, MGStageCrawler);
 registerCrawler(Website.JAV321, Jav321Crawler);
 registerCrawler(Website.KM_PRODUCE, KMProduceCrawler);
 registerCrawler(Website.AVBASE, AvbaseCrawler);
+registerCrawler(Website.KINGDOM, KingdomCrawler);
+registerCrawler(Website.SOKMIL, SokmilCrawler);

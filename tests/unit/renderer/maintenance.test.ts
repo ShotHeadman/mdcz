@@ -1,6 +1,7 @@
 import { Website } from "@shared/enums";
 import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { formatMaintenanceStatus } from "@/lib/formatMaintenanceStatus";
 import {
   buildCommittedCrawlerData,
   buildMaintenanceCommitItem,
@@ -9,13 +10,24 @@ import {
 } from "@/lib/maintenance";
 import {
   buildMaintenanceEntryGroups,
+  buildMaintenanceEntryViewModel,
   countMaintenanceDisplayItems,
   findMaintenanceEntryGroup,
   formatMaintenanceIdleStatusText,
   summarizeMaintenanceExecutionGroups,
   summarizeMaintenancePreviewGroups,
 } from "@/lib/maintenanceGrouping";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import {
+  applyMaintenanceExecutionItemResult,
+  applyMaintenancePreviewResult,
+  changeMaintenancePreset,
+  clearMaintenancePreviewResults,
+  invalidateMaintenancePreview,
+  toggleMaintenanceSelectedIds,
+} from "@/store/maintenanceSession";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Old Title",
@@ -29,8 +41,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 });
 
 const createEntry = (crawlerData?: CrawlerData): LocalScanEntry => ({
-  id: "entry-1",
-  videoPath: "/media/ABC-123.mp4",
+  fileId: "entry-1",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
     fileName: "ABC-123.mp4",
@@ -46,10 +57,10 @@ const createEntry = (crawlerData?: CrawlerData): LocalScanEntry => ({
     fanart: "/media/fanart.jpg",
     sceneImages: ["/media/extrafanart/fanart1.jpg"],
     trailer: "/media/trailer.mp4",
-    nfo: "/media/ABC-123.nfo",
     actorPhotos: ["/media/.actors/Actor A.jpg"],
   },
   currentDir: "/media",
+  groupingDirectory: "/media",
 });
 
 type ValueDiffInput = Omit<Extract<FieldDiff, { kind: "value" }>, "kind">;
@@ -72,15 +83,16 @@ const createImageCollectionDiff = (overrides: ImageCollectionDiffInput): FieldDi
 });
 
 afterEach(() => {
-  useMaintenanceStore.getState().reset();
+  useMaintenancePreviewStore.getState().reset();
+  useMaintenanceExecutionStore.getState().reset();
+  useMaintenanceEntryStore.getState().reset();
 });
 
 describe("maintenance multipart grouping", () => {
   it("collapses same-directory multipart files into one display group", () => {
     const part1: LocalScanEntry = {
       ...createEntry(createCrawlerData({ number: "FC2-123456" })),
-      id: "entry-1",
-      videoPath: "/media/FC2-123456-1.mp4",
+      fileId: "entry-1",
       fileInfo: {
         filePath: "/media/FC2-123456-1.mp4",
         fileName: "FC2-123456-1",
@@ -96,8 +108,7 @@ describe("maintenance multipart grouping", () => {
     };
     const part2: LocalScanEntry = {
       ...part1,
-      id: "entry-2",
-      videoPath: "/media/FC2-123456-2.mp4",
+      fileId: "entry-2",
       fileInfo: {
         ...part1.fileInfo,
         filePath: "/media/FC2-123456-2.mp4",
@@ -110,16 +121,16 @@ describe("maintenance multipart grouping", () => {
     };
     const standalone: LocalScanEntry = {
       ...createEntry(createCrawlerData({ number: "ABC-123" })),
-      id: "entry-3",
+      fileId: "entry-3",
     };
 
     const groups = buildMaintenanceEntryGroups([part2, standalone, part1]);
 
     expect(groups).toHaveLength(2);
-    expect(groups.find((group) => group.representative.id === "entry-3")).toMatchObject({
+    expect(groups.find((group) => group.representative.fileId === "entry-3")).toMatchObject({
       representative: standalone,
     });
-    expect(groups.find((group) => group.items.length === 2)?.items.map((entry) => entry.id)).toEqual([
+    expect(groups.find((group) => group.items.length === 2)?.items.map((entry) => entry.fileId)).toEqual([
       "entry-1",
       "entry-2",
     ]);
@@ -129,8 +140,7 @@ describe("maintenance multipart grouping", () => {
   it("uses the same same-directory same-number grouping rule as normal scrape results", () => {
     const first: LocalScanEntry = {
       ...createEntry(createCrawlerData({ number: "ABC-123" })),
-      id: "entry-a",
-      videoPath: "/media/ABC-123-copy-a.mp4",
+      fileId: "entry-a",
       fileInfo: {
         filePath: "/media/ABC-123-copy-a.mp4",
         fileName: "ABC-123-copy-a.mp4",
@@ -142,8 +152,7 @@ describe("maintenance multipart grouping", () => {
     };
     const second: LocalScanEntry = {
       ...first,
-      id: "entry-b",
-      videoPath: "/media/ABC-123-copy-b.mp4",
+      fileId: "entry-b",
       fileInfo: {
         ...first.fileInfo,
         filePath: "/media/ABC-123-copy-b.mp4",
@@ -154,13 +163,13 @@ describe("maintenance multipart grouping", () => {
     const groups = buildMaintenanceEntryGroups([first, second]);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.items.map((entry) => entry.id)).toEqual(["entry-a", "entry-b"]);
+    expect(groups[0]?.items.map((entry) => entry.fileId)).toEqual(["entry-a", "entry-b"]);
   });
 
   it("derives grouped status and error text from child maintenance results", () => {
     const part1: LocalScanEntry = {
       ...createEntry(),
-      id: "entry-1",
+      fileId: "entry-1",
       fileInfo: {
         ...createEntry().fileInfo,
         number: "FC2-123456",
@@ -173,7 +182,7 @@ describe("maintenance multipart grouping", () => {
     };
     const part2: LocalScanEntry = {
       ...part1,
-      id: "entry-2",
+      fileId: "entry-2",
       scanError: "NFO 解析失败",
       fileInfo: {
         ...part1.fileInfo,
@@ -188,11 +197,11 @@ describe("maintenance multipart grouping", () => {
 
     const itemResults = {
       "entry-1": {
-        entryId: "entry-1",
+        fileId: "entry-1",
         status: "success" as const,
       },
       "entry-2": {
-        entryId: "entry-2",
+        fileId: "entry-2",
         status: "failed" as const,
         error: "维护失败",
       },
@@ -208,7 +217,7 @@ describe("maintenance multipart grouping", () => {
     expect(group.status).toBe("failed");
     expect(group.errorText).toBe("维护失败");
     expect(group.compareResult).toMatchObject({
-      entryId: "entry-2",
+      fileId: "entry-2",
       status: "failed",
       error: "维护失败",
     });
@@ -217,7 +226,7 @@ describe("maintenance multipart grouping", () => {
   it("marks the whole group as failed immediately when any child file fails", () => {
     const part1: LocalScanEntry = {
       ...createEntry(),
-      id: "entry-1",
+      fileId: "entry-1",
       fileInfo: {
         ...createEntry().fileInfo,
         number: "FC2-123456",
@@ -230,7 +239,7 @@ describe("maintenance multipart grouping", () => {
     };
     const part2: LocalScanEntry = {
       ...part1,
-      id: "entry-2",
+      fileId: "entry-2",
       fileInfo: {
         ...part1.fileInfo,
         filePath: "/media/FC2-123456-2.mp4",
@@ -245,11 +254,11 @@ describe("maintenance multipart grouping", () => {
     const [group] = buildMaintenanceEntryGroups([part1, part2], {
       itemResults: {
         "entry-1": {
-          entryId: "entry-1",
+          fileId: "entry-1",
           status: "processing",
         },
         "entry-2": {
-          entryId: "entry-2",
+          fileId: "entry-2",
           status: "failed",
           error: "第二个分盘维护失败",
         },
@@ -259,7 +268,7 @@ describe("maintenance multipart grouping", () => {
     expect(group?.status).toBe("failed");
     expect(group?.errorText).toBe("第二个分盘维护失败");
     expect(group?.compareResult).toMatchObject({
-      entryId: "entry-2",
+      fileId: "entry-2",
       status: "failed",
       error: "第二个分盘维护失败",
     });
@@ -268,7 +277,7 @@ describe("maintenance multipart grouping", () => {
   it("summarizes preview counts by grouped movie instead of raw file count", () => {
     const part1: LocalScanEntry = {
       ...createEntry(),
-      id: "entry-1",
+      fileId: "entry-1",
       fileInfo: {
         ...createEntry().fileInfo,
         number: "FC2-123456",
@@ -281,7 +290,7 @@ describe("maintenance multipart grouping", () => {
     };
     const part2: LocalScanEntry = {
       ...part1,
-      id: "entry-2",
+      fileId: "entry-2",
       fileInfo: {
         ...part1.fileInfo,
         filePath: "/media/FC2-123456-2.mp4",
@@ -296,11 +305,11 @@ describe("maintenance multipart grouping", () => {
     expect(
       summarizeMaintenancePreviewGroups([part1, part2], {
         "entry-1": {
-          entryId: "entry-1",
+          fileId: "entry-1",
           status: "ready",
         },
         "entry-2": {
-          entryId: "entry-2",
+          fileId: "entry-2",
           status: "ready",
         },
       }),
@@ -311,10 +320,30 @@ describe("maintenance multipart grouping", () => {
     });
   });
 
-  it("summarizes execution counts by grouped movie instead of raw file count", () => {
+  it("treats a ready preview as the effective status when local scanError has been recovered", () => {
+    const entry: LocalScanEntry = {
+      ...createEntry(),
+      scanError: "NFO 解析失败: NFO missing website",
+      crawlerData: undefined,
+    };
+
+    const [group] = buildMaintenanceEntryGroups([entry], {
+      previewResults: {
+        [entry.fileId]: {
+          fileId: entry.fileId,
+          status: "ready",
+        },
+      },
+    });
+
+    expect(group?.status).toBe("success");
+    expect(group?.errorText).toBeUndefined();
+  });
+
+  it("builds a unified batch view model with grouped preview state and executable entries", () => {
     const part1: LocalScanEntry = {
       ...createEntry(),
-      id: "entry-1",
+      fileId: "entry-1",
       fileInfo: {
         ...createEntry().fileInfo,
         number: "FC2-123456",
@@ -327,7 +356,70 @@ describe("maintenance multipart grouping", () => {
     };
     const part2: LocalScanEntry = {
       ...part1,
-      id: "entry-2",
+      fileId: "entry-2",
+      fileInfo: {
+        ...part1.fileInfo,
+        filePath: "/media/FC2-123456-2.mp4",
+        fileName: "FC2-123456-2",
+        part: {
+          number: 2,
+          suffix: "-2",
+        },
+      },
+    };
+
+    const viewModel = buildMaintenanceEntryViewModel([part1, part2], {
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+          fieldDiffs: [createValueDiff({ field: "title", label: "标题", oldValue: "A", newValue: "B", changed: true })],
+          pathDiff: {
+            fileId: "entry-1",
+            currentVideoPath: "/media/FC2-123456-1.mp4",
+            targetVideoPath: "/organized/FC2-123456-1.mp4",
+            currentDir: "/media",
+            targetDir: "/organized",
+            changed: true,
+          },
+        },
+        "entry-2": {
+          fileId: "entry-2",
+          status: "ready",
+        },
+      },
+    });
+
+    expect(viewModel.previewSummary).toEqual({
+      totalCount: 1,
+      readyCount: 1,
+      blockedCount: 0,
+    });
+    expect(viewModel.executableEntries.map((entry) => entry.fileId)).toEqual(["entry-1", "entry-2"]);
+    expect(viewModel.groups[0]?.previewState).toMatchObject({
+      ready: true,
+      diffCount: 1,
+      hasPathChange: true,
+    });
+  });
+
+  it("summarizes execution counts by grouped movie instead of raw file count", () => {
+    const part1: LocalScanEntry = {
+      ...createEntry(),
+      fileId: "entry-1",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        number: "FC2-123456",
+        part: {
+          number: 1,
+          suffix: "-1",
+        },
+      },
+      currentDir: "/media",
+    };
+    const part2: LocalScanEntry = {
+      ...part1,
+      fileId: "entry-2",
       fileInfo: {
         ...part1.fileInfo,
         filePath: "/media/FC2-123456-2.mp4",
@@ -342,11 +434,11 @@ describe("maintenance multipart grouping", () => {
     expect(
       summarizeMaintenanceExecutionGroups([part1, part2], {
         "entry-1": {
-          entryId: "entry-1",
+          fileId: "entry-1",
           status: "success",
         },
         "entry-2": {
-          entryId: "entry-2",
+          fileId: "entry-2",
           status: "success",
         },
       }),
@@ -364,8 +456,7 @@ describe("maintenance multipart grouping", () => {
     const targetDir = "/organized/FC2-123456";
     const part1: LocalScanEntry = {
       ...createEntry(),
-      id: "entry-1",
-      videoPath: `${targetDir}/FC2-123456-1.mp4`,
+      fileId: "entry-1",
       currentDir: targetDir,
       fileInfo: {
         ...createEntry().fileInfo,
@@ -380,8 +471,7 @@ describe("maintenance multipart grouping", () => {
     };
     const part2: LocalScanEntry = {
       ...createEntry(),
-      id: "entry-2",
-      videoPath: `${sourceDir}/FC2-123456-2.mp4`,
+      fileId: "entry-2",
       currentDir: sourceDir,
       fileInfo: {
         ...createEntry().fileInfo,
@@ -396,10 +486,10 @@ describe("maintenance multipart grouping", () => {
     };
     const itemResults = {
       "entry-1": {
-        entryId: "entry-1",
+        fileId: "entry-1",
         status: "success" as const,
         pathDiff: {
-          entryId: "entry-1",
+          fileId: "entry-1",
           currentVideoPath: `${sourceDir}/FC2-123456-1.mp4`,
           targetVideoPath: `${targetDir}/FC2-123456-1.mp4`,
           currentDir: sourceDir,
@@ -408,10 +498,10 @@ describe("maintenance multipart grouping", () => {
         },
       },
       "entry-2": {
-        entryId: "entry-2",
+        fileId: "entry-2",
         status: "processing" as const,
         pathDiff: {
-          entryId: "entry-2",
+          fileId: "entry-2",
           currentVideoPath: `${sourceDir}/FC2-123456-2.mp4`,
           targetVideoPath: `${targetDir}/FC2-123456-2.mp4`,
           currentDir: sourceDir,
@@ -428,8 +518,7 @@ describe("maintenance multipart grouping", () => {
   it("finds a grouped entry by any child entry id", () => {
     const first: LocalScanEntry = {
       ...createEntry(createCrawlerData({ number: "ABC-123" })),
-      id: "entry-a",
-      videoPath: "/media/ABC-123-part1.mp4",
+      fileId: "entry-a",
       fileInfo: {
         filePath: "/media/ABC-123-part1.mp4",
         fileName: "ABC-123-part1.mp4",
@@ -441,8 +530,7 @@ describe("maintenance multipart grouping", () => {
     };
     const second: LocalScanEntry = {
       ...first,
-      id: "entry-b",
-      videoPath: "/media/ABC-123-part2.mp4",
+      fileId: "entry-b",
       fileInfo: {
         ...first.fileInfo,
         filePath: "/media/ABC-123-part2.mp4",
@@ -453,8 +541,8 @@ describe("maintenance multipart grouping", () => {
     const group = findMaintenanceEntryGroup([first, second], "entry-b");
 
     expect(group?.id).toBe("/media::ABC-123");
-    expect(group?.representative.id).toBe("entry-a");
-    expect(group?.items.map((entry) => entry.id)).toEqual(["entry-a", "entry-b"]);
+    expect(group?.representative.fileId).toBe("entry-a");
+    expect(group?.items.map((entry) => entry.fileId)).toEqual(["entry-a", "entry-b"]);
   });
 });
 
@@ -462,7 +550,7 @@ describe("buildCommittedCrawlerData", () => {
   it("merges selected old and new diff values onto the existing crawler data", () => {
     const entry = createEntry(createCrawlerData());
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         title: "New Title",
@@ -514,7 +602,7 @@ describe("buildMaintenanceCommitItem", () => {
       }),
     );
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         poster_url: "https://example.com/new-poster.jpg",
@@ -582,7 +670,7 @@ describe("buildMaintenanceCommitItem", () => {
       }),
     );
     const scenePreview: MaintenancePreviewItem = {
-      entryId: sceneEntry.id,
+      fileId: sceneEntry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         scene_images: ["https://example.com/new-scene.jpg"],
@@ -620,7 +708,7 @@ describe("buildMaintenanceCommitItem", () => {
       }),
     );
     const remotePreview: MaintenancePreviewItem = {
-      entryId: remoteEntry.id,
+      fileId: remoteEntry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         trailer_url: "https://example.com/trailer-new.mp4",
@@ -652,7 +740,7 @@ describe("buildMaintenanceCommitItem", () => {
       scanError: "NFO 解析失败: NFO missing website",
     };
     const localPreview: MaintenancePreviewItem = {
-      entryId: localEntry.id,
+      fileId: localEntry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         trailer_url: "https://example.com/trailer-new.mp4",
@@ -686,7 +774,7 @@ describe("buildMaintenanceCommitItem", () => {
       scanError: "NFO 解析失败: NFO missing website",
     };
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         poster_url: "https://example.com/new-poster.jpg",
@@ -812,8 +900,8 @@ describe("resolveMaintenanceDiffImageSrc", () => {
   });
 });
 
-describe("useMaintenanceStore", () => {
-  it("preserves preview diffs during optimistic execution, clears stale results on new previews, and can roll back execution state", () => {
+describe("maintenance execution stores", () => {
+  it("preserves preview diffs during optimistic execution and can roll back execution state", () => {
     const fieldDiff = createValueDiff({
       field: "title" as const,
       label: "标题",
@@ -829,122 +917,315 @@ describe("useMaintenanceStore", () => {
       changed: false,
     });
     const pathDiff = {
-      entryId: "entry-1",
+      fileId: "entry-1",
       currentVideoPath: "/media/ABC-123.mp4",
       targetVideoPath: "/organized/ABC-123.mp4",
       currentDir: "/media",
       targetDir: "/organized",
       changed: true,
     };
+    const previewResults = {
+      "entry-1": {
+        fileId: "entry-1",
+        status: "ready" as const,
+        fieldDiffs: [fieldDiff],
+        unchangedFieldDiffs: [unchangedFieldDiff],
+        pathDiff,
+      },
+    };
 
-    useMaintenanceStore.getState().applyPreviewResult({
-      items: [
-        {
-          entryId: "entry-1",
-          status: "ready",
-          fieldDiffs: [fieldDiff],
-          unchangedFieldDiffs: [unchangedFieldDiff],
-          pathDiff,
-        },
-      ],
+    useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
+    useMaintenanceExecutionStore.getState().beginExecution({
+      fileIds: ["entry-1"],
+      displayCount: 1,
     });
-
-    useMaintenanceStore.getState().beginExecution(["entry-1"]);
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-1",
+    applyMaintenanceExecutionItemResult({
+      fileId: "entry-1",
       status: "processing",
     });
 
-    expect(useMaintenanceStore.getState().itemResults["entry-1"]).toEqual({
-      entryId: "entry-1",
+    expect(useMaintenanceExecutionStore.getState().itemResults["entry-1"]).toEqual({
+      fileId: "entry-1",
       status: "processing",
+    });
+
+    const compareGroup = buildMaintenanceEntryGroups([createEntry(createCrawlerData())], {
+      itemResults: useMaintenanceExecutionStore.getState().itemResults,
+      previewResults,
+    })[0];
+    expect(compareGroup?.compareResult).toMatchObject({
+      fileId: "entry-1",
       fieldDiffs: [fieldDiff],
       unchangedFieldDiffs: [unchangedFieldDiff],
       pathDiff,
     });
 
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-1",
-      status: "success",
-      fieldDiffs: [
-        createValueDiff({
-          field: "title",
-          label: "标题",
-          oldValue: "Old Title",
-          newValue: "Older Preview",
-          changed: true,
-        }),
-      ],
+    useMaintenanceExecutionStore.getState().rollbackExecutionStart();
+
+    expect(useMaintenanceExecutionStore.getState().executionStatus).toBe("idle");
+    expect(useMaintenanceExecutionStore.getState().progressTotal).toBe(0);
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+  });
+});
+
+describe("maintenance preview store", () => {
+  it("keeps preview refresh state separate from full invalidation", () => {
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      statusText: "执行完成 · 成功 1 · 失败 0",
+      itemResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "success",
+        },
+      },
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
     });
 
-    useMaintenanceStore.getState().applyPreviewResult({
+    useMaintenancePreviewStore.getState().beginPreviewRequest();
+
+    expect(useMaintenancePreviewStore.getState().previewPending).toBe(true);
+    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+      "entry-1": {
+        fileId: "entry-1",
+        status: "success",
+      },
+    });
+
+    clearMaintenancePreviewResults();
+
+    expect(useMaintenancePreviewStore.getState().previewPending).toBe(false);
+    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+      "entry-1": {
+        fileId: "entry-1",
+        status: "success",
+      },
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: true,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
+    invalidateMaintenancePreview();
+
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().previewPending).toBe(false);
+    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
+  });
+
+  it("retargets the active entry to the latest preview set and exposes preview diffs instead of stale execution results", () => {
+    const firstEntry = createEntry(createCrawlerData());
+    const secondEntry: LocalScanEntry = {
+      ...createEntry(createCrawlerData({ number: "ABC-124", title: "Another Title", title_zh: "另一个标题" })),
+      fileId: "entry-2",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        filePath: "/media/ABC-124.mp4",
+        fileName: "ABC-124.mp4",
+        number: "ABC-124",
+      },
+      nfoPath: "/media/ABC-124.nfo",
+    };
+
+    useMaintenanceEntryStore.getState().setEntries([firstEntry, secondEntry], "/media");
+    useMaintenanceEntryStore.getState().setActiveId("entry-2");
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      statusText: "执行完成 · 成功 0 · 失败 1",
+      itemResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "failed",
+          error: "旧执行结果",
+        },
+      },
+    });
+
+    applyMaintenancePreviewResult({
       items: [
         {
-          entryId: "entry-1",
+          fileId: "entry-1",
           status: "ready",
-          unchangedFieldDiffs: [
+          fieldDiffs: [
             createValueDiff({
               field: "title",
               label: "标题",
-              oldValue: "Same Title",
-              newValue: "Same Title",
-              changed: false,
+              oldValue: "Old Title",
+              newValue: "New Title",
+              changed: true,
             }),
           ],
         },
       ],
     });
 
-    expect(useMaintenanceStore.getState().itemResults).toEqual({});
-    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.unchangedFieldDiffs).toEqual([
-      createValueDiff({
-        field: "title",
-        label: "标题",
-        oldValue: "Same Title",
-        newValue: "Same Title",
-        changed: false,
-      }),
-    ]);
+    const entryState = useMaintenanceEntryStore.getState();
+    const executionState = useMaintenanceExecutionStore.getState();
+    const previewState = useMaintenancePreviewStore.getState();
+    const group = findMaintenanceEntryGroup(entryState.entries, "entry-1", {
+      itemResults: executionState.itemResults,
+      previewResults: previewState.previewResults,
+    });
 
-    useMaintenanceStore.getState().beginExecution(["entry-1"]);
-    useMaintenanceStore.getState().rollbackExecutionStart();
-
-    expect(useMaintenanceStore.getState().executionStatus).toBe("idle");
-    expect(useMaintenanceStore.getState().progressTotal).toBe(0);
-    expect(useMaintenanceStore.getState().itemResults).toEqual({});
-    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.unchangedFieldDiffs).toEqual([
-      createValueDiff({
-        field: "title",
-        label: "标题",
-        oldValue: "Same Title",
-        newValue: "Same Title",
-        changed: false,
-      }),
-    ]);
+    expect(entryState.activeId).toBe("entry-1");
+    expect(executionState.itemResults).toEqual({});
+    expect(group?.compareResult).toMatchObject({
+      fileId: "entry-1",
+      status: "ready",
+    });
   });
 
+  it("invalidates preview state through session actions when selections or preset change", () => {
+    useMaintenanceEntryStore.getState().setEntries(
+      [
+        createEntry(createCrawlerData()),
+        {
+          ...createEntry(createCrawlerData({ number: "ABC-124" })),
+          fileId: "entry-2",
+        },
+      ],
+      "/media",
+    );
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      statusText: "执行完成 · 成功 1 · 失败 0",
+      itemResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "success",
+        },
+      },
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    toggleMaintenanceSelectedIds(["entry-2"]);
+
+    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual(["entry-1"]);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    changeMaintenancePreset("refresh_data");
+
+    expect(useMaintenanceEntryStore.getState().presetId).toBe("refresh_data");
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+  });
+});
+
+describe("formatMaintenanceStatus", () => {
   it("keeps stopped wording after an interrupted run becomes idle", () => {
-    useMaintenanceStore.getState().beginExecution(["entry-1", "entry-2"]);
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-1",
-      status: "success",
-    });
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-2",
-      status: "failed",
-      error: "维护已停止，项目未执行",
-    });
-    useMaintenanceStore.getState().setExecutionStatus("stopping");
-    useMaintenanceStore.getState().setStatusText("正在停止维护操作...");
+    const entries = [
+      {
+        ...createEntry(),
+        fileId: "entry-1",
+      },
+      {
+        ...createEntry(),
+        fileId: "entry-2",
+        fileInfo: {
+          ...createEntry().fileInfo,
+          filePath: "/media/ABC-124.mp4",
+          fileName: "ABC-124.mp4",
+          number: "ABC-124",
+        },
+      },
+    ];
+    const itemResults = {
+      "entry-1": {
+        fileId: "entry-1",
+        status: "success" as const,
+      },
+      "entry-2": {
+        fileId: "entry-2",
+        status: "failed" as const,
+        error: "维护已停止，项目未执行",
+      },
+    };
 
-    useMaintenanceStore.getState().applyStatusSnapshot({
-      state: "idle",
-      totalEntries: 0,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
-    });
+    const statusText = formatMaintenanceStatus(
+      {
+        state: "idle",
+        totalEntries: 0,
+        completedEntries: 0,
+        successCount: 0,
+        failedCount: 0,
+      },
+      entries,
+      itemResults,
+      "正在停止维护操作...",
+      "stopping",
+    );
 
-    expect(useMaintenanceStore.getState().statusText).toBe("已停止 · 成功 1 · 失败/取消 1");
+    expect(statusText).toBe("已停止 · 成功 1 · 失败/取消 1");
   });
 });

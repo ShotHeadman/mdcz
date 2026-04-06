@@ -17,8 +17,8 @@ export enum IpcChannel {
   Scraper_Requeue = "scraper:requeue",
   Scraper_RetryFailed = "scraper:retry-failed",
   Scraper_GetFailedFiles = "scraper:get-failed-files",
-  Scraper_HasRecoverableSession = "scraper:has-recoverable-session",
-  Scraper_RecoverSession = "scraper:recover-session",
+  Scraper_GetRecoverableSession = "scraper:get-recoverable-session",
+  Scraper_ResolveRecoverableSession = "scraper:resolve-recoverable-session",
   Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",
@@ -44,6 +44,7 @@ export enum IpcChannel {
 
   App_Info = "app:info",
   App_OpenExternal = "app:open-external",
+  App_PlayMedia = "app:play-media",
 
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",

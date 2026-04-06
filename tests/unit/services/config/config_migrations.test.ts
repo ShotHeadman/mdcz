@@ -1,5 +1,6 @@
 import { ConfigMigrationError, CURRENT_CONFIG_VERSION, runMigrations } from "@main/services/config/migrator";
 import { configurationSchema } from "@main/services/config/models";
+import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
 import { describe, expect, it } from "vitest";
 
 const V040_ENABLED_SITES = [
@@ -391,8 +392,8 @@ describe("Configuration migrations", () => {
       expect(result).toEqual({
         migrated: true,
         fromVersion: 1,
-        toVersion: 3,
-        applied: ["v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2"],
+        toVersion: 4,
+        applied: ["v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2", "v0.5.2 → v0.6.0"],
       });
 
       expect(download.generateNfo).toBe(true);
@@ -431,7 +432,7 @@ describe("Configuration migrations", () => {
     });
   });
 
-  describe("v0.5.0 → v0.5.2", () => {
+  describe("v0.5.0 → v0.6.0", () => {
     function buildV050Config(overrides: Record<string, unknown> = {}): Record<string, unknown> {
       return {
         configVersion: 2,
@@ -466,24 +467,24 @@ describe("Configuration migrations", () => {
       expect(result).toEqual({
         migrated: true,
         fromVersion: 2,
-        toVersion: 3,
-        applied: ["v0.5.0 → v0.5.2"],
+        toVersion: 4,
+        applied: ["v0.5.0 → v0.5.2", "v0.5.2 → v0.6.0"],
       });
 
       expect(translate.llmMaxRetries).toBe(3);
       expect(translate).not.toHaveProperty("llmMaxTry");
       expect(translate.targetLanguage).toBe("zh-CN");
+      expect(translate.llmBaseUrl).toBe(DEFAULT_LLM_BASE_URL);
       expect(translate).not.toHaveProperty("titleLanguage");
       expect(translate).not.toHaveProperty("plotLanguage");
       expect(translate).not.toHaveProperty("enableGoogleFallback");
-      expect(translate.llmPrompt).toBe(
-        "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
-      );
+      expect(translate.llmPrompt).toBe("自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}");
       expect(fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
       expect(parsed.translate.llmMaxRetries).toBe(3);
       expect(parsed.translate.targetLanguage).toBe("zh-CN");
+      expect(parsed.translate.llmBaseUrl).toBe(DEFAULT_LLM_BASE_URL);
       expect(parsed.translate.llmPrompt).toBe(
-        "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+        "自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}",
       );
       expect(parsed.aggregation.fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
     });
@@ -556,7 +557,7 @@ describe("Configuration migrations", () => {
         migrated: true,
         fromVersion: 0,
         toVersion: CURRENT_CONFIG_VERSION,
-        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2"],
+        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2", "v0.5.2 → v0.6.0"],
       });
     });
 

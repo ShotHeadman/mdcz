@@ -32,7 +32,7 @@ describe("LocalScanService", () => {
     const entries = await new LocalScanService().scan(root, "extrafanart");
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.videoPath).toBe(videoPath);
+    expect(entries[0]?.fileInfo.filePath).toBe(videoPath);
     expect(entries[0]?.assets.trailer).toBe(trailerPath);
   });
 
@@ -65,7 +65,7 @@ describe("LocalScanService", () => {
     const entries = await new LocalScanService().scan(root, "extrafanart");
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.videoPath).toBe(partPath);
+    expect(entries[0]?.fileInfo.filePath).toBe(partPath);
     expect(entries[0]?.nfoPath).toBe(multipartNfoPath);
   });
 
@@ -78,7 +78,7 @@ describe("LocalScanService", () => {
     const entries = await new LocalScanService().scan(root, "extrafanart");
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.videoPath).toBe(videoPath);
+    expect(entries[0]?.fileInfo.filePath).toBe(videoPath);
   });
 
   it("marks videos as subtitled when a matching external subtitle file exists", async () => {
@@ -94,7 +94,7 @@ describe("LocalScanService", () => {
     const entries = await new LocalScanService().scan(root, "extrafanart");
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.videoPath).toBe(videoPath);
+    expect(entries[0]?.fileInfo.filePath).toBe(videoPath);
     expect(entries[0]?.fileInfo.isSubtitled).toBe(true);
     expect(entries[0]?.fileInfo.subtitleTag).toBe("中文字幕");
   });

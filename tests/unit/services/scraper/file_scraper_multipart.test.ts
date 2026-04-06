@@ -6,7 +6,7 @@ import { SignalService } from "@main/services/SignalService";
 import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
-import { FileScraper } from "@main/services/scraper/FileScraper";
+import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
@@ -85,7 +85,7 @@ const createScraper = (
     overrides.organizeVideo ?? vi.fn(async (_fileInfo: FileInfo, plan: OrganizePlan) => plan.targetVideoPath);
   const moveToFailedFolder = overrides.moveToFailedFolder ?? vi.fn(async (fileInfo: FileInfo) => fileInfo.filePath);
 
-  const scraper = new FileScraper({
+  const scraper = createFileScraper({
     configManager: new TestConfigManager(config),
     aggregationService: {
       aggregate,

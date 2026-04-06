@@ -19,8 +19,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 });
 
 const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
-  id: "entry-1",
-  videoPath: "/media/ABC-123.mp4",
+  fileId: "entry-1",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
     fileName: "ABC-123.mp4",
@@ -36,7 +35,6 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     fanart: "/media/fanart.jpg",
     sceneImages: ["/media/extrafanart/fanart1.jpg"],
     trailer: "/media/trailer.mp4",
-    nfo: "/media/ABC-123.nfo",
     actorPhotos: [],
   },
   currentDir: "/media",

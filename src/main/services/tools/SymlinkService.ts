@@ -3,6 +3,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
+import { inspectStrmTarget } from "@main/utils/strm";
 import { SUBTITLE_EXTENSIONS } from "@main/utils/subtitles";
 
 const DEFAULT_MEDIA_EXTENSIONS = new Set([
@@ -105,6 +106,12 @@ export interface CreateSymlinkPayload {
   copyFiles?: boolean;
 }
 
+interface PreparedSymlinkTask {
+  sourceDir: string;
+  destDir: string;
+  copyFiles: boolean;
+}
+
 export interface SymlinkTaskResult {
   total: number;
   linked: number;
@@ -129,7 +136,7 @@ export interface SymlinkServiceDependencies {
 export class SymlinkService {
   constructor(private readonly deps: SymlinkServiceDependencies) {}
 
-  async run(payload: CreateSymlinkPayload): Promise<SymlinkTaskResult> {
+  async prepare(payload: CreateSymlinkPayload): Promise<PreparedSymlinkTask> {
     const sourceInput = payload.sourceDir.trim();
     const destInput = payload.destDir.trim();
     if (!sourceInput || !destInput) {
@@ -151,6 +158,18 @@ export class SymlinkService {
 
     await mkdir(destDir, { recursive: true });
 
+    return {
+      sourceDir,
+      destDir,
+      copyFiles,
+    };
+  }
+
+  async run(payload: CreateSymlinkPayload): Promise<SymlinkTaskResult> {
+    return this.runPrepared(await this.prepare(payload));
+  }
+
+  async runPrepared({ sourceDir, destDir, copyFiles }: PreparedSymlinkTask): Promise<SymlinkTaskResult> {
     const copyExtensions = new Set([".nfo", ".jpg", ".png", ...SUBTITLE_EXTENSIONS]);
 
     this.deps.signalService.showLogText("Starting symlink task");
@@ -194,6 +213,20 @@ export class SymlinkService {
       if (destinationState === "broken_symlink") {
         await unlink(destinationPath).catch(() => undefined);
         this.deps.signalService.showLogText(`Removed broken symlink: ${destinationPath}`);
+      }
+
+      const strmTarget = extension === ".strm" ? await inspectStrmTarget(sourcePath).catch(() => undefined) : undefined;
+      if (strmTarget?.kind === "relative_path") {
+        try {
+          await copyFile(sourcePath, destinationPath);
+          this.deps.signalService.showLogText(`Copied relative STRM file: ${sourcePath}`);
+          result.copied += 1;
+        } catch (error) {
+          result.failed += 1;
+          const message = toErrorMessage(error);
+          this.deps.signalService.showLogText(`Failed to copy relative STRM file: ${sourcePath}. ${message}`, "warn");
+        }
+        continue;
       }
 
       if (copyExtensions.has(extension)) {
