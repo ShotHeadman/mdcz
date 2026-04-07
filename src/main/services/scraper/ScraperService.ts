@@ -163,7 +163,7 @@ export class ScraperService {
 
   private readonly sharedNetworkClient: NetworkClient;
 
-  private readonly sharedCrawlerProvider: CrawlerProvider;
+  private readonly aggregationService: AggregationService;
 
   constructor(
     private readonly signalService: SignalService,
@@ -173,7 +173,7 @@ export class ScraperService {
     private readonly actorSourceProvider?: ActorSourceProvider,
   ) {
     this.sharedNetworkClient = networkClient;
-    this.sharedCrawlerProvider = crawlerProvider;
+    this.aggregationService = new AggregationService(crawlerProvider);
   }
 
   getStatus(): ScraperStatus {
@@ -322,6 +322,7 @@ export class ScraperService {
     }
 
     await this.session.finish();
+    this.aggregationService.clearCache();
 
     this.signalService.setButtonStatus(true, false);
     this.logger.info(`Scrape task finished: ${taskId}`);
@@ -449,7 +450,7 @@ export class ScraperService {
 
   private createFileScraperDependencies() {
     return {
-      aggregationService: new AggregationService(this.sharedCrawlerProvider),
+      aggregationService: this.aggregationService,
       translateService: new TranslateService(this.sharedNetworkClient),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.sharedNetworkClient),

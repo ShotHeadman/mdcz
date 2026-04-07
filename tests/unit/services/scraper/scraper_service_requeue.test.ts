@@ -5,6 +5,9 @@ import { configManager, configurationSchema, defaultConfiguration } from "@main/
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
+import { AggregationService } from "@main/services/scraper/aggregation";
+import type { FileScraperDependencies } from "@main/services/scraper/FileScraper";
+import * as FileScraperModule from "@main/services/scraper/FileScraper";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import type { ScrapeResult } from "@shared/types";
@@ -346,5 +349,114 @@ describe("ScraperService requeue flow", () => {
     await waitForIdle(service);
 
     expect(retryProgress.get(secondFilePath)).toEqual([3]);
+  });
+
+  it("reuses the same aggregation service for requeues and clears its cache when the session ends", async () => {
+    const signalService = new SignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new ScraperService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        threadNumber: 1,
+      },
+    });
+    const secondFileTask = deferred<ScrapeResult>();
+    const firstFilePath = "/tmp/ABP-911.mp4";
+    const secondFilePath = "/tmp/ABP-922.mp4";
+    const createdDependencies: FileScraperDependencies[] = [];
+    const attemptCounts = new Map<string, number>();
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const clearCacheSpy = vi.spyOn(AggregationService.prototype, "clearCache");
+    vi.spyOn(FileScraperModule, "createFileScraper").mockImplementation((deps) => {
+      createdDependencies.push(deps);
+
+      return {
+        scrapeFile: (filePath: string) => {
+          const attempt = (attemptCounts.get(filePath) ?? 0) + 1;
+          attemptCounts.set(filePath, attempt);
+
+          if (filePath === firstFilePath) {
+            if (attempt === 1) {
+              return Promise.resolve({
+                status: "failed",
+                fileId: "abp-911",
+                error: "lookup failed",
+                fileInfo: {
+                  filePath: firstFilePath,
+                  fileName: "ABP-911.mp4",
+                  extension: ".mp4",
+                  number: "ABP-911",
+                  isSubtitled: false,
+                },
+              });
+            }
+
+            return Promise.resolve({
+              status: "success",
+              fileId: "abp-911",
+              fileInfo: {
+                filePath: firstFilePath,
+                fileName: "ABP-911.mp4",
+                extension: ".mp4",
+                number: "ABP-911",
+                isSubtitled: false,
+              },
+              crawlerData: {
+                title: "ABP-911",
+                number: "ABP-911",
+                actors: [],
+                genres: [],
+                scene_images: [],
+                website: config.scrape.enabledSites[0],
+              },
+            });
+          }
+
+          if (filePath === secondFilePath) {
+            return secondFileTask.promise;
+          }
+
+          throw new Error(`Unexpected file path: ${filePath}`);
+        },
+      } as unknown as FileScraper;
+    });
+
+    await service.retryFiles([firstFilePath, secondFilePath]);
+    await waitFor(() => service.getFailedFiles().includes(firstFilePath) && service.getStatus().running);
+
+    await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 1 });
+
+    secondFileTask.resolve({
+      status: "success",
+      fileId: "abp-922",
+      fileInfo: {
+        filePath: secondFilePath,
+        fileName: "ABP-922.mp4",
+        extension: ".mp4",
+        number: "ABP-922",
+        isSubtitled: false,
+      },
+      crawlerData: {
+        title: "ABP-922",
+        number: "ABP-922",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: config.scrape.enabledSites[0],
+      },
+    });
+
+    await waitForIdle(service);
+
+    expect(createdDependencies).toHaveLength(2);
+    expect(createdDependencies[0]?.aggregationService).toBe(createdDependencies[1]?.aggregationService);
+    expect(clearCacheSpy).toHaveBeenCalledTimes(1);
   });
 });
