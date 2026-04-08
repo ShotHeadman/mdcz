@@ -5,6 +5,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractText, parseDate } from "../base/parser";
 import type { Context, CrawlerInput, SearchPageResolution } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { pickSearchResultDetailUrl, toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const JAV321_BASE_URL = "https://www.jav321.com";
@@ -259,3 +260,8 @@ export class Jav321Crawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.JAV321,
+  crawler: Jav321Crawler,
+};

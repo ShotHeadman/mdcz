@@ -6,6 +6,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { parseDate } from "../base/parser";
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { uniqueStrings } from "./helpers";
 
 const AVBASE_BASE_URL = "https://www.avbase.net";
@@ -415,3 +416,8 @@ export class AvbaseCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.AVBASE,
+  crawler: AvbaseCrawler,
+};

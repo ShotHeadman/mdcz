@@ -5,6 +5,7 @@ import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
 
 import type { Context, CrawlerInput } from "../../base/types";
+import type { CrawlerRegistration } from "../../registration";
 
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
 import { classifyDmmDetailFailure } from "./failureClassifier";
@@ -191,3 +192,8 @@ export class DmmCrawler extends BaseDmmCrawler {
     return detailUrls[0] ?? null;
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.DMM,
+  crawler: DmmCrawler,
+};

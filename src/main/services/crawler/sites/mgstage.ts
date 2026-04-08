@@ -5,6 +5,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractText, parseDate } from "../base/parser";
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { extractByLabel, pickSearchResultDetailUrl, toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const MGSTAGE_BASE_URL = "https://www.mgstage.com";
@@ -110,3 +111,8 @@ export class MGStageCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.MGSTAGE,
+  crawler: MGStageCrawler,
+};

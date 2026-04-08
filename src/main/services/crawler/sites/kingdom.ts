@@ -5,6 +5,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractText, parseDate } from "../base/parser";
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { toAbsoluteUrl } from "./helpers";
 
 const KINGDOM_BASE_URL = "https://kingdom.vc";
@@ -199,3 +200,8 @@ export class KingdomCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.KINGDOM,
+  crawler: KingdomCrawler,
+};

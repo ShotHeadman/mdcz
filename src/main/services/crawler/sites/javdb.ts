@@ -6,6 +6,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractAttr, extractText, parseDate } from "../base/parser";
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { extractParentLinksByLabelSelector, extractParentTextByLabelSelector, toAbsoluteUrl } from "./helpers";
 
 const JAVDB_BASE_URL = "https://javdb.com";
@@ -181,3 +182,8 @@ export class JavdbCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.JAVDB,
+  crawler: JavdbCrawler,
+};

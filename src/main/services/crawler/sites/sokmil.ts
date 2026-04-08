@@ -5,6 +5,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const SOKMIL_BASE_URL = "https://www.sokmil.com";
@@ -195,3 +196,8 @@ export class SokmilCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.SOKMIL,
+  crawler: SokmilCrawler,
+};

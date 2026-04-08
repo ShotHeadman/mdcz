@@ -1,31 +1,14 @@
 import { bootstrap } from "@main/bootstrap";
 import type { ServiceContainer } from "@main/container";
+import { createContainer } from "@main/createContainer";
 import { registerIpcHandlers } from "@main/ipc";
 import { registerLocalFileHandler, registerLocalFileScheme } from "@main/localFileProtocol";
-import { ActorImageService } from "@main/services/ActorImageService";
-import {
-  ActorSourceProvider,
-  ActorSourceRegistry,
-  AvbaseActorSource,
-  AvjohoActorSource,
-  GfriendsActorSource,
-  LocalActorSource,
-  OfficialActorSource,
-} from "@main/services/actorSource";
 import { configManager } from "@main/services/config";
-import { createImageHostCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
-import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
-import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
-import { createElectronCookieResolver, NetworkClient } from "@main/services/network";
+import { NetworkClient } from "@main/services/network";
 import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
-import { ScraperService } from "@main/services/scraper";
-import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
-import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { TrayService } from "@main/services/TrayService";
-import { AmazonPosterToolService, SymlinkService } from "@main/services/tools";
 import { UpdateService } from "@main/services/UpdateService";
 import { WindowService } from "@main/services/WindowService";
 import { app, BrowserWindow } from "electron";
@@ -49,99 +32,32 @@ let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) =
   signalService.forwardLoggerLog(payload);
 });
 
-const ensureMainWindow = async (): Promise<void> => {
+const ensureWindowService = (): WindowService => {
   if (!windowService) {
     windowService = new WindowService();
   }
 
-  const mainWindow = windowService.createMainWindow();
+  return windowService;
+};
+
+const ensureMainWindow = async (): Promise<void> => {
+  const currentWindowService = ensureWindowService();
+  const mainWindow = currentWindowService.createMainWindow();
   signalService.setMainWindow(mainWindow);
 
   if (!ipcRegistered) {
-    const fetchGateway = new FetchGateway(sharedNetworkClient);
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway,
-      siteRequestConfigRegistrar: sharedNetworkClient,
-    });
-    const imageHostCooldownStore = createImageHostCooldownStore();
-    const amazonJpImageService = new AmazonJpImageService(sharedNetworkClient);
-    const actorImageService = new ActorImageService({ networkClient: sharedNetworkClient });
-    const avjohoCookieResolver = createElectronCookieResolver({
-      expectedCookieNames: ["wsidchk"],
-    });
-    const actorSourceProvider = new ActorSourceProvider({
-      registry: new ActorSourceRegistry([
-        new LocalActorSource(actorImageService),
-        new OfficialActorSource({ networkClient: sharedNetworkClient }),
-        new GfriendsActorSource({ networkClient: sharedNetworkClient }),
-        new AvjohoActorSource({ networkClient: sharedNetworkClient, cookieResolver: avjohoCookieResolver }),
-        new AvbaseActorSource({ networkClient: sharedNetworkClient }),
-      ]),
-    });
-
-    const scraperService = new ScraperService(
+    const container: ServiceContainer = createContainer({
+      windowService: currentWindowService,
       signalService,
-      sharedNetworkClient,
-      crawlerProvider,
-      actorImageService,
-      actorSourceProvider,
-      imageHostCooldownStore,
-    );
-    const maintenanceService = new MaintenanceService(
-      signalService,
-      sharedNetworkClient,
-      crawlerProvider,
-      actorImageService,
-      actorSourceProvider,
-      imageHostCooldownStore,
-    );
-    const container: ServiceContainer = {
-      signalService,
-      windowService,
       networkClient: sharedNetworkClient,
-      fetchGateway,
-      scraperService,
-      maintenanceService,
-      crawlerProvider,
-      actorSourceProvider,
-      actorImageService,
-      jellyfinActorPhotoService: new JellyfinActorPhotoService({
-        signalService,
-        networkClient: sharedNetworkClient,
-        actorSourceProvider,
-      }),
-      jellyfinActorInfoService: new JellyfinActorInfoService({
-        signalService,
-        networkClient: sharedNetworkClient,
-        actorSourceProvider,
-      }),
-      embyActorPhotoService: new EmbyActorPhotoService({
-        signalService,
-        networkClient: sharedNetworkClient,
-        actorSourceProvider,
-      }),
-      embyActorInfoService: new EmbyActorInfoService({
-        signalService,
-        networkClient: sharedNetworkClient,
-        actorSourceProvider,
-      }),
-      symlinkService: new SymlinkService({ signalService }),
-      amazonPosterToolService: new AmazonPosterToolService(sharedNetworkClient, amazonJpImageService),
-      shutdown: async () => {
-        await Promise.allSettled([
-          scraperService.shutdown(),
-          maintenanceService.shutdown(),
-          crawlerProvider.shutdown(),
-        ]);
-      },
-    };
+    });
 
     registerIpcHandlers(container);
     serviceContainer = container;
     ipcRegistered = true;
   }
 
-  await windowService.loadMainWindow();
+  await currentWindowService.loadMainWindow();
 };
 
 const cleanupResources = async (): Promise<void> => {

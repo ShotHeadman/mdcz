@@ -2,6 +2,7 @@ import { Website } from "@shared/enums";
 import type { CheerioAPI } from "cheerio";
 
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { BaseLabelCrawler, type LabelCrawlerConfig } from "./BaseLabelCrawler";
 import { toAbsoluteUrl } from "./helpers";
 
@@ -31,3 +32,8 @@ export class FalenoCrawler extends BaseLabelCrawler {
     return toAbsoluteUrl(this.config.baseUrl, href) ?? null;
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.FALENO,
+  crawler: FalenoCrawler,
+};

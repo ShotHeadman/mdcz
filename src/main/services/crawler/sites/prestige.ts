@@ -4,6 +4,7 @@ import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../base/BaseCrawler";
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 
 interface PrestigeSearchResponse {
   hits?: {
@@ -90,3 +91,8 @@ export class PrestigeCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.PRESTIGE,
+  crawler: PrestigeCrawler,
+};

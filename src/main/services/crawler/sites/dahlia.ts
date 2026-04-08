@@ -1,6 +1,7 @@
 import { Website } from "@shared/enums";
 
 import type { Context } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { BaseLabelCrawler, type LabelCrawlerConfig } from "./BaseLabelCrawler";
 
 export class DahliaCrawler extends BaseLabelCrawler {
@@ -20,3 +21,8 @@ export class DahliaCrawler extends BaseLabelCrawler {
     return this.config.buildSearchUrl(this.config.baseUrl, context.number);
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.DAHLIA,
+  crawler: DahliaCrawler,
+};

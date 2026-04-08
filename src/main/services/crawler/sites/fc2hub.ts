@@ -5,6 +5,7 @@ import { type CheerioAPI, load } from "cheerio";
 
 import { extractAttr, parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
 import { pickSearchResultDetailUrl, toAbsoluteUrl, uniqueStrings } from "./helpers";
 
@@ -317,3 +318,8 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
     });
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.FC2HUB,
+  crawler: Fc2HubCrawler,
+};

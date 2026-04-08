@@ -1,28 +1,21 @@
+/// <reference types="vite/client" />
+
 import type { SiteRequestConfig } from "@main/services/network";
-import { Website } from "@shared/enums";
+import type { Website } from "@shared/enums";
 
-import type { SiteAdapterConstructor } from "./base/types";
-import { AvbaseCrawler } from "./sites/avbase";
-import { DahliaCrawler } from "./sites/dahlia";
-import { DmmCrawler } from "./sites/dmm";
-import { DmmTvCrawler } from "./sites/dmm/dmm_tv";
-import { FalenoCrawler } from "./sites/faleno";
-import { Fc2Crawler } from "./sites/fc2";
-import { Fc2HubCrawler } from "./sites/fc2hub";
-import { Jav321Crawler } from "./sites/jav321";
-import { JavbusCrawler } from "./sites/javbus";
-import { JavdbCrawler } from "./sites/javdb";
-import { KingdomCrawler } from "./sites/kingdom";
-import { KMProduceCrawler } from "./sites/kmproduce";
-import { MGStageCrawler } from "./sites/mgstage";
-import { PrestigeCrawler } from "./sites/prestige";
-import { SokmilCrawler } from "./sites/sokmil";
-
-export type CrawlerConstructor = SiteAdapterConstructor;
+import type { CrawlerConstructor, CrawlerRegistration } from "./registration";
 
 const crawlerConstructors = new Map<Website, CrawlerConstructor>();
 
-export const registerCrawler = (site: Website, crawler: CrawlerConstructor): void => {
+type CrawlerRegistrationModule = {
+  crawlerRegistration?: CrawlerRegistration;
+};
+
+const registerCrawler = (site: Website, crawler: CrawlerConstructor): void => {
+  if (crawlerConstructors.has(site)) {
+    throw new Error(`Crawler for site '${site}' is already registered`);
+  }
+
   crawlerConstructors.set(site, crawler);
 };
 
@@ -38,18 +31,16 @@ export const listRegisteredCrawlerRequestConfigs = (): SiteRequestConfig[] => {
   return Array.from(crawlerConstructors.values()).flatMap((crawler) => [...(crawler.siteRequestConfigs ?? [])]);
 };
 
-registerCrawler(Website.JAVBUS, JavbusCrawler);
-registerCrawler(Website.JAVDB, JavdbCrawler);
-registerCrawler(Website.DMM, DmmCrawler);
-registerCrawler(Website.DMM_TV, DmmTvCrawler);
-registerCrawler(Website.PRESTIGE, PrestigeCrawler);
-registerCrawler(Website.FALENO, FalenoCrawler);
-registerCrawler(Website.DAHLIA, DahliaCrawler);
-registerCrawler(Website.FC2, Fc2Crawler);
-registerCrawler(Website.FC2HUB, Fc2HubCrawler);
-registerCrawler(Website.MGSTAGE, MGStageCrawler);
-registerCrawler(Website.JAV321, Jav321Crawler);
-registerCrawler(Website.KM_PRODUCE, KMProduceCrawler);
-registerCrawler(Website.AVBASE, AvbaseCrawler);
-registerCrawler(Website.KINGDOM, KingdomCrawler);
-registerCrawler(Website.SOKMIL, SokmilCrawler);
+const crawlerRegistrationModules = import.meta.glob<CrawlerRegistrationModule>("./sites/**/*.ts", {
+  eager: true,
+});
+
+for (const [, module] of Object.entries(crawlerRegistrationModules).sort(([left], [right]) =>
+  left.localeCompare(right),
+)) {
+  if (!module.crawlerRegistration) {
+    continue;
+  }
+
+  registerCrawler(module.crawlerRegistration.site, module.crawlerRegistration.crawler);
+}

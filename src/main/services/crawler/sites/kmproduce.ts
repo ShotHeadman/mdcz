@@ -5,6 +5,7 @@ import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractAttr, extractText, parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
+import type { CrawlerRegistration } from "../registration";
 import { toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const KM_PRODUCE_BASE_URL = "https://www.km-produce.com";
@@ -90,3 +91,8 @@ export class KMProduceCrawler extends BaseCrawler {
     };
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.KM_PRODUCE,
+  crawler: KMProduceCrawler,
+};
