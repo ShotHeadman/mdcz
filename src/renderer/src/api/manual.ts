@@ -20,6 +20,12 @@ export interface RequeueResponse {
   message: string;
   running: boolean;
   queued: number;
+  strategy: "new-task" | "requeue";
+}
+
+export interface RetryScrapeSelectionOptions {
+  scrapeStatus: ScrapeStatusResponse["status"];
+  canRequeueCurrentRun?: boolean;
 }
 
 const asNfoPath = (path: string): string => {
@@ -175,24 +181,38 @@ export const updateNfo = async (path: string, content: string, videoPath?: strin
   return { data };
 };
 
-export const requeueScrapeByNumber = async (path: string | string[], _number: string) => {
+export const retryScrapeSelection = async (path: string | string[], options: RetryScrapeSelectionOptions) => {
   const filePaths = Array.isArray(path) ? path : [path];
-  const result = await ipc.scraper.requeue(filePaths);
-  const data: RequeueResponse = {
-    message: `Requeued ${result.requeuedCount} file(s).`,
-    running: false,
-    queued: result.requeuedCount,
-  };
-  return { data };
-};
 
-export const requeueScrapeByUrl = async (path: string | string[], _url: string) => {
-  const filePaths = Array.isArray(path) ? path : [path];
-  const result = await ipc.scraper.requeue(filePaths);
-  const data: RequeueResponse = {
-    message: `Requeued ${result.requeuedCount} file(s).`,
-    running: false,
-    queued: result.requeuedCount,
-  };
-  return { data };
+  if (options.scrapeStatus === "idle") {
+    const result = await ipc.scraper.retryFailed(filePaths);
+    const data: RequeueResponse = {
+      message: result.message,
+      running: true,
+      queued: result.totalFiles,
+      strategy: "new-task",
+    };
+    return { data };
+  }
+
+  if (options.scrapeStatus === "running" || options.scrapeStatus === "paused") {
+    if (!options.canRequeueCurrentRun) {
+      throw new Error("当前刮削任务仍在进行，已成功项目请等待任务结束后再重新刮削");
+    }
+
+    const result = await ipc.scraper.requeue(filePaths);
+    if (result.requeuedCount <= 0) {
+      throw new Error("当前项目不在失败队列中，无法加入当前任务");
+    }
+
+    const data: RequeueResponse = {
+      message: `已加入当前任务队列，共 ${result.requeuedCount} 个文件`,
+      running: true,
+      queued: result.requeuedCount,
+      strategy: "requeue",
+    };
+    return { data };
+  }
+
+  throw new Error("当前刮削任务正在停止，请等待停止完成后再重新刮削");
 };

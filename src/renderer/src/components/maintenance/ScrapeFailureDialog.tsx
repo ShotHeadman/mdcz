@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, FileText, RotateCcw, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ipc } from "@/client/ipc";
+import { retryScrapeSelection } from "@/api/manual";
 import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { type ScrapeResult, useScrapeStore } from "@/store/scrapeStore";
+import { useUIStore } from "@/store/uiStore";
 
 interface ScrapeFailureDialogProps {
   open: boolean;
@@ -28,6 +29,14 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
   const navigate = useNavigate();
   const results = useScrapeStore((state) => state.results);
   const [selectedFailedPaths, setSelectedFailedPaths] = useState<Set<string>>(new Set());
+  const resetForNewTask = () => {
+    const scrapeStore = useScrapeStore.getState();
+    scrapeStore.clearResults();
+    scrapeStore.updateProgress(0, 0);
+    scrapeStore.setScraping(true);
+    scrapeStore.setScrapeStatus("running");
+    useUIStore.getState().setSelectedResultId(null);
+  };
 
   const failedResults = useMemo(() => results.filter((result) => result.status === "failed"), [results]);
 
@@ -45,8 +54,14 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
 
   const handleRetrySingle = async (item: ScrapeResult) => {
     try {
-      const result = await ipc.scraper.retryFailed([item.fileInfo.filePath]);
-      toast.success(result.message);
+      const result = await retryScrapeSelection([item.fileInfo.filePath], {
+        scrapeStatus: useScrapeStore.getState().scrapeStatus,
+        canRequeueCurrentRun: true,
+      });
+      if (result.data.strategy === "new-task") {
+        resetForNewTask();
+      }
+      toast.success(result.data.message);
       onOpenChange(false);
     } catch (_error) {
       toast.error("重试失败");
@@ -61,8 +76,14 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
     }
 
     try {
-      const result = await ipc.scraper.retryFailed(paths);
-      toast.success(result.message);
+      const result = await retryScrapeSelection(paths, {
+        scrapeStatus: useScrapeStore.getState().scrapeStatus,
+        canRequeueCurrentRun: true,
+      });
+      if (result.data.strategy === "new-task") {
+        resetForNewTask();
+      }
+      toast.success(result.data.message);
       setSelectedFailedPaths(new Set());
       onOpenChange(false);
     } catch (_error) {
@@ -77,8 +98,14 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
     }
 
     try {
-      const result = await ipc.scraper.retryFailed(paths);
-      toast.success(result.message);
+      const result = await retryScrapeSelection(paths, {
+        scrapeStatus: useScrapeStore.getState().scrapeStatus,
+        canRequeueCurrentRun: true,
+      });
+      if (result.data.strategy === "new-task") {
+        resetForNewTask();
+      }
+      toast.success(result.data.message);
       onOpenChange(false);
     } catch (_error) {
       toast.error("全部重试失败");

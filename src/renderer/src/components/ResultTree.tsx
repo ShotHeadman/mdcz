@@ -1,7 +1,8 @@
+import { toErrorMessage } from "@shared/error";
 import { Copy, FileText, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeByUrl } from "@/api/manual";
+import { deleteFile, deleteFileAndFolder, retryScrapeSelection } from "@/api/manual";
 import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
 import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
 import { Button } from "@/components/ui/Button";
@@ -21,7 +22,11 @@ function getFileNameFromPath(filePath: string) {
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
 
-function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | null) {
+function buildMenuContent(
+  group: ScrapeResultGroup,
+  selectedResultId: string | null,
+  scrapeStatus: "idle" | "running" | "stopping" | "paused",
+) {
   const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
   const result = actionContext.selectedItem;
   const resultPath = result.fileInfo.filePath;
@@ -42,26 +47,23 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
     }
   };
 
-  const handleRescrapeByNumber = async () => {
-    const defaultNumber = resultNumber || "";
-    const number = window.prompt("输入番号重新刮削", defaultNumber)?.trim();
-    if (!number) return;
+  const handleRetryScrape = async () => {
     try {
-      const response = await requeueScrapeByNumber(groupedVideoPaths, number);
-      toast.success(response.data?.message ?? "Queued re-scrape by number");
-    } catch {
-      toast.error("Failed to queue re-scrape by number");
-    }
-  };
-
-  const handleRescrapeByUrl = async () => {
-    const url = window.prompt("输入网址重新刮削", "")?.trim();
-    if (!url) return;
-    try {
-      const response = await requeueScrapeByUrl(groupedVideoPaths, url);
-      toast.success(response.data?.message ?? "Queued re-scrape by URL");
-    } catch {
-      toast.error("Failed to queue re-scrape by URL");
+      const response = await retryScrapeSelection(groupedVideoPaths, {
+        scrapeStatus,
+        canRequeueCurrentRun: group.status === "failed",
+      });
+      if (response.data.strategy === "new-task") {
+        const scrapeStore = useScrapeStore.getState();
+        scrapeStore.clearResults();
+        scrapeStore.updateProgress(0, 0);
+        scrapeStore.setScraping(true);
+        scrapeStore.setScrapeStatus("running");
+        useUIStore.getState().setSelectedResultId(null);
+      }
+      toast.success(response.data.message);
+    } catch (error) {
+      toast.error(toErrorMessage(error, "重新刮削失败"));
     }
   };
 
@@ -116,14 +118,7 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
         </ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem onClick={handleRescrapeByNumber}>
-        Re-scrape by number
-        <ContextMenuShortcut>N</ContextMenuShortcut>
-      </ContextMenuItem>
-      <ContextMenuItem onClick={handleRescrapeByUrl}>
-        Re-scrape by URL
-        <ContextMenuShortcut>U</ContextMenuShortcut>
-      </ContextMenuItem>
+      <ContextMenuItem onClick={handleRetryScrape}>Re-scrape</ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
         Delete file
@@ -153,7 +148,7 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
 }
 
 export function ResultTree() {
-  const { results, clearResults } = useScrapeStore();
+  const { results, clearResults, scrapeStatus } = useScrapeStore();
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
   const resultGroups = useMemo(() => buildScrapeResultGroups(results), [results]);
@@ -171,9 +166,9 @@ export function ResultTree() {
           setSelectedResultId(
             group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,
           ),
-        menuContent: buildMenuContent(group, selectedResultId),
+        menuContent: buildMenuContent(group, selectedResultId, scrapeStatus),
       })),
-    [resultGroups, selectedResultId, setSelectedResultId],
+    [resultGroups, scrapeStatus, selectedResultId, setSelectedResultId],
   );
 
   return (

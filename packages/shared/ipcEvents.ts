@@ -4,8 +4,7 @@ import type { FileInfo, MaintenanceItemResult, ScrapeResult } from "./types";
 
 export type RendererShortcutAction =
   | "start-or-stop-scrape"
-  | "search-by-number"
-  | "search-by-url"
+  | "retry-scrape"
   | "delete-file"
   | "delete-file-and-folder"
   | "open-folder"

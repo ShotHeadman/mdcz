@@ -186,8 +186,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "emby.refreshPersonAfterSync", label: "Emby 同步后刷新人物", section: "personSync" },
   // shortcuts
   { key: "shortcuts.startOrStopScrape", label: "开始/停止刮削", section: "shortcuts" },
-  { key: "shortcuts.searchByNumber", label: "按番号重刮", section: "shortcuts" },
-  { key: "shortcuts.searchByUrl", label: "按网址重刮", section: "shortcuts" },
+  { key: "shortcuts.retryScrape", label: "重新刮削", section: "shortcuts" },
   { key: "shortcuts.deleteFile", label: "删除文件", section: "shortcuts" },
   { key: "shortcuts.deleteFileAndFolder", label: "删除文件及文件夹", section: "shortcuts" },
   { key: "shortcuts.openFolder", label: "打开所在目录", section: "shortcuts" },
@@ -664,8 +663,7 @@ function ShortcutsSection(_props: SectionRenderProps) {
   return (
     <>
       <ShortcutField name="shortcuts.startOrStopScrape" label="开始/停止刮削" description="示例: S" />
-      <ShortcutField name="shortcuts.searchByNumber" label="按番号重刮" description="示例: N" />
-      <ShortcutField name="shortcuts.searchByUrl" label="按网址重刮" description="示例: U" />
+      <ShortcutField name="shortcuts.retryScrape" label="重新刮削" description="示例: R" />
       <ShortcutField name="shortcuts.deleteFile" label="删除文件" description="示例: D" />
       <ShortcutField name="shortcuts.deleteFileAndFolder" label="删除文件及文件夹" description="示例: ⇧ + D" />
       <ShortcutField name="shortcuts.openFolder" label="打开所在目录" description="示例: F" />

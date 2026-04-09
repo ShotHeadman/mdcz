@@ -124,8 +124,7 @@ const embySchema = z.object({
 
 const shortcutsSchema = z.object({
   startOrStopScrape: z.string().default("S"),
-  searchByNumber: z.string().default("N"),
-  searchByUrl: z.string().default("U"),
+  retryScrape: z.string().default("R"),
   deleteFile: z.string().default("D"),
   deleteFileAndFolder: z.string().default("Shift+D"),
   openFolder: z.string().default("F"),
