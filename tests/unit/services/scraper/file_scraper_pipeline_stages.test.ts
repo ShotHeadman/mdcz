@@ -123,39 +123,23 @@ describe("FileScraper pipeline stages", () => {
     ]);
   });
 
-  it("ProbeStage fails invalid non-STRM files before aggregation starts", async () => {
+  it("ProbeStage keeps invalid non-STRM files in the pipeline and only records missing metadata", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-probe-stage-"));
     tempDirs.push(root);
     const invalidVideoPath = join(root, "ABC-123.mp4");
     await writeFile(invalidVideoPath, "not-a-video", "utf8");
-    const movedFileInfo: FileInfo = {
-      filePath: "/tmp/failed/ABC-123.mp4",
-      fileName: "ABC-123.mp4",
-      extension: ".mp4",
-      number: "ABC-123",
-      isSubtitled: false,
-    };
-    const runtime = createRuntime({
-      handleFailedFileMove: vi.fn().mockResolvedValue(movedFileInfo),
-    });
+    const runtime = createRuntime();
     const context = new ScrapeContext(invalidVideoPath);
 
     await new ProbeStage(runtime).execute(context);
 
-    expect(runtime.getConfiguration).toHaveBeenCalledTimes(1);
-    expect(runtime.handleFailedFileMove).toHaveBeenCalledWith(expect.objectContaining({ number: "ABC-123" }), config);
-    expect(runtime.signalService.showScrapeResult).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "failed",
-        error: "Video probe failed",
-        fileInfo: movedFileInfo,
-      }),
-    );
-    expect(context.result).toMatchObject({
-      status: "failed",
-      error: "Video probe failed",
-      fileInfo: movedFileInfo,
-    });
+    expect(runtime.getConfiguration).not.toHaveBeenCalled();
+    expect(runtime.handleFailedFileMove).not.toHaveBeenCalled();
+    expect(runtime.signalService.showScrapeResult).not.toHaveBeenCalled();
+    expect(runtime.signalService.showFailedInfo).not.toHaveBeenCalled();
+    expect(context.videoMeta).toBeUndefined();
+    expect(context.result).toBeUndefined();
+    expect(runtime.setProgress).toHaveBeenCalledWith(context.progress, 30);
   });
 
   it("ProbeStage avoids loading configuration when probing succeeds", async () => {
