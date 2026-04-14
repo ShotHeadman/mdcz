@@ -1,6 +1,6 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { CrawlerInput, CrawlerResponse } from "@main/services/crawler/base/types";
+import type { CrawlerInput, CrawlerResponse, FailureReason } from "@main/services/crawler/base/types";
 import { NetworkClient } from "@main/services/network";
 import { AggregationService } from "@main/services/scraper/aggregation/AggregationService";
 import { FieldAggregator } from "@main/services/scraper/aggregation/FieldAggregator";
@@ -210,12 +210,18 @@ describe("FieldAggregator", () => {
 class MultiResultCrawlerProvider extends CrawlerProvider {
   private readonly siteResults: Map<Website, CrawlerData>;
   private readonly siteDelaysMs: Partial<Record<Website, number>>;
+  private readonly siteFailures: Map<Website, { error: string; failureReason?: FailureReason }>;
   readonly calledSites: Website[] = [];
 
-  constructor(siteResults: Map<Website, CrawlerData>, siteDelaysMs: Partial<Record<Website, number>> = {}) {
+  constructor(
+    siteResults: Map<Website, CrawlerData>,
+    siteDelaysMs: Partial<Record<Website, number>> = {},
+    siteFailures: Map<Website, { error: string; failureReason?: FailureReason }> = new Map(),
+  ) {
     super({ fetchGateway: new FetchGateway(new NetworkClient()) });
     this.siteResults = siteResults;
     this.siteDelaysMs = siteDelaysMs;
+    this.siteFailures = siteFailures;
   }
 
   override async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
@@ -223,6 +229,15 @@ class MultiResultCrawlerProvider extends CrawlerProvider {
 
     const delayMs = this.siteDelaysMs[input.site] ?? 0;
     await waitForDelay(delayMs, input.options?.signal);
+
+    const failure = this.siteFailures.get(input.site);
+    if (failure) {
+      return {
+        input,
+        elapsedMs: 1,
+        result: { success: false, error: failure.error, failureReason: failure.failureReason },
+      };
+    }
 
     const data = this.siteResults.get(input.site);
     if (!data) {
@@ -256,7 +271,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM, Website.JAVDB, Website.JAVBUS],
+        sites: [Website.DMM, Website.JAVDB, Website.JAVBUS],
         siteOrder: [Website.DMM, Website.JAVDB, Website.JAVBUS],
       },
       ...overrides,
@@ -300,6 +315,110 @@ describe("AggregationService", () => {
     expect(result?.stats.skippedCount).toBe(0);
   });
 
+  it("records DMM blocked failures and uses avwikidb only when it is enabled", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.AVWIKIDB,
+        makeCrawlerData({
+          title: "AVWikiDB Title",
+          actors: ["Actor From AVWikiDB"],
+          thumb_url: "https://avwikidb.example/thumb.jpg",
+          website: Website.AVWIKIDB,
+        }),
+      ],
+    ]);
+    const siteFailures = new Map<Website, { error: string; failureReason?: FailureReason }>([
+      [Website.DMM, { error: "DMM region blocked", failureReason: "region_blocked" }],
+    ]);
+    const provider = new MultiResultCrawlerProvider(siteResults, {}, siteFailures);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.DMM, Website.AVWIKIDB],
+      },
+    });
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    expect(provider.calledSites).toEqual([Website.DMM, Website.AVWIKIDB]);
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("AVWikiDB Title");
+    expect(result?.sources.title).toBe(Website.AVWIKIDB);
+    expect(result?.stats.siteResults.find((siteResult) => siteResult.site === Website.DMM)?.failureReason).toBe(
+      "region_blocked",
+    );
+  });
+
+  it("marks crawler budget overruns as timeout failures", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          title: "Slow DMM Title",
+          thumb_url: "https://dmm.example/thumb.jpg",
+          website: Website.DMM,
+        }),
+      ],
+      [
+        Website.JAVDB,
+        makeCrawlerData({
+          title: "Fast JAVDB Title",
+          thumb_url: "https://javdb.example/thumb.jpg",
+          website: Website.JAVDB,
+        }),
+      ],
+    ]);
+    const provider = new MultiResultCrawlerProvider(siteResults, { [Website.DMM]: 30 });
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.DMM, Website.JAVDB],
+      },
+    });
+    config.aggregation.maxParallelCrawlers = 2;
+    config.aggregation.perCrawlerTimeoutMs = 5;
+    config.aggregation.globalTimeoutMs = 1_000;
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    const dmmResult = result?.stats.siteResults.find((siteResult) => siteResult.site === Website.DMM);
+    expect(dmmResult?.success).toBe(false);
+    expect(dmmResult?.error).toContain("exceeded crawler budget");
+    expect(dmmResult?.failureReason).toBe("timeout");
+  });
+
+  it("does not query avwikidb when it is not enabled", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.AVBASE,
+        makeCrawlerData({
+          title: "AVBase Title",
+          actors: ["Actor A"],
+          thumb_url: "https://avbase.example/thumb.jpg",
+          website: Website.AVBASE,
+        }),
+      ],
+    ]);
+    const provider = new MultiResultCrawlerProvider(siteResults);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.AVBASE],
+      },
+      download: {
+        ...defaultConfiguration.download,
+        downloadSceneImages: false,
+      },
+    });
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    expect(provider.calledSites).toEqual([Website.AVBASE]);
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("AVBase Title");
+    expect(result?.stats.skippedCount).toBe(0);
+  });
+
   it("uses configured durationSeconds priority instead of completion order", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
@@ -329,7 +448,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.AVBASE, Website.DMM_TV],
+        sites: [Website.AVBASE, Website.DMM_TV],
         siteOrder: [Website.AVBASE, Website.DMM_TV],
       },
       aggregation: {
@@ -382,7 +501,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.FC2HUB, Website.JAVDB],
+        sites: [Website.FC2HUB, Website.JAVDB],
         siteOrder: [Website.FC2HUB, Website.JAVDB],
       },
     });
@@ -442,7 +561,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.FC2HUB, Website.PPVDATABANK],
+        sites: [Website.FC2HUB, Website.PPVDATABANK],
         siteOrder: [Website.FC2HUB, Website.PPVDATABANK],
       },
     });
@@ -545,7 +664,7 @@ describe("AggregationService", () => {
     const config = makeConfig({
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM],
+        sites: [Website.DMM],
         siteOrder: [Website.DMM],
       },
     });
@@ -651,7 +770,7 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [
+          sites: [
             Website.DMM,
             Website.MGSTAGE,
             Website.FC2,
@@ -729,7 +848,7 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
+          sites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
           siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
         },
       }),
@@ -757,7 +876,7 @@ describe("AggregationService", () => {
     const config = makeConfig({
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM],
+        sites: [Website.DMM],
         siteOrder: [Website.DMM],
       },
     });

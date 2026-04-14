@@ -117,7 +117,7 @@ describe("ScraperService requeue flow", () => {
             actors: [],
             genres: [],
             scene_images: [],
-            website: config.scrape.enabledSites[0],
+            website: config.scrape.sites[0],
           },
         });
       }
@@ -151,7 +151,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 
@@ -243,7 +243,7 @@ describe("ScraperService requeue flow", () => {
             actors: [],
             genres: [],
             scene_images: [],
-            website: config.scrape.enabledSites[0],
+            website: config.scrape.sites[0],
           },
         });
       }
@@ -280,7 +280,7 @@ describe("ScraperService requeue flow", () => {
             actors: [],
             genres: [],
             scene_images: [],
-            website: config.scrape.enabledSites[0],
+            website: config.scrape.sites[0],
           },
         });
       }
@@ -323,7 +323,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
     fourthFileTask.resolve({
@@ -342,7 +342,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 
@@ -414,7 +414,7 @@ describe("ScraperService requeue flow", () => {
                 actors: [],
                 genres: [],
                 scene_images: [],
-                website: config.scrape.enabledSites[0],
+                website: config.scrape.sites[0],
               },
             });
           }
@@ -449,7 +449,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 

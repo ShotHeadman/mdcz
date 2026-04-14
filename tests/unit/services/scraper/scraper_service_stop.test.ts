@@ -106,7 +106,7 @@ describe("ScraperService stop flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 
@@ -156,7 +156,7 @@ describe("ScraperService stop flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 
@@ -216,7 +216,7 @@ describe("ScraperService stop flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 

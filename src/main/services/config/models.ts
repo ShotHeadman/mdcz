@@ -5,7 +5,7 @@ import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLa
 import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
 import { z } from "zod";
 
-const DEFAULT_ENABLED_SITES: Website[] = [
+const DEFAULT_SITES: Website[] = [
   Website.DMM,
   Website.DMM_TV,
   Website.MGSTAGE,
@@ -21,7 +21,6 @@ const DEFAULT_ENABLED_SITES: Website[] = [
   Website.AVBASE,
 ];
 
-const DEFAULT_SITE_ORDER: Website[] = [...DEFAULT_ENABLED_SITES];
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
 const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
@@ -41,8 +40,7 @@ const siteConfigSchema = z.object({
 });
 
 const scrapeSchema = z.object({
-  enabledSites: z.array(z.enum(Website)).default(DEFAULT_ENABLED_SITES),
-  siteOrder: z.array(z.enum(Website)).default(DEFAULT_SITE_ORDER),
+  sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
   threadNumber: z.number().int().min(1).max(128).default(2),
   javdbDelaySeconds: z.number().int().min(0).max(120).default(10),
   restAfterCount: z.number().int().min(1).max(500).default(20),
@@ -172,6 +170,7 @@ const fieldPrioritiesSchema = z.object({
       Website.MGSTAGE,
       Website.DMM,
       Website.DMM_TV,
+      Website.AVWIKIDB,
       Website.FC2HUB,
       Website.FC2,
       Website.JAVDB,
@@ -188,19 +187,37 @@ const fieldPrioritiesSchema = z.object({
       Website.FC2,
       Website.FC2HUB,
       Website.JAV321,
+      Website.AVWIKIDB,
     ]),
   actors: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.MGSTAGE, Website.DMM, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
+    .default([
+      Website.AVBASE,
+      Website.MGSTAGE,
+      Website.DMM,
+      Website.AVWIKIDB,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
   genres: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
+    .default([
+      Website.AVBASE,
+      Website.DMM,
+      Website.AVWIKIDB,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
   thumb_url: z
     .array(z.enum(Website))
     .default([
       Website.AVBASE,
       Website.MGSTAGE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,
@@ -212,6 +229,7 @@ const fieldPrioritiesSchema = z.object({
       Website.AVBASE,
       Website.MGSTAGE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,
@@ -223,6 +241,7 @@ const fieldPrioritiesSchema = z.object({
       Website.AVBASE,
       Website.MGSTAGE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,
@@ -230,18 +249,36 @@ const fieldPrioritiesSchema = z.object({
     ]),
   studio: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
-  director: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB]),
+    .default([
+      Website.AVBASE,
+      Website.DMM,
+      Website.AVWIKIDB,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
+  director: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.AVWIKIDB]),
   publisher: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB]),
-  series: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS]),
+    .default([Website.AVBASE, Website.DMM, Website.AVWIKIDB, Website.FC2, Website.FC2HUB, Website.JAVDB]),
+  series: z
+    .array(z.enum(Website))
+    .default([Website.AVBASE, Website.DMM, Website.JAVDB, Website.JAVBUS, Website.AVWIKIDB]),
   release_date: z
     .array(z.enum(Website))
-    .default([Website.AVBASE, Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS]),
-  durationSeconds: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM_TV, Website.FC2HUB]),
+    .default([
+      Website.AVBASE,
+      Website.DMM,
+      Website.AVWIKIDB,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.JAVDB,
+      Website.JAVBUS,
+    ]),
+  durationSeconds: z.array(z.enum(Website)).default([Website.AVBASE, Website.DMM_TV, Website.AVWIKIDB, Website.FC2HUB]),
   rating: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.FC2HUB, Website.JAVDB]),
-  trailer_url: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.JAVBUS]),
+  trailer_url: z.array(z.enum(Website)).default([Website.DMM_TV, Website.DMM, Website.JAVBUS, Website.AVWIKIDB]),
 });
 
 const aggregationBehaviorSchema = z.object({

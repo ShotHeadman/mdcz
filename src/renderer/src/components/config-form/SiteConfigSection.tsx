@@ -15,15 +15,10 @@ interface SiteInfo {
 
 export function SiteConfigSection() {
   const form = useFormContext<FieldValues>();
-  const enabledSites =
+  const sites =
     (useWatch({
       control: form.control,
-      name: "scrape.enabledSites",
-    }) as Website[] | undefined) ?? [];
-  const siteOrder =
-    (useWatch({
-      control: form.control,
-      name: "scrape.siteOrder",
+      name: "scrape.sites",
     }) as Website[] | undefined) ?? [];
 
   const sitesQ = useQuery({
@@ -35,7 +30,7 @@ export function SiteConfigSection() {
     staleTime: 60_000,
   });
 
-  const visibleSites = [...new Set([...siteOrder.filter((site) => enabledSites.includes(site)), ...enabledSites])];
+  const visibleSites = [...new Set(sites)];
   const siteInfoMap = new Map((sitesQ.data ?? []).map((site) => [site.site, site]));
 
   if (visibleSites.length === 0) return null;

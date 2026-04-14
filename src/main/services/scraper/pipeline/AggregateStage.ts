@@ -18,7 +18,7 @@ export class AggregateStage implements ScrapeStage {
 
     this.runtime.signalService.showScrapeInfo({
       fileInfo: context.fileInfo,
-      site: context.requireConfiguration().scrape.enabledSites[0],
+      site: context.requireConfiguration().scrape.sites[0],
       step: "search",
     });
 

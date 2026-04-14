@@ -61,7 +61,7 @@ export const createCrawlerHandlers = (
     [IpcChannel.Crawler_ListSites]: t.procedure.action(async () => {
       try {
         const configuration = await configManager.getValidated();
-        const enabledSites = new Set(configuration.scrape.enabledSites);
+        const enabledSites = new Set(configuration.scrape.sites);
         return {
           sites: crawlerProvider.listSites().map(({ site, native }) => ({
             site,

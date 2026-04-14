@@ -1,5 +1,6 @@
 import type { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
+import type { FailureReason } from "../../crawler/base/types";
 
 /** Maps each CrawlerData field to the Website that provided the winning value. */
 export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
@@ -26,6 +27,7 @@ export interface SiteCrawlResult {
   success: boolean;
   data?: CrawlerData;
   error?: string;
+  failureReason?: FailureReason;
   elapsedMs: number;
 }
 

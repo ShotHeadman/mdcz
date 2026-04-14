@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { ChipArrayField } from "./ChipArrayField";
 import { DurationField } from "./DurationField";
+import { OrderedSiteField } from "./OrderedSiteField";
 import { ServerPathField } from "./ServerPathField";
 
 // ── Centralized Base Field ──
@@ -374,6 +375,24 @@ export function ChipArrayFieldWrapper({
   return (
     <BaseField name={name} label={label} description={description} fullWidthContent>
       {(field) => <ChipArrayField field={field} options={options} showBulkActions={showBulkActions} />}
+    </BaseField>
+  );
+}
+
+export function OrderedSiteFieldWrapper({
+  name,
+  label,
+  description,
+  options,
+}: {
+  name: string;
+  label: string;
+  description?: string;
+  options: string[];
+}) {
+  return (
+    <BaseField name={name} label={label} description={description} fullWidthContent>
+      {(field) => <OrderedSiteField field={field} options={options} />}
     </BaseField>
   );
 }

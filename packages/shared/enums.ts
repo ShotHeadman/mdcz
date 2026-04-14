@@ -15,6 +15,7 @@ export enum Website {
   PRESTIGE = "prestige",
   SOKMIL = "sokmil",
   AVBASE = "avbase",
+  AVWIKIDB = "avwikidb",
 }
 
 export enum ProxyType {

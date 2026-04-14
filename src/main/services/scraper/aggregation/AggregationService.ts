@@ -76,23 +76,20 @@ export class AggregationService {
       signal,
     );
 
-    const totalElapsedMs = Date.now() - globalStart;
-
-    // Partition into successes and failures
-    const successes = new Map<Website, CrawlerData>();
+    const successes = this.collectSuccesses(siteResults);
     let successCount = 0;
     let failedCount = 0;
     const skippedCount = Math.max(0, enabledSites.length - siteResults.length);
 
     for (const result of siteResults) {
       if (result.success && result.data) {
-        successes.set(result.site, result.data);
         successCount++;
       } else {
         failedCount++;
       }
     }
 
+    const totalElapsedMs = Date.now() - globalStart;
     this.logger.info(
       `Crawl complete for ${number}: ${successCount} succeeded, ${failedCount} failed, ${skippedCount} skipped in ${totalElapsedMs}ms`,
     );
@@ -131,8 +128,7 @@ export class AggregationService {
   }
 
   private resolveActiveSites(number: string, config: Configuration): Website[] {
-    const enabledSet = new Set(config.scrape.enabledSites);
-    const ordered = config.scrape.siteOrder.filter((site) => enabledSet.has(site));
+    const ordered = [...new Set(config.scrape.sites)];
     const isFc2 = FC2_NUMBER_PATTERN.test(number.trim().toUpperCase());
     const candidates = ordered.filter((site) => (isFc2 ? FC2_SITE_WHITELIST.has(site) : !FC2_ONLY_SITES.has(site)));
 
@@ -152,6 +148,16 @@ export class AggregationService {
       }
       return true;
     });
+  }
+
+  private collectSuccesses(results: SiteCrawlResult[]): Map<Website, CrawlerData> {
+    const successes = new Map<Website, CrawlerData>();
+    for (const result of results) {
+      if (result.success && result.data) {
+        successes.set(result.site, result.data);
+      }
+    }
+    return successes;
   }
 
   private async executeWithGlobalTimeout(
@@ -256,6 +262,7 @@ export class AggregationService {
           site,
           success: false,
           error: toErrorMessage(error),
+          failureReason: "unknown",
           elapsedMs: 0,
         };
       } finally {
@@ -329,22 +336,26 @@ export class AggregationService {
         };
       }
 
-      const error = siteTimedOut && !signal.aborted ? timeoutMessage : response.result.error;
+      const timedOut = siteTimedOut && !signal.aborted;
+      const error = timedOut ? timeoutMessage : response.result.error;
       this.logger.warn(`${site} failed for ${number}: ${error} (${elapsedMs}ms)`);
       return {
         site,
         success: false,
         error,
+        failureReason: timedOut ? "timeout" : response.result.failureReason,
         elapsedMs,
       };
     } catch (error) {
       const elapsedMs = Date.now() - start;
-      const message = siteTimedOut && !signal.aborted ? timeoutMessage : toErrorMessage(error);
+      const timedOut = siteTimedOut && !signal.aborted;
+      const message = timedOut ? timeoutMessage : toErrorMessage(error);
       this.logger.warn(`${site} threw for ${number}: ${message} (${elapsedMs}ms)`);
       return {
         site,
         success: false,
         error: message,
+        failureReason: timedOut ? "timeout" : "unknown",
         elapsedMs,
       };
     } finally {
@@ -392,7 +403,7 @@ export class AggregationService {
     config: Configuration,
   ): boolean {
     const fieldPriorities = config.aggregation.fieldPriorities as Partial<Record<string, Website[]>>;
-    const priorityOrder = fieldPriorities[field] ?? config.scrape.siteOrder;
+    const priorityOrder = fieldPriorities[field] ?? config.scrape.sites;
     const winnerRank = priorityOrder.indexOf(winner);
 
     if (winnerRank === -1) {

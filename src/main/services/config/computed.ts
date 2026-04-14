@@ -34,8 +34,8 @@ const normalizeProxyUrl = (configuration: Configuration): string | undefined => 
 export const buildComputedConfiguration = (configuration: Configuration): ComputedConfiguration => {
   const proxyUrl = normalizeProxyUrl(configuration);
 
-  const enabledSites = new Set(configuration.scrape.enabledSites);
-  const orderedSites = configuration.scrape.siteOrder.filter((site) => enabledSites.has(site));
+  const orderedSites = [...new Set(configuration.scrape.sites)];
+  const enabledSites = new Set(orderedSites);
 
   return {
     proxyUrl,

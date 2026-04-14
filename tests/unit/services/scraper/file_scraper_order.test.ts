@@ -40,7 +40,7 @@ const createConfig = (): Configuration => {
     ...defaultConfiguration,
     scrape: {
       ...defaultConfiguration.scrape,
-      enabledSites: [Website.JAVBUS, Website.JAVDB, Website.DMM],
+      sites: [Website.JAVBUS, Website.JAVDB, Website.DMM],
       siteOrder: [Website.JAVBUS, Website.JAVDB, Website.DMM],
     },
   });

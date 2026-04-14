@@ -48,6 +48,7 @@ import {
   EnumField,
   type EnumOption,
   NumberField,
+  OrderedSiteFieldWrapper,
   PathFieldWrapper,
   PromptFieldWrapper,
   SecretField,
@@ -121,8 +122,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "paths.sceneImagesFolder", label: "剧照目录名", section: "paths" },
   { key: "paths.configDirectory", label: "配置文件目录", section: "paths" },
   // scrape
-  { key: "scrape.enabledSites", label: "启用站点", section: "scrape" },
-  { key: "scrape.siteOrder", label: "站点优先级", section: "scrape" },
+  { key: "scrape.sites", label: "启用站点与优先级", section: "scrape" },
   { key: "scrape.threadNumber", label: "并发线程数", section: "scrape" },
   { key: "scrape.javdbDelaySeconds", label: "JavDB 请求延迟(秒)", section: "scrape" },
   { key: "scrape.restAfterCount", label: "连续刮削后休息(条数)", section: "scrape" },
@@ -343,8 +343,12 @@ function PathsSection(_props: SectionRenderProps) {
 function ScrapeSection({ siteOptions }: SectionRenderProps) {
   return (
     <>
-      <ChipArrayFieldWrapper name="scrape.enabledSites" label="启用站点" options={siteOptions} showBulkActions />
-      <ChipArrayFieldWrapper name="scrape.siteOrder" label="站点优先级" options={siteOptions} showBulkActions />
+      <OrderedSiteFieldWrapper
+        name="scrape.sites"
+        label="启用站点与优先级"
+        description="勾选启用站点，上下移动调整优先级。未勾选的站点不会参与刮削。"
+        options={siteOptions}
+      />
       <NumberField name="scrape.threadNumber" label="并发线程数" min={1} max={128} />
       <NumberField name="scrape.javdbDelaySeconds" label="JavDB 请求延迟(秒)" min={0} max={120} />
       <NumberField name="scrape.restAfterCount" label="连续刮削后休息(条数)" min={1} max={500} />
@@ -823,10 +827,7 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
 
   const siteOptions = useMemo(() => {
     const fromApi = toSiteOptions(sitesQ.data);
-    const fromConfig = [
-      ...toStringArray(flatDefaults["scrape.enabledSites"]),
-      ...toStringArray(flatDefaults["scrape.siteOrder"]),
-    ];
+    const fromConfig = toStringArray(flatDefaults["scrape.sites"]);
     return Array.from(new Set([...fromApi, ...fromConfig]));
   }, [sitesQ.data, flatDefaults]);
 

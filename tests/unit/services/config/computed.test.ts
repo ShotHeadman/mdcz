@@ -209,6 +209,7 @@ describe("buildComputedConfiguration", () => {
     expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([
       Website.AVBASE,
       Website.DMM_TV,
+      Website.AVWIKIDB,
       Website.FC2HUB,
     ]);
     expect(defaultConfiguration.aggregation.fieldPriorities.rating).toEqual([
@@ -220,6 +221,7 @@ describe("buildComputedConfiguration", () => {
     expect(defaultConfiguration.aggregation.fieldPriorities.studio).toEqual([
       Website.AVBASE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,
@@ -228,6 +230,7 @@ describe("buildComputedConfiguration", () => {
     expect(defaultConfiguration.aggregation.fieldPriorities.publisher).toEqual([
       Website.AVBASE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,
