@@ -41,21 +41,6 @@ const EMPTY_IMAGE_ALTERNATIVES: ImageAlternatives = {
   scene_image_sources: [],
 };
 
-const COHERENT_METADATA_FIELDS = new Set<keyof CrawlerData>([
-  "number",
-  "genres",
-  "content_type",
-  "studio",
-  "director",
-  "publisher",
-  "series",
-  "release_date",
-  "durationSeconds",
-  "rating",
-  "trailer_url",
-  "website",
-]);
-
 type PrimaryImageAlternativeField = "thumb_url" | "poster_url";
 
 function isPrimaryImageField(field: keyof CrawlerData): field is PrimaryImageAlternativeField {
@@ -90,19 +75,7 @@ export class FieldAggregator {
 
     // Use first entry as fallback for required fields
     const firstEntry = entries[0];
-    const preferredMetadataSource = this.resolvePreferredMetadataSource(entries);
-
     const resolve = <K extends keyof CrawlerData>(field: K): CrawlerData[K] => {
-      if (preferredMetadataSource && field !== "title" && COHERENT_METADATA_FIELDS.has(field)) {
-        const preferredResult = this.resolveFromPreferredSource(field, preferredMetadataSource);
-        if (preferredResult) {
-          if (preferredResult.value !== undefined && preferredResult.value !== null) {
-            sources[field] = preferredResult.source;
-          }
-          return preferredResult.value as CrawlerData[K];
-        }
-      }
-
       const strategy = FIELD_STRATEGIES[field] ?? "first_non_null";
       const priority = (this.priorities[field] ?? []) as Website[];
       const ordered = this.orderByPriority(entries, priority);
@@ -147,51 +120,6 @@ export class FieldAggregator {
 
     return { data, sources, imageAlternatives };
   }
-
-  private resolvePreferredMetadataSource(entries: SourceEntry[]): SourceEntry | undefined {
-    const strategy = FIELD_STRATEGIES.title ?? "first_non_null";
-    const priority = (this.priorities.title ?? []) as Website[];
-    const ordered = this.orderByPriority(entries, priority);
-    const resolved = this.applyStrategy("title", strategy, ordered);
-    return entries.find((entry) => entry.site === resolved.source);
-  }
-
-  private resolveFromPreferredSource(field: keyof CrawlerData, entry: SourceEntry): ResolvedField | null {
-    const value = entry.data[field];
-
-    if (field === "actors" || field === "genres") {
-      if (!Array.isArray(value) || value.length === 0) {
-        return null;
-      }
-
-      return {
-        value:
-          field === "actors"
-            ? value.slice(0, this.behavior.maxActors)
-            : value.slice(0, this.behavior.maxGenres),
-        source: entry.site,
-      };
-    }
-
-    if (typeof value === "string") {
-      if (value.length === 0 || looksLikeCode(value)) {
-        return null;
-      }
-
-      return { value, source: entry.site };
-    }
-
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? { value, source: entry.site } : null;
-    }
-
-    if (value === undefined || value === null) {
-      return null;
-    }
-
-    return { value, source: entry.site };
-  }
-
   private orderByPriority(entries: SourceEntry[], priority: Website[]): SourceEntry[] {
     if (priority.length === 0) {
       return entries;

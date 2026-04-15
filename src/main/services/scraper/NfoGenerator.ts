@@ -179,7 +179,7 @@ export class NfoGenerator {
     const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
     const genres = Array.from(new Set(buildStringNodes(toArray(data.genres))));
-    const tags = Array.from(new Set([...genres, ...buildMovieTags(data, fileInfo, localState)]));
+    const tags = Array.from(new Set(buildMovieTags(data, fileInfo, localState)));
     const videoNode = buildVideoNode(videoMeta);
 
     const movie: Record<string, unknown> = {};

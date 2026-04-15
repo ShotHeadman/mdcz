@@ -161,43 +161,6 @@ describe("FieldAggregator", () => {
     expect(sources.scene_images).toBe(Website.DMM);
   });
 
-  it("keeps metadata coherent with the title-winning source when that source has values", () => {
-    const aggregator = new FieldAggregator({
-      title: [Website.DMM_TV, Website.JAV321],
-      genres: [Website.JAV321, Website.DMM_TV],
-      studio: [Website.JAV321, Website.DMM_TV],
-    });
-    const results = new Map<Website, CrawlerData>([
-      [
-        Website.DMM_TV,
-        makeCrawlerData({
-          title: "DMM TV Title",
-          genres: ["Tag TV 1", "Tag TV 2"],
-          studio: "Studio TV",
-          website: Website.DMM_TV,
-        }),
-      ],
-      [
-        Website.JAV321,
-        makeCrawlerData({
-          title: "JAV321 Title",
-          genres: ["Tag JAV321"],
-          studio: "Studio JAV321",
-          website: Website.JAV321,
-        }),
-      ],
-    ]);
-
-    const { data, sources } = aggregator.aggregate(results);
-
-    expect(data.title).toBe("DMM TV Title");
-    expect(data.genres).toEqual(["Tag TV 1", "Tag TV 2"]);
-    expect(data.studio).toBe("Studio TV");
-    expect(sources.title).toBe(Website.DMM_TV);
-    expect(sources.genres).toBe(Website.DMM_TV);
-    expect(sources.studio).toBe(Website.DMM_TV);
-  });
-
   it("respects maxActors limit", () => {
     const aggregator = new FieldAggregator({}, { maxActors: 2 });
     const results = new Map<Website, CrawlerData>([
@@ -440,6 +403,63 @@ describe("AggregationService", () => {
     expect(result?.sources.publisher).toBe(Website.FC2HUB);
     expect(result?.sources.durationSeconds).toBe(Website.FC2HUB);
     expect(result?.sources.rating).toBe(Website.FC2HUB);
+  });
+
+  it("keeps DMM family metadata aligned with the title-winning source", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          title: "DMM Title",
+          genres: ["DMM Genre"],
+          studio: "DMM Studio",
+          thumb_url: "https://awsimgsrc.dmm.co.jp/dmm.jpg",
+          website: Website.DMM,
+        }),
+      ],
+      [
+        Website.DMM_TV,
+        makeCrawlerData({
+          title: "DMM TV Title",
+          genres: ["DMM TV Genre 1", "DMM TV Genre 2"],
+          studio: "DMM TV Studio",
+          trailer_url: "https://video.example.com/trailer.mp4",
+          thumb_url: "https://video.example.com/thumb.jpg",
+          website: Website.DMM_TV,
+        }),
+      ],
+    ]);
+
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.DMM, Website.DMM_TV],
+        siteOrder: [Website.DMM, Website.DMM_TV],
+      },
+      aggregation: {
+        ...defaultConfiguration.aggregation,
+        fieldPriorities: {
+          ...defaultConfiguration.aggregation.fieldPriorities,
+          title: [Website.DMM_TV, Website.DMM],
+          genres: [Website.DMM, Website.DMM_TV],
+          studio: [Website.DMM, Website.DMM_TV],
+        },
+      },
+    });
+
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "ABF-075",
+      config,
+    );
+
+    expect(result?.data.title).toBe("DMM TV Title");
+    expect(result?.data.genres).toEqual(["DMM TV Genre 1", "DMM TV Genre 2"]);
+    expect(result?.data.studio).toBe("DMM TV Studio");
+    expect(result?.data.trailer_url).toBe("https://video.example.com/trailer.mp4");
+    expect(result?.sources.title).toBe(Website.DMM_TV);
+    expect(result?.sources.genres).toBe(Website.DMM_TV);
+    expect(result?.sources.studio).toBe(Website.DMM_TV);
+    expect(result?.sources.trailer_url).toBe(Website.DMM_TV);
   });
 
   it("uses PPVDATABANK as an FC2 fallback when higher-priority sources miss seller and image fields", async () => {

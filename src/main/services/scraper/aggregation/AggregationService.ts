@@ -19,6 +19,19 @@ const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Websit
 const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
+const DMM_FAMILY_SITES = new Set<Website>([Website.DMM, Website.DMM_TV]);
+const DMM_FAMILY_METADATA_FIELDS = [
+  "number",
+  "genres",
+  "studio",
+  "director",
+  "publisher",
+  "series",
+  "release_date",
+  "durationSeconds",
+  "rating",
+  "trailer_url",
+] as const satisfies ReadonlyArray<keyof CrawlerData>;
 
 interface CrawlerExecutionState {
   nextIndex: number;
@@ -111,7 +124,12 @@ export class AggregationService {
       return null;
     }
 
-    const { data, sources, imageAlternatives } = fieldAggregator.aggregate(successes);
+    const {
+      data: aggregatedData,
+      sources: aggregatedSources,
+      imageAlternatives,
+    } = fieldAggregator.aggregate(successes);
+    const { data, sources } = this.cohereDmmFamilyMetadata(aggregatedData, aggregatedSources, successes, config);
 
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
@@ -407,6 +425,67 @@ export class AggregationService {
 
   private createFieldAggregator(config: Configuration): FieldAggregator {
     return new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
+  }
+
+  private cohereDmmFamilyMetadata(
+    data: CrawlerData,
+    sources: Partial<Record<keyof CrawlerData, Website>>,
+    successes: Map<Website, CrawlerData>,
+    config: Configuration,
+  ): { data: CrawlerData; sources: Partial<Record<keyof CrawlerData, Website>> } {
+    const titleSource = sources.title;
+    if (!titleSource || !DMM_FAMILY_SITES.has(titleSource)) {
+      return { data, sources };
+    }
+
+    const counterpart = titleSource === Website.DMM ? Website.DMM_TV : Website.DMM;
+    if (!successes.has(counterpart)) {
+      return { data, sources };
+    }
+
+    const preferred = successes.get(titleSource);
+    if (!preferred) {
+      return { data, sources };
+    }
+
+    const nextData: CrawlerData = { ...data };
+    const nextSources: Partial<Record<keyof CrawlerData, Website>> = { ...sources };
+
+    for (const field of DMM_FAMILY_METADATA_FIELDS) {
+      const preferredValue = this.takeDmmFamilyFieldValue(field, preferred[field], config);
+      if (preferredValue === undefined) {
+        continue;
+      }
+
+      Object.assign(nextData, { [field]: preferredValue });
+      nextSources[field] = titleSource;
+    }
+
+    return { data: nextData, sources: nextSources };
+  }
+
+  private takeDmmFamilyFieldValue<K extends (typeof DMM_FAMILY_METADATA_FIELDS)[number]>(
+    field: K,
+    value: CrawlerData[K],
+    config: Configuration,
+  ): CrawlerData[K] | undefined {
+    if (field === "genres") {
+      if (!Array.isArray(value) || value.length === 0) {
+        return undefined;
+      }
+
+      return value.slice(0, config.aggregation.behavior.maxGenres) as CrawlerData[K];
+    }
+
+    if (typeof value === "string") {
+      return value.length > 0 ? value : undefined;
+    }
+
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    return value ?? undefined;
   }
 
   private getFromCache(key: string): AggregationResult | null {

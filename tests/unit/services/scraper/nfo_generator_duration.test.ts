@@ -128,22 +128,11 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<thumb>https://img.example.com/actor-a.jpg</thumb>");
     expect(xml).toContain("<order>0</order>");
     expect(xml).toContain("<sortorder>0</sortorder>");
-    expect(xml).toContain("<tag>Drama</tag>");
+    expect(xml).not.toContain("<tag>Drama</tag>");
     expect(xml).toContain("<tag>mdcz:content_type:VR</tag>");
     expect(xml).not.toContain("<altname>");
     expect(xml).not.toContain("<biography>");
     expect(xml).not.toContain("<website>");
-  });
-
-  it("mirrors genre nodes into tag nodes even when there is no extra managed movie tag", () => {
-    const xml = new NfoGenerator().buildXml(
-      createCrawlerData({
-        genres: ["Drama"],
-      }),
-    );
-
-    expect(xml).toContain("<genre>Drama</genre>");
-    expect(xml).toContain("<tag>Drama</tag>");
   });
 
   it("injects classification tags when fileInfo is provided", () => {

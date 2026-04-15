@@ -88,20 +88,15 @@ const collectDetailUrls = (context: DmmContext, $: CheerioAPI, searchUrl: string
     pushUrl(match[1]);
   }
 
-  $("a[href]")
+  const detailAnchors = $("a[href]")
     .toArray()
     .map((element) => $(element).attr("href"))
-    .filter(
-      (href): href is string =>
-        Boolean(href) &&
-        (/\/(?:digital|mono|monthly|rental)\//u.test(href) ||
-          href.includes("/detail/=/cid=") ||
-          href.includes("tv.dmm.") ||
-          href.includes("video.dmm.co.jp")),
-    )
-    .forEach((href) => {
-      pushUrl(toAbsoluteUrl(searchUrl, href));
-    });
+    .filter((href): href is string => typeof href === "string")
+    .filter((href) => /\/(?:digital|mono|monthly|rental)\//u.test(href) || href.includes("/detail/=/cid="));
+
+  for (const href of detailAnchors) {
+    pushUrl(toAbsoluteUrl(searchUrl, href));
+  }
 
   if (urls.length === 0) {
     return [];

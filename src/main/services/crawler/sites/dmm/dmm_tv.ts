@@ -248,7 +248,7 @@ const pickSearchResultContentId = (context: DmmTvContext, payload: unknown): str
     return best.id;
   }
 
-  return contents.length === 1 ? contents[0]?.id ?? null : null;
+  return contents.length === 1 ? (contents[0]?.id ?? null) : null;
 };
 
 const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<CrawlerData> | null => {
@@ -294,6 +294,33 @@ const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<Cr
       .map((item) => item.largeImageUrl)
       .filter((value): value is string => Boolean(value)),
     trailer_url: trailer,
+  };
+};
+
+const toCrawlerData = (data: Partial<CrawlerData> | null | undefined, fallbackNumber: string): CrawlerData | null => {
+  if (!data?.title || hasLoginWallTitle(data.title)) {
+    return null;
+  }
+
+  return {
+    title: data.title,
+    number: data.number ?? fallbackNumber,
+    durationSeconds: data.durationSeconds,
+    actors: data.actors ?? [],
+    genres: data.genres ?? [],
+    studio: data.studio,
+    director: data.director,
+    publisher: data.publisher ?? data.studio,
+    series: data.series,
+    plot: data.plot,
+    release_date: data.release_date,
+    rating: data.rating,
+    thumb_url: data.thumb_url,
+    poster_url: data.poster_url,
+    fanart_url: data.fanart_url,
+    scene_images: data.scene_images ?? [],
+    trailer_url: data.trailer_url,
+    website: Website.DMM_TV,
   };
 };
 
@@ -350,7 +377,9 @@ export class DmmTvCrawler extends BaseDmmCrawler {
 
     const links = new Set<string>();
 
-    $("a[href*='/av/content/?id='], a[href*='video.dmm.co.jp/av/content/?id='], a[href*='/anime/content/?id='], a[href*='video.dmm.co.jp/anime/content/?id=']")
+    $(
+      "a[href*='/av/content/?id='], a[href*='video.dmm.co.jp/av/content/?id='], a[href*='/anime/content/?id='], a[href*='video.dmm.co.jp/anime/content/?id=']",
+    )
       .toArray()
       .map((element) => $(element).attr("href"))
       .filter((href): href is string => Boolean(href))
@@ -404,154 +433,44 @@ export class DmmTvCrawler extends BaseDmmCrawler {
   protected async parseDetailPage(
     context: DmmTvContext,
     $: CheerioAPI,
-    _detailUrl: string,
+    detailUrl: string,
   ): Promise<CrawlerData | null> {
-    const graphQlData = await this.tryGraphQL(context);
-    if (graphQlData?.title && !hasLoginWallTitle(graphQlData.title)) {
-      return {
-        title: graphQlData.title,
-        number: graphQlData.number ?? context.number,
-        durationSeconds: graphQlData.durationSeconds,
-        actors: graphQlData.actors ?? [],
-        genres: graphQlData.genres ?? [],
-        studio: graphQlData.studio,
-        director: graphQlData.director,
-        publisher: graphQlData.publisher ?? graphQlData.studio,
-        series: graphQlData.series,
-        plot: graphQlData.plot,
-        release_date: graphQlData.release_date,
-        rating: graphQlData.rating,
-        thumb_url: graphQlData.thumb_url,
-        poster_url: graphQlData.poster_url,
-        fanart_url: graphQlData.fanart_url,
-        scene_images: graphQlData.scene_images ?? [],
-        trailer_url: graphQlData.trailer_url,
-        website: Website.DMM_TV,
-      };
+    const graphQlResult = toCrawlerData(await this.tryGraphQL(context), context.number);
+    if (graphQlResult) {
+      return graphQlResult;
     }
 
-    const parsed = parseDigitalDetail($);
-    if (!parsed?.title || hasLoginWallTitle(parsed.title)) {
-      const searchedDetailUrl = await this.tryResolveDetailUrlViaSearch(context, _detailUrl);
-      if (searchedDetailUrl && searchedDetailUrl !== _detailUrl) {
-        try {
-          const searchedContentId = getVideoDetailContentId(searchedDetailUrl);
-          if (searchedContentId) {
-            const searchedGraphQlData = await this.gateway.fetchGraphQL<unknown>(
-              DMM_VIDEO_GRAPHQL_ENDPOINT,
-              buildDmmVideoPayload(searchedContentId),
-              this.createGraphQlFetchOptions(context),
-            );
-            const searchedVideoData = parseDmmVideoData(searchedGraphQlData, context.number);
-            if (searchedVideoData?.title && !hasLoginWallTitle(searchedVideoData.title)) {
-              return {
-                title: searchedVideoData.title,
-                number: searchedVideoData.number ?? context.number,
-                durationSeconds: searchedVideoData.durationSeconds,
-                actors: searchedVideoData.actors ?? [],
-                genres: searchedVideoData.genres ?? [],
-                studio: searchedVideoData.studio,
-                director: searchedVideoData.director,
-                publisher: searchedVideoData.publisher ?? searchedVideoData.studio,
-                series: searchedVideoData.series,
-                plot: searchedVideoData.plot,
-                release_date: searchedVideoData.release_date,
-                rating: searchedVideoData.rating,
-                thumb_url: searchedVideoData.thumb_url,
-                poster_url: searchedVideoData.poster_url,
-                fanart_url: searchedVideoData.fanart_url,
-                scene_images: searchedVideoData.scene_images ?? [],
-                trailer_url: searchedVideoData.trailer_url,
-                website: Website.DMM_TV,
-              };
-            }
-          }
-
-          const searchedHtml = await this.gateway.fetchHtml(searchedDetailUrl, this.createFetchOptions(context));
-          const searchedData = parseDigitalDetail(load(searchedHtml));
-          if (searchedData?.title && !hasLoginWallTitle(searchedData.title)) {
-            return {
-              title: searchedData.title,
-              number: context.number,
-              durationSeconds: searchedData.durationSeconds,
-              actors: searchedData.actors ?? [],
-              genres: searchedData.genres ?? [],
-              studio: searchedData.studio,
-              director: searchedData.director,
-              publisher: searchedData.publisher ?? searchedData.studio,
-              series: searchedData.series,
-              plot: searchedData.plot,
-              release_date: searchedData.release_date,
-              rating: searchedData.rating,
-              thumb_url: searchedData.thumb_url,
-              poster_url: searchedData.poster_url,
-              fanart_url: searchedData.fanart_url,
-              scene_images: searchedData.scene_images ?? [],
-              trailer_url: searchedData.trailer_url,
-              website: Website.DMM_TV,
-            };
-          }
-        } catch (error) {
-          const message = toErrorMessage(error);
-          this.logger.debug(`DMM TV searched detail miss for ${searchedDetailUrl}: ${message}`);
-        }
-      }
-
-      for (const fallbackUrl of getAlternativeDetailUrls(_detailUrl)) {
-        try {
-          const fallbackHtml = await this.gateway.fetchHtml(fallbackUrl, this.createFetchOptions(context));
-          const fallbackParsed = parseDigitalDetail(load(fallbackHtml));
-          if (fallbackParsed?.title && !hasLoginWallTitle(fallbackParsed.title)) {
-            return {
-              title: fallbackParsed.title,
-              number: context.number,
-              durationSeconds: fallbackParsed.durationSeconds,
-              actors: fallbackParsed.actors ?? [],
-              genres: fallbackParsed.genres ?? [],
-              studio: fallbackParsed.studio,
-              director: fallbackParsed.director,
-              publisher: fallbackParsed.publisher ?? fallbackParsed.studio,
-              series: fallbackParsed.series,
-              plot: fallbackParsed.plot,
-              release_date: fallbackParsed.release_date,
-              rating: fallbackParsed.rating,
-              thumb_url: fallbackParsed.thumb_url,
-              poster_url: fallbackParsed.poster_url,
-              fanart_url: fallbackParsed.fanart_url,
-              scene_images: fallbackParsed.scene_images ?? [],
-              trailer_url: fallbackParsed.trailer_url,
-              website: Website.DMM_TV,
-            };
-          }
-        } catch (error) {
-          const message = toErrorMessage(error);
-          this.logger.debug(`DMM TV detail parse fallback miss for ${fallbackUrl}: ${message}`);
-        }
-      }
-
-      return null;
+    const htmlResult = toCrawlerData(parseDigitalDetail($), context.number);
+    if (htmlResult) {
+      return htmlResult;
     }
 
-    return {
-      title: parsed.title,
-      number: context.number,
-      durationSeconds: parsed.durationSeconds,
-      actors: parsed.actors ?? [],
-      genres: parsed.genres ?? [],
-      studio: parsed.studio,
-      director: parsed.director,
-      publisher: parsed.publisher ?? parsed.studio,
-      series: parsed.series,
-      plot: parsed.plot,
-      release_date: parsed.release_date,
-      rating: parsed.rating,
-      thumb_url: parsed.thumb_url,
-      poster_url: parsed.poster_url,
-      fanart_url: parsed.fanart_url,
-      scene_images: parsed.scene_images ?? [],
-      trailer_url: parsed.trailer_url,
-      website: Website.DMM_TV,
-    };
+    const searchedDetailUrl = await this.tryResolveDetailUrlViaSearch(context, detailUrl);
+    if (searchedDetailUrl && searchedDetailUrl !== detailUrl) {
+      try {
+        const searchedResult = await this.tryDetailUrl(context, searchedDetailUrl);
+        if (searchedResult) {
+          return searchedResult;
+        }
+      } catch (error) {
+        const message = toErrorMessage(error);
+        this.logger.debug(`DMM TV searched detail miss for ${searchedDetailUrl}: ${message}`);
+      }
+    }
+
+    for (const fallbackUrl of getAlternativeDetailUrls(detailUrl)) {
+      try {
+        const fallbackResult = await this.tryDetailUrl(context, fallbackUrl);
+        if (fallbackResult) {
+          return fallbackResult;
+        }
+      } catch (error) {
+        const message = toErrorMessage(error);
+        this.logger.debug(`DMM TV detail parse fallback miss for ${fallbackUrl}: ${message}`);
+      }
+    }
+
+    return null;
   }
 
   private createGraphQlFetchOptions(context: DmmTvContext): FetchOptions {
@@ -571,19 +490,13 @@ export class DmmTvCrawler extends BaseDmmCrawler {
   }
 
   private async tryGraphQL(context: DmmTvContext): Promise<Partial<CrawlerData> | null> {
-    const options = this.createGraphQlFetchOptions(context);
     const candidateIds = Array.from(
       new Set(context.candidateIds.length > 0 ? context.candidateIds : normalizeContentIds(context.number)),
     );
 
     for (const contentId of candidateIds) {
       try {
-        const videoResponse = await this.gateway.fetchGraphQL<unknown>(
-          DMM_VIDEO_GRAPHQL_ENDPOINT,
-          buildDmmVideoPayload(contentId),
-          options,
-        );
-        const videoData = parseDmmVideoData(videoResponse, context.number);
+        const videoData = await this.fetchGraphQlVideoData(context, contentId);
         if (videoData?.title) {
           return videoData;
         }
@@ -594,6 +507,32 @@ export class DmmTvCrawler extends BaseDmmCrawler {
     }
 
     return null;
+  }
+
+  private async fetchGraphQlVideoData(
+    context: DmmTvContext,
+    contentId: string,
+    fallbackNumber: string = context.number,
+  ): Promise<Partial<CrawlerData> | null> {
+    const videoResponse = await this.gateway.fetchGraphQL<unknown>(
+      DMM_VIDEO_GRAPHQL_ENDPOINT,
+      buildDmmVideoPayload(contentId),
+      this.createGraphQlFetchOptions(context),
+    );
+    return parseDmmVideoData(videoResponse, fallbackNumber);
+  }
+
+  private async tryDetailUrl(context: DmmTvContext, detailUrl: string): Promise<CrawlerData | null> {
+    const contentId = getVideoDetailContentId(detailUrl);
+    if (contentId) {
+      const graphQlResult = toCrawlerData(await this.fetchGraphQlVideoData(context, contentId), context.number);
+      if (graphQlResult) {
+        return graphQlResult;
+      }
+    }
+
+    const html = await this.gateway.fetchHtml(detailUrl, this.createFetchOptions(context));
+    return toCrawlerData(parseDigitalDetail(load(html)), context.number);
   }
 
   private async tryResolveDetailUrlViaSearch(context: DmmTvContext, currentDetailUrl: string): Promise<string | null> {

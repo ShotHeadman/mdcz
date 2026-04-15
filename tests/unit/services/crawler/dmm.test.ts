@@ -279,40 +279,6 @@ describe("DmmCrawler", () => {
     }
   });
 
-  it("does not hard-fail when legacy DMM TV GraphQL returns miss after the unified query also misses", async () => {
-    const number = "STARS-804";
-    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=stars00804/sort=ranking/";
-    const detailUrl = "https://tv.dmm.com/vod/detail/?seasonId=12345";
-
-    const searchHtml = `
-      <html><body>
-        <script>
-          const item = {"detailUrl":"${detailUrl.replaceAll("/", "\\/")}"};
-        </script>
-      </body></html>
-    `;
-
-    const fixtures = new Map<string, unknown>([
-      [searchUrl, searchHtml],
-      [detailUrl, "<html><body>dmm tv detail without metadata</body></html>"],
-      ["https://api.video.dmm.co.jp/graphql", { data: {} }],
-    ]);
-
-    const crawler = new DmmCrawler(withGateway(new FixtureNetworkClient(fixtures)));
-
-    const response = await crawler.crawl({
-      number,
-      site: Website.DMM,
-    });
-
-    expect(response.result.success).toBe(false);
-    if (response.result.success) {
-      throw new Error("expected failure");
-    }
-
-    expect(response.result.error).not.toContain("Missing fixture for https://api.tv.dmm.com/graphql");
-  });
-
   it("falls back to additional search keywords and parses direct detail anchors", async () => {
     const number = "KNBM-007";
     const primarySearchUrl = "https://www.dmm.co.jp/search/=/searchstr=knbm00007/sort=ranking/";
@@ -323,10 +289,7 @@ describe("DmmCrawler", () => {
     const fixtures = new Map<string, unknown>([
       [primarySearchUrl, "<html><body><div>no match</div></body></html>"],
       [compactSearchUrl, "<html><body><div>still no match</div></body></html>"],
-      [
-        hyphenatedSearchUrl,
-        `<html><body><a href="${detailUrl}">KNBM-007 Detail</a></body></html>`,
-      ],
+      [hyphenatedSearchUrl, `<html><body><a href="${detailUrl}">KNBM-007 Detail</a></body></html>`],
       [
         detailUrl,
         `
