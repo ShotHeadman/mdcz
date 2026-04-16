@@ -86,12 +86,6 @@ interface DmmVideoSearchResponse {
 const CONTENT_PAGE_DATA_QUERY =
   "query ContentPageData($id: ID!, $shouldFetchRelatedTags: Boolean = true) { ppvContent(id: $id) { title description makerContentId makerReleasedAt deliveryStartDate duration packageImage { largeUrl mediumUrl } sampleImages { largeImageUrl } sample2DMovie { highestMovieUrl hlsMovieUrl } actresses { name } directors { name } series { name } maker { name } label { name } genres { name } relatedTags(limit: 16) @include(if: $shouldFetchRelatedTags) { ... on ContentTagGroup { tags { name } } ... on ContentTag { name } } } reviewSummary(contentId: $id) { average } }";
 
-const AV_SEARCH_QUERY =
-  "query AvSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $queryWord: String, $facetLimit: Int!, $excludeUndelivered: Boolean!) { legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, queryWord: $queryWord, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) { result { contents { id title contentType } } } }";
-
-const ANIME_SEARCH_QUERY =
-  "query AnimeSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $queryWord: String, $facetLimit: Int!, $excludeUndelivered: Boolean!) { legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, queryWord: $queryWord, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) { result { contents { id title contentType } } } }";
-
 const buildDetailUrl = (contentId: string, path: DmmVideoDetailPath = "/av/content/?id="): string =>
   `${DMM_VIDEO_BASE}${path}${contentId}`;
 
@@ -187,9 +181,12 @@ const buildDmmVideoPayload = (id: string): DmmVideoPayload => {
 };
 
 const buildDmmVideoSearchPayload = (floor: "AV" | "ANIME", queryWord: string): DmmVideoSearchPayload => {
+  const operationName = floor === "ANIME" ? "AnimeSearch" : "AvSearch";
+  const query = `query ${operationName}($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $queryWord: String, $facetLimit: Int!, $excludeUndelivered: Boolean!) { legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, queryWord: $queryWord, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) { result { contents { id title contentType } } } }`;
+
   return {
-    operationName: floor === "ANIME" ? "AnimeSearch" : "AvSearch",
-    query: floor === "ANIME" ? ANIME_SEARCH_QUERY : AV_SEARCH_QUERY,
+    operationName,
+    query,
     variables: {
       limit: 5,
       offset: 0,
@@ -218,37 +215,37 @@ const pickSearchResultContentId = (context: DmmTvContext, payload: unknown): str
     ),
   );
 
-  const scored = contents
-    .map((item) => {
-      const normalizedId = normalizeToken(item.id);
-      const normalizedTitle = normalizeToken(item.title ?? "");
-      let score = 0;
+  const candidates = contents.map((item) => ({
+    id: item.id,
+    normalizedId: normalizeToken(item.id),
+    normalizedTitle: normalizeToken(item.title ?? ""),
+  }));
 
-      for (const needle of needles) {
-        if (normalizedId === needle) {
-          score = Math.max(score, 300);
-        } else if (normalizedTitle === needle) {
-          score = Math.max(score, 280);
-        } else if (normalizedId.includes(needle)) {
-          score = Math.max(score, 220);
-        } else if (normalizedTitle.includes(needle)) {
-          score = Math.max(score, 180);
-        }
-      }
-
-      return {
-        id: item.id,
-        score,
-      };
-    })
-    .sort((left, right) => right.score - left.score);
-
-  const best = scored[0];
-  if (best && best.score > 0) {
-    return best.id;
+  for (const candidate of candidates) {
+    if (needles.includes(candidate.normalizedId)) {
+      return candidate.id;
+    }
   }
 
-  return contents.length === 1 ? (contents[0]?.id ?? null) : null;
+  for (const candidate of candidates) {
+    if (needles.includes(candidate.normalizedTitle)) {
+      return candidate.id;
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (needles.some((needle) => candidate.normalizedId.includes(needle))) {
+      return candidate.id;
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (needles.some((needle) => candidate.normalizedTitle.includes(needle))) {
+      return candidate.id;
+    }
+  }
+
+  return null;
 };
 
 const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<CrawlerData> | null => {

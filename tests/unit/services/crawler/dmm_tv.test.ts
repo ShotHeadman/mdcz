@@ -75,6 +75,18 @@ class BodyAwareDmmTvNetworkClient extends NetworkClient {
         } as TResponse;
       }
 
+      if (queryWord === "zzzz-999") {
+        return {
+          data: {
+            legacySearchPPV: {
+              result: {
+                contents: [{ id: "unrelated001", title: "Completely Different Title" }],
+              },
+            },
+          },
+        } as TResponse;
+      }
+
       return {
         data: {
           legacySearchPPV: {
@@ -323,5 +335,28 @@ describe("DmmTvCrawler", () => {
           String((request.body as { variables?: Record<string, unknown> })?.variables?.id ?? "") === "realknbm007",
       ),
     ).toBe(true);
+  });
+
+  it("does not accept a single GraphQL search result without an id or title match", async () => {
+    const guessedDetailUrl = "https://video.dmm.co.jp/av/content/?id=1zzzz00999";
+    const networkClient = new BodyAwareDmmTvNetworkClient(
+      new Map<string, string>([
+        [guessedDetailUrl, `<html><body><script>self.__next_f.push([1,"shell"])</script></body></html>`],
+      ]),
+    );
+    const crawler = new DmmTvCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number: "ZZZZ-999",
+      site: Website.DMM_TV,
+    });
+
+    expect(response.result.success).toBe(false);
+    const requestedContentIds = networkClient.requests
+      .filter((request) => request.url === "https://api.video.dmm.co.jp/graphql")
+      .map((request) => request.body as { operationName?: string; variables?: Record<string, unknown> })
+      .filter((payload) => payload.operationName === "ContentPageData")
+      .map((payload) => String(payload.variables?.id ?? ""));
+    expect(requestedContentIds).not.toContain("unrelated001");
   });
 });

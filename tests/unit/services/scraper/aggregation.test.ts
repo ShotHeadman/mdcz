@@ -524,7 +524,7 @@ describe("AggregationService", () => {
     expect(result?.sources.rating).toBe(Website.FC2HUB);
   });
 
-  it("keeps DMM family metadata aligned with the title-winning source", async () => {
+  it("keeps DMM family identity fields aligned with the title-winning source", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
         Website.DMM,
@@ -532,6 +532,9 @@ describe("AggregationService", () => {
           title: "DMM Title",
           genres: ["DMM Genre"],
           studio: "DMM Studio",
+          durationSeconds: 7_200,
+          rating: 4.6,
+          trailer_url: "https://dmm.example.com/trailer.mp4",
           thumb_url: "https://awsimgsrc.dmm.co.jp/dmm.jpg",
           website: Website.DMM,
         }),
@@ -542,6 +545,8 @@ describe("AggregationService", () => {
           title: "DMM TV Title",
           genres: ["DMM TV Genre 1", "DMM TV Genre 2"],
           studio: "DMM TV Studio",
+          durationSeconds: 5_400,
+          rating: 3.2,
           trailer_url: "https://video.example.com/trailer.mp4",
           thumb_url: "https://video.example.com/thumb.jpg",
           website: Website.DMM_TV,
@@ -562,6 +567,9 @@ describe("AggregationService", () => {
           title: [Website.DMM_TV, Website.DMM],
           genres: [Website.DMM, Website.DMM_TV],
           studio: [Website.DMM, Website.DMM_TV],
+          durationSeconds: [Website.DMM, Website.DMM_TV],
+          rating: [Website.DMM, Website.DMM_TV],
+          trailer_url: [Website.DMM, Website.DMM_TV],
         },
       },
     });
@@ -574,11 +582,15 @@ describe("AggregationService", () => {
     expect(result?.data.title).toBe("DMM TV Title");
     expect(result?.data.genres).toEqual(["DMM TV Genre 1", "DMM TV Genre 2"]);
     expect(result?.data.studio).toBe("DMM TV Studio");
-    expect(result?.data.trailer_url).toBe("https://video.example.com/trailer.mp4");
+    expect(result?.data.durationSeconds).toBe(7_200);
+    expect(result?.data.rating).toBe(4.6);
+    expect(result?.data.trailer_url).toBe("https://dmm.example.com/trailer.mp4");
     expect(result?.sources.title).toBe(Website.DMM_TV);
     expect(result?.sources.genres).toBe(Website.DMM_TV);
     expect(result?.sources.studio).toBe(Website.DMM_TV);
-    expect(result?.sources.trailer_url).toBe(Website.DMM_TV);
+    expect(result?.sources.durationSeconds).toBe(Website.DMM);
+    expect(result?.sources.rating).toBe(Website.DMM);
+    expect(result?.sources.trailer_url).toBe(Website.DMM);
   });
 
   it("uses PPVDATABANK as an FC2 fallback when higher-priority sources miss seller and image fields", async () => {
