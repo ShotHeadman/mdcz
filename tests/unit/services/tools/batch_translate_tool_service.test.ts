@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { NetworkClient } from "@main/services/network";
 import type { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
@@ -162,9 +163,10 @@ describe("BatchTranslateToolService", () => {
       ],
     });
 
-    const items = await service.scan("/library", config);
+    const scanRoot = resolve("/library");
+    const items = await service.scan(scanRoot, config);
 
-    expect(localScanService.scan).toHaveBeenCalledWith("/library", config.paths.sceneImagesFolder);
+    expect(localScanService.scan).toHaveBeenCalledWith(scanRoot, config.paths.sceneImagesFolder);
     expect(items).toEqual<BatchTranslateScanItem[]>([
       expect.objectContaining({
         number: "AAA-001",

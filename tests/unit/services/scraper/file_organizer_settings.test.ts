@@ -73,7 +73,7 @@ const createConfig = (overrides: ConfigOverrides = {}) => {
   });
 };
 
-const splitSegments = (value: string): string[] => value.split(/[\\/]+/u).filter((segment) => segment.length > 0);
+const expectedOutputPath = (...segments: string[]): string => join(resolve("/media"), "output", ...segments);
 
 const expectPathExists = async (path: string): Promise<void> => {
   await expect(access(path)).resolves.toBeUndefined();
@@ -208,11 +208,11 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
 
-    expect(splitSegments(plan.outputDir)).toEqual([
-      "media",
-      "output",
-      "Unknown[FC2-4532163] 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
-    ]);
+    expect(plan.outputDir).toBe(
+      expectedOutputPath(
+        "Unknown[FC2-4532163] 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
+      ),
+    );
     expect(parse(plan.targetVideoPath).name).toBe(
       "FC2-4532163 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
     );
@@ -237,7 +237,7 @@ describe("FileOrganizer naming settings", () => {
       }),
       config,
     );
-    expect(splitSegments(explicitActorPlan.outputDir)).toEqual(["media", "output", "Actor A", "ABC-123"]);
+    expect(explicitActorPlan.outputDir).toBe(expectedOutputPath("Actor A", "ABC-123"));
 
     const studioFallbackPlan = organizer.plan(
       createFileInfo(),
@@ -247,7 +247,7 @@ describe("FileOrganizer naming settings", () => {
       }),
       config,
     );
-    expect(splitSegments(studioFallbackPlan.outputDir)).toEqual(["media", "output", "片商：Studio A", "ABC-123"]);
+    expect(studioFallbackPlan.outputDir).toBe(expectedOutputPath("片商：Studio A", "ABC-123"));
 
     const sellerFallbackPlan = organizer.plan(
       createFileInfo({
@@ -264,7 +264,7 @@ describe("FileOrganizer naming settings", () => {
       }),
       config,
     );
-    expect(splitSegments(sellerFallbackPlan.outputDir)).toEqual(["media", "output", "卖家：Seller A", "FC2-123456"]);
+    expect(sellerFallbackPlan.outputDir).toBe(expectedOutputPath("卖家：Seller A", "FC2-123456"));
 
     const fc2PpvFallbackPlan = organizer.plan(
       createFileInfo({
@@ -280,12 +280,7 @@ describe("FileOrganizer naming settings", () => {
       }),
       config,
     );
-    expect(splitSegments(fc2PpvFallbackPlan.outputDir)).toEqual([
-      "media",
-      "output",
-      "卖家：PPV Seller",
-      "FC2-PPV-789012",
-    ]);
+    expect(fc2PpvFallbackPlan.outputDir).toBe(expectedOutputPath("卖家：PPV Seller", "FC2-PPV-789012"));
 
     const publisherOnlyPlan = organizer.plan(
       createFileInfo(),
@@ -295,7 +290,7 @@ describe("FileOrganizer naming settings", () => {
       }),
       config,
     );
-    expect(splitSegments(publisherOnlyPlan.outputDir)).toEqual(["media", "output", "Unknown", "ABC-123"]);
+    expect(publisherOnlyPlan.outputDir).toBe(expectedOutputPath("Unknown", "ABC-123"));
 
     const disabledFallbackPlan = organizer.plan(
       createFileInfo(),
@@ -311,7 +306,7 @@ describe("FileOrganizer naming settings", () => {
         },
       }),
     );
-    expect(splitSegments(disabledFallbackPlan.outputDir)).toEqual(["media", "output", "Unknown", "ABC-123"]);
+    expect(disabledFallbackPlan.outputDir).toBe(expectedOutputPath("Unknown", "ABC-123"));
   });
 
   it("sanitizes colon-heavy titles without turning them into nested folders", () => {
@@ -339,12 +334,7 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
 
-    expect(splitSegments(plan.outputDir)).toEqual([
-      "media",
-      "output",
-      "Actor A",
-      "[2026-04-08][SUJI-137] 尾行-侵入-媚药-连れ込み-拉致輪",
-    ]);
+    expect(plan.outputDir).toBe(expectedOutputPath("Actor A", "[2026-04-08][SUJI-137] 尾行-侵入-媚药-连れ込み-拉致輪"));
     expect(parse(plan.targetVideoPath).name).toBe("SUJI-137 Actor A 尾行-侵入-媚药-连れ込み-拉致輪");
   });
 
@@ -1338,7 +1328,7 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
 
-    expect(splitSegments(plan.outputDir).slice(-4)).toEqual(["media", "output", "Actor A", "Original Title"]);
+    expect(plan.outputDir).toBe(expectedOutputPath("Actor A", "Original Title"));
     expect(parse(plan.targetVideoPath).name).toBe("ABC-123 Original Title");
   });
 });
