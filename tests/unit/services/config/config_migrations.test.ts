@@ -362,6 +362,24 @@ describe("Configuration migrations", () => {
         {
           raw: buildV030Config({
             naming: {
+              folderTemplate: "/{title}",
+              fileTemplate: "{number}",
+            },
+          }),
+          expected: "/{title}",
+        },
+        {
+          raw: buildV030Config({
+            naming: {
+              folderTemplate: "/{originaltitle}",
+              fileTemplate: "{number}",
+            },
+          }),
+          expected: "/{originaltitle}",
+        },
+        {
+          raw: buildV030Config({
+            naming: {
               folderTemplate: "   ",
               fileTemplate: "{number}",
             },
@@ -379,6 +397,18 @@ describe("Configuration migrations", () => {
           expect(parsed.download.nfoNaming).toBe("filename");
           expect(parsed.download.downloadSceneImages).toBe(false);
           expect(parsed.download.keepSceneImages).toBe(false);
+        }
+
+        if (expected === "/{title}") {
+          expect(parsed.naming.assetNamingMode).toBe("fixed");
+          expect(parsed.download.nfoNaming).toBe("both");
+          expect(parsed.download.downloadSceneImages).toBe(true);
+        }
+
+        if (expected === "/{originaltitle}") {
+          expect(parsed.naming.assetNamingMode).toBe("fixed");
+          expect(parsed.download.nfoNaming).toBe("both");
+          expect(parsed.download.downloadSceneImages).toBe(true);
         }
       }
     });

@@ -1,5 +1,7 @@
 export const ASSET_NAMING_MODES = ["fixed", "followVideo"] as const;
 export const MOVIE_NFO_BASE_NAME = "movie";
+const TEMPLATE_PLACEHOLDER = /\{([^{}]+)\}/gu;
+const DEDICATED_DIRECTORY_PLACEHOLDER_KEYS = new Set(["number", "title", "originaltitle"]);
 
 export type AssetNamingMode = (typeof ASSET_NAMING_MODES)[number];
 export type MovieAssetKind = "thumb" | "poster" | "fanart" | "trailer";
@@ -19,7 +21,18 @@ const FIXED_MOVIE_ASSET_FILE_NAMES: MovieAssetFileNames = {
 };
 
 export const isSharedDirectoryMode = (input: { successFileMove: boolean; folderTemplate: string }): boolean => {
-  return input.successFileMove && !input.folderTemplate.includes("{number}");
+  if (!input.successFileMove) {
+    return false;
+  }
+
+  for (const match of input.folderTemplate.matchAll(TEMPLATE_PLACEHOLDER)) {
+    const key = match[1]?.trim().toLowerCase();
+    if (key && DEDICATED_DIRECTORY_PLACEHOLDER_KEYS.has(key)) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 export const isMovieNfoBaseName = (value: string): boolean => value.trim().toLowerCase() === MOVIE_NFO_BASE_NAME;

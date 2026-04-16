@@ -221,4 +221,29 @@ describe("parseNfo", () => {
       tags: ["中文字幕", "自定义标签"],
     });
   });
+
+  it("does not restore mirrored genre tags as localState tags", () => {
+    const xml = new NfoGenerator().buildXml(
+      {
+        title: "Genre Mirror",
+        number: "ABC-654",
+        actors: [],
+        genres: ["Drama", "Mystery"],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      {
+        localState: {
+          tags: ["自定义标签"],
+        },
+      },
+    );
+
+    const parsed = parseNfoSnapshot(xml);
+
+    expect(parsed.crawlerData.genres).toEqual(["Drama", "Mystery"]);
+    expect(parsed.localState).toEqual({
+      tags: ["自定义标签"],
+    });
+  });
 });

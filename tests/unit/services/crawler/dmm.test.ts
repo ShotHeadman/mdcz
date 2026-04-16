@@ -85,6 +85,66 @@ describe("DmmCrawler", () => {
         },
       },
       {
+        number: "ACPDP-1102",
+        searchUrl: "https://www.dmm.co.jp/search/=/searchstr=acpdp01102/sort=ranking/",
+        detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=acpdp01102/",
+        searchHtml: (detailUrl: string) => `
+          <html><body>
+            <script>
+              const item = {"detailUrl":"${detailUrl.replaceAll("/", "\\/")}"};
+            </script>
+          </body></html>
+        `,
+        detailHtml: `
+          <html><body>
+            <h1><span>Genre Merge Test</span></h1>
+            <table>
+              <tr><th>ジャンル</th><td>
+                <a>Tag 1</a><a>サンプル動画</a><a>Tag 2</a><a>Tag 3</a><a>Tag 4</a><a>Tag 5</a>
+                <a>Tag 6</a><a>Tag 7</a><a>Tag 8</a><a>Tag 9</a><a>Tag 10</a>
+              </td></tr>
+              <tr><th>関連タグ</th><td>
+                <ul>
+                  <li><a>#Tag11 #Tag12</a></li>
+                  <li><a>#Tag12 #Tag13</a></li>
+                </ul>
+              </td></tr>
+              <tr><th>メーカー</th><td><a>Studio Merge</a></td></tr>
+            </table>
+            <script type="application/ld+json">
+            {
+              "name": "Genre Merge Test",
+              "image": ["https://pics.dmm.co.jp/digital/video/acpdp01102/acpdp01102pl.jpg"],
+              "subjectOf": {
+                "genre": ["Tag 1", "Tag 2"]
+              }
+            }
+            </script>
+          </body></html>
+        `,
+        assert: (response: Awaited<ReturnType<DmmCrawler["crawl"]>>) => {
+          if (!response.result.success) {
+            throw new Error("expected success");
+          }
+
+          expect(response.result.data.genres).toEqual([
+            "Tag 1",
+            "Tag 2",
+            "Tag 3",
+            "Tag 4",
+            "Tag 5",
+            "Tag 6",
+            "Tag 7",
+            "Tag 8",
+            "Tag 9",
+            "Tag 10",
+            "Tag11",
+            "Tag12",
+            "Tag13",
+          ]);
+        },
+      },
+      {
         number: "SSIS-027",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=ssis00027/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00027/",
@@ -219,37 +279,45 @@ describe("DmmCrawler", () => {
     }
   });
 
-  it("does not hard-fail when legacy DMM TV GraphQL returns miss after the unified query also misses", async () => {
-    const number = "STARS-804";
-    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=stars00804/sort=ranking/";
-    const detailUrl = "https://tv.dmm.com/vod/detail/?seasonId=12345";
-
-    const searchHtml = `
-      <html><body>
-        <script>
-          const item = {"detailUrl":"${detailUrl.replaceAll("/", "\\/")}"};
-        </script>
-      </body></html>
-    `;
+  it("falls back to additional search keywords and parses direct detail anchors", async () => {
+    const number = "KNBM-007";
+    const primarySearchUrl = "https://www.dmm.co.jp/search/=/searchstr=knbm00007/sort=ranking/";
+    const compactSearchUrl = "https://www.dmm.co.jp/search/=/searchstr=knbm007/sort=ranking/";
+    const hyphenatedSearchUrl = "https://www.dmm.co.jp/search/=/searchstr=knbm-007/sort=ranking/";
+    const detailUrl = "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=knbm007/";
 
     const fixtures = new Map<string, unknown>([
-      [searchUrl, searchHtml],
-      [detailUrl, "<html><body>dmm tv detail without metadata</body></html>"],
-      ["https://api.video.dmm.co.jp/graphql", { data: {} }],
+      [primarySearchUrl, "<html><body><div>no match</div></body></html>"],
+      [compactSearchUrl, "<html><body><div>still no match</div></body></html>"],
+      [hyphenatedSearchUrl, `<html><body><a href="${detailUrl}">KNBM-007 Detail</a></body></html>`],
+      [
+        detailUrl,
+        `
+          <html><body>
+            <h1><span>KNBM Search Recovery</span></h1>
+            <table>
+              <tr><th>鍑烘紨鑰?/th><td><a>Actor Recovery</a></td></tr>
+              <tr><th>銈搞儯銉炽儷</th><td><a>Tag Recovery</a></td></tr>
+            </table>
+          </body></html>
+        `,
+      ],
     ]);
 
-    const crawler = new DmmCrawler(withGateway(new FixtureNetworkClient(fixtures)));
+    const networkClient = new FixtureNetworkClient(fixtures);
+    const crawler = new DmmCrawler(withGateway(networkClient));
 
     const response = await crawler.crawl({
       number,
       site: Website.DMM,
     });
 
-    expect(response.result.success).toBe(false);
-    if (response.result.success) {
-      throw new Error("expected failure");
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
     }
 
-    expect(response.result.error).not.toContain("Missing fixture for https://api.tv.dmm.com/graphql");
+    expect(response.result.data.title).toBe("KNBM Search Recovery");
+    expect(networkClient.requests.map((request) => request.url)).toContain(hyphenatedSearchUrl);
   });
 });

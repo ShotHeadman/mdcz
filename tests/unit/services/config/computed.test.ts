@@ -176,6 +176,42 @@ describe("buildComputedConfiguration", () => {
     expect(result.success).toBe(true);
   });
 
+  it("treats title-based folder templates as dedicated movie directories", () => {
+    const result = configurationSchema.safeParse({
+      naming: {
+        folderTemplate: "/{title}",
+        assetNamingMode: "fixed",
+      },
+      behavior: {
+        successFileMove: true,
+      },
+      download: {
+        nfoNaming: "both",
+        downloadSceneImages: true,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("treats original-title-based folder templates as dedicated movie directories", () => {
+    const result = configurationSchema.safeParse({
+      naming: {
+        folderTemplate: "/{originaltitle}",
+        assetNamingMode: "fixed",
+      },
+      behavior: {
+        successFileMove: true,
+      },
+      download: {
+        nfoNaming: "both",
+        downloadSceneImages: true,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects optional groups that try to span multiple path segments", () => {
     const cases = [
       {

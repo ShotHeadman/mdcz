@@ -135,17 +135,6 @@ describe("NfoGenerator", () => {
     expect(xml).not.toContain("<website>");
   });
 
-  it("omits tag nodes when there is no extra managed movie tag", () => {
-    const xml = new NfoGenerator().buildXml(
-      createCrawlerData({
-        genres: ["Drama"],
-      }),
-    );
-
-    expect(xml).toContain("<genre>Drama</genre>");
-    expect(xml).not.toContain("<tag>");
-  });
-
   it("injects classification tags when fileInfo is provided", () => {
     const uncensoredXml = new NfoGenerator().buildXml(createCrawlerData(), {
       fileInfo: createFileInfo({
@@ -285,6 +274,21 @@ describe("NfoGenerator", () => {
   it("writes a standards-compliant uniqueid attribute for Jellyfin", () => {
     const xml = new NfoGenerator().buildXml(createCrawlerData());
     expect(xml).toContain('<uniqueid type="dmm" default="true">ABC-123</uniqueid>');
+  });
+
+  it("supports originaltitle in the NFO title template", () => {
+    const xml = new NfoGenerator().buildXml(
+      createCrawlerData({
+        title: "Original Title",
+        title_zh: "中文标题",
+      }),
+      {
+        nfoTitleTemplate: "{number} {originaltitle}",
+      },
+    );
+
+    expect(xml).toContain("<title>ABC-123 Original Title</title>");
+    expect(xml).toContain("<originaltitle>Original Title</originaltitle>");
   });
 
   it("uses thumb artwork as fallback fanart and persists sample image urls under mdcz", () => {

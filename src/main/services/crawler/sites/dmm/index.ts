@@ -6,6 +6,7 @@ import { type CheerioAPI, load } from "cheerio";
 
 import type { Context, CrawlerInput } from "../../base/types";
 import type { CrawlerRegistration } from "../../registration";
+import { toAbsoluteUrl } from "../helpers";
 
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
 import { classifyDmmDetailFailure } from "./failureClassifier";
@@ -14,6 +15,7 @@ import { DmmCategory, parseCategory, parseDigitalDetail, parseMonoLikeDetail } f
 interface DmmContext extends Context {
   number00?: string;
   numberNo00?: string;
+  searchKeywords: string[];
 }
 
 const DMM_SEARCH_BASE = "https://www.dmm.co.jp/search/=/searchstr=";
@@ -23,7 +25,45 @@ const unescapeDetailUrl = (value: string): string => {
   return value.replaceAll("\\/", "/").replaceAll("\\u0026", "&");
 };
 
-const collectDetailUrls = (context: DmmContext, $: CheerioAPI): string[] => {
+const pushUnique = (values: string[], value: string | undefined): void => {
+  if (!value || values.includes(value)) {
+    return;
+  }
+
+  values.push(value);
+};
+
+const buildSearchKeywords = (number: string, number00?: string, numberNo00?: string): string[] => {
+  const normalized = number.trim().toLowerCase();
+  const keywords: string[] = [];
+  pushUnique(keywords, number00);
+  pushUnique(keywords, numberNo00);
+  pushUnique(keywords, normalized);
+  pushUnique(keywords, normalized.replace(/\s+/gu, ""));
+
+  const matched = normalized.match(/(\d*[a-z]+)-?(\d+)/u);
+  if (matched) {
+    const prefix = matched[1] ?? "";
+    const digits = matched[2];
+    pushUnique(keywords, `${prefix}-${digits}`);
+    pushUnique(keywords, `${prefix}${digits}`);
+    pushUnique(keywords, `${prefix}${digits.padStart(5, "0")}`);
+  }
+
+  return keywords.filter((keyword) => keyword.length > 0);
+};
+
+const buildDetailUrlNeedles = (context: DmmContext): string[] => {
+  return Array.from(
+    new Set(
+      context.searchKeywords
+        .map((keyword) => keyword.toLowerCase().replace(/[^a-z0-9]/gu, ""))
+        .filter((keyword) => keyword.length > 0),
+    ),
+  );
+};
+
+const collectDetailUrls = (context: DmmContext, $: CheerioAPI, searchUrl: string): string[] => {
   const htmlText = $.html();
   const escapedMatches = htmlText.matchAll(/detailUrl\\":\\"(.*?)\\"/giu);
   const plainMatches = htmlText.matchAll(/"detailUrl"\s*:\s*"(.*?)"/giu);
@@ -37,7 +77,7 @@ const collectDetailUrls = (context: DmmContext, $: CheerioAPI): string[] => {
     if (parsed.trim().length === 0) {
       return;
     }
-    urls.push(parsed);
+    pushUnique(urls, parsed);
   };
 
   for (const match of escapedMatches) {
@@ -48,23 +88,28 @@ const collectDetailUrls = (context: DmmContext, $: CheerioAPI): string[] => {
     pushUrl(match[1]);
   }
 
+  const detailAnchors = $("a[href]")
+    .toArray()
+    .map((element) => $(element).attr("href"))
+    .filter((href): href is string => typeof href === "string")
+    .filter((href) => /\/(?:digital|mono|monthly|rental)\//u.test(href) || href.includes("/detail/=/cid="));
+
+  for (const href of detailAnchors) {
+    pushUrl(toAbsoluteUrl(searchUrl, href));
+  }
+
   if (urls.length === 0) {
     return [];
   }
 
-  const numberParts = context.number.toLowerCase().match(/(\d*[a-z]+)?-?(\d+)/u);
-  if (!numberParts) {
+  const needles = buildDetailUrlNeedles(context);
+  if (needles.length === 0) {
     return Array.from(urls);
   }
 
-  const prefix = numberParts[1] ?? "";
-  const digits = numberParts[2];
-  const n1 = `${prefix}${digits.padStart(5, "0")}`;
-  const n2 = `${prefix}${digits}`;
-
   return urls.filter((value) => {
-    const lowered = value.toLowerCase();
-    return new RegExp(`[^a-z]${n1}[^0-9]`, "u").test(lowered) || new RegExp(`[^a-z]${n2}[^0-9]`, "u").test(lowered);
+    const lowered = value.toLowerCase().replace(/[^a-z0-9]/gu, "");
+    return needles.some((needle) => lowered.includes(needle));
   });
 };
 
@@ -82,6 +127,7 @@ export class DmmCrawler extends BaseDmmCrawler {
     const variants = normalizeDmmNumberVariants(input.number);
     context.number00 = variants.number00;
     context.numberNo00 = variants.numberNo00;
+    context.searchKeywords = buildSearchKeywords(input.number, variants.number00, variants.numberNo00);
     return context;
   }
 
@@ -99,7 +145,7 @@ export class DmmCrawler extends BaseDmmCrawler {
   }
 
   protected async parseSearchPage(context: DmmContext, $: CheerioAPI, searchUrl: string): Promise<string | null> {
-    const currentResult = this.resolveDetailUrlFromSearchHtml(context, $);
+    const currentResult = this.resolveDetailUrlFromSearchHtml(context, $, searchUrl);
     if (currentResult) {
       return currentResult;
     }
@@ -111,7 +157,7 @@ export class DmmCrawler extends BaseDmmCrawler {
 
       try {
         const html = await this.gateway.fetchHtml(candidateSearchUrl, this.createFetchOptions(context));
-        const candidateResult = this.resolveDetailUrlFromSearchHtml(context, load(html));
+        const candidateResult = this.resolveDetailUrlFromSearchHtml(context, load(html), candidateSearchUrl);
         if (candidateResult) {
           return candidateResult;
         }
@@ -175,10 +221,7 @@ export class DmmCrawler extends BaseDmmCrawler {
   }
 
   private buildSearchUrls(context: DmmContext): string[] {
-    const variants = [context.number00, context.numberNo00].filter((value): value is string => Boolean(value));
-    const uniqueKeywords = Array.from(new Set(variants));
-
-    return uniqueKeywords.flatMap((keyword) => {
+    return context.searchKeywords.flatMap((keyword) => {
       const encodedKeyword = encodeURIComponent(keyword).replace(/%2D/giu, "-");
       return [
         `${DMM_SEARCH_BASE}${encodedKeyword}/sort=ranking/`,
@@ -187,8 +230,8 @@ export class DmmCrawler extends BaseDmmCrawler {
     });
   }
 
-  private resolveDetailUrlFromSearchHtml(context: DmmContext, $: CheerioAPI): string | null {
-    const detailUrls = collectDetailUrls(context, $);
+  private resolveDetailUrlFromSearchHtml(context: DmmContext, $: CheerioAPI, searchUrl: string): string | null {
+    const detailUrls = collectDetailUrls(context, $, searchUrl);
     return detailUrls[0] ?? null;
   }
 }

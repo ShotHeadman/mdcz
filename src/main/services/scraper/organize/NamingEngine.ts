@@ -202,12 +202,14 @@ const NAMING_PREVIEW_SAMPLES: Array<{
 export class NamingEngine {
   buildLayout(fileInfo: FileInfo, data: CrawlerData, config: Configuration, localState?: NfoLocalState): NamingLayout {
     const title = data.title_zh?.trim() || data.title;
+    const originaltitle = data.title.trim();
     const actorTemplateValue = pickActorTemplateValue(config, data.actors ?? [], data);
     const styledNumber = buildNumberWithNamingMarkers(fileInfo, data, config, localState);
     const partSuffix = formatPartSuffix(fileInfo, config);
     const formattedReleaseDate = formatReleaseDateByRule(data.release_date, config.naming.releaseRule);
     const templateData = {
       title,
+      originaltitle,
       number: styledNumber,
       actor: actorTemplateValue.actor,
       actorFallbackPrefix: actorTemplateValue.actorFallbackPrefix,

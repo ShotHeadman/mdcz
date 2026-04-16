@@ -1315,4 +1315,30 @@ describe("FileOrganizer naming settings", () => {
       nfoPath: join(root, "output", "FC2-123456", "FC2-123456.nfo"),
     });
   });
+
+  it("supports originaltitle in folder and file templates without replacing title", () => {
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/source.mp4",
+        fileName: "source",
+      }),
+      createCrawlerData({
+        number: "ABC-123",
+        title: "Original Title",
+        title_zh: "中文标题",
+        actors: ["Actor A"],
+      }),
+      createConfig({
+        naming: {
+          folderTemplate: "{actor}/{originaltitle}",
+          fileTemplate: "{number} {originaltitle}",
+          censoredStyle: "",
+        },
+      }),
+    );
+
+    expect(splitSegments(plan.outputDir).slice(-4)).toEqual(["media", "output", "Actor A", "Original Title"]);
+    expect(parse(plan.targetVideoPath).name).toBe("ABC-123 Original Title");
+  });
 });

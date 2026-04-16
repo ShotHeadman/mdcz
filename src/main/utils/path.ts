@@ -8,6 +8,7 @@ const OPTIONAL_GROUP = /\[([^[\]]*)\]/gu;
 
 export interface TemplateData {
   title?: string;
+  originaltitle?: string;
   number?: string;
   actor?: string;
   actorFallbackPrefix?: string;

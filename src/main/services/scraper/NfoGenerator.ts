@@ -166,8 +166,9 @@ export interface NfoOptions {
 export class NfoGenerator {
   buildXml(data: CrawlerData, options?: NfoOptions): string {
     const rawTitle = data.title_zh?.trim() || data.title;
+    const originaltitle = data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
-    const title = renderPathTemplate(titleTemplate, { title: rawTitle, number: data.number });
+    const title = renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
     const plot = data.plot_zh?.trim() || data.plot?.trim();
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
     const assets = options?.assets;
@@ -177,7 +178,8 @@ export class NfoGenerator {
     const localState = options?.localState;
     const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
-    const tags = buildMovieTags(data, fileInfo, localState);
+    const genres = Array.from(new Set(buildStringNodes(toArray(data.genres))));
+    const tags = Array.from(new Set(buildMovieTags(data, fileInfo, localState)));
     const videoNode = buildVideoNode(videoMeta);
 
     const movie: Record<string, unknown> = {};
@@ -188,7 +190,7 @@ export class NfoGenerator {
     }
 
     movie.title = title;
-    movie.originaltitle = data.title;
+    movie.originaltitle = originaltitle;
     movie.plot = plot && plot.length > 0 ? plot : undefined;
     movie.outline = outline;
     movie.premiered = data.release_date;
@@ -214,7 +216,7 @@ export class NfoGenerator {
       "@_default": "true",
       "#text": data.number,
     };
-    movie.genre = Array.from(new Set(buildStringNodes(toArray(data.genres))));
+    movie.genre = genres;
     movie.tag = tags.length > 0 ? tags : undefined;
     movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
 

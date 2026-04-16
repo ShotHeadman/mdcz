@@ -17,6 +17,33 @@ export enum DmmCategory {
 type CheerioInput = Parameters<CheerioAPI>[0];
 const DMM_SCENE_IMAGE_PATTERN = /jp-\d+\.(?:jpe?g|png|webp)$/iu;
 const DMM_PRIMARY_IMAGE_PATTERN = /p[sl]\.(?:jpe?g|png|webp)$/iu;
+const DMM_NOISE_GENRES = new Set(["サンプル動画"]);
+
+const extractRelatedTags = ($: CheerioAPI): string[] => {
+  const texts = [
+    ...$("td:contains('関連タグ') + td a")
+      .toArray()
+      .map((element: CheerioInput) => $(element).text()),
+    ...$("th:contains('関連タグ') + td a")
+      .toArray()
+      .map((element: CheerioInput) => $(element).text()),
+  ];
+
+  return uniqueStrings(
+    texts.flatMap((text) => {
+      const normalized = text.replace(/\u3000/gu, " ").trim();
+      if (!normalized) {
+        return [];
+      }
+
+      const rawParts = normalized.includes("#") ? normalized.split(/\s+/u) : [normalized];
+      return rawParts.map((part) => part.replace(/^#+/u, "").trim()).filter((part) => part.length > 0);
+    }),
+  );
+};
+
+const normalizeDmmGenres = (values: Array<string | undefined>): string[] =>
+  uniqueStrings(values).filter((value) => !DMM_NOISE_GENRES.has(value));
 
 const normalizeDmmSceneImageUrl = (value: string | undefined): string | undefined => {
   if (!value || DMM_PRIMARY_IMAGE_PATTERN.test(value)) {
@@ -99,9 +126,10 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
     ...extractList($, "th:contains('出演者') + td a"),
   ]);
 
-  const genres = uniqueStrings([
+  const genres = normalizeDmmGenres([
     ...extractList($, "td:contains('ジャンル') + td a"),
     ...extractList($, "th:contains('ジャンル') + td a"),
+    ...extractRelatedTags($),
   ]);
 
   const thumb =
@@ -154,7 +182,7 @@ export const parseDigitalDetail = ($: CheerioAPI): Partial<CrawlerData> | null =
 
   const images = jsonLd?.image ?? [];
   const actorsFromJson = uniqueStrings((jsonLd?.subjectOf?.actor ?? []).map((actor) => actor.name));
-  const genresFromJson = uniqueStrings(jsonLd?.subjectOf?.genre ?? []);
+  const genresFromJson = normalizeDmmGenres(jsonLd?.subjectOf?.genre ?? []);
   const releaseFromJson = parseDate(jsonLd?.subjectOf?.uploadDate) ?? undefined;
   const trailerFromJson = jsonLd?.subjectOf?.contentUrl;
   const ratingFromJson = jsonLd?.aggregateRating?.ratingValue;
@@ -172,7 +200,7 @@ export const parseDigitalDetail = ($: CheerioAPI): Partial<CrawlerData> | null =
     title: jsonLd?.name ?? base?.title,
     plot: jsonLd?.description ?? base?.plot,
     actors: actorsFromJson.length > 0 ? actorsFromJson : base?.actors,
-    genres: genresFromJson.length > 0 ? genresFromJson : base?.genres,
+    genres: normalizeDmmGenres([...(base?.genres ?? []), ...genresFromJson]),
     studio: jsonLd?.brand?.name ?? base?.studio,
     release_date: releaseFromJson ?? base?.release_date,
     rating: Number.isFinite(ratingFromJson) ? ratingFromJson : base?.rating,

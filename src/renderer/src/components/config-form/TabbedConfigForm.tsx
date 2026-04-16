@@ -102,7 +102,7 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
 ];
 
 export const NAMING_TEMPLATE_DESCRIPTION =
-  "可用占位符：{actor} {actorFallbackPrefix} {number} {date} {title} {studio} {publisher}";
+  "可用占位符：{actor} {actorFallbackPrefix} {number} {date} {title} {originaltitle} {studio} {publisher}";
 
 // ── Field registry for search/filter ──
 
@@ -550,7 +550,7 @@ export function NamingSection(_props: SectionRenderProps) {
       <TextField
         name="naming.nfoTitleTemplate"
         label="NFO 标题模板"
-        description="NFO 中 title 字段的格式。可用占位符：{number} {title}"
+        description="NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}"
       />
       <NamingPreview />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />

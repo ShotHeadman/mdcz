@@ -75,7 +75,6 @@ export class FieldAggregator {
 
     // Use first entry as fallback for required fields
     const firstEntry = entries[0];
-
     const resolve = <K extends keyof CrawlerData>(field: K): CrawlerData[K] => {
       const strategy = FIELD_STRATEGIES[field] ?? "first_non_null";
       const priority = (this.priorities[field] ?? []) as Website[];
@@ -121,7 +120,6 @@ export class FieldAggregator {
 
     return { data, sources, imageAlternatives };
   }
-
   private orderByPriority(entries: SourceEntry[], priority: Website[]): SourceEntry[] {
     if (priority.length === 0) {
       return entries;
