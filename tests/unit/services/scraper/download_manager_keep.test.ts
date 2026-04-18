@@ -438,6 +438,38 @@ describe("DownloadManager keep flags", () => {
     await expectSceneImages(root, assets, ["https://example.com/scene-001.jpg"]);
   });
 
+  it("saves downloaded WebP scene images with WebP file extensions", async () => {
+    const { root, manager } = await createDownloadSubject({
+      "extrafanart/fanart1.jpg": "old-scene",
+    });
+    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
+      valid: true,
+      width: 640,
+      height: 360,
+      format: "webp",
+    });
+
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData({
+        scene_images: ["https://example.com/scene-001.jpg"],
+      }),
+      createDownloadConfig({
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadTrailer: false,
+        keepSceneImages: false,
+      }),
+    );
+
+    const scenePath = join(root, "extrafanart", "fanart1.webp");
+    expect(assets.sceneImages).toEqual([scenePath]);
+    expect(assets.downloaded).toEqual([scenePath]);
+    await expect(readFile(scenePath, "utf8")).resolves.toBe("downloaded:https://example.com/scene-001.jpg");
+    await expect(access(sceneImagePath(root, 1))).rejects.toThrow();
+  });
+
   it("only derives secondary artwork when a kept thumb is actually available", async () => {
     const cases: SecondaryArtworkCase[] = [
       {
@@ -648,6 +680,46 @@ describe("DownloadManager keep flags", () => {
       expect(networkClient.probe).toHaveBeenCalledTimes(expectedProbeCalls);
       expect(networkClient.download).toHaveBeenCalledTimes(expectedDownloadCalls);
     }
+  });
+
+  it("saves downloaded WebP artwork with WebP file extensions", async () => {
+    const { root, manager } = await createDownloadSubject({
+      "thumb.jpg": "old-thumb",
+      "fanart.jpg": "old-fanart",
+    });
+    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
+      valid: true,
+      width: 640,
+      height: 360,
+      format: "webp",
+    });
+
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData({
+        thumb_url: "https://example.com/thumb.jpg",
+        poster_url: "https://example.com/poster.jpg",
+      }),
+      createDownloadConfig({
+        keepThumb: false,
+        keepPoster: false,
+        keepFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      }),
+    );
+
+    expect(assets.thumb).toBe(join(root, "thumb.webp"));
+    expect(assets.poster).toBe(join(root, "poster.webp"));
+    expect(assets.fanart).toBe(join(root, "fanart.webp"));
+    expect(assets.downloaded).toEqual([join(root, "thumb.webp"), join(root, "poster.webp"), join(root, "fanart.webp")]);
+    await expect(readFile(join(root, "thumb.webp"), "utf8")).resolves.toBe("downloaded:https://example.com/thumb.jpg");
+    await expect(readFile(join(root, "poster.webp"), "utf8")).resolves.toBe(
+      "downloaded:https://example.com/poster.jpg",
+    );
+    await expect(readFile(join(root, "fanart.webp"), "utf8")).resolves.toBe("downloaded:https://example.com/thumb.jpg");
+    await expect(access(join(root, "thumb.jpg"))).rejects.toThrow();
+    await expect(access(join(root, "fanart.jpg"))).rejects.toThrow();
   });
 
   it("uses probe metadata to minimize primary artwork downloads", async () => {

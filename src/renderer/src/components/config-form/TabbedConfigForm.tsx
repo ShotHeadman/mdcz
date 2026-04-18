@@ -283,6 +283,40 @@ function unflattenConfig(flat: Record<string, unknown>): Record<string, unknown>
   return nested;
 }
 
+const NAMING_PREVIEW_FIELD_KEYS = [
+  "naming.folderTemplate",
+  "naming.fileTemplate",
+  "naming.assetNamingMode",
+  "naming.actorNameMax",
+  "naming.actorNameMore",
+  "naming.actorFallbackToStudio",
+  "naming.releaseRule",
+  "naming.folderNameMax",
+  "naming.fileNameMax",
+  "naming.cnwordStyle",
+  "naming.umrStyle",
+  "naming.leakStyle",
+  "naming.uncensoredStyle",
+  "naming.censoredStyle",
+  "naming.partStyle",
+  "download.nfoNaming",
+  "download.downloadSceneImages",
+  "behavior.successFileMove",
+  "behavior.successFileRename",
+] as const;
+
+export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
+  const flat: Record<string, unknown> = {};
+  for (const key of NAMING_PREVIEW_FIELD_KEYS) {
+    const value = values[key] ?? getNestedValue(values, key);
+    if (value !== undefined) {
+      flat[key] = value;
+    }
+  }
+
+  return unflattenConfig(flat) as Partial<Configuration>;
+}
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -427,28 +461,19 @@ function DownloadSection(_props: SectionRenderProps) {
 
 function NamingPreview() {
   const form = useFormContext<FieldValues>();
-  const naming = useWatch({
+  const previewValues = useWatch({
     control: form.control,
-    name: "naming",
-  }) as Record<string, unknown> | undefined;
-  const download = useWatch({
-    control: form.control,
-    name: "download",
-  }) as Record<string, unknown> | undefined;
-  const behavior = useWatch({
-    control: form.control,
-    name: "behavior",
-  }) as Record<string, unknown> | undefined;
+    name: NAMING_PREVIEW_FIELD_KEYS,
+  }) as unknown[];
   const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const previewConfig = useMemo(
-    () => ({
-      naming: naming ?? {},
-      download: download ?? {},
-      behavior: behavior ?? {},
-    }),
-    [behavior, download, naming],
-  );
+  const previewConfig = useMemo(() => {
+    const flatValues: Record<string, unknown> = {};
+    for (const [index, key] of NAMING_PREVIEW_FIELD_KEYS.entries()) {
+      flatValues[key] = previewValues[index];
+    }
+    return buildNamingPreviewConfig(flatValues);
+  }, [previewValues]);
   const previewConfigRef = useRef(previewConfig);
 
   const previewConfigKey = useMemo(() => JSON.stringify(previewConfig), [previewConfig]);

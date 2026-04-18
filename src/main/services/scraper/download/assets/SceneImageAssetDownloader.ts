@@ -7,7 +7,7 @@ import {
   getSceneImageSets,
   listExistingSceneImages,
   removeStaleSceneImages,
-  resolveExistingAsset,
+  resolveExistingImageAsset,
   shouldKeepAsset,
   uniqueFilePaths,
 } from "./helpers";
@@ -27,7 +27,7 @@ export class SceneImageAssetDownloader implements AssetDownloader {
     const existingSceneImages = await listExistingSceneImages(sceneDir);
     const sceneImageComparisonPaths = uniqueFilePaths([
       assets.thumb,
-      await resolveExistingAsset(join(plan.outputDir, plan.assetFileNames.fanart)),
+      await resolveExistingImageAsset(join(plan.outputDir, plan.assetFileNames.fanart)),
     ]);
     const forceReplaceSceneImages = plan.assetDecisions.sceneImages === "replace";
     const keepSceneImages = shouldKeepAsset(plan.assetDecisions.sceneImages, plan.config.download.keepSceneImages);
@@ -68,7 +68,7 @@ export class SceneImageAssetDownloader implements AssetDownloader {
       const finalPath = join(
         plan.outputDir,
         plan.config.paths.sceneImagesFolder,
-        buildSceneImageFileName(plan.config.paths.sceneImagesFolder, index),
+        buildSceneImageFileName(plan.config.paths.sceneImagesFolder, index, sceneImage.path),
       );
 
       await mkdir(dirname(finalPath), { recursive: true });

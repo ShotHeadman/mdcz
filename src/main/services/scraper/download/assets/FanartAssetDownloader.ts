@@ -1,7 +1,12 @@
 import { join } from "node:path";
 
 import { throwIfAborted } from "../../abort";
-import { resolveExistingAsset, resolveSingleAsset, shouldKeepAsset } from "./helpers";
+import {
+  buildImageAssetPathFromSource,
+  removeStaleImageAssetVariants,
+  resolveExistingImageAsset,
+  shouldKeepAsset,
+} from "./helpers";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan } from "./types";
 
 export class FanartAssetDownloader implements AssetDownloader {
@@ -22,22 +27,29 @@ export class FanartAssetDownloader implements AssetDownloader {
       const keepFanart = thumbWasRefreshed
         ? false
         : shouldKeepAsset(plan.assetDecisions.fanart, plan.config.download.keepFanart);
+      const fanartPath = buildImageAssetPathFromSource(fanartTargetPath, thumbPath);
+      const existingFanart = await resolveExistingImageAsset(fanartPath);
 
-      const fanartResult = await resolveSingleAsset({
-        targetPath: fanartTargetPath,
-        keepExisting: keepFanart,
-        create: () => imageDownloader.copyDerivedImage(thumbPath, fanartTargetPath, "fanart"),
-      });
-      if (fanartResult.assetPath) {
-        assets.fanart = fanartResult.assetPath;
-        if (fanartResult.createdPath) {
-          assets.downloaded.push(fanartResult.createdPath);
-        }
+      if (keepFanart && existingFanart) {
+        assets.fanart = existingFanart;
+        return;
+      }
+
+      const createdPath = await imageDownloader.copyDerivedImage(thumbPath, fanartPath, "fanart");
+      if (createdPath) {
+        assets.fanart = createdPath;
+        assets.downloaded.push(createdPath);
+        await removeStaleImageAssetVariants(fanartTargetPath, createdPath);
+        return;
+      }
+
+      if (existingFanart) {
+        assets.fanart = existingFanart;
       }
       return;
     }
 
-    const existingFanart = await resolveExistingAsset(fanartTargetPath);
+    const existingFanart = await resolveExistingImageAsset(fanartTargetPath);
     if (existingFanart) {
       assets.fanart = existingFanart;
     }

@@ -407,12 +407,14 @@ describe("FileOrganizer naming settings", () => {
       createConfig({
         naming: {
           folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
+          fileTemplate: "{number}{originaltitle}",
           actorFallbackToStudio: true,
           censoredStyle: "",
         },
       }),
     );
     expect(fallbackPreviews.find((item) => item.label === "演员为空")?.folder).toContain("卖家：示例卖家");
+    expect(fallbackPreviews.find((item) => item.label === "普通")?.file).toBe("ABC-123示例标题.mp4");
   });
 
   it("preserves input extension and explicit multipart suffix casing when renaming", () => {

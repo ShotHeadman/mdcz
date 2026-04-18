@@ -1,4 +1,5 @@
 import { open, stat } from "node:fs/promises";
+import { join, parse } from "node:path";
 import { isTrackType } from "mediainfo.js";
 import { CHUNK_SIZE, runWithMediaInfo, toNumber } from "./video";
 
@@ -7,10 +8,14 @@ export interface ImageDimensions {
   height: number;
 }
 
+export type ImageFileFormat = "jpeg" | "png" | "webp";
+export type NormalizedImageFileExtension = ".jpg" | ".png" | ".webp";
+
 export interface ImageValidation {
   valid: boolean;
   width: number;
   height: number;
+  format?: ImageFileFormat;
   reason?: "file_too_small" | "parse_failed";
 }
 
@@ -21,6 +26,67 @@ const JPEG_START_OF_FRAME_MARKERS = new Set([
 
 const matchesSignature = (bytes: Uint8Array, signature: Uint8Array): boolean =>
   bytes.length >= signature.length && signature.every((value, index) => bytes[index] === value);
+
+export const normalizeImageFileExtension = (extension: string): NormalizedImageFileExtension | null => {
+  switch (extension.toLowerCase()) {
+    case ".jpg":
+    case ".jpeg":
+      return ".jpg";
+    case ".png":
+      return ".png";
+    case ".webp":
+      return ".webp";
+    default:
+      return null;
+  }
+};
+
+export const getImageFileExtensionForFormat = (
+  format: ImageFileFormat | undefined,
+): NormalizedImageFileExtension | undefined => {
+  switch (format) {
+    case "jpeg":
+      return ".jpg";
+    case "png":
+      return ".png";
+    case "webp":
+      return ".webp";
+    default:
+      return undefined;
+  }
+};
+
+export const replaceImageFileExtension = (filePath: string, extension: NormalizedImageFileExtension): string => {
+  const parsedPath = parse(filePath);
+  return join(parsedPath.dir, `${parsedPath.name}${extension}`);
+};
+
+export const buildImageFilePathVariants = (filePath: string): string[] => {
+  const parsedPath = parse(filePath);
+  const candidates = [filePath];
+
+  for (const extension of [".jpg", ".jpeg", ".png", ".webp"]) {
+    candidates.push(join(parsedPath.dir, `${parsedPath.name}${extension}`));
+  }
+
+  return Array.from(new Set(candidates));
+};
+
+export const detectImageFormat = (bytes: Uint8Array): ImageFileFormat | null => {
+  if (matchesSignature(bytes, PNG_SIGNATURE)) {
+    return "png";
+  }
+
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    return "jpeg";
+  }
+
+  if (bytes.length >= 16 && readAscii(bytes, 0, 4) === "RIFF" && readAscii(bytes, 8, 12) === "WEBP") {
+    return "webp";
+  }
+
+  return null;
+};
 
 const readUint16BE = (bytes: Uint8Array, offset: number): number => {
   return (bytes[offset] << 8) | bytes[offset + 1];
@@ -143,16 +209,20 @@ export async function validateImage(filePath: string, minBytes = 8192): Promise<
   const handle = await open(filePath, "r");
 
   try {
+    let format: ImageFileFormat | undefined;
     const headerLength = Math.min(CHUNK_SIZE, fileStat.size);
     if (headerLength > 0) {
       const header = Buffer.alloc(headerLength);
       const { bytesRead } = await handle.read(header, 0, headerLength, 0);
-      const dimensions = parseImageDimensions(header.subarray(0, bytesRead));
+      const headerBytes = header.subarray(0, bytesRead);
+      format = detectImageFormat(headerBytes) ?? undefined;
+      const dimensions = parseImageDimensions(headerBytes);
       if (dimensions) {
         return {
           valid: true,
           width: dimensions.width,
           height: dimensions.height,
+          format,
         };
       }
     }
@@ -194,6 +264,7 @@ export async function validateImage(filePath: string, minBytes = 8192): Promise<
       valid: true,
       width,
       height,
+      format,
     };
   } catch {
     return {

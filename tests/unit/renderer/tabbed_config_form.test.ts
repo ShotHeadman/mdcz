@@ -1,4 +1,8 @@
-import { NAMING_TEMPLATE_DESCRIPTION, NamingSection } from "@renderer/components/config-form/TabbedConfigForm";
+import {
+  buildNamingPreviewConfig,
+  NAMING_TEMPLATE_DESCRIPTION,
+  NamingSection,
+} from "@renderer/components/config-form/TabbedConfigForm";
 import { type ComponentProps, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";
@@ -26,5 +30,27 @@ describe("TabbedConfigForm", () => {
     const html = renderToStaticMarkup(createElement(NamingSectionHarness));
 
     expect(html.split(NAMING_TEMPLATE_DESCRIPTION)).toHaveLength(3);
+  });
+
+  it("builds nested naming preview config from flat form field values", () => {
+    expect(
+      buildNamingPreviewConfig({
+        "naming.folderTemplate": "{actorFallbackPrefix}{actor}/{number}",
+        "naming.fileTemplate": "{number}{originaltitle}",
+        "naming.actorFallbackToStudio": true,
+        "behavior.successFileMove": true,
+        "behavior.successFileRename": true,
+      }),
+    ).toMatchObject({
+      naming: {
+        folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
+        fileTemplate: "{number}{originaltitle}",
+        actorFallbackToStudio: true,
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
   });
 });

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { throwIfAborted } from "../../abort";
-import { buildImageCandidates, resolveExistingAsset, runParallel } from "./helpers";
+import { buildImageCandidates, removeStaleImageAssetVariants, resolveExistingImageAsset, runParallel } from "./helpers";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan, PrimaryImageKey } from "./types";
 
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
@@ -20,7 +20,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
 
     for (const task of primaryTasks) {
-      const existingAsset = await resolveExistingAsset(task.path);
+      const existingAsset = await resolveExistingImageAsset(task.path);
       if (task.keepExisting && existingAsset && !plan.forceReplace[task.key]) {
         assets[task.key] = existingAsset;
         continue;
@@ -48,13 +48,15 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       }
 
       const key = result.key as PrimaryImageKey;
-      assets[key] = result.path;
-      assets.downloaded.push(result.path);
+      const downloadedPath = result.value ?? result.path;
+      assets[key] = downloadedPath;
+      assets.downloaded.push(downloadedPath);
+      await removeStaleImageAssetVariants(result.path, downloadedPath);
     }
 
     for (const task of primaryTasks) {
       if (!assets[task.key]) {
-        const existingAsset = await resolveExistingAsset(task.path);
+        const existingAsset = await resolveExistingImageAsset(task.path);
         if (existingAsset) {
           assets[task.key] = existingAsset;
         }

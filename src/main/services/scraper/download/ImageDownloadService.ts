@@ -2,7 +2,12 @@ import { copyFile, mkdir, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { NetworkClient, ProbeResult } from "@main/services/network";
 import { toErrorMessage } from "@main/utils/common";
-import { validateImage } from "@main/utils/image";
+import {
+  getImageFileExtensionForFormat,
+  type ImageFileFormat,
+  replaceImageFileExtension,
+  validateImage,
+} from "@main/utils/image";
 import { isAbortError, throwIfAborted } from "../abort";
 import type { ImageHostCooldownTracker } from "./ImageHostCooldownTracker";
 
@@ -15,15 +20,15 @@ type SafeDownloadResult =
   | { status: "downloaded"; path: string }
   | { status: "skipped"; reason: "host_cooldown" | "download_failed" };
 export type DownloadValidatedImageResult =
-  | { status: "downloaded"; path: string; width: number; height: number }
+  | { status: "downloaded"; path: string; width: number; height: number; format?: ImageFileFormat }
   | { status: "skipped"; reason: ImageDownloadSkipReason };
 export type ProbedImageCandidate = ProbeResult & { index: number; url: string };
 type ProbedImageCandidateWithDimensions = ProbedImageCandidate & { width: number; height: number };
 type DownloadedImageCandidate = {
-  url: string;
   path: string;
   width: number;
   height: number;
+  format?: ImageFileFormat;
   rank: number;
 };
 
@@ -61,9 +66,9 @@ export class ImageDownloadService {
     if (this.canSelectBestImageFromProbe(downloadableCandidates)) {
       for (const candidate of downloadableCandidates) {
         throwIfAborted(signal);
-        const downloadedPath = await this.downloadAndValidateImage(candidate.url, outputPath, { signal });
-        if (downloadedPath) {
-          return candidate.url;
+        const downloaded = await this.downloadValidatedImageCandidate(candidate.url, outputPath, { signal });
+        if (downloaded.status === "downloaded") {
+          return downloaded.path;
         }
       }
 
@@ -87,11 +92,13 @@ export class ImageDownloadService {
     try {
       const validation = await validateImage(downloadResult.path, options.minBytes);
       if (validation.valid) {
+        const normalizedPath = await this.normalizeDownloadedImageExtension(downloadResult.path, validation.format);
         return {
           status: "downloaded",
-          path: downloadResult.path,
+          path: normalizedPath,
           width: validation.width,
           height: validation.height,
+          format: validation.format,
         };
       }
 
@@ -145,15 +152,6 @@ export class ImageDownloadService {
     }
   }
 
-  private async downloadAndValidateImage(
-    url: string,
-    outputPath: string,
-    options: { timeoutMs?: number; minBytes?: number; signal?: AbortSignal } = {},
-  ): Promise<string | null> {
-    const candidate = await this.downloadValidatedImageCandidate(url, outputPath, options);
-    return candidate.status === "downloaded" ? candidate.path : null;
-  }
-
   private async downloadBestImageByComparison(
     candidates: ProbedImageCandidate[],
     outputPath: string,
@@ -169,19 +167,18 @@ export class ImageDownloadService {
           continue;
         }
 
-        const url = candidate.url;
         const tempPath = `${outputPath}.candidate-${rank + 1}.part`;
-        const downloaded = await this.downloadValidatedImageCandidate(url, tempPath, { signal });
+        const downloaded = await this.downloadValidatedImageCandidate(candidate.url, tempPath, { signal });
         if (downloaded.status !== "downloaded") {
           continue;
         }
 
         tempPaths.add(downloaded.path);
         const downloadedCandidate: DownloadedImageCandidate = {
-          url,
           path: downloaded.path,
           width: downloaded.width,
           height: downloaded.height,
+          format: downloaded.format,
           rank,
         };
 
@@ -203,15 +200,38 @@ export class ImageDownloadService {
       }
 
       throwIfAborted(signal);
+      const finalPath = this.resolveImageOutputPath(outputPath, bestCandidate.format);
       await unlink(outputPath).catch(() => undefined);
-      await rename(bestCandidate.path, outputPath);
+      if (finalPath !== outputPath) {
+        await unlink(finalPath).catch(() => undefined);
+      }
+      await rename(bestCandidate.path, finalPath);
       tempPaths.delete(bestCandidate.path);
-      return bestCandidate.url;
+      return finalPath;
     } finally {
       for (const tempPath of tempPaths) {
         await unlink(tempPath).catch(() => undefined);
       }
     }
+  }
+
+  private resolveImageOutputPath(outputPath: string, format: ImageFileFormat | undefined): string {
+    const extension = getImageFileExtensionForFormat(format);
+    return extension ? replaceImageFileExtension(outputPath, extension) : outputPath;
+  }
+
+  private async normalizeDownloadedImageExtension(
+    filePath: string,
+    format: ImageFileFormat | undefined,
+  ): Promise<string> {
+    const normalizedPath = this.resolveImageOutputPath(filePath, format);
+    if (normalizedPath === filePath) {
+      return filePath;
+    }
+
+    await unlink(normalizedPath).catch(() => undefined);
+    await rename(filePath, normalizedPath);
+    return normalizedPath;
   }
 
   private isHigherResolutionCandidate(

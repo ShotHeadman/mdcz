@@ -1,8 +1,9 @@
 import { readdir, rm, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 
 import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
+import { buildImageFilePathVariants, normalizeImageFileExtension, replaceImageFileExtension } from "@main/utils/image";
 import type { CrawlerData } from "@shared/types";
 import { isAbortError } from "../../abort";
 import type { ImageAlternatives } from "../../aggregation";
@@ -16,6 +17,31 @@ const SCENE_IMAGE_FILE_PATTERN = /^(?:scene-\d+|fanart\d+)\.(?:jpe?g|png|webp)$/
 
 export const resolveExistingAsset = async (assetPath: string): Promise<string | undefined> => {
   return (await pathExists(assetPath)) ? assetPath : undefined;
+};
+
+export const resolveExistingImageAsset = async (assetPath: string): Promise<string | undefined> => {
+  for (const candidatePath of buildImageFilePathVariants(assetPath)) {
+    if (await pathExists(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  return undefined;
+};
+
+export const removeStaleImageAssetVariants = async (assetPath: string, activePath: string): Promise<void> => {
+  const activePaths = new Set([activePath]);
+
+  for (const candidatePath of buildImageFilePathVariants(assetPath)) {
+    if (!activePaths.has(candidatePath)) {
+      await unlink(candidatePath).catch(() => undefined);
+    }
+  }
+};
+
+export const buildImageAssetPathFromSource = (targetPath: string, sourcePath: string): string => {
+  const extension = normalizeImageFileExtension(extname(sourcePath));
+  return extension ? replaceImageFileExtension(targetPath, extension) : targetPath;
 };
 
 export const resolveSingleAsset = async ({
@@ -149,12 +175,13 @@ const isExtrafanartFolder = (folderName: string): boolean => {
   );
 };
 
-export const buildSceneImageFileName = (sceneFolder: string, index: number): string => {
+export const buildSceneImageFileName = (sceneFolder: string, index: number, sourcePath?: string): string => {
+  const extension = normalizeImageFileExtension(extname(sourcePath ?? "")) ?? ".jpg";
   if (isExtrafanartFolder(sceneFolder)) {
-    return `fanart${index + 1}.jpg`;
+    return `fanart${index + 1}${extension}`;
   }
 
-  return `scene-${String(index + 1).padStart(3, "0")}.jpg`;
+  return `scene-${String(index + 1).padStart(3, "0")}${extension}`;
 };
 
 const getNormalizedSceneImageUrls = (values: string[]): string[] => {

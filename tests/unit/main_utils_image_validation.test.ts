@@ -50,6 +50,7 @@ describe("main image validation", () => {
       valid: true,
       width: 1920,
       height: 1080,
+      format: "jpeg",
     });
     expect(runWithMediaInfoMock).not.toHaveBeenCalled();
   });
