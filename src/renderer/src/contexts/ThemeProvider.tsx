@@ -1,4 +1,5 @@
 import { createContext, useContext, useLayoutEffect, useState } from "react";
+import { ipc } from "@/client/ipc";
 
 export type Theme = "dark" | "light" | "system";
 
@@ -38,6 +39,10 @@ export function ThemeProvider({
     root.classList.remove("light", "dark");
     root.classList.add(resolvedTheme);
     root.style.colorScheme = resolvedTheme;
+
+    if (window.api) {
+      void ipc.app.syncTitleBarTheme(resolvedTheme === "dark").catch(() => undefined);
+    }
   }, [theme]);
 
   const value = {

@@ -1,6 +1,7 @@
 import type { AppIpcContract } from "./ipc-contracts/appContract";
 import type { ConfigIpcContract } from "./ipc-contracts/configContract";
 import type { CrawlerIpcContract } from "./ipc-contracts/crawlerContract";
+import type { DashboardIpcContract } from "./ipc-contracts/dashboardContract";
 import type { FileIpcContract } from "./ipc-contracts/fileContract";
 import type { MaintenanceIpcContract } from "./ipc-contracts/maintenanceContract";
 import type { NetworkIpcContract } from "./ipc-contracts/networkContract";
@@ -12,6 +13,7 @@ export type IpcRouterContract = AppIpcContract &
   ConfigIpcContract &
   ScraperIpcContract &
   CrawlerIpcContract &
+  DashboardIpcContract &
   NetworkIpcContract &
   TranslateIpcContract &
   FileIpcContract &

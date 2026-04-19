@@ -45,6 +45,11 @@ export enum IpcChannel {
   App_Info = "app:info",
   App_OpenExternal = "app:open-external",
   App_PlayMedia = "app:play-media",
+  App_Relaunch = "app:relaunch",
+  App_SyncTitleBarTheme = "app:sync-titlebar-theme",
+
+  Dashboard_GetRecentAcquisitions = "dashboard:get-recent-acquisitions",
+  Dashboard_GetOutputSummary = "dashboard:get-output-summary",
 
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",

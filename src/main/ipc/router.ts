@@ -3,6 +3,7 @@ import type { IpcRouterContract } from "@shared/ipcContract";
 import { createAppHandlers } from "./handlers/app";
 import { createConfigHandlers } from "./handlers/config";
 import { createCrawlerHandlers } from "./handlers/crawler";
+import { createDashboardHandlers } from "./handlers/dashboard";
 import { createFileHandlers } from "./handlers/file";
 import { createMaintenanceHandlers } from "./handlers/maintenance";
 import { createNetworkHandlers } from "./handlers/network";
@@ -11,10 +12,11 @@ import { createToolHandlers } from "./handlers/tool";
 import { createTranslateHandlers } from "./handlers/translate";
 
 export const createIpcRouter = (context: ServiceContainer): IpcRouterContract => ({
-  ...createAppHandlers(),
+  ...createAppHandlers(context),
   ...createConfigHandlers(),
   ...createScraperHandlers(context),
   ...createCrawlerHandlers(context),
+  ...createDashboardHandlers(context),
   ...createNetworkHandlers(context),
   ...createFileHandlers(context),
   ...createToolHandlers(context),

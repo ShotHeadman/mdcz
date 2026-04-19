@@ -1,13 +1,20 @@
 import { arch } from "node:os";
+import type { ServiceContainer } from "@main/container";
 import { resolvePlayableMediaTarget } from "@main/utils/strm";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import { app, shell } from "electron";
 import { t } from "../shared";
 
-export const createAppHandlers = (): Pick<
+export const createAppHandlers = (
+  context: ServiceContainer,
+): Pick<
   IpcRouterContract,
-  typeof IpcChannel.App_Info | typeof IpcChannel.App_OpenExternal | typeof IpcChannel.App_PlayMedia
+  | typeof IpcChannel.App_Info
+  | typeof IpcChannel.App_OpenExternal
+  | typeof IpcChannel.App_PlayMedia
+  | typeof IpcChannel.App_Relaunch
+  | typeof IpcChannel.App_SyncTitleBarTheme
 > => ({
   [IpcChannel.App_Info]: t.procedure.action(async () => ({
     version: app.getVersion(),
@@ -36,6 +43,15 @@ export const createAppHandlers = (): Pick<
       throw new Error(errorMessage);
     }
 
+    return { success: true as const };
+  }),
+  [IpcChannel.App_Relaunch]: t.procedure.action(async () => {
+    app.relaunch();
+    app.exit(0);
+    return { success: true as const };
+  }),
+  [IpcChannel.App_SyncTitleBarTheme]: t.procedure.input<{ isDark: boolean }>().action(async ({ input }) => {
+    context.windowService.syncTitleBarOverlay(input.isDark);
     return { success: true as const };
   }),
 });

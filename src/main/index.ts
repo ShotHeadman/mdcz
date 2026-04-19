@@ -10,7 +10,7 @@ import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
 import { TrayService } from "@main/services/TrayService";
 import { UpdateService } from "@main/services/UpdateService";
-import { WindowService } from "@main/services/WindowService";
+import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
 import { app, BrowserWindow } from "electron";
 
 const QUIT_FORCE_EXIT_TIMEOUT_MS = 3_000;
@@ -48,9 +48,15 @@ const ensureWindowService = (): WindowService => {
   return windowService;
 };
 
-const ensureMainWindow = async (): Promise<void> => {
+const toMainWindowCreationOptions = (
+  config: Awaited<ReturnType<typeof configManager.getValidated>>,
+): MainWindowCreationOptions => ({
+  useCustomTitleBar: config.ui.useCustomTitleBar,
+});
+
+const ensureMainWindow = async (options: MainWindowCreationOptions): Promise<void> => {
   const currentWindowService = ensureWindowService();
-  const mainWindow = currentWindowService.createMainWindow();
+  const mainWindow = currentWindowService.createMainWindow(options);
   signalService.setMainWindow(mainWindow);
 
   if (!ipcRegistered) {
@@ -113,11 +119,11 @@ if (!app.requestSingleInstanceLock()) {
     .then(async () => {
       await bootstrap();
       registerLocalFileHandler();
-      await ensureMainWindow();
+      const initialConfig = await configManager.getValidated();
+      await ensureMainWindow(toMainWindowCreationOptions(initialConfig));
 
       if (windowService) {
         trayService.initialize(windowService);
-        const initialConfig = await configManager.getValidated();
         shortcutService.initialize(windowService, initialConfig);
         loggerService.reconfigure(initialConfig.behavior.saveLog);
         windowService.applyUiConfig(initialConfig.ui);
@@ -142,16 +148,13 @@ if (!app.requestSingleInstanceLock()) {
 
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
-          void ensureMainWindow().then(() => {
+          void (async () => {
+            const config = await configManager.getValidated();
+            await ensureMainWindow(toMainWindowCreationOptions(config));
             if (windowService) {
-              void (async () => {
-                if (!windowService) {
-                  return;
-                }
-                shortcutService.initialize(windowService, await configManager.getValidated());
-              })();
+              shortcutService.initialize(windowService, config);
             }
-          });
+          })();
           return;
         }
 

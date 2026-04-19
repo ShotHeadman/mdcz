@@ -2,6 +2,7 @@ import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@shared/config";
 import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
+import type { DashboardOutputSummary, DashboardRecentAcquisitionItem } from "@shared/ipc-contracts/dashboardContract";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type {
   ButtonStatusPayload,
@@ -41,6 +42,15 @@ export const ipc = {
     info: () => client[IpcChannel.App_Info](undefined) as Promise<AppInfo>,
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
     playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
+    relaunch: () => client[IpcChannel.App_Relaunch](undefined),
+    syncTitleBarTheme: (isDark: boolean) => client[IpcChannel.App_SyncTitleBarTheme]({ isDark }),
+  },
+  dashboard: {
+    getRecentAcquisitions: () =>
+      client[IpcChannel.Dashboard_GetRecentAcquisitions](undefined) as Promise<{
+        items: DashboardRecentAcquisitionItem[];
+      }>,
+    getOutputSummary: () => client[IpcChannel.Dashboard_GetOutputSummary](undefined) as Promise<DashboardOutputSummary>,
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
