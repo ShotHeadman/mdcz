@@ -1,6 +1,8 @@
 import { toErrorMessage } from "@shared/error";
 import type { MaintenanceStatus, ScraperStatus } from "@shared/types";
+import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { dashboardKeys } from "@/api/dashboard";
 import { ipc } from "@/client/ipc";
 import { createRuntimeLog, useLogStore } from "@/store/logStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
@@ -67,7 +69,17 @@ const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   );
 };
 
-export const useIpcSync = () => {
+export const createDashboardInvalidationTracker = () => {
+  let lastButtonStatusActive = false;
+
+  return (nextActive: boolean): boolean => {
+    const shouldInvalidate = lastButtonStatusActive && !nextActive;
+    lastButtonStatusActive = nextActive;
+    return shouldInvalidate;
+  };
+};
+
+export const useIpcSync = (queryClient: QueryClient) => {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
@@ -75,6 +87,7 @@ export const useIpcSync = () => {
     let disposed = false;
     let pollTimeout: number | undefined;
     let syncPromise: Promise<void> | null = null;
+    const shouldInvalidateDashboard = createDashboardInvalidationTracker();
     const unsubscribers: Array<() => void> = [];
 
     const reportAsyncError = (context: string, error: unknown) => {
@@ -208,9 +221,13 @@ export const useIpcSync = () => {
             const isRunning = !payload.startEnabled && payload.stopEnabled;
             const isStopping = !payload.startEnabled && !payload.stopEnabled;
             const active = isRunning || isStopping;
+            const nextStatus = isRunning ? "running" : isStopping ? "stopping" : "idle";
 
             scrapeStore.setScraping(active);
-            scrapeStore.setScrapeStatus(isRunning ? "running" : isStopping ? "stopping" : "idle");
+            scrapeStore.setScrapeStatus(nextStatus);
+            if (shouldInvalidateDashboard(active)) {
+              void queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
+            }
             safeSync("button status", "scrape");
           }),
         );
@@ -245,7 +262,7 @@ export const useIpcSync = () => {
         unsubscribe();
       }
     };
-  }, []);
+  }, [queryClient]);
 
   return {
     runtimeReady,

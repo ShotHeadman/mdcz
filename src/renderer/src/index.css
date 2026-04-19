@@ -3,10 +3,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "Manrope";
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/Manrope-VariableFont_wght.ttf") format("truetype-variations");
+  unicode-range: U+0020-007F, U+00A0-00FF, U+2000-206F;
+}
+
 @theme inline {
   --font-sans:
     "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
     "Noto Color Emoji";
+  --font-numeric: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
@@ -42,10 +52,19 @@
 
   --color-surface: var(--surface);
   --color-surface-foreground: var(--surface-foreground);
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-low: var(--surface-low);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-floating: var(--surface-floating);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+  --radius-quiet-sm: 0.75rem;
+  --radius-quiet: 1rem;
+  --radius-quiet-lg: 2rem;
+  --radius-quiet-xl: 3rem;
+  --radius-quiet-capsule: 9999px;
 
   @keyframes accordion-down {
     from {
@@ -88,10 +107,14 @@
   --input: hsl(240 6% 90%);
   --ring: hsl(232 100% 65%);
   --radius: 0.5rem;
-  --sidebar: hsl(0 0% 98%);
+  --sidebar: hsl(240 5% 96%);
   --sidebar-foreground: hsl(240 6% 10%);
   --surface: hsl(0 0% 100%);
   --surface-foreground: hsl(240 6% 10%);
+  --surface-canvas: hsl(0 0% 98%);
+  --surface-low: hsl(240 5% 96%);
+  --surface-raised: hsl(0 0% 93%);
+  --surface-floating: hsl(0 0% 100%);
 }
 
 .dark {
@@ -114,10 +137,14 @@
   --border: hsl(212 20% 20%);
   --input: hsl(212 20% 20%);
   --ring: hsl(213 94% 55%);
-  --sidebar: hsl(212 25% 14%);
+  --sidebar: hsl(180 2% 12%);
   --sidebar-foreground: hsl(0 0% 98%);
   --surface: hsl(212 25% 16%);
   --surface-foreground: hsl(0 0% 98%);
+  --surface-canvas: hsl(180 2% 9%);
+  --surface-low: hsl(180 2% 12%);
+  --surface-raised: hsl(0 0% 18%);
+  --surface-floating: hsl(180 2% 15%);
 }
 
 @layer base {

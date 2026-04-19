@@ -119,6 +119,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "paths.softlinkPath", label: "软链接目录", section: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", section: "paths" },
   { key: "paths.failedOutputFolder", label: "失败输出目录", section: "paths" },
+  { key: "paths.outputSummaryPath", label: "仪表盘统计目录", section: "paths" },
   { key: "paths.sceneImagesFolder", label: "剧照目录名", section: "paths" },
   { key: "paths.configDirectory", label: "配置文件目录", section: "paths" },
   // scrape
@@ -200,6 +201,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "shortcuts.playVideo", label: "播放视频", section: "shortcuts" },
   // ui
   { key: "ui.showLogsPanel", label: "显示日志面板", section: "ui" },
+  { key: "ui.useCustomTitleBar", label: "使用自定义标题栏", section: "ui" },
   { key: "ui.hideDock", label: "隐藏 Dock 图标", section: "ui" },
   { key: "ui.hideMenu", label: "隐藏菜单栏", section: "ui" },
   { key: "ui.hideWindowButtons", label: "隐藏窗口按钮", section: "ui" },
@@ -346,6 +348,7 @@ function toSiteOptions(value: unknown): string[] {
 
 type SectionRenderProps = {
   siteOptions: string[];
+  initialUseCustomTitleBar: boolean;
 };
 
 type CrawlerSiteInfo = {
@@ -368,6 +371,12 @@ function PathsSection(_props: SectionRenderProps) {
       <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />
       <PathFieldWrapper name="paths.successOutputFolder" label="成功输出目录" isDirectory />
       <PathFieldWrapper name="paths.failedOutputFolder" label="失败输出目录" isDirectory />
+      <PathFieldWrapper
+        name="paths.outputSummaryPath"
+        label="仪表盘统计目录"
+        description="留空则使用成功输出目录"
+        isDirectory
+      />
       <TextField name="paths.sceneImagesFolder" label="剧照目录名" />
       <PathFieldWrapper name="paths.configDirectory" label="配置文件目录" isDirectory />
     </>
@@ -745,10 +754,51 @@ function ShortcutsSection(_props: SectionRenderProps) {
   );
 }
 
-function UiSection(_props: SectionRenderProps) {
+function UiSection({ initialUseCustomTitleBar }: SectionRenderProps) {
+  const [relaunching, setRelaunching] = useState(false);
+  const form = useFormContext<FieldValues>();
+  const currentUseCustomTitleBar = Boolean(useWatch({ control: form.control, name: "ui.useCustomTitleBar" }) ?? true);
+  const titleBarChanged = currentUseCustomTitleBar !== initialUseCustomTitleBar;
+  const canRelaunch = titleBarChanged && !form.formState.isDirty;
+
+  const handleRelaunch = async () => {
+    if (form.formState.isDirty) {
+      toast.info("请先保存设置，再重启应用");
+      return;
+    }
+
+    setRelaunching(true);
+    try {
+      await ipc.app.relaunch();
+    } catch (error) {
+      setRelaunching(false);
+      toast.error(`重启失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    }
+  };
+
   return (
     <>
       <BoolField name="ui.showLogsPanel" label="显示日志面板" />
+      <BaseField name="ui.useCustomTitleBar" label="使用自定义标题栏" description="切换后需要重启应用">
+        {(field) => (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={titleBarChanged ? "default" : "outline"}
+              size="sm"
+              className="h-7 rounded-lg text-xs"
+              disabled={!canRelaunch || relaunching}
+              onClick={handleRelaunch}
+            >
+              {relaunching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              重启应用
+            </Button>
+            <FormControl>
+              <Switch checked={Boolean(field.value ?? true)} onCheckedChange={field.onChange} />
+            </FormControl>
+          </div>
+        )}
+      </BaseField>
       <BoolField name="ui.hideDock" label="隐藏 Dock 图标" />
       <BoolField name="ui.hideMenu" label="隐藏菜单栏" />
       <BoolField name="ui.hideWindowButtons" label="隐藏窗口按钮" />
@@ -828,7 +878,12 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
   const defaultTab = TABS[0]?.key || "";
   const resolvedInitialTab = initialTab && TABS.some((tab) => tab.key === initialTab) ? initialTab : defaultTab;
   const flatDefaults = useMemo(() => flattenConfig(data), [data]);
+  const initialUseCustomTitleBarRef = useRef<boolean | null>(null);
   const submitPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  if (initialUseCustomTitleBarRef.current === null) {
+    initialUseCustomTitleBarRef.current = Boolean(flatDefaults["ui.useCustomTitleBar"] ?? true);
+  }
 
   const form = useForm<FieldValues>({
     defaultValues: flatDefaults,
@@ -1246,7 +1301,10 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
                   )}
                 </div>
                 <div className="bg-card rounded-xl border shadow-sm overflow-hidden divide-y divide-border/50">
-                  <SectionComp siteOptions={siteOptions} />
+                  <SectionComp
+                    siteOptions={siteOptions}
+                    initialUseCustomTitleBar={initialUseCustomTitleBarRef.current ?? true}
+                  />
                 </div>
               </div>
             );

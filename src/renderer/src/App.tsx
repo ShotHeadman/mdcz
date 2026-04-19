@@ -31,7 +31,7 @@ declare module "@tanstack/react-router" {
 
 const App = () => {
   const queryClient = useMemo(() => new QueryClient(), []);
-  const { runtimeReady, runtimeError } = useIpcSync();
+  const { runtimeReady, runtimeError } = useIpcSync(queryClient);
   const stylesReady = useStylesReady();
   const recoveryCheckedRef = useRef(false);
 

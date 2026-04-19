@@ -21,7 +21,7 @@ function NamingSectionHarness() {
   return createElement(
     FormProvider,
     form as ComponentProps<typeof FormProvider>,
-    createElement(NamingSection, { siteOptions: [] }),
+    createElement(NamingSection, { siteOptions: [], initialUseCustomTitleBar: true }),
   );
 }
 

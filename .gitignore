@@ -30,3 +30,5 @@ tmp/
 .claude/
 .codex
 .agent
+.agents
+.trellis
