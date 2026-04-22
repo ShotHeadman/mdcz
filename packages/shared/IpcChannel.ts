@@ -8,6 +8,8 @@ export enum IpcChannel {
   Config_CreateProfile = "config:create-profile",
   Config_SwitchProfile = "config:switch-profile",
   Config_DeleteProfile = "config:delete-profile",
+  Config_ExportProfile = "config:export-profile",
+  Config_ImportProfile = "config:import-profile",
 
   Scraper_Start = "scraper:start",
   Scraper_Stop = "scraper:stop",
@@ -23,6 +25,7 @@ export enum IpcChannel {
 
   Crawler_Test = "crawler:test",
   Crawler_ListSites = "crawler:list-sites",
+  Crawler_ProbeSiteConnectivity = "crawler:probe-site-connectivity",
 
   Network_CheckCookies = "network:check-cookies",
 

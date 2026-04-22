@@ -36,8 +36,10 @@ export function SettingRow({
   return (
     <div
       className={cn(
-        "flex py-4 transition-[opacity,background-color] duration-200",
-        fullWidthContent ? "flex-col gap-3" : "flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-8",
+        "flex py-3 transition-[opacity,background-color] duration-200",
+        fullWidthContent
+          ? "flex-col gap-2.5"
+          : "flex-col gap-2.5 md:flex-row md:items-start md:justify-between md:gap-6",
         highlighted && "rounded-[var(--radius-quiet-sm)] -mx-2 px-2 bg-primary/5",
         dimmed && "opacity-40",
         className,
@@ -60,7 +62,7 @@ export function SettingRow({
           )}
         </div>
       ) : (
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2.5">
           <div className="min-w-0">{control}</div>
           {status && (
             <div

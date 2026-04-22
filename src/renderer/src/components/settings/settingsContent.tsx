@@ -19,7 +19,6 @@ import {
   EnumField,
   type EnumOption,
   NumberField,
-  OrderedSiteFieldWrapper,
   PathFieldWrapper,
   PromptFieldWrapper,
   SecretField,
@@ -182,21 +181,6 @@ export function PathsSection() {
       <TextField name="paths.sceneImagesFolder" label="剧照目录名" />
       <PathFieldWrapper name="paths.configDirectory" label="配置文件目录" isDirectory />
     </>
-  );
-}
-
-interface ScrapeSitesSectionProps {
-  siteOptions: string[];
-}
-
-export function ScrapeSitesSection({ siteOptions }: ScrapeSitesSectionProps) {
-  return (
-    <OrderedSiteFieldWrapper
-      name="scrape.sites"
-      label="启用站点与优先级"
-      description="勾选启用站点，上下移动调整优先级。未勾选的站点不会参与刮削。"
-      options={siteOptions}
-    />
   );
 }
 

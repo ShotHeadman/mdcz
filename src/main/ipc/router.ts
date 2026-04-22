@@ -13,7 +13,7 @@ import { createTranslateHandlers } from "./handlers/translate";
 
 export const createIpcRouter = (context: ServiceContainer): IpcRouterContract => ({
   ...createAppHandlers(context),
-  ...createConfigHandlers(),
+  ...createConfigHandlers(context),
   ...createScraperHandlers(context),
   ...createCrawlerHandlers(context),
   ...createOverviewHandlers(context),

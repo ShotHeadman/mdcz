@@ -1,5 +1,6 @@
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config";
+import { probeSiteConnectivity } from "@main/services/crawler/siteConnectivity";
 import { buildCrawlerOptions } from "@main/services/scraper/crawlerOptions";
 import { toErrorMessage } from "@main/utils/common";
 import { Website } from "@shared/enums";
@@ -19,8 +20,11 @@ const parseWebsite = (value: unknown): Website | null => {
 
 export const createCrawlerHandlers = (
   context: ServiceContainer,
-): Pick<IpcRouterContract, typeof IpcChannel.Crawler_Test | typeof IpcChannel.Crawler_ListSites> => {
-  const { crawlerProvider } = context;
+): Pick<
+  IpcRouterContract,
+  typeof IpcChannel.Crawler_Test | typeof IpcChannel.Crawler_ListSites | typeof IpcChannel.Crawler_ProbeSiteConnectivity
+> => {
+  const { crawlerProvider, networkClient } = context;
 
   return {
     [IpcChannel.Crawler_Test]: t.procedure.input<{ site?: Website; number?: string }>().action(async ({ input }) => {
@@ -72,6 +76,23 @@ export const createCrawlerHandlers = (
         };
       } catch (error) {
         throw asSerializableIpcError(error);
+      }
+    }),
+    [IpcChannel.Crawler_ProbeSiteConnectivity]: t.procedure.input<{ site?: Website }>().action(async ({ input }) => {
+      try {
+        const site = parseWebsite(input?.site);
+        if (!site) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Site is required");
+        }
+
+        const configuration = await configManager.getValidated();
+        return await probeSiteConnectivity(site, configuration, networkClient);
+      } catch (error) {
+        return {
+          ok: false as const,
+          message: `请求失败: ${toErrorMessage(error)}`,
+          latencyMs: 0,
+        };
       }
     }),
   };

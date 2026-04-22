@@ -63,6 +63,19 @@ export const ipc = {
     createProfile: (name: string) => client[IpcChannel.Config_CreateProfile]({ name }),
     switchProfile: (name: string) => client[IpcChannel.Config_SwitchProfile]({ name }),
     deleteProfile: (name: string) => client[IpcChannel.Config_DeleteProfile]({ name }),
+    exportProfile: (name: string) =>
+      client[IpcChannel.Config_ExportProfile]({ name }) as Promise<{
+        canceled: boolean;
+        filePath: string | null;
+        profileName: string;
+      }>,
+    importProfile: (filePath: string, name: string, overwrite = false) =>
+      client[IpcChannel.Config_ImportProfile]({ filePath, name, overwrite }) as Promise<{
+        success: true;
+        profileName: string;
+        overwritten: boolean;
+        active: boolean;
+      }>,
   },
   scraper: {
     start: (mode: "single" | "selection", paths: string[]) => client[IpcChannel.Scraper_Start]({ mode, paths }),
@@ -82,6 +95,14 @@ export const ipc = {
   crawler: {
     test: (site: Website, number: string) => client[IpcChannel.Crawler_Test]({ site, number }),
     listSites: () => client[IpcChannel.Crawler_ListSites](undefined),
+    probeSiteConnectivity: (site: Website) =>
+      client[IpcChannel.Crawler_ProbeSiteConnectivity]({ site }) as Promise<{
+        ok: boolean;
+        message: string;
+        latencyMs: number;
+        status?: number;
+        resolvedUrl?: string;
+      }>,
   },
   network: {
     checkCookies: () => client[IpcChannel.Network_CheckCookies](undefined),

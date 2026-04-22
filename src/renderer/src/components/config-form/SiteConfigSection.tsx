@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
 import { ipc } from "@/client/ipc";
+import { SiteConnectivityPill } from "@/components/settings/SiteConnectivityPill";
 import { FormControl } from "@/components/ui/Form";
 import { Input } from "@/components/ui/Input";
 import { BaseField } from "./FieldRenderer";
@@ -14,7 +15,11 @@ interface SiteInfo {
   native: boolean;
 }
 
-export function SiteConfigSection() {
+interface SiteConfigSectionProps {
+  sitesOverride?: string[];
+}
+
+export function SiteConfigSection({ sitesOverride }: SiteConfigSectionProps) {
   const form = useFormContext<FieldValues>();
   const sites =
     (useWatch({
@@ -31,7 +36,7 @@ export function SiteConfigSection() {
     staleTime: 60_000,
   });
 
-  const visibleSites = [...new Set(sites)];
+  const visibleSites = [...new Set((sitesOverride ?? sites) as Website[])];
   const siteInfoMap = new Map((sitesQ.data ?? []).map((site) => [site.site, site]));
 
   if (visibleSites.length === 0) return null;
@@ -46,12 +51,15 @@ export function SiteConfigSection() {
           <BaseField key={site} name={urlKey} label={siteInfo?.name ?? site} commitMode="debounce">
             {(field) => (
               <FormControl>
-                <Input
-                  {...field}
-                  value={(field.value as string) ?? ""}
-                  placeholder="默认 URL（留空使用内置地址）"
-                  className="h-8 w-[320px] text-sm bg-background/50 focus:bg-background transition-all"
-                />
+                <div className="flex flex-wrap items-center gap-3">
+                  <Input
+                    {...field}
+                    value={(field.value as string) ?? ""}
+                    placeholder="默认 URL（留空使用内置地址）"
+                    className="h-8 min-w-[240px] flex-1 text-sm bg-background/50 transition-all focus:bg-background"
+                  />
+                  <SiteConnectivityPill site={site} />
+                </div>
               </FormControl>
             )}
           </BaseField>

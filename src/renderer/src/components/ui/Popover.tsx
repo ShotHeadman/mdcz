@@ -4,6 +4,7 @@ import { Popover as PopoverPrimitive } from "radix-ui";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { quietFloatingSurfaceClass, quietFocusRingClass, quietPanelRadiusClass } from "./quietCraft";
 
 function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
@@ -26,7 +27,10 @@ function PopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+        "z-50 w-72 origin-(--radix-popover-content-transform-origin) p-4 text-popover-foreground outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+        quietFloatingSurfaceClass,
+        quietPanelRadiusClass,
+        quietFocusRingClass,
         className,
       )}
       {...props}
@@ -45,15 +49,15 @@ function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitiv
 }
 
 function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="popover-header" className={cn("flex flex-col gap-1 text-sm", className)} {...props} />;
+  return <div data-slot="popover-header" className={cn("flex flex-col gap-1.5 text-sm", className)} {...props} />;
 }
 
 function PopoverTitle({ className, ...props }: React.ComponentProps<"h2">) {
-  return <div data-slot="popover-title" className={cn("font-medium", className)} {...props} />;
+  return <div data-slot="popover-title" className={cn("font-medium tracking-[-0.02em]", className)} {...props} />;
 }
 
 function PopoverDescription({ className, ...props }: React.ComponentProps<"p">) {
-  return <p data-slot="popover-description" className={cn("text-muted-foreground", className)} {...props} />;
+  return <p data-slot="popover-description" className={cn("leading-6 text-muted-foreground", className)} {...props} />;
 }
 
 export { Popover, PopoverTrigger, PopoverContent, PopoverAnchor, PopoverHeader, PopoverTitle, PopoverDescription };

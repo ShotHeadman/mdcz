@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Download, type LucideIcon, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
+import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/Popover";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +10,8 @@ interface ProfileCapsuleProps {
   onCreateProfile: () => void;
   onDeleteProfile: () => void;
   onResetConfig: () => void;
+  onExportProfile: () => void;
+  onImportProfile: () => void;
   className?: string;
 }
 
@@ -19,14 +22,21 @@ export function ProfileCapsule({
   onCreateProfile,
   onDeleteProfile,
   onResetConfig,
+  onExportProfile,
+  onImportProfile,
   className,
 }: ProfileCapsuleProps) {
+  const [open, setOpen] = useState(false);
   const hasOtherProfiles = profiles.filter((p) => p !== activeProfile).length > 0;
   const visibleProfiles = profiles.filter((p) => p.length > 0);
   const displayName = activeProfile || "默认配置";
+  const runAction = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
           "inline-flex h-9 items-center gap-2 rounded-[var(--radius-quiet-capsule)] bg-surface-low px-4 text-sm",
@@ -41,11 +51,11 @@ export function ProfileCapsule({
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-64 rounded-[var(--radius-quiet)] border-none bg-surface-floating p-2 shadow-lg"
+        className="w-72 rounded-[var(--radius-quiet-lg)] border border-border/40 bg-surface-floating p-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.45)]"
       >
         {visibleProfiles.length > 0 && (
           <div className="space-y-0.5 pb-2">
-            <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
               配置档案
             </div>
             {visibleProfiles.map((profile) => {
@@ -54,7 +64,7 @@ export function ProfileCapsule({
                 <button
                   key={profile}
                   type="button"
-                  onClick={() => onSwitchProfile(profile)}
+                  onClick={() => runAction(() => onSwitchProfile(profile))}
                   className={cn(
                     "flex w-full items-center justify-between rounded-[var(--radius-quiet-sm)] px-2 py-1.5 text-left text-sm outline-none",
                     "transition-colors hover:bg-surface-low focus-visible:bg-surface-low",
@@ -70,9 +80,13 @@ export function ProfileCapsule({
         )}
         <div className="h-px bg-border/50" />
         <div className="space-y-0.5 pt-2">
-          <MenuAction icon={Plus} label="新建配置档案" onClick={onCreateProfile} />
-          {hasOtherProfiles && <MenuAction icon={Trash2} label="删除配置档案..." onClick={onDeleteProfile} />}
-          <MenuAction icon={RotateCcw} label="恢复默认设置" onClick={onResetConfig} />
+          <MenuAction icon={Plus} label="新建配置档案" onClick={() => runAction(onCreateProfile)} />
+          <MenuAction icon={Upload} label="导入 JSON 档案..." onClick={() => runAction(onImportProfile)} />
+          <MenuAction icon={Download} label="导出当前档案..." onClick={() => runAction(onExportProfile)} />
+          {hasOtherProfiles && (
+            <MenuAction icon={Trash2} label="删除配置档案..." onClick={() => runAction(onDeleteProfile)} />
+          )}
+          <MenuAction icon={RotateCcw} label="恢复默认设置" onClick={() => runAction(onResetConfig)} />
         </div>
       </PopoverContent>
     </Popover>
@@ -80,7 +94,7 @@ export function ProfileCapsule({
 }
 
 interface MenuActionProps {
-  icon: typeof Plus;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
 }

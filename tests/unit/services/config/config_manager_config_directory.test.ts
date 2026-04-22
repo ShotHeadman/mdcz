@@ -91,6 +91,69 @@ describe("ConfigManager configDirectory", () => {
     expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(false);
   });
 
+  it("exports the active profile as formatted JSON", async () => {
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    await manager.save({
+      naming: {
+        fileTemplate: "{number}-{title}",
+      },
+      ui: {
+        hideMenu: true,
+      },
+    });
+
+    const exportDir = join(mockUserDataPath, "exports");
+    const exportPath = join(exportDir, "quiet-settings.json");
+    await mkdir(exportDir, { recursive: true });
+
+    await manager.exportProfile("default", exportPath);
+
+    const exported = JSON.parse(await readFile(exportPath, "utf8"));
+    expect(exported.naming.fileTemplate).toBe("{number}-{title}");
+    expect(exported.ui.hideMenu).toBe(true);
+  });
+
+  it("imports a profile file and refreshes the active profile when overwriting it", async () => {
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    const current = await manager.getValidated();
+    const importPath = join(mockUserDataPath, "incoming-profile.json");
+
+    await writeFile(
+      importPath,
+      `${JSON.stringify(
+        {
+          ...current,
+          naming: {
+            ...current.naming,
+            fileTemplate: "{number}-imported",
+          },
+          ui: {
+            ...current.ui,
+            hideMenu: true,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const result = await manager.importProfile(importPath, "default", true);
+    const reloaded = await manager.getValidated();
+
+    expect(result).toEqual({
+      profileName: "default",
+      overwritten: true,
+      active: true,
+    });
+    expect(reloaded.naming.fileTemplate).toBe("{number}-imported");
+    expect(reloaded.ui.hideMenu).toBe(true);
+  });
+
   it("does not overwrite an unreadable active config file", async () => {
     const configDir = join(mockUserDataPath, "config");
     const configPath = join(configDir, "default.json");

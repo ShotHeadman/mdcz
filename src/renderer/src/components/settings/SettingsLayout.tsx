@@ -1,13 +1,10 @@
 import { type ReactNode, useRef } from "react";
-import { cn } from "@/lib/utils";
 import { FloatingToc } from "./FloatingToc";
 import { ProfileCapsule } from "./ProfileCapsule";
 import { SettingsSearch } from "./SettingsSearch";
 import { TocProvider } from "./TocContext";
 
 interface SettingsLayoutProps {
-  title: string;
-  subtitle?: string;
   searchValue: string;
   onSearchChange: (value: string) => void;
   onSearchSubmit?: () => void;
@@ -17,13 +14,12 @@ interface SettingsLayoutProps {
   onCreateProfile: () => void;
   onDeleteProfile: () => void;
   onResetConfig: () => void;
-  configPath?: string;
+  onExportProfile: () => void;
+  onImportProfile: () => void;
   children: ReactNode;
 }
 
 export function SettingsLayout({
-  title,
-  subtitle,
   searchValue,
   onSearchChange,
   onSearchSubmit,
@@ -33,7 +29,8 @@ export function SettingsLayout({
   onCreateProfile,
   onDeleteProfile,
   onResetConfig,
-  configPath,
+  onExportProfile,
+  onImportProfile,
   children,
 }: SettingsLayoutProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -45,8 +42,6 @@ export function SettingsLayout({
           <div className="mx-auto flex max-w-6xl gap-6 px-6 pb-24 pt-10 md:px-10">
             <div className="min-w-0 flex-1">
               <SettingsHeader
-                title={title}
-                subtitle={subtitle}
                 searchValue={searchValue}
                 onSearchChange={onSearchChange}
                 onSearchSubmit={onSearchSubmit}
@@ -56,9 +51,10 @@ export function SettingsLayout({
                 onCreateProfile={onCreateProfile}
                 onDeleteProfile={onDeleteProfile}
                 onResetConfig={onResetConfig}
-                configPath={configPath}
+                onExportProfile={onExportProfile}
+                onImportProfile={onImportProfile}
               />
-              <div className="mt-12 space-y-16">{children}</div>
+              <div className="mt-6">{children}</div>
             </div>
             <FloatingToc />
           </div>
@@ -71,8 +67,6 @@ export function SettingsLayout({
 interface SettingsHeaderProps extends Omit<SettingsLayoutProps, "children"> {}
 
 function SettingsHeader({
-  title,
-  subtitle,
   searchValue,
   onSearchChange,
   onSearchSubmit,
@@ -82,20 +76,12 @@ function SettingsHeader({
   onCreateProfile,
   onDeleteProfile,
   onResetConfig,
-  configPath,
+  onExportProfile,
+  onImportProfile,
 }: SettingsHeaderProps) {
   return (
-    <header className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-      <div className="min-w-0 flex-1">
-        <h1 className={cn("font-numeric text-4xl font-black tracking-tight text-foreground md:text-5xl")}>{title}</h1>
-        {subtitle && <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>}
-        {configPath && (
-          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/70" title={configPath}>
-            {configPath}
-          </p>
-        )}
-      </div>
-      <div className="flex items-center gap-3">
+    <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-end">
+      <div className="flex items-center gap-2.5">
         <SettingsSearch value={searchValue} onChange={onSearchChange} onSubmit={onSearchSubmit} />
         <ProfileCapsule
           profiles={profiles}
@@ -104,6 +90,8 @@ function SettingsHeader({
           onCreateProfile={onCreateProfile}
           onDeleteProfile={onDeleteProfile}
           onResetConfig={onResetConfig}
+          onExportProfile={onExportProfile}
+          onImportProfile={onImportProfile}
         />
       </div>
     </header>

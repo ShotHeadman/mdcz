@@ -6,19 +6,27 @@ import { FormControl } from "@/components/ui/Form";
 import { cn } from "@/lib/utils";
 
 interface OrderedSiteFieldProps {
+  value: string[];
+  options: string[];
+  onChange: (sites: string[]) => void;
+}
+
+interface OrderedSiteFieldWrapperProps {
   field: ControllerRenderProps<FieldValues, string>;
   options: string[];
 }
 
-const unique = (values: string[]): string[] => [...new Set(values.filter((value) => value.trim().length > 0))];
+export const normalizeEnabledSites = (values: string[]): string[] => [
+  ...new Set(values.filter((value) => value.trim().length > 0)),
+];
 
-export function OrderedSiteField({ field, options }: OrderedSiteFieldProps) {
-  const enabledSites = unique(Array.isArray(field.value) ? field.value : []);
+export function OrderedSiteFieldEditor({ value, options, onChange }: OrderedSiteFieldProps) {
+  const enabledSites = normalizeEnabledSites(value);
   const disabledSites = options.filter((site) => !enabledSites.includes(site));
   const visibleSites = [...enabledSites, ...disabledSites];
 
   const setEnabledSites = (sites: string[]) => {
-    field.onChange(unique(sites));
+    onChange(normalizeEnabledSites(sites));
   };
 
   const toggleSite = (site: string, enabled: boolean) => {
@@ -44,7 +52,7 @@ export function OrderedSiteField({ field, options }: OrderedSiteFieldProps) {
 
   return (
     <FormControl>
-      <div className="rounded-md border bg-background divide-y">
+      <div className="divide-y overflow-hidden rounded-[var(--radius-quiet-lg)] border border-border/60 bg-surface">
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
           <span className="mr-auto">
             已启用 {enabledSites.length}/{options.length}
@@ -64,7 +72,7 @@ export function OrderedSiteField({ field, options }: OrderedSiteFieldProps) {
             <div
               key={site}
               className={cn(
-                "grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-sm",
+                "grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2.5 text-sm",
                 !enabled && "text-muted-foreground",
               )}
             >
@@ -97,5 +105,15 @@ export function OrderedSiteField({ field, options }: OrderedSiteFieldProps) {
         })}
       </div>
     </FormControl>
+  );
+}
+
+export function OrderedSiteField({ field, options }: OrderedSiteFieldWrapperProps) {
+  return (
+    <OrderedSiteFieldEditor
+      value={Array.isArray(field.value) ? (field.value as string[]) : []}
+      options={options}
+      onChange={field.onChange}
+    />
   );
 }

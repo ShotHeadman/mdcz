@@ -9,4 +9,14 @@ export type CrawlerIpcContract = {
     { data: CrawlerData | null; error?: string; elapsed: number }
   >;
   [IpcChannel.Crawler_ListSites]: IpcProcedure<void, unknown>;
+  [IpcChannel.Crawler_ProbeSiteConnectivity]: IpcProcedure<
+    { site?: Website },
+    {
+      ok: boolean;
+      message: string;
+      latencyMs: number;
+      status?: number;
+      resolvedUrl?: string;
+    }
+  >;
 };

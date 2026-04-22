@@ -1,3 +1,4 @@
+import { buildSitePrioritySummary } from "@renderer/components/settings/SitePriorityEditorField";
 import {
   buildNamingPreviewConfig,
   NAMING_TEMPLATE_DESCRIPTION,
@@ -47,6 +48,29 @@ describe("settingsContent", () => {
         successFileMove: true,
         successFileRename: true,
       },
+    });
+  });
+
+  it("summarizes enabled site priority for the compact editor row", () => {
+    expect(
+      buildSitePrioritySummary(["dmm", "dmm_tv", "mgstage", "dmm"], ["dmm", "dmm_tv", "mgstage", "faleno"]),
+    ).toMatchObject({
+      enabledCount: 3,
+      totalCount: 4,
+      preview: ["dmm", "dmm_tv", "mgstage"],
+      remainingCount: 0,
+    });
+
+    expect(
+      buildSitePrioritySummary(
+        ["dmm", "dmm_tv", "mgstage", "prestige"],
+        ["dmm", "dmm_tv", "mgstage", "prestige", "faleno"],
+      ),
+    ).toMatchObject({
+      enabledCount: 4,
+      totalCount: 5,
+      preview: ["dmm", "dmm_tv", "mgstage"],
+      remainingCount: 1,
     });
   });
 });
