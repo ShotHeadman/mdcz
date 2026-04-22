@@ -95,10 +95,7 @@ function About() {
               <img
                 src={AppLogo}
                 alt="MDCz"
-                className={cn(
-                  "relative h-20 w-20 shadow-xl shadow-primary/5 border-white/40 dark:border-white/5 border-2 bg-white/40 dark:bg-white/5 backdrop-blur-sm p-1",
-                  quietHeroRadiusClass,
-                )}
+                className={cn("relative h-20 w-20 shadow-xl shadow-primary/5", quietHeroRadiusClass)}
               />
             </button>
             <div className="flex flex-col items-center gap-1">
