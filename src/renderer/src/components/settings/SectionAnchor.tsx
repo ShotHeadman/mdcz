@@ -36,13 +36,14 @@ export function SectionAnchor({
   const [open, setOpen] = useState(defaultOpen);
   const resolvedOpen = search?.hasActiveFilters ? true : open;
   const hiddenBySearch = isKnownAnchor(id) && search ? !search.isAnchorVisible(id) : false;
+  const registerSection = toc?.register;
 
   useEffect(() => {
-    if (hiddenBySearch || !toc) {
+    if (hiddenBySearch || !registerSection) {
       return;
     }
-    return toc.register({ id, label });
-  }, [hiddenBySearch, toc, id, label]);
+    return registerSection({ id, label });
+  }, [hiddenBySearch, id, label, registerSection]);
 
   if (hiddenBySearch) {
     return null;

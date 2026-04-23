@@ -30,7 +30,11 @@ import { Button } from "@/components/ui/Button";
 import { Form, FormControl } from "@/components/ui/Form";
 import { Switch } from "@/components/ui/Switch";
 import { useSettingsSavingStore } from "@/store/settingsSavingStore";
+import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
+import { useOptionalSettingsSearch } from "./SettingsSearchContext";
+import { shouldRenderFieldInSectionMode, useSettingsSectionMode } from "./SettingsSectionModeContext";
 import {
+  AGGREGATION_PRIORITY_FIELDS,
   FIELD_REGISTRY,
   type FieldEntry,
   flattenConfig,
@@ -96,6 +100,42 @@ const NAMING_PREVIEW_FIELD_KEYS = [
   "behavior.successFileRename",
 ] as const;
 
+const ASSET_DOWNLOAD_FIELD_KEYS = [
+  "download.downloadThumb",
+  "download.downloadPoster",
+  "download.tagBadges",
+  "download.downloadFanart",
+  "download.downloadSceneImages",
+  "download.downloadTrailer",
+  "download.keepThumb",
+  "download.keepPoster",
+  "download.keepFanart",
+  "download.keepSceneImages",
+  "download.keepTrailer",
+  "download.sceneImageConcurrency",
+] as const;
+
+const NAMING_SECTION_FIELD_KEYS = [
+  "naming.folderTemplate",
+  "naming.fileTemplate",
+  "naming.assetNamingMode",
+  "naming.nfoTitleTemplate",
+  "naming.actorNameMax",
+  "naming.actorNameMore",
+  "naming.actorFallbackToStudio",
+  "naming.releaseRule",
+  "naming.folderNameMax",
+  "naming.fileNameMax",
+  "naming.cnwordStyle",
+  "naming.umrStyle",
+  "naming.leakStyle",
+  "naming.uncensoredStyle",
+  "naming.censoredStyle",
+  "naming.partStyle",
+] as const;
+
+const PERSON_SYNC_SHARED_FIELD_KEYS = ["personSync.personOverviewSources", "personSync.personImageSources"] as const;
+
 export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
   const flat: Record<string, unknown> = {};
   for (const key of NAMING_PREVIEW_FIELD_KEYS) {
@@ -131,6 +171,19 @@ function toSiteOptions(value: unknown): string[] {
     }
   }
   return outputs;
+}
+
+function useHasRenderableFields(fieldNames: readonly string[]): boolean {
+  const search = useOptionalSettingsSearch();
+  const sectionMode = useSettingsSectionMode();
+
+  return fieldNames.some((name) => {
+    if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
+      return false;
+    }
+
+    return search ? search.isFieldVisible(name) : true;
+  });
 }
 
 type CrawlerSiteInfo = {
@@ -217,6 +270,8 @@ export function NetworkCookiesSection() {
 }
 
 export function AssetDownloadsSection() {
+  const sectionMode = useSettingsSectionMode();
+  const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
   const form = useFormContext<FieldValues>();
   const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
     "download.downloadThumb",
@@ -229,9 +284,13 @@ export function AssetDownloadsSection() {
   const successFileMove = Boolean(form.watch("behavior.successFileMove"));
   const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
 
+  if (!hasRenderableFields) {
+    return null;
+  }
+
   return (
     <>
-      {sharedDirectoryMode && (
+      {sectionMode === "public" && sharedDirectoryMode && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
           当前为共享目录模式：多个影片会写入同一目录。保存时会校验 NFO 命名与剧照下载设置。
         </div>
@@ -253,6 +312,13 @@ export function AssetDownloadsSection() {
       {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
       {downloadSceneImages && <BoolField name="download.keepSceneImages" label="保留已有剧照" />}
       {downloadTrailer && <BoolField name="download.keepTrailer" label="保留已有预告片" />}
+      <NumberField
+        name="download.sceneImageConcurrency"
+        label="剧照下载并发"
+        description="仅影响剧照下载任务的并发请求数；关闭“下载剧照”时此设置不会生效。"
+        min={1}
+        max={20}
+      />
     </>
   );
 }
@@ -344,10 +410,16 @@ function NamingPreview() {
 }
 
 export function NamingSection() {
+  const sectionMode = useSettingsSectionMode();
+  const hasRenderableFields = useHasRenderableFields(NAMING_SECTION_FIELD_KEYS);
   const form = useFormContext<FieldValues>();
   const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
   const successFileMove = Boolean(form.watch("behavior.successFileMove"));
   const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
+
+  if (!hasRenderableFields) {
+    return null;
+  }
 
   return (
     <>
@@ -359,7 +431,7 @@ export function NamingSection() {
         description="海报、横版缩略图、背景图与预告片的文件名规则。"
         options={ASSET_NAMING_OPTIONS}
       />
-      {sharedDirectoryMode && (
+      {sectionMode === "public" && sharedDirectoryMode && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
           当前文件夹模板不会为每部影片创建独立目录，属于共享目录模式。推荐默认使用 <code>{`{actor}/{number}`}</code>；
           如需共享目录，保存时会校验相关命名规则。
@@ -370,7 +442,7 @@ export function NamingSection() {
         label="NFO 标题模板"
         description="NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}"
       />
-      <NamingPreview />
+      {sectionMode === "public" && <NamingPreview />}
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
       <BoolField
@@ -479,7 +551,92 @@ export function TranslateSection() {
   );
 }
 
+export function AggregationScrapeSection() {
+  return (
+    <>
+      <NumberField
+        name="aggregation.maxParallelCrawlers"
+        label="聚合并行站点数"
+        description="同一影片聚合抓取时，最多同时请求多少个站点。"
+        min={1}
+        max={10}
+      />
+      <NumberField
+        name="aggregation.perCrawlerTimeoutMs"
+        label="单站超时 (ms)"
+        description="单个站点在聚合阶段允许的最长等待时间。"
+        min={5000}
+        max={120000}
+        step={1000}
+      />
+      <NumberField
+        name="aggregation.globalTimeoutMs"
+        label="全局超时 (ms)"
+        description="单部影片整次聚合抓取允许的总超时时间，必须大于单站超时。"
+        min={10000}
+        max={300000}
+        step={1000}
+      />
+    </>
+  );
+}
+
+export function AggregationBehaviorSection() {
+  return (
+    <>
+      <BoolField
+        name="aggregation.behavior.preferLongerPlot"
+        label="简介优先取更长内容"
+        description="多个站点都提供简介时，优先采用信息量更高的版本。"
+      />
+      <NumberField
+        name="aggregation.behavior.maxSceneImages"
+        label="最多保留剧照数"
+        description="聚合后的剧照数量上限。"
+        min={0}
+        max={100}
+      />
+      <NumberField
+        name="aggregation.behavior.maxActors"
+        label="最多保留演员数"
+        description="聚合后的演员数量上限。"
+        min={1}
+        max={100}
+      />
+      <NumberField
+        name="aggregation.behavior.maxGenres"
+        label="最多保留标签数"
+        description="聚合后的类型或标签数量上限。"
+        min={1}
+        max={100}
+      />
+    </>
+  );
+}
+
+export function AggregationPrioritySection({ siteOptions }: { siteOptions: string[] }) {
+  return (
+    <>
+      {AGGREGATION_PRIORITY_FIELDS.map((entry) => (
+        <AggregationPriorityEditorField
+          key={entry.key}
+          name={entry.key}
+          label={entry.label}
+          description={entry.description}
+          options={siteOptions}
+        />
+      ))}
+    </>
+  );
+}
+
 export function PersonSyncSharedSection() {
+  const hasRenderableFields = useHasRenderableFields(PERSON_SYNC_SHARED_FIELD_KEYS);
+
+  if (!hasRenderableFields) {
+    return null;
+  }
+
   return (
     <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
       <div className="space-y-1">

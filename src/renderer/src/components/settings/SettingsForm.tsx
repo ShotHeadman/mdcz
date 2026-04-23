@@ -2,6 +2,7 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { useCrawlerSiteOptions } from "./settingsContent";
 import {
+  AdvancedTopLevelSection,
   DataSourcesSection,
   ExtractionRulesSection,
   PathsTopLevelSection,
@@ -29,6 +30,7 @@ export function SettingsForm({ flatDefaults, initialUseCustomTitleBar }: Setting
           <ExtractionRulesSection />
           <PathsTopLevelSection />
           <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
+          <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>
       )}
 

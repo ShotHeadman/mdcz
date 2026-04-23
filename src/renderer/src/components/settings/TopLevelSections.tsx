@@ -1,17 +1,21 @@
+import type { ReactNode } from "react";
 import { SectionAnchor } from "./SectionAnchor";
+import { useSettingsSearch } from "./SettingsSearchContext";
+import { SettingsSectionModeProvider } from "./SettingsSectionModeContext";
 import { SitePriorityEditorField } from "./SitePriorityEditorField";
 import { Subsection } from "./Subsection";
 import {
+  AggregationBehaviorSection,
+  AggregationPrioritySection,
+  AggregationScrapeSection,
   AssetDownloadsSection,
   BehaviorSection,
   EmbySection,
   JellyfinSection,
   NamingSection,
-  NetworkConnectionSection,
   NetworkCookiesSection,
   NfoSection,
   PathsSection,
-  PersonSyncSharedSection,
   ScrapePacingSection,
   SECTION_DESCRIPTIONS,
   SECTION_LABELS,
@@ -43,8 +47,7 @@ export function DataSourcesSection({ siteOptions }: SiteOptionsProps) {
       <Subsection title="翻译">
         <TranslateSection />
       </Subsection>
-      <Subsection title="人物同步 · Jellyfin" description="共享的来源顺序 + Jellyfin 连接">
-        <PersonSyncSharedSection />
+      <Subsection title="人物同步 · Jellyfin" description="Jellyfin 连接与同步入口">
         <JellyfinSection />
       </Subsection>
       <Subsection title="人物同步 · Emby">
@@ -64,9 +67,6 @@ export function RateLimitingSection() {
     >
       <Subsection title="刮削节奏">
         <ScrapePacingSection />
-      </Subsection>
-      <Subsection title="网络">
-        <NetworkConnectionSection />
       </Subsection>
     </SectionAnchor>
   );
@@ -124,5 +124,51 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar }: SystemSectio
         <BehaviorSection />
       </Subsection>
     </SectionAnchor>
+  );
+}
+
+export function AdvancedTopLevelSection({ siteOptions }: SiteOptionsProps) {
+  const search = useSettingsSearch();
+
+  if (!search.hasVisibleAdvancedEntries) {
+    return null;
+  }
+
+  return (
+    <SectionAnchor
+      id="advancedSettings"
+      label="高级设置"
+      title="高级设置"
+      description="只在当前浏览会话临时显示的专家级选项，按原有领域归类，离开页面后会恢复默认浏览模式。"
+    >
+      <SettingsSectionModeProvider mode="advanced">
+        <AdvancedDomainSubsection anchor="dataSources">
+          <AggregationPrioritySection siteOptions={siteOptions} />
+        </AdvancedDomainSubsection>
+
+        <AdvancedDomainSubsection anchor="rateLimiting">
+          <AggregationScrapeSection />
+        </AdvancedDomainSubsection>
+
+        <AdvancedDomainSubsection anchor="extractionRules">
+          <AggregationBehaviorSection />
+          <AssetDownloadsSection />
+        </AdvancedDomainSubsection>
+      </SettingsSectionModeProvider>
+    </SectionAnchor>
+  );
+}
+
+function AdvancedDomainSubsection({ anchor, children }: { anchor: keyof typeof SECTION_LABELS; children: ReactNode }) {
+  const search = useSettingsSearch();
+
+  if (!search.isAdvancedAnchorVisible(anchor)) {
+    return null;
+  }
+
+  return (
+    <Subsection title={SECTION_LABELS[anchor]} description={SECTION_DESCRIPTIONS[anchor]}>
+      {children}
+    </Subsection>
   );
 }

@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { ipc } from "@/client/ipc";
@@ -8,6 +8,10 @@ import { AutoSaveStatusIndicator } from "@/components/settings/AutoSaveStatusInd
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
+import {
+  shouldRenderFieldInSectionMode,
+  useSettingsSectionMode,
+} from "@/components/settings/SettingsSectionModeContext";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FormControl, FormField, FormItem } from "@/components/ui/Form";
@@ -54,20 +58,32 @@ export function BaseField({
   fullWidthContent,
   commitMode = "immediate",
 }: BaseFieldProps) {
+  const sectionMode = useSettingsSectionMode();
+
+  if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
+    return null;
+  }
+
+  return (
+    <ConnectedBaseField
+      name={name}
+      label={label}
+      description={description}
+      fullWidthContent={fullWidthContent}
+      commitMode={commitMode}
+    >
+      {children}
+    </ConnectedBaseField>
+  );
+}
+
+function ConnectedBaseField({ name, label, description, children, fullWidthContent, commitMode }: BaseFieldProps) {
   const form = useFormContext();
   const { status, resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
   const search = useOptionalSettingsSearch();
   const visible = search ? search.isFieldVisible(name) : true;
   const highlighted = search ? search.isFieldHighlighted(name) : false;
   const modified = search ? search.isFieldModified(name) : false;
-
-  useEffect(() => {
-    if (!search) {
-      return;
-    }
-
-    return search.registerMountedField(name);
-  }, [name, search]);
 
   return (
     <FormField

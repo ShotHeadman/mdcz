@@ -22,6 +22,7 @@ interface SettingsEditorProps {
   data: Record<string, unknown>;
   defaultConfig?: Record<string, unknown>;
   defaultConfigReady?: boolean;
+  deepLinkSettingKey?: string | null;
   profiles: string[];
   activeProfile: string | null;
   profileLoading?: boolean;
@@ -37,6 +38,7 @@ export function SettingsEditor({
   data,
   defaultConfig = {},
   defaultConfigReady = false,
+  deepLinkSettingKey = null,
   profiles,
   activeProfile,
   profileLoading = false,
@@ -77,7 +79,11 @@ export function SettingsEditor({
           defaultValues={flatDefaultValues}
           defaultValuesReady={defaultConfigReady}
         >
-          <SettingsSearchProvider defaultConfig={defaultConfig} defaultConfigReady={defaultConfigReady}>
+          <SettingsSearchProvider
+            defaultConfig={defaultConfig}
+            defaultConfigReady={defaultConfigReady}
+            deepLinkSettingKey={deepLinkSettingKey}
+          >
             <SettingsLayout
               profiles={profiles}
               activeProfile={activeProfile}

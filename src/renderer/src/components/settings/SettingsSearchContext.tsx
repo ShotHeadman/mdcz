@@ -6,6 +6,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { FieldValues } from "react-hook-form";
@@ -34,6 +35,7 @@ interface SettingsSearchContextValue {
   showAdvanced: boolean;
   isAdvancedVisible: boolean;
   isAdvancedTokenActive: boolean;
+  hasVisibleAdvancedEntries: boolean;
   toggleShowAdvanced: () => void;
   clearAdvancedToken: () => void;
   applySuggestion: (suggestion: SettingsSuggestion) => void;
@@ -42,8 +44,8 @@ interface SettingsSearchContextValue {
   isFieldModified: (key: string) => boolean;
   isFieldIdTargeted: (key: string) => boolean;
   isAnchorVisible: (anchor: FieldAnchor) => boolean;
+  isAdvancedAnchorVisible: (anchor: FieldAnchor) => boolean;
   focusFirstMatch: () => void;
-  registerMountedField: (key: string) => () => void;
 }
 
 const SettingsSearchContext = createContext<SettingsSearchContextValue | null>(null);
@@ -67,18 +69,27 @@ interface SettingsSearchProviderProps {
   children: ReactNode;
   defaultConfig: Record<string, unknown>;
   defaultConfigReady?: boolean;
+  deepLinkSettingKey?: string | null;
+}
+
+function buildIdQuery(settingKey: string | null | undefined): string {
+  const normalized = settingKey?.trim();
+  return normalized ? `@id:${normalized}` : "";
 }
 
 export function SettingsSearchProvider({
   children,
   defaultConfig,
   defaultConfigReady = false,
+  deepLinkSettingKey = null,
 }: SettingsSearchProviderProps) {
   const form = useFormContext<FieldValues>();
-  const [query, setQuery] = useState("");
+  const deepLinkQuery = buildIdQuery(deepLinkSettingKey);
+  const [query, setQuery] = useState(deepLinkQuery);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [mountedFields, setMountedFields] = useState<Set<string>>(() => new Set());
   const deferredQuery = useDeferredValue(query);
+  const focusedDeepLinkKeyRef = useRef<string | null>(null);
+  const lastDeepLinkQueryRef = useRef(deepLinkQuery);
   const watchedValues = useWatch({
     control: form.control,
     name: FIELD_KEYS,
@@ -102,51 +113,30 @@ export function SettingsSearchProvider({
     return next;
   }, [defaultConfigReady, defaultValues, watchedValues]);
 
-  const registerMountedField = useCallback((key: string) => {
-    setMountedFields((previous) => {
-      if (previous.has(key)) {
-        return previous;
-      }
-
-      const next = new Set(previous);
-      next.add(key);
-      return next;
-    });
-
-    return () => {
-      setMountedFields((previous) => {
-        if (!previous.has(key)) {
-          return previous;
-        }
-
-        const next = new Set(previous);
-        next.delete(key);
-        return next;
-      });
-    };
-  }, []);
-
-  const availableEntries = useMemo(
-    () => (mountedFields.size > 0 ? FIELD_REGISTRY.filter((entry) => mountedFields.has(entry.key)) : FIELD_REGISTRY),
-    [mountedFields],
-  );
-
   const visibleEntries = useMemo(
     () =>
-      getVisibleEntries(availableEntries, {
+      getVisibleEntries(FIELD_REGISTRY, {
         parsedQuery,
         showAdvanced,
         modifiedKeys,
       }),
-    [availableEntries, modifiedKeys, parsedQuery, showAdvanced],
+    [modifiedKeys, parsedQuery, showAdvanced],
   );
 
   const visibleKeySet = useMemo(() => new Set(visibleEntries.map((entry) => entry.key)), [visibleEntries]);
-  const visibleAnchorSet = useMemo(() => new Set(visibleEntries.map((entry) => entry.anchor)), [visibleEntries]);
+  const visiblePublicAnchorSet = useMemo(
+    () => new Set(visibleEntries.filter((entry) => entry.visibility === "public").map((entry) => entry.anchor)),
+    [visibleEntries],
+  );
+  const visibleAdvancedAnchorSet = useMemo(
+    () => new Set(visibleEntries.filter((entry) => entry.visibility === "advanced").map((entry) => entry.anchor)),
+    [visibleEntries],
+  );
   const firstMatch = visibleEntries[0] ?? null;
   const hasActiveFilters = parsedQuery.hasFilters;
   const isAdvancedTokenActive = parsedQuery.advanced;
   const isAdvancedVisible = showAdvanced || isAdvancedTokenActive;
+  const hasVisibleAdvancedEntries = visibleEntries.some((entry) => entry.visibility === "advanced");
 
   const applySuggestion = useCallback((suggestion: SettingsSuggestion) => {
     setQuery((previous) => replaceLastToken(previous, suggestion.insertValue));
@@ -177,13 +167,55 @@ export function SettingsSearchProvider({
     },
     [parsedQuery],
   );
-  const isAnchorVisible = useCallback((anchor: FieldAnchor) => visibleAnchorSet.has(anchor), [visibleAnchorSet]);
+  const isAnchorVisible = useCallback(
+    (anchor: FieldAnchor) => visiblePublicAnchorSet.has(anchor),
+    [visiblePublicAnchorSet],
+  );
+  const isAdvancedAnchorVisible = useCallback(
+    (anchor: FieldAnchor) => visibleAdvancedAnchorSet.has(anchor),
+    [visibleAdvancedAnchorSet],
+  );
 
   useEffect(() => {
     if (showAdvanced && isAdvancedTokenActive) {
       setShowAdvanced(false);
     }
   }, [isAdvancedTokenActive, showAdvanced]);
+
+  useEffect(() => {
+    const previousDeepLinkQuery = lastDeepLinkQueryRef.current;
+    if (previousDeepLinkQuery === deepLinkQuery) {
+      return;
+    }
+
+    lastDeepLinkQueryRef.current = deepLinkQuery;
+    focusedDeepLinkKeyRef.current = null;
+
+    setQuery((previous) => {
+      if (!deepLinkQuery) {
+        return previous === previousDeepLinkQuery ? "" : previous;
+      }
+
+      return previous === deepLinkQuery ? previous : deepLinkQuery;
+    });
+  }, [deepLinkQuery]);
+
+  useEffect(() => {
+    const normalizedKey = deepLinkSettingKey?.trim();
+    if (!normalizedKey || focusedDeepLinkKeyRef.current === normalizedKey || !visibleKeySet.has(normalizedKey)) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      if (focusFieldInDom(normalizedKey)) {
+        focusedDeepLinkKeyRef.current = normalizedKey;
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [deepLinkSettingKey, visibleKeySet]);
 
   const value = useMemo<SettingsSearchContextValue>(
     () => ({
@@ -197,6 +229,7 @@ export function SettingsSearchProvider({
       showAdvanced,
       isAdvancedVisible,
       isAdvancedTokenActive,
+      hasVisibleAdvancedEntries,
       toggleShowAdvanced: () => setShowAdvanced((current) => !current),
       clearAdvancedToken,
       applySuggestion,
@@ -205,8 +238,8 @@ export function SettingsSearchProvider({
       isFieldModified,
       isFieldIdTargeted,
       isAnchorVisible,
+      isAdvancedAnchorVisible,
       focusFirstMatch,
-      registerMountedField,
     }),
     [
       applySuggestion,
@@ -214,8 +247,10 @@ export function SettingsSearchProvider({
       firstMatch,
       focusFirstMatch,
       hasActiveFilters,
+      hasVisibleAdvancedEntries,
       isAdvancedTokenActive,
       isAdvancedVisible,
+      isAdvancedAnchorVisible,
       isAnchorVisible,
       isFieldHighlighted,
       isFieldIdTargeted,
@@ -223,7 +258,6 @@ export function SettingsSearchProvider({
       isFieldVisible,
       parsedQuery,
       query,
-      registerMountedField,
       showAdvanced,
       suggestions,
       visibleEntries.length,

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { normalizeEnabledSites, OrderedSiteFieldEditor } from "@/components/config-form/OrderedSiteField";
-import { SiteConfigSection } from "@/components/config-form/SiteConfigSection";
 import { AutoSaveStatusIndicator } from "@/components/settings/AutoSaveStatusIndicator";
-import { buildOrderedSiteSummary, type OrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
+import { buildOrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
@@ -22,10 +21,10 @@ import { FormItem } from "@/components/ui/Form";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
 import { cn } from "@/lib/utils";
 
-interface SitePriorityEditorFieldProps {
+interface AggregationPriorityEditorFieldProps {
   options: string[];
-  name?: string;
-  label?: string;
+  name: string;
+  label: string;
   description?: string;
 }
 
@@ -33,25 +32,28 @@ function valuesEqual(a: string[], b: string[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function buildSitePrioritySummary(value: unknown, options: string[]): OrderedSiteSummary {
-  return buildOrderedSiteSummary(value, options);
-}
-
 const EDITOR_DIALOG_CLASS_NAME =
-  "w-[94vw] max-w-[94vw] gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)] sm:w-[90vw] sm:max-w-[90vw] xl:w-[84vw] xl:max-w-[84vw]";
+  "w-[94vw] max-w-[94vw] gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)] sm:w-[90vw] sm:max-w-[90vw] xl:w-[72vw] xl:max-w-[72vw]";
 
-export function SitePriorityEditorField({
+export function AggregationPriorityEditorField({
   options,
-  name = "scrape.sites",
-  label = "启用站点与优先级",
-  description = "勾选启用站点，上下移动调整优先级。",
-}: SitePriorityEditorFieldProps) {
+  name,
+  label,
+  description = "按顺序选择这个字段优先采用哪些站点；未列出的站点会在后面按实际抓取结果补位。",
+}: AggregationPriorityEditorFieldProps) {
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
   const value = (useWatch({ control: form.control, name }) as string[] | undefined) ?? [];
   const fieldFormState = useFormState({ control: form.control, name });
   const normalizedValue = useMemo(() => normalizeEnabledSites(value), [value]);
-  const summary = useMemo(() => buildSitePrioritySummary(normalizedValue, options), [normalizedValue, options]);
+  const availableOptions = useMemo(
+    () => normalizeEnabledSites([...options, ...normalizedValue]),
+    [normalizedValue, options],
+  );
+  const summary = useMemo(
+    () => buildOrderedSiteSummary(normalizedValue, availableOptions),
+    [availableOptions, normalizedValue],
+  );
   const { status, resetToDefault } = useAutoSaveField(name, { mode: "immediate", label });
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState<string[]>(normalizedValue);
@@ -96,7 +98,7 @@ export function SitePriorityEditorField({
             <div className="flex items-center gap-3">
               <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
                 <span className="rounded-[var(--radius-quiet-capsule)] border border-border/50 bg-surface-low px-2.5 py-1">
-                  已启用 {summary.enabledCount}/{summary.totalCount}
+                  候选 {summary.enabledCount}/{summary.totalCount}
                 </span>
                 {summary.preview.map((site) => (
                   <span
@@ -123,34 +125,20 @@ export function SitePriorityEditorField({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className={EDITOR_DIALOG_CLASS_NAME}>
           <DialogHeader className="gap-3 px-7 pt-7 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">刮削站点</p>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">字段聚合</p>
             <DialogTitle className="text-2xl font-semibold tracking-tight">{label}</DialogTitle>
             <DialogDescription className="max-w-2xl text-sm leading-6">{description}</DialogDescription>
           </DialogHeader>
           <div className="max-h-[min(74vh,880px)] overflow-y-auto border-y border-border/50 px-6 py-6">
-            <div className="space-y-8">
-              <section className="space-y-4">
-                <header className="space-y-1">
-                  <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
-                    启用站点与优先级
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">勾选启用站点，上下移动调整优先级。</p>
-                </header>
-                <OrderedSiteFieldEditor value={draftValue} options={options} onChange={setDraftValue} />
-              </section>
-
-              <section className="space-y-4">
-                <header className="space-y-1">
-                  <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
-                    站点地址与连通性
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    为已启用站点覆盖内置地址，并直接在这里测试当前代理、Cookie 与站点连通性。
-                  </p>
-                </header>
-                <SiteConfigSection sitesOverride={draftValue} />
-              </section>
-            </div>
+            <section className="space-y-4">
+              <header className="space-y-1">
+                <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">{label}</h3>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  勾选参与聚合的站点并调整顺序；未列出的站点会在这些候选之后补位。
+                </p>
+              </header>
+              <OrderedSiteFieldEditor value={draftValue} options={availableOptions} onChange={setDraftValue} />
+            </section>
           </div>
           <DialogFooter className="gap-2 px-6 pb-6">
             <DialogClose asChild>

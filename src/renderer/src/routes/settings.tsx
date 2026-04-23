@@ -25,6 +25,9 @@ import { cn } from "@/lib/utils";
 import { useSettingsSavingStore } from "@/store/settingsSavingStore";
 
 export const Route = createFileRoute("/settings")({
+  validateSearch: (search): { setting?: string } => ({
+    setting: typeof search.setting === "string" && search.setting.trim().length > 0 ? search.setting.trim() : undefined,
+  }),
   component: SettingsComponent,
 });
 
@@ -42,6 +45,7 @@ const PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME = "rounded-[var(--radius-quiet-ca
 type ImportMode = "new" | "overwrite";
 
 function SettingsComponent() {
+  const search = Route.useSearch();
   const queryClient = useQueryClient();
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -252,6 +256,7 @@ function SettingsComponent() {
             data={configQ.data}
             defaultConfig={defaultsQ.data}
             defaultConfigReady={Boolean(defaultsQ.data)}
+            deepLinkSettingKey={search.setting ?? null}
             profiles={profiles}
             activeProfile={activeProfile}
             profileLoading={profilesQ.isLoading}

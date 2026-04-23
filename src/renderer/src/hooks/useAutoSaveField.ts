@@ -612,6 +612,7 @@ export function useAutoSaveField(path: string, options: UseAutoSaveFieldOptions 
   if (!autosave) {
     throw new Error("useAutoSaveField must be used within <SettingsEditorAutosaveProvider>");
   }
+  const { getFieldStatus, registerField, resetFieldToDefault } = autosave;
 
   const registrationOptions = useMemo(
     () => ({
@@ -622,10 +623,10 @@ export function useAutoSaveField(path: string, options: UseAutoSaveFieldOptions 
     [options.debounceMs, options.label, options.mode],
   );
 
-  useEffect(() => autosave.registerField(path, registrationOptions), [autosave, path, registrationOptions]);
+  useEffect(() => registerField(path, registrationOptions), [path, registerField, registrationOptions]);
 
   return {
-    status: autosave.getFieldStatus(path),
-    resetToDefault: () => autosave.resetFieldToDefault(path, options.label),
+    status: getFieldStatus(path),
+    resetToDefault: () => resetFieldToDefault(path, options.label),
   };
 }

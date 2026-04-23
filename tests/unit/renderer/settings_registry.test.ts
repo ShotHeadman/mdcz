@@ -29,6 +29,11 @@ describe("settingsRegistry", () => {
           javdb: { customUrl: "https://example.org" },
         },
       },
+      aggregation: {
+        fieldPriorities: {
+          durationSeconds: ["dmm_tv", "avbase"],
+        },
+      },
     };
 
     const flat = flattenConfig(source);
@@ -36,12 +41,18 @@ describe("settingsRegistry", () => {
     expect(flat["translate.llmApiKey"]).toBe("secret");
     expect(flat["naming.folderTemplate"]).toBe("{actor}/{number}");
     expect(flat["scrape.siteConfigs.javdb.customUrl"]).toBe("https://example.org");
+    expect(flat["aggregation.fieldPriorities.durationSeconds"]).toEqual(["dmm_tv", "avbase"]);
 
     const roundTripped = unflattenConfig(flat);
     expect(roundTripped).toMatchObject({
       translate: { engine: "openai", llmApiKey: "secret" },
       naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
       scrape: { siteConfigs: { javdb: { customUrl: "https://example.org" } } },
+      aggregation: {
+        fieldPriorities: {
+          durationSeconds: ["dmm_tv", "avbase"],
+        },
+      },
     });
   });
 
@@ -56,18 +67,27 @@ describe("settingsRegistry", () => {
   });
 
   it("marks selected expert-level fields as advanced while keeping public settings searchable", () => {
-    expect(FIELD_REGISTRY.find((entry) => entry.key === "naming.releaseRule")?.visibility).toBe("advanced");
-    expect(FIELD_REGISTRY.find((entry) => entry.key === "translate.llmPrompt")?.visibility).toBe("advanced");
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "download.sceneImageConcurrency")?.visibility).toBe("advanced");
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "aggregation.maxParallelCrawlers")?.visibility).toBe(
+      "advanced",
+    );
+    expect(
+      FIELD_REGISTRY.find((entry) => entry.key === "aggregation.fieldPriorities.durationSeconds")?.visibility,
+    ).toBe("advanced");
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "naming.partStyle")?.visibility).toBe("public");
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "translate.llmPrompt")?.visibility).toBe("public");
     expect(FIELD_REGISTRY.find((entry) => entry.key === "paths.mediaPath")?.visibility).toBe("public");
   });
 
-  it("does not expose about-owned or internal-only config keys through the settings registry", () => {
+  it("exposes public advanced download and aggregation keys while hiding other-surface or internal keys", () => {
     const keys = new Set(FIELD_REGISTRY.map((entry) => entry.key));
 
+    expect(keys.has("download.sceneImageConcurrency")).toBe(true);
+    expect(keys.has("aggregation.maxParallelCrawlers")).toBe(true);
+    expect(keys.has("aggregation.behavior.maxSceneImages")).toBe(true);
+    expect(keys.has("aggregation.fieldPriorities.durationSeconds")).toBe(true);
     expect(keys.has("behavior.updateCheck")).toBe(false);
     expect(keys.has("ui.theme")).toBe(false);
     expect(keys.has("ui.language")).toBe(false);
-    expect(keys.has("download.sceneImageConcurrency")).toBe(false);
-    expect(keys.has("aggregation.fieldPriorities.durationSeconds")).toBe(false);
   });
 });
