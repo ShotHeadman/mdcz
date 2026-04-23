@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 
 interface SettingRowProps {
+  fieldName?: string;
   label: string;
   description?: string;
   htmlFor?: string;
@@ -23,6 +25,7 @@ interface SettingRowProps {
 }
 
 export function SettingRow({
+  fieldName,
   label,
   description,
   htmlFor,
@@ -35,8 +38,22 @@ export function SettingRow({
   dimmed,
   highlighted,
 }: SettingRowProps) {
+  const search = useOptionalSettingsSearch();
+  const registerFieldNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!search || !fieldName) {
+        return;
+      }
+
+      search.registerFieldNode(fieldName, node);
+    },
+    [fieldName, search],
+  );
+
   return (
     <div
+      ref={fieldName ? registerFieldNode : undefined}
+      data-field-name={fieldName}
       className={cn(
         "group/setting-row flex py-3 transition-[opacity,background-color] duration-200",
         fullWidthContent
@@ -59,7 +76,7 @@ export function SettingRow({
       </div>
       {fullWidthContent ? (
         <div className="flex flex-col gap-2">
-          <div>{control}</div>
+          <div data-setting-control>{control}</div>
           {status && (
             <div aria-live="polite" className="flex min-h-[1rem] justify-end text-xs text-muted-foreground">
               {status}
@@ -68,7 +85,9 @@ export function SettingRow({
         </div>
       ) : (
         <div className="flex shrink-0 items-center gap-2.5">
-          <div className="min-w-0">{control}</div>
+          <div data-setting-control className="min-w-0">
+            {control}
+          </div>
           {status && (
             <div
               aria-live="polite"

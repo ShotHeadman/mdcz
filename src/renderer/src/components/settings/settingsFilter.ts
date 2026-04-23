@@ -1,5 +1,4 @@
 import {
-  FIELD_REGISTRY,
   type FieldAnchor,
   type FieldEntry,
   SECTION_DESCRIPTIONS,
@@ -11,9 +10,7 @@ export interface ParsedSettingsQuery {
   raw: string;
   textTerms: string[];
   groupTerms: string[];
-  idTerms: string[];
   modified: boolean;
-  advanced: boolean;
   hasFilters: boolean;
 }
 
@@ -25,16 +22,14 @@ export interface SettingsFilterState {
 
 export interface SettingsSuggestion {
   id: string;
-  kind: "token" | "group" | "id";
+  kind: "token" | "group";
   label: string;
   insertValue: string;
   description: string;
 }
 
-const TOKEN_ADVANCED = "@advanced";
 const TOKEN_MODIFIED = "@modified";
 const TOKEN_GROUP = "@group:";
-const TOKEN_ID = "@id:";
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
@@ -80,18 +75,11 @@ export function parseSettingsQuery(query: string): ParsedSettingsQuery {
   const tokens = tokenize(query);
   const textTerms: string[] = [];
   const groupTerms: string[] = [];
-  const idTerms: string[] = [];
   let modified = false;
-  let advanced = false;
 
   for (const token of tokens) {
     const normalizedToken = normalize(token);
     if (!normalizedToken) {
-      continue;
-    }
-
-    if (normalizedToken === TOKEN_ADVANCED) {
-      advanced = true;
       continue;
     }
 
@@ -108,14 +96,6 @@ export function parseSettingsQuery(query: string): ParsedSettingsQuery {
       continue;
     }
 
-    if (normalizedToken.startsWith(TOKEN_ID)) {
-      const value = normalizedToken.slice(TOKEN_ID.length);
-      if (value) {
-        idTerms.push(value);
-      }
-      continue;
-    }
-
     textTerms.push(normalizedToken);
   }
 
@@ -123,31 +103,20 @@ export function parseSettingsQuery(query: string): ParsedSettingsQuery {
     raw: query,
     textTerms,
     groupTerms,
-    idTerms,
     modified,
-    advanced,
-    hasFilters: textTerms.length > 0 || groupTerms.length > 0 || idTerms.length > 0 || modified || advanced,
+    hasFilters: textTerms.length > 0 || groupTerms.length > 0 || modified,
   };
-}
-
-export function isIdTargetMatch(entry: FieldEntry, parsedQuery: ParsedSettingsQuery): boolean {
-  return (
-    parsedQuery.idTerms.length > 0 && parsedQuery.idTerms.every((term) => entry.key.toLowerCase().startsWith(term))
-  );
 }
 
 export function isFieldVisible(entry: FieldEntry, state: SettingsFilterState): boolean {
   const { parsedQuery, showAdvanced, modifiedKeys } = state;
   const isModified = modifiedKeys.has(entry.key);
-  const targetedById = isIdTargetMatch(entry, parsedQuery);
-  const canRevealAdvanced =
-    showAdvanced || parsedQuery.advanced || targetedById || (parsedQuery.modified && isModified);
 
   if (entry.surface !== "settings" || entry.visibility === "hidden") {
     return false;
   }
 
-  if (entry.visibility === "advanced" && !canRevealAdvanced) {
+  if (entry.visibility === "advanced" && !showAdvanced) {
     return false;
   }
 
@@ -156,10 +125,6 @@ export function isFieldVisible(entry: FieldEntry, state: SettingsFilterState): b
   }
 
   if (parsedQuery.groupTerms.length > 0 && !parsedQuery.groupTerms.every((term) => matchesGroup(entry.anchor, term))) {
-    return false;
-  }
-
-  if (parsedQuery.idTerms.length > 0 && !targetedById) {
     return false;
   }
 
@@ -188,12 +153,6 @@ export function replaceLastToken(query: string, replacement: string): string {
   return `${prefix}${replacement} `;
 }
 
-export function removeToken(query: string, token: string): string {
-  return tokenize(query)
-    .filter((item) => normalize(item) !== normalize(token))
-    .join(" ");
-}
-
 function getActiveToken(query: string): string {
   if (!query || /\s$/u.test(query)) {
     return "";
@@ -217,19 +176,6 @@ function buildGroupSuggestions(prefix: string): SettingsSuggestion[] {
     }));
 }
 
-function buildIdSuggestions(prefix: string): SettingsSuggestion[] {
-  const normalizedPrefix = normalize(prefix);
-  return FIELD_REGISTRY.filter((entry) => entry.key.toLowerCase().includes(normalizedPrefix))
-    .slice(0, 8)
-    .map((entry) => ({
-      id: `id:${entry.key}`,
-      kind: "id" as const,
-      label: entry.key,
-      insertValue: `${TOKEN_ID}${entry.key}`,
-      description: `${SECTION_LABELS[entry.anchor]} · ${entry.label}`,
-    }));
-}
-
 export function getSettingsSuggestions(query: string): SettingsSuggestion[] {
   const activeToken = getActiveToken(query);
   const normalizedToken = normalize(activeToken);
@@ -238,35 +184,17 @@ export function getSettingsSuggestions(query: string): SettingsSuggestion[] {
     return [];
   }
 
-  if (normalizedToken.startsWith(TOKEN_ID)) {
-    return buildIdSuggestions(normalizedToken.slice(TOKEN_ID.length));
-  }
-
   if (normalizedToken.startsWith(TOKEN_GROUP)) {
     return buildGroupSuggestions(normalizedToken.slice(TOKEN_GROUP.length));
   }
 
   const tokenSuggestions: SettingsSuggestion[] = [
     {
-      id: TOKEN_ADVANCED,
-      kind: "token" as const,
-      label: TOKEN_ADVANCED,
-      insertValue: TOKEN_ADVANCED,
-      description: "显示公共高级设置",
-    },
-    {
       id: TOKEN_MODIFIED,
       kind: "token" as const,
       label: TOKEN_MODIFIED,
       insertValue: TOKEN_MODIFIED,
       description: "仅显示已偏离默认值的设置",
-    },
-    {
-      id: TOKEN_ID,
-      kind: "token" as const,
-      label: TOKEN_ID,
-      insertValue: TOKEN_ID,
-      description: "按设置键精确定位，例如 @id:translate.llmApiKey",
     },
     {
       id: TOKEN_GROUP,

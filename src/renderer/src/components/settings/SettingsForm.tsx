@@ -25,12 +25,18 @@ export function SettingsForm({ flatDefaults, initialUseCustomTitleBar }: Setting
         <SettingsEmptyState />
       ) : (
         <>
-          <DataSourcesSection siteOptions={siteOptions} />
-          <RateLimitingSection />
-          <ExtractionRulesSection />
-          <PathsTopLevelSection />
-          <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
-          <AdvancedTopLevelSection siteOptions={siteOptions} />
+          <DataSourcesSection siteOptions={siteOptions} forceOpen={search.isSectionForceOpen("dataSources")} />
+          <RateLimitingSection forceOpen={search.isSectionForceOpen("rateLimiting")} />
+          <ExtractionRulesSection forceOpen={search.isSectionForceOpen("extractionRules")} />
+          <PathsTopLevelSection forceOpen={search.isSectionForceOpen("paths")} />
+          <SystemTopLevelSection
+            initialUseCustomTitleBar={initialUseCustomTitleBar}
+            forceOpen={search.isSectionForceOpen("system")}
+          />
+          <AdvancedTopLevelSection
+            siteOptions={siteOptions}
+            forceOpen={search.isSectionForceOpen("advancedSettings")}
+          />
         </>
       )}
 
@@ -48,9 +54,7 @@ function SettingsEmptyState() {
       <div className="mt-4 space-y-1">
         <p className="text-sm font-medium text-foreground">没有匹配的设置</p>
         <p className="text-sm leading-6 text-muted-foreground">
-          试试更短的关键字，或使用 <code>@advanced</code>、<code>@id:&lt;settingKey&gt;</code>、
-          <code>@group:数据源</code>
-          之类的筛选。
+          试试更短的关键字，或检查是否需要显示高级设置后再搜索。
         </p>
       </div>
     </div>
@@ -59,17 +63,13 @@ function SettingsEmptyState() {
 
 function AdvancedSettingsFooter() {
   const search = useSettingsSearch();
-  const actionLabel = search.isAdvancedTokenActive
-    ? "退出 @advanced 筛选"
-    : search.isAdvancedVisible
-      ? "隐藏高级设置"
-      : "显示高级设置";
+  const actionLabel = search.isAdvancedVisible ? "隐藏高级设置" : "显示高级设置";
 
   return (
     <div className="flex justify-end pt-2">
       <button
         type="button"
-        onClick={search.isAdvancedTokenActive ? search.clearAdvancedToken : search.toggleShowAdvanced}
+        onClick={search.toggleShowAdvanced}
         className="inline-flex items-center gap-2 rounded-[var(--radius-quiet-capsule)] bg-surface-low px-3.5 py-2 text-sm text-foreground outline-none transition-colors hover:bg-surface-raised focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />

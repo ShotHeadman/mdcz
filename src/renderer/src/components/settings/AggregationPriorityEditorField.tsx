@@ -86,8 +86,9 @@ export function AggregationPriorityEditorField({
 
   return (
     <>
-      <FormItem className="block space-y-0" data-field-name={name}>
+      <FormItem className="block space-y-0">
         <SettingRow
+          fieldName={name}
           label={label}
           description={description}
           error={rowError}

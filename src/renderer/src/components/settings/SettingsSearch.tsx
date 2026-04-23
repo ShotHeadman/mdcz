@@ -9,11 +9,7 @@ interface SettingsSearchProps {
   className?: string;
 }
 
-export function SettingsSearch({
-  disabled = false,
-  placeholder = "搜索设置，或输入 @advanced / @id:...",
-  className,
-}: SettingsSearchProps) {
+export function SettingsSearch({ disabled = false, placeholder = "搜索设置", className }: SettingsSearchProps) {
   const search = useOptionalSettingsSearch();
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
 
@@ -38,15 +34,6 @@ export function SettingsSearch({
   const suggestions = search.suggestions;
   const resolvedActiveSuggestionIndex = suggestions[activeSuggestionIndex] ? activeSuggestionIndex : 0;
   const activeSuggestion = suggestions[resolvedActiveSuggestionIndex] ?? null;
-  const metaText = (() => {
-    if (search.hasActiveFilters) {
-      return `匹配 ${search.resultCount} 项`;
-    }
-    if (search.isAdvancedVisible) {
-      return "当前显示高级设置";
-    }
-    return "\u00a0";
-  })();
 
   return (
     <div className={cn("relative w-full max-w-[420px]", className)}>
@@ -97,8 +84,6 @@ export function SettingsSearch({
           "focus-visible:ring-2 focus-visible:ring-ring/40",
         )}
       />
-
-      <div className="mt-1.5 min-h-[1rem] px-1 text-[11px] text-muted-foreground">{metaText}</div>
 
       {suggestions.length > 0 && !disabled && (
         <div

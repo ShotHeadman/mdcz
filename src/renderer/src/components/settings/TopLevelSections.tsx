@@ -26,19 +26,30 @@ import {
 
 interface SiteOptionsProps {
   siteOptions: string[];
+  forceOpen?: boolean;
 }
 
 interface SystemSectionProps {
   initialUseCustomTitleBar: boolean;
+  forceOpen?: boolean;
 }
 
-export function DataSourcesSection({ siteOptions }: SiteOptionsProps) {
+const DEFERRED_SECTION_HEIGHTS = {
+  rateLimiting: 760,
+  extractionRules: 1680,
+  paths: 780,
+  system: 1120,
+  advancedSettings: 1760,
+} as const;
+
+export function DataSourcesSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
   return (
     <SectionAnchor
       id="dataSources"
       label={SECTION_LABELS.dataSources}
       title={SECTION_LABELS.dataSources}
       description={SECTION_DESCRIPTIONS.dataSources}
+      forceOpen={forceOpen}
     >
       <Subsection title="刮削站点" description="启用网站、优先级、每站 URL 与站点凭证">
         <SitePriorityEditorField options={siteOptions} />
@@ -57,13 +68,16 @@ export function DataSourcesSection({ siteOptions }: SiteOptionsProps) {
   );
 }
 
-export function RateLimitingSection() {
+export function RateLimitingSection({ forceOpen = false }: { forceOpen?: boolean }) {
   return (
     <SectionAnchor
       id="rateLimiting"
       label={SECTION_LABELS.rateLimiting}
       title={SECTION_LABELS.rateLimiting}
       description={SECTION_DESCRIPTIONS.rateLimiting}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.rateLimiting}
     >
       <Subsection title="刮削节奏">
         <ScrapePacingSection />
@@ -72,13 +86,16 @@ export function RateLimitingSection() {
   );
 }
 
-export function ExtractionRulesSection() {
+export function ExtractionRulesSection({ forceOpen = false }: { forceOpen?: boolean }) {
   return (
     <SectionAnchor
       id="extractionRules"
       label={SECTION_LABELS.extractionRules}
       title={SECTION_LABELS.extractionRules}
       description={SECTION_DESCRIPTIONS.extractionRules}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.extractionRules}
     >
       <Subsection title="命名模板">
         <NamingSection />
@@ -93,26 +110,32 @@ export function ExtractionRulesSection() {
   );
 }
 
-export function PathsTopLevelSection() {
+export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
   return (
     <SectionAnchor
       id="paths"
       label={SECTION_LABELS.paths}
       title={SECTION_LABELS.paths}
       description={SECTION_DESCRIPTIONS.paths}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.paths}
     >
       <PathsSection />
     </SectionAnchor>
   );
 }
 
-export function SystemTopLevelSection({ initialUseCustomTitleBar }: SystemSectionProps) {
+export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = false }: SystemSectionProps) {
   return (
     <SectionAnchor
       id="system"
       label={SECTION_LABELS.system}
       title={SECTION_LABELS.system}
       description={SECTION_DESCRIPTIONS.system}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.system}
     >
       <Subsection title="界面">
         <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
@@ -127,7 +150,7 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar }: SystemSectio
   );
 }
 
-export function AdvancedTopLevelSection({ siteOptions }: SiteOptionsProps) {
+export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
   const search = useSettingsSearch();
 
   if (!search.hasVisibleAdvancedEntries) {
@@ -140,6 +163,9 @@ export function AdvancedTopLevelSection({ siteOptions }: SiteOptionsProps) {
       label="高级设置"
       title="高级设置"
       description="只在当前浏览会话临时显示的专家级选项，按原有领域归类，离开页面后会恢复默认浏览模式。"
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.advancedSettings}
     >
       <SettingsSectionModeProvider mode="advanced">
         <AdvancedDomainSubsection anchor="dataSources">

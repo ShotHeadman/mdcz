@@ -1,4 +1,5 @@
 import {
+  getSettingsSuggestions,
   getVisibleEntries,
   parseSettingsQuery,
   type SettingsFilterState,
@@ -25,33 +26,38 @@ describe("settingsFilter", () => {
     expect(visibleKeys.has("paths.mediaPath")).toBe(true);
   });
 
-  it("@advanced reveals advanced settings without changing the grouped ordering", () => {
-    const visibleEntries = getVisibleEntries(FIELD_REGISTRY, buildState("@advanced"));
+  it("showAdvanced reveals advanced settings without changing the grouped ordering", () => {
+    const visibleEntries = getVisibleEntries(FIELD_REGISTRY, buildState("", { showAdvanced: true }));
 
     expect(visibleEntries.find((entry) => entry.key === "download.sceneImageConcurrency")).toBeTruthy();
     expect(visibleEntries.find((entry) => entry.key === "aggregation.maxParallelCrawlers")).toBeTruthy();
     expect(visibleEntries.find((entry) => entry.key === "aggregation.fieldPriorities.durationSeconds")).toBeTruthy();
   });
 
-  it("@id targets advanced settings directly even when advanced browse mode is off", () => {
-    const visibleEntries = getVisibleEntries(FIELD_REGISTRY, buildState("@id:download.sceneImageConcurrency"));
-
-    expect(visibleEntries.map((entry) => entry.key)).toEqual(["download.sceneImageConcurrency"]);
-  });
-
-  it("@id targets aggregation priority settings directly even when advanced browse mode is off", () => {
-    const visibleEntries = getVisibleEntries(
-      FIELD_REGISTRY,
-      buildState("@id:aggregation.fieldPriorities.durationSeconds"),
-    );
-
-    expect(visibleEntries.map((entry) => entry.key)).toEqual(["aggregation.fieldPriorities.durationSeconds"]);
-  });
-
-  it("@modified can surface advanced settings that diverge from defaults", () => {
+  it("@modified keeps advanced settings hidden while advanced mode is off", () => {
     const visibleEntries = getVisibleEntries(
       FIELD_REGISTRY,
       buildState("@modified", {
+        modifiedKeys: new Set(["download.sceneImageConcurrency", "paths.mediaPath"]),
+      }),
+    );
+
+    expect(visibleEntries.map((entry) => entry.key)).toEqual(["paths.mediaPath"]);
+  });
+
+  it("free-text search can match advanced settings after advanced mode is enabled", () => {
+    const hiddenEntries = getVisibleEntries(FIELD_REGISTRY, buildState("聚合并行站点"));
+    const visibleEntries = getVisibleEntries(FIELD_REGISTRY, buildState("聚合并行站点", { showAdvanced: true }));
+
+    expect(hiddenEntries).toEqual([]);
+    expect(visibleEntries.map((entry) => entry.key)).toEqual(["aggregation.maxParallelCrawlers"]);
+  });
+
+  it("@modified can include advanced settings after advanced mode is enabled", () => {
+    const visibleEntries = getVisibleEntries(
+      FIELD_REGISTRY,
+      buildState("@modified", {
+        showAdvanced: true,
         modifiedKeys: new Set(["download.sceneImageConcurrency", "paths.mediaPath"]),
       }),
     );
@@ -63,5 +69,16 @@ describe("settingsFilter", () => {
     const visibleEntries = getVisibleEntries(FIELD_REGISTRY, buildState("@group:系统 日志面板"));
 
     expect(visibleEntries.map((entry) => entry.key)).toEqual(["ui.showLogsPanel"]);
+  });
+
+  it("offers only the supported search tokens in visible suggestions", () => {
+    const labels = getSettingsSuggestions("@").map((suggestion) => suggestion.label);
+
+    expect(labels).toContain("@modified");
+    expect(labels).toContain("@group:");
+  });
+
+  it("ignores unsupported token prefixes in the search UI", () => {
+    expect(getSettingsSuggestions("@foo")).toEqual([]);
   });
 });

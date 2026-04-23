@@ -1,21 +1,11 @@
 import { AlertTriangle } from "lucide-react";
 import type { CrossFieldError } from "@/hooks/useCrossFieldErrors";
 import { cn } from "@/lib/utils";
+import { focusSettingFieldInDom } from "./focusSettingField";
 
 interface CrossFieldBannerProps {
   errors: CrossFieldError[];
   className?: string;
-}
-
-function focusField(field: string): void {
-  const selector = `[data-field-name="${CSS.escape(field)}"]`;
-  const el = document.querySelector<HTMLElement>(selector);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  const focusable = el.querySelector<HTMLElement>(
-    "input:not([type=hidden]), textarea, select, button:not([aria-label='删除']), [role='combobox'], [role='button'], [tabindex]:not([tabindex='-1'])",
-  );
-  focusable?.focus();
 }
 
 /**
@@ -47,7 +37,7 @@ export function CrossFieldBanner({ errors, className }: CrossFieldBannerProps) {
               </div>
               <button
                 type="button"
-                onClick={() => focusField(err.field)}
+                onClick={() => focusSettingFieldInDom(err.field)}
                 className={cn(
                   "shrink-0 rounded-[var(--radius-quiet-sm)] px-2 py-0.5 text-[11px] font-medium",
                   "text-destructive outline-none transition-colors hover:bg-destructive/10",
