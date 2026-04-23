@@ -39,8 +39,10 @@ export interface AggregationPriorityFieldDefinition {
 
 interface SiteCustomUrlFieldDefinition {
   key: `scrape.siteConfigs.${string}.customUrl`;
+  site: Website;
   label: string;
   anchor: "scrape";
+  surface: "internal";
   description: string;
   aliases: string[];
 }
@@ -166,8 +168,10 @@ const AGGREGATION_PRIORITY_ALIASES = Object.fromEntries(
 
 const SITE_CUSTOM_URL_FIELDS: SiteCustomUrlFieldDefinition[] = Object.values(Website).map((site) => ({
   key: `scrape.siteConfigs.${site}.customUrl`,
+  site,
   label: `${site} 站点地址`,
   anchor: "scrape",
+  surface: "internal",
   description: `覆盖 ${site} 的内置地址，并用于当前配置下的连通性测试。`,
   aliases: [site, `${site} url`, `${site} 地址`, "custom url", "mirror", "站点地址", "连通性"],
 }));
@@ -175,6 +179,10 @@ const SITE_CUSTOM_URL_FIELDS: SiteCustomUrlFieldDefinition[] = Object.values(Web
 const SITE_CUSTOM_URL_ALIASES = Object.fromEntries(
   SITE_CUSTOM_URL_FIELDS.map((entry) => [entry.key, entry.aliases]),
 ) as Record<string, string[]>;
+
+const SITE_BY_CUSTOM_URL_FIELD_KEY = new Map<string, Website>(
+  SITE_CUSTOM_URL_FIELDS.map((entry) => [entry.key, entry.site]),
+);
 
 const ADVANCED_FIELD_KEYS = new Set<string>([
   "download.sceneImageConcurrency",
@@ -394,6 +402,10 @@ export const FIELD_REGISTRY_BY_KEY = Object.fromEntries(FIELD_REGISTRY.map((entr
   FieldEntry
 >;
 
+export function isFieldManagedBySettingsSearch(key: string): boolean {
+  return FIELD_REGISTRY_BY_KEY[key]?.surface === "settings";
+}
+
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split(".");
   let cursor: unknown = obj;
@@ -422,7 +434,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function flattenConfig(data: Record<string, unknown>): Record<string, unknown> {
   const flat: Record<string, unknown> = {};
   for (const entry of FIELD_REGISTRY) {
-    flat[entry.key] = getNestedValue(data, entry.key);
+    const value = getNestedValue(data, entry.key);
+    flat[entry.key] = value === undefined && SITE_BY_CUSTOM_URL_FIELD_KEY.has(entry.key) ? "" : value;
   }
 
   const siteConfigs = getNestedValue(data, "scrape.siteConfigs");
@@ -432,7 +445,7 @@ export function flattenConfig(data: Record<string, unknown>): Record<string, unk
         continue;
       }
       if ("customUrl" in config) {
-        flat[`scrape.siteConfigs.${site}.customUrl`] = config.customUrl;
+        flat[`scrape.siteConfigs.${site}.customUrl`] = config.customUrl ?? "";
       }
     }
   }

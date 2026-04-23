@@ -212,6 +212,32 @@ function isLatestRevision(revisions: Map<string, number>, path: string, revision
   return (revisions.get(path) ?? 0) === revision;
 }
 
+interface LatestRevisionTaskOptions {
+  revisions: Map<string, number>;
+  path: string;
+  revision: number;
+  run: () => Promise<void>;
+  finalize: () => void;
+}
+
+export async function runLatestRevisionTask({
+  revisions,
+  path,
+  revision,
+  run,
+  finalize,
+}: LatestRevisionTaskOptions): Promise<void> {
+  try {
+    if (!isLatestRevision(revisions, path, revision)) {
+      return;
+    }
+
+    await run();
+  } finally {
+    finalize();
+  }
+}
+
 export function SettingsEditorAutosaveProvider({
   children,
   savedValues,
@@ -318,63 +344,65 @@ export function SettingsEditorAutosaveProvider({
 
       saveChainRef.current = saveChainRef.current
         .catch(() => {})
-        .then(async () => {
-          if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
-            return;
-          }
+        .then(() => {
+          return runLatestRevisionTask({
+            revisions: saveRevisionsRef.current,
+            path,
+            revision,
+            finalize: decrementInFlight,
+            run: async () => {
+              const flatPayload = buildAutoSaveFlatPayload(path, value, formRef.current.formState.errors, (fieldPath) =>
+                formRef.current.getValues(fieldPath),
+              );
+              const payloadPaths = Object.keys(flatPayload);
 
-          const flatPayload = buildAutoSaveFlatPayload(path, value, formRef.current.formState.errors, (fieldPath) =>
-            formRef.current.getValues(fieldPath),
-          );
-          const payloadPaths = Object.keys(flatPayload);
+              try {
+                await ipc.config.save(unflattenConfig(flatPayload) as Partial<Configuration>);
 
-          try {
-            await ipc.config.save(unflattenConfig(flatPayload) as Partial<Configuration>);
-
-            if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
-              return;
-            }
-
-            for (const [payloadPath, payloadValue] of Object.entries(flatPayload)) {
-              committedValuesRef.current.set(payloadPath, payloadValue);
-            }
-
-            formRef.current.clearErrors(payloadPaths);
-            mergeCurrentConfigCache(flatPayload);
-            markFieldSaved(path);
-          } catch (error) {
-            if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
-              return;
-            }
-
-            const serverError = extractServerValidation(error);
-            if (serverError) {
-              const ownError = serverError.fieldErrors[path];
-              if (ownError) {
-                formRef.current.setError(path, { type: "server", message: ownError });
-              } else {
-                formRef.current.clearErrors(path);
-              }
-
-              for (const otherField of serverError.fields) {
-                if (otherField === path) {
-                  continue;
+                if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
+                  return;
                 }
 
-                const message = serverError.fieldErrors[otherField] ?? "校验失败";
-                formRef.current.setError(otherField, { type: "server", message });
-              }
-            } else {
-              formRef.current.setError(path, {
-                type: "server",
-                message: toFieldMessage(error, "保存失败"),
-              });
-            }
+                for (const [payloadPath, payloadValue] of Object.entries(flatPayload)) {
+                  committedValuesRef.current.set(payloadPath, payloadValue);
+                }
 
-            setFieldStatus(path, "error");
-          } finally {
-            decrementInFlight();
-          }
+                formRef.current.clearErrors(payloadPaths);
+                mergeCurrentConfigCache(flatPayload);
+                markFieldSaved(path);
+              } catch (error) {
+                if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
+                  return;
+                }
+
+                const serverError = extractServerValidation(error);
+                if (serverError) {
+                  const ownError = serverError.fieldErrors[path];
+                  if (ownError) {
+                    formRef.current.setError(path, { type: "server", message: ownError });
+                  } else {
+                    formRef.current.clearErrors(path);
+                  }
+
+                  for (const otherField of serverError.fields) {
+                    if (otherField === path) {
+                      continue;
+                    }
+
+                    const message = serverError.fieldErrors[otherField] ?? "校验失败";
+                    formRef.current.setError(otherField, { type: "server", message });
+                  }
+                } else {
+                  formRef.current.setError(path, {
+                    type: "server",
+                    message: toFieldMessage(error, "保存失败"),
+                  });
+                }
+
+                setFieldStatus(path, "error");
+              }
+            },
+          });
         });
     },
     [clearFieldTimers, decrementInFlight, incrementInFlight, markFieldSaved, mergeCurrentConfigCache, setFieldStatus],
@@ -417,50 +445,52 @@ export function SettingsEditorAutosaveProvider({
 
       saveChainRef.current = saveChainRef.current
         .catch(() => {})
-        .then(async () => {
-          if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
-            return;
-          }
+        .then(() => {
+          return runLatestRevisionTask({
+            revisions: saveRevisionsRef.current,
+            path,
+            revision,
+            finalize: decrementInFlight,
+            run: async () => {
+              try {
+                await ipc.config.reset(path);
 
-          try {
-            await ipc.config.reset(path);
+                if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
+                  return;
+                }
 
-            if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
-              return;
-            }
+                committedValuesRef.current.set(path, defaultValue);
+                formRef.current.clearErrors(path);
+                mergeCurrentConfigCache({ [path]: defaultValue });
+                markFieldSaved(path);
 
-            committedValuesRef.current.set(path, defaultValue);
-            formRef.current.clearErrors(path);
-            mergeCurrentConfigCache({ [path]: defaultValue });
-            markFieldSaved(path);
+                toast.success(`${fieldLabel} 已恢复为默认值`, {
+                  action: {
+                    label: "撤销",
+                    onClick: () => {
+                      programmaticSave(path, previousValue);
+                    },
+                  },
+                });
+              } catch (error) {
+                if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
+                  return;
+                }
 
-            toast.success(`${fieldLabel} 已恢复为默认值`, {
-              action: {
-                label: "撤销",
-                onClick: () => {
-                  programmaticSave(path, previousValue);
-                },
-              },
-            });
-          } catch (error) {
-            if (!isLatestRevision(saveRevisionsRef.current, path, revision)) {
-              return;
-            }
-
-            pendingProgrammaticValuesRef.current.set(path, previousValue);
-            formRef.current.setValue(path, previousValue, {
-              shouldDirty: true,
-              shouldTouch: true,
-            });
-            formRef.current.setError(path, {
-              type: "server",
-              message: toFieldMessage(error, "恢复默认值失败"),
-            });
-            setFieldStatus(path, "error");
-            toast.error(`${fieldLabel} 恢复失败: ${toFieldMessage(error, "未知错误")}`);
-          } finally {
-            decrementInFlight();
-          }
+                pendingProgrammaticValuesRef.current.set(path, previousValue);
+                formRef.current.setValue(path, previousValue, {
+                  shouldDirty: true,
+                  shouldTouch: true,
+                });
+                formRef.current.setError(path, {
+                  type: "server",
+                  message: toFieldMessage(error, "恢复默认值失败"),
+                });
+                setFieldStatus(path, "error");
+                toast.error(`${fieldLabel} 恢复失败: ${toFieldMessage(error, "未知错误")}`);
+              }
+            },
+          });
         });
     },
     [
@@ -542,9 +572,9 @@ export function SettingsEditorAutosaveProvider({
   useEffect(() => {
     for (const [index, path] of watchedPaths.entries()) {
       const value = watchedValues[index];
-      const pendingProgrammaticValue = pendingProgrammaticValuesRef.current.get(path);
 
-      if (pendingProgrammaticValue !== undefined) {
+      if (pendingProgrammaticValuesRef.current.has(path)) {
+        const pendingProgrammaticValue = pendingProgrammaticValuesRef.current.get(path);
         if (valuesEqual(value, pendingProgrammaticValue)) {
           pendingProgrammaticValuesRef.current.delete(path);
           continue;

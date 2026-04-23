@@ -172,6 +172,13 @@ function useHasRenderableFields(fieldNames: readonly string[]): boolean {
   });
 }
 
+function shouldMountConditionalSettings(
+  normalVisible: boolean,
+  search: ReturnType<typeof useOptionalSettingsSearch>,
+): boolean {
+  return normalVisible || Boolean(search?.hasActiveFilters);
+}
+
 type CrawlerSiteInfo = {
   site: string;
   name: string;
@@ -258,6 +265,7 @@ export function NetworkCookiesSection() {
 export function AssetDownloadsSection() {
   const sectionMode = useSettingsSectionMode();
   const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
+  const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
   const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
     "download.downloadThumb",
@@ -283,7 +291,7 @@ export function AssetDownloadsSection() {
       )}
       <BoolField name="download.downloadThumb" label="下载横版缩略图" />
       <BoolField name="download.downloadPoster" label="下载海报" />
-      {downloadPoster && (
+      {shouldMountConditionalSettings(Boolean(downloadPoster), search) && (
         <BoolField
           name="download.tagBadges"
           label="为封面添加标签角标"
@@ -293,11 +301,21 @@ export function AssetDownloadsSection() {
       <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
-      {downloadThumb && <BoolField name="download.keepThumb" label="保留已有横版缩略图" />}
-      {downloadPoster && <BoolField name="download.keepPoster" label="保留已有海报" />}
-      {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
-      {downloadSceneImages && <BoolField name="download.keepSceneImages" label="保留已有剧照" />}
-      {downloadTrailer && <BoolField name="download.keepTrailer" label="保留已有预告片" />}
+      {shouldMountConditionalSettings(Boolean(downloadThumb), search) && (
+        <BoolField name="download.keepThumb" label="保留已有横版缩略图" />
+      )}
+      {shouldMountConditionalSettings(Boolean(downloadPoster), search) && (
+        <BoolField name="download.keepPoster" label="保留已有海报" />
+      )}
+      {shouldMountConditionalSettings(Boolean(downloadFanart), search) && (
+        <BoolField name="download.keepFanart" label="保留已有背景图" />
+      )}
+      {shouldMountConditionalSettings(Boolean(downloadSceneImages), search) && (
+        <BoolField name="download.keepSceneImages" label="保留已有剧照" />
+      )}
+      {shouldMountConditionalSettings(Boolean(downloadTrailer), search) && (
+        <BoolField name="download.keepTrailer" label="保留已有预告片" />
+      )}
       <NumberField
         name="download.sceneImageConcurrency"
         label="剧照下载并发"
@@ -310,13 +328,14 @@ export function AssetDownloadsSection() {
 }
 
 export function NfoSection() {
+  const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
   const generateNfo = Boolean(form.watch("download.generateNfo"));
 
   return (
     <>
       <BoolField name="download.generateNfo" label="生成 NFO" />
-      {generateNfo && (
+      {shouldMountConditionalSettings(generateNfo, search) && (
         <>
           <EnumField name="download.nfoNaming" label="NFO 文件命名" options={NFO_NAMING_OPTIONS} />
           <BoolField name="download.keepNfo" label="保留已有 NFO" />
@@ -457,6 +476,7 @@ export function NamingSection() {
 export function TranslateSection() {
   const [testing, setTesting] = useState(false);
   const form = useFormContext<FieldValues>();
+  const search = useOptionalSettingsSearch();
   const engine = useWatch({ control: form.control, name: "translate.engine" });
   const isLLM = engine !== "google";
 
@@ -513,7 +533,7 @@ export function TranslateSection() {
         )}
       </BaseField>
       <EnumField name="translate.engine" label="翻译引擎" options={TRANSLATE_ENGINE_OPTIONS} />
-      {isLLM && (
+      {shouldMountConditionalSettings(isLLM, search) && (
         <>
           <TextField name="translate.llmModelName" label="LLM 模型名称" />
           <SecretField

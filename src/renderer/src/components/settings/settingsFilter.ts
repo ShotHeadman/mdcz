@@ -34,9 +34,7 @@ function tokenize(query: string): string[] {
 }
 
 function entrySearchText(entry: FieldEntry): string {
-  const sectionLabel = SECTION_LABELS[entry.anchor];
-  const aliases = SECTION_FILTER_ALIASES[entry.anchor];
-  return normalize([entry.label, entry.description, ...entry.aliases, sectionLabel, ...aliases].join(" "));
+  return normalize([entry.label, entry.description].join(" "));
 }
 
 function matchesGroup(anchor: FieldAnchor, term: string): boolean {

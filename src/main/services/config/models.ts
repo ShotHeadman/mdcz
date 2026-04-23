@@ -388,3 +388,42 @@ export type DeepPartial<T> =
   T extends Array<infer U> ? Array<DeepPartial<U>> : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 
 export const defaultConfiguration: Configuration = configurationSchema.parse({});
+
+const siteConfigDefault = siteConfigSchema.parse({});
+
+export type ConfigurationPathDefault = { found: true; value: unknown } | { found: false };
+
+function getNestedConfigurationDefault(path: string): unknown {
+  const parts = path.split(".");
+  let cursor: unknown = defaultConfiguration;
+
+  for (const part of parts) {
+    if (cursor == null || typeof cursor !== "object" || !(part in cursor)) {
+      return undefined;
+    }
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+
+  return cursor;
+}
+
+export function getConfigurationPathDefault(path: string): ConfigurationPathDefault {
+  const staticDefault = getNestedConfigurationDefault(path);
+  if (staticDefault !== undefined) {
+    return { found: true, value: staticDefault };
+  }
+
+  const [root, collection, site, field, ...rest] = path.split(".");
+  if (
+    root === "scrape" &&
+    collection === "siteConfigs" &&
+    Boolean(site) &&
+    field === "customUrl" &&
+    rest.length === 0 &&
+    Object.hasOwn(siteConfigDefault, field)
+  ) {
+    return { found: true, value: siteConfigDefault.customUrl };
+  }
+
+  return { found: false };
+}

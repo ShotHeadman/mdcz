@@ -1,6 +1,7 @@
 import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
 import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
 import { SectionAnchor } from "@renderer/components/settings/SectionAnchor";
+import { AdvancedSettingsFooterContent } from "@renderer/components/settings/SettingsForm";
 import {
   SettingsSectionModeProvider,
   shouldRenderFieldInSectionMode,
@@ -24,6 +25,7 @@ import {
 import {
   buildAutoSaveFlatPayload,
   mergeConfigWithFlatPayload,
+  runLatestRevisionTask,
   SettingsEditorAutosaveProvider,
 } from "@renderer/hooks/useAutoSaveField";
 import { type ComponentProps, createElement, type ReactNode } from "react";
@@ -100,6 +102,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("naming.partStyle")?.visibility).toBe("public");
     expect(entry("scrape.siteConfigs.javdb.customUrl")).toMatchObject({
       anchor: "scrape",
+      surface: "internal",
       visibility: "public",
     });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
@@ -137,6 +140,10 @@ describe("settings editor metadata and filtering", () => {
       scrape: { siteConfigs: { javdb: { customUrl: "https://example.org" } } },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
+
+    expect(flattenConfig({ scrape: { sites: ["javdb"], siteConfigs: {} } })["scrape.siteConfigs.javdb.customUrl"]).toBe(
+      "",
+    );
   });
 
   it("applies PRD visibility rules for normal, advanced, modified, group, and deep-link browsing", () => {
@@ -172,6 +179,54 @@ describe("settings editor metadata and filtering", () => {
       fieldKey: null,
       sectionId: null,
     });
+  });
+
+  it("reveals normal conditional rows in search while preserving the advanced visibility gate", () => {
+    const hiddenDownloadChildSearch = buildSettingsBrowseState({
+      query: "保留已有横版缩略图",
+      showAdvanced: false,
+      modifiedKeys: new Set(["download.keepThumb"]),
+    });
+    expect(hiddenDownloadChildSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["download.keepThumb"]);
+
+    const hiddenLlmField = buildSettingsBrowseState({
+      query: "LLM 模型名称",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    expect(hiddenLlmField.visibleEntries.map((candidate) => candidate.key)).toEqual(["translate.llmModelName"]);
+
+    const hiddenAdvancedField = buildSettingsBrowseState({
+      query: "剧照下载并发",
+      showAdvanced: false,
+      modifiedKeys: new Set(["download.sceneImageConcurrency"]),
+    });
+    expect(hiddenAdvancedField.visibleEntries).toEqual([]);
+
+    const visibleAdvancedField = buildSettingsBrowseState({
+      query: "剧照下载并发",
+      showAdvanced: true,
+      modifiedKeys: new Set(["download.sceneImageConcurrency"]),
+    });
+    expect(visibleAdvancedField.visibleEntries.map((candidate) => candidate.key)).toEqual([
+      "download.sceneImageConcurrency",
+    ]);
+  });
+
+  it("does not invent top-level search matches for dialog-only site URL rows", () => {
+    const siteUrlSearch = buildSettingsBrowseState({
+      query: "javdb 站点地址",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const siteEditorSearch = buildSettingsBrowseState({
+      query: "启用站点与优先级",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+
+    expect(siteUrlSearch.visibleEntries).toEqual([]);
+    expect(siteEditorSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
   });
 
   it("offers only the supported query tokens and section-mode row split", () => {
@@ -211,6 +266,34 @@ describe("settings editor save and content helpers", () => {
     ).toEqual({
       scrape: { siteConfigs: { javdb: { customUrl: "https://mirror.example" } } },
     });
+  });
+
+  it("finalizes stale autosave revisions without running superseded work", async () => {
+    const revisions = new Map([["paths.mediaPath", 2]]);
+    const run = vi.fn(async () => {});
+    const finalize = vi.fn();
+
+    await runLatestRevisionTask({
+      revisions,
+      path: "paths.mediaPath",
+      revision: 1,
+      run,
+      finalize,
+    });
+
+    expect(run).not.toHaveBeenCalled();
+    expect(finalize).toHaveBeenCalledTimes(1);
+
+    await runLatestRevisionTask({
+      revisions,
+      path: "paths.mediaPath",
+      revision: 2,
+      run,
+      finalize,
+    });
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(finalize).toHaveBeenCalledTimes(2);
   });
 
   it("keeps buffered numeric and compact editor helper behavior stable", () => {
@@ -296,6 +379,26 @@ describe("settings editor render contracts", () => {
     expect(deferredHtml).not.toContain("Deferred content");
     expect(forceOpenHtml).toContain("Force-open content");
     expect(forceOpenHtml).not.toContain('data-deferred-placeholder="true"');
+  });
+
+  it("hides the advanced settings footer while search filters are active", () => {
+    const filteredHtml = renderToStaticMarkup(
+      createElement(AdvancedSettingsFooterContent, {
+        hasActiveFilters: true,
+        isAdvancedVisible: false,
+        onToggleShowAdvanced: noop,
+      }),
+    );
+    const browseHtml = renderToStaticMarkup(
+      createElement(AdvancedSettingsFooterContent, {
+        hasActiveFilters: false,
+        isAdvancedVisible: false,
+        onToggleShowAdvanced: noop,
+      }),
+    );
+
+    expect(filteredHtml).not.toContain("显示高级设置");
+    expect(browseHtml).toContain("显示高级设置");
   });
 
   it("renders the PRD split sections and keeps advanced-only content out of public rows", () => {

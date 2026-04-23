@@ -8,7 +8,13 @@ import { getProperty, mergeDeep, setProperty, toErrorMessage } from "@main/utils
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import { ConfigMigrationError, runMigrations } from "./migrator";
-import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "./models";
+import {
+  type Configuration,
+  configurationSchema,
+  type DeepPartial,
+  defaultConfiguration,
+  getConfigurationPathDefault,
+} from "./models";
 
 const ACTIVE_PROFILE_META_FILE = ".active-profile.json";
 const CONFIG_DIRECTORY_META_FILE = ".config-directory.json";
@@ -140,13 +146,13 @@ export class ConfigManager extends EventEmitter {
       return;
     }
 
-    const defaultValue = getProperty(defaultConfiguration as unknown as Record<string, unknown>, path);
-    if (defaultValue === undefined) {
+    const resetDefault = getConfigurationPathDefault(path);
+    if (!resetDefault.found) {
       throw new Error(`Path not found: ${path}`);
     }
 
     const next = JSON.parse(JSON.stringify(this.configuration)) as Record<string, unknown>;
-    setProperty(next, path, defaultValue);
+    setProperty(next, path, resetDefault.value);
 
     const parsed = configurationSchema.parse(next);
     this.configuration = parsed;

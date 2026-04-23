@@ -11,6 +11,7 @@ import {
   shouldRenderFieldInSectionMode,
   useSettingsSectionMode,
 } from "@/components/settings/SettingsSectionModeContext";
+import { isFieldManagedBySettingsSearch } from "@/components/settings/settingsRegistry";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FormControl, FormField, FormItem } from "@/components/ui/Form";
@@ -85,7 +86,8 @@ function ConnectedBaseField({ name, label, description, children, layout, commit
   const fieldLayout = useContext(ConfigFieldLayoutContext);
   const { status, resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
   const search = useOptionalSettingsSearch();
-  const visible = search ? search.isFieldVisible(name) : true;
+  const visible =
+    search && isFieldManagedBySettingsSearch(name) ? !search.hasActiveFilters || search.isFieldVisible(name) : true;
   const highlighted = search ? search.isFieldHighlighted(name) : false;
   const modified = search ? search.isFieldModified(name) : false;
   const resolvedLayout = layout ?? fieldLayout.layout;
