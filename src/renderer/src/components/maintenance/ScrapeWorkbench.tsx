@@ -6,11 +6,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Progress } from "@/components/ui/Progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/Resizable";
-import { cn } from "@/lib/utils";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 export interface ScrapeWorkbenchProps {
-  mediaPath: string;
   onPauseScrape: () => void;
   onResumeScrape: () => void;
   onStopScrape: () => void;
@@ -19,19 +17,18 @@ export interface ScrapeWorkbenchProps {
 }
 
 export default function ScrapeWorkbench({
-  mediaPath,
   onPauseScrape,
   onResumeScrape,
   onStopScrape,
   onRetryFailed,
   failedCount,
 }: ScrapeWorkbenchProps) {
-  const { isScraping, scrapeStatus, progress, currentFilePath, statusText } = useScrapeStore();
+  const { isScraping, scrapeStatus, progress } = useScrapeStore();
   const showControls = isScraping || failedCount > 0;
 
   return (
     <div className="relative h-full overflow-hidden bg-surface-canvas">
-      <div className="flex h-full min-h-0 p-4 md:p-6 lg:p-8">
+      <div className="flex h-full min-h-0 p-4">
         <ResizablePanelGroup orientation="horizontal" className="flex-1 gap-3">
           <ResizablePanel
             id="result-list"
@@ -64,21 +61,6 @@ export default function ScrapeWorkbench({
                 <span className="w-10 font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
               </div>
             )}
-
-            <div className="min-w-0 max-w-lg text-xs text-muted-foreground">
-              <div className="flex items-center gap-2 text-foreground/80">
-                <span
-                  className={cn(
-                    "h-1.5 w-1.5 rounded-full",
-                    isScraping ? "animate-pulse bg-foreground" : "bg-muted-foreground/40",
-                  )}
-                />
-                <span className="font-medium">{isScraping ? "正在处理" : "就绪"}</span>
-                {statusText && <span>{statusText}</span>}
-              </div>
-              {isScraping && currentFilePath && <div className="mt-1 truncate font-mono">{currentFilePath}</div>}
-              {!isScraping && mediaPath && <div className="mt-1 truncate font-mono">{mediaPath}</div>}
-            </div>
           </div>
 
           {isScraping && (

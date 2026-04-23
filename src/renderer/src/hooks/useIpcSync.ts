@@ -53,7 +53,6 @@ const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   const scrapeStore = useScrapeStore.getState();
   const activeState = status.state ?? (status.running ? "running" : "idle");
   const active = activeState !== "idle";
-  const pending = Math.max(status.totalFiles - status.completedFiles, 0);
   const shouldSyncProgressFromStatus = activeState === "idle" || activeState === "paused";
 
   scrapeStore.setScraping(active);
@@ -64,9 +63,6 @@ const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   }
 
   scrapeStore.setFailedCount(status.failedCount);
-  scrapeStore.setStatusText(
-    `${activeState === "paused" ? "已暂停 | " : activeState === "stopping" ? "正在停止 | " : ""}待处理: ${pending} | 成功: ${status.successCount} | 失败: ${status.failedCount} | 跳过: ${status.skippedCount}`,
-  );
 };
 
 export const createOverviewInvalidationTracker = () => {
@@ -170,12 +166,6 @@ export const useIpcSync = (queryClient: QueryClient) => {
         unsubscribers.push(
           ipc.on.log((payload) => {
             useLogStore.getState().addLog(createRuntimeLog(payload.level ?? "info", payload.text, payload.timestamp));
-          }),
-        );
-
-        unsubscribers.push(
-          ipc.on.scrapeInfo((payload) => {
-            useScrapeStore.getState().setCurrentFilePath(payload.fileInfo.filePath);
           }),
         );
 

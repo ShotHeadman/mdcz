@@ -55,8 +55,6 @@ export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set) => ({
   beginScan: (scanDir, excludeDirPath) =>
     set({
       scanDir,
-      candidates: [],
-      selectedPaths: [],
       scanStatus: "scanning",
       scanError: "",
       lastScannedDir: scanDir,

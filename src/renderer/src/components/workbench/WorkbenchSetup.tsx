@@ -97,6 +97,28 @@ const MEDIA_GRID_CLASS = "grid grid-cols-[auto_minmax(0,1fr)_84px_76px] gap-4";
 const MEDIA_ROW_CLASS =
   "w-full cursor-pointer items-start px-4 py-3 text-left transition-colors hover:bg-surface-low/70";
 const MEDIA_ROW_META_CLASS = "pt-0.5 font-numeric text-xs leading-5 text-muted-foreground";
+const SCAN_FEEDBACK_DELAY_MS = 500;
+
+function useDelayedFlag(active: boolean, delayMs: number) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setVisible(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setVisible(true);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [active, delayMs]);
+
+  return visible;
+}
 
 function MediaRow({
   candidate,
@@ -194,6 +216,7 @@ export default function WorkbenchSetup({
   const allSelected = candidates.length > 0 && selectedPaths.length === candidates.length;
   const someSelected = selectedPaths.length > 0 && selectedPaths.length < candidates.length;
   const scanning = scanStatus === "scanning";
+  const showScanFeedback = useDelayedFlag(scanning, SCAN_FEEDBACK_DELAY_MS);
   const primaryDisabled =
     startPending || scanning || scanStatus === "error" || candidates.length === 0 || selectedPaths.length === 0;
   const runSummary =
@@ -420,7 +443,7 @@ export default function WorkbenchSetup({
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-quiet bg-surface-floating">
+            <div className="relative overflow-hidden rounded-quiet bg-surface-floating" aria-busy={scanning}>
               <div
                 className={cn(
                   MEDIA_GRID_CLASS,
@@ -433,11 +456,22 @@ export default function WorkbenchSetup({
                 <span>大小</span>
               </div>
 
-              {scanning && (
+              {scanning && candidates.length === 0 && !showScanFeedback && <div className="min-h-64" />}
+
+              {scanning && candidates.length === 0 && showScanFeedback && (
                 <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                   <Loader2 className="h-8 w-8 animate-spin" />
                   <div className="text-sm font-medium">正在递归扫描媒体文件</div>
                   <div className="max-w-md break-all font-mono text-xs">{scanDir}</div>
+                </div>
+              )}
+
+              {scanning && candidates.length > 0 && showScanFeedback && (
+                <div className="pointer-events-none absolute inset-x-4 top-12 z-10 flex justify-center">
+                  <div className="flex items-center gap-2 rounded-quiet-capsule bg-surface-floating/95 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)] ring-1 ring-border/45 backdrop-blur">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    正在刷新目录
+                  </div>
                 </div>
               )}
 
@@ -469,14 +503,14 @@ export default function WorkbenchSetup({
                 </div>
               )}
 
-              {!scanning && candidates.length > 0 && (
-                <div className="max-h-[48vh] overflow-y-auto">
+              {candidates.length > 0 && (
+                <div className={cn("max-h-[48vh] overflow-y-auto transition-opacity", scanning && "opacity-55")}>
                   {candidates.map((candidate) => (
                     <MediaRow
                       key={candidate.path}
                       candidate={candidate}
                       selected={selectedPathSet.has(candidate.path)}
-                      disabled={startPending}
+                      disabled={startPending || scanning}
                       onToggle={() => toggleSelectedPath(candidate.path)}
                     />
                   ))}

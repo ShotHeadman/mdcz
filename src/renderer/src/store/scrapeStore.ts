@@ -14,16 +14,12 @@ interface ScrapeState {
   current: number;
   failedCount: number;
   results: ScrapeResult[];
-  currentFilePath: string;
-  statusText: string;
 
   setScraping: (isScraping: boolean) => void;
   setScrapeStatus: (status: "idle" | "running" | "stopping" | "paused") => void;
   updateProgress: (current: number, total: number) => void;
   addResult: (result: ScrapeResult) => void;
   clearResults: () => void;
-  setCurrentFilePath: (path: string) => void;
-  setStatusText: (text: string) => void;
   setFailedCount: (count: number) => void;
   resolveUncensoredResults: (updates: UncensoredConfirmResultItem[]) => void;
   reset: () => void;
@@ -50,8 +46,6 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
   current: 0,
   failedCount: 0,
   results: [],
-  currentFilePath: "",
-  statusText: "",
 
   setScraping: (isScraping) => set({ isScraping }),
   setScrapeStatus: (status) => set({ scrapeStatus: status }),
@@ -69,11 +63,7 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
     set({
       results: [],
       failedCount: 0,
-      statusText: "",
-      currentFilePath: "",
     }),
-  setCurrentFilePath: (path) => set({ currentFilePath: path }),
-  setStatusText: (text) => set({ statusText: text }),
   setFailedCount: (count) => set({ failedCount: Math.max(0, count) }),
   resolveUncensoredResults: (updates) =>
     set((state) => {
@@ -108,8 +98,6 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
       current: 0,
       failedCount: 0,
       results: [],
-      currentFilePath: "",
-      statusText: "",
     }),
 });
 

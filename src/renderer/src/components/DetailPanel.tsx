@@ -304,7 +304,6 @@ export function DetailPanel({
                           <span className="inline-flex items-center gap-1.5 font-numeric text-base font-semibold text-foreground">
                             <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                             {ratingLabel}
-                            <span className="text-xs font-medium text-muted-foreground">/10</span>
                           </span>
                         )}
                       </div>

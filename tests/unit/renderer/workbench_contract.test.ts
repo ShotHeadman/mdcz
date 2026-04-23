@@ -4,8 +4,9 @@ import {
   mergeMediaCandidates,
   resolveMediaCandidateScanPlan,
 } from "@renderer/components/workbench/mediaCandidateScan";
+import { useWorkbenchSetupStore } from "@renderer/store/workbenchSetupStore";
 import type { MediaCandidate } from "@shared/types";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
 const successDir = process.platform === "win32" ? "D:\\media\\JAV_output" : "/media/JAV_output";
@@ -37,7 +38,25 @@ const createCandidate = (path: string): MediaCandidate => ({
   relativeDirectory: "",
 });
 
+const resetWorkbenchSetupStore = () => {
+  useWorkbenchSetupStore.setState({
+    scanDir: "",
+    targetDir: "",
+    candidates: [],
+    selectedPaths: [],
+    scanStatus: "idle",
+    scanError: "",
+    lastScannedDir: "",
+    lastScannedExcludeDir: "",
+    supportedExtensions: [],
+  });
+};
+
 describe("workbench setup contract", () => {
+  beforeEach(() => {
+    resetWorkbenchSetupStore();
+  });
+
   it("plans normal scrape scans from configured paths and excludes output folders", () => {
     const plan = resolveMediaCandidateScanPlan("scrape", rootDir, successDir, createConfig());
 
@@ -68,5 +87,31 @@ describe("workbench setup contract", () => {
     expect(
       mergeMediaCandidates([createCandidate("D:\\media\\ABC-123.mp4")], [createCandidate("d:/MEDIA/abc-123.mp4")]),
     ).toEqual([createCandidate("D:\\media\\ABC-123.mp4")]);
+  });
+
+  it("keeps the current file list visible while a rescan is pending", () => {
+    const first = createCandidate(process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4");
+    const second = createCandidate(process.platform === "win32" ? "D:\\media\\XYZ-999.mp4" : "/media/XYZ-999.mp4");
+
+    useWorkbenchSetupStore.getState().applyScanResult(rootDir, "", [first, second], [".mp4"]);
+    useWorkbenchSetupStore.getState().toggleSelectedPath(second.path);
+    useWorkbenchSetupStore.getState().beginScan(rootDir, "");
+
+    const state = useWorkbenchSetupStore.getState();
+    expect(state.scanStatus).toBe("scanning");
+    expect(state.candidates).toEqual([first, second]);
+    expect(state.selectedPaths).toEqual([first.path]);
+  });
+
+  it("still clears the file list immediately when the scan directory changes", () => {
+    const candidate = createCandidate(process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4");
+
+    useWorkbenchSetupStore.getState().applyScanResult(rootDir, "", [candidate], [".mp4"]);
+    useWorkbenchSetupStore.getState().setScanDir(process.platform === "win32" ? "D:\\next-media" : "/next-media");
+
+    const state = useWorkbenchSetupStore.getState();
+    expect(state.candidates).toEqual([]);
+    expect(state.selectedPaths).toEqual([]);
+    expect(state.scanStatus).toBe("idle");
   });
 });

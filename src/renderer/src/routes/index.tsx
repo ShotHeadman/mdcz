@@ -42,27 +42,18 @@ function Index() {
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
   const configQ = useCurrentConfig();
 
-  const {
-    isScraping,
-    scrapeStatus,
-    results,
-    setScraping,
-    setScrapeStatus,
-    updateProgress,
-    setStatusText,
-    clearResults,
-  } = useScrapeStore(
-    useShallow((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      results: state.results,
-      setScraping: state.setScraping,
-      setScrapeStatus: state.setScrapeStatus,
-      updateProgress: state.updateProgress,
-      setStatusText: state.setStatusText,
-      clearResults: state.clearResults,
-    })),
-  );
+  const { isScraping, scrapeStatus, results, setScraping, setScrapeStatus, updateProgress, clearResults } =
+    useScrapeStore(
+      useShallow((state) => ({
+        isScraping: state.isScraping,
+        scrapeStatus: state.scrapeStatus,
+        results: state.results,
+        setScraping: state.setScraping,
+        setScrapeStatus: state.setScrapeStatus,
+        updateProgress: state.updateProgress,
+        clearResults: state.clearResults,
+      })),
+    );
   const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
   const maintenanceEntries = useMaintenanceEntryStore((state) => state.entries);
   const maintenancePreviewResults = useMaintenancePreviewStore((state) => state.previewResults);
@@ -237,7 +228,6 @@ function Index() {
     try {
       await stopScrape();
       setScrapeStatus("stopping");
-      setStatusText("正在停止...");
       toast.info("正在停止...");
     } catch (_error) {
       toast.error("停止失败");
@@ -248,7 +238,6 @@ function Index() {
     try {
       await pauseScrape();
       setScrapeStatus("paused");
-      setStatusText("已暂停");
       toast.info("任务已暂停");
     } catch (_error) {
       toast.error("暂停失败");
@@ -259,7 +248,6 @@ function Index() {
     try {
       await resumeScrape();
       setScrapeStatus("running");
-      setStatusText("已恢复");
       toast.success("任务已恢复");
     } catch (_error) {
       toast.error("恢复失败");
@@ -315,7 +303,6 @@ function Index() {
             />
           ) : workbenchMode === "scrape" ? (
             <ScrapeWorkbench
-              mediaPath={mediaPath}
               onPauseScrape={handlePauseScrape}
               onResumeScrape={handleResumeScrape}
               onStopScrape={handleStopScrape}
