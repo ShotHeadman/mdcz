@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, unlink } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import type { PosterBadgeDefinition } from "@main/utils/movieTags";
+import type { PosterTagBadgePosition } from "@shared/posterBadges";
 import sharp from "sharp";
 
 const BADGE_WIDTH_RATIO = 0.24;
@@ -26,6 +27,12 @@ interface BadgeOverlayLayout {
   badgeHeight: number;
   badgeGap: number;
   overlayHeight: number;
+}
+
+interface BadgeOverlayRenderResult {
+  svg: string;
+  width: number;
+  height: number;
 }
 
 const inferOutputExtension = (filePath: string, format: string | undefined): string => {
@@ -120,22 +127,43 @@ const buildBadgeOverlaySvg = (
   posterWidth: number,
   posterHeight: number,
   badges: readonly PosterBadgeDefinition[],
-): string => {
+): BadgeOverlayRenderResult => {
   const { badgeWidth, badgeHeight, badgeGap, overlayHeight } = resolveBadgeOverlayLayout(
     posterWidth,
     posterHeight,
     badges.length,
   );
 
-  return `
-    <svg width="${badgeWidth}" height="${overlayHeight}" viewBox="0 0 ${badgeWidth} ${overlayHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
-      ${badges.map((badge, index) => buildBadgeMarkup(badge, index, badgeWidth, badgeHeight, badgeGap)).join("")}
-    </svg>
-  `;
+  return {
+    svg: `
+      <svg width="${badgeWidth}" height="${overlayHeight}" viewBox="0 0 ${badgeWidth} ${overlayHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
+        ${badges.map((badge, index) => buildBadgeMarkup(badge, index, badgeWidth, badgeHeight, badgeGap)).join("")}
+      </svg>
+    `,
+    width: badgeWidth,
+    height: overlayHeight,
+  };
+};
+
+const resolveBadgeOverlayPlacement = (
+  posterWidth: number,
+  posterHeight: number,
+  overlayWidth: number,
+  overlayHeight: number,
+  position: PosterTagBadgePosition,
+): { left: number; top: number } => {
+  const left = position.endsWith("Right") ? Math.max(0, posterWidth - overlayWidth) : 0;
+  const top = position.startsWith("bottom") ? Math.max(0, posterHeight - overlayHeight) : 0;
+
+  return { left, top };
 };
 
 export class PosterWatermarkService {
-  async applyTagBadges(posterPath: string, badges: readonly PosterBadgeDefinition[]): Promise<void> {
+  async applyTagBadges(
+    posterPath: string,
+    badges: readonly PosterBadgeDefinition[],
+    position: PosterTagBadgePosition = "topLeft",
+  ): Promise<void> {
     if (badges.length === 0) {
       return;
     }
@@ -154,13 +182,14 @@ export class PosterWatermarkService {
     await mkdir(dirname(tempPath), { recursive: true });
 
     try {
-      const overlaySvg = buildBadgeOverlaySvg(width, height, badges);
+      const overlay = buildBadgeOverlaySvg(width, height, badges);
+      const placement = resolveBadgeOverlayPlacement(width, height, overlay.width, overlay.height, position);
       pipeline = pipeline
         .composite([
           {
-            input: Buffer.from(overlaySvg),
-            left: 0,
-            top: 0,
+            input: Buffer.from(overlay.svg),
+            left: placement.left,
+            top: placement.top,
           },
         ])
         .keepMetadata();

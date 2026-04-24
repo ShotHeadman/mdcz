@@ -2,6 +2,12 @@ import { isSharedDirectoryMode } from "@shared/assetNaming";
 import type { Configuration } from "@shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
+import {
+  POSTER_TAG_BADGE_POSITION_LABELS,
+  POSTER_TAG_BADGE_POSITION_OPTIONS,
+  POSTER_TAG_BADGE_TYPE_LABELS,
+  POSTER_TAG_BADGE_TYPE_OPTIONS,
+} from "@shared/posterBadges";
 import type { NamingPreviewItem } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RotateCcw } from "lucide-react";
@@ -60,6 +66,14 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "movie", label: "仅 movie.nfo" },
   { value: "filename", label: "仅 文件名.nfo" },
 ];
+const TAG_BADGE_TYPE_OPTIONS = POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({
+  value,
+  label: POSTER_TAG_BADGE_TYPE_LABELS[value],
+}));
+const TAG_BADGE_POSITION_OPTIONS: EnumOption[] = POSTER_TAG_BADGE_POSITION_OPTIONS.map((value) => ({
+  value,
+  label: POSTER_TAG_BADGE_POSITION_LABELS[value],
+}));
 
 export const NAMING_TEMPLATE_DESCRIPTION =
   "可用占位符：{actor} {actorFallbackPrefix} {number} {date} {title} {originaltitle} {studio} {publisher}";
@@ -90,6 +104,8 @@ const ASSET_DOWNLOAD_FIELD_KEYS = [
   "download.downloadThumb",
   "download.downloadPoster",
   "download.tagBadges",
+  "download.tagBadgeTypes",
+  "download.tagBadgePosition",
   "download.downloadFanart",
   "download.downloadSceneImages",
   "download.downloadTrailer",
@@ -267,16 +283,25 @@ export function AssetDownloadsSection() {
   const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
   const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
-  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
+  const [downloadThumb, downloadPoster, tagBadges, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
     "download.downloadThumb",
     "download.downloadPoster",
+    "download.tagBadges",
     "download.downloadFanart",
     "download.downloadSceneImages",
     "download.downloadTrailer",
-  ]) as [boolean | undefined, boolean | undefined, boolean | undefined, boolean | undefined, boolean | undefined];
+  ]) as [
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+    boolean | undefined,
+  ];
   const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
   const successFileMove = Boolean(form.watch("behavior.successFileMove"));
   const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
+  const showTagBadgeSettings = Boolean(downloadPoster) && Boolean(tagBadges);
 
   if (!hasRenderableFields) {
     return null;
@@ -295,8 +320,25 @@ export function AssetDownloadsSection() {
         <BoolField
           name="download.tagBadges"
           label="为封面添加标签角标"
-          description="按现有影片标签自动添加角标，当前支持中字、无码、破解、流出；仅处理本次新下载的海报。"
+          description="按现有影片标签自动添加角标；可配置启用类型与角落位置，仅处理本次新下载的海报。"
         />
+      )}
+      {shouldMountConditionalSettings(showTagBadgeSettings, search) && (
+        <>
+          <ChipArrayFieldWrapper
+            name="download.tagBadgeTypes"
+            label="角标类型"
+            description="选择允许自动渲染的内建角标类型。未选中的类型即使被识别到，也不会叠加到海报上。"
+            options={TAG_BADGE_TYPE_OPTIONS}
+            showBulkActions
+          />
+          <EnumField
+            name="download.tagBadgePosition"
+            label="角标位置"
+            description="多个角标会按顺序堆叠在同一个角落。"
+            options={TAG_BADGE_POSITION_OPTIONS}
+          />
+        </>
       )}
       <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />

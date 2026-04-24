@@ -1,6 +1,7 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
 import { configurationSchema } from "@main/services/config/models";
 import { ProxyType, Website } from "@shared/enums";
+import { DEFAULT_POSTER_TAG_BADGE_TYPES, POSTER_TAG_BADGE_TYPE_OPTIONS } from "@shared/posterBadges";
 import { describe, expect, it } from "vitest";
 
 describe("buildComputedConfiguration", () => {
@@ -54,6 +55,22 @@ describe("buildComputedConfiguration", () => {
     const computed = buildComputedConfiguration(configuration);
     expect(computed.networkTimeoutMs).toBe(25_000);
     expect(computed.networkRetryCount).toBe(4);
+  });
+
+  it("fills poster badge settings defaults and preserves explicit badge filters", () => {
+    const defaults = configurationSchema.parse({});
+    const customized = configurationSchema.parse({
+      download: {
+        tagBadgeTypes: ["subtitle", "leak"],
+        tagBadgePosition: "bottomRight",
+      },
+    });
+
+    expect(defaults.download.tagBadgeTypes).toEqual([...DEFAULT_POSTER_TAG_BADGE_TYPES]);
+    expect(defaults.download.tagBadgeTypes).not.toEqual([...POSTER_TAG_BADGE_TYPE_OPTIONS]);
+    expect(defaults.download.tagBadgePosition).toBe("topLeft");
+    expect(customized.download.tagBadgeTypes).toEqual(["subtitle", "leak"]);
+    expect(customized.download.tagBadgePosition).toBe("bottomRight");
   });
 
   it("enforces shared-directory rules, overview sources, and Jellyfin userId", () => {

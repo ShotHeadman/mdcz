@@ -35,6 +35,8 @@ describe("applyPosterTagBadgesIfNeeded", () => {
       download: {
         ...defaultConfiguration.download,
         tagBadges: true,
+        tagBadgeTypes: ["subtitle", "fourK"],
+        tagBadgePosition: "bottomRight",
       },
     });
     const watermarkService = {
@@ -48,7 +50,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
       fileInfo: createFileInfo({
         isSubtitled: true,
         subtitleTag: "中文字幕",
-        isUncensored: true,
+        resolution: "2160P",
       }),
       logger: {
         warn: vi.fn(),
@@ -58,7 +60,8 @@ describe("applyPosterTagBadgesIfNeeded", () => {
 
     expect(watermarkService.applyTagBadges).toHaveBeenCalledWith(
       "/tmp/poster.jpg",
-      expect.arrayContaining([expect.objectContaining({ label: "中字" }), expect.objectContaining({ label: "无码" })]),
+      [expect.objectContaining({ label: "中字" }), expect.objectContaining({ label: "4K" })],
+      "bottomRight",
     );
   });
 

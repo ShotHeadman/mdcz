@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
 import { BufferedFieldControl, parseBufferedNumberValue } from "./BufferedFieldControls";
-import { ChipArrayField } from "./ChipArrayField";
+import { ChipArrayField, type ChipArrayOption } from "./ChipArrayField";
 import { DurationField } from "./DurationField";
 import { OrderedSiteField } from "./OrderedSiteField";
 import { ServerPathField } from "./ServerPathField";
@@ -489,7 +489,7 @@ export function ChipArrayFieldWrapper({
   name: string;
   label: string;
   description?: string;
-  options?: string[];
+  options?: ChipArrayOption[];
   showBulkActions?: boolean;
 }) {
   return (

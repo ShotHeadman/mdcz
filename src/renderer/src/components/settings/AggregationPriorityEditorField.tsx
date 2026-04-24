@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
-import { normalizeEnabledSites, OrderedSiteFieldEditor } from "@/components/config-form/OrderedSiteField";
+import { OrderedSiteFieldEditor } from "@/components/config-form/OrderedSiteField";
 import { AutoSaveStatusIndicator } from "@/components/settings/AutoSaveStatusIndicator";
 import { buildOrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
@@ -20,6 +20,7 @@ import {
 import { FormItem } from "@/components/ui/Form";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
 import { cn } from "@/lib/utils";
+import { normalizeEnabledSites } from "@/utils/orderedSite";
 
 interface AggregationPriorityEditorFieldProps {
   options: string[];

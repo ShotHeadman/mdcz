@@ -2,24 +2,58 @@ import { classifyMovie } from "@main/utils/movieClassification";
 import { buildManagedMovieTags } from "@main/utils/movieMetadata";
 import { normalizeNfoLocalState, uncensoredChoiceToTag } from "@main/utils/nfoLocalState";
 import { resolveFileInfoSubtitleTag } from "@main/utils/subtitles";
+import { POSTER_TAG_BADGE_TYPE_OPTIONS, type PosterTagBadgeType } from "@shared/posterBadges";
 import type { CrawlerData, FileInfo, NfoLocalState } from "@shared/types";
 
 export interface PosterBadgeDefinition {
-  id: "subtitle" | "umr" | "leak" | "uncensored";
+  id: PosterTagBadgeType;
   label: string;
   colorStart: string;
   colorEnd: string;
   accentColor: string;
 }
 
-const POSTER_BADGE_DEFINITIONS: Array<PosterBadgeDefinition & { sourceTags: string[] }> = [
+interface PosterBadgeMatchContext {
+  classification: ReturnType<typeof classifyMovie> | undefined;
+  fileInfo: FileInfo | undefined;
+  tags: ReadonlySet<string>;
+}
+
+const hasAnyTag = (tags: ReadonlySet<string>, candidates: readonly string[]): boolean =>
+  candidates.some((candidate) => tags.has(candidate));
+
+const matchesResolution = (fileInfo: FileInfo | undefined, candidates: readonly string[]): boolean => {
+  const resolution = fileInfo?.resolution?.trim().toUpperCase();
+  if (!resolution) {
+    return false;
+  }
+
+  return candidates.includes(resolution);
+};
+
+const POSTER_BADGE_DEFINITIONS: Array<
+  PosterBadgeDefinition & { matches: (context: PosterBadgeMatchContext) => boolean }
+> = [
   {
     id: "subtitle",
     label: "中字",
     colorStart: "#F04A3A",
     colorEnd: "#B91C1C",
     accentColor: "#FFD5D0",
-    sourceTags: ["中文字幕", "字幕", "中字"],
+    matches: ({ tags }) => hasAnyTag(tags, ["中文字幕", "字幕", "中字"]),
+  },
+  {
+    id: "censored",
+    label: "有码",
+    colorStart: "#0F766E",
+    colorEnd: "#115E59",
+    accentColor: "#CCFBF1",
+    matches: ({ classification, fileInfo }) =>
+      fileInfo !== undefined &&
+      classification !== undefined &&
+      !classification.uncensored &&
+      !classification.umr &&
+      !classification.leak,
   },
   {
     id: "umr",
@@ -27,7 +61,7 @@ const POSTER_BADGE_DEFINITIONS: Array<PosterBadgeDefinition & { sourceTags: stri
     colorStart: "#E77A0C",
     colorEnd: "#B45309",
     accentColor: "#FDE5C2",
-    sourceTags: ["破解"],
+    matches: ({ tags }) => tags.has("破解"),
   },
   {
     id: "leak",
@@ -35,7 +69,7 @@ const POSTER_BADGE_DEFINITIONS: Array<PosterBadgeDefinition & { sourceTags: stri
     colorStart: "#2B6CB0",
     colorEnd: "#1E3A5F",
     accentColor: "#D6E8FF",
-    sourceTags: ["流出"],
+    matches: ({ tags }) => tags.has("流出"),
   },
   {
     id: "uncensored",
@@ -43,7 +77,31 @@ const POSTER_BADGE_DEFINITIONS: Array<PosterBadgeDefinition & { sourceTags: stri
     colorStart: "#505B67",
     colorEnd: "#1F2937",
     accentColor: "#E5E7EB",
-    sourceTags: ["无码"],
+    matches: ({ tags }) => tags.has("无码"),
+  },
+  {
+    id: "fullHd",
+    label: "1080P",
+    colorStart: "#6D28D9",
+    colorEnd: "#5B21B6",
+    accentColor: "#E9D5FF",
+    matches: ({ fileInfo }) => matchesResolution(fileInfo, ["1080P"]),
+  },
+  {
+    id: "fourK",
+    label: "4K",
+    colorStart: "#166534",
+    colorEnd: "#14532D",
+    accentColor: "#DCFCE7",
+    matches: ({ fileInfo }) => matchesResolution(fileInfo, ["4K", "2160P"]),
+  },
+  {
+    id: "eightK",
+    label: "8K",
+    colorStart: "#7C2D12",
+    colorEnd: "#9A3412",
+    accentColor: "#FFEDD5",
+    matches: ({ fileInfo }) => matchesResolution(fileInfo, ["8K"]),
   },
 ];
 
@@ -92,10 +150,14 @@ export const resolvePosterBadgeDefinitions = (
   data: CrawlerData,
   fileInfo: FileInfo | undefined,
   localState: NfoLocalState | undefined,
+  enabledTypes: readonly PosterTagBadgeType[] = POSTER_TAG_BADGE_TYPE_OPTIONS,
 ): PosterBadgeDefinition[] => {
   const tags = new Set(buildMovieTags(data, fileInfo, localState));
+  const enabledTypeSet = new Set(enabledTypes);
+  const normalizedLocalState = normalizeNfoLocalState(localState);
+  const classification = fileInfo ? classifyMovie(fileInfo, data, normalizedLocalState) : undefined;
 
-  return POSTER_BADGE_DEFINITIONS.filter((definition) => definition.sourceTags.some((tag) => tags.has(tag))).map(
-    ({ sourceTags: _sourceTags, ...definition }) => definition,
-  );
+  return POSTER_BADGE_DEFINITIONS.filter(
+    (definition) => enabledTypeSet.has(definition.id) && definition.matches({ tags, fileInfo, classification }),
+  ).map(({ matches: _matches, ...definition }) => definition);
 };

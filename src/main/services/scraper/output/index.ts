@@ -108,7 +108,12 @@ export const applyPosterTagBadgesIfNeeded = async (input: {
     return input.assets;
   }
 
-  const badges = resolvePosterBadgeDefinitions(input.crawlerData, input.fileInfo, input.localState);
+  const badges = resolvePosterBadgeDefinitions(
+    input.crawlerData,
+    input.fileInfo,
+    input.localState,
+    input.config.download.tagBadgeTypes,
+  );
   if (badges.length === 0) {
     return input.assets;
   }
@@ -117,7 +122,11 @@ export const applyPosterTagBadgesIfNeeded = async (input: {
   input.signalService?.showLogText(`[${input.fileInfo.number}] Applying poster tag badges...`);
 
   try {
-    await (input.watermarkService ?? posterWatermarkService).applyTagBadges(posterPath, badges);
+    await (input.watermarkService ?? posterWatermarkService).applyTagBadges(
+      posterPath,
+      badges,
+      input.config.download.tagBadgePosition,
+    );
   } catch (error) {
     input.logger.warn(`Failed to apply poster tag badges for ${posterPath}: ${toErrorMessage(error)}`);
   }
