@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, BrushCleaning } from "lucide-react";
+import { BrushCleaning } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 export function OverviewMaintenanceCard() {
@@ -23,7 +23,6 @@ export function OverviewMaintenanceCard() {
         onClick={() => navigate({ to: "/", search: { intent: "maintenance" } })}
       >
         去工作台
-        <ArrowRight className="h-4 w-4" />
       </Button>
     </section>
   );

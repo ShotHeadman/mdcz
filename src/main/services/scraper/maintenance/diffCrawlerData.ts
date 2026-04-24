@@ -55,7 +55,7 @@ const ARRAY_VALUE_FIELDS: DiffableField[] = [
   { key: "genres", label: "标签" },
 ];
 
-const IMAGE_COLLECTION_FIELDS: DiffableField[] = [{ key: "scene_images", label: "场景图" }];
+const IMAGE_COLLECTION_FIELDS: DiffableField[] = [{ key: "scene_images", label: "剧照" }];
 
 const IMAGE_ASSET_FIELD_MAP = {
   thumb_url: "thumb",

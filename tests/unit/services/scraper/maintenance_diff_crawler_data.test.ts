@@ -287,7 +287,7 @@ describe("diffCrawlerData", () => {
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "imageCollection",
       field: "scene_images",
-      label: "场景图",
+      label: "剧照",
       oldValue: ["https://example.com/current-scene.jpg"],
       newValue: ["https://example.com/current-scene.jpg"],
       changed: false,
@@ -321,7 +321,7 @@ describe("diffCrawlerData", () => {
     expect(result.fieldDiffs).toContainEqual({
       kind: "imageCollection",
       field: "scene_images",
-      label: "场景图",
+      label: "剧照",
       oldValue: ["https://example.com/old-scene.jpg"],
       newValue: ["https://example.com/new-scene.jpg"],
       changed: true,
@@ -348,7 +348,7 @@ describe("diffCrawlerData", () => {
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "imageCollection",
       field: "scene_images",
-      label: "场景图",
+      label: "剧照",
       oldValue: ["https://example.com/scene-a.jpg"],
       newValue: ["https://example.com/scene-a.jpg"],
       changed: false,

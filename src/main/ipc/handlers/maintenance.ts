@@ -15,6 +15,8 @@ export const createMaintenanceHandlers = (
   | typeof IpcChannel.Maintenance_Preview
   | typeof IpcChannel.Maintenance_Execute
   | typeof IpcChannel.Maintenance_Stop
+  | typeof IpcChannel.Maintenance_Pause
+  | typeof IpcChannel.Maintenance_Resume
   | typeof IpcChannel.Maintenance_GetStatus
 > => {
   const { maintenanceService } = context;
@@ -87,6 +89,24 @@ export const createMaintenanceHandlers = (
     [IpcChannel.Maintenance_Stop]: t.procedure.action(async () => {
       try {
         maintenanceService.stop();
+        return { success: true as const };
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
+
+    [IpcChannel.Maintenance_Pause]: t.procedure.action(async () => {
+      try {
+        maintenanceService.pause();
+        return { success: true as const };
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
+
+    [IpcChannel.Maintenance_Resume]: t.procedure.action(async () => {
+      try {
+        maintenanceService.resume();
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);

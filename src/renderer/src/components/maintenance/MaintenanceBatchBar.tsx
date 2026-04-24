@@ -1,11 +1,12 @@
 import { toErrorMessage } from "@shared/error";
 import type { MaintenancePreviewItem } from "@shared/types";
-import { Play, RefreshCw, StopCircle } from "lucide-react";
+import { PauseCircle, Play, StopCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { ipc } from "@/client/ipc";
-import { getMaintenancePresetMeta, MAINTENANCE_PRESET_OPTIONS } from "@/components/maintenance/presetMeta";
+import { getMaintenancePresetMeta } from "@/components/maintenance/presetMeta";
+import { ReturnToWorkbenchSetupButton } from "@/components/shared/ReturnToWorkbenchSetupButton";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -15,57 +16,51 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { Progress } from "@/components/ui/Progress";
 import { buildMaintenanceCommitItem } from "@/lib/maintenance";
-import { buildMaintenanceEntryViewModel, countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
+import { buildMaintenanceEntryViewModel } from "@/lib/maintenanceGrouping";
 import { cn } from "@/lib/utils";
 import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
 import {
   applyMaintenancePreviewResult,
-  applyMaintenanceScanResult,
   beginMaintenanceExecution,
   beginMaintenancePreviewRequest,
-  changeMaintenancePreset,
+  cancelMaintenancePreviewFlow,
+  resetMaintenanceSession,
   setMaintenancePreviewPending,
 } from "@/store/maintenanceSession";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 interface MaintenanceBatchBarProps {
-  mediaPath?: string;
   className?: string;
+  mediaPath?: string;
 }
-
-const formatPreviewStatusText = (readyCount: number, blockedCount: number): string => {
-  return blockedCount > 0
-    ? `预览完成 · 可执行 ${readyCount} · 阻塞 ${blockedCount}`
-    : `预览完成 · 可执行 ${readyCount} 项`;
-};
 
 const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 };
 
-export default function MaintenanceBatchBar({ mediaPath, className }: MaintenanceBatchBarProps) {
+export default function MaintenanceBatchBar({ className }: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
-  const { entries, selectedIds, presetId, lastScannedDir, currentPath, setCurrentPath } = useMaintenanceEntryStore(
+  const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
       presetId: state.presetId,
-      lastScannedDir: state.lastScannedDir,
       currentPath: state.currentPath,
       setCurrentPath: state.setCurrentPath,
     })),
   );
-  const { executionStatus, itemResults, setExecutionStatus, setStatusText, rollbackExecutionStart } =
+  const { executionStatus, progressValue, itemResults, setExecutionStatus, setProgress, rollbackExecutionStart } =
     useMaintenanceExecutionStore(
       useShallow((state) => ({
         executionStatus: state.executionStatus,
+        progressValue: state.progressValue,
         itemResults: state.itemResults,
         setExecutionStatus: state.setExecutionStatus,
-        setStatusText: state.setStatusText,
+        setProgress: state.setProgress,
         rollbackExecutionStart: state.rollbackExecutionStart,
       })),
     );
@@ -85,9 +80,13 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const presetMeta = getMaintenancePresetMeta(presetId);
   const supportsExecution = presetMeta.supportsExecution !== false;
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
-  const executing = executionStatus === "executing" || executionStatus === "stopping";
+  const activeExecution = executionStatus !== "idle";
+  const paused = executionStatus === "paused";
+  const stopping = executionStatus === "stopping";
   const scanning = executionStatus === "scanning";
   const previewing = executionStatus === "previewing";
+  const canPauseMaintenance =
+    executionStatus === "previewing" || executionStatus === "executing" || executionStatus === "paused";
   const hasPreviewResults = Object.keys(previewResults).length > 0;
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedIds.includes(entry.fileId)),
@@ -105,59 +104,14 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const entriesCount = allEntriesViewModel.displayCount;
   const selectedCount = selectedEntriesViewModel.displayCount;
   const previewSummary = selectedEntriesViewModel.previewSummary;
-  const previewInProgress = previewPending || previewing;
-  const previewActionLabel = previewInProgress
-    ? "正在预览..."
-    : usesDiffView
-      ? hasPreviewResults
-        ? "刷新对比"
-        : "生成对比"
-      : hasPreviewResults
-        ? "执行整理"
-        : "生成整理预览";
-
-  const resolveScanDirectory = async (): Promise<string | null> => {
-    const preferred = lastScannedDir || mediaPath?.trim() || "";
-    if (preferred) {
-      return preferred;
-    }
-
-    const selection = await ipc.file.browse("directory");
-    const path = selection.paths?.[0]?.trim();
-    return path || null;
-  };
-
-  const handleScan = async () => {
-    if (isScraping) {
-      toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
-      return;
-    }
-
-    const dirPath = await resolveScanDirectory();
-    if (!dirPath) {
-      toast.info("未选择维护目录");
-      return;
-    }
-
-    setExecuteDialogOpen(false);
-    setExecutionStatus("scanning");
-    setCurrentPath(dirPath);
-    setStatusText("正在扫描目录...");
-
-    try {
-      const result = await ipc.maintenance.scan(dirPath);
-      applyMaintenanceScanResult(result.entries, dirPath);
-      if (result.entries.length === 0) {
-        setStatusText("未发现可维护项目");
-      }
-      toast.success(`扫描完成，共发现 ${countMaintenanceDisplayItems(result.entries)} 个项目`);
-    } catch (error) {
-      setExecutionStatus("idle");
-      setCurrentPath(dirPath);
-      setStatusText("扫描失败");
-      toast.error(`扫描失败: ${toErrorMessage(error)}`);
-    }
-  };
+  const canReturnToSetup = !scanning && !previewPending;
+  const previewActionLabel = usesDiffView
+    ? hasPreviewResults
+      ? "刷新对比"
+      : "生成对比"
+    : hasPreviewResults
+      ? "执行整理"
+      : "生成整理预览";
 
   const handlePreview = async () => {
     if (!supportsExecution) {
@@ -175,7 +129,8 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     }
 
     beginMaintenancePreviewRequest();
-    setStatusText(`正在预览 ${countMaintenanceDisplayItems(selectedEntries)} 项...`);
+    setExecutionStatus("previewing");
+    setProgress(0, 0, selectedEntries.length);
     const requestedPresetId = presetId;
     const requestedEntries = selectedEntries;
 
@@ -194,12 +149,12 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       }
 
       applyMaintenancePreviewResult(preview);
-      const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
-      const nextPreviewSummary = buildMaintenanceEntryViewModel(requestedEntries, {
-        previewResults: previewMap,
-      }).previewSummary;
-      setStatusText(formatPreviewStatusText(nextPreviewSummary.readyCount, nextPreviewSummary.blockedCount));
+      setExecutionStatus("idle");
       if (usesDiffView) {
+        const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
+        const nextPreviewSummary = buildMaintenanceEntryViewModel(requestedEntries, {
+          previewResults: previewMap,
+        }).previewSummary;
         toast.info(
           nextPreviewSummary.readyCount > 0
             ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
@@ -221,7 +176,12 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       }
 
       setMaintenancePreviewPending(false);
-      setStatusText("预览失败");
+      if (toErrorMessage(error) === "Operation aborted") {
+        cancelMaintenancePreviewFlow();
+        return null;
+      }
+
+      setExecutionStatus("idle");
       toast.error(`预览失败: ${toErrorMessage(error)}`);
       return null;
     }
@@ -257,20 +217,37 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     }
 
     const displayCount = buildMaintenanceEntryViewModel(executableEntries).displayCount;
-    beginMaintenanceExecution(
-      commitItems.map((item) => item.entry.fileId),
-      displayCount,
-    );
+    beginMaintenanceExecution(commitItems.map((item) => item.entry.fileId));
     setCurrentPath(commitItems[0]?.entry.fileInfo.filePath ?? currentPath);
-    setStatusText(`正在执行 ${displayCount} 项...`);
 
     try {
       await ipc.maintenance.execute(commitItems, presetId);
       toast.success(`维护任务已启动，共 ${displayCount} 项`);
     } catch (error) {
       rollbackExecutionStart();
-      setStatusText("启动失败");
       toast.error(`启动失败: ${toErrorMessage(error)}`);
+    }
+  };
+
+  const handlePauseToggle = async () => {
+    if (!canPauseMaintenance) {
+      return;
+    }
+
+    try {
+      const pausingPreview = previewing;
+      if (paused) {
+        await ipc.maintenance.resume();
+        setExecutionStatus(previewPending ? "previewing" : "executing");
+        toast.success(previewPending ? "维护预览已恢复" : "维护任务已恢复");
+        return;
+      }
+
+      await ipc.maintenance.pause();
+      setExecutionStatus("paused");
+      toast.info(pausingPreview ? "维护预览已暂停" : "维护任务已暂停");
+    } catch (error) {
+      toast.error(`${paused ? "恢复" : "暂停"}失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -278,57 +255,27 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     try {
       await ipc.maintenance.stop();
       setExecutionStatus("stopping");
-      setStatusText("正在停止维护操作...");
-      toast.info("正在停止维护操作...");
+      toast.info("正在停止维护流程...");
     } catch (error) {
       toast.error(`停止失败: ${toErrorMessage(error)}`);
     }
   };
 
+  const handleReturnToSetup = () => {
+    setExecuteDialogOpen(false);
+    resetMaintenanceSession();
+  };
+
   return (
-    <div className={cn("flex flex-col items-end gap-1.5", className)}>
-      <div className="flex flex-wrap items-start justify-end gap-2">
-        <div className="flex flex-col gap-1.5">
-          <div className="flex h-9 items-center gap-2 rounded-lg border bg-background px-3">
-            <span className="text-xs font-medium text-muted-foreground">预设</span>
-            <Select
-              value={presetId}
-              onValueChange={(value) => {
-                changeMaintenancePreset(value as typeof presetId);
-              }}
-              disabled={executing}
-            >
-              <SelectTrigger className="border-0 bg-transparent px-0 shadow-none focus:ring-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MAINTENANCE_PRESET_OPTIONS.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {!executing && entriesCount > 0 && (
-          <div className="hidden h-9 items-center rounded-lg border bg-background px-3 text-xs text-muted-foreground xl:flex">
-            已选 {selectedCount}/{entriesCount}
-          </div>
-        )}
-
-        {!executing ? (
+    <>
+      <div className={cn("flex w-fit max-w-full flex-wrap items-center justify-center gap-2", className)}>
+        {!activeExecution ? (
           <>
-            <Button
-              variant="outline"
-              onClick={handleScan}
-              disabled={isScraping || scanning || previewInProgress}
-              className="h-9 rounded-lg px-4"
-            >
-              <RefreshCw className={cn("mr-2 h-4 w-4", scanning && "animate-spin")} />
-              {entriesCount > 0 ? "重新扫描" : "扫描目录"}
-            </Button>
+            <ReturnToWorkbenchSetupButton
+              disabled={!canReturnToSetup}
+              dialogDescription="返回后会清空当前维护列表、预览结果和执行记录。确定继续吗？"
+              onConfirm={handleReturnToSetup}
+            />
             {supportsExecution && (
               <Button
                 onClick={async () => {
@@ -342,14 +289,10 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                     toast.info("预览完成，请在右侧路径计划中确认后执行。");
                   }
                 }}
-                disabled={isScraping || scanning || previewInProgress || entriesCount === 0 || selectedCount === 0}
+                disabled={isScraping || scanning || previewPending || entriesCount === 0 || selectedCount === 0}
                 className="h-9 rounded-lg px-4"
               >
-                {previewInProgress ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="mr-2 h-4 w-4" />
-                )}
+                <Play className="mr-2 h-4 w-4" />
                 {previewActionLabel}
               </Button>
             )}
@@ -357,7 +300,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <Button
                 variant="secondary"
                 onClick={() => setExecuteDialogOpen(true)}
-                disabled={scanning || previewInProgress || !hasPreviewResults || previewSummary.readyCount === 0}
+                disabled={scanning || previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
                 className="h-9 rounded-lg px-4"
               >
                 数据替换
@@ -365,13 +308,40 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             )}
           </>
         ) : (
-          <Button variant="destructive" onClick={() => setStopDialogOpen(true)} className="h-9 rounded-lg px-4">
-            <StopCircle className="mr-2 h-4 w-4" />
-            停止执行
-          </Button>
+          <>
+            <div className="flex min-w-44 items-center gap-3 px-1">
+              <Progress value={progressValue} className="h-1.5 w-28 md:w-36" />
+              <span className="w-10 font-numeric text-[11px] font-bold tabular-nums text-foreground">
+                {Math.round(progressValue)}%
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-quiet-capsule"
+              onClick={handlePauseToggle}
+              disabled={!canPauseMaintenance || stopping}
+              aria-label={paused ? "恢复维护操作" : "暂停维护操作"}
+              title={paused ? "恢复" : "暂停"}
+            >
+              {paused ? <Play className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon-sm"
+              className="rounded-quiet-capsule"
+              onClick={() => setStopDialogOpen(true)}
+              disabled={stopping}
+              aria-label="停止维护操作"
+              title="停止"
+            >
+              <StopCircle className="h-4 w-4" />
+            </Button>
+          </>
         )}
       </div>
-      <div className="flex justify-end px-1 text-[11px] leading-4 text-muted-foreground">{presetMeta.description}</div>
 
       <Dialog open={usesDiffView && executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
         <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">
@@ -387,7 +357,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <div className="min-w-0 space-y-4 text-sm">
               <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2">
                 <span className="text-muted-foreground">预设</span>
-                <span className="min-w-0 break-words">{presetMeta.label}</span>
+                <span className="min-w-0 wrap-break-word">{presetMeta.label}</span>
                 <span className="text-muted-foreground">选中</span>
                 <span>
                   {selectedCount} / {entriesCount} 项
@@ -396,17 +366,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                 <span>{previewSummary.readyCount} 项</span>
                 <span className="text-muted-foreground">阻塞</span>
                 <span>{previewSummary.blockedCount} 项</span>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-muted-foreground">此操作将:</div>
-                <div className="space-y-1 min-w-0">
-                  {presetMeta.executeSummary.map((line) => (
-                    <div key={line} className="break-words">
-                      · {line}
-                    </div>
-                  ))}
-                </div>
               </div>
 
               <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
@@ -500,7 +459,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>停止维护操作</DialogTitle>
-            <DialogDescription>确定要停止当前维护操作吗？已完成的项目不受影响。</DialogDescription>
+            <DialogDescription>确定要停止当前维护流程吗？已完成的项目不受影响。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStopDialogOpen(false)}>
@@ -518,6 +477,6 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

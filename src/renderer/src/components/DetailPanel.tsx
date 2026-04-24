@@ -180,7 +180,6 @@ export function DetailPanel({
         <div className="shrink-0 px-5 py-4 md:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">数据对比</div>
               <h2 className="mt-2 text-xl font-extrabold tracking-tight text-foreground">{item.number}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {compare?.titleOverride ?? item.title ?? item.number}
@@ -423,23 +422,24 @@ export function DetailPanel({
       <Dialog open={thumbPreviewOpen} onOpenChange={setThumbPreviewOpen}>
         <DialogContent
           showCloseButton={false}
-          className="max-h-[90vh] max-w-[90vw] overflow-hidden border-0 bg-black/95 p-0"
+          className="flex w-fit max-w-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent p-0 shadow-none backdrop-blur-none sm:max-w-none"
         >
           <DialogTitle className="sr-only">缩略图预览</DialogTitle>
           <DialogDescription className="sr-only">查看当前缩略图的大图预览。</DialogDescription>
           <button
             type="button"
             onClick={() => setThumbPreviewOpen(false)}
+            aria-label="关闭缩略图预览"
             className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
           >
             <X className="h-4 w-4" />
           </button>
-          <div className="flex h-[80vh] w-full items-center justify-center p-4">
+          <div className="flex max-h-[82vh] max-w-[90vw] items-center justify-center">
             {shouldShowThumb ? (
               <img
                 src={thumbSrc}
                 alt={`${posterAlt} 缩略图大图预览`}
-                className="max-h-full max-w-full object-contain"
+                className="block max-h-[82vh] max-w-[90vw] object-contain"
                 onError={handleThumbError}
               />
             ) : (

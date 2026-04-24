@@ -15,7 +15,7 @@ export function SceneImageGallery({
   images,
   maxThumbnails = 10,
   baseDir,
-  label = "场景预览",
+  label = "预览",
   variant = "compact",
 }: SceneImageGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState(-1);
@@ -129,16 +129,17 @@ export function SceneImageGallery({
       >
         <DialogContent
           showCloseButton={false}
-          className="max-w-[90vw] max-h-[90vh] p-0 border-0 bg-black/95 overflow-hidden"
+          className="flex w-fit max-w-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent p-0 shadow-none backdrop-blur-none sm:max-w-none"
         >
-          <DialogTitle className="sr-only">场景图预览</DialogTitle>
+          <DialogTitle className="sr-only">剧照预览</DialogTitle>
           <DialogDescription className="sr-only">
-            查看场景图大图预览，当前第 {lightboxIndex + 1} 张，共 {images.length} 张，可使用左右方向键切换。
+            查看剧照大图预览，当前第 {lightboxIndex + 1} 张，共 {images.length} 张，可使用左右方向键切换。
           </DialogDescription>
 
           <button
             type="button"
             onClick={closeLightbox}
+            aria-label="关闭剧照预览"
             className="absolute top-3 right-3 z-10 h-8 w-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition-colors"
           >
             <X className="h-4 w-4" />
@@ -153,6 +154,7 @@ export function SceneImageGallery({
               <button
                 type="button"
                 onClick={goPrev}
+                aria-label="上一张剧照"
                 className="absolute left-2 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center transition-colors"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -160,6 +162,7 @@ export function SceneImageGallery({
               <button
                 type="button"
                 onClick={goNext}
+                aria-label="下一张剧照"
                 className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center transition-colors"
               >
                 <ChevronRight className="h-5 w-5" />
@@ -167,7 +170,7 @@ export function SceneImageGallery({
             </>
           )}
 
-          <div className="flex items-center justify-center w-full h-[80vh]">
+          <div className="flex max-h-[82vh] max-w-[90vw] items-center justify-center">
             {lightboxIndex >= 0 && lightboxIndex < images.length && (
               <LightboxImage src={images[lightboxIndex]} index={lightboxIndex} baseDir={baseDir} />
             )}
@@ -189,7 +192,9 @@ function LightboxImage({ src, index, baseDir }: { src: string; index: number; ba
     );
   }
 
-  return <img src={resolvedSrc} alt={`Scene ${index + 1}`} className="max-w-full max-h-full object-contain" />;
+  return (
+    <img src={resolvedSrc} alt={`Scene ${index + 1}`} className="block max-h-[82vh] max-w-[90vw] object-contain" />
+  );
 }
 
 function LazyImage({
@@ -208,14 +213,40 @@ function LazyImage({
   const resolvedSrc = useResolvedImageSrc([src], baseDir);
 
   useEffect(() => {
-    if (resolvedSrc) {
-      setLoaded(false);
-      setError(false);
+    setLoaded(false);
+    setError(false);
+
+    if (!resolvedSrc) {
       return;
     }
 
-    setLoaded(false);
-    setError(false);
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (!cancelled) {
+        setLoaded(true);
+      }
+    };
+    probe.onerror = () => {
+      if (!cancelled) {
+        setError(true);
+      }
+    };
+    probe.src = resolvedSrc;
+
+    if (probe.complete) {
+      if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
+        setLoaded(true);
+      } else {
+        setError(true);
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      probe.onload = null;
+      probe.onerror = null;
+    };
   }, [resolvedSrc]);
 
   if (error || !resolvedSrc) {
@@ -236,6 +267,7 @@ function LazyImage({
     >
       {!loaded && <div className="h-full w-full animate-pulse bg-muted/30" />}
       <img
+        key={resolvedSrc}
         src={resolvedSrc}
         alt={alt}
         onLoad={() => setLoaded(true)}

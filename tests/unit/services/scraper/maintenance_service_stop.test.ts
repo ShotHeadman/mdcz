@@ -7,7 +7,7 @@ import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanSe
 import { MaintenanceFileScraper } from "@main/services/scraper/maintenance/MaintenanceFileScraper";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { Website } from "@shared/enums";
-import type { MaintenanceCommitItem, MaintenanceItemResult } from "@shared/types";
+import type { MaintenanceCommitItem, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class CaptureSignalService extends SignalService {
@@ -162,6 +162,95 @@ describe("MaintenanceService stop flow", () => {
     });
   });
 
+  it("pauses queued maintenance work and resumes it later", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        threadNumber: 1,
+      },
+    });
+    const firstTask = deferred<MaintenanceItemResult>();
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    vi.spyOn(MaintenanceFileScraper.prototype, "processFile")
+      .mockImplementationOnce(() => firstTask.promise as never)
+      .mockImplementationOnce(
+        async (_entry) =>
+          ({
+            status: "success",
+            fileId: "abp-457",
+            crawlerData: {
+              title: "ABP-457",
+              number: "ABP-457",
+              actors: [],
+              genres: [],
+              scene_images: [],
+              website: Website.DMM,
+            },
+          }) as MaintenanceItemResult,
+      );
+
+    await service.execute([createCommitItem("abp-456"), createCommitItem("abp-457")], "organize_files");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    service.pause();
+    expect(service.getStatus().state).toBe("paused");
+
+    firstTask.resolve({
+      status: "success",
+      fileId: "abp-456",
+      crawlerData: {
+        title: "ABP-456",
+        number: "ABP-456",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM,
+      },
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(signalService.itemResults).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fileId: "abp-457",
+          status: "processing",
+        }),
+      ]),
+    );
+
+    service.resume();
+    expect(service.getStatus().state).toBe("executing");
+
+    await waitForIdle(service);
+
+    expect(signalService.itemResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fileId: "abp-456",
+          status: "success",
+        }),
+        expect.objectContaining({
+          fileId: "abp-457",
+          status: "success",
+        }),
+      ]),
+    );
+  });
+
   it("shutdown aborts the active maintenance run and waits until it becomes idle", async () => {
     const signalService = new CaptureSignalService(null);
     const networkClient = new NetworkClient();
@@ -230,6 +319,114 @@ describe("MaintenanceService stop flow", () => {
     await service.shutdown({ timeoutMs: 500 });
 
     await expect(previewPromise).rejects.toThrow("Operation aborted");
+    expect(service.getStatus().state).toBe("idle");
+  });
+
+  it("stop aborts an active maintenance preview and waits until it becomes idle", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse(defaultConfiguration);
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    vi.spyOn(MaintenanceFileScraper.prototype, "previewFile").mockImplementation(
+      (_entry, _config, signal) =>
+        new Promise((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(createAbortError());
+            return;
+          }
+
+          signal?.addEventListener(
+            "abort",
+            () => {
+              reject(createAbortError());
+            },
+            { once: true },
+          );
+        }),
+    );
+
+    const previewPromise = service.preview([createCommitItem("abp-901").entry], "organize_files");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(service.getStatus().state).toBe("previewing");
+    service.stop();
+
+    await expect(previewPromise).rejects.toThrow("Operation aborted");
+    expect(service.getStatus().state).toBe("idle");
+  });
+
+  it("pauses queued maintenance preview work and resumes it later", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        threadNumber: 1,
+      },
+    });
+    const firstPreview = deferred<MaintenancePreviewItem>();
+    const previewSpy = vi
+      .spyOn(MaintenanceFileScraper.prototype, "previewFile")
+      .mockImplementationOnce(() => firstPreview.promise)
+      .mockImplementationOnce(async (entry) => ({
+        fileId: entry.fileId,
+        status: "ready",
+      }));
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+
+    const previewPromise = service.preview(
+      [createCommitItem("abp-902").entry, createCommitItem("abp-903").entry],
+      "organize_files",
+    );
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(previewSpy).toHaveBeenCalledTimes(1);
+    service.pause();
+    expect(service.getStatus().state).toBe("paused");
+
+    firstPreview.resolve({
+      fileId: "abp-902",
+      status: "ready",
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(previewSpy).toHaveBeenCalledTimes(1);
+
+    service.resume();
+    expect(service.getStatus().state).toBe("previewing");
+
+    await expect(previewPromise).resolves.toEqual({
+      items: [
+        {
+          fileId: "abp-902",
+          status: "ready",
+        },
+        {
+          fileId: "abp-903",
+          status: "ready",
+        },
+      ],
+    });
     expect(service.getStatus().state).toBe("idle");
   });
 

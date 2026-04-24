@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, FolderCog, Image, Play } from "lucide-react";
+import { FolderCog, Play, Telescope } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { useOutputSummary } from "@/hooks/useOverview";
@@ -42,7 +42,7 @@ export function OverviewHeroStartCard({ className }: OverviewHeroStartCardProps)
           </p>
         </div>
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-quiet-lg bg-white/10 text-white/55">
-          <Image className="h-6 w-6" />
+          <Telescope className="h-6 w-6" />
         </div>
       </div>
 
@@ -78,12 +78,11 @@ export function OverviewHeroStartCard({ className }: OverviewHeroStartCardProps)
 
         <Button
           type="button"
-          className="h-14 rounded-quiet-capsule bg-primary-foreground px-8 font-bold text-primary hover:bg-primary-foreground/90 dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90"
+          className="h-14 px-8! rounded-quiet-capsule bg-primary-foreground font-bold text-primary hover:bg-primary-foreground/90 dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90"
           onClick={() => navigate({ to: canOpenWorkbench ? "/" : "/settings" })}
         >
           {canOpenWorkbench ? <Play className="h-4 w-4 fill-current" /> : <FolderCog className="h-4 w-4" />}
           {canOpenWorkbench ? "去工作台" : "去设置"}
-          <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
     </section>

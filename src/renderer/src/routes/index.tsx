@@ -11,7 +11,7 @@ import { isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
 import { UncensoredConfirmDialog } from "@/components/UncensoredConfirmDialog";
 import WorkbenchSetup from "@/components/workbench/WorkbenchSetup";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
-import { buildMaintenanceEntryViewModel, countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
+import { countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
 import { buildAmbiguousUncensoredScrapeGroups } from "@/lib/scrapeResultGrouping";
 import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
@@ -20,6 +20,7 @@ import {
   applyMaintenancePreviewResult,
   applyMaintenanceScanResult,
   beginMaintenancePreviewRequest,
+  cancelMaintenancePreviewFlow,
   changeMaintenancePreset,
   setMaintenancePreviewPending,
 } from "@/store/maintenanceSession";
@@ -179,20 +180,17 @@ function Index() {
       changeMaintenancePreset(presetId);
       await persistWorkbenchPaths(scanDir, targetDir);
       executionStore.setExecutionStatus("scanning");
-      executionStore.setStatusText("正在读取选中文件...");
 
       const scan = await ipc.maintenance.scanFiles(filePaths);
       applyMaintenanceScanResult(scan.entries, scanDir);
 
       if (scan.entries.length === 0) {
-        executionStore.setStatusText("未发现可维护项目");
         toast.info("未发现可维护项目");
         await refreshCurrentConfig();
         return;
       }
 
       if (presetId === "read_local") {
-        executionStore.setStatusText(`本地读取完成 · ${countMaintenanceDisplayItems(scan.entries)} 项`);
         toast.success(`本地读取完成，共 ${countMaintenanceDisplayItems(scan.entries)} 项`);
         await refreshCurrentConfig();
         return;
@@ -200,25 +198,20 @@ function Index() {
 
       executionStore.setExecutionStatus("previewing");
       beginMaintenancePreviewRequest();
-      executionStore.setStatusText("正在生成维护预览...");
+      executionStore.setProgress(0, 0, scan.entries.length);
       const preview = await ipc.maintenance.preview(scan.entries, presetId);
       applyMaintenancePreviewResult(preview);
-
-      const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
-      const previewSummary = buildMaintenanceEntryViewModel(scan.entries, {
-        previewResults: previewMap,
-      }).previewSummary;
-      executionStore.setStatusText(
-        previewSummary.blockedCount > 0
-          ? `预览完成 · 可执行 ${previewSummary.readyCount} · 阻塞 ${previewSummary.blockedCount}`
-          : `预览完成 · 可执行 ${previewSummary.readyCount} 项`,
-      );
+      executionStore.setExecutionStatus("idle");
       await refreshCurrentConfig();
       toast.success("维护预览已生成");
     } catch (error) {
+      if (toErrorMessage(error) === "Operation aborted") {
+        cancelMaintenancePreviewFlow();
+        return;
+      }
+
       setMaintenancePreviewPending(false);
       executionStore.setExecutionStatus("idle");
-      executionStore.setStatusText("启动失败");
       toast.error(`启动失败: ${toErrorMessage(error)}`);
     }
   };

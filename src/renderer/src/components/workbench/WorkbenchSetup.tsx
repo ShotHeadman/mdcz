@@ -361,7 +361,6 @@ export default function WorkbenchSetup({
       <div className="h-full overflow-y-auto">
         <main className="mx-auto w-full max-w-6xl px-6 pb-36 pt-10 md:px-10 lg:px-12">
           <section className="mb-10">
-            <SectionLabel>源目录设置</SectionLabel>
             <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
               <PathControl
                 label="扫描目录"
@@ -423,7 +422,6 @@ export default function WorkbenchSetup({
                   disabled={candidates.length === 0 || scanning}
                   onCheckedChange={() => setAllSelected(!allSelected)}
                 />
-                <SectionLabel className="mb-0">目录文件</SectionLabel>
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 {runSummary && <span>{runSummary}</span>}

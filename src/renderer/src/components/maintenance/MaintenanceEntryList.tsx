@@ -1,8 +1,11 @@
+import { toErrorMessage } from "@shared/error";
 import type { LocalScanEntry } from "@shared/types";
 import { FileText, FolderOpen, FolderSearch, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
+import { ipc } from "@/client/ipc";
+import { getMaintenancePresetMeta } from "@/components/maintenance/presetMeta";
 import {
   type MediaBrowserItem,
   type MediaBrowserItemStatus,
@@ -42,12 +45,18 @@ const buildGroupSubtitle = (group: MaintenanceEntryGroupViewModel): string => {
 };
 
 function buildMenuContent(entry: LocalScanEntry) {
-  const handleOpenFolder = () => {
-    if (!window.electron?.openPath) {
-      toast.info("打开目录功能仅在桌面客户端可用");
+  const handleOpenFolder = async () => {
+    const filePath = entry.fileInfo.filePath.trim();
+    if (!filePath) {
+      toast.info("无可打开的文件路径");
       return;
     }
-    void window.electron.openPath(entry.currentDir);
+
+    try {
+      await ipc.app.showItemInFolder(filePath);
+    } catch (error) {
+      toast.error(`打开目录失败: ${toErrorMessage(error)}`);
+    }
   };
 
   const handlePlay = () => void playMediaPath(entry.fileInfo.filePath, "播放功能仅在桌面客户端可用");
@@ -77,12 +86,13 @@ function buildMenuContent(entry: LocalScanEntry) {
 }
 
 export default function MaintenanceEntryList() {
-  const { entries, selectedIds, activeId, filter, setFilter, setActiveId } = useMaintenanceEntryStore(
+  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
+      presetId: state.presetId,
       setFilter: state.setFilter,
       setActiveId: state.setActiveId,
     })),
@@ -94,7 +104,8 @@ export default function MaintenanceEntryList() {
     })),
   );
   const previewResults = useMaintenancePreviewStore((state) => state.previewResults);
-  const selectionLocked = executionStatus === "executing" || executionStatus === "stopping";
+  const showsSelection = getMaintenancePresetMeta(presetId).supportsExecution !== false;
+  const selectionLocked = executionStatus !== "idle";
   const groupedEntries = useMemo(
     () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }).groups,
     [entries, itemResults, previewResults],
@@ -138,7 +149,7 @@ export default function MaintenanceEntryList() {
       subtitle: buildGroupSubtitle(group),
       errorText: group.errorText,
       status: group.status,
-      selectionControl: (
+      selectionControl: showsSelection ? (
         <Checkbox
           checked={checkedState}
           disabled={selectionLocked}
@@ -147,7 +158,7 @@ export default function MaintenanceEntryList() {
           }}
           onClick={(event) => event.stopPropagation()}
         />
-      ),
+      ) : undefined,
       onClick: () =>
         setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
       menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative),
@@ -159,10 +170,9 @@ export default function MaintenanceEntryList() {
       items={items}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
-      title="维护队列"
       stats={[
         { label: "总计", value: String(groupedEntries.length) },
-        { label: "已选", value: String(selectedCount) },
+        ...(showsSelection ? [{ label: "已选", value: String(selectedCount) }] : []),
         { label: "处理中", value: String(processingCount) },
         { label: "异常", value: String(blockedCount), tone: "negative" },
       ]}
@@ -173,19 +183,21 @@ export default function MaintenanceEntryList() {
         </div>
       }
       headerLeading={
-        <>
-          <Checkbox
-            id="maintenance-select-all"
-            checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
-            disabled={selectionLocked || visibleIds.length === 0}
-            onCheckedChange={() => {
-              toggleMaintenanceSelectedIds(visibleIds);
-            }}
-          />
-          <label htmlFor="maintenance-select-all" className="cursor-pointer">
-            全选 ({selectedVisibleCount}/{visibleEntries.length})
-          </label>
-        </>
+        showsSelection ? (
+          <>
+            <Checkbox
+              id="maintenance-select-all"
+              checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+              disabled={selectionLocked || visibleIds.length === 0}
+              onCheckedChange={() => {
+                toggleMaintenanceSelectedIds(visibleIds);
+              }}
+            />
+            <label htmlFor="maintenance-select-all" className="cursor-pointer">
+              全选 ({selectedVisibleCount}/{visibleEntries.length})
+            </label>
+          </>
+        ) : undefined
       }
     />
   );

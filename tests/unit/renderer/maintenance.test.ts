@@ -1,7 +1,6 @@
 import { Website } from "@shared/enums";
 import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { formatMaintenanceStatus } from "@/lib/formatMaintenanceStatus";
 import {
   buildCommittedCrawlerData,
   buildMaintenanceCommitItem,
@@ -23,6 +22,7 @@ import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
 import {
   applyMaintenanceExecutionItemResult,
   applyMaintenancePreviewResult,
+  cancelMaintenancePreviewFlow,
   changeMaintenancePreset,
   clearMaintenancePreviewResults,
   invalidateMaintenancePreview,
@@ -678,7 +678,7 @@ describe("buildMaintenanceCommitItem", () => {
       fieldDiffs: [
         createImageCollectionDiff({
           field: "scene_images",
-          label: "场景图",
+          label: "剧照",
           oldValue: [],
           newValue: ["https://example.com/new-scene.jpg"],
           changed: true,
@@ -937,7 +937,6 @@ describe("maintenance execution stores", () => {
     useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
     useMaintenanceExecutionStore.getState().beginExecution({
       fileIds: ["entry-1"],
-      displayCount: 1,
     });
     applyMaintenanceExecutionItemResult({
       fileId: "entry-1",
@@ -975,7 +974,6 @@ describe("maintenance preview store", () => {
       progressValue: 100,
       progressCurrent: 1,
       progressTotal: 1,
-      statusText: "执行完成 · 成功 1 · 失败 0",
       itemResults: {
         "entry-1": {
           fileId: "entry-1",
@@ -1069,7 +1067,6 @@ describe("maintenance preview store", () => {
       progressValue: 100,
       progressCurrent: 1,
       progressTotal: 1,
-      statusText: "执行完成 · 成功 0 · 失败 1",
       itemResults: {
         "entry-1": {
           fileId: "entry-1",
@@ -1113,7 +1110,7 @@ describe("maintenance preview store", () => {
     });
   });
 
-  it("invalidates preview state through session actions when selections or preset change", () => {
+  it("invalidates preview state when selection changes under non-diff presets", () => {
     useMaintenanceEntryStore.getState().setEntries(
       [
         createEntry(createCrawlerData()),
@@ -1129,7 +1126,6 @@ describe("maintenance preview store", () => {
       progressValue: 100,
       progressCurrent: 1,
       progressTotal: 1,
-      statusText: "执行完成 · 成功 1 · 失败 0",
       itemResults: {
         "entry-1": {
           fileId: "entry-1",
@@ -1158,7 +1154,32 @@ describe("maintenance preview store", () => {
     expect(useMaintenanceEntryStore.getState().selectedIds).toEqual(["entry-1"]);
     expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
     expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+  });
 
+  it("preserves preview state when selection changes under diff presets", () => {
+    useMaintenanceEntryStore.getState().setEntries(
+      [
+        createEntry(createCrawlerData()),
+        {
+          ...createEntry(createCrawlerData({ number: "ABC-124" })),
+          fileId: "entry-2",
+        },
+      ],
+      "/media",
+    );
+    useMaintenanceEntryStore.getState().setPresetId("refresh_data");
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      itemResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "success",
+        },
+      },
+    });
     useMaintenancePreviewStore.setState({
       previewPending: false,
       executeDialogOpen: true,
@@ -1175,57 +1196,83 @@ describe("maintenance preview store", () => {
       },
     });
 
-    changeMaintenancePreset("refresh_data");
+    toggleMaintenanceSelectedIds(["entry-2"]);
 
-    expect(useMaintenanceEntryStore.getState().presetId).toBe("refresh_data");
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
-  });
-});
-
-describe("formatMaintenanceStatus", () => {
-  it("keeps stopped wording after an interrupted run becomes idle", () => {
-    const entries = [
-      {
-        ...createEntry(),
-        fileId: "entry-1",
-      },
-      {
-        ...createEntry(),
-        fileId: "entry-2",
-        fileInfo: {
-          ...createEntry().fileInfo,
-          filePath: "/media/ABC-124.mp4",
-          fileName: "ABC-124.mp4",
-          number: "ABC-124",
-        },
-      },
-    ];
-    const itemResults = {
+    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual(["entry-1"]);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({
       "entry-1": {
         fileId: "entry-1",
-        status: "success" as const,
+        status: "ready",
       },
-      "entry-2": {
-        fileId: "entry-2",
-        status: "failed" as const,
-        error: "维护已停止，项目未执行",
+    });
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+      "entry-1": {
+        fileId: "entry-1",
+        status: "success",
       },
-    };
+    });
+  });
 
-    const statusText = formatMaintenanceStatus(
-      {
-        state: "idle",
-        totalEntries: 0,
-        completedEntries: 0,
-        successCount: 0,
-        failedCount: 0,
+  it("invalidates preview state when preset changes", () => {
+    useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
+    useMaintenanceEntryStore.getState().setPresetId("refresh_data");
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+        },
       },
-      entries,
-      itemResults,
-      "正在停止维护操作...",
-      "stopping",
-    );
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
 
-    expect(statusText).toBe("已停止 · 成功 1 · 失败/取消 1");
+    changeMaintenancePreset("organize_files");
+
+    expect(useMaintenanceEntryStore.getState().presetId).toBe("organize_files");
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+  });
+
+  it("resets preview flow back to idle state when previewing is canceled", () => {
+    useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "previewing",
+      progressValue: 37,
+      progressCurrent: 1,
+      progressTotal: 3,
+      itemResults: {},
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: true,
+      executeDialogOpen: false,
+      previewResults: {
+        "entry-1": {
+          fileId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    cancelMaintenancePreviewFlow();
+
+    expect(useMaintenanceExecutionStore.getState()).toMatchObject({
+      executionStatus: "idle",
+      progressValue: 0,
+      progressCurrent: 0,
+      progressTotal: 0,
+      itemResults: {},
+    });
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
   });
 });

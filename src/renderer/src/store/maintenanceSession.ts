@@ -6,15 +6,14 @@ import type {
   MaintenancePreviewResult,
   MaintenanceStatus,
 } from "@shared/types";
-import { formatMaintenanceIdleStatusText } from "@/lib/maintenanceGrouping";
 import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
 
 const isExecutionIdle = (): boolean => useMaintenanceExecutionStore.getState().executionStatus === "idle";
 
-const getIdleStatusText = (entries = useMaintenanceEntryStore.getState().entries): string =>
-  formatMaintenanceIdleStatusText(entries);
+const preservesPreviewAcrossSelectionChanges = (presetId: MaintenancePresetId): boolean =>
+  presetId === "refresh_data" || presetId === "rebuild_all";
 
 const resolveNextActiveId = (
   currentActiveId: string | null,
@@ -41,15 +40,20 @@ export const clearMaintenancePreviewResults = (): void => {
 
 export const invalidateMaintenancePreview = (): void => {
   if (isExecutionIdle()) {
-    useMaintenanceExecutionStore.getState().resetDerivedData(getIdleStatusText());
+    useMaintenanceExecutionStore.getState().resetDerivedData();
   }
 
   useMaintenancePreviewStore.getState().reset();
 };
 
+export const cancelMaintenancePreviewFlow = (): void => {
+  useMaintenancePreviewStore.getState().reset();
+  useMaintenanceExecutionStore.getState().resetDerivedData();
+};
+
 export const applyMaintenancePreviewResult = (result: MaintenancePreviewResult): void => {
   if (isExecutionIdle()) {
-    useMaintenanceExecutionStore.getState().resetDerivedData(getIdleStatusText());
+    useMaintenanceExecutionStore.getState().resetDerivedData();
   }
 
   const entryStore = useMaintenanceEntryStore.getState();
@@ -66,7 +70,7 @@ export const applyMaintenancePreviewResult = (result: MaintenancePreviewResult):
 export const applyMaintenanceScanResult = (entries: LocalScanEntry[], dirPath: string): void => {
   useMaintenanceEntryStore.getState().setEntries(entries, dirPath);
   useMaintenancePreviewStore.getState().clearPreviewResults();
-  useMaintenanceExecutionStore.getState().resetDerivedData(getIdleStatusText(entries));
+  useMaintenanceExecutionStore.getState().resetDerivedData();
 };
 
 export const changeMaintenancePreset = (presetId: MaintenancePresetId): void => {
@@ -75,15 +79,25 @@ export const changeMaintenancePreset = (presetId: MaintenancePresetId): void => 
 };
 
 export const toggleMaintenanceSelectedIds = (ids: string[]): void => {
-  invalidateMaintenancePreview();
-  useMaintenanceEntryStore.getState().toggleSelectedIds(ids);
+  const entryStore = useMaintenanceEntryStore.getState();
+
+  if (!preservesPreviewAcrossSelectionChanges(entryStore.presetId)) {
+    invalidateMaintenancePreview();
+  }
+
+  entryStore.toggleSelectedIds(ids);
 };
 
-export const beginMaintenanceExecution = (fileIds: string[], displayCount: number): void => {
+export const beginMaintenanceExecution = (fileIds: string[]): void => {
   useMaintenanceExecutionStore.getState().beginExecution({
     fileIds,
-    displayCount,
   });
+};
+
+export const resetMaintenanceSession = (): void => {
+  useMaintenancePreviewStore.getState().reset();
+  useMaintenanceExecutionStore.getState().reset();
+  useMaintenanceEntryStore.getState().reset();
 };
 
 export const applyMaintenanceExecutionItemResult = (payload: MaintenanceItemResult): void => {
@@ -92,5 +106,5 @@ export const applyMaintenanceExecutionItemResult = (payload: MaintenanceItemResu
 };
 
 export const applyMaintenanceStatusSnapshot = (status: MaintenanceStatus): void => {
-  useMaintenanceExecutionStore.getState().applyStatusSnapshot(status, useMaintenanceEntryStore.getState().entries);
+  useMaintenanceExecutionStore.getState().applyStatusSnapshot(status);
 };

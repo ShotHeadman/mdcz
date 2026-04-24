@@ -1,12 +1,15 @@
 import { PauseCircle, Play, RotateCcw, StopCircle } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { DetailPanel } from "@/components/DetailPanel";
 import { ResultTree } from "@/components/ResultTree";
 import { FloatingWorkbenchBar } from "@/components/shared/FloatingWorkbenchBar";
+import { ReturnToWorkbenchSetupButton } from "@/components/shared/ReturnToWorkbenchSetupButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Progress } from "@/components/ui/Progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/Resizable";
 import { useScrapeStore } from "@/store/scrapeStore";
+import { useUIStore } from "@/store/uiStore";
 
 export interface ScrapeWorkbenchProps {
   onPauseScrape: () => void;
@@ -23,8 +26,26 @@ export default function ScrapeWorkbench({
   onRetryFailed,
   failedCount,
 }: ScrapeWorkbenchProps) {
-  const { isScraping, scrapeStatus, progress } = useScrapeStore();
-  const showControls = isScraping || failedCount > 0;
+  const { isScraping, scrapeStatus, progress, resultsCount, reset } = useScrapeStore(
+    useShallow((state) => ({
+      isScraping: state.isScraping,
+      scrapeStatus: state.scrapeStatus,
+      progress: state.progress,
+      resultsCount: state.results.length,
+      reset: state.reset,
+    })),
+  );
+  const setSelectedResultId = useUIStore((state) => state.setSelectedResultId);
+  const showCompletedActions = !isScraping && resultsCount > 0;
+  const showControls = isScraping || showCompletedActions;
+  const stopping = scrapeStatus === "stopping";
+  const handleReturnToSetup = () => {
+    setSelectedResultId(null);
+    reset();
+  };
+  const barContentClassName = isScraping
+    ? "mx-auto flex w-full max-w-3xl items-center gap-4 px-4 py-3 md:px-5"
+    : "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-2 px-3 py-2.5 md:px-4";
 
   return (
     <div className="relative h-full overflow-hidden bg-surface-canvas">
@@ -53,47 +74,64 @@ export default function ScrapeWorkbench({
       </div>
 
       {showControls && (
-        <FloatingWorkbenchBar contentClassName="mx-auto flex w-full max-w-3xl items-center gap-4 px-4 py-3 md:px-5">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
-            {isScraping && (
-              <div className="flex min-w-48 items-center gap-3">
-                <Progress value={progress} className="h-1.5 w-24 md:w-28" />
-                <span className="w-10 font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
-              </div>
-            )}
-          </div>
+        <FloatingWorkbenchBar contentClassName={barContentClassName}>
+          {isScraping && (
+            <div className="flex min-w-48 items-center gap-3">
+              <Progress value={progress} className="h-1.5 w-24 md:w-28" />
+              <span className="w-10 font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
+            </div>
+          )}
 
           {isScraping && (
             <>
               <Button
                 type="button"
                 variant="ghost"
+                size="icon-sm"
                 className="rounded-quiet-capsule"
                 onClick={scrapeStatus === "paused" ? onResumeScrape : onPauseScrape}
+                disabled={stopping}
+                aria-label={scrapeStatus === "paused" ? "恢复刮削任务" : "暂停刮削任务"}
+                title={scrapeStatus === "paused" ? "恢复" : "暂停"}
               >
                 {scrapeStatus === "paused" ? <Play className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
-                {scrapeStatus === "paused" ? "恢复" : "暂停"}
               </Button>
-              <Button type="button" variant="destructive" className="rounded-quiet-capsule" onClick={onStopScrape}>
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon-sm"
+                className="rounded-quiet-capsule"
+                onClick={onStopScrape}
+                disabled={stopping}
+                aria-label="停止刮削任务"
+                title="停止"
+              >
                 <StopCircle className="h-4 w-4" />
-                停止
               </Button>
             </>
           )}
 
-          {!isScraping && failedCount > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              className="rounded-quiet-capsule text-destructive hover:text-destructive"
-              onClick={onRetryFailed}
-            >
-              <RotateCcw className="h-4 w-4" />
-              重试失败
-              <Badge variant="destructive" className="h-4 px-1 text-[10px]">
-                {failedCount}
-              </Badge>
-            </Button>
+          {showCompletedActions && (
+            <>
+              <ReturnToWorkbenchSetupButton
+                dialogDescription="返回后会清空当前刮削结果并回到工作台初始页面。确定继续吗？"
+                onConfirm={handleReturnToSetup}
+              />
+              {failedCount > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="rounded-quiet-capsule text-destructive hover:text-destructive"
+                  onClick={onRetryFailed}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  重试失败
+                  <Badge variant="destructive" className="h-4 px-1 text-[10px]">
+                    {failedCount}
+                  </Badge>
+                </Button>
+              )}
+            </>
           )}
         </FloatingWorkbenchBar>
       )}

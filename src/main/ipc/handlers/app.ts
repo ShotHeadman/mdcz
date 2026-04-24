@@ -13,6 +13,7 @@ export const createAppHandlers = (
   | typeof IpcChannel.App_Info
   | typeof IpcChannel.App_OpenExternal
   | typeof IpcChannel.App_PlayMedia
+  | typeof IpcChannel.App_ShowItemInFolder
   | typeof IpcChannel.App_Relaunch
   | typeof IpcChannel.App_SyncTitleBarTheme
 > => ({
@@ -43,6 +44,15 @@ export const createAppHandlers = (
       throw new Error(errorMessage);
     }
 
+    return { success: true as const };
+  }),
+  [IpcChannel.App_ShowItemInFolder]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
+    const targetPath = input.path?.trim();
+    if (!targetPath) {
+      throw new Error("Path is required");
+    }
+
+    shell.showItemInFolder(targetPath);
     return { success: true as const };
   }),
   [IpcChannel.App_Relaunch]: t.procedure.action(async () => {

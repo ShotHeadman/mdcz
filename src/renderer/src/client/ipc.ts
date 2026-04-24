@@ -43,6 +43,7 @@ export const ipc = {
     info: () => client[IpcChannel.App_Info](undefined) as Promise<AppInfo>,
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
     playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
+    showItemInFolder: (path: string) => client[IpcChannel.App_ShowItemInFolder]({ path }),
     relaunch: () => client[IpcChannel.App_Relaunch](undefined),
     syncTitleBarTheme: (isDark: boolean) => client[IpcChannel.App_SyncTitleBarTheme]({ isDark }),
   },
@@ -162,6 +163,8 @@ export const ipc = {
     execute: (items: MaintenanceCommitItem[], presetId: MaintenancePresetId) =>
       client[IpcChannel.Maintenance_Execute]({ items, presetId }),
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
+    pause: () => client[IpcChannel.Maintenance_Pause](undefined),
+    resume: () => client[IpcChannel.Maintenance_Resume](undefined),
     getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined) as Promise<MaintenanceStatus>,
   },
   on: {

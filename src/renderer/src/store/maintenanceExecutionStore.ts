@@ -1,7 +1,6 @@
-import type { LocalScanEntry, MaintenanceItemResult, MaintenanceStatus } from "@shared/types";
+import type { MaintenanceItemResult, MaintenanceStatus } from "@shared/types";
 import { create, type StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { formatMaintenanceStatus } from "@/lib/formatMaintenanceStatus";
 
 type MaintenanceExecutionStatus = MaintenanceStatus["state"];
 const isDev = import.meta.env.DEV;
@@ -11,7 +10,6 @@ const createInitialState = () => ({
   progressValue: 0,
   progressCurrent: 0,
   progressTotal: 0,
-  statusText: "就绪",
   itemResults: {} as Record<string, MaintenanceItemResult>,
 });
 
@@ -20,17 +18,15 @@ export interface MaintenanceExecutionState {
   progressValue: number;
   progressCurrent: number;
   progressTotal: number;
-  statusText: string;
   itemResults: Record<string, MaintenanceItemResult>;
 
   setExecutionStatus: (status: MaintenanceExecutionStatus) => void;
-  setStatusText: (text: string) => void;
   setProgress: (value: number, current: number, total: number) => void;
-  beginExecution: (input: { fileIds: string[]; displayCount: number }) => void;
+  beginExecution: (input: { fileIds: string[] }) => void;
   rollbackExecutionStart: () => void;
-  applyStatusSnapshot: (status: MaintenanceStatus, entries: LocalScanEntry[]) => void;
+  applyStatusSnapshot: (status: MaintenanceStatus) => void;
   applyItemResult: (payload: MaintenanceItemResult) => void;
-  resetDerivedData: (statusText?: string) => void;
+  resetDerivedData: () => void;
   reset: () => void;
 }
 
@@ -63,7 +59,6 @@ const mergePersistedMaintenanceExecutionState = (
     progressValue: 0,
     progressCurrent: 0,
     progressTotal: 0,
-    statusText: "就绪",
   };
 };
 
@@ -72,8 +67,6 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
 
   setExecutionStatus: (executionStatus) => set({ executionStatus }),
 
-  setStatusText: (statusText) => set({ statusText }),
-
   setProgress: (value, current, total) =>
     set({
       progressValue: Math.max(0, Math.min(100, value)),
@@ -81,7 +74,7 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
       progressTotal: total,
     }),
 
-  beginExecution: ({ fileIds, displayCount }) =>
+  beginExecution: ({ fileIds }) =>
     set((state) => {
       const nextResults = { ...state.itemResults };
 
@@ -98,7 +91,6 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
         progressValue: 0,
         progressCurrent: 0,
         progressTotal: fileIds.length,
-        statusText: `正在执行 ${displayCount} 项...`,
         itemResults: nextResults,
       };
     }),
@@ -112,12 +104,15 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
       itemResults: {},
     }),
 
-  applyStatusSnapshot: (status, entries) =>
+  applyStatusSnapshot: (status) =>
     set((state) => {
       const derivedProgress =
         status.totalEntries > 0 ? Math.round((status.completedEntries / status.totalEntries) * 100) : 0;
       const nextProgress =
-        status.state === "executing" || status.state === "stopping"
+        status.state === "previewing" ||
+        status.state === "executing" ||
+        status.state === "paused" ||
+        status.state === "stopping"
           ? Math.max(state.progressValue, derivedProgress)
           : derivedProgress;
 
@@ -126,13 +121,6 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
         progressValue: nextProgress,
         progressCurrent: status.completedEntries,
         progressTotal: status.totalEntries,
-        statusText: formatMaintenanceStatus(
-          status,
-          entries,
-          state.itemResults,
-          state.statusText,
-          state.executionStatus,
-        ),
       };
     }),
 
@@ -151,13 +139,12 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
       };
     }),
 
-  resetDerivedData: (statusText = "就绪") =>
+  resetDerivedData: () =>
     set({
       executionStatus: "idle",
       progressValue: 0,
       progressCurrent: 0,
       progressTotal: 0,
-      statusText,
       itemResults: {},
     }),
 

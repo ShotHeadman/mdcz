@@ -189,7 +189,7 @@ export default function ChangeDiffView({
       const newImage = resolveMaintenanceDiffImageOption(diff, "new");
 
       return (
-        <div className="grid md:grid-cols-2">
+        <div className="grid md:grid-cols-2 gap-3">
           <ImageOptionCard
             src={oldImage.src}
             fallbackSrcs={oldImage.fallbackSrcs}
@@ -228,7 +228,7 @@ export default function ChangeDiffView({
       const newImages = resolveMaintenanceDiffImageCollection(diff, "new");
 
       return (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           <SceneImageOption
             title="旧 (当前)"
             images={oldImages}
@@ -250,7 +250,7 @@ export default function ChangeDiffView({
     }
 
     return (
-      <div className="grid md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <DiffOption
           title="旧 (当前)"
           value={diff.oldValue}

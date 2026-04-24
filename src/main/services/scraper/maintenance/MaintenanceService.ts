@@ -66,6 +66,8 @@ export class MaintenanceService {
 
   private currentOperationPromise: Promise<void> | null = null;
 
+  private pausedStateBeforePause: "previewing" | "executing" | null = null;
+
   constructor(
     private readonly signalService: SignalService,
     private readonly networkClient: NetworkClient,
@@ -90,6 +92,7 @@ export class MaintenanceService {
 
     this.status = { ...createIdleMaintenanceStatus(), state: "scanning" };
     this.signalService.showLogText("Scanning maintenance directories");
+    this.signalService.resetProgress();
     return await this.trackOperation(
       async (signal) => {
         const config = await configManager.getValidated();
@@ -116,6 +119,7 @@ export class MaintenanceService {
 
     this.status = { ...createIdleMaintenanceStatus(), state: "scanning" };
     this.signalService.showLogText("Scanning selected maintenance files");
+    this.signalService.resetProgress();
     return await this.trackOperation(
       async (signal) => {
         const config = await configManager.getValidated();
@@ -139,16 +143,36 @@ export class MaintenanceService {
       throw new Error("No entries to process");
     }
 
-    this.status = { ...createIdleMaintenanceStatus(), state: "previewing" };
+    this.status = {
+      state: "previewing",
+      totalEntries: entries.length,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
+    };
+    this.signalService.resetProgress();
     return await this.trackOperation(
       async (signal) => {
         const runContext = await this.createRunContext(presetId);
         const queue = new PQueue({ concurrency: runContext.concurrency });
+        this.queue = queue;
         const items = await Promise.all(
           entries.map((entry) =>
             queue.add(
               async () => {
-                return runContext.fileScraper.previewFile(entry, runContext.config, signal);
+                const item = await runContext.fileScraper.previewFile(entry, runContext.config, signal);
+                this.status.completedEntries += 1;
+                if (item.status === "ready") {
+                  this.status.successCount += 1;
+                } else {
+                  this.status.failedCount += 1;
+                }
+                this.signalService.setProgress(
+                  Math.round((this.status.completedEntries / entries.length) * 100),
+                  this.status.completedEntries,
+                  entries.length,
+                );
+                return item;
               },
               signal ? { signal } : undefined,
             ),
@@ -162,6 +186,7 @@ export class MaintenanceService {
       new AbortController(),
       () => {
         this.status = createIdleMaintenanceStatus();
+        this.queue = null;
       },
     );
   }
@@ -301,12 +326,37 @@ export class MaintenanceService {
   }
 
   stop(): void {
-    if (this.status.state !== "executing") return;
+    if (
+      this.status.state !== "scanning" &&
+      this.status.state !== "previewing" &&
+      this.status.state !== "executing" &&
+      this.status.state !== "paused"
+    ) {
+      return;
+    }
 
-    this.logger.info("Stopping maintenance execution");
+    this.logger.info("Stopping maintenance operation");
     this.status = { ...this.status, state: "stopping" };
     this.operationController?.abort(createAbortError());
     this.queue?.clear();
+  }
+
+  pause(): void {
+    if ((this.status.state !== "executing" && this.status.state !== "previewing") || !this.queue) return;
+
+    this.logger.info("Pausing maintenance operation");
+    this.pausedStateBeforePause = this.status.state;
+    this.queue.pause();
+    this.status = { ...this.status, state: "paused" };
+  }
+
+  resume(): void {
+    if (this.status.state !== "paused" || !this.queue) return;
+
+    this.logger.info("Resuming maintenance operation");
+    this.status = { ...this.status, state: this.pausedStateBeforePause ?? "executing" };
+    this.pausedStateBeforePause = null;
+    this.queue.start();
   }
 
   async waitForIdle(): Promise<void> {
@@ -318,7 +368,7 @@ export class MaintenanceService {
     const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
     if (operationPromise) {
       this.logger.info("Shutting down maintenance service");
-      if (this.status.state === "executing") {
+      if (this.status.state === "executing" || this.status.state === "paused") {
         this.stop();
       } else {
         this.operationController?.abort(createAbortError());
@@ -367,6 +417,7 @@ export class MaintenanceService {
       if (this.operationController === controller) {
         this.operationController = null;
       }
+      this.pausedStateBeforePause = null;
       onFinally?.();
     });
 

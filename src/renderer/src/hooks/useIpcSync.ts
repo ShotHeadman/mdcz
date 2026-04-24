@@ -24,6 +24,7 @@ const getPollingInterval = (
     scrapeState === "stopping" ||
     maintenanceState === "scanning" ||
     maintenanceState === "previewing" ||
+    maintenanceState === "paused" ||
     maintenanceState === "stopping"
   ) {
     return 2000;
@@ -196,7 +197,12 @@ export const useIpcSync = (queryClient: QueryClient) => {
         unsubscribers.push(
           ipc.on.progress((payload) => {
             const maintenanceState = useMaintenanceExecutionStore.getState();
-            if (maintenanceState.executionStatus === "executing" || maintenanceState.executionStatus === "stopping") {
+            if (
+              maintenanceState.executionStatus === "previewing" ||
+              maintenanceState.executionStatus === "executing" ||
+              maintenanceState.executionStatus === "paused" ||
+              maintenanceState.executionStatus === "stopping"
+            ) {
               maintenanceState.setProgress(payload.value, payload.current, payload.total);
               return;
             }

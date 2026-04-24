@@ -50,6 +50,7 @@ export enum IpcChannel {
   App_Info = "app:info",
   App_OpenExternal = "app:open-external",
   App_PlayMedia = "app:play-media",
+  App_ShowItemInFolder = "app:show-item-in-folder",
   App_Relaunch = "app:relaunch",
   App_SyncTitleBarTheme = "app:sync-titlebar-theme",
 
@@ -74,6 +75,8 @@ export enum IpcChannel {
   Maintenance_Preview = "maintenance:preview",
   Maintenance_Execute = "maintenance:execute",
   Maintenance_Stop = "maintenance:stop",
+  Maintenance_Pause = "maintenance:pause",
+  Maintenance_Resume = "maintenance:resume",
   Maintenance_GetStatus = "maintenance:get-status",
 
   Event_MaintenanceItemResult = "event:maintenance-item-result",

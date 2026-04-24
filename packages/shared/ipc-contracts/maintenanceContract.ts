@@ -22,5 +22,7 @@ export type MaintenanceIpcContract = {
     { success: true }
   >;
   [IpcChannel.Maintenance_Stop]: IpcProcedure<void, { success: true }>;
+  [IpcChannel.Maintenance_Pause]: IpcProcedure<void, { success: true }>;
+  [IpcChannel.Maintenance_Resume]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Maintenance_GetStatus]: IpcProcedure<void, MaintenanceStatus>;
 };
