@@ -4,11 +4,12 @@ import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
 
-import type { Context, CrawlerInput } from "../../base/types";
+import type { Context, CrawlerInput, SearchPageResolution } from "../../base/types";
 import type { CrawlerRegistration } from "../../registration";
 import { toAbsoluteUrl } from "../helpers";
 
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
+import { isDmmVideoLikeUrl } from "./dmmVideo";
 import { classifyDmmDetailFailure } from "./failureClassifier";
 import { DmmCategory, parseCategory, parseDigitalDetail, parseMonoLikeDetail } from "./parsers";
 
@@ -24,6 +25,13 @@ const DMM_SEARCH_BASE_ALT = "https://www.dmm.com/search/=/searchstr=";
 const unescapeDetailUrl = (value: string): string => {
   return value.replaceAll("\\/", "/").replaceAll("\\u0026", "&");
 };
+
+interface DmmSearchCandidate {
+  detailUrl: string;
+  contentId?: string;
+  title?: string;
+  order: number;
+}
 
 const pushUnique = (values: string[], value: string | undefined): void => {
   if (!value || values.includes(value)) {
@@ -63,13 +71,35 @@ const buildDetailUrlNeedles = (context: DmmContext): string[] => {
   );
 };
 
-const collectDetailUrls = (context: DmmContext, $: CheerioAPI, searchUrl: string): string[] => {
+const extractJsonStringField = (value: string, names: string[]): string | undefined => {
+  for (const name of names) {
+    const escapedPattern = new RegExp(`${name}\\\\":\\\\"(.*?)\\\\"`, "iu");
+    const escapedMatch = value.match(escapedPattern);
+    if (escapedMatch?.[1]) {
+      return unescapeDetailUrl(escapedMatch[1]);
+    }
+
+    const plainPattern = new RegExp(`"${name}"\\s*:\\s*"(.*?)"`, "iu");
+    const plainMatch = value.match(plainPattern);
+    if (plainMatch?.[1]) {
+      return unescapeDetailUrl(plainMatch[1]);
+    }
+  }
+
+  return undefined;
+};
+
+const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: string): DmmSearchCandidate[] => {
   const htmlText = $.html();
   const escapedMatches = htmlText.matchAll(/detailUrl\\":\\"(.*?)\\"/giu);
-  const plainMatches = htmlText.matchAll(/"detailUrl"\s*:\s*"(.*?)"/giu);
-  const urls: string[] = [];
+  const plainMatches = htmlText.matchAll(/"detail(?:Url|URL)"\s*:\s*"(.*?)"/giu);
+  const candidates: DmmSearchCandidate[] = [];
+  let order = 0;
 
-  const pushUrl = (value: string | undefined): void => {
+  const pushCandidate = (
+    value: string | undefined,
+    metadata: Partial<Omit<DmmSearchCandidate, "detailUrl" | "order">> = {},
+  ): void => {
     if (!value) {
       return;
     }
@@ -77,40 +107,74 @@ const collectDetailUrls = (context: DmmContext, $: CheerioAPI, searchUrl: string
     if (parsed.trim().length === 0) {
       return;
     }
-    pushUnique(urls, parsed);
+    if (candidates.some((candidate) => candidate.detailUrl === parsed)) {
+      return;
+    }
+
+    candidates.push({
+      detailUrl: parsed,
+      contentId: metadata.contentId,
+      title: metadata.title,
+      order,
+    });
+    order += 1;
   };
 
+  const objectMatches = htmlText.matchAll(/\{[^{}]*(?:"detail(?:Url|URL)"|detailUrl\\":\\")[^{}]*\}/giu);
+  for (const match of objectMatches) {
+    const objectText = match[0] ?? "";
+    pushCandidate(extractJsonStringField(objectText, ["detailUrl", "detailURL"]), {
+      contentId: extractJsonStringField(objectText, ["contentId", "contentID"]),
+      title: extractJsonStringField(objectText, ["title"]),
+    });
+  }
+
   for (const match of escapedMatches) {
-    pushUrl(match[1]);
+    pushCandidate(match[1]);
   }
 
   for (const match of plainMatches) {
-    pushUrl(match[1]);
+    pushCandidate(match[1]);
   }
 
   const detailAnchors = $("a[href]")
     .toArray()
     .map((element) => $(element).attr("href"))
     .filter((href): href is string => typeof href === "string")
-    .filter((href) => /\/(?:digital|mono|monthly|rental)\//u.test(href) || href.includes("/detail/=/cid="));
+    .filter(
+      (href) =>
+        /\/(?:digital|mono|monthly|rental)\//u.test(href) ||
+        href.includes("/detail/=/cid=") ||
+        /video\.dmm\.co\.jp\/(?:av|anime)\/content\/\?id=/iu.test(href) ||
+        /tv\.dmm\.co\.jp\/list\/?\?content=/iu.test(href),
+    );
 
   for (const href of detailAnchors) {
-    pushUrl(toAbsoluteUrl(searchUrl, href));
+    pushCandidate(toAbsoluteUrl(searchUrl, href));
   }
 
-  if (urls.length === 0) {
+  if (candidates.length === 0) {
     return [];
   }
 
   const needles = buildDetailUrlNeedles(context);
   if (needles.length === 0) {
-    return Array.from(urls);
+    return candidates;
   }
 
-  return urls.filter((value) => {
-    const lowered = value.toLowerCase().replace(/[^a-z0-9]/gu, "");
-    return needles.some((needle) => lowered.includes(needle));
-  });
+  return candidates
+    .map((candidate) => {
+      const searchable = [candidate.detailUrl, candidate.contentId, candidate.title]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/gu, "");
+      const matchIndex = needles.findIndex((needle) => searchable.includes(needle));
+      return { candidate, matchIndex };
+    })
+    .filter((item) => item.matchIndex >= 0)
+    .sort((a, b) => a.matchIndex - b.matchIndex || a.candidate.order - b.candidate.order)
+    .map((item) => item.candidate);
 };
 
 export class DmmCrawler extends BaseDmmCrawler {
@@ -144,7 +208,11 @@ export class DmmCrawler extends BaseDmmCrawler {
     return searchUrls[0] ?? null;
   }
 
-  protected async parseSearchPage(context: DmmContext, $: CheerioAPI, searchUrl: string): Promise<string | null> {
+  protected async parseSearchPage(
+    context: DmmContext,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
     const currentResult = this.resolveDetailUrlFromSearchHtml(context, $, searchUrl);
     if (currentResult) {
       return currentResult;
@@ -171,6 +239,13 @@ export class DmmCrawler extends BaseDmmCrawler {
   }
 
   protected async parseDetailPage(context: DmmContext, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
+    if (isDmmVideoLikeUrl(detailUrl)) {
+      const videoResult = await this.tryDmmVideoDetailUrl(context, detailUrl, Website.DMM, "DMM video GraphQL");
+      if (videoResult) {
+        return videoResult;
+      }
+    }
+
     const titleText = $("title").first().text().trim();
     const h1Text = $("h1#title, h1").first().text().trim();
     const mergedTitle = `${titleText} ${h1Text}`.trim() || undefined;
@@ -230,9 +305,18 @@ export class DmmCrawler extends BaseDmmCrawler {
     });
   }
 
-  private resolveDetailUrlFromSearchHtml(context: DmmContext, $: CheerioAPI, searchUrl: string): string | null {
-    const detailUrls = collectDetailUrls(context, $, searchUrl);
-    return detailUrls[0] ?? null;
+  private resolveDetailUrlFromSearchHtml(
+    context: DmmContext,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): string | SearchPageResolution | null {
+    const candidates = collectDetailCandidates(context, $, searchUrl);
+    const detailUrl = candidates[0]?.detailUrl;
+    if (!detailUrl) {
+      return null;
+    }
+
+    return isDmmVideoLikeUrl(detailUrl) ? this.reuseSearchDocument(detailUrl) : detailUrl;
   }
 }
 

@@ -36,8 +36,14 @@ const hasQueryParam = (url: URL, name: string): boolean => Boolean(url.searchPar
 const SITE_RULES: readonly ManualScrapeSiteRule[] = [
   {
     site: Website.DMM_TV,
-    hosts: ["video.dmm.co.jp"],
-    isDetailUrl: (url) => /^\/(?:av|anime)\/content\/?$/iu.test(url.pathname) && hasQueryParam(url, "id"),
+    hosts: ["video.dmm.co.jp", "tv.dmm.co.jp"],
+    isDetailUrl: (url) => {
+      if (url.hostname.toLowerCase() === "tv.dmm.co.jp") {
+        return /^\/list\/?$/iu.test(url.pathname) && hasQueryParam(url, "content");
+      }
+
+      return /^\/(?:av|anime)\/content\/?$/iu.test(url.pathname) && hasQueryParam(url, "id");
+    },
   },
   {
     site: Website.DMM,

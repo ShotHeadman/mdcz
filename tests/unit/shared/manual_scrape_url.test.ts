@@ -21,9 +21,11 @@ describe("validateManualScrapeUrl", () => {
   it("keeps DMM and DMM TV independent by host", () => {
     const dmm = validateManualScrapeUrl("https://www.dmm.co.jp/");
     const dmmTv = validateManualScrapeUrl("https://video.dmm.co.jp/");
+    const fanzaTv = validateManualScrapeUrl("https://tv.dmm.co.jp/list/?content=ssni00103");
 
     expect(dmm.valid && dmm.route.site).toBe(Website.DMM);
     expect(dmmTv.valid && dmmTv.route.site).toBe(Website.DMM_TV);
+    expect(fanzaTv.valid && fanzaTv.route.site).toBe(Website.DMM_TV);
   });
 
   it("routes supported detail URLs to direct detail parsing", () => {
@@ -34,6 +36,15 @@ describe("validateManualScrapeUrl", () => {
         mode: "detail",
         url: "https://video.dmm.co.jp/av/content/?id=1stars00804",
         detailUrl: "https://video.dmm.co.jp/av/content/?id=1stars00804",
+      },
+    });
+    expect(validateManualScrapeUrl("https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search")).toEqual({
+      valid: true,
+      route: {
+        site: Website.DMM_TV,
+        mode: "detail",
+        url: "https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search",
+        detailUrl: "https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search",
       },
     });
   });

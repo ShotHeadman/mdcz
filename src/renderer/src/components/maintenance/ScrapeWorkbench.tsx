@@ -44,7 +44,7 @@ export default function ScrapeWorkbench({
     reset();
   };
   const barContentClassName = isScraping
-    ? "mx-auto flex w-full max-w-3xl items-center gap-4 px-4 py-3 md:px-5"
+    ? "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-4 px-4 py-3 md:px-5"
     : "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-2 px-3 py-2.5 md:px-4";
 
   return (
