@@ -139,9 +139,9 @@ function MediaRow({
       <label htmlFor={checkboxId} className="contents">
         <div className="min-w-0 space-y-0.5">
           <div className="truncate text-sm font-bold leading-5 tracking-tight text-foreground">{candidate.name}</div>
-          <div className="truncate font-mono text-[10px]/4 text-muted-foreground">
-            {candidate.relativeDirectory || "."}
-          </div>
+          {candidate?.relativeDirectory ? (
+            <div className="truncate font-mono text-[10px]/4 text-muted-foreground">{candidate.relativeDirectory}</div>
+          ) : null}
         </div>
         <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension}</div>
         <div className={MEDIA_ROW_META_CLASS}>{formatBytes(candidate.size, { trimTrailingZeros: true })}</div>
@@ -369,9 +369,9 @@ export default function WorkbenchSetup({
                 onBrowse={handleChooseScanDir}
               />
               <PathControl
-                label="成功输出目录"
+                label="输出目录"
                 value={targetDir}
-                placeholder={configLoading ? "正在读取配置..." : "请选择成功输出目录"}
+                placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
                 onBrowse={handleChooseTargetDir}
               />
             </div>

@@ -16,6 +16,7 @@ export interface RequeueResponse {
 export interface RetryScrapeSelectionOptions {
   scrapeStatus: ScraperStatus["state"];
   canRequeueCurrentRun?: boolean;
+  manualUrl?: string;
 }
 
 const asNfoPath = (path: string): string => {
@@ -160,7 +161,7 @@ export const retryScrapeSelection = async (path: string | string[], options: Ret
   const filePaths = Array.isArray(path) ? path : [path];
 
   if (options.scrapeStatus === "idle") {
-    const result = await ipc.scraper.retryFailed(filePaths);
+    const result = await ipc.scraper.retryFailed(filePaths, options.manualUrl);
     const data: RequeueResponse = {
       message: result.message,
       running: true,
@@ -175,7 +176,7 @@ export const retryScrapeSelection = async (path: string | string[], options: Ret
       throw new Error("当前刮削任务仍在进行，已成功项目请等待任务结束后再重新刮削");
     }
 
-    const result = await ipc.scraper.requeue(filePaths);
+    const result = await ipc.scraper.requeue(filePaths, options.manualUrl);
     if (result.requeuedCount <= 0) {
       throw new Error("当前项目不在失败队列中，无法加入当前任务");
     }

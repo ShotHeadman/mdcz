@@ -44,7 +44,7 @@ export default function ScrapeWorkbench({
     reset();
   };
   const barContentClassName = isScraping
-    ? "mx-auto flex w-full max-w-3xl items-center gap-4 px-4 py-3 md:px-5"
+    ? "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-4 px-4 py-3 md:px-5"
     : "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-2 px-3 py-2.5 md:px-4";
 
   return (
@@ -76,9 +76,9 @@ export default function ScrapeWorkbench({
       {showControls && (
         <FloatingWorkbenchBar contentClassName={barContentClassName}>
           {isScraping && (
-            <div className="flex min-w-48 items-center gap-3">
+            <div className="flex items-center gap-3">
               <Progress value={progress} className="h-1.5 w-24 md:w-28" />
-              <span className="w-10 font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
+              <span className="font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
             </div>
           )}
 

@@ -51,6 +51,8 @@ export enum IpcChannel {
   App_OpenExternal = "app:open-external",
   App_PlayMedia = "app:play-media",
   App_ShowItemInFolder = "app:show-item-in-folder",
+  App_EnsureWatermarkDirectory = "app:ensure-watermark-directory",
+  App_OpenWatermarkDirectory = "app:open-watermark-directory",
   App_Relaunch = "app:relaunch",
   App_SyncTitleBarTheme = "app:sync-titlebar-theme",
 

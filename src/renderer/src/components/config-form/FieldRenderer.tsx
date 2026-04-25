@@ -3,7 +3,6 @@ import { createContext, type ReactElement, type ReactNode, useContext, useState 
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { ipc } from "@/client/ipc";
-import { AutoSaveStatusIndicator } from "@/components/settings/AutoSaveStatusIndicator";
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
@@ -23,7 +22,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
 import { BufferedFieldControl, parseBufferedNumberValue } from "./BufferedFieldControls";
-import { ChipArrayField } from "./ChipArrayField";
+import { ChipArrayField, type ChipArrayOption } from "./ChipArrayField";
 import { DurationField } from "./DurationField";
 import { OrderedSiteField } from "./OrderedSiteField";
 import { ServerPathField } from "./ServerPathField";
@@ -52,6 +51,7 @@ interface BaseFieldProps {
   name: string;
   label: string;
   description?: string;
+  labelAddon?: ReactNode;
   children: (field: ControllerRenderProps<FieldValues, string>) => React.ReactNode;
   layout?: ConfigFieldLayout;
   /**
@@ -63,11 +63,17 @@ interface BaseFieldProps {
 }
 
 /**
- * BaseField wires each form field to auto-save and renders it as a
- * `SettingRow` with the micro-status indicator in the right-aligned status
- * slot.
+ * BaseField wires each form field to auto-save and renders it as a `SettingRow`.
  */
-export function BaseField({ name, label, description, children, layout, commitMode = "immediate" }: BaseFieldProps) {
+export function BaseField({
+  name,
+  label,
+  description,
+  labelAddon,
+  children,
+  layout,
+  commitMode = "immediate",
+}: BaseFieldProps) {
   const sectionMode = useSettingsSectionMode();
 
   if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
@@ -75,16 +81,23 @@ export function BaseField({ name, label, description, children, layout, commitMo
   }
 
   return (
-    <ConnectedBaseField name={name} label={label} description={description} layout={layout} commitMode={commitMode}>
+    <ConnectedBaseField
+      name={name}
+      label={label}
+      description={description}
+      labelAddon={labelAddon}
+      layout={layout}
+      commitMode={commitMode}
+    >
       {children}
     </ConnectedBaseField>
   );
 }
 
-function ConnectedBaseField({ name, label, description, children, layout, commitMode }: BaseFieldProps) {
+function ConnectedBaseField({ name, label, description, labelAddon, children, layout, commitMode }: BaseFieldProps) {
   const form = useFormContext();
   const fieldLayout = useContext(ConfigFieldLayoutContext);
-  const { status, resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
+  const { resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
   const search = useOptionalSettingsSearch();
   const visible =
     search && isFieldManagedBySettingsSearch(name) ? !search.hasActiveFilters || search.isFieldVisible(name) : true;
@@ -114,9 +127,9 @@ function ConnectedBaseField({ name, label, description, children, layout, commit
               fieldName={name}
               label={label}
               description={description}
+              labelAddon={labelAddon}
               error={rowError}
               headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
-              status={<AutoSaveStatusIndicator status={status} />}
               control={children(field)}
               controlClassName={controlClassName}
               layout={resolvedLayout}
@@ -145,9 +158,19 @@ export function BoolField({ name, label, description }: { name: string; label: s
 
 // ── Text ──
 
-export function TextField({ name, label, description }: { name: string; label: string; description?: string }) {
+export function TextField({
+  name,
+  label,
+  description,
+  labelAddon,
+}: {
+  name: string;
+  label: string;
+  description?: string;
+  labelAddon?: ReactNode;
+}) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="debounce">
+    <BaseField name={name} label={label} description={description} labelAddon={labelAddon} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field}>
           {(control) => (
@@ -489,7 +512,7 @@ export function ChipArrayFieldWrapper({
   name: string;
   label: string;
   description?: string;
-  options?: string[];
+  options?: ChipArrayOption[];
   showBulkActions?: boolean;
 }) {
   return (

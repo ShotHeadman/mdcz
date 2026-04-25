@@ -7,6 +7,7 @@ import type { AggregationService } from "./aggregation";
 import type { DownloadManager } from "./DownloadManager";
 import type { FileOrganizer } from "./FileOrganizer";
 import type { LocalScanService } from "./maintenance/LocalScanService";
+import type { ManualScrapeOptions } from "./manualScrape";
 import type { NfoGenerator } from "./NfoGenerator";
 import { DefaultFileScraperPipeline, type FileScraperPipeline } from "./pipeline";
 import type { TranslateService } from "./TranslateService";
@@ -30,6 +31,10 @@ export interface FileScrapeProgress {
   totalFiles: number;
 }
 
+export interface FileScrapeOptions {
+  manualScrape?: ManualScrapeOptions;
+}
+
 export interface CreateFileScraperOptions {
   mode?: ScrapeExecutionMode;
 }
@@ -41,8 +46,9 @@ export class FileScraper {
     filePath: string,
     progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 },
     signal?: AbortSignal,
+    options: FileScrapeOptions = {},
   ): Promise<ScrapeResult> {
-    const context = this.pipeline.createContext(filePath, progress);
+    const context = this.pipeline.createContext(filePath, progress, options);
     this.pipeline.setProgress(progress, 0);
 
     try {

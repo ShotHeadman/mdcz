@@ -24,6 +24,13 @@ const DEFAULT_OPTIONS = {
   apiToken: undefined,
 };
 
+interface DetailRequest {
+  detailUrl: string;
+  reuseSearchDocument: boolean;
+  searchHtml?: string;
+  searchDoc?: CheerioAPI;
+}
+
 const toFailureReason = (message: string): FailureReason => {
   const lowered = message.toLowerCase();
 
@@ -131,35 +138,17 @@ export abstract class BaseCrawler implements SiteAdapter {
 
   private async runPipeline(context: Context): Promise<CrawlerResult> {
     try {
-      const searchUrl = await this.generateSearchUrl(context);
-      if (!searchUrl) {
-        return {
-          success: false,
-          error: `Search URL not generated for ${context.number}`,
-          failureReason: "not_found",
-        };
-      }
-
-      const searchHtml = await this.fetch(searchUrl, context);
-      const searchDoc = load(searchHtml);
-      const searchResolution = await this.parseSearchPage(context, searchDoc, searchUrl);
-      if (!searchResolution) {
-        return {
-          success: false,
-          error: `Detail URL not found for ${context.number}`,
-          failureReason: "not_found",
-        };
-      }
-
-      const detailRequest =
-        typeof searchResolution === "string"
-          ? { detailUrl: searchResolution, reuseSearchDocument: false }
-          : searchResolution;
+      const detailRequest: DetailRequest =
+        typeof context.options.detailUrl === "string" && context.options.detailUrl.trim().length > 0
+          ? { detailUrl: context.options.detailUrl.trim(), reuseSearchDocument: false }
+          : await this.resolveDetailRequest(context);
 
       const detailHtml = detailRequest.reuseSearchDocument
-        ? searchHtml
+        ? (detailRequest.searchHtml ?? "")
         : await this.fetch(detailRequest.detailUrl, context);
-      const detailDoc = detailRequest.reuseSearchDocument ? searchDoc : load(detailHtml);
+      const detailDoc = detailRequest.reuseSearchDocument
+        ? (detailRequest.searchDoc ?? load(detailHtml))
+        : load(detailHtml);
       const data = await this.parseDetailPage(context, detailDoc, detailRequest.detailUrl);
 
       if (!data) {
@@ -192,6 +181,34 @@ export abstract class BaseCrawler implements SiteAdapter {
         cause: error,
       };
     }
+  }
+
+  private async resolveDetailRequest(context: Context): Promise<DetailRequest> {
+    const searchUrl = await this.generateSearchUrl(context);
+    if (!searchUrl) {
+      throw new Error(`Search URL not generated for ${context.number}`);
+    }
+
+    const searchHtml = await this.fetch(searchUrl, context);
+    const searchDoc = load(searchHtml);
+    const searchResolution = await this.parseSearchPage(context, searchDoc, searchUrl);
+    if (!searchResolution) {
+      throw new Error(`Detail URL not found for ${context.number}`);
+    }
+
+    const detailRequest =
+      typeof searchResolution === "string"
+        ? { detailUrl: searchResolution, reuseSearchDocument: false }
+        : {
+            detailUrl: searchResolution.detailUrl,
+            reuseSearchDocument: searchResolution.reuseSearchDocument ?? false,
+          };
+
+    return {
+      ...detailRequest,
+      searchHtml,
+      searchDoc,
+    };
   }
 
   protected async fetch(url: string, context: Context): Promise<string> {

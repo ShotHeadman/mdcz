@@ -22,6 +22,7 @@ import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { fileOrganizer } from "./FileOrganizer";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
+import type { ManualScrapeOptions } from "./manualScrape";
 import { isGeneratedSidecarVideo } from "./media";
 import { NfoGenerator } from "./NfoGenerator";
 import { ScrapeSession } from "./session/ScrapeSession";
@@ -284,7 +285,7 @@ export class ScraperService {
     this.session.resume();
   }
 
-  async requeue(filePaths: string[]): Promise<{ requeuedCount: number }> {
+  async requeue(filePaths: string[], manualScrape?: ManualScrapeOptions): Promise<{ requeuedCount: number }> {
     if (!this.session.getStatus().running) {
       throw new ScraperServiceError("NOT_RUNNING", "Scraper is not running");
     }
@@ -311,7 +312,9 @@ export class ScraperService {
           isRetry: true,
           taskFn: async (signal) => {
             await this.restGate?.waitBeforeStart(signal);
-            return fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal);
+            return manualScrape
+              ? fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal, { manualScrape })
+              : fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal);
           },
         })
       ) {
@@ -330,7 +333,7 @@ export class ScraperService {
    * Works when the scraper is idle (unlike requeue which requires running state).
    * Starts a fresh task using the given file paths directly (no directory listing).
    */
-  async retryFiles(filePaths: string[]): Promise<StartScrapeResult> {
+  async retryFiles(filePaths: string[], manualScrape?: ManualScrapeOptions): Promise<StartScrapeResult> {
     if (this.session.getStatus().running) {
       throw new ScraperServiceError("ALREADY_RUNNING", "Scraper is already running — use requeue instead");
     }
@@ -341,7 +344,7 @@ export class ScraperService {
     }
 
     const configuration = await configManager.getValidated();
-    return this.startBatchExecution(pending, configuration);
+    return this.startBatchExecution(pending, configuration, manualScrape);
   }
 
   private async finish(taskId: string): Promise<void> {
@@ -423,10 +426,14 @@ export class ScraperService {
     return outputs;
   }
 
-  private startBatchExecution(filePaths: string[], configuration: Configuration): StartScrapeResult {
+  private startBatchExecution(
+    filePaths: string[],
+    configuration: Configuration,
+    manualScrape?: ManualScrapeOptions,
+  ): StartScrapeResult {
     this.configureRuntimeSettings(configuration);
     const concurrency = Math.max(1, configuration.scrape.threadNumber);
-    return this.beginSession(filePaths, concurrency, configuration, "batch");
+    return this.beginSession(filePaths, concurrency, configuration, "batch", manualScrape);
   }
 
   private createFileScraperDependencies() {
@@ -471,6 +478,7 @@ export class ScraperService {
     concurrency: number,
     configuration: Configuration,
     mode: ScrapeExecutionMode,
+    manualScrape?: ManualScrapeOptions,
   ): StartScrapeResult {
     const taskId = this.session.begin(filePaths, concurrency);
     this.restGate = this.createRestGate(configuration);
@@ -487,7 +495,10 @@ export class ScraperService {
         isRetry: false,
         taskFn: async (signal) => {
           await this.restGate?.waitBeforeStart(signal);
-          return fileScraper.scrapeFile(filePath, { fileIndex, totalFiles: filePaths.length }, signal);
+          const progress = { fileIndex, totalFiles: filePaths.length };
+          return manualScrape
+            ? fileScraper.scrapeFile(filePath, progress, signal, { manualScrape })
+            : fileScraper.scrapeFile(filePath, progress, signal);
         },
       });
     }

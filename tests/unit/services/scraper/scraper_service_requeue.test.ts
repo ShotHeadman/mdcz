@@ -10,6 +10,7 @@ import type { FileScraperDependencies } from "@main/services/scraper/FileScraper
 import * as FileScraperModule from "@main/services/scraper/FileScraper";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
+import { Website } from "@shared/enums";
 import type { ScrapeResult } from "@shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -459,5 +460,58 @@ describe("ScraperService requeue flow", () => {
     expect(createdDependencies).toHaveLength(2);
     expect(createdDependencies[0]?.aggregationService).toBe(createdDependencies[1]?.aggregationService);
     expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes manual scrape options to retry file tasks", async () => {
+    const signalService = new SignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new ScraperService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        threadNumber: 1,
+      },
+    });
+    const dirPath = await createTempDir();
+    const filePath = join(dirPath, "ABP-123.mp4");
+    const manualScrape = {
+      site: Website.DMM_TV,
+      detailUrl: "https://video.dmm.co.jp/av/content/?id=1abp00123",
+    };
+
+    await writeFile(filePath, "video", "utf8");
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const scrapeFile = vi.spyOn(FileScraper.prototype, "scrapeFile").mockResolvedValue({
+      status: "success",
+      fileId: "abp-123",
+      fileInfo: {
+        filePath,
+        fileName: "ABP-123.mp4",
+        extension: ".mp4",
+        number: "ABP-123",
+        isSubtitled: false,
+      },
+      crawlerData: {
+        title: "ABP-123",
+        number: "ABP-123",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM_TV,
+      },
+    });
+
+    await service.retryFiles([filePath], manualScrape);
+    await waitForIdle(service);
+
+    expect(scrapeFile).toHaveBeenCalledWith(filePath, { fileIndex: 1, totalFiles: 1 }, expect.anything(), {
+      manualScrape,
+    });
   });
 });

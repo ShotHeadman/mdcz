@@ -1,18 +1,22 @@
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createAppHandlers } from "@main/ipc/handlers/app";
 import { IpcChannel } from "@shared/IpcChannel";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockExit, mockRelaunch } = vi.hoisted(() => ({
+const { mockExit, mockOpenPath, mockRelaunch, mockUserDataPath } = vi.hoisted(() => ({
   mockExit: vi.fn(),
+  mockOpenPath: vi.fn(),
   mockRelaunch: vi.fn(),
+  mockUserDataPath: "/tmp/mdcz-vitest-app-handlers",
 }));
 
 vi.mock("electron", () => {
   return {
     app: {
       exit: mockExit,
-      getPath: () => "/tmp/mdcz-vitest-app-handlers",
+      getPath: () => mockUserDataPath,
       getVersion: () => "0.0.0-test",
       isReady: () => false,
       relaunch: mockRelaunch,
@@ -23,7 +27,7 @@ vi.mock("electron", () => {
     },
     shell: {
       openExternal: vi.fn(),
-      openPath: vi.fn(),
+      openPath: mockOpenPath,
     },
   };
 });
@@ -61,7 +65,24 @@ const createContext = (syncTitleBarOverlay = vi.fn()): ServiceContainer =>
 describe("createAppHandlers", () => {
   beforeEach(() => {
     mockExit.mockClear();
+    mockOpenPath.mockReset();
+    mockOpenPath.mockResolvedValue("");
     mockRelaunch.mockClear();
+  });
+
+  it("ensures and opens the app-managed watermark directory", async () => {
+    const handlers = createAppHandlers(createContext());
+    const watermarkPath = join(mockUserDataPath, "watermark");
+
+    await expect(handlers[IpcChannel.App_EnsureWatermarkDirectory].action(actionArgs)).resolves.toEqual({
+      path: watermarkPath,
+    });
+    expect((await stat(watermarkPath)).isDirectory()).toBe(true);
+
+    await expect(handlers[IpcChannel.App_OpenWatermarkDirectory].action(actionArgs)).resolves.toEqual({
+      success: true,
+    });
+    expect(mockOpenPath).toHaveBeenCalledWith(watermarkPath);
   });
 
   it("relaunches the app and exits the current process", async () => {

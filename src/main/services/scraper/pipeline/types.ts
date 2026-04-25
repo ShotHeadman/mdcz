@@ -7,6 +7,7 @@ import type { Logger } from "winston";
 import type { AggregationResult } from "../aggregation";
 import type { DownloadManager } from "../DownloadManager";
 import type { FileOrganizer } from "../FileOrganizer";
+import type { ManualScrapeOptions } from "../manualScrape";
 import type { NfoGenerator } from "../NfoGenerator";
 import type { ScrapeContext } from "./ScrapeContext";
 
@@ -30,6 +31,7 @@ export interface FileScraperStageRuntime {
     fileInfo: FileInfo,
     configuration: Configuration,
     signal?: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
   ): Promise<AggregationResult | null>;
   handleFailedFileMove(fileInfo: FileInfo, configuration: Configuration): Promise<FileInfo>;
   loadExistingNfoLocalState(filePath: string, configuration: Configuration): Promise<NfoLocalState | undefined>;

@@ -247,6 +247,20 @@ const normalizeNumber = (value: string): string => value.trim().toUpperCase();
 
 const isNotFoundError = (message: string): boolean => /\bHTTP 404\b|Detail URL not found/iu.test(message);
 
+const readDetailNumberFromUrl = (value: string | undefined): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/^\/work\/([^/]+)\/?$/u);
+    return match?.[1] ? normalizeNumber(decodeURIComponent(match[1])) : null;
+  } catch {
+    return null;
+  }
+};
+
 const classifyFailure = (message: string): FailureReason => {
   if (/region blocked|forbidden|HTTP 403/iu.test(message)) {
     return "region_blocked";
@@ -324,6 +338,11 @@ export class AvwikidbCrawler implements SiteAdapter {
   }
 
   private async fetchMetadataWithCurrentSession(input: CrawlerInput): Promise<CrawlerData | null> {
+    const detailNumber = readDetailNumberFromUrl(input.options?.detailUrl);
+    if (detailNumber) {
+      return this.fetchWorkData(detailNumber, input);
+    }
+
     const number = normalizeNumber(input.number);
     const cachedBuildId = this.buildId;
 

@@ -36,6 +36,28 @@ class BodyAwareDmmTvNetworkClient extends NetworkClient {
 
     if (operationName === "ContentPageData") {
       const id = String(operation.variables?.id ?? "");
+      if (id === "1stars00804") {
+        return {
+          data: {
+            ppvContent: {
+              title: "GraphQL-first STARS Title",
+              makerContentId: "STARS-804",
+              description: "Resolved before HTML",
+              makerReleasedAt: "2025-05-17T00:00:00Z",
+              duration: 5400,
+              packageImage: {
+                largeUrl: "https://cdn.example.com/stars-cover.jpg",
+                mediumUrl: "https://cdn.example.com/stars-poster.jpg",
+              },
+              sampleImages: [{ largeImageUrl: "https://cdn.example.com/stars-sample.jpg" }],
+              actresses: [{ name: "Actor STARS" }],
+              genres: [{ name: "Tag STARS" }],
+            },
+            reviewSummary: { average: 4.3 },
+          },
+        } as TResponse;
+      }
+
       if (id === "realknbm007") {
         return {
           data: {
@@ -115,6 +137,24 @@ class BodyAwareDmmTvNetworkClient extends NetworkClient {
 }
 
 describe("DmmTvCrawler", () => {
+  it("tries GraphQL detail data before fetching the guessed HTML shell", async () => {
+    const networkClient = new BodyAwareDmmTvNetworkClient(new Map());
+    const crawler = new DmmTvCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number: "STARS-804",
+      site: Website.DMM_TV,
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
+    }
+
+    expect(response.result.data.title).toBe("GraphQL-first STARS Title");
+    expect(networkClient.requests.map((request) => request.url)).toEqual(["https://api.video.dmm.co.jp/graphql"]);
+  });
+
   it("resolves detail ids for prefixed and non-prefixed numbers", async () => {
     const cases = [
       {
@@ -335,6 +375,31 @@ describe("DmmTvCrawler", () => {
           String((request.body as { variables?: Record<string, unknown> })?.variables?.id ?? "") === "realknbm007",
       ),
     ).toBe(true);
+  });
+
+  it("does not run GraphQL search fallback for manual detail URLs", async () => {
+    const manualDetailUrl = "https://video.dmm.co.jp/av/content/?id=1knbm00007";
+    const networkClient = new BodyAwareDmmTvNetworkClient(
+      new Map<string, string>([
+        [manualDetailUrl, `<html><body><script>self.__next_f.push([1,"shell"])</script></body></html>`],
+      ]),
+    );
+    const crawler = new DmmTvCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number: "KNBM-007",
+      site: Website.DMM_TV,
+      options: {
+        detailUrl: manualDetailUrl,
+      },
+    });
+
+    expect(response.result.success).toBe(false);
+    const searchPayloads = networkClient.requests
+      .filter((request) => request.url === "https://api.video.dmm.co.jp/graphql")
+      .map((request) => request.body as { operationName?: string })
+      .filter((payload) => payload.operationName === "AvSearch" || payload.operationName === "AnimeSearch");
+    expect(searchPayloads).toEqual([]);
   });
 
   it("does not accept a single GraphQL search result without an id or title match", async () => {

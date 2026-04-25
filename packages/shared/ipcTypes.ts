@@ -11,6 +11,10 @@ export type AppInfo = {
   isPackaged: boolean;
 };
 
+export type WatermarkDirectoryInfo = {
+  path: string;
+};
+
 export type TranslateTestLlmInput = {
   llmModelName?: string;
   llmApiKey?: string;

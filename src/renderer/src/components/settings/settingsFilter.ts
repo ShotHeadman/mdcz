@@ -34,7 +34,7 @@ function tokenize(query: string): string[] {
 }
 
 function entrySearchText(entry: FieldEntry): string {
-  return normalize([entry.label, entry.description].join(" "));
+  return normalize([entry.label, entry.description, ...entry.aliases].filter(Boolean).join(" "));
 }
 
 function matchesGroup(anchor: FieldAnchor, term: string): boolean {

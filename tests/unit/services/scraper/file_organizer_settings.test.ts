@@ -1333,4 +1333,48 @@ describe("FileOrganizer naming settings", () => {
     expect(plan.outputDir).toBe(expectedOutputPath("Actor A", "Original Title"));
     expect(parse(plan.targetVideoPath).name).toBe("ABC-123 Original Title");
   });
+
+  it("supports expanded MDCz naming placeholders for folders and files", () => {
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/raw-source.mp4",
+        fileName: "raw-source",
+        isSubtitled: true,
+        subtitleTag: "中文字幕",
+        resolution: "2160P",
+      }),
+      createCrawlerData({
+        number: "ABC-123",
+        title: "Original Title",
+        title_zh: "中文标题",
+        actors: ["Actor A", "Actor B"],
+        director: "Director A",
+        series: "Series A",
+        studio: "Studio A",
+        publisher: "Publisher A",
+        release_date: "2024-01-02",
+        durationSeconds: 7260,
+        rating: 4.5,
+        plot: "Original plot",
+        plot_zh: "中文简介",
+      }),
+      createConfig({
+        naming: {
+          folderTemplate:
+            "{letters}/{number}/{firstActor}/{series}/{year} {director} {runtime} {definition} {filename}",
+          fileTemplate: "{number} {allActors} {release} {firstLetter} {4K} {cnword} {censorshipType} {score} {outline}",
+          cnwordStyle: "-SUB",
+          censoredStyle: "",
+          folderNameMax: 255,
+          fileNameMax: 255,
+        },
+      }),
+    );
+
+    expect(plan.outputDir).toBe(
+      expectedOutputPath("ABC", "ABC-123-SUB", "Actor A", "Series A", "2024 Director A 121 2160P raw-source"),
+    );
+    expect(parse(plan.targetVideoPath).name).toBe("ABC-123-SUB Actor A Actor B 2024-01-02 A 4K -SUB 有码 4.5 中文简介");
+  });
 });

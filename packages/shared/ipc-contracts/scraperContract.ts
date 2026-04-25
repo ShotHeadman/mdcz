@@ -12,9 +12,9 @@ export type ScraperIpcContract = {
   [IpcChannel.Scraper_Resume]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Scraper_GetStatus]: IpcProcedure<void, ScraperStatus>;
   [IpcChannel.Scraper_GetFailedFiles]: IpcProcedure<void, { filePaths: string[] }>;
-  [IpcChannel.Scraper_Requeue]: IpcProcedure<{ filePaths?: string[] }, { requeuedCount: number }>;
+  [IpcChannel.Scraper_Requeue]: IpcProcedure<{ filePaths?: string[]; manualUrl?: string }, { requeuedCount: number }>;
   [IpcChannel.Scraper_RetryFailed]: IpcProcedure<
-    { filePaths?: string[] },
+    { filePaths?: string[]; manualUrl?: string },
     { taskId: string; totalFiles: number; message: string }
   >;
   [IpcChannel.Scraper_GetRecoverableSession]: IpcProcedure<

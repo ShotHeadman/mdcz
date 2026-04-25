@@ -1,4 +1,5 @@
 import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
+import { OrderedSiteFieldEditor } from "@renderer/components/config-form/OrderedSiteField";
 import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
 import { SectionAnchor } from "@renderer/components/settings/SectionAnchor";
 import { AdvancedSettingsFooterContent } from "@renderer/components/settings/SettingsForm";
@@ -11,12 +12,16 @@ import { buildSettingsBrowseState } from "@renderer/components/settings/settings
 import {
   AssetDownloadsSection,
   buildNamingPreviewConfig,
-  NAMING_TEMPLATE_DESCRIPTION,
   NamingSection,
 } from "@renderer/components/settings/settingsContent";
 import { resolveSettingsDeepLink } from "@renderer/components/settings/settingsDeepLink";
 import { getSettingsSuggestions } from "@renderer/components/settings/settingsFilter";
 import { FIELD_REGISTRY, flattenConfig, unflattenConfig } from "@renderer/components/settings/settingsRegistry";
+import {
+  moveSitePriorityOption,
+  resolveSitePriorityOptions,
+  toggleSitePriorityOption,
+} from "@renderer/components/settings/sitePriorityOptions";
 import {
   FileBehaviorTopLevelSection,
   NetworkTopLevelSection,
@@ -28,6 +33,7 @@ import {
   runLatestRevisionTask,
   SettingsEditorAutosaveProvider,
 } from "@renderer/hooks/useAutoSaveField";
+import { Website } from "@shared/enums";
 import { type ComponentProps, createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";
@@ -98,6 +104,9 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("translate.engine")?.anchor).toBe("translate");
     expect(entry("translate.llmApiKey")?.anchor).toBe("translate");
     expect(entry("download.sceneImageConcurrency")?.visibility).toBe("advanced");
+    expect(entry("download.tagBadgeTypes")).toMatchObject({ anchor: "download", visibility: "public" });
+    expect(entry("download.tagBadgePosition")).toMatchObject({ anchor: "download", visibility: "public" });
+    expect(entry("download.tagBadgeImageOverrides")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
     expect(entry("scrape.siteConfigs.javdb.customUrl")).toMatchObject({
@@ -116,6 +125,11 @@ describe("settings editor metadata and filtering", () => {
   it("round-trips registered settings, including dynamic site and aggregation paths", () => {
     const flat = flattenConfig({
       translate: { engine: "openai", llmApiKey: "secret" },
+      download: {
+        tagBadgeTypes: ["subtitle", "leak"],
+        tagBadgePosition: "bottomRight",
+        tagBadgeImageOverrides: true,
+      },
       scrape: {
         sites: ["javdb"],
         siteConfigs: {
@@ -132,11 +146,19 @@ describe("settings editor metadata and filtering", () => {
     expect(flat).toMatchObject({
       "translate.engine": "openai",
       "translate.llmApiKey": "secret",
+      "download.tagBadgeTypes": ["subtitle", "leak"],
+      "download.tagBadgePosition": "bottomRight",
+      "download.tagBadgeImageOverrides": true,
       "scrape.siteConfigs.javdb.customUrl": "https://example.org",
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
       translate: { engine: "openai", llmApiKey: "secret" },
+      download: {
+        tagBadgeTypes: ["subtitle", "leak"],
+        tagBadgePosition: "bottomRight",
+        tagBadgeImageOverrides: true,
+      },
       scrape: { siteConfigs: { javdb: { customUrl: "https://example.org" } } },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
@@ -213,6 +235,40 @@ describe("settings editor metadata and filtering", () => {
     ]);
   });
 
+  it("matches poster badge settings through their registered search aliases", () => {
+    const badgeTypeAliasSearch = buildSettingsBrowseState({
+      query: "subtitle",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const badgeResolutionAliasSearch = buildSettingsBrowseState({
+      query: "4k",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const badgePositionAliasSearch = buildSettingsBrowseState({
+      query: "top right",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const badgeImageAliasSearch = buildSettingsBrowseState({
+      query: "watermark",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+
+    expect(badgeTypeAliasSearch.visibleEntries.map((candidate) => candidate.key)).toContain("download.tagBadgeTypes");
+    expect(badgeResolutionAliasSearch.visibleEntries.map((candidate) => candidate.key)).toContain(
+      "download.tagBadgeTypes",
+    );
+    expect(badgePositionAliasSearch.visibleEntries.map((candidate) => candidate.key)).toContain(
+      "download.tagBadgePosition",
+    );
+    expect(badgeImageAliasSearch.visibleEntries.map((candidate) => candidate.key)).toContain(
+      "download.tagBadgeImageOverrides",
+    );
+  });
+
   it("does not invent top-level search matches for dialog-only site URL rows", () => {
     const siteUrlSearch = buildSettingsBrowseState({
       query: "javdb 站点地址",
@@ -227,6 +283,38 @@ describe("settings editor metadata and filtering", () => {
 
     expect(siteUrlSearch.visibleEntries).toEqual([]);
     expect(siteEditorSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+  });
+
+  it("matches grouped site-priority aliases without exposing per-site URL rows", () => {
+    const dmmFamilySearch = buildSettingsBrowseState({
+      query: "fanza",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const officialSearch = buildSettingsBrowseState({
+      query: "厂商官网",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+
+    expect(dmmFamilySearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+    expect(officialSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+  });
+
+  it("matches independent site-priority aliases for FC2 and wiki/aggregation sources", () => {
+    const fc2HubSearch = buildSettingsBrowseState({
+      query: "fc2hub",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const wikiSearch = buildSettingsBrowseState({
+      query: "avwikidb",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+
+    expect(fc2HubSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+    expect(wikiSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
   });
 
   it("offers only the supported query tokens and section-mode row split", () => {
@@ -316,15 +404,165 @@ describe("settings editor save and content helpers", () => {
     expect(
       buildSitePrioritySummary(["dmm", "dmm_tv", "mgstage", "dmm"], ["dmm", "dmm_tv", "mgstage", "faleno"]),
     ).toMatchObject({
-      enabledCount: 3,
-      totalCount: 4,
-      preview: ["dmm", "dmm_tv", "mgstage"],
+      enabledCount: 2,
+      totalCount: 2,
+      preview: ["DMM/FANZA 系", "厂商官网"],
       remainingCount: 0,
     });
+  });
+
+  it("maps grouped site-priority rows back to concrete site values deterministically", () => {
+    const availableSites = ["dmm", "dmm_tv", "mgstage", "prestige", "javdb"];
+    const enabledOptions = resolveSitePriorityOptions(["mgstage", "javdb", "dmm"], availableSites).filter(
+      (option) => option.state !== "none",
+    );
+
+    expect(
+      enabledOptions.map((option) => ({
+        id: option.id,
+        state: option.state,
+        enabledSites: option.enabledSites,
+      })),
+    ).toEqual([
+      {
+        id: "official",
+        state: "partial",
+        enabledSites: ["mgstage"],
+      },
+      {
+        id: "javdb",
+        state: "all",
+        enabledSites: ["javdb"],
+      },
+      {
+        id: "dmm_family",
+        state: "partial",
+        enabledSites: ["dmm"],
+      },
+    ]);
+    expect(enabledOptions[0]).toMatchObject({
+      id: "official",
+      memberLabel: "mgstage / prestige",
+      statusLabel: "已启用 1/2",
+    });
+    expect(enabledOptions[1]).toMatchObject({
+      id: "javdb",
+      memberLabel: null,
+      statusLabel: null,
+    });
+    expect(enabledOptions[2]).toMatchObject({
+      id: "dmm_family",
+      memberLabel: "dmm / dmm_tv",
+      statusLabel: "已启用 1/2",
+    });
+
+    expect(toggleSitePriorityOption(["dmm"], availableSites, "dmm_family", true)).toEqual(["dmm", "dmm_tv"]);
+    expect(moveSitePriorityOption(["mgstage", "javdb", "dmm"], availableSites, "dmm_family", -1)).toEqual([
+      "mgstage",
+      "dmm",
+      "javdb",
+    ]);
+  });
+
+  it("keeps FC2 and wiki/aggregation sources independent from the official site group", () => {
+    const availableSites = [
+      Website.DMM,
+      Website.DMM_TV,
+      Website.MGSTAGE,
+      Website.PRESTIGE,
+      Website.FALENO,
+      Website.DAHLIA,
+      Website.KM_PRODUCE,
+      Website.FC2,
+      Website.FC2HUB,
+      Website.PPVDATABANK,
+      Website.SOKMIL,
+      Website.KINGDOM,
+      Website.AVBASE,
+      Website.AVWIKIDB,
+      Website.JAVDB,
+      Website.JAVBUS,
+      Website.JAV321,
+    ];
+    const optionsById = new Map(resolveSitePriorityOptions([], availableSites).map((option) => [option.id, option]));
+
+    expect(optionsById.get("official")).toMatchObject({
+      label: "厂商官网",
+      sites: ["mgstage", "prestige", "faleno", "dahlia", "km_produce"],
+    });
+    expect(optionsById.get("official")?.sites).not.toEqual(expect.arrayContaining(["fc2", "fc2hub", "ppvdatabank"]));
+    expect(optionsById.get(Website.FC2)).toMatchObject({ sites: [Website.FC2] });
+    expect(optionsById.get(Website.FC2HUB)).toMatchObject({ sites: [Website.FC2HUB] });
+    expect(optionsById.get(Website.PPVDATABANK)).toMatchObject({ sites: [Website.PPVDATABANK] });
+    expect(optionsById.get(Website.SOKMIL)).toMatchObject({ sites: [Website.SOKMIL] });
+    expect(optionsById.get(Website.KINGDOM)).toMatchObject({ sites: [Website.KINGDOM] });
+    expect(optionsById.get(Website.AVBASE)).toMatchObject({ sites: [Website.AVBASE] });
+    expect(optionsById.get(Website.AVWIKIDB)).toMatchObject({ sites: [Website.AVWIKIDB] });
+    expect(optionsById.get(Website.JAVDB)).toMatchObject({ sites: [Website.JAVDB] });
+    expect(optionsById.get(Website.JAVBUS)).toMatchObject({ sites: [Website.JAVBUS] });
+    expect(optionsById.get(Website.JAV321)).toMatchObject({ sites: [Website.JAV321] });
+
+    for (const option of optionsById.values()) {
+      expect(option.description.length).toBeGreaterThan(0);
+    }
   });
 });
 
 describe("settings editor render contracts", () => {
+  it("keeps OrderedSiteFieldEditor simple mode stable while rendering grouped row details", () => {
+    const simpleHtml = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        null,
+        createElement(OrderedSiteFieldEditor, {
+          value: ["javdb", "dmm"],
+          options: ["dmm", "javdb", "avbase"],
+          onChange: noop,
+        }),
+      ),
+    );
+
+    expect(simpleHtml).toContain("已启用 2/3");
+    expect(simpleHtml).toContain(">avbase<");
+    expect(simpleHtml.indexOf(">javdb<")).toBeLessThan(simpleHtml.indexOf(">dmm<"));
+
+    const groupedHtml = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        null,
+        createElement(OrderedSiteFieldEditor, {
+          value: ["dmm"],
+          options: ["dmm", "dmm_tv", "javdb"],
+          onChange: noop,
+          rows: [
+            {
+              id: "dmm_family",
+              label: "DMM/FANZA 系",
+              description: "官方售卖与配信源",
+              checkboxState: "indeterminate" as const,
+              chips: [
+                { label: "dmm / dmm_tv", monospace: true, variant: "outline" as const },
+                { label: "已启用 1/2", variant: "soft" as const },
+              ],
+            },
+          ],
+          selectedCount: 1,
+          totalCount: 1,
+          onToggleRow: noop,
+          onMoveRow: noop,
+          onSelectAll: noop,
+          onClearAll: noop,
+        }),
+      ),
+    );
+
+    expect(groupedHtml).toContain("DMM/FANZA 系");
+    expect(groupedHtml).toContain("官方售卖与配信源");
+    expect(groupedHtml).toContain("dmm / dmm_tv");
+    expect(groupedHtml).toContain("已启用 1/2");
+    expect(groupedHtml).toMatch(/data-state="indeterminate"|aria-checked="mixed"/);
+  });
+
   it("renders loading profile identity without the old default-profile fallback", () => {
     const html = renderToStaticMarkup(
       createElement(ProfileCapsule, {
@@ -427,8 +665,57 @@ describe("settings editor render contracts", () => {
     expect(translateHtml).toContain("翻译引擎");
     expect(behaviorHtml).toContain("文件行为");
     expect(behaviorHtml).toContain("成功后移动文件");
-    expect(namingHtml.split(NAMING_TEMPLATE_DESCRIPTION)).toHaveLength(3);
+    expect(namingHtml).toContain('aria-label="查看文件夹模板占位符"');
+    expect(namingHtml).toContain('aria-label="查看文件名模板占位符"');
+    expect(namingHtml).not.toContain("可用占位符：{actor}");
     expect(advancedDownloadHtml).toContain("剧照下载并发");
     expect(advancedDownloadHtml).not.toContain("下载海报");
+  });
+
+  it("shows poster badge controls only when poster downloads stay enabled and badge processing is on", () => {
+    const posterDisabledHtml = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        { values: { download: { downloadPoster: false, tagBadges: true } } },
+        createElement(AssetDownloadsSection),
+      ),
+    );
+    const hiddenHtml = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        { values: { download: { downloadPoster: true, tagBadges: false } } },
+        createElement(AssetDownloadsSection),
+      ),
+    );
+    const visibleHtml = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        {
+          values: {
+            download: {
+              downloadPoster: true,
+              tagBadges: true,
+              tagBadgeTypes: ["subtitle", "leak"],
+              tagBadgePosition: "topRight",
+            },
+          },
+        },
+        createElement(AssetDownloadsSection),
+      ),
+    );
+
+    expect(posterDisabledHtml).not.toContain("为封面添加标签角标");
+    expect(posterDisabledHtml).not.toContain("角标类型");
+    expect(posterDisabledHtml).not.toContain("角标位置");
+    expect(posterDisabledHtml).not.toContain("覆盖角标图片");
+    expect(hiddenHtml).toContain("为封面添加标签角标");
+    expect(hiddenHtml).not.toContain("角标类型");
+    expect(hiddenHtml).not.toContain("角标位置");
+    expect(hiddenHtml).not.toContain("覆盖角标图片");
+    expect(visibleHtml).toContain("角标类型");
+    expect(visibleHtml).toContain("角标位置");
+    expect(visibleHtml).toContain("覆盖角标图片");
+    expect(visibleHtml).toContain("中字");
+    expect(visibleHtml).toContain("流出");
   });
 });

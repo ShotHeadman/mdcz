@@ -64,4 +64,84 @@ describe("movieTags", () => {
 
     expect(badges.map((badge) => badge.label)).toEqual(["中字", "破解"]);
   });
+
+  it("filters resolved poster badges by enabled built-in badge types", () => {
+    const badges = resolvePosterBadgeDefinitions(
+      createCrawlerData(),
+      createFileInfo({
+        isSubtitled: true,
+      }),
+      {
+        uncensoredChoice: "leak",
+      },
+      ["subtitle"],
+    );
+
+    expect(badges.map((badge) => badge.label)).toEqual(["中字"]);
+  });
+
+  it("treats ordinary titles as censored poster badges only when the uncensored chain does not match", () => {
+    const censoredBadges = resolvePosterBadgeDefinitions(
+      createCrawlerData(),
+      createFileInfo({
+        resolution: "1080P",
+      }),
+      undefined,
+      ["censored", "fullHd"],
+    );
+    const uncensoredBadges = resolvePosterBadgeDefinitions(
+      createCrawlerData({
+        number: "FC2-123456",
+      }),
+      createFileInfo({
+        number: "FC2-123456",
+        resolution: "1080P",
+      }),
+      undefined,
+      ["censored", "fullHd", "uncensored"],
+    );
+
+    expect(censoredBadges.map((badge) => badge.label)).toEqual(["有码", "1080P"]);
+    expect(uncensoredBadges.map((badge) => badge.label)).toEqual(["无码", "1080P"]);
+  });
+
+  it("maps poster resolution badges from 1080P, 2160P/4K, and 8K file info", () => {
+    const fullHdBadges = resolvePosterBadgeDefinitions(
+      createCrawlerData(),
+      createFileInfo({
+        resolution: "1080P",
+      }),
+      undefined,
+      ["fullHd", "fourK", "eightK"],
+    );
+    const fourKBadges = resolvePosterBadgeDefinitions(
+      createCrawlerData(),
+      createFileInfo({
+        resolution: "2160P",
+      }),
+      undefined,
+      ["fullHd", "fourK", "eightK"],
+    );
+    const fourKLiteralBadges = resolvePosterBadgeDefinitions(
+      createCrawlerData(),
+      createFileInfo({
+        resolution: "4K",
+      }),
+      undefined,
+      ["fullHd", "fourK", "eightK"],
+    );
+    const eightKBadges = resolvePosterBadgeDefinitions(
+      createCrawlerData(),
+      createFileInfo({
+        resolution: "8K",
+      }),
+      undefined,
+      ["fullHd", "fourK", "eightK"],
+    );
+
+    expect(fullHdBadges.map((badge) => badge.label)).toEqual(["1080P"]);
+    expect(fourKBadges.map((badge) => badge.label)).toEqual(["4K"]);
+    expect(fourKLiteralBadges.map((badge) => badge.label)).toEqual(["4K"]);
+    expect(eightKBadges.map((badge) => badge.label)).toEqual(["8K"]);
+  });
 });

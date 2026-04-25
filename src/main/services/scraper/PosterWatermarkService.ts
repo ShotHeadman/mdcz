@@ -1,13 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, unlink } from "node:fs/promises";
+import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import type { PosterBadgeDefinition } from "@main/utils/movieTags";
+import {
+  POSTER_TAG_BADGE_ASPECT_RATIO,
+  POSTER_TAG_BADGE_IMAGE_EXTENSIONS,
+  POSTER_TAG_BADGE_IMAGE_FILENAMES,
+  POSTER_TAG_BADGE_MAX_WIDTH,
+  POSTER_TAG_BADGE_MAX_WIDTH_RATIO,
+  POSTER_TAG_BADGE_MIN_WIDTH,
+  POSTER_TAG_BADGE_WIDTH_RATIO,
+  type PosterTagBadgePosition,
+} from "@shared/posterBadges";
+import { app } from "electron";
 import sharp from "sharp";
 
-const BADGE_WIDTH_RATIO = 0.24;
-const BADGE_MIN_WIDTH = 108;
-const BADGE_MAX_WIDTH = 184;
-const BADGE_ASPECT_RATIO = 122 / 58;
+const WATERMARK_DIRECTORY_NAME = "watermark";
 const BADGE_GAP_RATIO = 0.1;
 const FONT_STACK = [
   "'Microsoft YaHei'",
@@ -26,6 +34,24 @@ interface BadgeOverlayLayout {
   badgeHeight: number;
   badgeGap: number;
   overlayHeight: number;
+}
+
+interface BadgeOverlayRenderResult {
+  svg: string;
+  width: number;
+  height: number;
+}
+
+interface BadgeOverlayInput {
+  input: Buffer;
+  left: number;
+  top: number;
+}
+
+export interface PosterWatermarkOptions {
+  imageOverrides?: boolean;
+  onWarn?: (message: string) => void;
+  watermarkDirectory?: string;
 }
 
 const inferOutputExtension = (filePath: string, format: string | undefined): string => {
@@ -93,17 +119,23 @@ const resolveBadgeOverlayLayout = (
 ): BadgeOverlayLayout => {
   const maxPosterWidth = Math.max(1, Math.round(posterWidth));
   const maxPosterHeight = Math.max(1, Math.round(posterHeight));
+  const maxCoverageWidth = Math.max(1, Math.round(posterWidth * POSTER_TAG_BADGE_MAX_WIDTH_RATIO));
   let badgeWidth = Math.min(
-    clamp(Math.round(posterWidth * BADGE_WIDTH_RATIO), BADGE_MIN_WIDTH, BADGE_MAX_WIDTH),
+    clamp(
+      Math.round(posterWidth * POSTER_TAG_BADGE_WIDTH_RATIO),
+      POSTER_TAG_BADGE_MIN_WIDTH,
+      POSTER_TAG_BADGE_MAX_WIDTH,
+    ),
     maxPosterWidth,
+    maxCoverageWidth,
   );
-  let badgeHeight = Math.max(1, Math.round(badgeWidth / BADGE_ASPECT_RATIO));
+  let badgeHeight = Math.max(1, Math.round(badgeWidth / POSTER_TAG_BADGE_ASPECT_RATIO));
   let badgeGap = badgeCount > 1 ? Math.max(1, Math.round(badgeHeight * BADGE_GAP_RATIO)) : 0;
   let overlayHeight = badgeHeight * badgeCount + badgeGap * Math.max(0, badgeCount - 1);
 
   while (overlayHeight > maxPosterHeight && badgeWidth > 1) {
     badgeWidth -= 1;
-    badgeHeight = Math.max(1, Math.round(badgeWidth / BADGE_ASPECT_RATIO));
+    badgeHeight = Math.max(1, Math.round(badgeWidth / POSTER_TAG_BADGE_ASPECT_RATIO));
     badgeGap = badgeCount > 1 ? Math.max(0, Math.round(badgeHeight * BADGE_GAP_RATIO)) : 0;
     overlayHeight = badgeHeight * badgeCount + badgeGap * Math.max(0, badgeCount - 1);
   }
@@ -116,26 +148,143 @@ const resolveBadgeOverlayLayout = (
   };
 };
 
-const buildBadgeOverlaySvg = (
+const buildGeneratedBadgeOverlaySvg = (
+  badge: PosterBadgeDefinition,
+  badgeWidth: number,
+  badgeHeight: number,
+): BadgeOverlayRenderResult => {
+  return {
+    svg: `
+      <svg width="${badgeWidth}" height="${badgeHeight}" viewBox="0 0 ${badgeWidth} ${badgeHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
+        ${buildBadgeMarkup(badge, 0, badgeWidth, badgeHeight, 0)}
+      </svg>
+    `,
+    width: badgeWidth,
+    height: badgeHeight,
+  };
+};
+
+const resolveBadgeOverlayPlacement = (
+  posterWidth: number,
+  posterHeight: number,
+  overlayWidth: number,
+  overlayHeight: number,
+  position: PosterTagBadgePosition,
+): { left: number; top: number } => {
+  const left = position.endsWith("Right") ? Math.max(0, posterWidth - overlayWidth) : 0;
+  const top = position.startsWith("bottom") ? Math.max(0, posterHeight - overlayHeight) : 0;
+
+  return { left, top };
+};
+
+const resolveDefaultWatermarkDirectory = (): string => join(app.getPath("userData"), WATERMARK_DIRECTORY_NAME);
+
+const isExistingFile = async (filePath: string): Promise<boolean> => {
+  try {
+    return (await stat(filePath)).isFile();
+  } catch {
+    return false;
+  }
+};
+
+const resolveCustomBadgeImagePath = async (
+  badge: PosterBadgeDefinition,
+  watermarkDirectory: string,
+): Promise<string | null> => {
+  const basenames = POSTER_TAG_BADGE_IMAGE_FILENAMES[badge.id] ?? [badge.id, badge.label];
+
+  for (const basename of basenames) {
+    for (const extension of POSTER_TAG_BADGE_IMAGE_EXTENSIONS) {
+      const candidate = join(watermarkDirectory, `${basename}.${extension}`);
+      if (await isExistingFile(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+};
+
+const renderCustomBadgeImage = async (imagePath: string, badgeWidth: number, badgeHeight: number): Promise<Buffer> =>
+  await sharp(imagePath, { animated: false })
+    .rotate()
+    .resize({
+      width: badgeWidth,
+      height: badgeHeight,
+      fit: "contain",
+      position: "left",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+
+const renderGeneratedBadgeImage = (badge: PosterBadgeDefinition, badgeWidth: number, badgeHeight: number): Buffer => {
+  const overlay = buildGeneratedBadgeOverlaySvg(badge, badgeWidth, badgeHeight);
+  return Buffer.from(overlay.svg);
+};
+
+const renderBadgeImage = async (
+  badge: PosterBadgeDefinition,
+  badgeWidth: number,
+  badgeHeight: number,
+  options: PosterWatermarkOptions,
+): Promise<Buffer> => {
+  if (!options.imageOverrides) {
+    return renderGeneratedBadgeImage(badge, badgeWidth, badgeHeight);
+  }
+
+  const watermarkDirectory = options.watermarkDirectory ?? resolveDefaultWatermarkDirectory();
+  const imagePath = await resolveCustomBadgeImagePath(badge, watermarkDirectory);
+  if (!imagePath) {
+    return renderGeneratedBadgeImage(badge, badgeWidth, badgeHeight);
+  }
+
+  try {
+    return await renderCustomBadgeImage(imagePath, badgeWidth, badgeHeight);
+  } catch (error) {
+    options.onWarn?.(
+      `Failed to apply custom poster badge image for ${badge.id} from ${imagePath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return renderGeneratedBadgeImage(badge, badgeWidth, badgeHeight);
+  }
+};
+
+const buildBadgeOverlayInputs = async (
   posterWidth: number,
   posterHeight: number,
   badges: readonly PosterBadgeDefinition[],
-): string => {
-  const { badgeWidth, badgeHeight, badgeGap, overlayHeight } = resolveBadgeOverlayLayout(
+  position: PosterTagBadgePosition,
+  options: PosterWatermarkOptions,
+): Promise<BadgeOverlayInput[]> => {
+  const layout = resolveBadgeOverlayLayout(posterWidth, posterHeight, badges.length);
+  const placement = resolveBadgeOverlayPlacement(
     posterWidth,
     posterHeight,
-    badges.length,
+    layout.badgeWidth,
+    layout.overlayHeight,
+    position,
   );
 
-  return `
-    <svg width="${badgeWidth}" height="${overlayHeight}" viewBox="0 0 ${badgeWidth} ${overlayHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
-      ${badges.map((badge, index) => buildBadgeMarkup(badge, index, badgeWidth, badgeHeight, badgeGap)).join("")}
-    </svg>
-  `;
+  const overlays = await Promise.all(
+    badges.map(async (badge, index) => ({
+      input: await renderBadgeImage(badge, layout.badgeWidth, layout.badgeHeight, options),
+      left: placement.left,
+      top: placement.top + index * (layout.badgeHeight + layout.badgeGap),
+    })),
+  );
+
+  return overlays.filter((overlay) => overlay.top < posterHeight && overlay.left < posterWidth);
 };
 
 export class PosterWatermarkService {
-  async applyTagBadges(posterPath: string, badges: readonly PosterBadgeDefinition[]): Promise<void> {
+  async applyTagBadges(
+    posterPath: string,
+    badges: readonly PosterBadgeDefinition[],
+    position: PosterTagBadgePosition = "topLeft",
+    options: PosterWatermarkOptions = {},
+  ): Promise<void> {
     if (badges.length === 0) {
       return;
     }
@@ -154,15 +303,8 @@ export class PosterWatermarkService {
     await mkdir(dirname(tempPath), { recursive: true });
 
     try {
-      const overlaySvg = buildBadgeOverlaySvg(width, height, badges);
       pipeline = pipeline
-        .composite([
-          {
-            input: Buffer.from(overlaySvg),
-            left: 0,
-            top: 0,
-          },
-        ])
+        .composite(await buildBadgeOverlayInputs(width, height, badges, position, options))
         .keepMetadata();
 
       switch (metadata.format) {

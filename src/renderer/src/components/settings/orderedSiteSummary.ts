@@ -1,4 +1,4 @@
-import { normalizeEnabledSites } from "@/components/config-form/OrderedSiteField";
+import { normalizeEnabledSites } from "@/utils/orderedSite";
 
 export interface OrderedSiteSummary {
   enabledCount: number;

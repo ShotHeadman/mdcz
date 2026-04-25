@@ -17,6 +17,7 @@ import type {
   BatchTranslateApplyResultItem,
   BatchTranslateScanItem,
   TranslateTestLlmInput,
+  WatermarkDirectoryInfo,
 } from "@shared/ipcTypes";
 import type {
   CrawlerData,
@@ -44,6 +45,9 @@ export const ipc = {
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
     playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
     showItemInFolder: (path: string) => client[IpcChannel.App_ShowItemInFolder]({ path }),
+    ensureWatermarkDirectory: () =>
+      client[IpcChannel.App_EnsureWatermarkDirectory](undefined) as Promise<WatermarkDirectoryInfo>,
+    openWatermarkDirectory: () => client[IpcChannel.App_OpenWatermarkDirectory](undefined),
     relaunch: () => client[IpcChannel.App_Relaunch](undefined),
     syncTitleBarTheme: (isDark: boolean) => client[IpcChannel.App_SyncTitleBarTheme]({ isDark }),
   },
@@ -86,8 +90,9 @@ export const ipc = {
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
     getStatus: () => client[IpcChannel.Scraper_GetStatus](undefined),
     getFailedFiles: () => client[IpcChannel.Scraper_GetFailedFiles](undefined),
-    requeue: (filePaths: string[]) => client[IpcChannel.Scraper_Requeue]({ filePaths }),
-    retryFailed: (filePaths: string[]) => client[IpcChannel.Scraper_RetryFailed]({ filePaths }),
+    requeue: (filePaths: string[], manualUrl?: string) => client[IpcChannel.Scraper_Requeue]({ filePaths, manualUrl }),
+    retryFailed: (filePaths: string[], manualUrl?: string) =>
+      client[IpcChannel.Scraper_RetryFailed]({ filePaths, manualUrl }),
     getRecoverableSession: () => client[IpcChannel.Scraper_GetRecoverableSession](undefined),
     resolveRecoverableSession: (action: "recover" | "discard") =>
       client[IpcChannel.Scraper_ResolveRecoverableSession]({ action }),

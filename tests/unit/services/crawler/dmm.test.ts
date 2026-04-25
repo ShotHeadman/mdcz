@@ -200,20 +200,6 @@ describe("DmmCrawler", () => {
   it("classifies incompatible or blocked DMM detail pages as failures", async () => {
     const cases = [
       {
-        number: "SSNI-103",
-        searchUrl: "https://www.dmm.co.jp/search/=/searchstr=ssni00103/sort=ranking/",
-        detailUrl: "https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search&i3_ord=1",
-        searchHtml: (detailUrl: string) => `
-          <html><body>
-            <script>
-              const item = {"detailUrl":"${detailUrl.replaceAll("/", "\\/").replaceAll("&", "\\u0026")}"};
-            </script>
-          </body></html>
-        `,
-        detailHtml: "<html><body>tv detail</body></html>",
-        expectedError: undefined,
-      },
-      {
         number: "DLDSS-463",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=dldss00463/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=dldss00463/",
@@ -277,6 +263,160 @@ describe("DmmCrawler", () => {
         expect(response.result.error).toBe(expectedError);
       }
     }
+  });
+
+  it("uses manual detail URLs directly without running search", async () => {
+    const detailUrl = "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00497/";
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        [
+          detailUrl,
+          `
+            <html><body>
+              <h1><span>Direct Detail Title</span></h1>
+              <meta property="og:image" content="https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497ps.jpg" />
+            </body></html>
+          `,
+        ],
+      ]),
+    );
+    const crawler = new DmmCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number: "SSIS-497",
+      site: Website.DMM,
+      options: {
+        detailUrl,
+      },
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
+    }
+    expect(response.result.data.title).toBe("Direct Detail Title");
+    expect(networkClient.requests.map((request) => request.url)).toEqual([detailUrl]);
+  });
+
+  it("routes video.dmm.co.jp search candidates through GraphQL without fetching the shell detail page", async () => {
+    const number = "STARS-804";
+    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=stars00804/sort=ranking/";
+    const videoDetailUrl = "https://video.dmm.co.jp/av/content/?id=1stars00804";
+    const graphqlUrl = "https://api.video.dmm.co.jp/graphql";
+    const searchHtml = `
+      <html><body>
+        <script>
+          window.__DMM_SEARCH__ = {
+            "contents": {
+              "data": [{
+                "contentID": "1stars00804",
+                "title": "STARS-804 Embedded Search Hit",
+                "detailURL": "${videoDetailUrl}"
+              }]
+            }
+          };
+        </script>
+      </body></html>
+    `;
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        [searchUrl, searchHtml],
+        [
+          graphqlUrl,
+          {
+            data: {
+              ppvContent: {
+                title: "DMM Video GraphQL Title",
+                makerContentId: "STARS-804",
+                description: "Recovered from video GraphQL",
+                makerReleasedAt: "2025-05-17T00:00:00Z",
+                duration: 5400,
+                packageImage: {
+                  largeUrl: "https://cdn.example.com/dmm-video-cover.jpg",
+                  mediumUrl: "https://cdn.example.com/dmm-video-poster.jpg",
+                },
+                sampleImages: [{ largeImageUrl: "https://cdn.example.com/dmm-video-sample.jpg" }],
+                actresses: [{ name: "Actor Video" }],
+                genres: [{ name: "Tag Video" }],
+              },
+              reviewSummary: { average: 4.4 },
+            },
+          },
+        ],
+      ]),
+    );
+    const crawler = new DmmCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number,
+      site: Website.DMM,
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
+    }
+
+    expect(response.result.data.website).toBe(Website.DMM);
+    expect(response.result.data.title).toBe("DMM Video GraphQL Title");
+    expect(response.result.data.number).toBe("STARS-804");
+    expect(response.result.data.durationSeconds).toBe(5400);
+    expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl]);
+  });
+
+  it("routes tv.dmm.co.jp list search candidates through DMM Video GraphQL", async () => {
+    const number = "SSNI-103";
+    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=ssni00103/sort=ranking/";
+    const tvDetailUrl = "https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search&i3_ord=1";
+    const graphqlUrl = "https://api.video.dmm.co.jp/graphql";
+    const searchHtml = `
+      <html><body>
+        <script>
+          const item = {"detailUrl":"${tvDetailUrl.replaceAll("/", "\\/").replaceAll("&", "\\u0026")}"};
+        </script>
+      </body></html>
+    `;
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        [searchUrl, searchHtml],
+        [
+          graphqlUrl,
+          {
+            data: {
+              ppvContent: {
+                title: "DMM Video From TV List",
+                makerContentId: "SSNI-103",
+                description: "Recovered from tv.dmm.co.jp list content",
+                makerReleasedAt: "2024-01-19T00:00:00Z",
+                duration: 7200,
+                packageImage: {
+                  largeUrl: "https://cdn.example.com/ssni-cover.jpg",
+                  mediumUrl: "https://cdn.example.com/ssni-poster.jpg",
+                },
+              },
+              reviewSummary: { average: 4.1 },
+            },
+          },
+        ],
+      ]),
+    );
+    const crawler = new DmmCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number,
+      site: Website.DMM,
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
+    }
+
+    expect(response.result.data.website).toBe(Website.DMM);
+    expect(response.result.data.title).toBe("DMM Video From TV List");
+    expect(response.result.data.number).toBe("SSNI-103");
+    expect(response.result.data.plot).toBe("Recovered from tv.dmm.co.jp list content");
+    expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl]);
   });
 
   it("falls back to additional search keywords and parses direct detail anchors", async () => {

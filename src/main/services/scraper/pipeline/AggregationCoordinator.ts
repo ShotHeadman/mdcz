@@ -1,6 +1,7 @@
 import type { Configuration } from "@main/services/config";
 import type { FileInfo } from "@shared/types";
 import type { AggregationResult, AggregationService } from "../aggregation";
+import type { ManualScrapeOptions } from "../manualScrape";
 import { isGeneratedSidecarVideo } from "../media";
 
 const AGGREGATION_FAILURE_CACHE_WINDOW_MS = 1000;
@@ -12,10 +13,15 @@ export class AggregationCoordinator {
 
   constructor(private readonly aggregationService: AggregationService) {}
 
-  aggregate(fileInfo: FileInfo, configuration: Configuration, signal?: AbortSignal): Promise<AggregationResult | null> {
-    const cacheKey = fileInfo.number.trim().toUpperCase();
+  aggregate(
+    fileInfo: FileInfo,
+    configuration: Configuration,
+    signal?: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
+  ): Promise<AggregationResult | null> {
+    const cacheKey = this.buildCacheKey(fileInfo, manualScrape);
     if (!cacheKey || isGeneratedSidecarVideo(fileInfo.filePath)) {
-      return this.aggregationService.aggregate(fileInfo.number, configuration, signal);
+      return this.aggregationService.aggregate(fileInfo.number, configuration, signal, manualScrape);
     }
 
     const cached = this.aggregationPromiseCache.get(cacheKey);
@@ -24,7 +30,7 @@ export class AggregationCoordinator {
     }
 
     let request: Promise<AggregationResult | null>;
-    request = this.aggregationService.aggregate(fileInfo.number, configuration, signal).catch((error) => {
+    request = this.aggregationService.aggregate(fileInfo.number, configuration, signal, manualScrape).catch((error) => {
       this.scheduleFailedAggregationEviction(cacheKey, request);
       throw error;
     });
@@ -46,5 +52,14 @@ export class AggregationCoordinator {
     }, AGGREGATION_FAILURE_CACHE_WINDOW_MS);
     timer.unref?.();
     this.aggregationFailureEvictionTimers.set(cacheKey, timer);
+  }
+
+  private buildCacheKey(fileInfo: FileInfo, manualScrape?: ManualScrapeOptions): string {
+    const number = fileInfo.number.trim().toUpperCase();
+    if (!manualScrape) {
+      return number;
+    }
+
+    return `${number}::manual::${manualScrape.site}::${manualScrape.detailUrl ?? ""}`;
   }
 }

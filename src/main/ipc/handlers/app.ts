@@ -1,10 +1,22 @@
+import { mkdir } from "node:fs/promises";
 import { arch } from "node:os";
+import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { resolvePlayableMediaTarget } from "@main/utils/strm";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import { app, shell } from "electron";
 import { t } from "../shared";
+
+const WATERMARK_DIRECTORY_NAME = "watermark";
+
+const resolveWatermarkDirectory = (): string => join(app.getPath("userData"), WATERMARK_DIRECTORY_NAME);
+
+const ensureWatermarkDirectory = async (): Promise<string> => {
+  const directoryPath = resolveWatermarkDirectory();
+  await mkdir(directoryPath, { recursive: true });
+  return directoryPath;
+};
 
 export const createAppHandlers = (
   context: ServiceContainer,
@@ -14,6 +26,8 @@ export const createAppHandlers = (
   | typeof IpcChannel.App_OpenExternal
   | typeof IpcChannel.App_PlayMedia
   | typeof IpcChannel.App_ShowItemInFolder
+  | typeof IpcChannel.App_EnsureWatermarkDirectory
+  | typeof IpcChannel.App_OpenWatermarkDirectory
   | typeof IpcChannel.App_Relaunch
   | typeof IpcChannel.App_SyncTitleBarTheme
 > => ({
@@ -53,6 +67,18 @@ export const createAppHandlers = (
     }
 
     shell.showItemInFolder(targetPath);
+    return { success: true as const };
+  }),
+  [IpcChannel.App_EnsureWatermarkDirectory]: t.procedure.action(async () => ({
+    path: await ensureWatermarkDirectory(),
+  })),
+  [IpcChannel.App_OpenWatermarkDirectory]: t.procedure.action(async () => {
+    const directoryPath = await ensureWatermarkDirectory();
+    const errorMessage = await shell.openPath(directoryPath);
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+
     return { success: true as const };
   }),
   [IpcChannel.App_Relaunch]: t.procedure.action(async () => {

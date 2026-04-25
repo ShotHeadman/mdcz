@@ -393,10 +393,14 @@ export function SettingsEditorAutosaveProvider({
                     formRef.current.setError(otherField, { type: "server", message });
                   }
                 } else {
+                  const message = toFieldMessage(error, "保存失败");
                   formRef.current.setError(path, {
                     type: "server",
-                    message: toFieldMessage(error, "保存失败"),
+                    message,
                   });
+                  toast.error(
+                    `${formatFieldLabel(registeredFieldsRef.current[path]?.label, path)} 保存失败: ${message}`,
+                  );
                 }
 
                 setFieldStatus(path, "error");

@@ -5,7 +5,12 @@ import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanSe
 import { toErrorMessage } from "@main/utils/common";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@shared/types";
 import { isAbortError, throwIfAborted } from "../abort";
-import type { FileScrapeProgress, FileScraperDependencies, ScrapeExecutionMode } from "../FileScraper";
+import type {
+  FileScrapeOptions,
+  FileScrapeProgress,
+  FileScraperDependencies,
+  ScrapeExecutionMode,
+} from "../FileScraper";
 import { AggregateStage } from "./AggregateStage";
 import { AggregationCoordinator } from "./AggregationCoordinator";
 import { DownloadStage } from "./DownloadStage";
@@ -24,7 +29,7 @@ import type { FileScraperStageRuntime, ScrapeStage } from "./types";
 export interface FileScraperPipeline {
   readonly stages: readonly ScrapeStage[];
 
-  createContext(filePath: string, progress?: FileScrapeProgress): ScrapeContext;
+  createContext(filePath: string, progress?: FileScrapeProgress, options?: FileScrapeOptions): ScrapeContext;
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void;
 
@@ -61,8 +66,12 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     this.stages = this.createStages();
   }
 
-  createContext(filePath: string, progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 }): ScrapeContext {
-    return new ScrapeContext(filePath, progress, this.scrapeMode);
+  createContext(
+    filePath: string,
+    progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 },
+    options: FileScrapeOptions = {},
+  ): ScrapeContext {
+    return new ScrapeContext(filePath, progress, this.scrapeMode, options.manualScrape);
   }
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {
@@ -91,8 +100,8 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       nfoGenerator: this.deps.nfoGenerator,
       signalService: this.deps.signalService,
       getConfiguration: async () => await configManager.getValidated(),
-      aggregateMetadata: async (fileInfo, configuration, signal) =>
-        await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal),
+      aggregateMetadata: async (fileInfo, configuration, signal, manualScrape) =>
+        await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal, manualScrape),
       handleFailedFileMove: async (fileInfo, configuration) =>
         await this.failureHandler.moveToFailedFolder(fileInfo, configuration, this.scrapeMode),
       loadExistingNfoLocalState: async (filePath, configuration) =>

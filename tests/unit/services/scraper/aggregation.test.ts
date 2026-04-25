@@ -258,9 +258,11 @@ class MultiResultCrawlerProvider extends CrawlerProvider {
 
 class RecordingCrawlerProvider extends MultiResultCrawlerProvider {
   readonly calledNumbers: string[] = [];
+  readonly calledInputs: CrawlerInput[] = [];
 
   override async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
     this.calledNumbers.push(input.number);
+    this.calledInputs.push(input);
     return super.crawl(input);
   }
 }
@@ -845,6 +847,52 @@ describe("AggregationService", () => {
     await new AggregationService(provider).aggregate("ABF-075", config);
 
     expect(provider.calledSites).toEqual([Website.DMM]);
+  });
+
+  it("forces manual URL scrapes to the selected site only", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [Website.DMM, makeCrawlerData({ title: "DMM Title", website: Website.DMM })],
+      [
+        Website.DMM_TV,
+        makeCrawlerData({
+          title: "DMM TV Title",
+          thumb_url: "https://video.example/thumb.jpg",
+          website: Website.DMM_TV,
+        }),
+      ],
+      [Website.JAVDB, makeCrawlerData({ title: "JAVDB Title", website: Website.JAVDB })],
+    ]);
+    const provider = new RecordingCrawlerProvider(siteResults);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.DMM, Website.DMM_TV, Website.JAVDB],
+      },
+    });
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config, undefined, {
+      site: Website.DMM_TV,
+    });
+
+    expect(result?.data.website).toBe(Website.DMM_TV);
+    expect(provider.calledSites).toEqual([Website.DMM_TV]);
+    expect(provider.calledInputs[0]?.options?.detailUrl).toBeUndefined();
+  });
+
+  it("passes manual detail URLs to the forced crawler", async () => {
+    const detailUrl = "https://video.dmm.co.jp/av/content/?id=1abf00075";
+    const siteResults = new Map<Website, CrawlerData>([
+      [Website.DMM_TV, makeCrawlerData({ title: "DMM TV Title", website: Website.DMM_TV })],
+    ]);
+    const provider = new RecordingCrawlerProvider(siteResults);
+
+    await new AggregationService(provider).aggregate("ABF-075", makeConfig(), undefined, {
+      site: Website.DMM_TV,
+      detailUrl,
+    });
+
+    expect(provider.calledSites).toEqual([Website.DMM_TV]);
+    expect(provider.calledInputs[0]?.options?.detailUrl).toBe(detailUrl);
   });
 
   it("limits FC2 numbers to the FC2 crawler family only", async () => {

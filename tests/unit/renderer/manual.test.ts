@@ -137,8 +137,29 @@ describe("retryScrapeSelection", () => {
       },
     });
 
-    expect(retryFailed).toHaveBeenCalledWith(["/media/ABC-123.mp4", "/media/ABC-123-CD2.mp4"]);
+    expect(retryFailed).toHaveBeenCalledWith(["/media/ABC-123.mp4", "/media/ABC-123-CD2.mp4"], undefined);
     expect(requeue).not.toHaveBeenCalled();
+  });
+
+  it("passes manual URLs to a new retry task when idle", async () => {
+    retryFailed.mockResolvedValue({
+      taskId: "task-1",
+      totalFiles: 1,
+      message: "重试任务已启动，共 1 个文件",
+    });
+
+    await expect(
+      retryScrapeSelection("/media/ABC-123.mp4", {
+        scrapeStatus: "idle",
+        manualUrl: "https://video.dmm.co.jp/",
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        strategy: "new-task",
+      },
+    });
+
+    expect(retryFailed).toHaveBeenCalledWith(["/media/ABC-123.mp4"], "https://video.dmm.co.jp/");
   });
 
   it("requeues failed files into the current task when a scrape is already running", async () => {
@@ -158,7 +179,23 @@ describe("retryScrapeSelection", () => {
       },
     });
 
-    expect(requeue).toHaveBeenCalledWith(["/media/ABC-123.mp4"]);
+    expect(requeue).toHaveBeenCalledWith(["/media/ABC-123.mp4"], undefined);
+    expect(retryFailed).not.toHaveBeenCalled();
+  });
+
+  it("passes manual URLs when requeueing into the current task", async () => {
+    requeue.mockResolvedValue({ requeuedCount: 1 });
+
+    await retryScrapeSelection("/media/ABC-123.mp4", {
+      scrapeStatus: "running",
+      canRequeueCurrentRun: true,
+      manualUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=abc00123/",
+    });
+
+    expect(requeue).toHaveBeenCalledWith(
+      ["/media/ABC-123.mp4"],
+      "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=abc00123/",
+    );
     expect(retryFailed).not.toHaveBeenCalled();
   });
 

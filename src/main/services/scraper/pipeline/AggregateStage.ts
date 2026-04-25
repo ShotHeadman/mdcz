@@ -26,6 +26,7 @@ export class AggregateStage implements ScrapeStage {
       context.fileInfo,
       context.requireConfiguration(),
       signal,
+      context.manualScrape,
     );
     throwIfAborted(signal);
 

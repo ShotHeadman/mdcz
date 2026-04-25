@@ -3,6 +3,11 @@ import { CURRENT_CONFIG_VERSION } from "@main/services/config/migrator";
 import { ASSET_NAMING_MODES, isSharedDirectoryMode } from "@shared/assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLanguage, Website } from "@shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
+import {
+  DEFAULT_POSTER_TAG_BADGE_TYPES,
+  POSTER_TAG_BADGE_POSITION_OPTIONS,
+  POSTER_TAG_BADGE_TYPE_OPTIONS,
+} from "@shared/posterBadges";
 import { z } from "zod";
 
 const DEFAULT_SITES: Website[] = [
@@ -89,6 +94,9 @@ const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
   tagBadges: z.boolean().default(false),
+  tagBadgeTypes: z.array(z.enum(POSTER_TAG_BADGE_TYPE_OPTIONS)).default(() => [...DEFAULT_POSTER_TAG_BADGE_TYPES]),
+  tagBadgePosition: z.enum(POSTER_TAG_BADGE_POSITION_OPTIONS).default("topLeft"),
+  tagBadgeImageOverrides: z.boolean().default(false),
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),

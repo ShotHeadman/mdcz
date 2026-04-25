@@ -34,7 +34,7 @@ export function SettingsLayout({
 }: SettingsLayoutProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const search = useOptionalSettingsSearch();
-  const searchMetaText = (() => {
+  const headerMetaContent = (() => {
     if (search?.hasActiveFilters) {
       return `匹配 ${search.resultCount} 项`;
     }
@@ -66,7 +66,7 @@ export function SettingsLayout({
                       onImportProfile={onImportProfile}
                     />
                   </div>
-                  <div className="mt-1.5 min-h-[1rem] px-1 text-[11px] text-muted-foreground">{searchMetaText}</div>
+                  <div className="mt-1.5 min-h-[1rem] px-1 text-[11px] text-muted-foreground">{headerMetaContent}</div>
                 </div>
               </header>
               <div className="mt-6">{children}</div>

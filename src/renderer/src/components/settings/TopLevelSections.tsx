@@ -69,7 +69,7 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.scrape}
     >
-      <Subsection title="刮削站点" description="启用网站、优先级与每站自定义地址" className="mb-6 last:mb-0">
+      <Subsection title="刮削站点" description="启用网站、优先级与自定义地址" className="mb-6 last:mb-0">
         <SitePriorityEditorField options={siteOptions} />
       </Subsection>
       <Subsection title="刮削节奏" className="mb-6 last:mb-0">

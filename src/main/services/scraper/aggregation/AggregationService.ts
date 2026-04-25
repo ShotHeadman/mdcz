@@ -5,6 +5,7 @@ import { toErrorMessage } from "@main/utils/common";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { buildCrawlerOptions } from "../crawlerOptions";
+import type { ManualScrapeOptions } from "../manualScrape";
 import { FieldAggregator } from "./FieldAggregator";
 import type { AggregationResult, AggregationStats, SiteCrawlResult } from "./types";
 
@@ -34,6 +35,7 @@ interface CrawlerExecutionContext {
   signal: AbortSignal;
   abort: () => void;
   fieldAggregator: FieldAggregator;
+  manualScrape?: ManualScrapeOptions;
   results: SiteCrawlResult[];
   successes: Map<Website, CrawlerData>;
   inFlightSites: Set<Website>;
@@ -46,15 +48,20 @@ export class AggregationService {
 
   constructor(private readonly crawlerProvider: CrawlerProvider) {}
 
-  async aggregate(number: string, config: Configuration, signal?: AbortSignal): Promise<AggregationResult | null> {
-    const cacheKey = number;
+  async aggregate(
+    number: string,
+    config: Configuration,
+    signal?: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
+  ): Promise<AggregationResult | null> {
+    const cacheKey = this.buildCacheKey(number, manualScrape);
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       this.logger.info(`Cache hit for ${number}`);
       return cached;
     }
 
-    const enabledSites = this.resolveActiveSites(number, config);
+    const enabledSites = this.resolveActiveSites(number, config, manualScrape);
     if (enabledSites.length === 0) {
       this.logger.warn(`No active sites for ${number}`);
       return null;
@@ -75,6 +82,7 @@ export class AggregationService {
       globalTimeoutMs,
       fieldAggregator,
       signal,
+      manualScrape,
     );
 
     const successes = this.collectSuccesses(siteResults);
@@ -133,7 +141,11 @@ export class AggregationService {
     this.cache.clear();
   }
 
-  private resolveActiveSites(number: string, config: Configuration): Website[] {
+  private resolveActiveSites(number: string, config: Configuration, manualScrape?: ManualScrapeOptions): Website[] {
+    if (manualScrape) {
+      return this.filterSitesByCooldown([manualScrape.site]);
+    }
+
     const ordered = [...new Set(config.scrape.sites)];
     const isFc2 = FC2_NUMBER_PATTERN.test(number.trim().toUpperCase());
     const candidates = ordered.filter((site) => (isFc2 ? FC2_SITE_WHITELIST.has(site) : !FC2_ONLY_SITES.has(site)));
@@ -142,7 +154,11 @@ export class AggregationService {
       this.logger.info(`FC2 number detected for ${number}; limiting sites to: ${candidates.join(", ") || "(none)"}`);
     }
 
-    return candidates.filter((site) => {
+    return this.filterSitesByCooldown(candidates);
+  }
+
+  private filterSitesByCooldown(sites: Website[]): Website[] {
+    return sites.filter((site) => {
       const activeCooldown = this.crawlerProvider.getSiteCooldown(site);
       if (activeCooldown) {
         this.logger.info(
@@ -175,6 +191,7 @@ export class AggregationService {
     globalTimeoutMs: number,
     fieldAggregator: FieldAggregator,
     signal?: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
   ): Promise<SiteCrawlResult[]> {
     const abortController = new AbortController();
     const combinedSignal = signal ? AbortSignal.any([signal, abortController.signal]) : abortController.signal;
@@ -199,6 +216,7 @@ export class AggregationService {
         combinedSignal,
         abortAggregation,
         fieldAggregator,
+        manualScrape,
       );
     } finally {
       clearTimeout(globalTimer);
@@ -214,6 +232,7 @@ export class AggregationService {
     signal: AbortSignal,
     abortAggregation: () => void,
     fieldAggregator: FieldAggregator,
+    manualScrape?: ManualScrapeOptions,
   ): Promise<SiteCrawlResult[]> {
     const results: SiteCrawlResult[] = [];
     const successes = new Map<Website, CrawlerData>();
@@ -230,6 +249,7 @@ export class AggregationService {
       signal,
       abort: abortAggregation,
       fieldAggregator,
+      manualScrape,
       results,
       successes,
       inFlightSites,
@@ -262,6 +282,7 @@ export class AggregationService {
           context.config,
           context.perCrawlerTimeoutMs,
           context.signal,
+          context.manualScrape,
         );
       } catch (error) {
         result = {
@@ -303,6 +324,7 @@ export class AggregationService {
     config: Configuration,
     perCrawlerTimeoutMs: number,
     signal: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
   ): Promise<SiteCrawlResult> {
     const start = Date.now();
     const siteTimeoutController = new AbortController();
@@ -314,6 +336,9 @@ export class AggregationService {
     }, perCrawlerTimeoutMs);
 
     const options = buildCrawlerOptions({ site, configuration: config, signal: siteSignal });
+    if (manualScrape?.detailUrl) {
+      options.detailUrl = manualScrape.detailUrl;
+    }
     const configuredTimeoutMs = options.timeoutMs ?? perCrawlerTimeoutMs;
     options.timeoutMs = Math.max(1, Math.min(configuredTimeoutMs, perCrawlerTimeoutMs));
     const timeoutMessage = `${site} exceeded crawler budget (${perCrawlerTimeoutMs}ms)`;
@@ -515,5 +540,13 @@ export class AggregationService {
         this.cache.delete(key);
       }
     }
+  }
+
+  private buildCacheKey(number: string, manualScrape?: ManualScrapeOptions): string {
+    if (!manualScrape) {
+      return number;
+    }
+
+    return `${number}::manual::${manualScrape.site}::${manualScrape.detailUrl ?? ""}`;
   }
 }

@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
-import { normalizeEnabledSites, OrderedSiteFieldEditor } from "@/components/config-form/OrderedSiteField";
+import { OrderedSiteFieldEditor, type OrderedSiteFieldRow } from "@/components/config-form/OrderedSiteField";
 import { SiteConfigSection } from "@/components/config-form/SiteConfigSection";
-import { AutoSaveStatusIndicator } from "@/components/settings/AutoSaveStatusIndicator";
-import { buildOrderedSiteSummary, type OrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
+import type { OrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
+import {
+  buildGroupedSitePrioritySummary,
+  moveSitePriorityOption,
+  resolveSitePriorityOptions,
+  type SitePriorityOptionId,
+  setAllSitePriorityOptions,
+  toggleSitePriorityOption,
+} from "@/components/settings/sitePriorityOptions";
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { FormItem } from "@/components/ui/Form";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
-import { cn } from "@/lib/utils";
+import { normalizeEnabledSites } from "@/utils/orderedSite";
 
 interface SitePriorityEditorFieldProps {
   options: string[];
@@ -26,7 +33,7 @@ function valuesEqual(a: string[], b: string[]): boolean {
 }
 
 export function buildSitePrioritySummary(value: unknown, options: string[]): OrderedSiteSummary {
-  return buildOrderedSiteSummary(value, options);
+  return buildGroupedSitePrioritySummary(value, options);
 }
 
 const EDITOR_DIALOG_CLASS_NAME =
@@ -42,10 +49,40 @@ export function SitePriorityEditorField({
   const value = (useWatch({ control: form.control, name }) as string[] | undefined) ?? [];
   const fieldFormState = useFormState({ control: form.control, name });
   const normalizedValue = useMemo(() => normalizeEnabledSites(value), [value]);
-  const summary = useMemo(() => buildSitePrioritySummary(normalizedValue, options), [normalizedValue, options]);
-  const { status, resetToDefault } = useAutoSaveField(name, { mode: "immediate", label });
+  const availableOptions = useMemo(
+    () => normalizeEnabledSites([...options, ...normalizedValue]),
+    [normalizedValue, options],
+  );
+  const summary = useMemo(
+    () => buildSitePrioritySummary(normalizedValue, availableOptions),
+    [availableOptions, normalizedValue],
+  );
+  const { resetToDefault } = useAutoSaveField(name, { mode: "immediate", label });
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState<string[]>(normalizedValue);
+  const draftSummary = useMemo(
+    () => buildSitePrioritySummary(draftValue, availableOptions),
+    [availableOptions, draftValue],
+  );
+  const siteOptions = useMemo(
+    () => resolveSitePriorityOptions(draftValue, availableOptions),
+    [availableOptions, draftValue],
+  );
+  const siteRows = useMemo<OrderedSiteFieldRow<SitePriorityOptionId>[]>(
+    () =>
+      siteOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+        checkboxState: option.state === "all" ? true : option.state === "partial" ? "indeterminate" : false,
+        labelMonospace: option.sites.length === 1,
+        chips: [
+          ...(option.memberLabel ? [{ label: option.memberLabel, monospace: true, variant: "outline" as const }] : []),
+          ...(option.statusLabel ? [{ label: option.statusLabel, variant: "soft" as const }] : []),
+        ],
+      })),
+    [siteOptions],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -81,7 +118,6 @@ export function SitePriorityEditorField({
           label={label}
           error={rowError}
           headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
-          status={<AutoSaveStatusIndicator status={status} />}
           highlighted={highlighted}
           control={
             <div className="flex items-center gap-3">
@@ -92,7 +128,7 @@ export function SitePriorityEditorField({
                 {summary.preview.map((site) => (
                   <span
                     key={site}
-                    className="rounded-[var(--radius-quiet-capsule)] border border-border/40 bg-surface px-2.5 py-1 font-mono text-[11px] text-foreground/80"
+                    className="rounded-[var(--radius-quiet-capsule)] border border-border/40 bg-surface px-2.5 py-1 text-[11px] font-medium text-foreground/80"
                   >
                     {site}
                   </span>
@@ -121,7 +157,22 @@ export function SitePriorityEditorField({
             <div className="space-y-8">
               <section className="space-y-4">
                 <p className="text-sm leading-6 text-muted-foreground">勾选启用站点，上下移动调整优先级。</p>
-                <OrderedSiteFieldEditor value={draftValue} options={options} onChange={setDraftValue} />
+                <OrderedSiteFieldEditor
+                  value={draftValue}
+                  options={availableOptions}
+                  onChange={setDraftValue}
+                  rows={siteRows}
+                  selectedCount={draftSummary.enabledCount}
+                  totalCount={draftSummary.totalCount}
+                  onSelectAll={() => setDraftValue(setAllSitePriorityOptions(draftValue, availableOptions))}
+                  onClearAll={() => setDraftValue([])}
+                  onToggleRow={(rowId, enabled) =>
+                    setDraftValue(toggleSitePriorityOption(draftValue, availableOptions, rowId, enabled))
+                  }
+                  onMoveRow={(rowId, direction) =>
+                    setDraftValue(moveSitePriorityOption(draftValue, availableOptions, rowId, direction))
+                  }
+                />
               </section>
 
               <section className="space-y-4">
@@ -144,7 +195,7 @@ export function SitePriorityEditorField({
               </Button>
             </DialogClose>
             <Button
-              className={cn("rounded-[var(--radius-quiet-capsule)] px-5")}
+              className="rounded-[var(--radius-quiet-capsule)] px-5"
               onClick={hasChanges ? applyDraft : () => setOpen(false)}
             >
               {hasChanges ? "应用排序更改" : "完成"}

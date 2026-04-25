@@ -9,9 +9,9 @@ interface SettingRowProps {
   label: string;
   description?: string;
   htmlFor?: string;
+  labelAddon?: ReactNode;
   headerAction?: ReactNode;
   control: ReactNode;
-  status?: ReactNode;
   error?: string | null;
   className?: string;
   controlClassName?: string;
@@ -25,9 +25,9 @@ export function SettingRow({
   label,
   description,
   htmlFor,
+  labelAddon,
   headerAction,
   control,
-  status,
   error,
   className,
   controlClassName,
@@ -69,6 +69,7 @@ export function SettingRow({
           >
             {label}
           </label>
+          {labelAddon ? <div className="flex h-6 shrink-0 items-center">{labelAddon}</div> : null}
           {headerAction ? <div className="flex h-6 shrink-0 items-center">{headerAction}</div> : null}
         </div>
         {description && <p className="mt-1 max-w-prose text-xs text-muted-foreground">{description}</p>}
@@ -79,25 +80,12 @@ export function SettingRow({
           <div data-setting-control className={controlClassName}>
             {control}
           </div>
-          {status && (
-            <div aria-live="polite" className="flex min-h-[1rem] justify-end text-xs text-muted-foreground">
-              {status}
-            </div>
-          )}
         </div>
       ) : (
         <div className="flex shrink-0 items-center gap-2.5">
           <div data-setting-control className={cn("min-w-0", controlClassName)}>
             {control}
           </div>
-          {status && (
-            <div
-              aria-live="polite"
-              className="flex min-w-[4.5rem] min-h-[1rem] items-center justify-end text-xs text-muted-foreground"
-            >
-              {status}
-            </div>
-          )}
         </div>
       )}
     </div>

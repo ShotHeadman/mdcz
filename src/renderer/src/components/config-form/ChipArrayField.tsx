@@ -9,10 +9,12 @@ import { Input } from "@/components/ui/Input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/Popover";
 import { cn } from "@/lib/utils";
 
+export type ChipArrayOption = string | { value: string; label: string };
+
 interface ChipArrayFieldProps {
   field: ControllerRenderProps<FieldValues, string>;
   placeholder?: string;
-  options?: string[]; // If provided, use a multi-select dropdown instead of free-form input
+  options?: ChipArrayOption[]; // If provided, use a multi-select dropdown instead of free-form input
   showBulkActions?: boolean;
   defaultOpen?: boolean;
 }
@@ -27,9 +29,15 @@ export function ChipArrayField({
   const [inputValue, setInputValue] = useState("");
   const [open, setOpen] = useState(defaultOpen);
   const values: string[] = Array.isArray(field.value) ? field.value : [];
-  const hasOptions = Array.isArray(options) && options.length > 0;
+  const resolvedOptions = Array.isArray(options)
+    ? options.map((option) => (typeof option === "string" ? { value: option, label: option } : option))
+    : [];
+  const hasOptions = resolvedOptions.length > 0;
+  const labelByValue = new Map(resolvedOptions.map((option) => [option.value, option.label]));
   const allOptionsSelected =
-    hasOptions && values.length === options.length && options.every((opt) => values.includes(opt));
+    hasOptions &&
+    values.length === resolvedOptions.length &&
+    resolvedOptions.every((option) => values.includes(option.value));
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -82,7 +90,7 @@ export function ChipArrayField({
                           removeValue(value);
                         }}
                       >
-                        {value}
+                        {labelByValue.get(value) ?? value}
                         <X className="h-2.5 w-2.5 opacity-60 hover:opacity-100 transition-opacity" />
                       </Badge>
                     ))
@@ -100,14 +108,14 @@ export function ChipArrayField({
               {showBulkActions && hasOptions && (
                 <div className="flex items-center gap-2 border-b px-3 py-2 text-xs">
                   <span className="mr-auto text-[11px] text-muted-foreground">
-                    已选 {values.length}/{options.length}
+                    已选 {values.length}/{resolvedOptions.length}
                   </span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="xs"
                     className="h-6 px-2 text-[11px]"
-                    onClick={() => field.onChange([...options])}
+                    onClick={() => field.onChange(resolvedOptions.map((option) => option.value))}
                     disabled={allOptionsSelected}
                   >
                     全选
@@ -127,17 +135,17 @@ export function ChipArrayField({
               <CommandList>
                 <CommandEmpty className="text-xs py-3">无匹配选项</CommandEmpty>
                 <CommandGroup>
-                  {options.map((opt) => {
-                    const isSelected = values.includes(opt);
+                  {resolvedOptions.map((option) => {
+                    const isSelected = values.includes(option.value);
                     return (
                       <CommandItem
-                        key={opt}
-                        value={opt}
-                        onSelect={() => toggleOption(opt)}
+                        key={option.value}
+                        value={`${option.label} ${option.value}`}
+                        onSelect={() => toggleOption(option.value)}
                         className="text-xs cursor-pointer"
                       >
                         <Check className={cn("h-3.5 w-3.5 shrink-0", isSelected ? "opacity-100" : "opacity-0")} />
-                        {opt}
+                        {option.label}
                       </CommandItem>
                     );
                   })}

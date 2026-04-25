@@ -14,6 +14,7 @@ import type {
 import type { AggregationResult } from "../aggregation";
 import type { OrganizePlan } from "../FileOrganizer";
 import type { ScrapeExecutionMode } from "../FileScraper";
+import type { ManualScrapeOptions } from "../manualScrape";
 import { type FileInfoWithSubtitles, resolveFileInfoWithSubtitles, type SubtitleSidecarMatch } from "../media";
 
 export class ScrapeContext {
@@ -57,6 +58,7 @@ export class ScrapeContext {
     readonly filePath: string,
     readonly progress: { fileIndex: number; totalFiles: number } = { fileIndex: 1, totalFiles: 1 },
     readonly mode: ScrapeExecutionMode = "batch",
+    readonly manualScrape?: ManualScrapeOptions,
   ) {
     this.parsedFileInfo = parseFileInfo(filePath);
     this.fileId = buildFileId(this.parsedFileInfo.filePath);
