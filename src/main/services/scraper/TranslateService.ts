@@ -106,14 +106,9 @@ export class TranslateService {
       if (openAi) {
         return ensureTargetChinese(openAi.trim(), target);
       }
-
-      const google = await this.googleTranslator.translateText(text, target, signal);
-      if (google) {
-        return ensureTargetChinese(google.trim(), target);
-      }
     }
 
-    this.logger.warn(`All translation engines failed, returning original text`);
+    this.logger.warn(`Translation engine failed, returning original text`);
     return text;
   }
 }

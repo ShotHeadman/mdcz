@@ -771,6 +771,7 @@ export function TranslateSection() {
       llmModelName: String(form.getValues("translate.llmModelName") ?? ""),
       llmApiKey: String(form.getValues("translate.llmApiKey") ?? ""),
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
+      llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
       llmTemperature: Number(form.getValues("translate.llmTemperature") ?? 0),
     };
 

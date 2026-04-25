@@ -20,6 +20,6 @@ export const createIpcRouter = (context: ServiceContainer): IpcRouterContract =>
   ...createNetworkHandlers(context),
   ...createFileHandlers(context),
   ...createToolHandlers(context),
-  ...createTranslateHandlers(),
+  ...createTranslateHandlers(context),
   ...createMaintenanceHandlers(context),
 });

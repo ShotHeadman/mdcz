@@ -174,6 +174,24 @@ describe("TranslateService term consistency", () => {
     expect(sleepMock).toHaveBeenCalledWith(15_000, undefined, undefined);
   });
 
+  it("retries llm request after a short delay when 429 omits Retry-After", async () => {
+    const rateLimitedError = Object.assign(new Error("rate limited"), {
+      status: 429,
+      headers: new Headers(),
+    });
+
+    const generateText = vi.fn().mockRejectedValueOnce(rateLimitedError).mockResolvedValueOnce("Retry 成功");
+    const llmApiClient = createLlmApiClient(generateText);
+
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const config = createBaseConfig();
+
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("Retry 成功");
+
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(sleepMock).toHaveBeenCalledWith(1000, undefined, undefined);
+  });
+
   it("does not retry llm request for non-429 errors", async () => {
     const serverError = Object.assign(new Error("server error"), {
       status: 500,
@@ -252,6 +270,32 @@ describe("TranslateService term consistency", () => {
 
     expect(generateText).not.toHaveBeenCalled();
     expect(translated.genres).toEqual(["剧情"]);
+  });
+
+  it("keeps original genre terms after llm term translation fails", async () => {
+    const generateText = vi.fn().mockRejectedValue(new Error("rate limited"));
+    const llmApiClient = createLlmApiClient(generateText);
+    const networkClient = new NetworkClient({});
+    vi.spyOn(networkClient, "getJson").mockResolvedValue([[["剧情"]]] as unknown);
+
+    const service = new TranslateService(networkClient, llmApiClient);
+    const config = createBaseConfig();
+
+    const translated = await service.translateCrawlerData(
+      {
+        title: " ",
+        number: "DLDSS-463",
+        actors: [],
+        genres: ["Drama"],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(networkClient.getJson).not.toHaveBeenCalled();
+    expect(translated.genres).toEqual(["Drama"]);
   });
 
   it("normalizes unsupported translation target config values to zh-CN without migration", () => {

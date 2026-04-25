@@ -414,7 +414,27 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
     expect(fallbackPreviews.find((item) => item.label === "演员为空")?.folder).toContain("卖家：示例卖家");
-    expect(fallbackPreviews.find((item) => item.label === "普通")?.file).toBe("ABC-123示例标题.mp4");
+    expect(fallbackPreviews.find((item) => item.label === "普通")?.file).toBe("ABC-123Sample Original Title.mp4");
+
+    const expandedPreviews = organizer.buildNamingPreview(
+      createConfig({
+        naming: {
+          folderTemplate:
+            "{letters}/{number}/{firstActor}/{series}/{year} {director} {runtime} {definition} {filename}",
+          fileTemplate:
+            "{rawNumber} {allActors} {release} {firstLetter} {4K} {cnword} {censorshipType} {score} {outline} {publisher} {website}",
+          cnwordStyle: "-SUB",
+          censoredStyle: "",
+          folderNameMax: 255,
+          fileNameMax: 255,
+        },
+      }),
+    );
+    const subtitlePreview = expandedPreviews.find((item) => item.label === "中文字幕");
+
+    expect(subtitlePreview?.folder).toContain("ABC-456-SUB");
+    expect(subtitlePreview?.folder).toContain("2024 示例导演 121 2160P ABC-456");
+    expect(subtitlePreview?.file).toBe("ABC-456 演员B 2024-01-15 A 4K -SUB 有码 4.5 示例简介 示例发行 dmm.mp4");
   });
 
   it("preserves input extension and explicit multipart suffix casing when renaming", () => {

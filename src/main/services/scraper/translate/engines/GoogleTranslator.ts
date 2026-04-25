@@ -65,7 +65,7 @@ export class GoogleTranslator {
       if (isAbortError(error)) {
         throw error;
       }
-      this.logger.warn(`Google translate fallback failed: ${toErrorMessage(error)}`);
+      this.logger.warn(`Google translation failed: ${toErrorMessage(error)}`);
       return null;
     }
   }

@@ -1,6 +1,6 @@
+import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
-import { NetworkClient } from "@main/services/network";
 import {
   isMissingRequiredLlmApiKey,
   LlmApiClient,
@@ -13,15 +13,19 @@ import type { TranslateTestLlmInput } from "@shared/ipcTypes";
 import { t } from "../shared";
 
 const logger = loggerService.getLogger("TranslateTestLlm");
-const llmApiClient = new LlmApiClient(new NetworkClient({ timeoutMs: 10_000 }));
 
-export const createTranslateHandlers = (): Pick<IpcRouterContract, typeof IpcChannel.Translate_TestLlm> => {
+export const createTranslateHandlers = (
+  context: ServiceContainer,
+): Pick<IpcRouterContract, typeof IpcChannel.Translate_TestLlm> => {
+  const llmApiClient = new LlmApiClient(context.networkClient);
+
   return {
     [IpcChannel.Translate_TestLlm]: t.procedure.input<TranslateTestLlmInput>().action(async ({ input }) => {
       const config = await configManager.getValidated();
       const llmModelName = typeof input?.llmModelName === "string" ? input.llmModelName : config.translate.llmModelName;
       const llmApiKey = typeof input?.llmApiKey === "string" ? input.llmApiKey : config.translate.llmApiKey;
       const llmBaseUrl = typeof input?.llmBaseUrl === "string" ? input.llmBaseUrl : config.translate.llmBaseUrl;
+      const llmPrompt = typeof input?.llmPrompt === "string" ? input.llmPrompt : config.translate.llmPrompt;
       const llmTemperature =
         typeof input?.llmTemperature === "number" && Number.isFinite(input.llmTemperature)
           ? input.llmTemperature
@@ -44,7 +48,9 @@ export const createTranslateHandlers = (): Pick<IpcRouterContract, typeof IpcCha
           apiKey: llmApiKey,
           baseUrl: normalizedBaseUrl,
           temperature: Math.min(2, Math.max(0, llmTemperature)),
-          prompt: "请直接说出一个比1大的质数",
+          prompt: llmPrompt
+            .replaceAll("{lang}", "简体中文")
+            .replaceAll("{content}", "雨上がりの街で見つけた小さな約束"),
         });
         logger.info(`Test LLM connectivity: Success, reply="${content}"`);
 

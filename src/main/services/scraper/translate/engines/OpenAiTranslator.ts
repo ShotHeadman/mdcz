@@ -157,7 +157,7 @@ export class OpenAiTranslator {
           throw error;
         }
 
-        const retryAfterMs = this.getRetryAfterDelayMs(error);
+        const retryAfterMs = this.getRetryDelayMs(error, attempt);
         if (retryAfterMs === null) {
           throw error;
         }
@@ -169,7 +169,7 @@ export class OpenAiTranslator {
     }
   }
 
-  private getRetryAfterDelayMs(error: unknown): number | null {
+  private getRetryDelayMs(error: unknown, attempt: number): number | null {
     if (!error || typeof error !== "object") {
       return null;
     }
@@ -184,10 +184,10 @@ export class OpenAiTranslator {
 
     const rawRetryAfter = readRetryAfterHeader(headers);
     const parsed = parseRetryAfterMs(rawRetryAfter);
-    if (parsed === null) {
-      return null;
+    if (parsed !== null) {
+      return Math.min(parsed, RETRY_AFTER_CAP_MS);
     }
 
-    return Math.min(parsed, RETRY_AFTER_CAP_MS);
+    return Math.min(1000 * 2 ** attempt, RETRY_AFTER_CAP_MS);
   }
 }

@@ -19,6 +19,7 @@ export type TranslateTestLlmInput = {
   llmModelName?: string;
   llmApiKey?: string;
   llmBaseUrl?: string;
+  llmPrompt?: string;
   llmTemperature?: number;
 };
 

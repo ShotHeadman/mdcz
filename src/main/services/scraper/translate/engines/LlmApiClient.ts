@@ -79,6 +79,11 @@ export class LlmApiClient {
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
     const baseUrl = normalizeLlmBaseUrl(request.baseUrl);
     const headers = this.buildHeaders(request.apiKey);
+
+    if (this.shouldUseChatCompletionsFirst(baseUrl)) {
+      return await this.requestChatCompletions(baseUrl, request, headers, signal);
+    }
+
     const responsesUrl = `${baseUrl}/responses`;
     const responsesResponse = await this.transport.postJsonDetailed<ResponsesApiResponse>(
       responsesUrl,
@@ -154,6 +159,17 @@ export class LlmApiClient {
           detail.includes("unknown") ||
           detail.includes("unrecognized")))
     );
+  }
+
+  private shouldUseChatCompletionsFirst(baseUrl: string): boolean {
+    try {
+      const url = new URL(baseUrl);
+      return (
+        url.hostname === "generativelanguage.googleapis.com" && url.pathname.replace(/\/+$/u, "").endsWith("/openai")
+      );
+    } catch {
+      return false;
+    }
   }
 
   private extractResponsesText(data: ResponsesApiResponse | string | null): string | null {

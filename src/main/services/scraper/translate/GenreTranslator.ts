@@ -50,11 +50,17 @@ export class GenreTranslator {
         return ensureTargetChinese(mapped.trim(), target);
       }
 
-      const llmTerm = await this.translateWithOpenAi(normalized, target, config, signal);
-      const translated = llmTerm ?? (await translateText(normalized, target, config, signal));
+      const translated =
+        config.translate.engine === "google"
+          ? await translateText(normalized, target, config, signal)
+          : await this.translateWithOpenAi(normalized, target, config, signal);
+      if (!translated) {
+        return normalized;
+      }
+
       const normalizedResult = ensureTargetChinese(translated.trim(), target);
 
-      if (llmTerm) {
+      if (config.translate.engine !== "google") {
         try {
           await appendMappingCandidate({
             category: "genre",
@@ -91,10 +97,6 @@ export class GenreTranslator {
     config: Configuration,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    if (config.translate.engine === "google") {
-      return null;
-    }
-
     return await this.openAiTranslator.translateSingleLine(this.buildPrompt(term, target), config, signal);
   }
 }

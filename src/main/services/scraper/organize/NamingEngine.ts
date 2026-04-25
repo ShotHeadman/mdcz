@@ -230,17 +230,25 @@ const previewFileInfo = (number: string, overrides?: Partial<FileInfo>): FileInf
   extension: ".mp4",
   number,
   isSubtitled: false,
+  resolution: "1080P",
   ...overrides,
 });
 
 const previewData = (number: string, overrides?: Partial<CrawlerData>): CrawlerData => ({
-  title: "示例标题",
-  title_zh: "示例标题",
+  title: "Sample Original Title",
+  title_zh: "示例中文标题",
   number,
   actors: ["演员A"],
   genres: [],
   studio: "示例制片",
+  director: "示例导演",
+  publisher: "示例发行",
+  series: "示例系列",
+  plot: "Sample plot",
+  plot_zh: "示例简介",
   release_date: "2024-01-15",
+  durationSeconds: 7260,
+  rating: 4.5,
   scene_images: [],
   website: Website.DMM,
   ...overrides,
@@ -259,7 +267,7 @@ const NAMING_PREVIEW_SAMPLES: Array<{
   },
   {
     label: "中文字幕",
-    fileInfo: previewFileInfo("ABC-456", { isSubtitled: true, subtitleTag: "中文字幕" }),
+    fileInfo: previewFileInfo("ABC-456", { isSubtitled: true, subtitleTag: "中文字幕", resolution: "2160P" }),
     data: previewData("ABC-456", { title_zh: "中文字幕示例", actors: ["演员B"], studio: "Studio X" }),
   },
   {

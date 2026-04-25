@@ -96,6 +96,43 @@ describe("LlmApiClient", () => {
     expect(headers.get("authorization")).toBe("Bearer test-key");
   });
 
+  it("uses chat completions first for Google AI Studio OpenAI compatibility", async () => {
+    const postJsonDetailed = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      resolvedUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      headers: new Headers(),
+      data: {
+        choices: [
+          {
+            message: {
+              content: "聊天接口成功",
+            },
+          },
+        ],
+      },
+    });
+
+    const client = new LlmApiClient({ postJsonDetailed });
+    const request = {
+      model: "gemini-2.5-flash",
+      apiKey: "test-key",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      temperature: 1,
+      prompt: "hello",
+    };
+
+    await expect(client.generateText(request)).resolves.toBe("聊天接口成功");
+    await expect(client.generateText({ ...request, prompt: "again" })).resolves.toBe("聊天接口成功");
+
+    expect(postJsonDetailed).toHaveBeenCalledTimes(2);
+    expect(postJsonDetailed.mock.calls.map((call) => call[0])).toEqual([
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    ]);
+  });
+
   it("throws a typed error when responses fails without a supported fallback", async () => {
     const postJsonDetailed = vi.fn().mockResolvedValue({
       ok: false,
