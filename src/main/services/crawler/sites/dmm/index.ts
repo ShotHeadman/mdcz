@@ -26,6 +26,15 @@ const unescapeDetailUrl = (value: string): string => {
   return value.replaceAll("\\/", "/").replaceAll("\\u0026", "&");
 };
 
+const isDmmSearchCandidateDetailUrl = (value: string): boolean => {
+  return (
+    /\/(?:digital|mono|monthly|rental)\/.*\/-\/detail\//iu.test(value) ||
+    value.includes("/detail/=/cid=") ||
+    /video\.dmm\.co\.jp\/(?:av|anime)\/content\/\?id=/iu.test(value) ||
+    /tv\.dmm\.co\.jp\/list\/?\?content=/iu.test(value)
+  );
+};
+
 interface DmmSearchCandidate {
   detailUrl: string;
   contentId?: string;
@@ -107,6 +116,9 @@ const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: 
     if (parsed.trim().length === 0) {
       return;
     }
+    if (!isDmmSearchCandidateDetailUrl(parsed)) {
+      return;
+    }
     if (candidates.some((candidate) => candidate.detailUrl === parsed)) {
       return;
     }
@@ -141,13 +153,7 @@ const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: 
     .toArray()
     .map((element) => $(element).attr("href"))
     .filter((href): href is string => typeof href === "string")
-    .filter(
-      (href) =>
-        /\/(?:digital|mono|monthly|rental)\//u.test(href) ||
-        href.includes("/detail/=/cid=") ||
-        /video\.dmm\.co\.jp\/(?:av|anime)\/content\/\?id=/iu.test(href) ||
-        /tv\.dmm\.co\.jp\/list\/?\?content=/iu.test(href),
-    );
+    .filter(isDmmSearchCandidateDetailUrl);
 
   for (const href of detailAnchors) {
     pushCandidate(toAbsoluteUrl(searchUrl, href));
@@ -266,6 +272,9 @@ export class DmmCrawler extends BaseDmmCrawler {
     }
     const title = baseData.title;
 
+    const thumbUrl = baseData.thumb_url;
+    const posterUrl = baseData.poster_url ?? thumbUrl?.replace("pl.jpg", "ps.jpg");
+
     return {
       title,
       number: baseData.number ?? context.number,
@@ -278,8 +287,8 @@ export class DmmCrawler extends BaseDmmCrawler {
       plot: baseData.plot,
       release_date: baseData.release_date,
       rating: baseData.rating,
-      thumb_url: baseData.thumb_url,
-      poster_url: baseData.poster_url ?? baseData.thumb_url?.replace("pl.jpg", "ps.jpg"),
+      thumb_url: thumbUrl,
+      poster_url: posterUrl,
       fanart_url: baseData.fanart_url,
       scene_images: baseData.scene_images ?? [],
       trailer_url: baseData.trailer_url,

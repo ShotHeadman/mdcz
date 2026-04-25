@@ -18,7 +18,7 @@ import {
 } from "@shared/posterBadges";
 import type { NamingPreviewItem } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, Loader2, RotateCcw } from "lucide-react";
+import { CircleHelp, FolderOpen, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -49,9 +49,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/Dialog";
 import { FormControl } from "@/components/ui/Form";
 import { Switch } from "@/components/ui/Switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/Tooltip";
 import { useSettingsSavingStore } from "@/store/settingsSavingStore";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
@@ -99,8 +101,47 @@ const TAG_BADGE_IMAGE_DEFAULT_SIZE_LABEL = `${POSTER_TAG_BADGE_ASPECT_WIDTH}x${P
 const TAG_BADGE_IMAGE_WIDTH_PERCENT_LABEL = `${Math.round(POSTER_TAG_BADGE_WIDTH_RATIO * 100)}%`;
 const TAG_BADGE_IMAGE_MAX_WIDTH_PERCENT_LABEL = `${Math.round(POSTER_TAG_BADGE_MAX_WIDTH_RATIO * 100)}%`;
 
-export const NAMING_TEMPLATE_DESCRIPTION =
-  "可用占位符：{actor} {actorFallbackPrefix} {number} {date} {title} {originaltitle} {studio} {publisher}";
+const NAMING_TEMPLATE_PLACEHOLDERS = [
+  ["{actor}", "用于文件命名的演员显示名；会按“演员名最大数量”截断，超出时追加当前配置的后缀，默认是“等演员”"],
+  ["{actorFallbackPrefix}", "只有 {actor} 回退到片商或卖家时才输出，如“片商：”或“卖家：”"],
+  ["{firstActor}", "首位演员；没有演员时使用当前 {actor} 的值"],
+  ["{allActors}", "完整演员列表，不受“演员名最大数量”和“演员名超出后缀”影响；没有演员时使用当前 {actor} 的值"],
+  ["{number}", "番号，包含当前命名规则追加的字幕、无码、流出等标识"],
+  ["{rawNumber}", "原始番号，不追加命名标识"],
+  ["{letters}", "番号前缀，如 ABC-123 输出 ABC，FC2-123456 输出 FC2"],
+  ["{firstLetter}", "番号首字符；非字母数字时输出 #"],
+  ["{title}", "中文标题优先；没有中文标题时使用原标题"],
+  ["{originaltitle}", "抓取到的原标题"],
+  ["{outline} / {plot}", "中文简介优先；没有中文简介时使用原始简介"],
+  ["{date} / {release}", "按“发行日期格式”处理后的发行日期"],
+  ["{year}", "发行年份"],
+  ["{runtime}", "片长，单位为分钟"],
+  ["{director}", "导演"],
+  ["{series}", "系列"],
+  ["{studio}", "片商"],
+  ["{publisher}", "发行商"],
+  ["{filename}", "原始视频文件名，不含扩展名"],
+  ["{definition} / {resolution}", "视频分辨率，如 1080P、2160P"],
+  ["{4K}", "分辨率达到 4K 或 8K 时输出对应标识"],
+  ["{cnword}", "检测到中文字幕时输出配置的字幕标识"],
+  ["{subtitle}", "字幕标签，如 中文字幕"],
+  ["{censorshipType}", "码制类型，按番号、本地选择、标题和标签线索推导，如 有码、无码、无码破解、无码流出"],
+  ["{score} / {rating}", "评分"],
+  ["{website}", "最终采用的抓取站点标识"],
+] as const;
+
+const NAMING_TEMPLATE_NOTES = {
+  folder: [
+    "该配置里的 / 或 \\ 会创建多级文件夹；",
+    "如果关闭“成功后移动文件”，不会按文件夹模板创建新目录；",
+    "如果模板不包含影片级唯一字段，保存时会按共享目录模式校验附属文件和 NFO 命名",
+  ],
+  file: [
+    "文件名模板只决定视频基础文件名，不会创建子目录；路径分隔符和非法文件名字符都会被清理",
+    "文件扩展名会自动沿用源文件，不需要在模板里写 .mp4、.mkv 等扩展名",
+    "分盘视频会在模板结果后按“分盘样式”追加后缀；需要不带命名标识的番号时使用 {rawNumber}",
+  ],
+} as const;
 
 const NAMING_PREVIEW_FIELD_KEYS = [
   "naming.folderTemplate",
@@ -592,6 +633,73 @@ function NamingPreview() {
   );
 }
 
+type NamingTemplateHelpKind = "folder" | "file";
+
+function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
+  const label = kind === "folder" ? "文件夹模板" : "文件名模板";
+
+  return (
+    <Dialog>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
+                aria-label={`查看${label}占位符`}
+              >
+                <CircleHelp className="h-3.5 w-3.5" />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{label}占位符</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DialogContent className="max-w-3xl gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6">
+        <DialogHeader className="gap-2 text-left">
+          <DialogTitle>{label}占位符</DialogTitle>
+        </DialogHeader>
+        <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1 text-sm">
+          <div className="overflow-hidden rounded-xl border border-border/50">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-surface-low text-muted-foreground">
+                <tr>
+                  <th className="w-[220px] px-3 py-2 font-medium">占位符</th>
+                  <th className="px-3 py-2 font-medium">说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {NAMING_TEMPLATE_PLACEHOLDERS.map(([placeholder, description]) => (
+                  <tr key={placeholder} className="border-t border-border/40">
+                    <td className="px-3 py-2 align-top font-mono text-[11px] text-foreground">{placeholder}</td>
+                    <td className="px-3 py-2 align-top leading-5 text-muted-foreground">{description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="rounded-xl border border-border/50 bg-surface-low px-3 py-2.5">
+            <div className="font-numeric text-xs font-bold text-foreground">{label}注意事项</div>
+            <ul className="mt-2 space-y-1.5 text-xs leading-5 text-muted-foreground">
+              {NAMING_TEMPLATE_NOTES[kind].map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <DialogClose asChild>
+            <Button type="button">知道了</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function NamingSection() {
   const sectionMode = useSettingsSectionMode();
   const hasRenderableFields = useHasRenderableFields(NAMING_SECTION_FIELD_KEYS);
@@ -606,8 +714,8 @@ export function NamingSection() {
 
   return (
     <>
-      <TextField name="naming.folderTemplate" label="文件夹模板" description={NAMING_TEMPLATE_DESCRIPTION} />
-      <TextField name="naming.fileTemplate" label="文件名模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <TextField name="naming.folderTemplate" label="文件夹模板" labelAddon={<NamingTemplateHelp kind="folder" />} />
+      <TextField name="naming.fileTemplate" label="文件名模板" labelAddon={<NamingTemplateHelp kind="file" />} />
       <EnumField
         name="naming.assetNamingMode"
         label="附属文件命名"

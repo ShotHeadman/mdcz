@@ -4,6 +4,7 @@ import { Copy, FileText, Link2, Search, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, retryScrapeSelection } from "@/api/manual";
+import { ipc } from "@/client/ipc";
 import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
 import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
 import { Button } from "@/components/ui/Button";
@@ -24,7 +25,6 @@ import {
 } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
-import { getDirFromPath } from "@/utils/path";
 import { playMediaPath } from "@/utils/playback";
 
 function getFileNameFromPath(filePath: string) {
@@ -116,11 +116,17 @@ function buildMenuContent(
     }
   };
 
-  const handleOpenFolder = () => {
-    if (window.electron?.openPath) {
-      window.electron.openPath(getDirFromPath(resultPath));
-    } else {
-      toast.info("打开目录功能仅在桌面客户端可用");
+  const handleOpenFolder = async () => {
+    const filePath = resultPath.trim();
+    if (!filePath) {
+      toast.info("无可打开的文件路径");
+      return;
+    }
+
+    try {
+      await ipc.app.showItemInFolder(filePath);
+    } catch (error) {
+      toast.error(`打开目录失败: ${toErrorMessage(error)}`);
     }
   };
 

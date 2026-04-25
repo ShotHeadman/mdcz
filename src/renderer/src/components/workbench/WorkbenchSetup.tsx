@@ -369,9 +369,9 @@ export default function WorkbenchSetup({
                 onBrowse={handleChooseScanDir}
               />
               <PathControl
-                label="成功输出目录"
+                label="输出目录"
                 value={targetDir}
-                placeholder={configLoading ? "正在读取配置..." : "请选择成功输出目录"}
+                placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
                 onBrowse={handleChooseTargetDir}
               />
             </div>

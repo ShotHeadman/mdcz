@@ -9,6 +9,7 @@ interface SettingRowProps {
   label: string;
   description?: string;
   htmlFor?: string;
+  labelAddon?: ReactNode;
   headerAction?: ReactNode;
   control: ReactNode;
   error?: string | null;
@@ -24,6 +25,7 @@ export function SettingRow({
   label,
   description,
   htmlFor,
+  labelAddon,
   headerAction,
   control,
   error,
@@ -67,6 +69,7 @@ export function SettingRow({
           >
             {label}
           </label>
+          {labelAddon ? <div className="flex h-6 shrink-0 items-center">{labelAddon}</div> : null}
           {headerAction ? <div className="flex h-6 shrink-0 items-center">{headerAction}</div> : null}
         </div>
         {description && <p className="mt-1 max-w-prose text-xs text-muted-foreground">{description}</p>}

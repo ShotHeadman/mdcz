@@ -12,7 +12,6 @@ import { buildSettingsBrowseState } from "@renderer/components/settings/settings
 import {
   AssetDownloadsSection,
   buildNamingPreviewConfig,
-  NAMING_TEMPLATE_DESCRIPTION,
   NamingSection,
 } from "@renderer/components/settings/settingsContent";
 import { resolveSettingsDeepLink } from "@renderer/components/settings/settingsDeepLink";
@@ -666,7 +665,9 @@ describe("settings editor render contracts", () => {
     expect(translateHtml).toContain("翻译引擎");
     expect(behaviorHtml).toContain("文件行为");
     expect(behaviorHtml).toContain("成功后移动文件");
-    expect(namingHtml.split(NAMING_TEMPLATE_DESCRIPTION)).toHaveLength(3);
+    expect(namingHtml).toContain('aria-label="查看文件夹模板占位符"');
+    expect(namingHtml).toContain('aria-label="查看文件名模板占位符"');
+    expect(namingHtml).not.toContain("可用占位符：{actor}");
     expect(advancedDownloadHtml).toContain("剧照下载并发");
     expect(advancedDownloadHtml).not.toContain("下载海报");
   });

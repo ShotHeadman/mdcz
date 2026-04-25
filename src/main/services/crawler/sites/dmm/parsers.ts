@@ -18,6 +18,7 @@ type CheerioInput = Parameters<CheerioAPI>[0];
 const DMM_SCENE_IMAGE_PATTERN = /jp-\d+\.(?:jpe?g|png|webp)$/iu;
 const DMM_PRIMARY_IMAGE_PATTERN = /p[sl]\.(?:jpe?g|png|webp)$/iu;
 const DMM_NOISE_GENRES = new Set(["サンプル動画"]);
+const DMM_DUMMY_IMAGE_PATTERN = /\/(?:dummy|loading)[^/]*\.(?:gif|png|jpe?g|webp)$/iu;
 
 const extractRelatedTags = ($: CheerioAPI): string[] => {
   const texts = [
@@ -56,6 +57,35 @@ const normalizeDmmSceneImageUrl = (value: string | undefined): string | undefine
 
   const normalized = value.replace(/-(\d+)\.(jpe?g|png|webp)$/iu, "jp-$1.$2");
   return DMM_SCENE_IMAGE_PATTERN.test(normalized) ? normalized : undefined;
+};
+
+const extractSrcsetFirstUrl = (value: string | undefined): string | undefined => {
+  const first = value?.split(",")[0]?.trim().split(/\s+/u)[0]?.trim();
+  return first && first.length > 0 ? first : undefined;
+};
+
+const isUsableDmmImageUrl = (value: string | undefined): value is string => {
+  if (!value || DMM_DUMMY_IMAGE_PATTERN.test(value)) {
+    return false;
+  }
+
+  return /\.(?:jpe?g|png|webp)(?:[?#].*)?$/iu.test(value);
+};
+
+const extractDmmPrimaryImage = ($: CheerioAPI): string | undefined => {
+  const candidates = [
+    extractAttr($, "meta[property='og:image']", "content"),
+    extractAttr($, "meta[name='twitter:image']", "content"),
+    extractAttr($, "img[name='package-image']", "src"),
+    extractAttr($, "img[name='package-image']", "data-lazy"),
+    extractSrcsetFirstUrl(extractAttr($, "img[name='package-image']", "srcset")),
+    extractAttr($, "a[name='package-image'] img", "data-lazy"),
+    extractAttr($, "a[name='package-image'] img", "src"),
+    extractSrcsetFirstUrl(extractAttr($, "a[name='package-image'] img", "srcset")),
+    extractAttr($, "a[name='package-image']", "href"),
+  ];
+
+  return candidates.find(isUsableDmmImageUrl);
 };
 
 export interface DmmJsonLd {
@@ -132,8 +162,7 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
     ...extractRelatedTags($),
   ]);
 
-  const thumb =
-    extractAttr($, "meta[property='og:image']", "content") ?? extractAttr($, "a[name='package-image'] img", "src");
+  const thumb = extractDmmPrimaryImage($);
   const thumbUrl = thumb?.replace("ps.jpg", "pl.jpg");
 
   const sceneImages = uniqueStrings(

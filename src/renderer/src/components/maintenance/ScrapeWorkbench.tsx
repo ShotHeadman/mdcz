@@ -76,9 +76,9 @@ export default function ScrapeWorkbench({
       {showControls && (
         <FloatingWorkbenchBar contentClassName={barContentClassName}>
           {isScraping && (
-            <div className="flex min-w-48 items-center gap-3">
+            <div className="flex items-center gap-3">
               <Progress value={progress} className="h-1.5 w-24 md:w-28" />
-              <span className="w-10 font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
+              <span className="font-numeric text-[11px] font-bold text-foreground">{Math.round(progress)}%</span>
             </div>
           )}
 

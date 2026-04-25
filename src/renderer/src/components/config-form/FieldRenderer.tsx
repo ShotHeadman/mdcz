@@ -51,6 +51,7 @@ interface BaseFieldProps {
   name: string;
   label: string;
   description?: string;
+  labelAddon?: ReactNode;
   children: (field: ControllerRenderProps<FieldValues, string>) => React.ReactNode;
   layout?: ConfigFieldLayout;
   /**
@@ -64,7 +65,15 @@ interface BaseFieldProps {
 /**
  * BaseField wires each form field to auto-save and renders it as a `SettingRow`.
  */
-export function BaseField({ name, label, description, children, layout, commitMode = "immediate" }: BaseFieldProps) {
+export function BaseField({
+  name,
+  label,
+  description,
+  labelAddon,
+  children,
+  layout,
+  commitMode = "immediate",
+}: BaseFieldProps) {
   const sectionMode = useSettingsSectionMode();
 
   if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
@@ -72,13 +81,20 @@ export function BaseField({ name, label, description, children, layout, commitMo
   }
 
   return (
-    <ConnectedBaseField name={name} label={label} description={description} layout={layout} commitMode={commitMode}>
+    <ConnectedBaseField
+      name={name}
+      label={label}
+      description={description}
+      labelAddon={labelAddon}
+      layout={layout}
+      commitMode={commitMode}
+    >
       {children}
     </ConnectedBaseField>
   );
 }
 
-function ConnectedBaseField({ name, label, description, children, layout, commitMode }: BaseFieldProps) {
+function ConnectedBaseField({ name, label, description, labelAddon, children, layout, commitMode }: BaseFieldProps) {
   const form = useFormContext();
   const fieldLayout = useContext(ConfigFieldLayoutContext);
   const { resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
@@ -111,6 +127,7 @@ function ConnectedBaseField({ name, label, description, children, layout, commit
               fieldName={name}
               label={label}
               description={description}
+              labelAddon={labelAddon}
               error={rowError}
               headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
               control={children(field)}
@@ -141,9 +158,19 @@ export function BoolField({ name, label, description }: { name: string; label: s
 
 // ── Text ──
 
-export function TextField({ name, label, description }: { name: string; label: string; description?: string }) {
+export function TextField({
+  name,
+  label,
+  description,
+  labelAddon,
+}: {
+  name: string;
+  label: string;
+  description?: string;
+  labelAddon?: ReactNode;
+}) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="debounce">
+    <BaseField name={name} label={label} description={description} labelAddon={labelAddon} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field}>
           {(control) => (
