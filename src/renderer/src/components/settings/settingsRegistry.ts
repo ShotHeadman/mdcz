@@ -263,6 +263,13 @@ const RAW_FIELD_REGISTRY: Array<
     anchor: "scrape",
     description: "按分组显示 DMM/FANZA 系、厂商官网和常用聚合站点，并保持保存值仍为具体站点顺序。",
   },
+  {
+    key: "scrape.r18MetadataLanguage",
+    label: "R18.dev 元数据语言",
+    anchor: "scrape",
+    visibility: "hidden",
+    description: "R18.dev 行内语言偏好，由启用站点与优先级控件保存。",
+  },
   { key: "scrape.threadNumber", label: "并发线程数", anchor: "scrape" },
   { key: "scrape.javdbDelaySeconds", label: "JavDB 请求延迟(秒)", anchor: "scrape" },
   { key: "scrape.restAfterCount", label: "连续刮削后休息(条数)", anchor: "scrape" },

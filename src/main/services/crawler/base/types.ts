@@ -1,5 +1,6 @@
 import type { SiteRequestConfig } from "@main/services/network";
 import type { Website } from "@shared/enums";
+import type { R18MetadataLanguage } from "@shared/r18";
 import type { CrawlerData } from "@shared/types";
 import type { FetchGateway } from "../FetchGateway";
 
@@ -10,6 +11,7 @@ export interface CrawlerOptions {
   userAgent?: string;
   apiToken?: string;
   detailUrl?: string;
+  r18MetadataLanguage?: R18MetadataLanguage;
   signal?: AbortSignal;
 }
 

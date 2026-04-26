@@ -1,5 +1,6 @@
 import { Website } from "@shared/enums";
-import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_R18_METADATA_LANGUAGE, type R18MetadataLanguage } from "@shared/r18";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { OrderedSiteFieldEditor, type OrderedSiteFieldRow } from "@/components/config-form/OrderedSiteField";
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { FormItem } from "@/components/ui/Form";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
+import { cn } from "@/lib/utils";
 import { normalizeEnabledSites } from "@/utils/orderedSite";
 
 interface SitePriorityEditorFieldProps {
@@ -41,9 +43,48 @@ const EDITOR_DIALOG_CLASS_NAME =
   "w-[94vw] max-w-[94vw] gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)] sm:w-[90vw] sm:max-w-[90vw] xl:w-[84vw] xl:max-w-[84vw]";
 
 const WEBSITE_VALUES = new Set<string>(Object.values(Website));
+const R18_LANGUAGE_FIELD_NAME = "scrape.r18MetadataLanguage";
+const R18_LANGUAGE_OPTIONS: Array<{ value: R18MetadataLanguage; label: string }> = [
+  { value: "ja", label: "日文" },
+  { value: "en", label: "英文" },
+];
 
 const toConcreteWebsites = (sites: string[]): Website[] =>
   sites.filter((site): site is Website => WEBSITE_VALUES.has(site));
+
+const normalizeR18Language = (value: unknown): R18MetadataLanguage =>
+  value === "en" || value === "ja" ? value : DEFAULT_R18_METADATA_LANGUAGE;
+
+function R18LanguagePreferenceControl({
+  value,
+  onChange,
+}: {
+  value: R18MetadataLanguage;
+  onChange: (value: R18MetadataLanguage) => void;
+}) {
+  return (
+    <fieldset className="inline-flex rounded-[var(--radius-quiet-capsule)] border border-border/50 bg-surface-low p-0.5">
+      <legend className="sr-only">R18.dev 元数据语言</legend>
+      {R18_LANGUAGE_OPTIONS.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "h-7 rounded-[var(--radius-quiet-capsule)] px-2.5 text-[11px] font-medium text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+              active && "bg-surface-floating text-foreground shadow-[0_8px_18px_-16px_rgba(15,23,42,0.5)]",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </fieldset>
+  );
+}
 
 export function SitePriorityEditorField({
   options,
@@ -53,6 +94,7 @@ export function SitePriorityEditorField({
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
   const value = (useWatch({ control: form.control, name }) as string[] | undefined) ?? [];
+  const r18Language = normalizeR18Language(useWatch({ control: form.control, name: R18_LANGUAGE_FIELD_NAME }));
   const fieldFormState = useFormState({ control: form.control, name });
   const normalizedValue = useMemo(() => normalizeEnabledSites(value), [value]);
   const availableOptions = useMemo(
@@ -64,6 +106,7 @@ export function SitePriorityEditorField({
     [availableOptions, normalizedValue],
   );
   const { resetToDefault } = useAutoSaveField(name, { mode: "immediate", label });
+  useAutoSaveField(R18_LANGUAGE_FIELD_NAME, { mode: "immediate", label: "R18.dev 元数据语言" });
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState<string[]>(normalizedValue);
   const draftSummary = useMemo(
@@ -75,6 +118,15 @@ export function SitePriorityEditorField({
     [availableOptions, draftValue],
   );
   const connectivitySites = useMemo(() => toConcreteWebsites(normalizeEnabledSites(draftValue)), [draftValue]);
+  const handleR18LanguageChange = useCallback(
+    (language: R18MetadataLanguage) => {
+      form.setValue(R18_LANGUAGE_FIELD_NAME, language, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+    },
+    [form],
+  );
   const siteRows = useMemo<OrderedSiteFieldRow<SitePriorityOptionId>[]>(
     () =>
       siteOptions.map((option) => ({
@@ -87,8 +139,12 @@ export function SitePriorityEditorField({
           ...(option.memberLabel ? [{ label: option.memberLabel, monospace: true, variant: "outline" as const }] : []),
           ...(option.statusLabel ? [{ label: option.statusLabel, variant: "soft" as const }] : []),
         ],
+        trailingControl:
+          option.id === Website.R18_DEV ? (
+            <R18LanguagePreferenceControl value={r18Language} onChange={handleR18LanguageChange} />
+          ) : undefined,
       })),
-    [siteOptions],
+    [handleR18LanguageChange, r18Language, siteOptions],
   );
 
   useEffect(() => {

@@ -1,7 +1,9 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
 import { configurationSchema } from "@main/services/config/models";
+import { buildCrawlerOptions } from "@main/services/scraper/crawlerOptions";
 import { ProxyType, Website } from "@shared/enums";
 import { DEFAULT_POSTER_TAG_BADGE_TYPES, POSTER_TAG_BADGE_TYPE_OPTIONS } from "@shared/posterBadges";
+import { DEFAULT_R18_METADATA_LANGUAGE } from "@shared/r18";
 import { describe, expect, it } from "vitest";
 
 describe("buildComputedConfiguration", () => {
@@ -55,6 +57,22 @@ describe("buildComputedConfiguration", () => {
     const computed = buildComputedConfiguration(configuration);
     expect(computed.networkTimeoutMs).toBe(25_000);
     expect(computed.networkRetryCount).toBe(4);
+  });
+
+  it("defaults and forwards the R18.dev metadata language preference", () => {
+    const defaults = configurationSchema.parse({});
+    const customized = configurationSchema.parse({
+      scrape: {
+        r18MetadataLanguage: "en",
+      },
+    });
+
+    expect(defaults.scrape.r18MetadataLanguage).toBe(DEFAULT_R18_METADATA_LANGUAGE);
+    expect(buildCrawlerOptions({ site: Website.R18_DEV, configuration: defaults }).r18MetadataLanguage).toBe("ja");
+    expect(buildCrawlerOptions({ site: Website.R18_DEV, configuration: customized }).r18MetadataLanguage).toBe("en");
+    expect(
+      buildCrawlerOptions({ site: Website.AVBASE, configuration: customized }).r18MetadataLanguage,
+    ).toBeUndefined();
   });
 
   it("fills poster badge settings defaults and preserves explicit badge filters", () => {

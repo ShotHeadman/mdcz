@@ -8,6 +8,7 @@ import {
   POSTER_TAG_BADGE_POSITION_OPTIONS,
   POSTER_TAG_BADGE_TYPE_OPTIONS,
 } from "@shared/posterBadges";
+import { DEFAULT_R18_METADATA_LANGUAGE, R18_METADATA_LANGUAGE_OPTIONS } from "@shared/r18";
 import { z } from "zod";
 
 const DEFAULT_SITES: Website[] = [
@@ -42,6 +43,7 @@ const networkSchema = z.object({
 
 const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
+  r18MetadataLanguage: z.enum(R18_METADATA_LANGUAGE_OPTIONS).default(DEFAULT_R18_METADATA_LANGUAGE),
   threadNumber: z.number().int().min(1).max(128).default(2),
   javdbDelaySeconds: z.number().int().min(0).max(120).default(10),
   restAfterCount: z.number().int().min(1).max(500).default(20),

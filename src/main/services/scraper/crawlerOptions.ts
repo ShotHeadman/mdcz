@@ -23,6 +23,10 @@ export const buildCrawlerOptions = ({ site, configuration, signal }: BuildCrawle
     options.cookies = javbusCookie;
   }
 
+  if (site === Website.R18_DEV) {
+    options.r18MetadataLanguage = configuration.scrape.r18MetadataLanguage;
+  }
+
   if (signal) {
     options.signal = signal;
   }

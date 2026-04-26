@@ -46,6 +46,13 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
     aliases: ["aggregate", "通用来源"],
   },
   {
+    id: Website.R18_DEV,
+    label: "R18.dev",
+    description: "R18.dev JSON 元数据源，适合 DMM/FANZA 风格番号的补充抓取；结构化数据可用，但接口不作为稳定主 API。",
+    sites: [Website.R18_DEV],
+    aliases: ["r18", "r18.dev", "r18_dev", "metadata", "json", "japanese", "english", "日文", "英文"],
+  },
+  {
     id: Website.AVWIKIDB,
     label: Website.AVWIKIDB,
     description: "社区整理库，适合补简介、标签和发行信息；部分网络环境下可能出现区域限制或 403。",

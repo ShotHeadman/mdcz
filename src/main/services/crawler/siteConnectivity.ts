@@ -19,6 +19,7 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {
   [Website.KM_PRODUCE]: "https://www.km-produce.com",
   [Website.MGSTAGE]: "https://www.mgstage.com",
   [Website.PRESTIGE]: "https://www.prestige-av.com",
+  [Website.R18_DEV]: "https://r18.dev",
   [Website.SOKMIL]: "https://www.sokmil.com",
   [Website.AVBASE]: "https://www.avbase.net",
   [Website.AVWIKIDB]: "https://avwikidb.com",

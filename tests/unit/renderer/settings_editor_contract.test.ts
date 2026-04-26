@@ -109,6 +109,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("download.tagBadgeImageOverrides")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
+    expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
 
     const keys = new Set(FIELD_REGISTRY.map((candidate) => candidate.key));
@@ -127,6 +128,7 @@ describe("settings editor metadata and filtering", () => {
       },
       scrape: {
         sites: ["javdb"],
+        r18MetadataLanguage: "en",
       },
       aggregation: {
         fieldPriorities: {
@@ -142,6 +144,7 @@ describe("settings editor metadata and filtering", () => {
       "download.tagBadgePosition": "bottomRight",
       "download.tagBadgeImageOverrides": true,
       "scrape.sites": ["javdb"],
+      "scrape.r18MetadataLanguage": "en",
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
@@ -151,7 +154,7 @@ describe("settings editor metadata and filtering", () => {
         tagBadgePosition: "bottomRight",
         tagBadgeImageOverrides: true,
       },
-      scrape: { sites: ["javdb"] },
+      scrape: { sites: ["javdb"], r18MetadataLanguage: "en" },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
   });
@@ -303,6 +306,22 @@ describe("settings editor metadata and filtering", () => {
 
     expect(fc2HubSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
     expect(wikiSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+  });
+
+  it("matches the R18.dev site row through the grouped site-priority field only", () => {
+    const r18Search = buildSettingsBrowseState({
+      query: "r18.dev",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+    const hiddenPreferenceSearch = buildSettingsBrowseState({
+      query: "R18.dev 元数据语言",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
+
+    expect(r18Search.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+    expect(hiddenPreferenceSearch.visibleEntries.map((candidate) => candidate.key)).toEqual([]);
   });
 
   it("offers only the supported query tokens and section-mode row split", () => {
@@ -467,6 +486,7 @@ describe("settings editor save and content helpers", () => {
       Website.SOKMIL,
       Website.KINGDOM,
       Website.AVBASE,
+      Website.R18_DEV,
       Website.AVWIKIDB,
       Website.JAVDB,
       Website.JAVBUS,
@@ -485,6 +505,7 @@ describe("settings editor save and content helpers", () => {
     expect(optionsById.get(Website.SOKMIL)).toMatchObject({ sites: [Website.SOKMIL] });
     expect(optionsById.get(Website.KINGDOM)).toMatchObject({ sites: [Website.KINGDOM] });
     expect(optionsById.get(Website.AVBASE)).toMatchObject({ sites: [Website.AVBASE] });
+    expect(optionsById.get(Website.R18_DEV)).toMatchObject({ label: "R18.dev", sites: [Website.R18_DEV] });
     expect(optionsById.get(Website.AVWIKIDB)).toMatchObject({ sites: [Website.AVWIKIDB] });
     expect(optionsById.get(Website.JAVDB)).toMatchObject({ sites: [Website.JAVDB] });
     expect(optionsById.get(Website.JAVBUS)).toMatchObject({ sites: [Website.JAVBUS] });
@@ -528,6 +549,7 @@ describe("settings editor render contracts", () => {
               label: "DMM/FANZA 系",
               description: "官方售卖与配信源",
               checkboxState: "indeterminate" as const,
+              trailingControl: createElement("span", null, "日文"),
               chips: [
                 { label: "dmm / dmm_tv", monospace: true, variant: "outline" as const },
                 { label: "已启用 1/2", variant: "soft" as const },
@@ -546,6 +568,7 @@ describe("settings editor render contracts", () => {
 
     expect(groupedHtml).toContain("DMM/FANZA 系");
     expect(groupedHtml).toContain("官方售卖与配信源");
+    expect(groupedHtml).toContain("日文");
     expect(groupedHtml).toContain("dmm / dmm_tv");
     expect(groupedHtml).toContain("已启用 1/2");
     expect(groupedHtml).toMatch(/data-state="indeterminate"|aria-checked="mixed"/);
