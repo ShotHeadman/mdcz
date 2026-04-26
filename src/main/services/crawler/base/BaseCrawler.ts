@@ -73,19 +73,6 @@ export abstract class BaseCrawler implements SiteAdapter {
 
   abstract site(): Website;
 
-  /**
-   * Returns the custom URL from options if set, otherwise falls back to the default base URL.
-   * Crawlers should call this in generateSearchUrl/parseSearchPage/parseDetailPage
-   * instead of using a hardcoded constant directly.
-   */
-  protected resolveBaseUrl(context: Context, defaultBaseUrl: string): string {
-    const custom = context.options.customUrl?.trim();
-    if (custom) {
-      return custom.replace(/\/+$/u, "");
-    }
-    return defaultBaseUrl;
-  }
-
   protected newContext(input: CrawlerInput): Context {
     return {
       number: input.number,

@@ -1,12 +1,13 @@
+import { Website } from "@shared/enums";
 import { useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { OrderedSiteFieldEditor, type OrderedSiteFieldRow } from "@/components/config-form/OrderedSiteField";
-import { SiteConfigSection } from "@/components/config-form/SiteConfigSection";
 import type { OrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
+import { SiteConnectivityPill } from "@/components/settings/SiteConnectivityPill";
 import {
   buildGroupedSitePrioritySummary,
   moveSitePriorityOption,
@@ -39,6 +40,11 @@ export function buildSitePrioritySummary(value: unknown, options: string[]): Ord
 const EDITOR_DIALOG_CLASS_NAME =
   "w-[94vw] max-w-[94vw] gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)] sm:w-[90vw] sm:max-w-[90vw] xl:w-[84vw] xl:max-w-[84vw]";
 
+const WEBSITE_VALUES = new Set<string>(Object.values(Website));
+
+const toConcreteWebsites = (sites: string[]): Website[] =>
+  sites.filter((site): site is Website => WEBSITE_VALUES.has(site));
+
 export function SitePriorityEditorField({
   options,
   name = "scrape.sites",
@@ -68,6 +74,7 @@ export function SitePriorityEditorField({
     () => resolveSitePriorityOptions(draftValue, availableOptions),
     [availableOptions, draftValue],
   );
+  const connectivitySites = useMemo(() => toConcreteWebsites(normalizeEnabledSites(draftValue)), [draftValue]);
   const siteRows = useMemo<OrderedSiteFieldRow<SitePriorityOptionId>[]>(
     () =>
       siteOptions.map((option) => ({
@@ -174,18 +181,24 @@ export function SitePriorityEditorField({
                   }
                 />
               </section>
-
-              <section className="space-y-4">
-                <header className="space-y-1">
-                  <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
-                    站点地址与连通性
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    为已启用站点覆盖内置地址，留空则使用内置地址。
-                  </p>
-                </header>
-                <SiteConfigSection sitesOverride={draftValue} />
-              </section>
+              {connectivitySites.length > 0 && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">站点连通性</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      使用当前网络、代理和 Cookie 配置检测已启用站点。
+                    </p>
+                  </div>
+                  <div className="divide-y overflow-hidden rounded-[var(--radius-quiet-lg)] border border-border/60 bg-surface">
+                    {connectivitySites.map((site) => (
+                      <div key={site} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                        <span className="mr-auto font-mono text-xs text-foreground/85">{site}</span>
+                        <SiteConnectivityPill site={site} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           </div>
           <DialogFooter className="gap-2 px-6 pb-6">

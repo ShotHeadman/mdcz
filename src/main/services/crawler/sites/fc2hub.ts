@@ -247,8 +247,7 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
   }
 
   protected async generateSearchUrl(context: Context): Promise<string | null> {
-    const base = this.resolveBaseUrl(context, BASE_URL);
-    return `${base}/search?kw=${encodeURIComponent(context.number)}`;
+    return `${BASE_URL}/search?kw=${encodeURIComponent(context.number)}`;
   }
 
   protected async parseSearchPage(
@@ -261,7 +260,6 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
       throw new Error("FC2HUB access denied");
     }
 
-    const base = this.resolveBaseUrl(context, BASE_URL);
     const metaUrl = extractDetailUrlFromMeta($, context.number);
     if (metaUrl) {
       return this.reuseSearchDocument(metaUrl);
@@ -271,7 +269,7 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
       .toArray()
       .map((element) => $(element).attr("href"));
 
-    return pickSearchResultDetailUrl(base, candidates, context.number);
+    return pickSearchResultDetailUrl(BASE_URL, candidates, context.number);
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
@@ -281,7 +279,6 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
       return null;
     }
 
-    const base = this.resolveBaseUrl(context, BASE_URL);
     const jsonLdImage = toStringArray(movie?.image)[0];
     const coverUrl =
       toHttpsUrl(jsonLdImage) ??
@@ -318,7 +315,7 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
       releaseDate: parseDate(movie?.datePublished) ?? undefined,
       durationSeconds: parseIsoDurationToSeconds(movie?.duration),
       rating: toRating(movie?.aggregateRating?.ratingValue),
-      sceneImageUrls: extractSceneImageUrls($, base),
+      sceneImageUrls: extractSceneImageUrls($, BASE_URL),
     });
   }
 }

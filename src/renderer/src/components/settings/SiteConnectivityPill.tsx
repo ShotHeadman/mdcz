@@ -35,26 +35,12 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
   const hasMountedRef = useRef(false);
   const requestVersionRef = useRef(0);
 
-  const [customUrl, proxyType, proxy, useProxy, javdbCookie, javbusCookie] =
+  const [proxyType, proxy, useProxy, javdbCookie, javbusCookie] =
     (useWatch({
       control: form.control,
-      name: [
-        `scrape.siteConfigs.${site}.customUrl`,
-        "network.proxyType",
-        "network.proxy",
-        "network.useProxy",
-        "network.javdbCookie",
-        "network.javbusCookie",
-      ],
-    }) as [
-      string | undefined,
-      string | undefined,
-      string | undefined,
-      boolean | undefined,
-      string | undefined,
-      string | undefined,
-    ]) ?? [];
-  const probeDependencyKey = [customUrl, proxyType, proxy, useProxy, javdbCookie, javbusCookie].join("::");
+      name: ["network.proxyType", "network.proxy", "network.useProxy", "network.javdbCookie", "network.javbusCookie"],
+    }) as [string | undefined, string | undefined, boolean | undefined, string | undefined, string | undefined]) ?? [];
+  const probeDependencyKey = [proxyType, proxy, useProxy, javdbCookie, javbusCookie].join("::");
 
   useEffect(() => {
     void probeDependencyKey;

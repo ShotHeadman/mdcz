@@ -83,7 +83,6 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
       javdbDelaySeconds: 10,
       restAfterCount: 20,
       restDuration: 60,
-      siteConfigs: {},
     },
     download: {
       downloadCover: true,
@@ -209,7 +208,6 @@ function buildV040Config(overrides: Record<string, unknown> = {}): Record<string
       javdbDelaySeconds: 10,
       restAfterCount: 20,
       restDuration: 60,
-      siteConfigs: {},
     },
     download: {
       downloadThumb: true,

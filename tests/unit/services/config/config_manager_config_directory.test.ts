@@ -115,26 +115,6 @@ describe("ConfigManager configDirectory", () => {
     expect(exported.ui.hideMenu).toBe(true);
   });
 
-  it("resets dynamic site custom URLs to the site-config schema default", async () => {
-    const { ConfigManager } = await import("@main/services/config/ConfigManager");
-
-    const manager = new ConfigManager();
-    await manager.save({
-      scrape: {
-        siteConfigs: {
-          javdb: { customUrl: "https://mirror.example" },
-        },
-      },
-    });
-
-    await manager.reset("scrape.siteConfigs.javdb.customUrl");
-
-    const configuration = await manager.getValidated();
-    const persisted = JSON.parse(await readFile(join(mockUserDataPath, "config", "default.json"), "utf8"));
-    expect(configuration.scrape.siteConfigs.javdb.customUrl).toBe("");
-    expect(persisted.scrape.siteConfigs.javdb.customUrl).toBe("");
-  });
-
   it("imports a profile file and refreshes the active profile when overwriting it", async () => {
     const { ConfigManager } = await import("@main/services/config/ConfigManager");
 

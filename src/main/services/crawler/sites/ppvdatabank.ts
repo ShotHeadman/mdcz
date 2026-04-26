@@ -70,8 +70,7 @@ export class PpvDatabankCrawler extends BaseFc2Crawler {
   }
 
   protected async generateSearchUrl(context: Context): Promise<string | null> {
-    const baseUrl = this.resolveBaseUrl(context, BASE_URL);
-    return `${baseUrl}/article/${context.number}/`;
+    return `${BASE_URL}/article/${context.number}/`;
   }
 
   protected async parseSearchPage(

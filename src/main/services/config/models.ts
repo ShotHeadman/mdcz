@@ -40,17 +40,12 @@ const networkSchema = z.object({
   javbusCookie: z.string().default(""),
 });
 
-const siteConfigSchema = z.object({
-  customUrl: z.url().or(z.literal("")).default(""),
-});
-
 const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
   threadNumber: z.number().int().min(1).max(128).default(2),
   javdbDelaySeconds: z.number().int().min(0).max(120).default(10),
   restAfterCount: z.number().int().min(1).max(500).default(20),
   restDuration: z.number().int().min(0).default(60),
-  siteConfigs: z.record(z.string(), siteConfigSchema).default({}),
 });
 
 const namingSchema = z.object({
@@ -397,8 +392,6 @@ export type DeepPartial<T> =
 
 export const defaultConfiguration: Configuration = configurationSchema.parse({});
 
-const siteConfigDefault = siteConfigSchema.parse({});
-
 export type ConfigurationPathDefault = { found: true; value: unknown } | { found: false };
 
 function getNestedConfigurationDefault(path: string): unknown {
@@ -419,18 +412,6 @@ export function getConfigurationPathDefault(path: string): ConfigurationPathDefa
   const staticDefault = getNestedConfigurationDefault(path);
   if (staticDefault !== undefined) {
     return { found: true, value: staticDefault };
-  }
-
-  const [root, collection, site, field, ...rest] = path.split(".");
-  if (
-    root === "scrape" &&
-    collection === "siteConfigs" &&
-    Boolean(site) &&
-    field === "customUrl" &&
-    rest.length === 0 &&
-    Object.hasOwn(siteConfigDefault, field)
-  ) {
-    return { found: true, value: siteConfigDefault.customUrl };
   }
 
   return { found: false };

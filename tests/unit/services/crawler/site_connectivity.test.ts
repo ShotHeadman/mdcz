@@ -10,20 +10,9 @@ import { describe, expect, it, vi } from "vitest";
 const createConfiguration = (): Configuration => structuredClone(defaultConfiguration);
 
 describe("siteConnectivity", () => {
-  it("uses the saved custom URL when present", () => {
-    const configuration = createConfiguration();
-    configuration.scrape.siteConfigs[Website.JAVDB] = {
-      customUrl: "https://mirror.example.com",
-    };
-
-    expect(resolveSiteConnectivityTargetUrl(Website.JAVDB, configuration)).toBe("https://mirror.example.com");
-  });
-
-  it("falls back to the built-in site origin when no custom URL is configured", () => {
-    const configuration = createConfiguration();
-
-    expect(resolveSiteConnectivityTargetUrl(Website.AVBASE, configuration)).toBe("https://www.avbase.net");
-    expect(resolveSiteConnectivityTargetUrl(Website.DMM_TV, configuration)).toBe("https://video.dmm.co.jp/");
+  it("uses the built-in site origin", () => {
+    expect(resolveSiteConnectivityTargetUrl(Website.AVBASE)).toBe("https://www.avbase.net");
+    expect(resolveSiteConnectivityTargetUrl(Website.DMM_TV)).toBe("https://video.dmm.co.jp/");
   });
 
   it("builds cookie headers from crawler settings and site-specific probe requirements", () => {

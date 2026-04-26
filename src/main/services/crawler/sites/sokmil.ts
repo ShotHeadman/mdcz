@@ -84,8 +84,7 @@ export class SokmilCrawler extends BaseCrawler {
       return null;
     }
 
-    const base = this.resolveBaseUrl(context, SOKMIL_BASE_URL);
-    return `${base}/search/keyword/?sectionid=${DEFAULT_SECTION_ID}&q=${encodeURIComponent(number)}`;
+    return `${SOKMIL_BASE_URL}/search/keyword/?sectionid=${DEFAULT_SECTION_ID}&q=${encodeURIComponent(number)}`;
   }
 
   protected async parseSearchPage(
@@ -93,7 +92,6 @@ export class SokmilCrawler extends BaseCrawler {
     $: CheerioAPI,
     _searchUrl: string,
   ): Promise<string | SearchPageResolution | null> {
-    const base = this.resolveBaseUrl(context, SOKMIL_BASE_URL);
     const searchText = normalizeSokmilSearchText(context.number);
     if (!searchText) {
       return null;
@@ -127,11 +125,10 @@ export class SokmilCrawler extends BaseCrawler {
       return null;
     }
 
-    return toAbsoluteUrl(base, match.href.split("?")[0]) ?? null;
+    return toAbsoluteUrl(SOKMIL_BASE_URL, match.href.split("?")[0]) ?? null;
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
-    const base = this.resolveBaseUrl(context, SOKMIL_BASE_URL);
     if (isSokmilLoginWall($)) {
       throw new Error("SOKMIL: login wall");
     }
@@ -174,7 +171,7 @@ export class SokmilCrawler extends BaseCrawler {
       .filter((name: string) => name.length > 0);
 
     // Cover image
-    const jacketImg = toAbsoluteUrl(base, $("img.jacket-img").first().attr("src") ?? undefined);
+    const jacketImg = toAbsoluteUrl(SOKMIL_BASE_URL, $("img.jacket-img").first().attr("src") ?? undefined);
 
     return {
       title,

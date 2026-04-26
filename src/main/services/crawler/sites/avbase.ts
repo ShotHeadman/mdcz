@@ -368,8 +368,7 @@ export class AvbaseCrawler extends BaseCrawler {
       return null;
     }
 
-    const baseUrl = this.resolveBaseUrl(context, AVBASE_BASE_URL);
-    return `${baseUrl}/works?q=${encodeURIComponent(number)}`;
+    return `${AVBASE_BASE_URL}/works?q=${encodeURIComponent(number)}`;
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, _searchUrl: string): Promise<string | null> {
@@ -379,8 +378,7 @@ export class AvbaseCrawler extends BaseCrawler {
       return null;
     }
 
-    const baseUrl = this.resolveBaseUrl(context, AVBASE_BASE_URL);
-    return buildDetailUrl(baseUrl, best?.prefix ?? undefined, workId);
+    return buildDetailUrl(AVBASE_BASE_URL, best?.prefix ?? undefined, workId);
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI): Promise<CrawlerData | null> {

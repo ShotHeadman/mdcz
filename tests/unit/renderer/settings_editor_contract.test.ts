@@ -109,11 +109,6 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("download.tagBadgeImageOverrides")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
-    expect(entry("scrape.siteConfigs.javdb.customUrl")).toMatchObject({
-      anchor: "scrape",
-      surface: "internal",
-      visibility: "public",
-    });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
 
     const keys = new Set(FIELD_REGISTRY.map((candidate) => candidate.key));
@@ -122,7 +117,7 @@ describe("settings editor metadata and filtering", () => {
     expect(keys.has("ui.language")).toBe(false);
   });
 
-  it("round-trips registered settings, including dynamic site and aggregation paths", () => {
+  it("round-trips registered settings, including scrape order and aggregation paths", () => {
     const flat = flattenConfig({
       translate: { engine: "openai", llmApiKey: "secret" },
       download: {
@@ -132,9 +127,6 @@ describe("settings editor metadata and filtering", () => {
       },
       scrape: {
         sites: ["javdb"],
-        siteConfigs: {
-          javdb: { customUrl: "https://example.org" },
-        },
       },
       aggregation: {
         fieldPriorities: {
@@ -149,7 +141,7 @@ describe("settings editor metadata and filtering", () => {
       "download.tagBadgeTypes": ["subtitle", "leak"],
       "download.tagBadgePosition": "bottomRight",
       "download.tagBadgeImageOverrides": true,
-      "scrape.siteConfigs.javdb.customUrl": "https://example.org",
+      "scrape.sites": ["javdb"],
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
@@ -159,13 +151,9 @@ describe("settings editor metadata and filtering", () => {
         tagBadgePosition: "bottomRight",
         tagBadgeImageOverrides: true,
       },
-      scrape: { siteConfigs: { javdb: { customUrl: "https://example.org" } } },
+      scrape: { sites: ["javdb"] },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
-
-    expect(flattenConfig({ scrape: { sites: ["javdb"], siteConfigs: {} } })["scrape.siteConfigs.javdb.customUrl"]).toBe(
-      "",
-    );
   });
 
   it("applies PRD visibility rules for normal, advanced, modified, group, and deep-link browsing", () => {
@@ -269,7 +257,7 @@ describe("settings editor metadata and filtering", () => {
     );
   });
 
-  it("does not invent top-level search matches for dialog-only site URL rows", () => {
+  it("does not expose per-site URL rows through settings search", () => {
     const siteUrlSearch = buildSettingsBrowseState({
       query: "javdb 站点地址",
       showAdvanced: false,
@@ -348,11 +336,11 @@ describe("settings editor save and content helpers", () => {
     });
     expect(
       mergeConfigWithFlatPayload(
-        { scrape: { siteConfigs: { javdb: { customUrl: "" } } } },
-        { "scrape.siteConfigs.javdb.customUrl": "https://mirror.example" },
+        { translate: { engine: "google", llmApiKey: "" } },
+        { "translate.engine": "openai", "translate.llmApiKey": "secret" },
       ),
     ).toEqual({
-      scrape: { siteConfigs: { javdb: { customUrl: "https://mirror.example" } } },
+      translate: { engine: "openai", llmApiKey: "secret" },
     });
   });
 

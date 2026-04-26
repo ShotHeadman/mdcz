@@ -24,8 +24,7 @@ export class KMProduceCrawler extends BaseCrawler {
       return null;
     }
 
-    const baseUrl = this.resolveBaseUrl(context, KM_PRODUCE_BASE_URL);
-    return `${baseUrl}/works/${number.toLowerCase()}`;
+    return `${KM_PRODUCE_BASE_URL}/works/${number.toLowerCase()}`;
   }
 
   protected async parseSearchPage(
@@ -37,13 +36,12 @@ export class KMProduceCrawler extends BaseCrawler {
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI): Promise<CrawlerData | null> {
-    const baseUrl = this.resolveBaseUrl(context, KM_PRODUCE_BASE_URL);
     const title = extractText($, "h1");
     if (!title) {
       return null;
     }
 
-    const thumbUrl = toAbsoluteUrl(baseUrl, extractAttr($, "img[src*='/img/title']", "src"));
+    const thumbUrl = toAbsoluteUrl(KM_PRODUCE_BASE_URL, extractAttr($, "img[src*='/img/title']", "src"));
 
     const actors = uniqueStrings(
       $("a[href*='/works/category/']")

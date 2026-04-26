@@ -9,7 +9,6 @@ export interface CrawlerOptions {
   referer?: string;
   userAgent?: string;
   apiToken?: string;
-  customUrl?: string;
   detailUrl?: string;
   signal?: AbortSignal;
 }
