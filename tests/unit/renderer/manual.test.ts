@@ -63,7 +63,7 @@ describe("readNfo", () => {
     await expect(readNfo("/media/ABC-123.mp4")).resolves.toEqual({
       data: {
         path: "/media/ABC-123.nfo",
-        content: JSON.stringify(crawlerData, null, 2),
+        crawlerData,
       },
     });
 
@@ -98,14 +98,14 @@ describe("updateNfo", () => {
 
     await updateNfo(
       "/media/movie.nfo",
-      JSON.stringify({
+      {
         title: "Movie Title",
         number: "ABC-123",
         actors: [],
         genres: [],
         scene_images: [],
         website: Website.DMM,
-      }),
+      },
       "/media/ABC-123.mp4",
     );
 

@@ -338,7 +338,7 @@ describe("Configuration migrations", () => {
       const parsed = migrate(raw).parsed;
 
       expect(parsed.paths.sceneImagesFolder).toBe("my_custom_folder");
-      expect(parsed.paths.actorPhotoFolder).toBe("actor_photo");
+      expect(parsed.paths.actorPhotoFolder).toBe("");
       expect(parsed.download.generateNfo).toBe(false);
       expect(parsed.naming.partStyle).toBe("RAW");
       expect(parsed.aggregation.fieldPriorities.title).toEqual(["javdb", "dmm"]);

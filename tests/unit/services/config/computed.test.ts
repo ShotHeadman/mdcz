@@ -275,9 +275,9 @@ describe("buildComputedConfiguration", () => {
     }
   });
 
-  it("keeps actor photo defaults under paths and ignores legacy personSync.actorPhotoFolder", () => {
+  it("keeps actor photo defaults empty under paths and ignores legacy personSync.actorPhotoFolder", () => {
     const defaultConfiguration = configurationSchema.parse({});
-    expect(defaultConfiguration.paths.actorPhotoFolder).toBe("actor_photo");
+    expect(defaultConfiguration.paths.actorPhotoFolder).toBe("");
     expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([
       Website.AVBASE,
       Website.DMM_TV,
@@ -317,7 +317,7 @@ describe("buildComputedConfiguration", () => {
       },
     });
 
-    expect(legacyConfiguration.paths.actorPhotoFolder).toBe("actor_photo");
+    expect(legacyConfiguration.paths.actorPhotoFolder).toBe("");
     expect(legacyConfiguration.personSync).not.toHaveProperty("actorPhotoFolder");
   });
 });

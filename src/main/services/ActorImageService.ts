@@ -150,7 +150,7 @@ export class ActorImageService {
       return this.toResolvedActorImage(state);
     }
 
-    state = await this.cacheProfilePhoto(configuration, input, state);
+    state = await this.cacheProfilePhoto(input, state);
     if (state.imagePath) {
       return this.toResolvedActorImage(state);
     }
@@ -160,7 +160,7 @@ export class ActorImageService {
       return this.toResolvedActorImage(state);
     }
 
-    state = await this.cacheProfilePhoto(configuration, input, state);
+    state = await this.cacheProfilePhoto(input, state);
     return this.toResolvedActorImage(state);
   }
 
@@ -223,7 +223,6 @@ export class ActorImageService {
   }
 
   private async cacheProfilePhoto(
-    configuration: Configuration,
     input: PrepareActorProfilesInput,
     state: ActorImageResolutionState,
   ): Promise<ActorImageResolutionState> {
@@ -231,15 +230,7 @@ export class ActorImageService {
       return state;
     }
 
-    const imagePath = await this.fileStore.cacheActorImage(
-      configuration,
-      state.lookupNames,
-      state.profile?.photo_url,
-      {
-        fallbackBaseDir: input.actorPhotoBaseDir,
-      },
-      input.signal,
-    );
+    const imagePath = await this.fileStore.cacheActorImage(state.lookupNames, state.profile?.photo_url, input.signal);
 
     return {
       ...state,

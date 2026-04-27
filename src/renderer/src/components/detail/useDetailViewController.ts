@@ -1,8 +1,16 @@
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@shared/assetNaming";
+import { toErrorMessage } from "@shared/error";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { readNfo, updateNfo } from "@/api/manual";
 import type { DetailViewItem } from "@/components/detail/types";
+import {
+  createEmptyEditableNfoData,
+  type NfoValidationErrors,
+  normalizeEditableNfoData,
+  serializeEditableNfoData,
+  validateEditableNfoData,
+} from "@/components/nfo/nfoEditorModel";
 import { useResolvedImageCandidates } from "@/hooks/useResolvedImageSources";
 import { buildImageSourceCandidates, buildLocalImageCandidate } from "@/utils/image";
 import { getDirFromPath } from "@/utils/path";
@@ -38,7 +46,9 @@ const resolveMovieBaseName = (item: DetailViewItem | null | undefined): string =
 export function useDetailViewController(item?: DetailViewItem | null) {
   const [nfoOpen, setNfoOpen] = useState(false);
   const [nfoPath, setNfoPath] = useState("");
-  const [nfoContent, setNfoContent] = useState("");
+  const [nfoData, setNfoData] = useState(createEmptyEditableNfoData);
+  const [nfoInitialSnapshot, setNfoInitialSnapshot] = useState("");
+  const [nfoValidationErrors, setNfoValidationErrors] = useState<NfoValidationErrors>({});
   const [nfoLoading, setNfoLoading] = useState(false);
   const [nfoSaving, setNfoSaving] = useState(false);
   const [posterSrc, setPosterSrc] = useState("");
@@ -86,6 +96,7 @@ export function useDetailViewController(item?: DetailViewItem | null) {
   const thumbCandidateKeyRef = useRef(thumbCandidateKey);
   const posterRenderableCandidates = useResolvedImageCandidates(posterCandidates);
   const thumbRenderableCandidates = useResolvedImageCandidates(thumbCandidates);
+  const nfoDirty = nfoOpen && serializeEditableNfoData(nfoData) !== nfoInitialSnapshot;
 
   useEffect(() => {
     if (posterCandidateKeyRef.current === posterCandidateKey) {
@@ -117,28 +128,61 @@ export function useDetailViewController(item?: DetailViewItem | null) {
     try {
       setNfoLoading(true);
       const response = await readNfo(path);
-      setNfoPath(response.data?.path ?? path);
-      setNfoContent(response.data?.content ?? "");
+      const editableData = normalizeEditableNfoData(response.data.crawlerData);
+      setNfoPath(response.data.path);
+      setNfoData(editableData);
+      setNfoInitialSnapshot(serializeEditableNfoData(editableData));
+      setNfoValidationErrors({});
       setNfoOpen(true);
-    } catch {
-      toast.error("加载 NFO 失败");
+    } catch (error) {
+      toast.error(`加载 NFO 失败: ${toErrorMessage(error)}`);
     } finally {
       setNfoLoading(false);
     }
   }, []);
 
   const handleSaveNfo = useCallback(async () => {
+    const validation = validateEditableNfoData(nfoData);
+    setNfoValidationErrors(validation.errors);
+    if (!validation.valid || !validation.data) {
+      const firstMessage = Object.values(validation.errors)[0] ?? "请检查表单内容";
+      toast.error(firstMessage);
+      return;
+    }
+
     try {
       setNfoSaving(true);
-      await updateNfo(nfoPath, nfoContent, item?.path);
+      await updateNfo(nfoPath, validation.data, item?.path);
       toast.success("NFO 已保存");
+      setNfoInitialSnapshot(serializeEditableNfoData(normalizeEditableNfoData(validation.data)));
       setNfoOpen(false);
-    } catch {
-      toast.error("保存 NFO 失败");
+    } catch (error) {
+      toast.error(`保存 NFO 失败: ${toErrorMessage(error)}`);
     } finally {
       setNfoSaving(false);
     }
-  }, [item?.path, nfoContent, nfoPath]);
+  }, [item?.path, nfoData, nfoPath]);
+
+  const handleNfoOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        setNfoOpen(true);
+        return;
+      }
+
+      if (nfoSaving) {
+        return;
+      }
+
+      if (nfoDirty && !window.confirm("放弃未保存的 NFO 修改？")) {
+        return;
+      }
+
+      setNfoOpen(false);
+      setNfoValidationErrors({});
+    },
+    [nfoDirty, nfoSaving],
+  );
 
   const handlePlay = useCallback(() => {
     if (!item?.path) {
@@ -196,11 +240,13 @@ export function useDetailViewController(item?: DetailViewItem | null) {
     posterSrc,
     thumbSrc,
     nfoOpen,
-    nfoContent,
+    nfoData,
+    nfoDirty,
+    nfoValidationErrors,
     nfoLoading,
     nfoSaving,
-    setNfoOpen,
-    setNfoContent,
+    setNfoOpen: handleNfoOpenChange,
+    setNfoData,
     handlePlay,
     handleOpenFolder,
     handleOpenNfo,
