@@ -293,8 +293,8 @@ export function PathsSection() {
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
       <PathFieldWrapper
         name="paths.actorPhotoFolder"
-        label="演员头像库目录"
-        description="建议放在媒体目录下。这里的头像会优先使用；如希望优先使用在线头像，请在“人物头像来源顺序”中调整“本地”的位置或移除它。"
+        label="本地演员头像库目录"
+        description="仅当“人物头像来源顺序”启用“本地”时读取，用于本地头像覆盖和媒体服务器头像同步。"
         isDirectory
       />
       <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />

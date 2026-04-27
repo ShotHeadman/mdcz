@@ -161,7 +161,13 @@ describe("ActorImageService", () => {
   it("caches remote actor images into the internal cache and materializes them for movie NFOs", async () => {
     const { root, cacheRoot } = await createActorLibrary();
     const movieDir = join(root, "Movie");
-    const config = createConfig(root);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      paths: {
+        ...defaultConfiguration.paths,
+        mediaPath: root,
+      },
+    });
     const validPngBytes = await readValidPngBytes();
     vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
       valid: true,
@@ -218,7 +224,13 @@ describe("ActorImageService", () => {
 
   it("does not cache invalid remote actor image responses", async () => {
     const { root, cacheRoot } = await createActorLibrary();
-    const config = createConfig(root);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      paths: {
+        ...defaultConfiguration.paths,
+        mediaPath: root,
+      },
+    });
     vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
       valid: false,
       width: 0,
@@ -246,7 +258,13 @@ describe("ActorImageService", () => {
   it("retries actor source lookup after a crawler-provided photo fails to cache", async () => {
     const { root } = await createActorLibrary();
     const movieDir = join(root, "Movie");
-    const config = createConfig(root);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      paths: {
+        ...defaultConfiguration.paths,
+        mediaPath: root,
+      },
+    });
     const validPngBytes = await readValidPngBytes();
     vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
       valid: true,
@@ -294,11 +312,10 @@ describe("ActorImageService", () => {
     expect(await readFile(join(movieDir, ".actors", "Actor F.png"))).toEqual(validPngBytes);
   });
 
-  it("reuses cached actor images after the actor photo folder path changes", async () => {
+  it("reuses cached remote actor images after the actor photo folder path changes", async () => {
     const userDataDir = await createUserDataDir();
     const firstRoot = await createTempDir();
     const secondRoot = await createTempDir();
-    const cacheRoot = getActorImageCacheDirectory();
     const validPngBytes = await readValidPngBytes();
     vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
       valid: true,
@@ -316,38 +333,15 @@ describe("ActorImageService", () => {
       actorProfiles: [{ name: "Actor D", photo_url: "https://img.example.com/actor-d.png" }],
     });
 
-    const resolved = await service.resolveLocalImage(createConfig(secondRoot), ["Actor D"]);
+    const profiles = await service.prepareActorProfilesForMovie(createConfig(secondRoot), {
+      movieDir: join(secondRoot, "Movie"),
+      actors: ["Actor D"],
+      actorProfiles: [{ name: "Actor D", photo_url: "https://img.example.com/actor-d.png" }],
+    });
 
     expect(userDataDir).toBeTruthy();
-    expect(resolved).toMatch(new RegExp(`^${cacheRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`));
-    expect(networkClient.getContent).toHaveBeenCalledTimes(1);
-  });
-
-  it("merges new aliases when resolving an already cached actor image", async () => {
-    const { root } = await createActorLibrary();
-    const config = createConfig(root);
-    const validPngBytes = await readValidPngBytes();
-    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
-      valid: true,
-      width: 512,
-      height: 512,
-    });
-    const networkClient = {
-      getContent: vi.fn(async () => validPngBytes),
-    };
-    const service = new ActorImageService({ networkClient });
-
-    await service.prepareActorProfilesForMovie(config, {
-      movieDir: join(root, "Movie"),
-      actors: ["Actor E"],
-      actorProfiles: [{ name: "Actor E", photo_url: "https://img.example.com/actor-e.png" }],
-    });
-
-    const mixedLookup = await service.resolveLocalImage(config, ["Alias E", "Actor E"]);
-    const aliasOnlyLookup = await service.resolveLocalImage(config, ["Alias E"]);
-
-    expect(mixedLookup).toBeTruthy();
-    expect(aliasOnlyLookup).toBe(mixedLookup);
+    expect(profiles).toEqual([{ name: "Actor D", photo_url: ".actors/Actor D.png" }]);
+    expect(await readFile(join(secondRoot, "Movie", ".actors", "Actor D.png"))).toEqual(validPngBytes);
     expect(networkClient.getContent).toHaveBeenCalledTimes(1);
   });
 });

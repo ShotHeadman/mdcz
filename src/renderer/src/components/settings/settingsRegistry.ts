@@ -250,7 +250,7 @@ const RAW_FIELD_REGISTRY: Array<
   Pick<FieldEntry, "key" | "label" | "anchor" | "description"> & Partial<Pick<FieldEntry, "surface" | "visibility">>
 > = [
   { key: "paths.mediaPath", label: "媒体目录", anchor: "paths" },
-  { key: "paths.actorPhotoFolder", label: "演员头像库目录", anchor: "paths" },
+  { key: "paths.actorPhotoFolder", label: "本地演员头像库目录", anchor: "paths" },
   { key: "paths.softlinkPath", label: "软链接目录", anchor: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", anchor: "paths" },
   { key: "paths.failedOutputFolder", label: "失败输出目录", anchor: "paths" },
