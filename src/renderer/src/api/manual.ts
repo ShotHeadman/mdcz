@@ -3,7 +3,7 @@ import { ipc } from "@/client/ipc";
 
 export interface NfoResponse {
   path: string;
-  content: string;
+  crawlerData: CrawlerData;
 }
 
 export interface RequeueResponse {
@@ -71,10 +71,6 @@ const shouldRetryWithAlternateNfo = (error: unknown): boolean => {
   return code === "ENOENT" || code === "ENOTDIR";
 };
 
-const parseCrawlerData = (content: string): CrawlerData => {
-  return JSON.parse(content) as CrawlerData;
-};
-
 export const stopScrape = async () => {
   const data = await ipc.scraper.stop();
   return { data };
@@ -122,7 +118,7 @@ export const readNfo = async (path: string) => {
       const response = await ipc.file.nfoRead(candidate);
       const data: NfoResponse = {
         path: candidate,
-        content: JSON.stringify(response.data, null, 2),
+        crawlerData: response.data,
       };
       return { data };
     } catch (error) {
@@ -150,9 +146,8 @@ export const resolveNfoWritePath = (path: string, videoPath?: string): string =>
   return asNfoPath(normalizedVideoPath);
 };
 
-export const updateNfo = async (path: string, content: string, videoPath?: string) => {
+export const updateNfo = async (path: string, crawlerData: CrawlerData, videoPath?: string) => {
   const nfoPath = resolveNfoWritePath(path, videoPath);
-  const crawlerData = parseCrawlerData(content);
   const data = await ipc.file.nfoWrite(nfoPath, crawlerData);
   return { data };
 };

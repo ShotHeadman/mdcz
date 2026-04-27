@@ -10,17 +10,11 @@ import type { DetailViewItem } from "@/components/detail/types";
 import { useDetailViewController } from "@/components/detail/useDetailViewController";
 import ChangeDiffView from "@/components/maintenance/ChangeDiffView";
 import PathPlanView from "@/components/maintenance/PathPlanView";
+import { NfoEditorDialog } from "@/components/nfo/NfoEditorDialog";
 import { SceneImageGallery } from "@/components/SceneImageGallery";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import type { MaintenanceFieldSelectionSide } from "@/lib/maintenance";
 import { findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
@@ -153,11 +147,13 @@ export function DetailPanel({
     posterSrc,
     thumbSrc,
     nfoOpen,
-    nfoContent,
+    nfoData,
+    nfoDirty,
+    nfoValidationErrors,
     nfoLoading,
     nfoSaving,
     setNfoOpen,
-    setNfoContent,
+    setNfoData,
     handlePlay,
     handleOpenFolder,
     handleOpenNfo,
@@ -398,26 +394,16 @@ export function DetailPanel({
         </ScrollArea>
       </div>
 
-      <Dialog open={nfoOpen} onOpenChange={setNfoOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>编辑 NFO 文件</DialogTitle>
-          </DialogHeader>
-          <textarea
-            value={nfoContent}
-            onChange={(event) => setNfoContent(event.target.value)}
-            className="h-[60vh] w-full resize-none rounded-md border bg-background p-3 font-mono text-[11px]"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNfoOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={handleSaveNfo} disabled={nfoSaving}>
-              保存修改
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NfoEditorDialog
+        open={nfoOpen}
+        data={nfoData}
+        errors={nfoValidationErrors}
+        dirty={nfoDirty}
+        saving={nfoSaving}
+        onOpenChange={setNfoOpen}
+        onDataChange={setNfoData}
+        onSave={handleSaveNfo}
+      />
 
       <Dialog open={thumbPreviewOpen} onOpenChange={setThumbPreviewOpen}>
         <DialogContent
