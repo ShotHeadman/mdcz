@@ -3,7 +3,6 @@
  * `settingsContent.tsx` so hooks and filter logic can reuse the same metadata
  * without pulling in React renderers.
  */
-import { Website } from "@shared/enums";
 import { SITE_PRIORITY_EDITOR_ALIASES } from "@/components/settings/sitePriorityOptions";
 
 export const SECTION_ORDER = [
@@ -34,16 +33,6 @@ export interface FieldEntry {
 export interface AggregationPriorityFieldDefinition {
   key: `aggregation.fieldPriorities.${string}`;
   label: string;
-  description: string;
-  aliases: string[];
-}
-
-interface SiteCustomUrlFieldDefinition {
-  key: `scrape.siteConfigs.${string}.customUrl`;
-  site: Website;
-  label: string;
-  anchor: "scrape";
-  surface: "internal";
   description: string;
   aliases: string[];
 }
@@ -167,24 +156,6 @@ const AGGREGATION_PRIORITY_ALIASES = Object.fromEntries(
   AGGREGATION_PRIORITY_FIELDS.map((entry) => [entry.key, entry.aliases]),
 ) as Record<string, string[]>;
 
-const SITE_CUSTOM_URL_FIELDS: SiteCustomUrlFieldDefinition[] = Object.values(Website).map((site) => ({
-  key: `scrape.siteConfigs.${site}.customUrl`,
-  site,
-  label: `${site} 站点地址`,
-  anchor: "scrape",
-  surface: "internal",
-  description: `覆盖 ${site} 的内置地址，并用于当前配置下的连通性测试。`,
-  aliases: [site, `${site} url`, `${site} 地址`, "custom url", "mirror", "站点地址", "连通性"],
-}));
-
-const SITE_CUSTOM_URL_ALIASES = Object.fromEntries(
-  SITE_CUSTOM_URL_FIELDS.map((entry) => [entry.key, entry.aliases]),
-) as Record<string, string[]>;
-
-const SITE_BY_CUSTOM_URL_FIELD_KEY = new Map<string, Website>(
-  SITE_CUSTOM_URL_FIELDS.map((entry) => [entry.key, entry.site]),
-);
-
 const ADVANCED_FIELD_KEYS = new Set<string>([
   "download.sceneImageConcurrency",
   "aggregation.maxParallelCrawlers",
@@ -199,7 +170,6 @@ const ADVANCED_FIELD_KEYS = new Set<string>([
 
 const FIELD_ALIASES: Record<string, string[]> = {
   ...AGGREGATION_PRIORITY_ALIASES,
-  ...SITE_CUSTOM_URL_ALIASES,
   "paths.mediaPath": ["media", "library", "媒体库"],
   "paths.actorPhotoFolder": ["actor", "photo", "头像", "演员"],
   "paths.softlinkPath": ["symlink", "softlink", "链接"],
@@ -280,7 +250,7 @@ const RAW_FIELD_REGISTRY: Array<
   Pick<FieldEntry, "key" | "label" | "anchor" | "description"> & Partial<Pick<FieldEntry, "surface" | "visibility">>
 > = [
   { key: "paths.mediaPath", label: "媒体目录", anchor: "paths" },
-  { key: "paths.actorPhotoFolder", label: "演员头像库目录", anchor: "paths" },
+  { key: "paths.actorPhotoFolder", label: "本地演员头像库目录", anchor: "paths" },
   { key: "paths.softlinkPath", label: "软链接目录", anchor: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", anchor: "paths" },
   { key: "paths.failedOutputFolder", label: "失败输出目录", anchor: "paths" },
@@ -293,7 +263,13 @@ const RAW_FIELD_REGISTRY: Array<
     anchor: "scrape",
     description: "按分组显示 DMM/FANZA 系、厂商官网和常用聚合站点，并保持保存值仍为具体站点顺序。",
   },
-  ...SITE_CUSTOM_URL_FIELDS,
+  {
+    key: "scrape.r18MetadataLanguage",
+    label: "R18.dev 元数据语言",
+    anchor: "scrape",
+    visibility: "hidden",
+    description: "R18.dev 行内语言偏好，由启用站点与优先级控件保存。",
+  },
   { key: "scrape.threadNumber", label: "并发线程数", anchor: "scrape" },
   { key: "scrape.javdbDelaySeconds", label: "JavDB 请求延迟(秒)", anchor: "scrape" },
   { key: "scrape.restAfterCount", label: "连续刮削后休息(条数)", anchor: "scrape" },
@@ -485,19 +461,7 @@ export function flattenConfig(data: Record<string, unknown>): Record<string, unk
   const flat: Record<string, unknown> = {};
   for (const entry of FIELD_REGISTRY) {
     const value = getNestedValue(data, entry.key);
-    flat[entry.key] = value === undefined && SITE_BY_CUSTOM_URL_FIELD_KEY.has(entry.key) ? "" : value;
-  }
-
-  const siteConfigs = getNestedValue(data, "scrape.siteConfigs");
-  if (isRecord(siteConfigs)) {
-    for (const [site, config] of Object.entries(siteConfigs)) {
-      if (!isRecord(config)) {
-        continue;
-      }
-      if ("customUrl" in config) {
-        flat[`scrape.siteConfigs.${site}.customUrl`] = config.customUrl ?? "";
-      }
-    }
+    flat[entry.key] = value;
   }
 
   return flat;

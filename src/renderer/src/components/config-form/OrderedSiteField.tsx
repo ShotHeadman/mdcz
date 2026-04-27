@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
+import type { ReactNode } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -21,6 +22,7 @@ export interface OrderedSiteFieldRow<RowId extends string = string> {
   chips?: OrderedSiteFieldChip[];
   checkboxState: OrderedSiteFieldCheckboxState;
   labelMonospace?: boolean;
+  trailingControl?: ReactNode;
 }
 
 interface OrderedSiteFieldProps<RowId extends string = string> {
@@ -197,27 +199,30 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
                 </div>
                 {row.description && <p className="text-xs leading-5 text-muted-foreground">{row.description}</p>}
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={moveUpDisabled}
-                  onClick={() => handleMoveRow(row.id, -1)}
-                  aria-label={`上移 ${row.label}`}
-                >
-                  <ArrowUp className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={moveDisabled}
-                  onClick={() => handleMoveRow(row.id, 1)}
-                  aria-label={`下移 ${row.label}`}
-                >
-                  <ArrowDown className="size-3.5" />
-                </Button>
+              <div className="flex items-center gap-2">
+                {row.trailingControl ? <div className="shrink-0">{row.trailingControl}</div> : null}
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={moveUpDisabled}
+                    onClick={() => handleMoveRow(row.id, -1)}
+                    aria-label={`上移 ${row.label}`}
+                  >
+                    <ArrowUp className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={moveDisabled}
+                    onClick={() => handleMoveRow(row.id, 1)}
+                    aria-label={`下移 ${row.label}`}
+                  >
+                    <ArrowDown className="size-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           );

@@ -117,14 +117,11 @@ export class KingdomCrawler extends BaseCrawler {
       return null;
     }
 
-    const base = this.resolveBaseUrl(context, KINGDOM_BASE_URL);
-    return `${base}/products/list?category_id=&name=${encodeURIComponent(number)}`;
+    return `${KINGDOM_BASE_URL}/products/list?category_id=&name=${encodeURIComponent(number)}`;
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, _searchUrl: string): Promise<string | null> {
-    const base = this.resolveBaseUrl(context, KINGDOM_BASE_URL);
-
-    const exactDetailUrl = findSearchDetailUrlByProductCode($, base, context.number);
+    const exactDetailUrl = findSearchDetailUrlByProductCode($, KINGDOM_BASE_URL, context.number);
     if (exactDetailUrl) {
       return exactDetailUrl;
     }
@@ -142,12 +139,10 @@ export class KingdomCrawler extends BaseCrawler {
       return null;
     }
 
-    return toAbsoluteUrl(base, links[0]) ?? null;
+    return toAbsoluteUrl(KINGDOM_BASE_URL, links[0]) ?? null;
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
-    const base = this.resolveBaseUrl(context, KINGDOM_BASE_URL);
-
     const titleRaw = extractText($, "h2.detail-title") ?? extractText($, "h1");
     if (!titleRaw) {
       return null;
@@ -171,7 +166,7 @@ export class KingdomCrawler extends BaseCrawler {
 
     const images = $(".item_visual img")
       .toArray()
-      .map((el: CheerioInput) => toAbsoluteUrl(base, $(el).attr("src")))
+      .map((el: CheerioInput) => toAbsoluteUrl(KINGDOM_BASE_URL, $(el).attr("src")))
       .filter((url): url is string => Boolean(url));
 
     const posterUrl = images[0];

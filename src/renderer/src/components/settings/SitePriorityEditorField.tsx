@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { Website } from "@shared/enums";
+import { DEFAULT_R18_METADATA_LANGUAGE, type R18MetadataLanguage } from "@shared/r18";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { OrderedSiteFieldEditor, type OrderedSiteFieldRow } from "@/components/config-form/OrderedSiteField";
-import { SiteConfigSection } from "@/components/config-form/SiteConfigSection";
 import type { OrderedSiteSummary } from "@/components/settings/orderedSiteSummary";
 import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
+import { SiteConnectivityPill } from "@/components/settings/SiteConnectivityPill";
 import {
   buildGroupedSitePrioritySummary,
   moveSitePriorityOption,
@@ -19,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { FormItem } from "@/components/ui/Form";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
+import { cn } from "@/lib/utils";
 import { normalizeEnabledSites } from "@/utils/orderedSite";
 
 interface SitePriorityEditorFieldProps {
@@ -39,6 +42,50 @@ export function buildSitePrioritySummary(value: unknown, options: string[]): Ord
 const EDITOR_DIALOG_CLASS_NAME =
   "w-[94vw] max-w-[94vw] gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)] sm:w-[90vw] sm:max-w-[90vw] xl:w-[84vw] xl:max-w-[84vw]";
 
+const WEBSITE_VALUES = new Set<string>(Object.values(Website));
+const R18_LANGUAGE_FIELD_NAME = "scrape.r18MetadataLanguage";
+const R18_LANGUAGE_OPTIONS: Array<{ value: R18MetadataLanguage; label: string }> = [
+  { value: "ja", label: "日文" },
+  { value: "en", label: "英文" },
+];
+
+const toConcreteWebsites = (sites: string[]): Website[] =>
+  sites.filter((site): site is Website => WEBSITE_VALUES.has(site));
+
+const normalizeR18Language = (value: unknown): R18MetadataLanguage =>
+  value === "en" || value === "ja" ? value : DEFAULT_R18_METADATA_LANGUAGE;
+
+function R18LanguagePreferenceControl({
+  value,
+  onChange,
+}: {
+  value: R18MetadataLanguage;
+  onChange: (value: R18MetadataLanguage) => void;
+}) {
+  return (
+    <fieldset className="inline-flex rounded-[var(--radius-quiet-capsule)] border border-border/50 bg-surface-low p-0.5">
+      <legend className="sr-only">R18.dev 元数据语言</legend>
+      {R18_LANGUAGE_OPTIONS.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "h-7 rounded-[var(--radius-quiet-capsule)] px-2.5 text-[11px] font-medium text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+              active && "bg-surface-floating text-foreground shadow-[0_8px_18px_-16px_rgba(15,23,42,0.5)]",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </fieldset>
+  );
+}
+
 export function SitePriorityEditorField({
   options,
   name = "scrape.sites",
@@ -47,6 +94,7 @@ export function SitePriorityEditorField({
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
   const value = (useWatch({ control: form.control, name }) as string[] | undefined) ?? [];
+  const r18Language = normalizeR18Language(useWatch({ control: form.control, name: R18_LANGUAGE_FIELD_NAME }));
   const fieldFormState = useFormState({ control: form.control, name });
   const normalizedValue = useMemo(() => normalizeEnabledSites(value), [value]);
   const availableOptions = useMemo(
@@ -58,6 +106,7 @@ export function SitePriorityEditorField({
     [availableOptions, normalizedValue],
   );
   const { resetToDefault } = useAutoSaveField(name, { mode: "immediate", label });
+  useAutoSaveField(R18_LANGUAGE_FIELD_NAME, { mode: "immediate", label: "R18.dev 元数据语言" });
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState<string[]>(normalizedValue);
   const draftSummary = useMemo(
@@ -67,6 +116,16 @@ export function SitePriorityEditorField({
   const siteOptions = useMemo(
     () => resolveSitePriorityOptions(draftValue, availableOptions),
     [availableOptions, draftValue],
+  );
+  const connectivitySites = useMemo(() => toConcreteWebsites(normalizeEnabledSites(draftValue)), [draftValue]);
+  const handleR18LanguageChange = useCallback(
+    (language: R18MetadataLanguage) => {
+      form.setValue(R18_LANGUAGE_FIELD_NAME, language, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+    },
+    [form],
   );
   const siteRows = useMemo<OrderedSiteFieldRow<SitePriorityOptionId>[]>(
     () =>
@@ -80,8 +139,12 @@ export function SitePriorityEditorField({
           ...(option.memberLabel ? [{ label: option.memberLabel, monospace: true, variant: "outline" as const }] : []),
           ...(option.statusLabel ? [{ label: option.statusLabel, variant: "soft" as const }] : []),
         ],
+        trailingControl:
+          option.id === Website.R18_DEV ? (
+            <R18LanguagePreferenceControl value={r18Language} onChange={handleR18LanguageChange} />
+          ) : undefined,
       })),
-    [siteOptions],
+    [handleR18LanguageChange, r18Language, siteOptions],
   );
 
   useEffect(() => {
@@ -174,18 +237,24 @@ export function SitePriorityEditorField({
                   }
                 />
               </section>
-
-              <section className="space-y-4">
-                <header className="space-y-1">
-                  <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
-                    站点地址与连通性
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    为已启用站点覆盖内置地址，留空则使用内置地址。
-                  </p>
-                </header>
-                <SiteConfigSection sitesOverride={draftValue} />
-              </section>
+              {connectivitySites.length > 0 && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">站点连通性</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      使用当前网络、代理和 Cookie 配置检测已启用站点。
+                    </p>
+                  </div>
+                  <div className="divide-y overflow-hidden rounded-[var(--radius-quiet-lg)] border border-border/60 bg-surface">
+                    {connectivitySites.map((site) => (
+                      <div key={site} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                        <span className="mr-auto font-mono text-xs text-foreground/85">{site}</span>
+                        <SiteConnectivityPill site={site} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           </div>
           <DialogFooter className="gap-2 px-6 pb-6">

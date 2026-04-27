@@ -75,8 +75,7 @@ export class JavdbCrawler extends BaseCrawler {
       number = number.replace(oldDate[1], `20${oldDate[1]}`);
     }
 
-    const base = this.resolveBaseUrl(context, JAVDB_BASE_URL);
-    return `${base}/search?q=${encodeURIComponent(number)}&locale=zh`;
+    return `${JAVDB_BASE_URL}/search?q=${encodeURIComponent(number)}&locale=zh`;
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
@@ -104,8 +103,7 @@ export class JavdbCrawler extends BaseCrawler {
       return null;
     }
 
-    const base = this.resolveBaseUrl(context, JAVDB_BASE_URL);
-    return pickJavdbSearchResultUrl(base, results, context.number);
+    return pickJavdbSearchResultUrl(JAVDB_BASE_URL, results, context.number);
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import type { Configuration } from "@main/services/config";
-import { resolveActorPhotoFolderPath } from "@main/services/config/actorPhotoPath";
+import { resolveActorPhotoFolderPath, usesLocalActorImageSource } from "@main/services/config/actorPhotoPath";
 import type { NetworkClient } from "@main/services/network";
 import { toUniqueActorNames } from "@main/utils/actor";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
@@ -19,8 +19,7 @@ const INDEX_FILE_NAME = "index.json";
 const PHOTO_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"] as const;
 const DEFAULT_PHOTO_EXTENSION = ".jpg";
 
-type ActorImageLayout = {
-  libraryRoot: string;
+type ActorImageCacheLayout = {
   cacheRoot: string;
   indexPath: string;
 };
@@ -105,7 +104,7 @@ const resolveCachedPhotoExtension = (sourceUrl: string, bytes: Uint8Array): stri
 export const getActorImageCacheDirectory = (): string => join(app.getPath("userData"), CACHE_DIR_NAME);
 
 export class ActorImageFileStore {
-  private readonly layoutResolver = new CachedAsyncResolver<string, ActorImageLayout>();
+  private readonly cacheLayoutResolver = new CachedAsyncResolver<string, ActorImageCacheLayout>();
 
   private readonly indexStore: ActorImageIndexStore;
 
@@ -118,23 +117,21 @@ export class ActorImageFileStore {
     actorNames: string[],
     options: ActorImageLookupOptions = {},
   ): Promise<string | undefined> {
-    const libraryRoot = resolveActorPhotoFolderPath(configuration, options);
-    if (!libraryRoot) {
-      return undefined;
-    }
-
     const uniqueNames = toUniqueActorNames(actorNames);
     if (uniqueNames.length === 0) {
       return undefined;
     }
 
-    const layout = await this.ensureLayout(libraryRoot);
-    const index = await this.indexStore.readIndex(layout.indexPath);
-    const existingEntry = this.indexStore.findEntry(index, uniqueNames);
-
-    const manualImagePath = await this.findManualImage(layout.libraryRoot, uniqueNames);
+    const libraryRoot = usesLocalActorImageSource(configuration)
+      ? resolveActorPhotoFolderPath(configuration, options)
+      : undefined;
+    const manualImagePath =
+      libraryRoot && (await pathExists(libraryRoot)) ? await this.findManualImage(libraryRoot, uniqueNames) : undefined;
     if (manualImagePath) {
       this.deps.logger.info(`Actor photo local hit for ${uniqueNames[0] ?? "unknown"}: ${manualImagePath}`);
+      const layout = await this.ensureCacheLayout();
+      const index = await this.indexStore.readIndex(layout.indexPath);
+      const existingEntry = this.indexStore.findEntry(index, uniqueNames);
       await this.indexStore.updateEntry(layout.indexPath, uniqueNames, (currentEntry) =>
         this.indexStore.mergeEntry(currentEntry, uniqueNames, {
           publicFileName: basename(manualImagePath),
@@ -144,7 +141,14 @@ export class ActorImageFileStore {
       return manualImagePath;
     }
 
-    const cachedImagePath = await this.restoreCachedImage(layout, existingEntry, options.expectedRemoteUrl);
+    if (!options.expectedRemoteUrl) {
+      return undefined;
+    }
+
+    const layout = await this.ensureCacheLayout();
+    const index = await this.indexStore.readIndex(layout.indexPath);
+    const existingEntry = this.indexStore.findEntry(index, uniqueNames);
+    const cachedImagePath = await this.restoreCachedRemoteImage(layout, existingEntry, options.expectedRemoteUrl);
     if (cachedImagePath && existingEntry) {
       this.deps.logger.info(
         `Actor photo cache hit for ${uniqueNames[0] ?? existingEntry.displayName}: ${cachedImagePath}`,
@@ -165,10 +169,8 @@ export class ActorImageFileStore {
   }
 
   async cacheActorImage(
-    configuration: Configuration,
     actorNames: string[],
     imageSource: string | undefined,
-    options: ActorImageLookupOptions = {},
     signal?: AbortSignal,
   ): Promise<string | undefined> {
     const source = imageSource?.trim();
@@ -184,38 +186,25 @@ export class ActorImageFileStore {
       return sourceExists ? source : undefined;
     }
 
-    const libraryRoot = resolveActorPhotoFolderPath(configuration, options);
-    if (!libraryRoot) {
-      this.deps.logger.warn(
-        `Actor photo cache root unavailable for ${actorNames[0] ?? source}; resolved URL not cached`,
-      );
-      return undefined;
-    }
-
-    return await this.cacheRemoteImage(libraryRoot, actorNames, source, signal);
+    return await this.cacheRemoteImage(actorNames, source, signal);
   }
 
-  private ensureLayout(libraryRoot: string): Promise<ActorImageLayout> {
-    return this.layoutResolver.resolve(
-      libraryRoot,
-      async (resolvedLibraryRoot) => await this.createLayout(resolvedLibraryRoot),
-    );
+  private ensureCacheLayout(): Promise<ActorImageCacheLayout> {
+    return this.cacheLayoutResolver.resolve("default", async () => await this.createCacheLayout());
   }
 
-  private async createLayout(libraryRoot: string): Promise<ActorImageLayout> {
+  private async createCacheLayout(): Promise<ActorImageCacheLayout> {
     const cacheRoot = getActorImageCacheDirectory();
     const indexPath = join(cacheRoot, INDEX_FILE_NAME);
     const blobsDirectory = join(cacheRoot, "blobs", "sha256");
 
-    await mkdir(libraryRoot, { recursive: true });
     await mkdir(blobsDirectory, { recursive: true });
     await this.indexStore.ensureIndexFile(indexPath);
 
-    return { libraryRoot, cacheRoot, indexPath };
+    return { cacheRoot, indexPath };
   }
 
   private async cacheRemoteImage(
-    libraryRoot: string,
     actorNames: string[],
     remoteUrl: string,
     signal?: AbortSignal,
@@ -229,7 +218,7 @@ export class ActorImageFileStore {
 
     throwIfAborted(signal);
 
-    const layout = await this.ensureLayout(libraryRoot);
+    const layout = await this.ensureCacheLayout();
     const index = await this.indexStore.readIndex(layout.indexPath);
     const existingEntry = this.indexStore.findEntry(index, actorNames);
     const existingBlobPath = existingEntry?.blobRelativePath && join(layout.cacheRoot, existingEntry.blobRelativePath);
@@ -303,7 +292,7 @@ export class ActorImageFileStore {
   }
 
   private async writeCachedRemoteImage(input: {
-    layout: ActorImageLayout;
+    layout: ActorImageCacheLayout;
     actorNames: string[];
     normalizedRemoteUrl: string;
     blobRelativePath: string;
@@ -326,18 +315,11 @@ export class ActorImageFileStore {
     return input.blobPath;
   }
 
-  private async restoreCachedImage(
-    layout: ActorImageLayout,
+  private async restoreCachedRemoteImage(
+    layout: ActorImageCacheLayout,
     entry: ActorImageIndexEntry | undefined,
     expectedRemoteUrl?: string,
   ): Promise<string | undefined> {
-    if (entry?.publicFileName) {
-      const publicImagePath = join(layout.libraryRoot, entry.publicFileName);
-      if (await pathExists(publicImagePath)) {
-        return publicImagePath;
-      }
-    }
-
     if (!entry?.blobRelativePath) {
       return undefined;
     }

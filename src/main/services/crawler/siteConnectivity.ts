@@ -19,6 +19,7 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {
   [Website.KM_PRODUCE]: "https://www.km-produce.com",
   [Website.MGSTAGE]: "https://www.mgstage.com",
   [Website.PRESTIGE]: "https://www.prestige-av.com",
+  [Website.R18_DEV]: "https://r18.dev",
   [Website.SOKMIL]: "https://www.sokmil.com",
   [Website.AVBASE]: "https://www.avbase.net",
   [Website.AVWIKIDB]: "https://avwikidb.com",
@@ -43,14 +44,7 @@ export interface SiteConnectivityProbeResult {
   resolvedUrl?: string;
 }
 
-export const resolveSiteConnectivityTargetUrl = (site: Website, configuration: Configuration): string => {
-  const customUrl = buildCrawlerOptions({ site, configuration }).customUrl?.trim();
-  if (customUrl) {
-    return customUrl;
-  }
-
-  return DEFAULT_SITE_CONNECTIVITY_URLS[site];
-};
+export const resolveSiteConnectivityTargetUrl = (site: Website): string => DEFAULT_SITE_CONNECTIVITY_URLS[site];
 
 export const buildSiteConnectivityHeaders = (site: Website, configuration: Configuration): Record<string, string> => {
   const headers: Record<string, string> = {};
@@ -73,7 +67,7 @@ export const probeSiteConnectivity = async (
   configuration: Configuration,
   networkClient: Pick<NetworkClient, "probe">,
 ): Promise<SiteConnectivityProbeResult> => {
-  const url = resolveSiteConnectivityTargetUrl(site, configuration);
+  const url = resolveSiteConnectivityTargetUrl(site);
   const headers = buildSiteConnectivityHeaders(site, configuration);
   const timeout = Math.max(1, Math.trunc(configuration.network.timeout * 1000));
   const startedAt = Date.now();

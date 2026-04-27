@@ -13,6 +13,7 @@ export enum Website {
   KM_PRODUCE = "km_produce",
   MGSTAGE = "mgstage",
   PRESTIGE = "prestige",
+  R18_DEV = "r18_dev",
   SOKMIL = "sokmil",
   AVBASE = "avbase",
   AVWIKIDB = "avwikidb",

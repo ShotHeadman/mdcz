@@ -254,7 +254,7 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
     if ("actorPhotoFolder" in server) {
       if (!("actorPhotoFolder" in paths)) {
         const value = server.actorPhotoFolder;
-        paths.actorPhotoFolder = typeof value === "string" && value.trim() !== "" ? value : "actor_photo";
+        paths.actorPhotoFolder = typeof value === "string" && value.trim() !== "" ? value : "";
       }
     }
 

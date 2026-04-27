@@ -83,7 +83,6 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
       javdbDelaySeconds: 10,
       restAfterCount: 20,
       restDuration: 60,
-      siteConfigs: {},
     },
     download: {
       downloadCover: true,
@@ -209,7 +208,6 @@ function buildV040Config(overrides: Record<string, unknown> = {}): Record<string
       javdbDelaySeconds: 10,
       restAfterCount: 20,
       restDuration: 60,
-      siteConfigs: {},
     },
     download: {
       downloadThumb: true,
@@ -340,7 +338,7 @@ describe("Configuration migrations", () => {
       const parsed = migrate(raw).parsed;
 
       expect(parsed.paths.sceneImagesFolder).toBe("my_custom_folder");
-      expect(parsed.paths.actorPhotoFolder).toBe("actor_photo");
+      expect(parsed.paths.actorPhotoFolder).toBe("");
       expect(parsed.download.generateNfo).toBe(false);
       expect(parsed.naming.partStyle).toBe("RAW");
       expect(parsed.aggregation.fieldPriorities.title).toEqual(["javdb", "dmm"]);

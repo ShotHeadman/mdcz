@@ -369,7 +369,7 @@ export class AvwikidbCrawler implements SiteAdapter {
 
   private async fetchSearchRedirect(number: string, input: CrawlerInput): Promise<string | null> {
     const buildId = await this.resolveBuildId(input);
-    const url = this.buildDataUrl(input, `search.json`, { q: number });
+    const url = this.buildDataUrl(`search.json`, { q: number });
     const payload = await this.gateway.fetchJson<unknown>(url, this.createFetchOptions(input));
 
     const redirect = isRecord(payload) ? asString(payload.__N_REDIRECT) : undefined;
@@ -392,7 +392,7 @@ export class AvwikidbCrawler implements SiteAdapter {
   private async fetchWorkData(number: string, input: CrawlerInput): Promise<CrawlerData | null> {
     try {
       await this.resolveBuildId(input);
-      const url = this.buildDataUrl(input, `work/${encodeURIComponent(number)}.json`);
+      const url = this.buildDataUrl(`work/${encodeURIComponent(number)}.json`);
       const payload = await this.gateway.fetchJson<unknown>(url, this.createFetchOptions(input));
       const data = this.parseWorkPayload(payload, number);
       return data;
@@ -449,8 +449,7 @@ export class AvwikidbCrawler implements SiteAdapter {
       return this.buildId;
     }
 
-    const baseUrl = this.resolveBaseUrl(input);
-    const html = await this.gateway.fetchHtml(`${baseUrl}/`, this.createFetchOptions(input));
+    const html = await this.gateway.fetchHtml(`${AVWIKIDB_BASE_URL}/`, this.createFetchOptions(input));
     const $ = load(html);
     const nextDataText = $("#__NEXT_DATA__").text().trim();
     if (!nextDataText) {
@@ -467,13 +466,13 @@ export class AvwikidbCrawler implements SiteAdapter {
     return buildId;
   }
 
-  private buildDataUrl(input: CrawlerInput, path: string, query?: Record<string, string>): string {
+  private buildDataUrl(path: string, query?: Record<string, string>): string {
     const buildId = this.buildId;
     if (!buildId) {
       throw new Error("avwikidb build id not resolved");
     }
 
-    const url = new URL(`/_next/data/${encodeURIComponent(buildId)}/${path}`, this.resolveBaseUrl(input));
+    const url = new URL(`/_next/data/${encodeURIComponent(buildId)}/${path}`, AVWIKIDB_BASE_URL);
     for (const [key, value] of Object.entries(query ?? {})) {
       url.searchParams.set(key, value);
     }
@@ -486,10 +485,6 @@ export class AvwikidbCrawler implements SiteAdapter {
       signal: input.options?.signal,
       cookies: input.options?.cookies,
     };
-  }
-
-  private resolveBaseUrl(input: CrawlerInput): string {
-    return input.options?.customUrl?.trim().replace(/\/+$/u, "") || AVWIKIDB_BASE_URL;
   }
 }
 
