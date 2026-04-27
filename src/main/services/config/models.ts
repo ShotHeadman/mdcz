@@ -1,5 +1,4 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@main/services/actorSource/types";
-import { CURRENT_CONFIG_VERSION } from "@main/services/config/migrator";
 import { ASSET_NAMING_MODES, isSharedDirectoryMode } from "@shared/assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLanguage, Website } from "@shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
@@ -315,7 +314,6 @@ const aggregationSchema = z
 
 export const configurationSchema = z
   .object({
-    configVersion: z.number().int().default(CURRENT_CONFIG_VERSION),
     network: networkSchema.default(() => networkSchema.parse({})),
     scrape: scrapeSchema.default(() => scrapeSchema.parse({})),
     naming: namingSchema.default(() => namingSchema.parse({})),

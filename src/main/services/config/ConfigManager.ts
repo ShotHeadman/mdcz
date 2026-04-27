@@ -7,7 +7,6 @@ import { loggerService } from "@main/services/LoggerService";
 import { getProperty, mergeDeep, setProperty, toErrorMessage } from "@main/utils/common";
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
-import { ConfigMigrationError, runMigrations } from "./migrator";
 import {
   type Configuration,
   configurationSchema,
@@ -376,7 +375,6 @@ export class ConfigManager extends EventEmitter {
 
   private parseConfigurationContent(content: string): Configuration {
     const raw = JSON.parse(content) as Record<string, unknown>;
-    runMigrations(raw);
     return configurationSchema.parse(raw);
   }
 
@@ -403,15 +401,7 @@ export class ConfigManager extends EventEmitter {
 
     if (existsSync(configPath)) {
       try {
-        const content = await readFile(configPath, "utf8");
-        const raw = JSON.parse(content) as Record<string, unknown>;
-        const migrationResult = runMigrations(raw);
-        if (migrationResult.migrated) {
-          this.logger.info(
-            `Config migrated: v${migrationResult.fromVersion} → v${migrationResult.toVersion} (${migrationResult.applied.join(", ")})`,
-          );
-        }
-        const parsed = configurationSchema.parse(raw);
+        const parsed = await this.readConfigurationFile(configPath);
         this.configuration = parsed;
         this.syncConfigDirectoryFromConfiguration();
         await this.persist();
@@ -437,7 +427,6 @@ export class ConfigManager extends EventEmitter {
    * Remove legacy config files that are no longer used.
    * Old versions stored configs as `fc2.json`, `default.json` (with legacy schema), etc.
    * This method validates each profile file; if it fails schema parsing, it is removed.
-   * Profiles with unsupported config versions are preserved.
    */
   private async cleanupLegacyFiles(): Promise<void> {
     const dataDir = this.getDataDirectory();
@@ -452,14 +441,8 @@ export class ConfigManager extends EventEmitter {
         const filePath = join(dataDir, entry);
         try {
           const content = await readFile(filePath, "utf8");
-          const raw = JSON.parse(content) as Record<string, unknown>;
-          runMigrations(raw);
-          configurationSchema.parse(raw);
-        } catch (error) {
-          if (error instanceof ConfigMigrationError) {
-            this.logger.warn(`Skipping cleanup for config file ${entry}: ${error.message}`);
-            continue;
-          }
+          this.parseConfigurationContent(content);
+        } catch {
           this.logger.info(`Removing legacy config file: ${entry}`);
           try {
             await unlink(filePath);
