@@ -6,5 +6,10 @@
     "rootDir": "../..",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts", "../../packages/shared/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../../packages/persistence/**/*.ts",
+    "../../packages/shared/**/*.ts",
+    "../../packages/storage/**/*.ts"
+  ]
 }

@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 
 import { ServerConfigService } from "./configService";
 import { createHealthPayload } from "./http";
+import { ServerPersistenceService } from "./persistenceService";
 import { appRouter } from "./router";
 import type { ServerServices } from "./services";
 import { createTaskEventBus, formatSseEvent } from "./taskEvents";
@@ -17,12 +18,23 @@ export interface ServerApp {
 }
 
 export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
+  const config = options.services?.config ?? new ServerConfigService();
   const services: ServerServices = {
-    config: options.services?.config ?? new ServerConfigService(),
+    config,
+    persistence: options.services?.persistence ?? new ServerPersistenceService(config.runtimePaths),
     taskEvents: options.services?.taskEvents ?? createTaskEventBus(),
   };
   const fastify = Fastify({
     logger: false,
+  });
+
+  fastify.addHook("onReady", async () => {
+    await services.config.load();
+    await services.persistence.initialize();
+  });
+
+  fastify.addHook("onClose", async () => {
+    await services.persistence.close();
   });
 
   fastify.get("/", async () => createHealthPayload());

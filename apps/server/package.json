@@ -10,6 +10,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@mdcz/persistence": "workspace:*",
     "@mdcz/shared": "workspace:*",
     "@trpc/server": "^11.16.0",
     "fastify": "^5.8.5"

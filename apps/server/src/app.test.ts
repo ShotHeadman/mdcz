@@ -1,3 +1,6 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -25,18 +28,18 @@ const expectedHealthPayload = {
 
 let serverApp: ServerApp | undefined;
 
-const createTestServer = (): ServerApp => {
-  serverApp = buildServer({ services: { config: new ServerConfigService(createInMemoryRuntimePaths()) } });
+const createTestServer = async (): Promise<ServerApp> => {
+  const root = await mkdtemp(join(tmpdir(), "mdcz-server-app-"));
+  const paths = {
+    configDir: join(root, "config"),
+    dataDir: join(root, "data"),
+    configPath: join(root, "config", "default.toml"),
+    legacyConfigPath: join(root, "config", "default.json"),
+    databasePath: join(root, "data", "mdcz.sqlite"),
+  };
+  serverApp = buildServer({ services: { config: new ServerConfigService(paths) } });
   return serverApp;
 };
-
-const createInMemoryRuntimePaths = () => ({
-  configDir: "/tmp/mdcz-test-config",
-  dataDir: "/tmp/mdcz-test-data",
-  configPath: "/tmp/mdcz-test-config/default.toml",
-  legacyConfigPath: "/tmp/mdcz-test-config/default.json",
-  databasePath: "/tmp/mdcz-test-data/mdcz.sqlite",
-});
 
 afterEach(async () => {
   await serverApp?.fastify.close();
@@ -45,7 +48,7 @@ afterEach(async () => {
 
 describe("buildServer", () => {
   it("preserves the root and health HTTP contracts", async () => {
-    const { fastify } = createTestServer();
+    const { fastify } = await createTestServer();
 
     const rootResponse = await fastify.inject({ method: "GET", url: "/" });
     const healthResponse = await fastify.inject({ method: "GET", url: "/health" });
@@ -57,7 +60,7 @@ describe("buildServer", () => {
   });
 
   it("mounts a tRPC health procedure", async () => {
-    const { fastify } = createTestServer();
+    const { fastify } = await createTestServer();
 
     const response = await fastify.inject({ method: "GET", url: "/trpc/health" });
 
@@ -70,7 +73,7 @@ describe("buildServer", () => {
   });
 
   it("mounts tRPC config read and export procedures", async () => {
-    const { fastify, services } = createTestServer();
+    const { fastify, services } = await createTestServer();
     await services.config.save(defaultConfiguration);
 
     const readResponse = await fastify.inject({ method: "GET", url: "/trpc/config.read" });
@@ -82,8 +85,36 @@ describe("buildServer", () => {
     expect(exportResponse.json().result.data).toContain("[network]");
   });
 
+  it("initializes SQLite migrations before serving tRPC persistence status", async () => {
+    const { fastify, services } = await createTestServer();
+
+    const response = await fastify.inject({ method: "GET", url: "/trpc/persistence.status" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      result: {
+        data: {
+          databasePath: services.persistence.databasePath,
+          initialized: true,
+          mediaRootCount: 0,
+        },
+      },
+    });
+  });
+
+  it("closes the persistence database with the Fastify lifecycle", async () => {
+    const { fastify, services } = await createTestServer();
+
+    await fastify.ready();
+    expect(services.persistence.initialized).toBe(true);
+
+    await fastify.close();
+    expect(services.persistence.initialized).toBe(false);
+    serverApp = undefined;
+  });
+
   it("returns not found for unknown routes", async () => {
-    const { fastify } = createTestServer();
+    const { fastify } = await createTestServer();
 
     const response = await fastify.inject({ method: "GET", url: "/unknown" });
 
@@ -91,7 +122,7 @@ describe("buildServer", () => {
   });
 
   it("streams task updates through the SSE endpoint", async () => {
-    const { fastify, services } = createTestServer();
+    const { fastify, services } = await createTestServer();
     const address = await fastify.listen({ host: "127.0.0.1", port: 0 });
     const abortController = new AbortController();
     const response = await fetch(`${address}/events/tasks`, {

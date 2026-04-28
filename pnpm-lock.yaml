@@ -226,6 +226,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@mdcz/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
       '@mdcz/shared':
         specifier: workspace:*
         version: link:../../packages/shared
