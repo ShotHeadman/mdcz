@@ -1,13 +1,11 @@
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
 
+import { ServerConfigService } from "./configService";
 import { createHealthPayload } from "./http";
 import { appRouter } from "./router";
-import { createTaskEventBus, formatSseEvent, type TaskEventBus } from "./taskEvents";
-
-export interface ServerServices {
-  taskEvents: TaskEventBus;
-}
+import type { ServerServices } from "./services";
+import { createTaskEventBus, formatSseEvent } from "./taskEvents";
 
 export interface BuildServerOptions {
   services?: Partial<ServerServices>;
@@ -20,6 +18,7 @@ export interface ServerApp {
 
 export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const services: ServerServices = {
+    config: options.services?.config ?? new ServerConfigService(),
     taskEvents: options.services?.taskEvents ?? createTaskEventBus(),
   };
   const fastify = Fastify({

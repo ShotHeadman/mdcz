@@ -1,6 +1,8 @@
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildServer, type ServerApp } from "./app";
+import { ServerConfigService } from "./configService";
 import { formatSseEvent } from "./taskEvents";
 
 const textDecoder = new TextDecoder();
@@ -24,9 +26,17 @@ const expectedHealthPayload = {
 let serverApp: ServerApp | undefined;
 
 const createTestServer = (): ServerApp => {
-  serverApp = buildServer();
+  serverApp = buildServer({ services: { config: new ServerConfigService(createInMemoryRuntimePaths()) } });
   return serverApp;
 };
+
+const createInMemoryRuntimePaths = () => ({
+  configDir: "/tmp/mdcz-test-config",
+  dataDir: "/tmp/mdcz-test-data",
+  configPath: "/tmp/mdcz-test-config/default.toml",
+  legacyConfigPath: "/tmp/mdcz-test-config/default.json",
+  databasePath: "/tmp/mdcz-test-data/mdcz.sqlite",
+});
 
 afterEach(async () => {
   await serverApp?.fastify.close();
@@ -57,6 +67,19 @@ describe("buildServer", () => {
         data: expectedHealthPayload,
       },
     });
+  });
+
+  it("mounts tRPC config read and export procedures", async () => {
+    const { fastify, services } = createTestServer();
+    await services.config.save(defaultConfiguration);
+
+    const readResponse = await fastify.inject({ method: "GET", url: "/trpc/config.read" });
+    const exportResponse = await fastify.inject({ method: "GET", url: "/trpc/config.export" });
+
+    expect(readResponse.statusCode).toBe(200);
+    expect(readResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
+    expect(exportResponse.statusCode).toBe(200);
+    expect(exportResponse.json().result.data).toContain("[network]");
   });
 
   it("returns not found for unknown routes", async () => {

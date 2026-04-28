@@ -226,6 +226,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@mdcz/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@trpc/server':
         specifier: ^11.16.0
         version: 11.16.0(typescript@5.9.3)

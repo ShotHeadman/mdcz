@@ -1,6 +1,7 @@
 export * from "./actorSource";
 export * from "./assetNaming";
 export * from "./config";
+export * from "./configCodec";
 export * from "./enums";
 export * from "./error";
 export * from "./IpcChannel";

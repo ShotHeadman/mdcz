@@ -8,11 +8,15 @@ import { getProperty, mergeDeep, setProperty, toErrorMessage } from "@main/utils
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import {
+  CONFIGURATION_FILE_EXTENSIONS,
   type Configuration,
   configurationSchema,
   type DeepPartial,
   defaultConfiguration,
   getConfigurationPathDefault,
+  inferConfigurationFileFormat,
+  parseConfigurationContent,
+  serializeConfiguration,
 } from "./models";
 
 const ACTIVE_PROFILE_META_FILE = ".active-profile.json";
@@ -60,8 +64,6 @@ const normalizeProfileName = (name: string): string => {
   }
   return normalized;
 };
-
-const serializeConfiguration = (configuration: Configuration): string => `${JSON.stringify(configuration, null, 2)}\n`;
 
 export class ConfigManager extends EventEmitter {
   private readonly logger = loggerService.getLogger("ConfigManager");
@@ -186,8 +188,8 @@ export class ConfigManager extends EventEmitter {
     await mkdir(dataDir, { recursive: true });
     const entries = await readdir(dataDir);
     const profiles = entries
-      .filter((e) => e.endsWith(".json") && e !== ACTIVE_PROFILE_META_FILE)
-      .map((e) => e.replace(/\.json$/u, ""))
+      .filter((e) => this.isProfileConfigFile(e) && e !== ACTIVE_PROFILE_META_FILE)
+      .map((e) => e.replace(/\.(json|toml)$/u, ""))
       .filter((name) => PROFILE_NAME_PATTERN.test(name));
     if (!profiles.includes("default")) {
       profiles.unshift("default");
@@ -208,7 +210,7 @@ export class ConfigManager extends EventEmitter {
   async switchProfile(name: string): Promise<void> {
     await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
-    const filePath = this.getProfilePath(profileName);
+    const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) throw new Error(`Profile "${profileName}" not found`);
     this.activeProfileName = profileName;
     await this.persistActiveProfileName();
@@ -222,7 +224,7 @@ export class ConfigManager extends EventEmitter {
     await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
     if (profileName === this.activeProfileName) throw new Error("Cannot delete the active profile");
-    const filePath = this.getProfilePath(profileName);
+    const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) throw new Error(`Profile "${profileName}" not found`);
     await unlink(filePath);
     this.logger.info(`Deleted profile: ${profileName}`);
@@ -234,9 +236,13 @@ export class ConfigManager extends EventEmitter {
     const configuration =
       profileName === this.activeProfileName
         ? this.configuration
-        : await this.readProfileConfiguration(this.getProfilePath(profileName), profileName);
+        : await this.readProfileConfiguration(this.getExistingProfilePath(profileName), profileName);
 
-    await writeFile(destinationPath, serializeConfiguration(configuration), "utf8");
+    await writeFile(
+      destinationPath,
+      serializeConfiguration(configuration, inferConfigurationFileFormat(destinationPath)),
+      "utf8",
+    );
     this.logger.info(`Exported profile: ${profileName} -> ${destinationPath}`);
   }
 
@@ -249,7 +255,7 @@ export class ConfigManager extends EventEmitter {
 
     const profileName = normalizeProfileName(name);
     const targetPath = this.getProfilePath(profileName);
-    const overwritten = existsSync(targetPath);
+    const overwritten = existsSync(targetPath) || existsSync(this.getLegacyProfilePath(profileName));
 
     if (overwritten && !overwrite) {
       throw new Error(`Profile "${profileName}" already exists`);
@@ -284,7 +290,24 @@ export class ConfigManager extends EventEmitter {
   }
 
   private getProfilePath(profileName: string): string {
-    return join(this.getDataDirectory(), `${profileName}.json`);
+    return join(this.getDataDirectory(), `${profileName}${CONFIGURATION_FILE_EXTENSIONS.toml}`);
+  }
+
+  private getLegacyProfilePath(profileName: string): string {
+    return join(this.getDataDirectory(), `${profileName}${CONFIGURATION_FILE_EXTENSIONS.json}`);
+  }
+
+  private getExistingProfilePath(profileName: string): string {
+    const tomlPath = this.getProfilePath(profileName);
+    if (existsSync(tomlPath)) {
+      return tomlPath;
+    }
+
+    return this.getLegacyProfilePath(profileName);
+  }
+
+  private isProfileConfigFile(entry: string): boolean {
+    return entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.toml) || entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.json);
   }
 
   private getConfigDirectoryMetaPath(): string {
@@ -373,14 +396,13 @@ export class ConfigManager extends EventEmitter {
     await this.persistConfigDirectory();
   }
 
-  private parseConfigurationContent(content: string): Configuration {
-    const raw = JSON.parse(content) as Record<string, unknown>;
-    return configurationSchema.parse(raw);
+  private parseConfigurationContent(content: string, filePath: string): Configuration {
+    return parseConfigurationContent(content, inferConfigurationFileFormat(filePath));
   }
 
   private async readConfigurationFile(filePath: string): Promise<Configuration> {
     const content = await readFile(filePath, "utf8");
-    return this.parseConfigurationContent(content);
+    return this.parseConfigurationContent(content, filePath);
   }
 
   private async readProfileConfiguration(filePath: string, profileName: string): Promise<Configuration> {
@@ -397,7 +419,7 @@ export class ConfigManager extends EventEmitter {
     await this.loadActiveProfileName();
     await this.cleanupLegacyFiles();
 
-    const configPath = this.getConfigPath();
+    const configPath = this.getExistingProfilePath(this.activeProfileName);
 
     if (existsSync(configPath)) {
       try {
@@ -435,13 +457,13 @@ export class ConfigManager extends EventEmitter {
       const entries = await readdir(dataDir);
 
       for (const entry of entries) {
-        if (!entry.endsWith(".json") || entry === ACTIVE_PROFILE_META_FILE) continue;
-        if (entry === `${this.activeProfileName}.json`) continue;
+        if (!this.isProfileConfigFile(entry) || entry === ACTIVE_PROFILE_META_FILE) continue;
+        if (entry === `${this.activeProfileName}.json` || entry === `${this.activeProfileName}.toml`) continue;
 
         const filePath = join(dataDir, entry);
         try {
           const content = await readFile(filePath, "utf8");
-          this.parseConfigurationContent(content);
+          this.parseConfigurationContent(content, filePath);
         } catch {
           this.logger.info(`Removing legacy config file: ${entry}`);
           try {

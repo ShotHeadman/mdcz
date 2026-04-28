@@ -3,8 +3,8 @@
   "compilerOptions": {
     "lib": ["ES2023"],
     "types": ["node"],
-    "rootDir": "src",
+    "rootDir": "../..",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "../../packages/shared/**/*.ts"]
 }
