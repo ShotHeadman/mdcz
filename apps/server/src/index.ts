@@ -1,25 +1,27 @@
-import { createServer } from "node:http";
+import { buildServer } from "./app";
+import { parsePort } from "./config";
 
-import { createRequestHandler } from "./http";
+const startServer = async (): Promise<void> => {
+  const port = parsePort(process.env.PORT);
+  const { fastify } = buildServer();
 
-export const DEFAULT_SERVER_PORT = 3838;
+  const shutdown = async (): Promise<void> => {
+    await fastify.close();
+  };
 
-const parsePort = (value: string | undefined): number => {
-  if (!value) {
-    return DEFAULT_SERVER_PORT;
-  }
+  process.once("SIGINT", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
+  process.once("SIGTERM", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
 
-  const port = Number.parseInt(value, 10);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid PORT value: ${value}`);
-  }
+  await fastify.listen({
+    host: "127.0.0.1",
+    port,
+  });
 
-  return port;
+  console.log(`MDCz server listening on http://127.0.0.1:${port}`);
 };
 
-const port = parsePort(process.env.PORT);
-const server = createServer(createRequestHandler());
-
-server.listen(port, () => {
-  console.log(`MDCz server skeleton listening on http://localhost:${port}`);
-});
+void startServer();
