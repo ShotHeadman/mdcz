@@ -1,5 +1,5 @@
 import { JavdbCrawler } from "@main/services/crawler/sites/javdb";
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 import { FixtureNetworkClient, withGateway } from "./fixtures";

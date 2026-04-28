@@ -1,4 +1,4 @@
-# <img src="build/icon.png" width="28"> MDCz
+# <img src="apps/desktop/build/icon.png" width="28"> MDCz
 
 ![Electron](https://img.shields.io/badge/Electron-39-47848F.svg?style=flat&logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB.svg?style=flat&logo=react&logoColor=white)

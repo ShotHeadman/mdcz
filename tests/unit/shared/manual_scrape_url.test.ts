@@ -1,9 +1,9 @@
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import {
   MANUAL_SCRAPE_SUPPORTED_SITE_INVALID_MESSAGE,
   MANUAL_SCRAPE_UNSUPPORTED_SITE_MESSAGE,
   validateManualScrapeUrl,
-} from "@shared/manualScrapeUrl";
+} from "@mdcz/shared/manualScrapeUrl";
 import { describe, expect, it } from "vitest";
 
 describe("validateManualScrapeUrl", () => {

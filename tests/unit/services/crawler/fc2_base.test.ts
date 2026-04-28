@@ -1,8 +1,8 @@
 import { FetchGateway } from "@main/services/crawler/FetchGateway";
 import { BaseFc2Crawler } from "@main/services/crawler/sites/BaseFc2Crawler";
 import { NetworkClient } from "@main/services/network";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
 class TestFc2Crawler extends BaseFc2Crawler {

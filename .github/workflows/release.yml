@@ -4,15 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
+      - "apps/desktop/**"
       - "packages/**"
-      - "resources/**"
-      - "build/**"
       - "package.json"
+      - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - "mise.toml"
-      - "electron-builder.yml"
-      - "electron.vite.config.ts"
       - "tsconfig.json"
       - "tsconfig.node.json"
       - "tsconfig.web.json"
@@ -73,6 +70,7 @@ jobs:
         id: bump
         run: |
           NEW_VERSION=$(npm version ${{ steps.bump-type.outputs.type }} --no-git-tag-version)
+          npm version "$NEW_VERSION" --workspace apps/desktop --no-git-tag-version
           echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
           echo "tag=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -81,7 +79,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
+          git add package.json apps/desktop/package.json
           git commit -m "chore(release): ${{ steps.bump.outputs.tag }} [skip ci]"
           git tag ${{ steps.bump.outputs.tag }}
           git push origin main --tags

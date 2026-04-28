@@ -11,7 +11,7 @@ import { createAbortError } from "@main/services/scraper/abort";
 import { AggregationService } from "@main/services/scraper/aggregation";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
-import type { ScrapeResult } from "@shared/types";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];

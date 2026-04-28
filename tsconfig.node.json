@@ -5,11 +5,12 @@
     "types": ["node", "electron-vite/node"]
   },
   "include": [
-    "electron.vite.config.ts",
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts",
-    "src/**/*.d.ts",
-    "packages/shared/**/*.ts",
+    "apps/desktop/electron.vite.config.ts",
+    "apps/desktop/src/main/**/*.ts",
+    "apps/desktop/src/preload/**/*.ts",
+    "apps/desktop/src/**/*.d.ts",
+    "packages/**/*.ts",
     "vitest.config.ts"
-  ]
+  ],
+  "exclude": ["packages/**/*.test.ts"]
 }

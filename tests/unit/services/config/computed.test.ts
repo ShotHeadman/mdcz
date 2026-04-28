@@ -1,9 +1,9 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
 import { configurationSchema } from "@main/services/config/models";
 import { buildCrawlerOptions } from "@main/services/scraper/crawlerOptions";
-import { ProxyType, Website } from "@shared/enums";
-import { DEFAULT_POSTER_TAG_BADGE_TYPES, POSTER_TAG_BADGE_TYPE_OPTIONS } from "@shared/posterBadges";
-import { DEFAULT_R18_METADATA_LANGUAGE } from "@shared/r18";
+import { ProxyType, Website } from "@mdcz/shared/enums";
+import { DEFAULT_POSTER_TAG_BADGE_TYPES, POSTER_TAG_BADGE_TYPE_OPTIONS } from "@mdcz/shared/posterBadges";
+import { DEFAULT_R18_METADATA_LANGUAGE } from "@mdcz/shared/r18";
 import { describe, expect, it } from "vitest";
 
 describe("buildComputedConfiguration", () => {

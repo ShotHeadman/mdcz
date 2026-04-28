@@ -37,7 +37,7 @@ pnpm typecheck
 ## 代码结构
 
 ```
-src/
+apps/desktop/src/
 ├── main/                # Electron 主进程
 │   ├── ipc/             # IPC 通信路由
 │   ├── services/        # 业务逻辑
@@ -53,6 +53,12 @@ src/
 │   ├── components/      # 可复用 UI 组件
 │   ├── store/           # Zustand 状态管理
 │   └── client/          # IPC 客户端
-├── types/               # 共享 TypeScript 类型
-└── packages/shared/     # 跨进程共享代码
+└── types/               # Desktop-only TypeScript 类型
+
+packages/
+├── shared/              # 跨进程共享代码
+├── client/              # 客户端 DTO/contract 类型
+├── storage/             # 挂载文件系统与媒体根路径
+├── persistence/         # Drizzle/SQLite 持久化
+└── core/                # 后续抽离的领域工作流逻辑
 ```

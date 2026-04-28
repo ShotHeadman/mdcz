@@ -1,5 +1,5 @@
-import { Website } from "@shared/enums";
-import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCommittedCrawlerData,

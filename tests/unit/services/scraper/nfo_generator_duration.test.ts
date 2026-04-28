@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findExistingNfoPath, NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { parseNfo } from "@main/utils/nfo";
-import { Website } from "@shared/enums";
-import type { CrawlerData, DownloadedAssets, FileInfo } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];

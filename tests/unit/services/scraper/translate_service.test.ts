@@ -2,7 +2,7 @@ import { configurationSchema } from "@main/services/config";
 import { NetworkClient } from "@main/services/network";
 import { TranslateService } from "@main/services/scraper/TranslateService";
 import type { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
-import { TranslateEngine, Website } from "@shared/enums";
+import { TranslateEngine, Website } from "@mdcz/shared/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sleepMock } = vi.hoisted(() => {

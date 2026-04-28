@@ -6,8 +6,8 @@ import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCoold
 import type { NetworkClient, ProbeResult } from "@main/services/network";
 import { DownloadManager } from "@main/services/scraper/DownloadManager";
 import * as imageUtils from "@main/utils/image";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];

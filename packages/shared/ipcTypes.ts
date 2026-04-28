@@ -1,8 +1,11 @@
-import type { ActionContext } from "@egoist/tipc/main";
-
-export type IpcProcedure<TInput = unknown, TOutput = unknown> = {
-  action: (options: { context: ActionContext; input: TInput }) => Promise<TOutput>;
+export type IpcActionContext = {
+  // biome-ignore lint/suspicious/noExplicitAny: keep shared IPC contracts structurally compatible with tipc without importing desktop/Electron types.
+  sender: any;
 };
+
+export interface IpcProcedure<TInput = unknown, TOutput = unknown> {
+  action(options: { context: IpcActionContext; input: TInput }): Promise<TOutput>;
+}
 
 export type AppInfo = {
   version: string;

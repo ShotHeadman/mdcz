@@ -4,8 +4,8 @@ import type { CrawlerInput, CrawlerResponse, FailureReason } from "@main/service
 import { NetworkClient } from "@main/services/network";
 import { AggregationService } from "@main/services/scraper/aggregation/AggregationService";
 import { FieldAggregator } from "@main/services/scraper/aggregation/FieldAggregator";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
 const makeCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({

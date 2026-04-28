@@ -5,7 +5,7 @@ import {
   listRegisteredCrawlerRequestConfigs,
   listRegisteredCrawlerSites,
 } from "@main/services/crawler";
-import type { Website } from "@shared/enums";
+import type { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 type CrawlerModule = {
@@ -14,9 +14,12 @@ type CrawlerModule = {
   };
 } & Record<string, unknown>;
 
-const crawlerModules = import.meta.glob<CrawlerModule>("../../../../src/main/services/crawler/sites/**/*.ts", {
-  eager: true,
-});
+const crawlerModules = import.meta.glob<CrawlerModule>(
+  "../../../../apps/desktop/src/main/services/crawler/sites/**/*.ts",
+  {
+    eager: true,
+  },
+);
 
 const collectConcreteCrawlerSites = (): Website[] => {
   return Object.values(crawlerModules).flatMap((module) => {

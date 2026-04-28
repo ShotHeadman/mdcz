@@ -6,8 +6,8 @@ import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { buildGeneratedVideoSidecarTargetPath, isGeneratedSidecarVideo } from "@main/services/scraper/media";
 import * as fileUtils from "@main/utils/file";
 import { parseFileInfo } from "@main/utils/number";
-import { Website } from "@shared/enums";
-import type { CrawlerData, FileInfo } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];

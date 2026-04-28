@@ -4,7 +4,7 @@ import {
   probeSiteConnectivity,
   resolveSiteConnectivityTargetUrl,
 } from "@main/services/crawler/siteConnectivity";
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfiguration = (): Configuration => structuredClone(defaultConfiguration);

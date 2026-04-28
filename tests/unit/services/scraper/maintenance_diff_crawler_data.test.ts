@@ -3,8 +3,8 @@ import {
   diffCrawlerDataWithOptions,
   partitionCrawlerDataWithOptions,
 } from "@main/services/scraper/maintenance/diffCrawlerData";
-import { Website } from "@shared/enums";
-import type { CrawlerData, LocalScanEntry } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({

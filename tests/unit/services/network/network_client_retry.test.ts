@@ -7,18 +7,6 @@ const { fetchMock, sleepMock, impitConstructorMock } = vi.hoisted(() => {
   return { fetchMock, sleepMock, impitConstructorMock };
 });
 
-vi.mock("impit", () => {
-  return {
-    Impit: class {
-      constructor(options?: unknown) {
-        impitConstructorMock(options);
-      }
-
-      fetch = fetchMock;
-    },
-  };
-});
-
 vi.mock("node:timers/promises", () => {
   return {
     setTimeout: sleepMock,
@@ -64,6 +52,14 @@ const WEBP_PROBE_BYTES = Uint8Array.from([
 
 describe("NetworkClient retry policy", () => {
   beforeEach(() => {
+    (
+      globalThis as typeof globalThis & {
+        __mdczImpitMock?: { fetch: typeof fetchMock; constructorSpy: typeof impitConstructorMock };
+      }
+    ).__mdczImpitMock = {
+      fetch: fetchMock,
+      constructorSpy: impitConstructorMock,
+    };
     fetchMock.mockReset();
     sleepMock.mockClear();
     impitConstructorMock.mockClear();

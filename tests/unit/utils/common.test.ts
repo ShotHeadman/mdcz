@@ -1,5 +1,5 @@
 import { getProperty, isRecord, isString, mergeDeep, setProperty, toArray, toErrorMessage } from "@main/utils/common";
-import { toErrorMessage as toSharedErrorMessage } from "@shared/error";
+import { toErrorMessage as toSharedErrorMessage } from "@mdcz/shared/error";
 import { describe, expect, it } from "vitest";
 
 describe("toErrorMessage", () => {

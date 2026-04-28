@@ -5,7 +5,7 @@ import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCoold
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import type { CrawlerInput, CrawlerResponse, SiteAdapter } from "@main/services/crawler/base/types";
 import { NetworkClient } from "@main/services/network";
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];

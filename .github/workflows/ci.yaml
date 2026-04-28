@@ -4,16 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
+      - "apps/**"
       - "packages/**"
-      - "resources/**"
-      - "build/**"
       - "tests/**"
+      - "docs/package-boundaries.md"
       - "package.json"
+      - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - "mise.toml"
-      - "electron-builder.yml"
-      - "electron.vite.config.ts"
       - "biome.json"
       - "vitest.config.ts"
       - "tsconfig*.json"

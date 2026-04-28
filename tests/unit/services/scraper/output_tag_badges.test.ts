@@ -1,7 +1,7 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { applyPosterTagBadgesIfNeeded } from "@main/services/scraper/output";
-import { Website } from "@shared/enums";
-import type { CrawlerData, DownloadedAssets, FileInfo } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({

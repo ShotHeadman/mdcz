@@ -1,6 +1,6 @@
 import { buildMovieTags, resolvePosterBadgeDefinitions } from "@main/utils/movieTags";
-import { Website } from "@shared/enums";
-import type { CrawlerData, FileInfo, NfoLocalState } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({

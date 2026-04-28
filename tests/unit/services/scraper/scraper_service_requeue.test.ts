@@ -10,8 +10,8 @@ import type { FileScraperDependencies } from "@main/services/scraper/FileScraper
 import * as FileScraperModule from "@main/services/scraper/FileScraper";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
-import { Website } from "@shared/enums";
-import type { ScrapeResult } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const deferred = <T>() => {

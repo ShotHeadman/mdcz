@@ -13,8 +13,8 @@ import { ProbeStage } from "@main/services/scraper/pipeline/ProbeStage";
 import { ScrapeContext } from "@main/services/scraper/pipeline/ScrapeContext";
 import { TranslateStage } from "@main/services/scraper/pipeline/TranslateStage";
 import type { FileScraperStageRuntime } from "@main/services/scraper/pipeline/types";
-import { Website } from "@shared/enums";
-import type { CrawlerData, FileInfo } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const config = configurationSchema.parse(defaultConfiguration);

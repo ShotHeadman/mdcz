@@ -1,6 +1,6 @@
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 describe("parseNfo", () => {

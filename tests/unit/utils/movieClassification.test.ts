@@ -1,6 +1,6 @@
 import { classifyMovie } from "@main/utils/movieClassification";
-import { Website } from "@shared/enums";
-import type { CrawlerData, FileInfo } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
 const createFileInfo = (overrides: Partial<FileInfo> = {}): FileInfo => ({

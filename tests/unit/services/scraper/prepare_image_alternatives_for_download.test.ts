@@ -1,6 +1,6 @@
 import { prepareImageAlternativesForDownload } from "@main/services/scraper/output";
 import { isDmmImageUrl } from "@main/utils/dmmImage";
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 describe("isDmmImageUrl", () => {

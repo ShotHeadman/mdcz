@@ -1,7 +1,7 @@
 import type { NetworkClient, NetworkSession } from "@main/services/network";
 import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
 const baseCrawlerData: CrawlerData = {

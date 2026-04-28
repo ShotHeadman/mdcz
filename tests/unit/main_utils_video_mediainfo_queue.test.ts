@@ -27,16 +27,18 @@ const { mediaInfoFactoryMock, analyzeDataMock, getMaxConcurrent, resetConcurrenc
   };
 });
 
-vi.mock("mediainfo.js", () => ({
-  mediaInfoFactory: mediaInfoFactoryMock,
-  isTrackType: () => false,
-}));
-
-import { runWithMediaInfo } from "@main/utils/video";
-
 describe("runWithMediaInfo", () => {
   it("serializes analyzeData access on the shared MediaInfo instance", async () => {
     resetConcurrencyState();
+    (
+      globalThis as typeof globalThis & {
+        __mdczMediaInfoMock?: { factory: typeof mediaInfoFactoryMock };
+      }
+    ).__mdczMediaInfoMock = {
+      factory: mediaInfoFactoryMock,
+    };
+    vi.resetModules();
+    const { runWithMediaInfo } = await import("@main/utils/video");
 
     await Promise.all([
       runWithMediaInfo(

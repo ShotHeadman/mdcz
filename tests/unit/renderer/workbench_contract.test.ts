@@ -1,3 +1,4 @@
+import type { MediaCandidate } from "@mdcz/shared/types";
 import type { ConfigOutput } from "@renderer/client/types";
 import {
   filterMediaCandidates,
@@ -5,7 +6,6 @@ import {
   resolveMediaCandidateScanPlan,
 } from "@renderer/components/workbench/mediaCandidateScan";
 import { useWorkbenchSetupStore } from "@renderer/store/workbenchSetupStore";
-import type { MediaCandidate } from "@shared/types";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";

@@ -1,6 +1,6 @@
 import { ActorSourceProvider, ActorSourceRegistry, type BaseActorSource } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import type { ActorProfile } from "@shared/types";
+import type { ActorProfile } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>

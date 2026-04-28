@@ -1,3 +1,4 @@
+import { Website } from "@mdcz/shared/enums";
 import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
 import { OrderedSiteFieldEditor } from "@renderer/components/config-form/OrderedSiteField";
 import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
@@ -33,7 +34,6 @@ import {
   runLatestRevisionTask,
   SettingsEditorAutosaveProvider,
 } from "@renderer/hooks/useAutoSaveField";
-import { Website } from "@shared/enums";
 import { type ComponentProps, createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";

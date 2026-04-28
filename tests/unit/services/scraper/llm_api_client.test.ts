@@ -1,5 +1,5 @@
 import { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
-import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
+import { DEFAULT_LLM_BASE_URL } from "@mdcz/shared/llm";
 import { describe, expect, it, vi } from "vitest";
 
 describe("LlmApiClient", () => {

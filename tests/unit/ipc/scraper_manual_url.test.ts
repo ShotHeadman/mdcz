@@ -1,7 +1,7 @@
 import type { ServiceContainer } from "@main/container";
 import { createScraperHandlers } from "@main/ipc/handlers/scraper";
-import { Website } from "@shared/enums";
-import { IpcChannel } from "@shared/IpcChannel";
+import { Website } from "@mdcz/shared/enums";
+import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@egoist/tipc/main", () => {

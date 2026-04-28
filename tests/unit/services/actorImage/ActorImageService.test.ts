@@ -38,7 +38,7 @@ const createActorLibrary = async (): Promise<{ root: string; cacheRoot: string }
   return { root, cacheRoot };
 };
 
-const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "build", "icon.png"));
+const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "apps/desktop/build/icon.png"));
 
 describe("ActorImageService", () => {
   afterEach(async () => {

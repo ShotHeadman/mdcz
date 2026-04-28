@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createAppHandlers } from "@main/ipc/handlers/app";
-import { IpcChannel } from "@shared/IpcChannel";
+import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockExit, mockOpenPath, mockRelaunch, mockUserDataPath } = vi.hoisted(() => ({
@@ -28,6 +28,11 @@ vi.mock("electron", () => {
     shell: {
       openExternal: vi.fn(),
       openPath: mockOpenPath,
+    },
+    ipcMain: {
+      handle: vi.fn(),
+      once: vi.fn(),
+      removeHandler: vi.fn(),
     },
   };
 });

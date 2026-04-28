@@ -10,8 +10,8 @@ import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "./helpers";
 

@@ -1,5 +1,5 @@
-import { Website } from "@shared/enums";
-import type { FileInfo, ScrapeResult } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { FileInfo, ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildAmbiguousUncensoredScrapeGroups,

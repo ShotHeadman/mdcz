@@ -1,5 +1,5 @@
-import { Website } from "@shared/enums";
-import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 import {
   formatBitrate,

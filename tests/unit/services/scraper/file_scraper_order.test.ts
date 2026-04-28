@@ -9,7 +9,7 @@ import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { TranslateService } from "@main/services/scraper/TranslateService";
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "./helpers";
 

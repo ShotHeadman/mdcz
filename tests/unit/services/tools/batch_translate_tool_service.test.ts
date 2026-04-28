@@ -3,9 +3,9 @@ import { configurationSchema, defaultConfiguration } from "@main/services/config
 import type { NetworkClient } from "@main/services/network";
 import type { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
 import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
-import { Website } from "@shared/enums";
-import type { BatchTranslateScanItem } from "@shared/ipcTypes";
-import type { LocalScanEntry } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Partial<ReturnType<typeof configurationSchema.parse>> = {}) =>

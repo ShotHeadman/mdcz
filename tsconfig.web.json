@@ -6,9 +6,11 @@
     "types": ["vite/client"]
   },
   "include": [
-    "src/renderer/src/**/*.ts",
-    "src/renderer/src/**/*.tsx",
-    "src/renderer/src/**/*.d.ts",
+    "apps/desktop/src/renderer/src/**/*.ts",
+    "apps/desktop/src/renderer/src/**/*.tsx",
+    "apps/desktop/src/renderer/src/**/*.d.ts",
+    "packages/client/**/*.ts",
     "packages/shared/**/*.ts"
-  ]
+  ],
+  "exclude": ["packages/**/*.test.ts"]
 }

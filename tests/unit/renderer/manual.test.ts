@@ -1,4 +1,4 @@
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildNfoReadCandidates, readNfo, resolveNfoWritePath, retryScrapeSelection, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";

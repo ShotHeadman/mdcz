@@ -1,7 +1,7 @@
 import type { Configuration } from "@main/services/config";
 import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
-import { Website } from "@shared/enums";
-import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (): Configuration =>

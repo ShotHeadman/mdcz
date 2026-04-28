@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createFileHandlers } from "@main/ipc/handlers/file";
-import { IpcChannel } from "@shared/IpcChannel";
+import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@egoist/tipc/main", () => {

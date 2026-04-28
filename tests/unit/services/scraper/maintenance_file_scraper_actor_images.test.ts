@@ -11,8 +11,8 @@ import { getPreset } from "@main/services/scraper/maintenance/presets";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import * as imageUtils from "@main/utils/image";
-import { Website } from "@shared/enums";
-import type { CrawlerData, LocalScanEntry } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -30,7 +30,7 @@ const createUserDataDir = async (): Promise<string> => {
   return userDataDir;
 };
 
-const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "build", "icon.png"));
+const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "apps/desktop/build/icon.png"));
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Sample Title",

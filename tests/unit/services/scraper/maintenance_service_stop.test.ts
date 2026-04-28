@@ -6,8 +6,8 @@ import { createAbortError } from "@main/services/scraper/abort";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import { MaintenanceFileScraper } from "@main/services/scraper/maintenance/MaintenanceFileScraper";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
-import { Website } from "@shared/enums";
-import type { MaintenanceCommitItem, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { MaintenanceCommitItem, MaintenanceItemResult, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class CaptureSignalService extends SignalService {
