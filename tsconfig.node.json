@@ -6,6 +6,8 @@
   },
   "include": [
     "apps/desktop/electron.vite.config.ts",
+    "apps/server/src/**/*.ts",
+    "apps/server/tsconfig*.json",
     "apps/desktop/src/main/**/*.ts",
     "apps/desktop/src/preload/**/*.ts",
     "apps/desktop/src/**/*.d.ts",

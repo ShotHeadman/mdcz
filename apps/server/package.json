@@ -1,0 +1,19 @@
+{
+  "name": "@mdcz/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

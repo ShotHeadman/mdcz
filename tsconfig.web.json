@@ -9,6 +9,9 @@
     "apps/desktop/src/renderer/src/**/*.ts",
     "apps/desktop/src/renderer/src/**/*.tsx",
     "apps/desktop/src/renderer/src/**/*.d.ts",
+    "apps/web/src/**/*.ts",
+    "apps/web/src/**/*.tsx",
+    "apps/web/vite.config.ts",
     "packages/client/**/*.ts",
     "packages/shared/**/*.ts"
   ],
