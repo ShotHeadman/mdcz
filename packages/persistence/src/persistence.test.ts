@@ -37,10 +37,12 @@ describe("MediaRootRepository", () => {
       now: new Date("2026-04-28T00:00:00.000Z"),
     });
 
+    const persistedRoot = { ...root, deleted: false };
+
     await repository.upsert(root);
 
-    await expect(repository.get("root-1")).resolves.toEqual(root);
-    await expect(repository.list()).resolves.toEqual([root]);
+    await expect(repository.get("root-1")).resolves.toEqual(persistedRoot);
+    await expect(repository.list()).resolves.toEqual([persistedRoot]);
   });
 
   it("uses stable not-found errors", async () => {

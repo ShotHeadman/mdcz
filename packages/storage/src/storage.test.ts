@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -8,6 +8,7 @@ import {
   atomicWriteRootFile,
   createMediaRoot,
   listRootDirectory,
+  listRootFiles,
   normalizeRootRelativePath,
   readRootFile,
   resolveRootRelativePath,
@@ -92,6 +93,28 @@ describe("mounted filesystem helpers", () => {
       expect.objectContaining({ name: "movie.nfo", path: "nested/movie.nfo", kind: "file" }),
     );
     expect(toRootRelativePath(root, path.join(root.hostPath, "nested", "movie.nfo"))).toBe("nested/movie.nfo");
+  });
+
+  it("walks files with desktop-compatible symlink semantics", async () => {
+    const root = await createTempRoot();
+    await atomicWriteRootFile(root, "movie.mkv", "video");
+    await atomicWriteRootFile(root, "linked/target.mp4", "video");
+    await mkdir(path.join(root.hostPath, "links"), { recursive: true });
+    try {
+      await symlink(path.join(root.hostPath, "linked"), path.join(root.hostPath, "links", "linked-dir"), "dir");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") {
+        return;
+      }
+      throw error;
+    }
+
+    await expect(listRootFiles(root, "", true)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relativePath: "movie.mkv" }),
+        expect.objectContaining({ relativePath: "links/linked-dir/target.mp4" }),
+      ]),
+    );
   });
 
   it("rejects disabled roots with a stable unsupported-operation error", async () => {

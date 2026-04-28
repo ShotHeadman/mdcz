@@ -34,7 +34,6 @@ const createTestServer = async (): Promise<ServerApp> => {
     configDir: join(root, "config"),
     dataDir: join(root, "data"),
     configPath: join(root, "config", "default.toml"),
-    legacyConfigPath: join(root, "config", "default.json"),
     databasePath: join(root, "data", "mdcz.sqlite"),
   };
   serverApp = buildServer({ services: { config: new ServerConfigService(paths) } });
@@ -62,7 +61,7 @@ describe("buildServer", () => {
   it("mounts a tRPC health procedure", async () => {
     const { fastify } = await createTestServer();
 
-    const response = await fastify.inject({ method: "GET", url: "/trpc/health" });
+    const response = await fastify.inject({ method: "GET", url: "/trpc/health.read" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
@@ -76,8 +75,22 @@ describe("buildServer", () => {
     const { fastify, services } = await createTestServer();
     await services.config.save(defaultConfiguration);
 
-    const readResponse = await fastify.inject({ method: "GET", url: "/trpc/config.read" });
-    const exportResponse = await fastify.inject({ method: "GET", url: "/trpc/config.export" });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const readResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/config.read",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const exportResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/config.export",
+      headers: { authorization: `Bearer ${token}` },
+    });
 
     expect(readResponse.statusCode).toBe(200);
     expect(readResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
@@ -88,15 +101,24 @@ describe("buildServer", () => {
   it("initializes SQLite migrations before serving tRPC persistence status", async () => {
     const { fastify, services } = await createTestServer();
 
-    const response = await fastify.inject({ method: "GET", url: "/trpc/persistence.status" });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const response = await fastify.inject({
+      method: "GET",
+      url: "/trpc/persistence.status",
+      headers: { authorization: `Bearer ${token}` },
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       result: {
         data: {
-          databasePath: services.persistence.databasePath,
-          initialized: true,
-          mediaRootCount: 0,
+          ok: true,
+          path: services.persistence.databasePath,
         },
       },
     });
@@ -123,9 +145,15 @@ describe("buildServer", () => {
 
   it("streams task updates through the SSE endpoint", async () => {
     const { fastify, services } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
     const address = await fastify.listen({ host: "127.0.0.1", port: 0 });
     const abortController = new AbortController();
-    const response = await fetch(`${address}/events/tasks`, {
+    const response = await fetch(`${address}/events/tasks?token=${encodeURIComponent(token)}`, {
       signal: abortController.signal,
     });
 
@@ -138,13 +166,26 @@ describe("buildServer", () => {
       throw new Error("Expected SSE response body reader");
     }
 
-    expect(await readStreamChunk(reader)).toBe(": connected\n\n");
+    const initialChunk = await readStreamChunk(reader);
+    expect(initialChunk).toContain(": connected\n\n");
+    expect(initialChunk).toContain('data: {"kind":"snapshot","tasks":[]}');
     expect(services.taskEvents.listenerCount()).toBe(1);
 
     const event = services.taskEvents.publish({
-      taskId: "task-1",
-      status: "running",
-      emittedAt: "2026-04-28T00:00:00.000Z",
+      kind: "task",
+      task: {
+        id: "task-1",
+        rootId: "root-1",
+        status: "running",
+        createdAt: "2026-04-28T00:00:00.000Z",
+        updatedAt: "2026-04-28T00:00:00.000Z",
+        startedAt: "2026-04-28T00:00:00.000Z",
+        finishedAt: null,
+        videoCount: 0,
+        directoryCount: 0,
+        error: null,
+        videos: [],
+      },
     });
 
     expect(await readStreamChunk(reader)).toBe(formatSseEvent(event));

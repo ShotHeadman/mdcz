@@ -1,9 +1,6 @@
-export interface TaskEventPayload {
-  taskId: string;
-  status: "queued" | "running" | "success" | "failed" | "interrupted";
-  message?: string;
-  emittedAt: string;
-}
+import type { WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
+
+export type TaskEventPayload = WebTaskUpdateDto;
 
 export interface TaskEventEnvelope {
   id: string;

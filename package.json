@@ -54,7 +54,7 @@
     "pre-commit": "pnpm lint-staged"
   },
   "lint-staged": {
-    "*": "biome check --write --no-errors-on-unmatched"
+    "*": "pnpm exec biome check --write --no-errors-on-unmatched"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

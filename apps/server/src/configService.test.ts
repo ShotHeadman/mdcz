@@ -13,7 +13,6 @@ describe("resolveServerRuntimePaths", () => {
     expect(paths.configDir).toBe("/home/tester/.local/state/mdcz/config");
     expect(paths.dataDir).toBe("/home/tester/.local/state/mdcz/data");
     expect(paths.configPath).toBe("/home/tester/.local/state/mdcz/config/default.toml");
-    expect(paths.legacyConfigPath).toBe("/home/tester/.local/state/mdcz/config/default.json");
     expect(paths.databasePath).toBe("/home/tester/.local/state/mdcz/data/mdcz.sqlite");
   });
 
@@ -46,17 +45,10 @@ describe("ServerConfigService", () => {
     expect(persisted).toContain("[network]");
   });
 
-  it("prefers TOML over legacy JSON", async () => {
+  it("loads existing TOML config", async () => {
     const root = await createTempDir();
     const paths = resolveServerRuntimePaths({ env: { MDCZ_HOME: root } });
     await mkdir(paths.configDir, { recursive: true });
-    await writeFile(
-      paths.legacyConfigPath,
-      serializeConfiguration(
-        { ...defaultConfiguration, network: { ...defaultConfiguration.network, timeout: 11 } },
-        "json",
-      ),
-    );
     await writeFile(
       paths.configPath,
       serializeConfiguration(
@@ -68,26 +60,6 @@ describe("ServerConfigService", () => {
     const service = new ServerConfigService(paths);
 
     expect((await service.load()).network.timeout).toBe(22);
-  });
-
-  it("imports legacy JSON and persists TOML", async () => {
-    const root = await createTempDir();
-    const paths = resolveServerRuntimePaths({ env: { MDCZ_HOME: root } });
-    await mkdir(paths.configDir, { recursive: true });
-    await writeFile(
-      paths.legacyConfigPath,
-      serializeConfiguration(
-        { ...defaultConfiguration, paths: { ...defaultConfiguration.paths, configDirectory: "legacy" } },
-        "json",
-      ),
-    );
-
-    const service = new ServerConfigService(paths);
-    const configuration = await service.load();
-    const persisted = await readFile(paths.configPath, "utf8");
-
-    expect(configuration.paths.configDirectory).toBe("legacy");
-    expect(persisted).toContain('configDirectory = "legacy"');
   });
 });
 

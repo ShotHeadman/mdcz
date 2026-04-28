@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import path from "node:path";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import {
   CONFIGURATION_FILE_EXTENSIONS,
@@ -13,7 +13,6 @@ export interface ServerRuntimePaths {
   configDir: string;
   dataDir: string;
   configPath: string;
-  legacyConfigPath: string;
   databasePath: string;
 }
 
@@ -26,17 +25,17 @@ export interface ResolveServerRuntimePathsOptions {
 export const resolveServerRuntimePaths = (options: ResolveServerRuntimePathsOptions = {}): ServerRuntimePaths => {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
   const home = options.homeDir ?? homedir();
   const baseDir = resolveServerBaseDir(env, platform, home);
-  const configDir = resolve(env.MDCZ_CONFIG_DIR ?? join(baseDir, "config"));
-  const dataDir = resolve(env.MDCZ_DATA_DIR ?? join(baseDir, "data"));
+  const configDir = pathApi.resolve(env.MDCZ_CONFIG_DIR ?? pathApi.join(baseDir, "config"));
+  const dataDir = pathApi.resolve(env.MDCZ_DATA_DIR ?? pathApi.join(baseDir, "data"));
 
   return {
     configDir,
     dataDir,
-    configPath: join(configDir, `default${CONFIGURATION_FILE_EXTENSIONS.toml}`),
-    legacyConfigPath: join(configDir, `default${CONFIGURATION_FILE_EXTENSIONS.json}`),
-    databasePath: resolve(env.MDCZ_DATABASE_PATH ?? join(dataDir, "mdcz.sqlite")),
+    configPath: pathApi.join(configDir, `default${CONFIGURATION_FILE_EXTENSIONS.toml}`),
+    databasePath: pathApi.resolve(env.MDCZ_DATABASE_PATH ?? pathApi.join(dataDir, "mdcz.sqlite")),
   };
 };
 
@@ -50,20 +49,14 @@ export class ServerConfigService {
   }
 
   async load(): Promise<Configuration> {
-    const sourcePath = this.getReadableConfigPath();
-    if (!sourcePath) {
+    if (!existsSync(this.paths.configPath)) {
       this.configuration = defaultConfiguration;
       await this.persist();
       return this.configuration;
     }
 
-    const format = sourcePath === this.paths.legacyConfigPath ? "json" : "toml";
-    const content = await readFile(sourcePath, "utf8");
-    this.configuration = parseConfigurationContent(content, format);
-
-    if (sourcePath === this.paths.legacyConfigPath) {
-      await this.persist();
-    }
+    const content = await readFile(this.paths.configPath, "utf8");
+    this.configuration = parseConfigurationContent(content, "toml");
 
     return this.configuration;
   }
@@ -82,20 +75,8 @@ export class ServerConfigService {
     return this.configuration;
   }
 
-  async export(format: "toml" | "json" = "toml"): Promise<string> {
-    return serializeConfiguration(await this.get(), format);
-  }
-
-  private getReadableConfigPath(): string | null {
-    if (existsSync(this.paths.configPath)) {
-      return this.paths.configPath;
-    }
-
-    if (existsSync(this.paths.legacyConfigPath)) {
-      return this.paths.legacyConfigPath;
-    }
-
-    return null;
+  async export(): Promise<string> {
+    return serializeConfiguration(await this.get(), "toml");
   }
 
   private async persist(): Promise<void> {
@@ -106,13 +87,14 @@ export class ServerConfigService {
 }
 
 const resolveServerBaseDir = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home: string): string => {
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
   if (env.MDCZ_HOME) {
-    return resolve(env.MDCZ_HOME);
+    return pathApi.resolve(env.MDCZ_HOME);
   }
 
   if (platform === "linux") {
-    return resolve(env.XDG_STATE_HOME ?? join(home, ".local", "state"), "mdcz");
+    return pathApi.resolve(env.XDG_STATE_HOME ?? pathApi.join(home, ".local", "state"), "mdcz");
   }
 
-  return resolve(home, ".mdcz");
+  return pathApi.resolve(home, ".mdcz");
 };

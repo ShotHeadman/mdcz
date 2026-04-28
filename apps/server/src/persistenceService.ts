@@ -5,12 +5,14 @@ import {
   MediaRootRepository,
   type PersistenceDatabase,
   runMigrations,
+  TaskRepository,
 } from "@mdcz/persistence";
 
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
   mediaRoots: MediaRootRepository;
+  tasks: TaskRepository;
 }
 
 export interface ServerPersistenceState {
@@ -45,6 +47,7 @@ export class ServerPersistenceService {
         database,
         repositories: {
           mediaRoots: new MediaRootRepository(database),
+          tasks: new TaskRepository(database),
         },
       };
       return this.state;

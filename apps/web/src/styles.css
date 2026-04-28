@@ -1,126 +1,175 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@source "./**/*.{ts,tsx}";
+@source "../../../apps/desktop/src/renderer/src/components/ui/**/*.{ts,tsx}";
+@source "../../../apps/desktop/src/renderer/src/lib/**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "Manrope";
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  src: url("../../../apps/desktop/src/renderer/src/assets/fonts/Manrope-VariableFont_wght.ttf")
+    format("truetype-variations");
+  unicode-range: U+0020-007F, U+00A0-00FF, U+2000-206F;
+}
+
+@theme inline {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  --font-numeric: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-low: var(--surface-low);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-floating: var(--surface-floating);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-quiet-sm: 0.75rem;
+  --radius-quiet: 1rem;
+  --radius-quiet-lg: 1.5rem;
+  --radius-quiet-xl: 2rem;
+  --radius-quiet-capsule: 9999px;
+}
+
 :root {
   color-scheme: light;
   --background: hsl(240 5% 96%);
   --foreground: hsl(240 10% 4%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(240 10% 4%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(240 10% 4%);
+  --primary: hsl(240 10% 4%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(240 5% 93%);
+  --secondary-foreground: hsl(240 6% 10%);
+  --muted: hsl(240 5% 93%);
+  --muted-foreground: hsl(240 4% 46%);
+  --accent: hsl(240 5% 93%);
+  --accent-foreground: hsl(240 6% 10%);
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(240 6% 90%);
+  --input: hsl(240 6% 90%);
+  --ring: hsl(240 10% 4%);
+  --radius: 0.5rem;
+  --sidebar: hsl(240 5% 96%);
+  --sidebar-foreground: hsl(240 6% 10%);
   --surface: hsl(0 0% 100%);
+  --surface-foreground: hsl(240 6% 10%);
   --surface-canvas: hsl(0 0% 98%);
   --surface-low: hsl(240 5% 96%);
-  --border: hsl(240 6% 90%);
-  --muted-foreground: hsl(240 4% 46%);
-  --radius-quiet: 1rem;
-  --radius-quiet-lg: 1.5rem;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--background);
-  color: var(--foreground);
+  --surface-raised: hsl(0 0% 93%);
+  --surface-floating: hsl(0 0% 100%);
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  color-scheme: dark;
+  --background: hsl(212 25% 12%);
+  --foreground: hsl(0 0% 98%);
+  --card: hsl(212 25% 12%);
+  --card-foreground: hsl(0 0% 98%);
+  --popover: hsl(212 25% 12%);
+  --popover-foreground: hsl(0 0% 98%);
+  --primary: hsl(0 0% 96%);
+  --primary-foreground: hsl(180 2% 9%);
+  --secondary: hsl(212 25% 18%);
+  --secondary-foreground: hsl(0 0% 98%);
+  --muted: hsl(212 25% 18%);
+  --muted-foreground: hsl(215 20% 60%);
+  --accent: hsl(212 25% 18%);
+  --accent-foreground: hsl(0 0% 98%);
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(212 20% 20%);
+  --input: hsl(212 20% 20%);
+  --ring: hsl(0 0% 96%);
+  --sidebar: hsl(180 2% 12%);
+  --sidebar-foreground: hsl(0 0% 98%);
+  --surface: hsl(212 25% 16%);
+  --surface-foreground: hsl(0 0% 98%);
+  --surface-canvas: hsl(180 2% 9%);
+  --surface-low: hsl(180 2% 12%);
+  --surface-raised: hsl(0 0% 18%);
+  --surface-floating: hsl(180 2% 15%);
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: var(--background);
-}
-
-button,
-a,
-[role="button"] {
-  transition:
-    color 0.2s ease,
-    background-color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.app-shell {
-  min-height: 100vh;
-  padding: 48px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-canvas) 82%, transparent), var(--background)),
-    var(--background);
-}
-
-.hero-panel {
-  width: min(960px, 100%);
-  margin: 0 auto;
-  padding: 40px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: var(--radius-quiet-lg);
-  background: var(--surface);
-  box-shadow: 0 24px 60px color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
-.eyebrow {
-  margin: 0 0 16px;
-  color: var(--muted-foreground);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  max-width: 12ch;
-  font-size: 3.5rem;
-  line-height: 1;
-}
-
-.hero-copy {
-  max-width: 620px;
-  margin: 24px 0 0;
-  color: var(--muted-foreground);
-  font-size: 1rem;
-  line-height: 1.7;
-}
-
-.placeholder-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 36px;
-}
-
-.placeholder-item {
-  min-height: 88px;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  border-radius: var(--radius-quiet);
-  background: var(--surface-low);
-}
-
-.placeholder-item span,
-.placeholder-item small {
-  display: block;
-}
-
-.placeholder-item span {
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.placeholder-item small {
-  margin-top: 10px;
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-}
-
-@media (max-width: 720px) {
-  .app-shell {
-    padding: 24px;
+@layer base {
+  * {
+    @apply border-border;
   }
 
-  .hero-panel {
-    padding: 28px;
+  html,
+  body,
+  #root {
+    height: 100%;
   }
 
-  h1 {
-    font-size: 2.5rem;
+  body {
+    @apply m-0 overflow-hidden bg-background text-foreground antialiased;
   }
 
-  .placeholder-grid {
-    grid-template-columns: 1fr;
+  button,
+  a,
+  [role="button"],
+  [role="tab"] {
+    @apply transition-colors duration-200;
+  }
+
+  ::selection {
+    @apply bg-primary/20;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full border-2 border-transparent bg-muted-foreground/20 bg-clip-content;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
