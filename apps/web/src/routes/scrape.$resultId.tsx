@@ -6,8 +6,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "../client";
-import { AppLink, ErrorBanner } from "./Common";
+import { AppLink, ErrorBanner } from "../routeCommon";
 
+// Web-only route: scrape results need deep-linkable URLs for browser sessions and task notifications.
+// Desktop composes the same detail/NFO workflow inline inside the workbench selection flow.
 const emptyCrawlerData = (relativePath = ""): CrawlerDataDto => ({
   actors: [],
   genres: [],

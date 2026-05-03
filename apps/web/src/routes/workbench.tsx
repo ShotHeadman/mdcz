@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, subscribeTaskUpdates } from "../client";
-import { AppLink, formatDate, scanStatusLabels, taskKindLabels } from "./Common";
+import { AppLink, formatDate, scanStatusLabels, taskKindLabels } from "../routeCommon";
 
 const emptyCrawlerData = (relativePath = ""): CrawlerDataDto => ({
   title:

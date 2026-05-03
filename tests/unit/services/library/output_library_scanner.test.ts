@@ -1,50 +1,66 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { type Configuration, configurationSchema, defaultConfiguration } from "@main/services/config";
 import { OutputLibraryScanner } from "@main/services/library/OutputLibraryScanner";
+import { LibraryRepository, MediaRootRepository } from "@mdcz/persistence";
+import { createMediaRoot } from "@mdcz/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
 
-const tempDirs: string[] = [];
+const databases: ReturnType<typeof createTestPersistenceDatabase>[] = [];
 
-const createTempDir = async (): Promise<string> => {
-  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-output-library-scanner-"));
-  tempDirs.push(dirPath);
-  return dirPath;
+const createPersistenceService = () => {
+  const database = createTestPersistenceDatabase();
+  databases.push(database);
+  const library = new LibraryRepository(database);
+  const mediaRoots = new MediaRootRepository(database);
+  return {
+    library,
+    mediaRoots,
+    service: {
+      getState: vi.fn(async () => ({
+        database,
+        repositories: {
+          library,
+          mediaRoots,
+        },
+      })),
+    },
+  };
 };
 
-const createConfiguration = (paths: Partial<Configuration["paths"]>): Configuration =>
-  configurationSchema.parse({
-    ...defaultConfiguration,
-    paths: {
-      ...defaultConfiguration.paths,
-      ...paths,
-    },
-  });
-
 describe("OutputLibraryScanner", () => {
-  afterEach(async () => {
+  afterEach(() => {
     vi.restoreAllMocks();
-    await Promise.all(
-      tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
-    );
+    for (const database of databases.splice(0)) {
+      database.close();
+    }
   });
 
-  it("uses the default output path, caches scans, and rescans after invalidate", async () => {
-    const root = await createTempDir();
-    const outputDir = join(root, "media", "JAV_output");
-    await mkdir(join(outputDir, "nested"), { recursive: true });
-    await writeFile(join(outputDir, "A.mp4"), Buffer.alloc(4));
-    await writeFile(join(outputDir, "nested", "B.mkv"), Buffer.alloc(6));
-    await writeFile(join(outputDir, "ignored.txt"), Buffer.alloc(10));
+  it("returns an empty summary without a persistence service", async () => {
+    const scanner = new OutputLibraryScanner({
+      ttlMs: 60_000,
+      now: () => 12_345,
+      logger: { warn: vi.fn() },
+    });
 
-    const configuration = createConfiguration({
-      mediaPath: join(root, "media"),
-      successOutputFolder: "JAV_output",
-      outputSummaryPath: "",
+    await expect(scanner.getSummary()).resolves.toEqual({
+      fileCount: 0,
+      totalBytes: 0,
+      scannedAt: 12_345,
+      rootPath: null,
+    });
+  });
+
+  it("uses the latest persisted scrape output and caches until invalidated", async () => {
+    const { library, service } = createPersistenceService();
+    await library.upsertScrapeOutput({
+      taskId: "task-1",
+      rootId: "root-1",
+      outputDirectory: "output-root",
+      fileCount: 2,
+      totalBytes: 10,
+      completedAt: new Date(1_700_000_000_000),
     });
     const scanner = new OutputLibraryScanner({
-      configProvider: async () => configuration,
+      persistenceService: service as never,
       ttlMs: 60_000,
       now: () => 12_345,
       logger: { warn: vi.fn() },
@@ -54,69 +70,62 @@ describe("OutputLibraryScanner", () => {
     expect(first).toEqual({
       fileCount: 2,
       totalBytes: 10,
-      scannedAt: 12_345,
-      rootPath: outputDir,
+      scannedAt: 1_700_000_000_000,
+      rootPath: "output-root",
     });
 
-    await writeFile(join(outputDir, "C.webm"), Buffer.alloc(8));
-
+    await library.upsertScrapeOutput({
+      taskId: "task-2",
+      rootId: "root-1",
+      outputDirectory: "next-output",
+      fileCount: 3,
+      totalBytes: 18,
+      completedAt: new Date(1_700_000_000_100),
+    });
     await expect(scanner.getSummary()).resolves.toEqual(first);
 
     scanner.invalidate();
-
     await expect(scanner.getSummary()).resolves.toEqual({
       fileCount: 3,
       totalBytes: 18,
-      scannedAt: 12_345,
-      rootPath: outputDir,
+      scannedAt: 1_700_000_000_100,
+      rootPath: "next-output",
     });
   });
 
-  it("returns an empty summary when the configured root is missing", async () => {
-    const root = await createTempDir();
-    const missingRoot = join(root, "missing");
+  it("falls back to persisted library entries when no scrape output exists", async () => {
+    const { library, mediaRoots, service } = createPersistenceService();
+    await mediaRoots.upsert(
+      createMediaRoot({
+        id: "root-1",
+        displayName: "Output",
+        hostPath: "/media/output",
+      }),
+    );
+    await library.upsertEntry({
+      rootId: "root-1",
+      rootRelativePath: "A.mp4",
+      size: 4,
+      number: "A",
+    });
+    await library.upsertEntry({
+      rootId: "root-1",
+      rootRelativePath: "nested/B.mkv",
+      size: 6,
+      number: "B",
+    });
+
     const scanner = new OutputLibraryScanner({
-      configProvider: async () =>
-        createConfiguration({
-          mediaPath: join(root, "media"),
-          successOutputFolder: "JAV_output",
-          outputSummaryPath: missingRoot,
-        }),
+      persistenceService: service as never,
       now: () => 456,
       logger: { warn: vi.fn() },
     });
 
     await expect(scanner.getSummary()).resolves.toEqual({
-      fileCount: 0,
-      totalBytes: 0,
+      fileCount: 2,
+      totalBytes: 10,
       scannedAt: 456,
       rootPath: null,
-    });
-  });
-
-  it("resolves an absolute success output folder without prefixing the media root", async () => {
-    const root = await createTempDir();
-    const mediaRoot = join(root, "media");
-    const absoluteOutputDir = join(root, "absolute-output");
-    await mkdir(absoluteOutputDir, { recursive: true });
-    await writeFile(join(absoluteOutputDir, "ABS-001.mp4"), Buffer.alloc(3));
-
-    const scanner = new OutputLibraryScanner({
-      configProvider: async () =>
-        createConfiguration({
-          mediaPath: mediaRoot,
-          successOutputFolder: absoluteOutputDir,
-          outputSummaryPath: "",
-        }),
-      now: () => 789,
-      logger: { warn: vi.fn() },
-    });
-
-    await expect(scanner.getSummary()).resolves.toEqual({
-      fileCount: 1,
-      totalBytes: 3,
-      scannedAt: 789,
-      rootPath: absoluteOutputDir,
     });
   });
 });

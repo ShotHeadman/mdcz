@@ -1,5 +1,60 @@
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it } from "vitest";
-import { type RuntimeTaskSnapshot, transitionTask } from "./tasks";
+import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
+import {
+  type RecoverableSessionPort,
+  type RuntimeTaskSnapshot,
+  resolveRecoverableSession,
+  transitionTask,
+} from "./tasks";
+
+const configurationWithScrape = (scrape: Partial<typeof defaultConfiguration.scrape>) => ({
+  ...defaultConfiguration,
+  scrape: {
+    ...defaultConfiguration.scrape,
+    ...scrape,
+  },
+});
+
+describe("scrape execution policy", () => {
+  it("uses threadNumber for concurrency and creates the shared rest gate", () => {
+    const policy = createScrapeExecutionPolicy(
+      configurationWithScrape({
+        threadNumber: 4,
+        restAfterCount: 2,
+        restDuration: 30,
+      }),
+    );
+
+    expect(policy.concurrency).toBe(4);
+    expect(policy.restGate).not.toBeNull();
+  });
+
+  it("applies only explicit site delays and clears them back to global defaults", () => {
+    const calls: string[] = [];
+    const client = {
+      setDomainInterval: (domain: string, intervalMs: number, intervalCap?: number, concurrency?: number) => {
+        calls.push(`interval:${domain}:${intervalMs}:${intervalCap}:${concurrency}`);
+      },
+      setDomainLimit: (domain: string, requestsPerSecond: number, concurrency?: number) => {
+        calls.push(`limit:${domain}:${requestsPerSecond}:${concurrency}`);
+      },
+      clearDomainLimit: (domain: string) => {
+        calls.push(`clear:${domain}`);
+      },
+    };
+
+    applyScrapeNetworkPolicy(client, configurationWithScrape({ javdbDelaySeconds: 2 }));
+    applyScrapeNetworkPolicy(client, configurationWithScrape({ javdbDelaySeconds: 0 }));
+
+    expect(calls).toEqual([
+      "interval:javdb.com:2000:1:1",
+      "interval:www.javdb.com:2000:1:1",
+      "clear:javdb.com",
+      "clear:www.javdb.com",
+    ]);
+  });
+});
 
 const baseTask = (status: RuntimeTaskSnapshot["status"]): RuntimeTaskSnapshot => ({
   completedAt: null,
@@ -7,6 +62,36 @@ const baseTask = (status: RuntimeTaskSnapshot["status"]): RuntimeTaskSnapshot =>
   id: "task-1",
   startedAt: null,
   status,
+});
+
+describe("recoverable session port", () => {
+  it("routes recover and discard through one runtime policy", async () => {
+    const calls: string[] = [];
+    const port: RecoverableSessionPort<{ recoverable: boolean; pendingCount: number; failedCount: number }, string> = {
+      summarize: async () => ({ recoverable: true, pendingCount: 1, failedCount: 0 }),
+      recover: async () => {
+        calls.push("recover");
+        return "task-1";
+      },
+      discard: async () => {
+        calls.push("discard");
+      },
+    };
+
+    await expect(
+      resolveRecoverableSession(port, {
+        action: "recover",
+        recoverMessage: "恢复任务已启动",
+      }),
+    ).resolves.toEqual({ success: true, message: "恢复任务已启动", task: "task-1" });
+    await expect(
+      resolveRecoverableSession(port, {
+        action: "discard",
+        discardMessage: "已放弃上次未完成的刮削任务",
+      }),
+    ).resolves.toEqual({ success: true, message: "已放弃上次未完成的刮削任务", task: null });
+    expect(calls).toEqual(["recover", "discard"]);
+  });
 });
 
 describe("runtime task FSM", () => {

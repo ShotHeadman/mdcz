@@ -1,25 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { MaintenancePreviewItem } from "@mdcz/shared/types";
-import { PauseCircle, Play, StopCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type MaintenanceBatchBarPreviewGroup, MaintenanceBatchBarView } from "@mdcz/views/maintenance";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { ipc } from "@/client/ipc";
 import { getMaintenancePresetMeta } from "@/components/maintenance/presetMeta";
-import { ReturnToWorkbenchSetupButton } from "@/components/shared/ReturnToWorkbenchSetupButton";
-import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
-import { Progress } from "@/components/ui/Progress";
 import { buildMaintenanceCommitItem } from "@/lib/maintenance";
 import { buildMaintenanceEntryViewModel } from "@/lib/maintenanceGrouping";
-import { cn } from "@/lib/utils";
 import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
@@ -34,7 +22,6 @@ import {
 import { useScrapeStore } from "@/store/scrapeStore";
 
 interface MaintenanceBatchBarProps {
-  className?: string;
   mediaPath?: string;
 }
 
@@ -42,7 +29,7 @@ const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 };
 
-export default function MaintenanceBatchBar({ className }: MaintenanceBatchBarProps) {
+export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
   const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceEntryStore(
     useShallow((state) => ({
@@ -75,8 +62,6 @@ export default function MaintenanceBatchBar({ className }: MaintenanceBatchBarPr
       })),
     );
 
-  const [stopDialogOpen, setStopDialogOpen] = useState(false);
-
   const presetMeta = getMaintenancePresetMeta(presetId);
   const supportsExecution = presetMeta.supportsExecution !== false;
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
@@ -100,32 +85,45 @@ export default function MaintenanceBatchBar({ className }: MaintenanceBatchBarPr
     () => buildMaintenanceEntryViewModel(selectedEntries, { itemResults, previewResults }),
     [itemResults, previewResults, selectedEntries],
   );
-  const groupedSelectedEntries = selectedEntriesViewModel.groups;
   const entriesCount = allEntriesViewModel.displayCount;
   const selectedCount = selectedEntriesViewModel.displayCount;
   const previewSummary = selectedEntriesViewModel.previewSummary;
   const canReturnToSetup = !scanning && !previewPending;
-  const previewActionLabel = usesDiffView
-    ? hasPreviewResults
-      ? "刷新对比"
-      : "生成对比"
-    : hasPreviewResults
-      ? "执行整理"
-      : "生成整理预览";
+  const groupedSelectedEntries = useMemo<MaintenanceBatchBarPreviewGroup[]>(
+    () =>
+      selectedEntriesViewModel.groups.map((group) => ({
+        id: group.id,
+        title: group.representative.fileInfo.number,
+        subtitle:
+          group.representative.crawlerData?.title_zh ??
+          group.representative.crawlerData?.title ??
+          group.representative.fileInfo.fileName,
+        ready: group.previewState.ready,
+        blockedError: group.previewState.blockedPreview?.error,
+        diffCount: group.previewState.diffCount,
+        hasPathChange: group.previewState.hasPathChange,
+        changedPathItems: group.previewState.changedPathItems.map(({ entry, pathDiff }) => ({
+          fileId: entry.fileId,
+          fileName: entry.fileInfo.fileName,
+          pathDiff,
+        })),
+      })),
+    [selectedEntriesViewModel.groups],
+  );
 
-  const handlePreview = async () => {
+  const handlePreview = async (): Promise<MaintenancePreviewItem[] | null> => {
     if (!supportsExecution) {
-      return false;
+      return null;
     }
 
     if (isScraping) {
       toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
-      return false;
+      return null;
     }
 
     if (selectedEntries.length === 0) {
       toast.info("请先选择要执行的项目");
-      return false;
+      return null;
     }
 
     beginMaintenancePreviewRequest();
@@ -160,8 +158,10 @@ export default function MaintenanceBatchBar({ className }: MaintenanceBatchBarPr
             ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
             : "预览完成，请在右侧数据对比中查看阻塞项。",
         );
+      } else {
+        toast.info("预览完成，请在右侧路径计划中确认后执行。");
       }
-      return preview;
+      return preview.items;
     } catch (error) {
       const liveState = useMaintenanceEntryStore.getState();
       const previewExpired =
@@ -267,216 +267,31 @@ export default function MaintenanceBatchBar({ className }: MaintenanceBatchBarPr
   };
 
   return (
-    <>
-      <div className={cn("flex w-fit max-w-full flex-wrap items-center justify-center gap-2", className)}>
-        {!activeExecution ? (
-          <>
-            <ReturnToWorkbenchSetupButton
-              disabled={!canReturnToSetup}
-              dialogDescription="返回后会清空当前维护列表、预览结果和执行记录。确定继续吗？"
-              onConfirm={handleReturnToSetup}
-            />
-            {supportsExecution && (
-              <Button
-                onClick={async () => {
-                  if (!usesDiffView && hasPreviewResults) {
-                    await handleExecute();
-                    return;
-                  }
-
-                  const preview = await handlePreview();
-                  if (preview && !usesDiffView) {
-                    toast.info("预览完成，请在右侧路径计划中确认后执行。");
-                  }
-                }}
-                disabled={isScraping || scanning || previewPending || entriesCount === 0 || selectedCount === 0}
-                className="h-9 rounded-lg px-4"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {previewActionLabel}
-              </Button>
-            )}
-            {usesDiffView && (
-              <Button
-                variant="secondary"
-                onClick={() => setExecuteDialogOpen(true)}
-                disabled={scanning || previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
-                className="h-9 rounded-lg px-4"
-              >
-                数据替换
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="flex min-w-44 items-center gap-3 px-1">
-              <Progress value={progressValue} className="h-1.5 w-28 md:w-36" />
-              <span className="w-10 font-numeric text-[11px] font-bold tabular-nums text-foreground">
-                {Math.round(progressValue)}%
-              </span>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-quiet-capsule"
-              onClick={handlePauseToggle}
-              disabled={!canPauseMaintenance || stopping}
-              aria-label={paused ? "恢复维护操作" : "暂停维护操作"}
-              title={paused ? "恢复" : "暂停"}
-            >
-              {paused ? <Play className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="icon-sm"
-              className="rounded-quiet-capsule"
-              onClick={() => setStopDialogOpen(true)}
-              disabled={stopping}
-              aria-label="停止维护操作"
-              title="停止"
-            >
-              <StopCircle className="h-4 w-4" />
-            </Button>
-          </>
-        )}
-      </div>
-
-      <Dialog open={usesDiffView && executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
-        <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>确认数据替换</DialogTitle>
-            <DialogDescription>这里会按当前预览结果，对已选条目批量写入元数据、图片和文件调整。</DialogDescription>
-          </DialogHeader>
-          {previewPending ? (
-            <div className="space-y-3 py-2 text-sm text-muted-foreground">
-              <div>正在分析本次维护将要修改的内容...</div>
-            </div>
-          ) : (
-            <div className="min-w-0 space-y-4 text-sm">
-              <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2">
-                <span className="text-muted-foreground">预设</span>
-                <span className="min-w-0 wrap-break-word">{presetMeta.label}</span>
-                <span className="text-muted-foreground">选中</span>
-                <span>
-                  {selectedCount} / {entriesCount} 项
-                </span>
-                <span className="text-muted-foreground">可执行</span>
-                <span>{previewSummary.readyCount} 项</span>
-                <span className="text-muted-foreground">阻塞</span>
-                <span>{previewSummary.blockedCount} 项</span>
-              </div>
-
-              <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
-                {groupedSelectedEntries.map((group) => {
-                  const { blockedPreview, changedPathItems, diffCount, hasPathChange, ready } = group.previewState;
-
-                  return (
-                    <div key={group.id} className="min-w-0 rounded-lg border bg-muted/20 px-3 py-2">
-                      <div className="flex min-w-0 items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium">{group.representative.fileInfo.number}</div>
-                          <div className="break-all text-xs text-muted-foreground">
-                            {group.representative.crawlerData?.title_zh ??
-                              group.representative.crawlerData?.title ??
-                              group.representative.fileInfo.fileName}
-                          </div>
-                        </div>
-                        <div
-                          className={
-                            !ready
-                              ? "shrink-0 whitespace-nowrap text-xs font-medium text-destructive"
-                              : "shrink-0 whitespace-nowrap text-xs font-medium text-emerald-600"
-                          }
-                        >
-                          {ready ? "可执行" : "阻塞"}
-                        </div>
-                      </div>
-
-                      {!ready ? (
-                        <div className="mt-2 break-all text-xs text-destructive">
-                          {blockedPreview?.error ?? "部分分盘文件无法完成预览"}
-                        </div>
-                      ) : (
-                        <>
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            <span>字段差异 {diffCount} 项</span>
-                            {hasPathChange && <span>路径将调整</span>}
-                            {!hasPathChange && diffCount === 0 && <span>无额外变更</span>}
-                          </div>
-                          {hasPathChange && (
-                            <div className="mt-3 space-y-2">
-                              {changedPathItems.map(({ entry, pathDiff }) => (
-                                <div key={entry.fileId} className="rounded-md border bg-background/50 p-2">
-                                  <div className="mb-2 text-[11px] font-medium text-muted-foreground">
-                                    {entry.fileInfo.fileName}
-                                  </div>
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    <div className="min-w-0 rounded-md border bg-background/70 p-2">
-                                      <div className="mb-1 text-[11px] font-medium text-muted-foreground">当前路径</div>
-                                      <div className="break-all font-mono text-[11px] leading-relaxed">
-                                        {pathDiff.currentVideoPath}
-                                      </div>
-                                    </div>
-                                    <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 p-2">
-                                      <div className="mb-1 text-[11px] font-medium text-muted-foreground">目标路径</div>
-                                      <div className="break-all font-mono text-[11px] leading-relaxed">
-                                        {pathDiff.targetVideoPath}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setExecuteDialogOpen(false)}>
-              取消
-            </Button>
-            <Button
-              disabled={previewPending || previewSummary.readyCount === 0}
-              onClick={() => {
-                setExecuteDialogOpen(false);
-                void handleExecute();
-              }}
-            >
-              {previewSummary.readyCount === 0 ? "无可执行项" : `开始批量执行 ${previewSummary.readyCount} 项`}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>停止维护操作</DialogTitle>
-            <DialogDescription>确定要停止当前维护流程吗？已完成的项目不受影响。</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStopDialogOpen(false)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setStopDialogOpen(false);
-                void handleStop();
-              }}
-            >
-              确定停止
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <MaintenanceBatchBarView
+      activeExecution={activeExecution}
+      canPauseMaintenance={canPauseMaintenance}
+      canReturnToSetup={canReturnToSetup}
+      canRunPrimaryAction={!isScraping && !scanning && !previewPending && entriesCount > 0 && selectedCount > 0}
+      canRunReplacement={!scanning && !previewPending && hasPreviewResults && previewSummary.readyCount > 0}
+      entriesCount={entriesCount}
+      executeDialogOpen={executeDialogOpen}
+      groupedSelectedEntries={groupedSelectedEntries}
+      hasPreviewResults={hasPreviewResults}
+      onExecute={() => void handleExecute()}
+      onExecuteDialogOpenChange={setExecuteDialogOpen}
+      onPauseToggle={() => void handlePauseToggle()}
+      onPreview={handlePreview}
+      onReturnToSetup={handleReturnToSetup}
+      onStop={() => void handleStop()}
+      paused={paused}
+      presetLabel={presetMeta.label}
+      previewPending={previewPending}
+      progressValue={progressValue}
+      readyCount={previewSummary.readyCount}
+      selectedCount={selectedCount}
+      stopping={stopping}
+      supportsExecution={supportsExecution}
+      usesDiffView={usesDiffView}
+    />
   );
 }

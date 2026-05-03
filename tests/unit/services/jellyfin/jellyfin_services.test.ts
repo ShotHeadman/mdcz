@@ -8,10 +8,11 @@ import {
   GfriendsActorSource,
   LocalActorSource,
 } from "@main/services/actorSource";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
 import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
 import {
   checkConnection,
+  isUuid,
   JellyfinActorInfoService,
   JellyfinActorPhotoService,
 } from "@main/services/mediaServer/jellyfin";
@@ -34,11 +35,24 @@ const createUserDataDir = async (): Promise<string> => {
   return userDataDir;
 };
 
-const createConfig = (overrides: Record<string, unknown> = {}) =>
-  configurationSchema.parse({
-    ...defaultConfiguration,
-    ...overrides,
-  });
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const mergeConfig = <TValue>(base: TValue, overrides: DeepPartial<TValue>): TValue => {
+  if (!isPlainRecord(base) || !isPlainRecord(overrides)) {
+    return overrides as TValue;
+  }
+
+  const output: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    output[key] = key in output ? mergeConfig(output[key], value as never) : value;
+  }
+
+  return output as TValue;
+};
+
+const createConfig = (overrides: DeepPartial<Configuration> = {}) =>
+  configurationSchema.parse(mergeConfig(defaultConfiguration, overrides));
 
 class FakeNetworkClient {
   readonly getJson = vi.fn(async (_url: string) => ({}));
@@ -128,6 +142,10 @@ describe("Jellyfin services", () => {
         await rm(dirPath, { recursive: true, force: true });
       }),
     );
+  });
+
+  it("accepts a standard Jellyfin UUID user ID", () => {
+    expect(isUuid(jellyfinUserId)).toBe(true);
   });
 
   it("returns layered diagnostics for a healthy Jellyfin connection", async () => {

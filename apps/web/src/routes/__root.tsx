@@ -6,9 +6,9 @@ import { type AnchorHTMLAttributes, type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../client";
 import { NAV_ITEMS } from "../navigation";
+import { ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 import { Button, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, PasswordInput } from "../ui";
-import { ErrorBanner } from "./Common";
 
 const PUBLIC_PATHS = new Set(["/setup", "/login"]);
 

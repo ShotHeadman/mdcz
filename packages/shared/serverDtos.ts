@@ -208,6 +208,31 @@ export const scrapeTaskControlInputSchema = z.object({
 
 export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema>;
 
+export const scrapeRecoverableSessionResponseSchema = z.object({
+  recoverable: z.boolean(),
+  pendingCount: z.number(),
+  failedCount: z.number(),
+  taskId: z.string().nullable(),
+});
+
+export type ScrapeRecoverableSessionResponse = z.infer<typeof scrapeRecoverableSessionResponseSchema>;
+
+export const scrapeRecoverableSessionResolveInputSchema = z
+  .object({
+    action: z.enum(["recover", "discard"]).optional().default("recover"),
+  })
+  .optional();
+
+export type ScrapeRecoverableSessionResolveInput = z.infer<typeof scrapeRecoverableSessionResolveInputSchema>;
+
+export const scrapeRecoverableSessionResolveResponseSchema = z.object({
+  success: z.literal(true),
+  message: z.string(),
+  task: scanTaskSchema.nullable(),
+});
+
+export type ScrapeRecoverableSessionResolveResponse = z.infer<typeof scrapeRecoverableSessionResolveResponseSchema>;
+
 export const scrapeResultIdInputSchema = z.object({
   id: z.string().trim().min(1),
 });
@@ -718,6 +743,7 @@ export type ConfigProfileNameInput = z.infer<typeof configProfileNameInputSchema
 export const configProfileImportInputSchema = z.object({
   name: profileNameSchema,
   content: z.string().min(1),
+  fileName: z.string().trim().min(1).optional(),
   overwrite: z.boolean().optional(),
 });
 
@@ -811,6 +837,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     relativePath: z.string().optional().default(""),
     extensions: z.array(z.string().trim().min(1)).min(1),
     dryRun: z.boolean().optional().default(true),
+    recursive: z.boolean().optional().default(true),
   }),
   z.object({
     toolId: z.literal("batch-nfo-translator"),

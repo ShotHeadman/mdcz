@@ -1,17 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LocalScanEntry } from "@mdcz/shared/types";
-import { FileText, FolderOpen, FolderSearch, Play } from "lucide-react";
+import { MaintenanceEntryListView, type MaintenanceEntryListViewItem } from "@mdcz/views/maintenance";
+import { FileText, FolderOpen, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { ipc } from "@/client/ipc";
 import { getMaintenancePresetMeta } from "@/components/maintenance/presetMeta";
-import {
-  type MediaBrowserItem,
-  type MediaBrowserItemStatus,
-  MediaBrowserList,
-} from "@/components/shared/MediaBrowserList";
-import { Checkbox } from "@/components/ui/Checkbox";
+import type { MediaBrowserItemStatus } from "@/components/shared/MediaBrowserList";
 import { ContextMenuItem } from "@/components/ui/ContextMenu";
 import { buildMaintenanceEntryViewModel, type MaintenanceEntryGroupViewModel } from "@/lib/maintenanceGrouping";
 import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
@@ -138,7 +134,7 @@ export default function MaintenanceEntryList() {
   const blockedCount = groupedEntries.filter((group) => group.status === "failed").length;
   const processingCount = groupedEntries.filter((group) => group.status === "processing").length;
 
-  const items: MediaBrowserItem[] = sortedEntries.map((group) => {
+  const items: MaintenanceEntryListViewItem[] = sortedEntries.map((group) => {
     const representative = group.representative;
     const checkedState = isGroupFullySelected(group) ? true : isGroupPartiallySelected(group) ? "indeterminate" : false;
 
@@ -149,16 +145,13 @@ export default function MaintenanceEntryList() {
       subtitle: buildGroupSubtitle(group),
       errorText: group.errorText,
       status: group.status,
-      selectionControl: showsSelection ? (
-        <Checkbox
-          checked={checkedState}
-          disabled={selectionLocked}
-          onCheckedChange={() => {
+      selected: checkedState,
+      selectionDisabled: selectionLocked,
+      onSelectionChange: showsSelection
+        ? () => {
             toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
-          }}
-          onClick={(event) => event.stopPropagation()}
-        />
-      ) : undefined,
+          }
+        : undefined,
       onClick: () =>
         setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
       menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative),
@@ -166,39 +159,26 @@ export default function MaintenanceEntryList() {
   });
 
   return (
-    <MediaBrowserList
+    <MaintenanceEntryListView
       items={items}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
+      showSelection={showsSelection}
+      selectionDisabled={selectionLocked}
+      allVisibleSelected={allVisibleSelected}
+      someVisibleSelected={someVisibleSelected}
+      selectedVisibleCount={selectedVisibleCount}
+      visibleCount={visibleEntries.length}
+      visibleIdsCount={visibleIds.length}
+      onToggleVisibleSelection={() => {
+        toggleMaintenanceSelectedIds(visibleIds);
+      }}
       stats={[
         { label: "总计", value: String(groupedEntries.length) },
         ...(showsSelection ? [{ label: "已选", value: String(selectedCount) }] : []),
         { label: "处理中", value: String(processingCount) },
         { label: "异常", value: String(blockedCount), tone: "negative" },
       ]}
-      emptyContent={
-        <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
-          <FolderSearch className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
-          <span className="text-[13px] text-muted-foreground/40 tracking-wider">无维护项目</span>
-        </div>
-      }
-      headerLeading={
-        showsSelection ? (
-          <>
-            <Checkbox
-              id="maintenance-select-all"
-              checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
-              disabled={selectionLocked || visibleIds.length === 0}
-              onCheckedChange={() => {
-                toggleMaintenanceSelectedIds(visibleIds);
-              }}
-            />
-            <label htmlFor="maintenance-select-all" className="cursor-pointer">
-              全选 ({selectedVisibleCount}/{visibleEntries.length})
-            </label>
-          </>
-        ) : undefined
-      }
     />
   );
 }

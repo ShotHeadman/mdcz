@@ -131,7 +131,7 @@ export const ipc = {
         throw new Error("已选择的文件不可用，请重新选择。");
       }
       const content = await entry.file.text();
-      const result = await api.config.profiles.import({ name, content, overwrite });
+      const result = await api.config.profiles.import({ name, content, fileName: entry.file.name, overwrite });
       importFileStash.delete(filePath);
       return {
         success: true as const,

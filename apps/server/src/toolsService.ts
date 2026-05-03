@@ -1,7 +1,8 @@
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import { type MediaServerKey, syncMediaServerPersonInfo, syncMediaServerPersonPhotos } from "@mdcz/runtime/mediaserver";
-import { FetchNetworkClient } from "@mdcz/runtime/network";
-import { AggregationService, TranslateService, toTarget } from "@mdcz/runtime/scrape";
+import { NetworkClient } from "@mdcz/runtime/network";
+import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
 import {
   applyAmazonPosters,
   applyBatchNfoTranslations,
@@ -24,11 +25,14 @@ import type { MediaRootService } from "./mediaRootService";
 import type { ScrapeService } from "./scrapeService";
 
 export class ToolsService {
-  private readonly networkClient = new FetchNetworkClient();
+  private readonly networkClient = new NetworkClient();
   private readonly aggregation = new AggregationService(
     new CrawlerProvider({ fetchGateway: new FetchGateway(this.networkClient) }),
   );
   private readonly translate = new TranslateService(this.networkClient);
+  private readonly localScanService = new LocalScanService();
+  private readonly llmApiClient = new LlmApiClient(this.networkClient);
+  private readonly nfoGenerator = new NfoGenerator();
 
   constructor(
     private readonly config: ServerConfigService,
@@ -103,6 +107,7 @@ export class ToolsService {
         if (input.action === "sync-photo") {
           const config = await this.config.get();
           const result = await syncMediaServerPersonPhotos(
+            this.networkClient,
             config,
             server,
             await this.collectActorProfiles(),
@@ -136,6 +141,7 @@ export class ToolsService {
           rootDir,
           extensions: input.extensions,
           dryRun: input.dryRun,
+          recursive: input.recursive,
         });
         return {
           toolId: input.toolId,
@@ -150,12 +156,19 @@ export class ToolsService {
           if (!input.directory) {
             return { toolId: input.toolId, ok: false, message: "请选择要扫描的目录。" };
           }
-          const items = await scanBatchNfoTranslations(input.directory, config);
+          const items = await scanBatchNfoTranslations(input.directory, config, {
+            localScanService: this.localScanService,
+          });
           return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个待翻译 NFO`, data: { items } };
         }
         if (input.action === "apply") {
           const items = input.items ?? [];
-          const results = await applyBatchNfoTranslations(this.networkClient, items, config);
+          const results = await applyBatchNfoTranslations(items, config, {
+            llmApiClient: this.llmApiClient,
+            localScanService: this.localScanService,
+            nfoGenerator: this.nfoGenerator,
+            writeNfo: writePreparedNfo,
+          });
           return {
             toolId: input.toolId,
             ok: results.every((item) => item.success),

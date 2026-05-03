@@ -1,10 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createOverviewHandlers } from "@main/ipc/handlers/overview";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@egoist/tipc/main", () => {
   type MockProcedure = {
@@ -30,14 +27,18 @@ vi.mock("@egoist/tipc/main", () => {
 const actionArgs = { context: { sender: {} as never }, input: undefined };
 
 const createContext = (overrides: {
-  list?: ReturnType<typeof vi.fn>;
-  getThumbnailPath?: (number: string) => string;
+  listEntries?: ReturnType<typeof vi.fn>;
   getSummary?: ReturnType<typeof vi.fn>;
 }): ServiceContainer =>
   ({
-    recentAcquisitionsStore: {
-      list: overrides.list ?? vi.fn(async () => []),
-      getThumbnailPath: overrides.getThumbnailPath ?? ((number: string) => `/missing/${number}.webp`),
+    persistenceService: {
+      getState: vi.fn(async () => ({
+        repositories: {
+          library: {
+            listEntries: overrides.listEntries ?? vi.fn(async () => []),
+          },
+        },
+      })),
     },
     outputLibraryScanner: {
       getSummary:
@@ -46,51 +47,36 @@ const createContext = (overrides: {
   }) as unknown as ServiceContainer;
 
 describe("createOverviewHandlers", () => {
-  const tempDirs: string[] = [];
-
-  afterEach(async () => {
-    await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
-    tempDirs.length = 0;
-  });
-
-  it("returns thumbnail absolute paths only when the thumbnail file exists", async () => {
-    const thumbnailDir = await mkdtemp(join(tmpdir(), "mdcz-overview-ipc-"));
-    tempDirs.push(thumbnailDir);
-    const existingThumbnailPath = join(thumbnailDir, "ABC-123.webp");
-    await writeFile(existingThumbnailPath, "thumbnail");
-
+  it("returns persisted library entries as recent acquisitions", async () => {
     const handlers = createOverviewHandlers(
       createContext({
-        list: vi.fn(async () => [
+        listEntries: vi.fn(async () => [
           {
+            id: "entry-1",
             number: "ABC-123",
+            fileName: "ABC-123.mp4",
             title: "First",
             actors: ["Actor A"],
+            thumbnailPath: "/persisted/ABC-123.webp",
             lastKnownPath: "/output/ABC-123.mp4",
-            completedAt: 1_700_000_000_000,
+            indexedAt: new Date(1_700_000_000_000),
           },
           {
+            id: "entry-2",
             number: "MISSING-1",
+            fileName: "MISSING-1.mp4",
             title: null,
             actors: [],
+            thumbnailPath: null,
             lastKnownPath: null,
-            completedAt: 1_700_000_000_001,
+            indexedAt: new Date(1_700_000_000_001),
           },
         ]),
-        getThumbnailPath: (number) => join(thumbnailDir, `${number}.webp`),
       }),
     );
 
     await expect(handlers[IpcChannel.Overview_GetRecentAcquisitions].action(actionArgs)).resolves.toEqual({
       items: [
-        {
-          number: "ABC-123",
-          title: "First",
-          actors: ["Actor A"],
-          thumbnailPath: existingThumbnailPath,
-          lastKnownPath: "/output/ABC-123.mp4",
-          completedAt: 1_700_000_000_000,
-        },
         {
           number: "MISSING-1",
           title: null,
@@ -98,6 +84,14 @@ describe("createOverviewHandlers", () => {
           thumbnailPath: null,
           lastKnownPath: null,
           completedAt: 1_700_000_000_001,
+        },
+        {
+          number: "ABC-123",
+          title: "First",
+          actors: ["Actor A"],
+          thumbnailPath: "/persisted/ABC-123.webp",
+          lastKnownPath: "/output/ABC-123.mp4",
+          completedAt: 1_700_000_000_000,
         },
       ],
     });
@@ -117,10 +111,52 @@ describe("createOverviewHandlers", () => {
     expect(getSummary).toHaveBeenCalledOnce();
   });
 
+  it("returns an empty recent-acquisition list when persistence has no entries", async () => {
+    const handlers = createOverviewHandlers(createContext({ listEntries: vi.fn(async () => []) }));
+
+    await expect(handlers[IpcChannel.Overview_GetRecentAcquisitions].action(actionArgs)).resolves.toEqual({
+      items: [],
+    });
+  });
+
+  it("sorts and limits persisted recent acquisitions", async () => {
+    const entries = Array.from({ length: 55 }, (_, index) => {
+      const displayIndex = String(index).padStart(2, "0");
+      return {
+        id: `entry-${displayIndex}`,
+        number: `ABC-${displayIndex}`,
+        fileName: `ABC-${displayIndex}.mp4`,
+        title: `Persisted ${displayIndex}`,
+        actors: ["Actor P"],
+        thumbnailPath: `/persisted/thumb-${displayIndex}.png`,
+        lastKnownPath: `/persisted/ABC-${displayIndex}.mp4`,
+        indexedAt: new Date(1_700_000_000_000 + index),
+      };
+    });
+    const handlers = createOverviewHandlers(
+      createContext({
+        listEntries: vi.fn(async () => entries),
+      }),
+    );
+
+    const result = await handlers[IpcChannel.Overview_GetRecentAcquisitions].action(actionArgs);
+
+    expect(result.items).toHaveLength(50);
+    expect(result.items[0]).toEqual({
+      number: "ABC-54",
+      title: "Persisted 54",
+      actors: ["Actor P"],
+      thumbnailPath: "/persisted/thumb-54.png",
+      lastKnownPath: "/persisted/ABC-54.mp4",
+      completedAt: 1_700_000_000_054,
+    });
+    expect(result.items.at(-1)?.number).toBe("ABC-05");
+  });
+
   it("wraps overview handler failures as serializable IPC errors", async () => {
     const handlers = createOverviewHandlers(
       createContext({
-        list: vi.fn(async () => {
+        listEntries: vi.fn(async () => {
           throw new Error("boom");
         }),
       }),

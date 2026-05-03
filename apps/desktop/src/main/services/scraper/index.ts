@@ -9,4 +9,5 @@ export { ScrapeSession } from "@mdcz/runtime/tasks";
 export { DownloadManager } from "./DownloadManager";
 export { createFileScraper, FileScraper } from "./FileScraper";
 export { NfoGenerator, nfoGenerator } from "./NfoGenerator";
-export { ScraperService, ScraperServiceError } from "./ScraperService";
+export { ScraperService } from "./ScraperService";
+export { ScraperServiceError } from "./ScraperServiceError";

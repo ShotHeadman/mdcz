@@ -1,6 +1,8 @@
+import { cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import type { Plugin } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
 const appResolve = (subpath: string): string => resolve(__dirname, subpath);
@@ -17,6 +19,18 @@ const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
 
+const desktopDistributionAssets = (): Plugin => ({
+  name: "mdcz-desktop-distribution-assets",
+  async buildStart() {
+    await rm(appResolve("out/persistence"), { recursive: true, force: true });
+  },
+  async closeBundle() {
+    await cp(workspaceResolve("packages/persistence/drizzle"), appResolve("out/persistence/drizzle"), {
+      recursive: true,
+    });
+  },
+});
+
 const isIgnorableUseClientWarning = (message: string): boolean =>
   message.includes("Module level directives cause errors when bundled") && message.includes('"use client"');
 
@@ -26,7 +40,7 @@ const isIgnorableUseClientSourcemapWarning = (message: string): boolean =>
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    plugins: [externalizeDepsPlugin({ exclude: workspacePackages }), desktopDistributionAssets()],
     resolve: {
       alias: {
         "@main": appResolve("src/main"),

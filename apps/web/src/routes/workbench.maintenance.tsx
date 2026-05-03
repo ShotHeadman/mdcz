@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api, subscribeTaskUpdates } from "../client";
-import { AppLink, formatDate, scanStatusLabels } from "./Common";
+import { AppLink, formatDate, scanStatusLabels } from "../routeCommon";
 
 export function MaintenancePage() {
   const queryClient = useQueryClient();

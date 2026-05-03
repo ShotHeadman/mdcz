@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../client";
-import { AppLink, ErrorBanner, formatDate } from "./Common";
+import { AppLink, ErrorBanner, formatDate } from "../routeCommon";
 
 const logLevelLabels: Record<string, string> = {
   completed: "OK",

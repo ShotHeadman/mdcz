@@ -5,7 +5,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { api } from "../client";
-import { AppLink } from "./Common";
+import { AppLink } from "../routeCommon";
 
 export function LibraryPage() {
   const [query, setQuery] = useState("");

@@ -1,4 +1,4 @@
-import type { ScrapeResult, ScraperStatus } from "@mdcz/shared/types";
+import type { CrawlerData, DownloadedAssets, ScrapeResult, ScraperStatus } from "@mdcz/shared/types";
 import type { RuntimeLogger } from "../../shared";
 
 export type SessionState = ScraperStatus["state"];
@@ -20,7 +20,11 @@ export interface ScrapeSuccessItem {
   number: string;
   title: string | null;
   actors: string[];
+  crawlerData?: CrawlerData;
+  assets?: DownloadedAssets;
   lastKnownPath: string | null;
+  nfoPath?: string | null;
+  outputPath?: string | null;
   posterPath: string | null;
 }
 

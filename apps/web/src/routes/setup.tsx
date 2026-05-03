@@ -4,11 +4,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../client";
+import { ErrorBanner } from "../routeCommon";
 import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Form,
@@ -22,8 +22,9 @@ import {
   PasswordInput,
   Progress,
 } from "../ui";
-import { ErrorBanner } from "./Common";
 
+// Web-only route: setup is the server first-run wizard for admin auth and mounted media-root registration.
+// Desktop persists local settings directly and has no browser-accessible first-run/auth boundary.
 export const SetupPage = () => {
   const queryClient = useQueryClient();
   const setupQ = useQuery({ queryKey: ["setup"], queryFn: () => api.setup.status(), retry: false });
@@ -105,7 +106,7 @@ export const SetupPage = () => {
             <Progress className="h-1 bg-surface-low" value={(step / 2) * 100} />
           </div>
           <div className="relative flex justify-between">
-            {["密码", "媒体库", "完成"].map((label, index) => (
+            {["密码", "完成"].map((label, index) => (
               <div
                 className={`flex flex-col items-center gap-3 ${index <= step ? "text-primary" : "text-muted-foreground"}`}
                 key={label}
@@ -177,7 +178,6 @@ export const SetupPage = () => {
               <div className="animate-in fade-in slide-in-from-right-4 duration-500">
                 <CardHeader className="pb-8">
                   <CardTitle className="text-xl">配置首个媒体库</CardTitle>
-                  <CardDescription>MDCz 将扫描并管理此目录下的所有媒体文件。目前仅支持本地挂载路径。</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid gap-5">
@@ -215,43 +215,8 @@ export const SetupPage = () => {
                     <Button variant="secondary" className="h-11 px-8 rounded-quiet-capsule" onClick={() => setStep(0)}>
                       上一步
                     </Button>
-                    <Button className="h-11 px-10 rounded-quiet-capsule font-semibold" onClick={nextMediaRootStep}>
-                      继续
-                    </Button>
-                  </div>
-                </CardContent>
-              </div>
-            )}
-
-            {step === 2 && (
-              <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-                <CardHeader className="pb-8">
-                  <CardTitle className="text-xl">检查配置</CardTitle>
-                  <CardDescription>一切准备就绪！请确认以下信息，点击“开始使用”完成初始化。</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-8">
-                  <div className="space-y-1 rounded-quiet-lg border border-border/40 bg-surface-low p-6 transition-colors hover:border-primary/20">
-                    <div className="flex justify-between py-2">
-                      <span className="text-sm font-medium text-muted-foreground">管理员</span>
-                      <span className="text-sm font-semibold">已就绪</span>
-                    </div>
-                    <div className="h-px bg-border/40" />
-                    <div className="space-y-3 py-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm font-medium text-muted-foreground">首个媒体库</span>
-                        <span className="text-sm font-semibold">{displayName}</span>
-                      </div>
-                      <div className="rounded bg-surface px-3 py-2 font-mono text-xs text-muted-foreground border border-border/30 truncate">
-                        {hostPath}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex justify-between gap-4 pt-4">
-                    <Button variant="secondary" className="h-11 px-8 rounded-quiet-capsule" onClick={() => setStep(1)}>
-                      上一步
-                    </Button>
                     <Button
-                      className="h-11 px-12 rounded-quiet-capsule font-bold shadow-lg shadow-primary/20"
+                      className="h-11 px-10 rounded-quiet-capsule font-semibold"
                       disabled={completeM.isPending}
                       onClick={() => void completeSetup()}
                     >

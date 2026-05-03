@@ -4,7 +4,11 @@ import { inspectStrmTarget } from "../scrape/utils/strm";
 import { SUBTITLE_EXTENSIONS } from "../scrape/utils/subtitles";
 
 export { applyAmazonPosters, lookupAmazonPoster, scanAmazonPosters } from "./amazonPoster";
-export { applyBatchNfoTranslations, scanBatchNfoTranslations } from "./batchNfoTranslator";
+export {
+  applyBatchNfoTranslations,
+  type BatchNfoTranslatorDependencies,
+  scanBatchNfoTranslations,
+} from "./batchNfoTranslator";
 
 const DEFAULT_MEDIA_EXTENSIONS = new Set([
   ".mp4",
@@ -39,7 +43,7 @@ const shouldSkipFileName = (fileName: string): boolean => {
   );
 };
 
-const listAllFiles = async (sourceDir: string, excludedDir?: string): Promise<string[]> => {
+const listAllFiles = async (sourceDir: string, excludedDir?: string, recursive = true): Promise<string[]> => {
   const files: string[] = [];
   const stack: string[] = [sourceDir];
 
@@ -54,7 +58,7 @@ const listAllFiles = async (sourceDir: string, excludedDir?: string): Promise<st
 
       if (entry.isDirectory()) {
         if (excludedDir && isSameOrSubPath(resolvedPath, excludedDir)) continue;
-        stack.push(resolvedPath);
+        if (recursive) stack.push(resolvedPath);
         continue;
       }
 
@@ -231,6 +235,7 @@ export interface CleanFilesInput {
   rootDir: string;
   extensions: string[];
   dryRun?: boolean;
+  recursive?: boolean;
 }
 
 export interface CleanFilesResult {
@@ -247,7 +252,9 @@ export const cleanFilesByExtension = async (input: CleanFilesInput): Promise<Cle
   }
 
   const extensions = new Set(input.extensions.map(normalizeExtension).filter(Boolean));
-  const files = (await listAllFiles(rootDir)).filter((file) => extensions.has(normalizeExtension(extname(file))));
+  const files = (await listAllFiles(rootDir, undefined, input.recursive ?? true)).filter((file) =>
+    extensions.has(normalizeExtension(extname(file))),
+  );
   let deleted = 0;
   if (!input.dryRun) {
     for (const file of files) {

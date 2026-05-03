@@ -24,7 +24,7 @@ export function OverviewHeroStartCard({ className }: OverviewHeroStartCardProps)
       isError={summaryQ.isError}
       isLoading={configQ.isLoading || summaryQ.isLoading}
       onSetup={() => navigate({ to: "/settings" })}
-      onStart={() => navigate({ to: "/" })}
+      onStart={() => navigate({ to: "/workbench" })}
     />
   );
 }

@@ -3,10 +3,12 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { api } from "../client";
+import { AppLink, ErrorBanner, formatBytes } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui";
-import { AppLink, ErrorBanner, formatBytes } from "./Common";
 
+// Web-only route: the browser lists files inside registered server media roots without exposing arbitrary host paths.
+// Desktop relies on native file dialogs and shell-open integration rather than a mounted-root browser route.
 const parentPath = (value: string): string => {
   const parts = value.split("/").filter(Boolean);
   parts.pop();

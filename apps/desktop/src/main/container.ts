@@ -1,11 +1,11 @@
 import type { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { RecentAcquisitionsStore } from "@main/services/history";
 import type { OutputLibraryScanner } from "@main/services/library";
 import type { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
 import type { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
 import type { NetworkClient } from "@main/services/network";
+import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import type { ScraperService } from "@main/services/scraper";
 import type { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
@@ -25,8 +25,8 @@ export interface ServiceContainer {
   windowService: WindowService;
   networkClient: NetworkClient;
   fetchGateway: FetchGateway;
-  recentAcquisitionsStore: RecentAcquisitionsStore;
   outputLibraryScanner: OutputLibraryScanner;
+  persistenceService: DesktopPersistenceService;
   scraperService: ScraperService;
   maintenanceService: MaintenanceService;
   crawlerProvider: CrawlerProvider;

@@ -1,45 +1,61 @@
 import { Website } from "@mdcz/shared/enums";
-import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
-import { OrderedSiteFieldEditor } from "@renderer/components/config-form/OrderedSiteField";
-import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
-import { SectionAnchor } from "@renderer/components/settings/SectionAnchor";
-import { AdvancedSettingsFooterContent } from "@renderer/components/settings/SettingsForm";
+import { OrderedSiteFieldEditor, parseBufferedNumberValue } from "@mdcz/views/config-form";
 import {
-  SettingsSectionModeProvider,
-  shouldRenderFieldInSectionMode,
-} from "@renderer/components/settings/SettingsSectionModeContext";
-import { buildSitePrioritySummary } from "@renderer/components/settings/SitePriorityEditorField";
-import { buildSettingsBrowseState } from "@renderer/components/settings/settingsBrowseState";
-import {
+  AdvancedSettingsFooterContent,
   AssetDownloadsSection,
-  buildNamingPreviewConfig,
-  NamingSection,
-} from "@renderer/components/settings/settingsContent";
-import { resolveSettingsDeepLink } from "@renderer/components/settings/settingsDeepLink";
-import { getSettingsSuggestions } from "@renderer/components/settings/settingsFilter";
-import { FIELD_REGISTRY, flattenConfig, unflattenConfig } from "@renderer/components/settings/settingsRegistry";
-import {
-  moveSitePriorityOption,
-  resolveSitePriorityOptions,
-  toggleSitePriorityOption,
-} from "@renderer/components/settings/sitePriorityOptions";
-import {
-  FileBehaviorTopLevelSection,
-  NetworkTopLevelSection,
-  TranslateTopLevelSection,
-} from "@renderer/components/settings/TopLevelSections";
-import {
   buildAutoSaveFlatPayload,
+  buildNamingPreviewConfig,
+  buildSettingsBrowseState,
+  buildSitePrioritySummary,
+  FIELD_REGISTRY,
+  FileBehaviorTopLevelSection,
+  flattenConfig,
+  getSettingsSuggestions,
   mergeConfigWithFlatPayload,
+  moveSitePriorityOption,
+  NamingSection,
+  NetworkTopLevelSection,
+  ProfileCapsule,
+  resolveSettingsDeepLink,
+  resolveSitePriorityOptions,
   runLatestRevisionTask,
+  SectionAnchor,
   SettingsEditorAutosaveProvider,
-} from "@renderer/hooks/useAutoSaveField";
+  SettingsSectionModeProvider,
+  type SettingsServices,
+  SettingsServicesProvider,
+  shouldRenderFieldInSectionMode,
+  TranslateTopLevelSection,
+  toggleSitePriorityOption,
+  unflattenConfig,
+} from "@mdcz/views/settings";
 import { type ComponentProps, createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it, vi } from "vitest";
 
 const noop = vi.fn();
+const testSettingsServices = {
+  browsePath: vi.fn(async () => ({})),
+  checkCookies: vi.fn(async () => ({ results: [] })),
+  decrementInFlightSaves: vi.fn(),
+  ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
+  getInFlightSaves: vi.fn(() => 0),
+  incrementInFlightSaves: vi.fn(),
+  listCrawlerSites: vi.fn(async () => ({ sites: [] })),
+  openWatermarkDirectory: vi.fn(async () => undefined),
+  previewNaming: vi.fn(async () => ({ items: [] })),
+  probeSiteConnectivity: vi.fn(async () => ({ ok: true, message: "" })),
+  relaunchApp: vi.fn(async () => undefined),
+  resetConfig: vi.fn(async () => undefined),
+  saveConfig: vi.fn(async () => undefined),
+  testLlm: vi.fn(async () => ({ success: true, message: "" })),
+} satisfies SettingsServices;
+const testSettingsNotifier = {
+  error: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+};
 
 function entry(key: string) {
   return FIELD_REGISTRY.find((candidate) => candidate.key === key);
@@ -50,16 +66,20 @@ function FormHarness({ children, values = {} }: { children?: ReactNode; values?:
   const flatValues = flattenConfig(values);
 
   return createElement(
-    FormProvider,
-    form as ComponentProps<typeof FormProvider>,
+    SettingsServicesProvider,
+    { notifier: testSettingsNotifier, services: testSettingsServices },
     createElement(
-      SettingsEditorAutosaveProvider,
-      {
-        savedValues: flatValues,
-        defaultValues: flatValues,
-        defaultValuesReady: true,
-      },
-      children,
+      FormProvider,
+      form as ComponentProps<typeof FormProvider>,
+      createElement(
+        SettingsEditorAutosaveProvider,
+        {
+          savedValues: flatValues,
+          defaultValues: flatValues,
+          defaultValuesReady: true,
+        },
+        children,
+      ),
     ),
   );
 }

@@ -1,9 +1,11 @@
+import { preloadSettingsExperience } from "@mdcz/views/settings";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import {
   FileText,
   Info,
   LayoutDashboard,
+  Library,
   Monitor,
   Moon,
   PanelLeftClose,
@@ -16,7 +18,6 @@ import {
 import { type ReactNode, useMemo, useState } from "react";
 import AppLogo from "@/assets/images/logo.png";
 import { AppTitleBar } from "@/components/AppTitleBar";
-import { preloadSettingsExperience } from "@/components/settings/preloadSettingsExperience";
 import { Button } from "@/components/ui/Button";
 import { NavButton } from "@/components/ui/NavButton";
 import { Separator } from "@/components/ui/Separator";
@@ -38,8 +39,9 @@ interface NavItem {
 // Primary workflow pages
 const PRIMARY_NAV: NavItem[] = [
   { label: "概览", to: "/overview", icon: LayoutDashboard },
-  { label: "工作台", to: "/", icon: PlaySquare },
-  { label: "工具", to: "/tool", icon: Wrench },
+  { label: "工作台", to: "/workbench", icon: PlaySquare },
+  { label: "工具", to: "/tools", icon: Wrench },
+  { label: "媒体库", to: "/library", icon: Library },
 ];
 
 // System / configuration pages

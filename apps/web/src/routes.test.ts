@@ -13,8 +13,8 @@ import {
 } from "@mdcz/shared/settingsRegistry";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import { describe, expect, it } from "vitest";
+import { taskKindLabels } from "./routeCommon";
 import { buildHref, includesSearch, normalizeSearchText } from "./routeHelpers";
-import { taskKindLabels } from "./routes/Common";
 
 const WEB_SRC_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -77,6 +77,7 @@ describe("route helpers", () => {
       "概览",
       "工作台",
       "工具",
+      "媒体库",
       "设置",
       "日志",
       "关于",

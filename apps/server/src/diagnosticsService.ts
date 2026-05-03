@@ -1,6 +1,6 @@
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { probeMediaServer as probeRuntimeMediaServer } from "@mdcz/runtime/mediaserver";
-import { FetchNetworkClient } from "@mdcz/runtime/network";
+import { NetworkClient } from "@mdcz/runtime/network";
 import { isMissingRequiredLlmApiKey, TranslateService, toTarget } from "@mdcz/runtime/translate";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { DiagnosticCheckDto, DiagnosticsSummaryResponse } from "@mdcz/shared/serverDtos";
@@ -9,7 +9,7 @@ import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 
 export class DiagnosticsService {
-  private readonly networkClient = new FetchNetworkClient();
+  private readonly networkClient = new NetworkClient();
   private readonly crawlerProvider = new CrawlerProvider({ fetchGateway: new FetchGateway(this.networkClient) });
   private readonly translate = new TranslateService(this.networkClient);
 

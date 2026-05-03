@@ -12,6 +12,8 @@ export default defineConfig({
       { find: "@mdcz/runtime", replacement: resolve(__dirname, "packages/runtime/src/index.ts") },
       { find: "@mdcz/shared", replacement: resolve(__dirname, "packages/shared") },
       { find: "@mdcz/storage", replacement: resolve(__dirname, "packages/storage/src/index.ts") },
+      { find: /^@mdcz\/views\/(.+)$/, replacement: resolve(__dirname, "packages/views/src/$1") },
+      { find: "@mdcz/views", replacement: resolve(__dirname, "packages/views/src/index.ts") },
       { find: "electron", replacement: resolve(__dirname, "tests/unit/electronMock.ts") },
       { find: "impit", replacement: resolve(__dirname, "tests/unit/impitMock.ts") },
       { find: "mediainfo.js", replacement: resolve(__dirname, "tests/unit/mediaInfoMock.ts") },

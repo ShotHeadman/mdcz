@@ -1,10 +1,11 @@
 import { type DesktopRouteId, PRIMARY_DESKTOP_ROUTES, SYSTEM_DESKTOP_ROUTES } from "@mdcz/shared/desktopNavigation";
 import type { LucideIcon } from "lucide-react";
-import { Info, LayoutDashboard, PlaySquare, ScrollText, Settings, Wrench } from "lucide-react";
+import { Info, LayoutDashboard, Library, PlaySquare, ScrollText, Settings, Wrench } from "lucide-react";
 
 const routeIcons: Record<DesktopRouteId, LucideIcon> = {
   about: Info,
   logs: ScrollText,
+  library: Library,
   overview: LayoutDashboard,
   settings: Settings,
   tools: Wrench,

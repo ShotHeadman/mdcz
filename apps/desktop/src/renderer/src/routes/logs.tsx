@@ -1,9 +1,14 @@
+import type { LogEntryDto } from "@mdcz/shared/serverDtos";
+import { type LogsKindFilter, type LogsLevelFilter, LogsPanelView } from "@mdcz/views/logs";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowDownToLine, Eraser, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { LogList } from "@/components/logviewer/LogList";
-import { getRuntimeLogSearchText } from "@/components/logviewer/logFormat";
+import {
+  getRuntimeLogSearchText,
+  getVisualLogLevel,
+  getVisualLogLevelLabel,
+  stringifyRuntimeLogMessage,
+} from "@/components/logviewer/logFormat";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -14,9 +19,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Input";
-import { cn } from "@/lib/utils";
 import { useLogStore } from "@/store/logStore";
+
+const toLogEntryLevel = (level: string): LogEntryDto["level"] => {
+  if (level === "OK" || level === "WARN" || level === "ERR" || level === "REQ" || level === "INFO") {
+    return level;
+  }
+  return "INFO";
+};
 
 export const Route = createFileRoute("/logs")({
   component: LogsComponent,
@@ -25,93 +35,95 @@ export const Route = createFileRoute("/logs")({
 function LogsComponent() {
   const { logs, clearLogs } = useLogStore();
   const [autoScroll, setAutoScroll] = useState(true);
-  const [filter, setFilter] = useState("");
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<LogsKindFilter>("all");
+  const [level, setLevel] = useState<LogsLevelFilter>("all");
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const logEntries = useMemo<LogEntryDto[]>(
+    () =>
+      logs.map((log) => {
+        const visualLevel = getVisualLogLevel(log);
+        return {
+          id: log.id,
+          createdAt: log.timestamp,
+          level: toLogEntryLevel(getVisualLogLevelLabel(visualLevel)),
+          message: stringifyRuntimeLogMessage(log.message),
+          source: "runtime",
+          taskId: "desktop",
+          type: "runtime",
+        };
+      }),
+    [logs],
+  );
 
   const filteredLogs = useMemo(() => {
-    const normalizedFilter = filter.trim().toLowerCase();
-    if (!normalizedFilter) {
-      return logs;
-    }
+    const normalizedFilter = query.trim().toLowerCase();
+    return logEntries.filter((log, index) => {
+      if (kind !== "all" && kind !== "runtime") return false;
+      if (level !== "all" && log.level !== level) return false;
+      if (!normalizedFilter) return true;
+      return getRuntimeLogSearchText(logs[index]).includes(normalizedFilter);
+    });
+  }, [kind, level, logEntries, logs, query]);
 
-    return logs.filter((log) => getRuntimeLogSearchText(log).includes(normalizedFilter));
-  }, [logs, filter]);
+  useEffect(() => {
+    if (autoScroll) {
+      endRef.current?.scrollIntoView({ block: "end" });
+    }
+  });
 
   return (
-    <div className="h-full overflow-hidden bg-surface-canvas">
-      <main className="mx-auto flex h-full w-full max-w-[1240px] flex-col px-5 py-4 sm:px-6 md:px-8 lg:px-10 lg:py-5">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-          <div className="relative w-full min-w-0 sm:mr-auto sm:max-w-[360px]">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
-            <Input
-              placeholder="搜索日志内容..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="h-11 rounded-[var(--radius-quiet-capsule)] pl-11 pr-4 shadow-none"
-            />
-          </div>
-
-          <Button
-            type="button"
-            variant="secondary"
-            className={cn(
-              "h-11 gap-2 px-4",
-              autoScroll &&
-                "border-primary/15 bg-primary text-primary-foreground shadow-[0_16px_34px_-22px_rgba(15,23,42,0.65)] hover:bg-primary/92",
-            )}
-            onClick={() => {
-              const nextValue = !autoScroll;
-              setAutoScroll(nextValue);
-              toast.info(nextValue ? "已开启自动滚动" : "已关闭自动滚动");
-            }}
-          >
-            <ArrowDownToLine className={cn("h-4 w-4", !autoScroll && "opacity-60")} />
-            <span className="text-sm font-medium">自动滚动</span>
-          </Button>
-
-          <Dialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-11 gap-2 px-4 text-foreground hover:border-destructive/15 hover:bg-destructive/5 hover:text-destructive"
-              onClick={() => setIsClearDialogOpen(true)}
-            >
-              <Eraser className="h-4 w-4" />
-              <span className="text-sm font-medium">清空</span>
-            </Button>
-            <DialogContent className="max-w-md gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)]">
-              <DialogHeader className="space-y-2 text-left">
-                <DialogTitle>清空所有日志</DialogTitle>
-                <DialogDescription>确定要清空所有日志内容吗？此操作不可撤销。</DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="gap-2 sm:justify-end">
-                <DialogClose asChild>
-                  <Button type="button" variant="secondary">
-                    取消
-                  </Button>
-                </DialogClose>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => {
-                    clearLogs();
-                    setIsClearDialogOpen(false);
-                    toast.success("日志已成功清空");
-                  }}
-                >
-                  确定清空
+    <main className="h-full overflow-y-auto bg-surface-canvas text-foreground">
+      <div className="mx-auto grid w-full max-w-[1240px] gap-7 px-6 py-8 lg:px-10 lg:py-10">
+        <LogsPanelView
+          autoScroll={autoScroll}
+          emptyText={query ? "没有匹配的日志。" : "暂无日志。刮削或维护任务开始后，运行日志会显示在这里。"}
+          endRef={endRef}
+          formatDate={(value) => new Date(value).toLocaleString()}
+          kind={kind}
+          level={level}
+          logs={filteredLogs}
+          query={query}
+          total={logEntries.length}
+          onAutoScrollChange={(nextValue) => {
+            setAutoScroll(nextValue);
+            toast.info(nextValue ? "已开启自动滚动" : "已关闭自动滚动");
+          }}
+          onClearSearch={() => setQuery("")}
+          onClearRuntime={() => setIsClearDialogOpen(true)}
+          onKindChange={setKind}
+          onLevelChange={setLevel}
+          onQueryChange={setQuery}
+          onRefresh={() => undefined}
+        />
+        <Dialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
+          <DialogContent className="max-w-md gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)]">
+            <DialogHeader className="space-y-2 text-left">
+              <DialogTitle>清空所有日志</DialogTitle>
+              <DialogDescription>确定要清空所有日志内容吗？此操作不可撤销。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:justify-end">
+              <DialogClose asChild>
+                <Button type="button" variant="secondary">
+                  取消
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        <section className="flex min-h-0 flex-1 flex-col rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating/96 p-1.5 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.42)] sm:p-2">
-          <div className="min-h-0 flex-1">
-            <LogList items={filteredLogs} autoScroll={autoScroll} />
-          </div>
-        </section>
-      </main>
-    </div>
+              </DialogClose>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  clearLogs();
+                  setIsClearDialogOpen(false);
+                  toast.success("日志已成功清空");
+                }}
+              >
+                确定清空
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </main>
   );
 }

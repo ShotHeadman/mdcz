@@ -1,81 +1,43 @@
-import type { Configuration } from "@mdcz/shared/config";
-import { toErrorMessage } from "@mdcz/shared/error";
-import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import type { ActorProfile } from "@mdcz/shared/types";
 import type { RuntimeNetworkClient } from "../network";
+import { toErrorMessage } from "../shared";
+import { buildMediaServerHeaders, buildMediaServerUrl, type MediaServerKey, type MediaServerMode } from "./client";
+import { normalizeMediaServerPersonName, toStringArray, toStringValue } from "./common";
+import {
+  fetchEmbyActorPersons,
+  fetchEmbyPersonDetail,
+  hasEmbyPrimaryImage,
+  resolveEmbyUserId,
+  updateEmbyPersonInfo,
+  uploadEmbyPrimaryImage,
+} from "./emby";
+import {
+  fetchJellyfinPersonDetail,
+  fetchJellyfinPersons,
+  hasJellyfinPrimaryImage,
+  resolveJellyfinUserId,
+  updateJellyfinPersonInfo,
+  uploadJellyfinPrimaryImage,
+} from "./jellyfin";
+import type { MediaServerPerson, MediaServerProbeResult } from "./types";
 
-export type MediaServerKey = "emby" | "jellyfin";
-export type MediaServerMode = "all" | "missing";
-
-export interface MediaServerPerson {
-  id: string;
-  name: string;
-  overview?: string;
-  imageTags?: Record<string, string>;
-  raw: Record<string, unknown>;
-}
-
-export interface MediaServerProbeResult {
-  ok: boolean;
-  message: string;
-  serverName?: string;
-  version?: string;
-  personCount?: number;
-}
-
-const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/+$/u, "");
-
-const getMediaConfig = (configuration: Configuration, server: MediaServerKey) =>
-  server === "emby" ? configuration.emby : configuration.jellyfin;
-
-const buildMediaServerUrl = (
-  configuration: Configuration,
-  server: MediaServerKey,
-  path: string,
-  query: Record<string, string | undefined> = {},
-): string => {
-  const mediaConfig = getMediaConfig(configuration, server);
-  const baseUrl = normalizeBaseUrl(mediaConfig.url);
-  if (!baseUrl) {
-    throw new Error(`${server} URL is not configured`);
-  }
-
-  const url = new URL(path, `${baseUrl}/`);
-  const apiKey = mediaConfig.apiKey.trim();
-  if (apiKey) {
-    url.searchParams.set("api_key", apiKey);
-  }
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value.trim().length > 0) {
-      url.searchParams.set(key, value);
-    }
-  }
-  return url.toString();
-};
-
-const buildMediaServerHeaders = (configuration: Configuration, server: MediaServerKey): Headers => {
-  const headers = new Headers();
-  const apiKey = getMediaConfig(configuration, server).apiKey.trim();
-  if (apiKey) {
-    headers.set("X-Emby-Token", apiKey);
-    headers.set("X-MediaBrowser-Token", apiKey);
-  }
-  return headers;
-};
-
-const asRecord = (value: unknown): Record<string, unknown> | null =>
-  value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-
-const asString = (value: unknown): string | undefined =>
-  typeof value === "string" ? value.trim() || undefined : undefined;
-
-const normalizePersonName = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+export * from "./client";
+export * from "./common";
+export * from "./connectionCheck";
+export * from "./emby";
+export * from "./errors";
+export * from "./infoSync";
+export * from "./jellyfin";
+export * from "./personSync";
+export * from "./photoSync";
+export * from "./planner";
+export * from "./types";
 
 const indexProfiles = (profiles: ActorProfile[]): Map<string, ActorProfile> => {
   const result = new Map<string, ActorProfile>();
   for (const profile of profiles) {
     for (const candidate of [profile.name, ...(profile.aliases ?? [])]) {
-      const key = normalizePersonName(candidate);
+      const key = normalizeMediaServerPersonName(candidate);
       if (key && !result.has(key)) {
         result.set(key, profile);
       }
@@ -84,76 +46,52 @@ const indexProfiles = (profiles: ActorProfile[]): Map<string, ActorProfile> => {
   return result;
 };
 
-const parsePeople = (response: unknown): MediaServerPerson[] => {
-  const root = asRecord(response);
-  const items = Array.isArray(response) ? response : Array.isArray(root?.Items) ? root.Items : [];
-  return items
-    .map((item): MediaServerPerson | null => {
-      const record = asRecord(item);
-      if (!record) return null;
-      const id = asString(record.Id);
-      const name = asString(record.Name);
-      if (!id || !name) return null;
-      const imageTags = asRecord(record.ImageTags);
-      return {
-        id,
-        name,
-        overview: asString(record.Overview),
-        imageTags: imageTags
-          ? Object.fromEntries(Object.entries(imageTags).map(([key, value]) => [key, String(value)]))
-          : undefined,
-        raw: record,
-      };
-    })
-    .filter((person): person is MediaServerPerson => person !== null);
-};
-
-const hasPrimaryImage = (person: MediaServerPerson): boolean => Boolean(person.imageTags?.Primary?.trim());
-
-const emptySyncResult = (): PersonSyncResult => ({ failedCount: 0, processedCount: 0, skippedCount: 0 });
-
 export const listMediaServerPeople = async (
   networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
+  configuration: import("@mdcz/shared/config").Configuration,
   server: MediaServerKey,
   options: { limit?: number } = {},
 ): Promise<MediaServerPerson[]> => {
-  const path = server === "emby" ? "/Persons" : "/Persons";
-  const userId = getMediaConfig(configuration, server).userId.trim();
-  const response = await networkClient.getJson<unknown>(
-    buildMediaServerUrl(configuration, server, path, {
-      Fields: "Overview,ImageTags",
-      Limit: options.limit === undefined ? undefined : String(options.limit),
-      PersonTypes: server === "emby" ? "Actor,GuestStar" : "Actor",
-      personTypes: server === "jellyfin" ? "Actor" : undefined,
-      userId: server === "jellyfin" ? userId || undefined : undefined,
-      userid: server === "emby" ? userId || undefined : undefined,
-    }),
-    { headers: buildMediaServerHeaders(configuration, server) },
-  );
-  return parsePeople(response);
+  const people =
+    server === "emby"
+      ? await fetchEmbyActorPersons(networkClient, configuration, {
+          fields: ["Overview", "ImageTags"],
+          limit: options.limit,
+        })
+      : await fetchJellyfinPersons(networkClient, configuration, {
+          fields: ["Overview", "ImageTags"],
+          limit: options.limit,
+        });
+  return people.map((person) => ({
+    id: person.Id,
+    name: person.Name,
+    overview: person.Overview,
+    imageTags: person.ImageTags,
+    raw: person,
+  }));
 };
 
 export const probeMediaServer = async (
   networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
+  configuration: import("@mdcz/shared/config").Configuration,
   server: MediaServerKey,
 ): Promise<MediaServerProbeResult> => {
   try {
-    const mediaConfig = getMediaConfig(configuration, server);
+    const mediaConfig = server === "emby" ? configuration.emby : configuration.jellyfin;
     if (!mediaConfig.url.trim() || !mediaConfig.apiKey.trim()) {
       return { ok: false, message: "未配置服务地址或 API Key" };
     }
 
-    const info = asRecord(
-      await networkClient.getJson<unknown>(buildMediaServerUrl(configuration, server, "/System/Info"), {
+    const info = await networkClient.getJson<Record<string, unknown>>(
+      buildMediaServerUrl(configuration, server, "/System/Info"),
+      {
         timeout: Math.max(1, Math.trunc(configuration.network.timeout * 1000)),
         headers: buildMediaServerHeaders(configuration, server),
-      }),
+      },
     );
     const people = await listMediaServerPeople(networkClient, configuration, server, { limit: 1 }).catch(() => []);
-    const serverName = asString(info?.ServerName) ?? asString(info?.LocalAddress);
-    const version = asString(info?.Version);
+    const serverName = toStringValue(info.ServerName) ?? toStringValue(info.LocalAddress);
+    const version = toStringValue(info.Version);
     return {
       ok: true,
       message: serverName ? `${serverName}${version ? ` ${version}` : ""}` : "媒体服务器响应正常",
@@ -166,55 +104,53 @@ export const probeMediaServer = async (
   }
 };
 
-const fetchPersonDetail = async (
-  networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
-  server: MediaServerKey,
-  person: MediaServerPerson,
-): Promise<Record<string, unknown>> => {
-  const userId = getMediaConfig(configuration, server).userId.trim();
-  const path = userId
-    ? `/Users/${encodeURIComponent(userId)}/Items/${encodeURIComponent(person.id)}`
-    : `/Items/${encodeURIComponent(person.id)}`;
-  return (
-    asRecord(
-      await networkClient.getJson<unknown>(buildMediaServerUrl(configuration, server, path), {
-        headers: buildMediaServerHeaders(configuration, server),
-      }),
-    ) ?? person.raw
-  );
-};
-
 export const syncMediaServerPersonInfo = async (
   networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
+  configuration: import("@mdcz/shared/config").Configuration,
   server: MediaServerKey,
   profiles: ActorProfile[],
   mode: MediaServerMode,
-): Promise<PersonSyncResult> => {
-  const result = emptySyncResult();
+): Promise<import("@mdcz/shared/ipcTypes").PersonSyncResult> => {
+  const result = { failedCount: 0, processedCount: 0, skippedCount: 0 };
   const profilesByName = indexProfiles(profiles);
-  const people = await listMediaServerPeople(networkClient, configuration, server);
+  const people =
+    server === "emby"
+      ? await fetchEmbyActorPersons(networkClient, configuration, { fields: ["Overview"] })
+      : await fetchJellyfinPersons(networkClient, configuration, { fields: ["Overview"] });
+  const embyUserId = server === "emby" ? await resolveEmbyUserId(networkClient, configuration) : undefined;
+  const jellyfinUserId = server === "jellyfin" ? await resolveJellyfinUserId(networkClient, configuration) : undefined;
   for (const person of people) {
-    const profile = profilesByName.get(normalizePersonName(person.name));
+    const profile = profilesByName.get(normalizeMediaServerPersonName(person.Name));
     const overview = profile?.description?.trim();
     if (!profile || !overview) {
       result.skippedCount += 1;
       continue;
     }
-    if (mode === "missing" && person.overview?.trim()) {
+    if (mode === "missing" && person.Overview?.trim()) {
       result.skippedCount += 1;
       continue;
     }
 
     try {
-      const detail = await fetchPersonDetail(networkClient, configuration, server, person);
-      const payload = { ...detail, Id: person.id, Name: asString(detail.Name) ?? person.name, Overview: overview };
-      await networkClient.postJsonDetailed?.(
-        buildMediaServerUrl(configuration, server, `/Items/${encodeURIComponent(person.id)}`),
-        payload,
-        { headers: buildMediaServerHeaders(configuration, server) },
-      );
+      const detail =
+        server === "emby"
+          ? await fetchEmbyPersonDetail(networkClient, configuration, person, embyUserId ?? "")
+          : await fetchJellyfinPersonDetail(networkClient, configuration, person, { userId: jellyfinUserId });
+      const synced = {
+        shouldUpdate: true,
+        updatedFields: ["overview" as const],
+        overview,
+        tags: toStringArray(detail.Tags),
+        taglines: toStringArray(detail.Taglines),
+        productionLocations: toStringArray(detail.ProductionLocations),
+      };
+      if (server === "emby") {
+        await updateEmbyPersonInfo(networkClient, configuration, person, detail, synced);
+      } else {
+        await updateJellyfinPersonInfo(networkClient, configuration, person, detail, synced, {
+          lockOverview: configuration.jellyfin.lockOverviewAfterSync,
+        });
+      }
       result.processedCount += 1;
     } catch {
       result.failedCount += 1;
@@ -231,48 +167,40 @@ const contentTypeFromUrl = (url: string): string => {
 };
 
 export const syncMediaServerPersonPhotos = async (
-  configuration: Configuration,
+  networkClient: RuntimeNetworkClient,
+  configuration: import("@mdcz/shared/config").Configuration,
   server: MediaServerKey,
   profiles: ActorProfile[],
   mode: MediaServerMode,
-): Promise<PersonSyncResult> => {
-  const result = emptySyncResult();
-  const networkClient = {
-    getJson: async <T>(url: string, init?: RequestInit) => (await (await fetch(url, init)).json()) as T,
-  };
-  const peopleResponse = await networkClient.getJson<unknown>(
-    buildMediaServerUrl(configuration, server, "/Persons", {
-      Fields: "Overview,ImageTags",
-      PersonTypes: server === "emby" ? "Actor,GuestStar" : "Actor",
-    }),
-    { headers: buildMediaServerHeaders(configuration, server) },
-  );
+): Promise<import("@mdcz/shared/ipcTypes").PersonSyncResult> => {
+  const result = { failedCount: 0, processedCount: 0, skippedCount: 0 };
   const profilesByName = indexProfiles(profiles);
-  for (const person of parsePeople(peopleResponse)) {
-    const profile = profilesByName.get(normalizePersonName(person.name));
+  const people =
+    server === "emby"
+      ? await fetchEmbyActorPersons(networkClient, configuration)
+      : await fetchJellyfinPersons(networkClient, configuration);
+  for (const person of people) {
+    const profile = profilesByName.get(normalizeMediaServerPersonName(person.Name));
     const photoUrl = profile?.photo_url?.trim();
     if (!profile || !photoUrl || !/^https?:\/\//iu.test(photoUrl)) {
       result.skippedCount += 1;
       continue;
     }
-    if (mode === "missing" && hasPrimaryImage(person)) {
+    if (mode === "missing" && (server === "emby" ? hasEmbyPrimaryImage(person) : hasJellyfinPrimaryImage(person))) {
       result.skippedCount += 1;
       continue;
     }
 
     try {
-      const imageResponse = await fetch(photoUrl);
-      if (!imageResponse.ok) {
-        throw new Error(`HTTP ${imageResponse.status} for ${photoUrl}`);
+      const content = await networkClient.getContent?.(photoUrl, { headers: { accept: "image/*" } });
+      if (!content) {
+        throw new Error(`Unable to load image ${photoUrl}`);
       }
-      const uploadHeaders = buildMediaServerHeaders(configuration, server);
-      uploadHeaders.set("content-type", imageResponse.headers.get("content-type") ?? contentTypeFromUrl(photoUrl));
-      const uploadResponse = await fetch(
-        buildMediaServerUrl(configuration, server, `/Items/${encodeURIComponent(person.id)}/Images/Primary`),
-        { body: await imageResponse.arrayBuffer(), headers: uploadHeaders, method: "POST" },
-      );
-      if (!uploadResponse.ok) {
-        throw new Error(`HTTP ${uploadResponse.status} ${uploadResponse.statusText}`);
+      const contentType = contentTypeFromUrl(photoUrl);
+      if (server === "emby") {
+        await uploadEmbyPrimaryImage(networkClient, configuration, person.Id, content, contentType);
+      } else {
+        await uploadJellyfinPrimaryImage(networkClient, configuration, person.Id, content, contentType);
       }
       result.processedCount += 1;
     } catch {

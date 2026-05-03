@@ -10,6 +10,8 @@ export interface RuntimeTaskSnapshot {
   error: string | null;
 }
 
+export type RuntimeServerTaskStatus = Exclude<RuntimeTaskStatus, "canceled">;
+
 export interface RuntimeTaskTransition {
   action: RuntimeTaskAction;
   now?: Date;
@@ -66,6 +68,24 @@ export const transitionTask = (
 
 export const isTerminalTaskStatus = (status: RuntimeTaskStatus): boolean => terminalStatuses.has(status);
 
+export const toRuntimeTaskSnapshot = (task: {
+  id: string;
+  status: string;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  error: string | null;
+}): RuntimeTaskSnapshot => ({
+  id: task.id,
+  status: task.status as RuntimeTaskStatus,
+  startedAt: task.startedAt,
+  completedAt: task.completedAt,
+  error: task.error,
+});
+
+export const toServerTaskStatus = (status: RuntimeTaskStatus): RuntimeServerTaskStatus =>
+  status === "canceled" ? "failed" : status;
+
+export * from "./runner";
 export * from "./session/ScrapeSession";
 export * from "./session/SessionProgressTracker";
 export * from "./session/SessionRecovery";

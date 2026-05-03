@@ -1,16 +1,16 @@
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
-import { readNfo, updateNfo } from "@/api/manual";
-import type { DetailViewItem } from "@/components/detail/types";
 import {
   createEmptyEditableNfoData,
   type NfoValidationErrors,
   normalizeEditableNfoData,
   serializeEditableNfoData,
   validateEditableNfoData,
-} from "@/components/nfo/nfoEditorModel";
+} from "@mdcz/views/nfo";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { readNfo, updateNfo } from "@/api/manual";
+import type { DetailViewItem } from "@/components/detail/types";
 import { useResolvedImageCandidates } from "@/hooks/useResolvedImageSources";
 import { buildImageSourceCandidates, buildLocalImageCandidate } from "@/utils/image";
 import { getDirFromPath } from "@/utils/path";

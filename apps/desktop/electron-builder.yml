@@ -14,6 +14,7 @@ directories:
 
 files:
   - out/**
+  - persistence/**
   - resources/**
   - package.json
   - "!**/*.map"

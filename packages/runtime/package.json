@@ -12,6 +12,7 @@
     "@mdcz/storage": "workspace:*",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.3.0",
+    "impit": "^0.13.0",
     "opencc-js": "^1.0.5",
     "p-queue": "^9.0.0",
     "zod": "^4.3.6"

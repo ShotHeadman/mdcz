@@ -11,7 +11,7 @@ import {
 } from "@mdcz/runtime/scrape";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer, type ServerApp } from "./app";
 import { ServerConfigService } from "./configService";
 import { MediaRootService } from "./mediaRootService";
@@ -230,6 +230,16 @@ const createAbortAwareAggregation = (): {
 afterEach(async () => {
   await serverApp?.fastify.close();
   serverApp = undefined;
+});
+
+beforeEach(() => {
+  (
+    globalThis as typeof globalThis & {
+      __mdczImpitMock?: { fetch: (url: string, init?: RequestInit) => Promise<Response> };
+    }
+  ).__mdczImpitMock = {
+    fetch: (url, init) => fetch(url, init),
+  };
 });
 
 describe("buildServer", () => {
@@ -1029,6 +1039,105 @@ describe("buildServer", () => {
     expect(resultsResponse.json().result.data.results[0]).toMatchObject({
       status: "skipped",
       error: "刮削已停止",
+    });
+  });
+
+  it("recovers and discards persisted recoverable scrape sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-recover-root-"));
+    await writeFile(join(root, "ABC-126.mp4"), "video");
+    await writeFile(join(root, "ABC-127.mp4"), "video");
+    const { fastify, services } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+    const state = await services.persistence.getState();
+    const recoverTask = await state.repositories.tasks.createTask({
+      kind: "scrape",
+      rootId,
+      now: new Date(1_700_000_000_000),
+    });
+    await state.repositories.library.upsertScrapeResult({
+      taskId: recoverTask.id,
+      rootId,
+      relativePath: "ABC-126.mp4",
+      status: "processing",
+    });
+    await state.repositories.library.upsertScrapeResult({
+      taskId: recoverTask.id,
+      rootId,
+      relativePath: "ABC-127.mp4",
+      status: "failed",
+      error: "boom",
+    });
+    await state.repositories.tasks.patch(recoverTask.id, { status: "failed", error: "interrupted" });
+
+    const recoverableResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/scrape.getRecoverableSession",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(recoverableResponse.statusCode).toBe(200);
+    expect(recoverableResponse.json().result.data).toMatchObject({
+      recoverable: true,
+      taskId: recoverTask.id,
+      pendingCount: 1,
+      failedCount: 1,
+    });
+
+    const resolveResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.resolveRecoverableSession",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { action: "recover" },
+    });
+    expect(resolveResponse.statusCode).toBe(200);
+    expect(resolveResponse.json().result.data.task.id).toBe(recoverTask.id);
+    await expect(state.repositories.tasks.listEvents(recoverTask.id)).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "queued", message: "恢复未完成刮削并重新排队" })]),
+    );
+
+    const discardTask = await state.repositories.tasks.createTask({
+      kind: "scrape",
+      rootId,
+      now: new Date(1_700_000_001_000),
+    });
+    await state.repositories.library.upsertScrapeResult({
+      taskId: discardTask.id,
+      rootId,
+      relativePath: "ABC-126.mp4",
+      status: "processing",
+    });
+    await state.repositories.tasks.patch(discardTask.id, { status: "running" });
+    const discardResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.resolveRecoverableSession",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { action: "discard" },
+    });
+    expect(discardResponse.statusCode).toBe(200);
+    expect(discardResponse.json().result.data).toMatchObject({
+      success: true,
+      task: null,
+    });
+    await expect(state.repositories.library.listScrapeResults(discardTask.id)).resolves.toEqual([
+      expect.objectContaining({
+        status: "skipped",
+        error: "已放弃未完成刮削",
+      }),
+    ]);
+    await expect(state.repositories.tasks.get(discardTask.id)).resolves.toMatchObject({
+      status: "failed",
+      error: "已放弃未完成刮削",
     });
   });
 

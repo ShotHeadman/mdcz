@@ -3,8 +3,8 @@ import { OverviewHeroStartCard, OverviewMaintenanceCard, RecentAcquisitionsGrid 
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { api } from "../client";
+import { AppLink, ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
-import { AppLink, ErrorBanner } from "./Common";
 
 export function OverviewPage() {
   const setupQ = useQuery({ queryKey: ["setup"], queryFn: () => api.setup.status(), retry: false });

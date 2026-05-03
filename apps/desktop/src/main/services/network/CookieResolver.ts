@@ -1,12 +1,5 @@
 import { BrowserWindow, type Cookie, type Event } from "electron";
-import { filterCookiesForUrl, normalizeCookieDomain, normalizeCookiePath } from "./cookieUtils";
-
-export interface ResolvedCookie {
-  name: string;
-  value: string;
-  domain: string;
-  path: string;
-}
+import { filterCookiesForUrl, normalizeCookieDomain, normalizeCookiePath, type ResolvedCookie } from "./cookieUtils";
 
 export type CookieResolver = (url: string) => Promise<ResolvedCookie[]>;
 

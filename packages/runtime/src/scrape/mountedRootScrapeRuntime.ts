@@ -4,7 +4,7 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, ScrapeResult } from "@mdcz/shared/types";
 import type { MediaRoot } from "@mdcz/storage";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/storage";
-import { FetchNetworkClient } from "../network";
+import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
 import { ActorImageService } from "./ActorImageService";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
 import { DownloadManager } from "./download";
@@ -163,7 +163,7 @@ class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
 
 class MountedRootFileScraperPipeline implements FileScraperPipeline {
   private readonly nfoGenerator = new NfoGenerator();
-  private readonly networkClient = new FetchNetworkClient();
+  private readonly networkClient: RuntimeDownloadNetworkClient;
   private readonly fileOrganizer: FileOrganizer;
   private readonly translateService: TranslateService;
   private readonly downloadManager: DownloadManager;
@@ -179,7 +179,9 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     private readonly aggregationService: MountedRootScrapeAggregationService,
     private readonly signalService: RuntimeScrapeSignalService,
     private readonly logger: MountedRootScrapeLogger,
+    networkClient?: RuntimeDownloadNetworkClient,
   ) {
+    this.networkClient = networkClient ?? new NetworkClient();
     const runtimeLogger = toRuntimeLogger(this.logger);
     this.fileOrganizer = new FileOrganizer(runtimeLogger);
     this.translateService = new TranslateService(this.networkClient, { logger: runtimeLogger });
@@ -425,6 +427,7 @@ export class MountedRootScrapeRuntime {
     private readonly config: MountedRootScrapeRuntimeConfig,
     private readonly aggregationService: MountedRootScrapeAggregationService,
     private readonly logger: MountedRootScrapeLogger = console,
+    private readonly networkClient?: RuntimeDownloadNetworkClient,
   ) {}
 
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
@@ -433,7 +436,14 @@ export class MountedRootScrapeRuntime {
       this.logger.info(`[${type}] ${message}`);
     });
     const scraper = new FileScraper(
-      new MountedRootFileScraperPipeline(input.root, this.config, this.aggregationService, signalService, this.logger),
+      new MountedRootFileScraperPipeline(
+        input.root,
+        this.config,
+        this.aggregationService,
+        signalService,
+        this.logger,
+        this.networkClient,
+      ),
     );
     const absolutePath = resolveRootRelativePath(input.root, input.relativePath);
     const result = await scraper.scrapeFile(absolutePath, input.progress, input.signal, {

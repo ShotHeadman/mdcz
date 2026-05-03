@@ -105,7 +105,11 @@ export class SessionProgressTracker {
         number: result.fileInfo.number,
         title: result.crawlerData?.title ?? null,
         actors: result.crawlerData?.actors ?? [],
+        crawlerData: result.crawlerData,
+        assets: result.assets,
         lastKnownPath: result.fileInfo.filePath ?? null,
+        nfoPath: result.nfoPath ?? null,
+        outputPath: result.outputPath ?? null,
         posterPath: result.assets?.poster ?? null,
       });
       if (hadFailureBefore) {
@@ -141,6 +145,18 @@ export class SessionProgressTracker {
     return this.successItems.map((item) => ({
       ...item,
       actors: [...item.actors],
+      assets: item.assets
+        ? { ...item.assets, sceneImages: [...item.assets.sceneImages], downloaded: [...item.assets.downloaded] }
+        : undefined,
+      crawlerData: item.crawlerData
+        ? {
+            ...item.crawlerData,
+            actors: [...item.crawlerData.actors],
+            actor_profiles: item.crawlerData.actor_profiles?.map((profile) => ({ ...profile })),
+            genres: [...item.crawlerData.genres],
+            scene_images: [...item.crawlerData.scene_images],
+          }
+        : undefined,
     }));
   }
 

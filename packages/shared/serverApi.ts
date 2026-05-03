@@ -46,6 +46,9 @@ import type {
   ScanTaskDto,
   ScanTaskIdInput,
   ScanTaskListResponse,
+  ScrapeRecoverableSessionResolveInput,
+  ScrapeRecoverableSessionResolveResponse,
+  ScrapeRecoverableSessionResponse,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeResultListResponse,
@@ -157,6 +160,10 @@ export interface ServerApiContract {
     pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
+    resolveRecoverableSession(
+      input?: ScrapeRecoverableSessionResolveInput,
+    ): Promise<ScrapeRecoverableSessionResolveResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
@@ -232,6 +239,8 @@ export type ServerApiProcedure =
   | "scrape.pause"
   | "scrape.resume"
   | "scrape.retry"
+  | "scrape.getRecoverableSession"
+  | "scrape.resolveRecoverableSession"
   | "scrape.nfoRead"
   | "scrape.nfoWrite"
   | "scrape.deleteFile"

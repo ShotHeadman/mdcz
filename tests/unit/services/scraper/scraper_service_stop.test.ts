@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { RecentAcquisitionsStore } from "@main/services/history";
 import type { OutputLibraryScanner } from "@main/services/library";
 import { NetworkClient } from "@main/services/network";
+import type { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { createAbortError } from "@main/services/scraper/abort";
 import { AggregationService } from "@main/services/scraper/aggregation";
@@ -119,18 +119,35 @@ describe("ScraperService stop flow", () => {
     expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });
   });
 
-  it("records successful acquisitions and invalidates output summary before clearing aggregation cache", async () => {
+  it("persists successful acquisitions to the library and invalidates output summary before clearing aggregation cache", async () => {
     const events: string[] = [];
     const signalService = new CaptureSignalService(null);
     const networkClient = new NetworkClient();
     const crawlerProvider = new CrawlerProvider({
       fetchGateway: new FetchGateway(networkClient),
     });
-    const recentAcquisitionsStore = {
-      recordBatch: vi.fn(async (items: Array<{ number: string; lastKnownPath: string | null }>) => {
-        events.push(`record:${items[0]?.number}:${items[0]?.lastKnownPath}`);
-      }),
-    } as unknown as RecentAcquisitionsStore;
+    const upsertRoot = vi.fn(async (input) => input);
+    const upsertScrapeOutput = vi.fn(async (input: { fileCount: number }) => {
+      events.push(`persist-output:${input.fileCount}`);
+      return { id: "output-1" };
+    });
+    const upsertEntry = vi.fn(async (input: { number?: string | null; lastKnownPath?: string | null }) => {
+      events.push(`persist-entry:${input.number}:${input.lastKnownPath}`);
+      return { id: "entry-1" };
+    });
+    const persistenceService = {
+      getState: vi.fn(async () => ({
+        repositories: {
+          library: {
+            upsertScrapeOutput,
+            upsertEntry,
+          },
+          mediaRoots: {
+            upsert: upsertRoot,
+          },
+        },
+      })),
+    } as unknown as DesktopPersistenceService;
     const outputLibraryScanner = {
       invalidate: vi.fn(() => {
         events.push("invalidate");
@@ -143,12 +160,19 @@ describe("ScraperService stop flow", () => {
       undefined,
       undefined,
       undefined,
-      recentAcquisitionsStore,
       outputLibraryScanner,
+      persistenceService,
     );
-    const config = configurationSchema.parse(defaultConfiguration);
+    const outputRoot = join(tmpdir(), "mdcz-output");
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      paths: {
+        ...defaultConfiguration.paths,
+        outputSummaryPath: outputRoot,
+      },
+    });
     const mediaFilePath = await createTempMediaFile("ABP-789.mp4");
-    const outputVideoPath = join(tmpdir(), "mdcz-output", "ABP-789.mp4");
+    const outputVideoPath = join(outputRoot, "ABP-789.mp4");
 
     vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
     vi.spyOn(configManager, "get").mockResolvedValue(config);
@@ -183,18 +207,34 @@ describe("ScraperService stop flow", () => {
     await service.startSingle([mediaFilePath]);
     await waitForIdle(service, signalService);
 
-    expect(recentAcquisitionsStore.recordBatch).toHaveBeenCalledWith([
-      {
-        sourcePath: mediaFilePath,
-        number: "ABP-789",
+    expect(upsertScrapeOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: expect.any(String),
+        rootId: "desktop-output",
+        outputDirectory: outputRoot,
+        fileCount: 1,
+        totalBytes: 0,
+        completedAt: expect.any(Date),
+      }),
+    );
+    expect(upsertEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaIdentity: "ABP-789",
+        rootId: "desktop-output",
+        rootRelativePath: "ABP-789.mp4",
+        sourceTaskId: expect.any(String),
+        scrapeOutputId: "output-1",
         title: "ABP-789 title",
+        number: "ABP-789",
         actors: ["Actor A"],
-        lastKnownPath: outputVideoPath,
-        posterPath: "/output/ABP-789/poster.jpg",
-      },
-    ]);
+        thumbnailPath: "/output/ABP-789/poster.jpg",
+        lastKnownPath: "ABP-789.mp4",
+        indexedAt: expect.any(Date),
+      }),
+    );
+    expect(upsertRoot).toHaveBeenCalledWith(expect.objectContaining({ id: "desktop-output", hostPath: outputRoot }));
     expect(outputLibraryScanner.invalidate).toHaveBeenCalledTimes(1);
-    expect(events).toEqual([`record:ABP-789:${outputVideoPath}`, "invalidate", "clear-cache"]);
+    expect(events).toEqual([`persist-output:1`, "persist-entry:ABP-789:ABP-789.mp4", "invalidate", "clear-cache"]);
   });
 
   it("updates status state when pausing and resuming", async () => {

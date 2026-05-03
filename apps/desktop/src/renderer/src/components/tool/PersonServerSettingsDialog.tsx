@@ -1,16 +1,29 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { ConfigFieldLayoutProvider } from "@mdcz/views/config-form";
+import {
+  EmbySection,
+  flattenConfig,
+  JellyfinSection,
+  mergeConfigWithFlatPayload,
+  PersonSyncSharedSection,
+  type SettingsCrawlerSiteInfo,
+  type SettingsNotifier,
+  type SettingsServices,
+  SettingsServicesProvider,
+} from "@mdcz/views/settings";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useForm } from "react-hook-form";
-import { ConfigFieldLayoutProvider } from "@/components/config-form/FieldRenderer";
-import { EmbySection, JellyfinSection, PersonSyncSharedSection } from "@/components/settings/settingsContent";
-import { flattenConfig } from "@/components/settings/settingsRegistry";
+import { toast } from "sonner";
+import { ipc } from "@/client/ipc";
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { Form } from "@/components/ui/Form";
 import { SettingsEditorAutosaveProvider, valuesEqual } from "@/hooks/useAutoSaveField";
-import { useCurrentConfig } from "@/hooks/useCurrentConfig";
+import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { cn } from "@/lib/utils";
+import { useSettingsSavingStore } from "@/store/settingsSavingStore";
 
 export type PersonServer = "jellyfin" | "emby";
 
@@ -24,6 +37,7 @@ const DIALOG_CONTENT_CLASS_NAME =
   "w-[92vw] max-w-3xl gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)]";
 
 export function PersonServerSettingsDialog({ open, server, onOpenChange }: PersonServerSettingsDialogProps) {
+  const queryClient = useQueryClient();
   const configQ = useCurrentConfig({
     enabled: open,
     refetchOnWindowFocus: false,
@@ -34,6 +48,56 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
     mode: "onChange",
   });
   const serverName = server === "jellyfin" ? "Jellyfin" : "Emby";
+  const settingsServices = useMemo(
+    () =>
+      ({
+        browsePath: async (kind, filters) => {
+          const result = await ipc.file.browse(kind, filters);
+          return { ...result, paths: result.paths ?? undefined };
+        },
+        checkCookies: ipc.network.checkCookies,
+        decrementInFlightSaves: useSettingsSavingStore.getState().decrementInFlight,
+        ensureWatermarkDirectory: ipc.app.ensureWatermarkDirectory,
+        getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
+        incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
+        listCrawlerSites: async () => {
+          const result = (await ipc.crawler.listSites()) as {
+            sites?: SettingsCrawlerSiteInfo[];
+          };
+          return { sites: result.sites ?? [] };
+        },
+        openWatermarkDirectory: async () => {
+          await ipc.app.openWatermarkDirectory();
+        },
+        previewNaming: ipc.config.previewNaming,
+        probeSiteConnectivity: ipc.crawler.probeSiteConnectivity,
+        relaunchApp: async () => {
+          await ipc.app.relaunch();
+        },
+        resetConfig: ipc.config.reset,
+        saveConfig: ipc.config.save,
+        subscribeInFlightSaves: useSettingsSavingStore.subscribe,
+        testLlm: ipc.translate.testLlm,
+        updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
+          queryClient.setQueryData(CURRENT_CONFIG_QUERY_KEY, (previous) => {
+            if (typeof previous !== "object" || previous === null || Array.isArray(previous)) {
+              return previous;
+            }
+            return mergeConfigWithFlatPayload(previous as Record<string, unknown>, flatPayload);
+          });
+        },
+      }) satisfies SettingsServices,
+    [queryClient],
+  );
+  const settingsNotifier = useMemo(
+    () =>
+      ({
+        error: toast.error,
+        info: toast.info,
+        success: toast.success,
+      }) satisfies SettingsNotifier,
+    [],
+  );
 
   useEffect(() => {
     if (!configQ.data || valuesEqual(form.getValues(), flatConfigValues)) {
@@ -57,32 +121,36 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
           ) : configQ.isError ? (
             <DialogStateMessage title="配置加载失败" description={toErrorMessage(configQ.error)} tone="error" />
           ) : (
-            <Form {...form}>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                }}
-              >
-                <SettingsEditorAutosaveProvider savedValues={flatConfigValues}>
-                  <ConfigFieldLayoutProvider layout="vertical">
-                    <div className="space-y-6">
-                      <PersonSyncSharedSection />
-                      <section className="space-y-4 rounded-[var(--radius-quiet-lg)] bg-surface-low/90 p-4 md:p-5">
-                        <header className="space-y-1">
-                          <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
-                            {serverName}
-                          </h3>
-                          <p className="text-sm leading-6 text-muted-foreground">
-                            连接诊断和人物同步会读取这里保存的服务器地址、API Key 与用户 ID。
-                          </p>
-                        </header>
-                        <div className="space-y-3">{server === "jellyfin" ? <JellyfinSection /> : <EmbySection />}</div>
-                      </section>
-                    </div>
-                  </ConfigFieldLayoutProvider>
-                </SettingsEditorAutosaveProvider>
-              </form>
-            </Form>
+            <SettingsServicesProvider services={settingsServices} notifier={settingsNotifier}>
+              <Form {...form}>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                  }}
+                >
+                  <SettingsEditorAutosaveProvider savedValues={flatConfigValues}>
+                    <ConfigFieldLayoutProvider layout="vertical">
+                      <div className="space-y-6">
+                        <PersonSyncSharedSection />
+                        <section className="space-y-4 rounded-[var(--radius-quiet-lg)] bg-surface-low/90 p-4 md:p-5">
+                          <header className="space-y-1">
+                            <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
+                              {serverName}
+                            </h3>
+                            <p className="text-sm leading-6 text-muted-foreground">
+                              连接诊断和人物同步会读取这里保存的服务器地址、API Key 与用户 ID。
+                            </p>
+                          </header>
+                          <div className="space-y-3">
+                            {server === "jellyfin" ? <JellyfinSection /> : <EmbySection />}
+                          </div>
+                        </section>
+                      </div>
+                    </ConfigFieldLayoutProvider>
+                  </SettingsEditorAutosaveProvider>
+                </form>
+              </Form>
+            </SettingsServicesProvider>
           )}
         </div>
 

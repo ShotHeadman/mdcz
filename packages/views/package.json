@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./about": "./src/about/index.ts",
+    "./config-form": "./src/config-form/index.ts",
     "./overview": "./src/overview/index.ts",
     "./workbench": "./src/workbench/index.ts",
     "./library": "./src/library/index.ts",
@@ -13,6 +14,7 @@
     "./nfo": "./src/nfo/index.ts",
     "./detail": "./src/detail/index.ts",
     "./logs": "./src/logs/index.ts",
+    "./settings": "./src/settings/index.ts",
     "./tools": "./src/tools/index.ts",
     "./common": "./src/common/index.ts"
   },

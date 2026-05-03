@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readdir, readFile, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
+import { Website } from "@mdcz/shared/enums";
 import type {
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
@@ -11,7 +12,7 @@ import type { CrawlerData } from "@mdcz/shared/types";
 import { load } from "cheerio";
 import type { RuntimeDownloadNetworkClient, RuntimeNetworkClient } from "../network";
 import { parseNfo } from "../scrape/nfo";
-import { validateImage } from "../scrape/utils/image";
+import { type ImageValidation, validateImage } from "../scrape/utils/image";
 
 const POSTER_FILE_NAME = "poster.jpg";
 const AMAZON_ORIGIN = "https://www.amazon.co.jp";
@@ -130,7 +131,25 @@ const findCurrentPosterPath = async (
   return null;
 };
 
-export const scanAmazonPosters = async (rootDirectory: string): Promise<AmazonPosterScanItem[]> => {
+export interface AmazonPosterEnhanceResult {
+  poster_url?: string;
+  reason: string;
+}
+
+export interface AmazonPosterDependencies {
+  validateImage?: (filePath: string) => Promise<ImageValidation>;
+  enhanceAmazonPoster?: (data: CrawlerData) => Promise<AmazonPosterEnhanceResult>;
+}
+
+const defaultAmazonPosterDependencies: Required<Pick<AmazonPosterDependencies, "validateImage">> = {
+  validateImage,
+};
+
+export const scanAmazonPosters = async (
+  rootDirectory: string,
+  dependencies: AmazonPosterDependencies = {},
+): Promise<AmazonPosterScanItem[]> => {
+  const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
   const normalizedRoot = resolve(rootDirectory.trim());
   if (!(await stat(normalizedRoot)).isDirectory()) throw new Error(`Directory not found: ${normalizedRoot}`);
   const nfoPaths = await listNfoFiles(normalizedRoot);
@@ -161,7 +180,7 @@ export const scanAmazonPosters = async (rootDirectory: string): Promise<AmazonPo
       const posterStats = await stat(currentPosterPath).catch(() => null);
       if (posterStats?.isFile()) {
         currentPosterSize = posterStats.size;
-        const validation = await validateImage(currentPosterPath).catch(() => null);
+        const validation = await validateImageFn(currentPosterPath).catch(() => null);
         if (validation?.valid) {
           currentPosterWidth = validation.width;
           currentPosterHeight = validation.height;
@@ -224,11 +243,30 @@ export const lookupAmazonPoster = async (
   networkClient: RuntimeNetworkClient,
   nfoPath: string,
   title: string,
+  dependencies: AmazonPosterDependencies = {},
 ): Promise<AmazonPosterLookupResult> => {
   const normalizedNfoPath = resolve(nfoPath.trim());
   const startedAt = Date.now();
   try {
     const searchTitle = normalizeWhitespace(title);
+    if (dependencies.enhanceAmazonPoster) {
+      const result = await dependencies.enhanceAmazonPoster({
+        title: searchTitle,
+        number: basename(normalizedNfoPath, extname(normalizedNfoPath)),
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.JAVDB,
+        poster_url: "lookup",
+      });
+      return {
+        nfoPath: normalizedNfoPath,
+        amazonPosterUrl: result.poster_url ?? null,
+        reason: result.reason,
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+
     const searchHtml = await networkClient.getText(
       buildBlackCurtainUrl(`/s?k=${encodeAmazonKeyword(searchTitle)}&ref=nb_sb_noss`),
       { headers: AMAZON_HEADERS },
@@ -279,7 +317,9 @@ export const lookupAmazonPoster = async (
 export const applyAmazonPosters = async (
   networkClient: RuntimeDownloadNetworkClient,
   items: Array<{ nfoPath: string; amazonPosterUrl: string }>,
+  dependencies: AmazonPosterDependencies = {},
 ): Promise<AmazonPosterApplyResultItem[]> => {
+  const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
   const results: AmazonPosterApplyResultItem[] = [];
   for (const item of items) {
     const normalizedNfoPath = resolve(item.nfoPath.trim());
@@ -299,7 +339,7 @@ export const applyAmazonPosters = async (
       const tempPosterPath = join(directory, `.amazon-poster-${randomUUID()}.jpg`);
       try {
         await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
-        const validation = await validateImage(tempPosterPath);
+        const validation = await validateImageFn(tempPosterPath);
         if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
         if (replacedExisting) await unlink(savedPosterPath).catch(() => undefined);
         await rename(tempPosterPath, savedPosterPath);

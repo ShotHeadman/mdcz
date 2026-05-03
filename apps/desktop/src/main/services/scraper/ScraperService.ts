@@ -1,5 +1,4 @@
-import { stat } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { join } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
@@ -8,25 +7,36 @@ import {
   type PersistentCooldownStore,
 } from "@main/services/cooldown/PersistentCooldownStore";
 import type { CrawlerProvider } from "@main/services/crawler";
-import { RecentAcquisitionsStore } from "@main/services/history";
 import { loggerService } from "@main/services/LoggerService";
 import { OutputLibraryScanner } from "@main/services/library";
 import type { NetworkClient } from "@main/services/network";
+import { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
 import { toErrorMessage } from "@main/utils/common";
-import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
-import { isGeneratedSidecarVideo, TranslateService } from "@mdcz/runtime/scrape";
-import { ScrapeSession } from "@mdcz/runtime/tasks";
+import { createDesktopOutputRoot, resolveDesktopOutputRootPath, toLibraryAssets } from "@mdcz/runtime/library";
+import {
+  applyScrapeNetworkPolicy,
+  createScrapeExecutionPolicy,
+  type ScrapeRestGate,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
+import { ScrapeSession, type ScrapeSuccessItem } from "@mdcz/runtime/tasks";
 import type { ScraperStatus } from "@mdcz/shared/types";
+import { toRootRelativePath } from "@mdcz/storage";
 import { app } from "electron";
-import { createAbortError } from "./abort";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
 import { fileOrganizer } from "./fileOrganizerAdapter";
 import type { ManualScrapeOptions } from "./manualScrape";
 import { NfoGenerator } from "./NfoGenerator";
+import {
+  resolveSelectedFilePaths as resolveSelectedFilePathsForScrape,
+  resolveSingleFilePaths as resolveSingleFilePathsForScrape,
+  uniquePaths,
+} from "./pathResolver";
+import { ScraperServiceError } from "./ScraperServiceError";
 import { translationMappingStore } from "./translationMappingStore";
 
 export interface StartScrapeResult {
@@ -40,106 +50,7 @@ export interface RecoverableSessionInfo {
   failedCount: number;
 }
 
-export class ScraperServiceError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-const DEFAULT_DOMAIN_RPS = 5;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
-const sleepWithAbort = (durationMs: number, signal?: AbortSignal): Promise<void> => {
-  if (durationMs <= 0) {
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve, reject) => {
-    if (!signal) {
-      setTimeout(resolve, durationMs);
-      return;
-    }
-
-    if (signal.aborted) {
-      reject(createAbortError());
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, durationMs);
-
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-      reject(createAbortError());
-    };
-
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-};
-
-class ScrapeRestGate {
-  private startedCount = 0;
-
-  private gate: Promise<void> = Promise.resolve();
-
-  constructor(
-    private readonly restAfterCount: number,
-    private readonly restDurationMs: number,
-    private readonly logger: ReturnType<typeof loggerService.getLogger>,
-  ) {}
-
-  async waitBeforeStart(signal?: AbortSignal): Promise<void> {
-    if (this.restAfterCount <= 0 || this.restDurationMs <= 0) {
-      return;
-    }
-
-    let release: ((value?: void | PromiseLike<void>) => void) | undefined;
-    const next = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const previous = this.gate;
-    this.gate = next;
-
-    await previous;
-
-    try {
-      this.startedCount += 1;
-      const completedCount = this.startedCount - 1;
-      const shouldRest = completedCount > 0 && completedCount % this.restAfterCount === 0;
-      if (!shouldRest) {
-        return;
-      }
-
-      const durationSeconds = Math.max(1, Math.round(this.restDurationMs / 1000));
-      this.logger.info(`Reached ${completedCount} files; resting for ${durationSeconds}s`);
-      await sleepWithAbort(this.restDurationMs, signal);
-    } finally {
-      release?.();
-    }
-  }
-}
-
-const uniquePaths = (paths: string[]): string[] => {
-  const outputs: string[] = [];
-  const seen = new Set<string>();
-  for (const path of paths) {
-    const trimmed = path.trim();
-    if (!trimmed) {
-      continue;
-    }
-    if (seen.has(trimmed)) {
-      continue;
-    }
-    seen.add(trimmed);
-    outputs.push(trimmed);
-  }
-  return outputs;
-};
 
 export class ScraperService {
   private readonly logger = loggerService.getLogger("ScraperService");
@@ -170,8 +81,8 @@ export class ScraperService {
     actorImageService?: ActorImageService,
     actorSourceProvider?: ActorSourceProvider,
     imageHostCooldownStore?: PersistentCooldownStore,
-    private readonly recentAcquisitionsStore = new RecentAcquisitionsStore(),
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
+    private readonly persistenceService = new DesktopPersistenceService(),
   ) {
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
@@ -236,7 +147,7 @@ export class ScraperService {
     }
 
     this.configureRuntimeSettings(configuration);
-    return this.beginSession(filePaths, 1, configuration, "single");
+    return this.beginSession(filePaths, configuration, "single", undefined, { concurrency: 1 });
   }
 
   async startSelectedFiles(paths: string[]): Promise<StartScrapeResult> {
@@ -360,7 +271,7 @@ export class ScraperService {
     await this.session.finish();
 
     if (successItems.length > 0) {
-      await this.recentAcquisitionsStore.recordBatch(successItems);
+      await this.recordLibraryEntries(successItems, taskId);
     }
     this.outputLibraryScanner.invalidate();
 
@@ -371,63 +282,11 @@ export class ScraperService {
   }
 
   private async resolveSingleFilePaths(paths: string[]): Promise<string[]> {
-    const filePath = paths[0]?.trim();
-    if (!filePath) {
-      return [];
-    }
-
-    try {
-      const targetStats = await stat(filePath);
-      if (!targetStats.isDirectory()) {
-        return [filePath];
-      }
-    } catch {
-      throw new ScraperServiceError("FILE_NOT_FOUND", `Selected media file not found: ${filePath}`);
-    }
-
-    let candidatePaths: string[];
-    try {
-      candidatePaths = (await listVideoFiles(filePath, false)).filter(
-        (candidatePath) => !isGeneratedSidecarVideo(candidatePath),
-      );
-    } catch (error) {
-      throw new ScraperServiceError("DIR_NOT_FOUND", toErrorMessage(error));
-    }
-
-    if (candidatePaths.length === 0) {
-      return [];
-    }
-
-    if (candidatePaths.length > 1) {
-      throw new ScraperServiceError("MULTIPLE_FILES", "Directory contains multiple media files; choose a file path");
-    }
-
-    return candidatePaths;
+    return await resolveSingleFilePathsForScrape(paths);
   }
 
   private async resolveSelectedFilePaths(paths: string[]): Promise<string[]> {
-    const outputs: string[] = [];
-
-    for (const filePath of uniquePaths(paths)) {
-      let targetStats: Awaited<ReturnType<typeof stat>>;
-      try {
-        targetStats = await stat(filePath);
-      } catch {
-        throw new ScraperServiceError("FILE_NOT_FOUND", `Selected media file not found: ${filePath}`);
-      }
-
-      if (!targetStats.isFile()) {
-        throw new ScraperServiceError("FILE_NOT_FOUND", `Selected media file not found: ${filePath}`);
-      }
-
-      if (!DEFAULT_VIDEO_EXTENSIONS.has(extname(filePath).toLowerCase()) || isGeneratedSidecarVideo(filePath)) {
-        continue;
-      }
-
-      outputs.push(filePath);
-    }
-
-    return outputs;
+    return await resolveSelectedFilePathsForScrape(paths);
   }
 
   private startBatchExecution(
@@ -436,8 +295,7 @@ export class ScraperService {
     manualScrape?: ManualScrapeOptions,
   ): StartScrapeResult {
     this.configureRuntimeSettings(configuration);
-    const concurrency = Math.max(1, configuration.scrape.threadNumber);
-    return this.beginSession(filePaths, concurrency, configuration, "batch", manualScrape);
+    return this.beginSession(filePaths, configuration, "batch", manualScrape);
   }
 
   private createFileScraperDependencies() {
@@ -458,37 +316,91 @@ export class ScraperService {
     };
   }
 
-  private configureRuntimeSettings(configuration: Configuration): void {
-    const delaySeconds = Math.max(0, Math.trunc(configuration.scrape.javdbDelaySeconds));
-    if (delaySeconds > 0) {
-      const intervalMs = delaySeconds * 1000;
-      this.sharedNetworkClient.setDomainInterval("javdb.com", intervalMs, 1, 1);
-      this.sharedNetworkClient.setDomainInterval("www.javdb.com", intervalMs, 1, 1);
-    } else {
-      this.sharedNetworkClient.setDomainLimit("javdb.com", DEFAULT_DOMAIN_RPS, 1);
-      this.sharedNetworkClient.setDomainLimit("www.javdb.com", DEFAULT_DOMAIN_RPS, 1);
+  private async recordLibraryEntries(items: ScrapeSuccessItem[], taskId: string): Promise<void> {
+    try {
+      const state = await this.persistenceService.getState();
+      const completedAt = new Date();
+      const configuration = await configManager.getValidated();
+      const outputRoot = createDesktopOutputRoot(configuration, completedAt);
+      if (outputRoot) {
+        await state.repositories.mediaRoots.upsert(outputRoot);
+      }
+      const output = await state.repositories.library.upsertScrapeOutput({
+        taskId,
+        rootId: outputRoot?.id ?? null,
+        outputDirectory: resolveDesktopOutputRootPath(configuration),
+        fileCount: items.length,
+        totalBytes: 0,
+        completedAt,
+      });
+      if (!outputRoot) {
+        this.logger.warn("Desktop output root is not configured; skipping persisted library entries");
+        return;
+      }
+
+      for (const item of items) {
+        const outputPath = item.outputPath?.trim() || item.lastKnownPath?.trim();
+        if (!outputPath) {
+          continue;
+        }
+        const rootRelativePath = this.toOutputRootRelativePath(outputRoot, outputPath) ?? outputPath;
+
+        await state.repositories.library.upsertEntry({
+          mediaIdentity: item.crawlerData?.number ?? item.number,
+          rootId: outputRoot.id,
+          rootRelativePath,
+          sourceTaskId: taskId,
+          scrapeOutputId: output.id,
+          title: item.crawlerData?.title ?? item.title,
+          number: item.crawlerData?.number ?? item.number,
+          actors: item.crawlerData?.actors ?? item.actors,
+          crawlerDataJson: item.crawlerData ? JSON.stringify(item.crawlerData) : null,
+          thumbnailPath: this.toOutputRootRelativePath(
+            outputRoot,
+            item.assets?.thumb ?? item.assets?.poster ?? item.posterPath ?? undefined,
+          ),
+          assets: toLibraryAssets(outputRoot, item.assets),
+          lastKnownPath: rootRelativePath,
+          indexedAt: completedAt,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to persist desktop library entries: ${toErrorMessage(error)}`);
     }
   }
 
-  private createRestGate(configuration: Configuration): ScrapeRestGate | null {
-    const restAfterCount = Math.max(0, Math.trunc(configuration.scrape.restAfterCount));
-    const restDurationSeconds = Math.max(0, Math.trunc(configuration.scrape.restDuration));
-    if (restAfterCount <= 0 || restDurationSeconds <= 0) {
+  private toOutputRootRelativePath(
+    outputRoot: ReturnType<typeof createDesktopOutputRoot>,
+    candidatePath: string | undefined,
+  ): string | null {
+    const value = candidatePath?.trim();
+    if (!value) {
       return null;
     }
+    if (!outputRoot) {
+      return value;
+    }
+    try {
+      return toRootRelativePath(outputRoot, value);
+    } catch {
+      return value;
+    }
+  }
 
-    return new ScrapeRestGate(restAfterCount, restDurationSeconds * 1000, this.logger);
+  private configureRuntimeSettings(configuration: Configuration): void {
+    applyScrapeNetworkPolicy(this.sharedNetworkClient, configuration);
   }
 
   private beginSession(
     filePaths: string[],
-    concurrency: number,
     configuration: Configuration,
     mode: ScrapeExecutionMode,
     manualScrape?: ManualScrapeOptions,
+    overrides: { concurrency?: number } = {},
   ): StartScrapeResult {
-    const taskId = this.session.begin(filePaths, concurrency);
-    this.restGate = this.createRestGate(configuration);
+    const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
+    const taskId = this.session.begin(filePaths, overrides.concurrency ?? policy.concurrency);
+    this.restGate = policy.restGate;
 
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();

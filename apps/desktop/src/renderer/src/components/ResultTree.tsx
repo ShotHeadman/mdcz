@@ -1,23 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
-import { Copy, FileText, Link2, Search, Trash2 } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type ResultTreeManualUrlTarget, ResultTreeView } from "@mdcz/views/detail";
+import { Copy, FileText, Link2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, retryScrapeSelection } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
-import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
-import { Button } from "@/components/ui/Button";
+import type { MediaBrowserFilter } from "@/components/shared/MediaBrowserList";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Input";
 import {
   buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
@@ -30,12 +20,6 @@ import { playMediaPath } from "@/utils/playback";
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
-}
-
-interface ManualUrlRescrapeTarget {
-  videoPaths: string[];
-  number: string;
-  canRequeueCurrentRun: boolean;
 }
 
 const activateNewScrapeTask = () => {
@@ -51,7 +35,7 @@ function buildMenuContent(
   group: ScrapeResultGroup,
   selectedResultId: string | null,
   scrapeStatus: "idle" | "running" | "stopping" | "paused",
-  onManualUrlRescrape: (target: ManualUrlRescrapeTarget) => void,
+  onManualUrlRescrape: (target: ResultTreeManualUrlTarget) => void,
 ) {
   const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
   const result = actionContext.selectedItem;
@@ -188,105 +172,11 @@ function buildMenuContent(
   );
 }
 
-function ManualUrlRescrapeDialog({
-  target,
-  scrapeStatus,
-  onOpenChange,
-}: {
-  target: ManualUrlRescrapeTarget | null;
-  scrapeStatus: "idle" | "running" | "stopping" | "paused";
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [url, setUrl] = useState("");
-  const [touched, setTouched] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const validation = useMemo(() => validateManualScrapeUrl(url), [url]);
-  const errorText = touched && !validation.valid ? validation.message : undefined;
-
-  useEffect(() => {
-    if (target) {
-      setUrl("");
-      setTouched(false);
-      setSubmitting(false);
-    }
-  }, [target]);
-
-  const handleOpenChange = (open: boolean) => {
-    if (!open && !submitting) {
-      onOpenChange(false);
-    }
-  };
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setTouched(true);
-    if (!target || !validation.valid) {
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const response = await retryScrapeSelection(target.videoPaths, {
-        scrapeStatus,
-        canRequeueCurrentRun: target.canRequeueCurrentRun,
-        manualUrl: validation.route.url,
-      });
-      if (response.data.strategy === "new-task") {
-        activateNewScrapeTask();
-      }
-      toast.success(response.data.message);
-      onOpenChange(false);
-    } catch (error) {
-      toast.error(toErrorMessage(error, "按 URL 重新刮削失败"));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={Boolean(target)} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={handleSubmit} className="grid gap-5">
-          <DialogHeader>
-            <DialogTitle>按 URL 重新刮削</DialogTitle>
-            <DialogDescription>当前番号：{target?.number ?? ""}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Input
-              value={url}
-              onChange={(event) => {
-                setUrl(event.target.value);
-                if (touched) {
-                  setTouched(false);
-                }
-              }}
-              onBlur={() => setTouched(true)}
-              placeholder="https://www.dmm.co.jp/"
-              aria-invalid={Boolean(errorText)}
-              disabled={submitting}
-              autoFocus
-            />
-            {errorText ? <p className="text-sm text-destructive">{errorText}</p> : null}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>
-              取消
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "提交中..." : "重新刮削"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function ResultTree() {
   const { results, clearResults, scrapeStatus } = useScrapeStore();
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
-  const [manualUrlTarget, setManualUrlTarget] = useState<ManualUrlRescrapeTarget | null>(null);
+  const [manualUrlTarget, setManualUrlTarget] = useState<ResultTreeManualUrlTarget | null>(null);
   const resultGroups = useMemo(() => buildScrapeResultGroups(results), [results]);
   const successCount = useMemo(() => resultGroups.filter((group) => group.status === "success").length, [resultGroups]);
   const failedCount = useMemo(() => resultGroups.filter((group) => group.status === "failed").length, [resultGroups]);
@@ -310,46 +200,38 @@ export function ResultTree() {
   );
 
   return (
-    <>
-      <MediaBrowserList
-        items={items}
-        filter={filter}
-        onFilterChange={setFilter}
-        title="处理队列"
-        stats={[
-          { label: "总计", value: String(resultGroups.length) },
-          { label: "成功", value: String(successCount), tone: "positive" },
-          { label: "失败", value: String(failedCount), tone: "negative" },
-        ]}
-        emptyContent={
-          <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
-            <Search className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
-            <span className="text-[13px] text-muted-foreground/40 tracking-wider">暂无结果</span>
-          </div>
+    <ResultTreeView
+      items={items}
+      filter={filter}
+      onFilterChange={setFilter}
+      stats={[
+        { label: "总计", value: String(resultGroups.length) },
+        { label: "成功", value: String(successCount), tone: "positive" },
+        { label: "失败", value: String(failedCount), tone: "negative" },
+      ]}
+      manualUrlTarget={manualUrlTarget}
+      scrapeStatus={scrapeStatus}
+      onClearResults={clearResults}
+      onManualUrlDialogOpenChange={(open) => {
+        if (!open) {
+          setManualUrlTarget(null);
         }
-        headerTrailing={
-          resultGroups.length > 0 ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 hover:text-destructive"
-              onClick={clearResults}
-              title="清空结果"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          ) : undefined
-        }
-      />
-      <ManualUrlRescrapeDialog
-        target={manualUrlTarget}
-        scrapeStatus={scrapeStatus}
-        onOpenChange={(open) => {
-          if (!open) {
-            setManualUrlTarget(null);
+      }}
+      onManualUrlSubmit={async (target, manualUrl) => {
+        try {
+          const response = await retryScrapeSelection(target.videoPaths, {
+            scrapeStatus,
+            canRequeueCurrentRun: target.canRequeueCurrentRun,
+            manualUrl,
+          });
+          if (response.data.strategy === "new-task") {
+            activateNewScrapeTask();
           }
-        }}
-      />
-    </>
+          toast.success(response.data.message);
+        } catch (error) {
+          toast.error(toErrorMessage(error, "按 URL 重新刮削失败"));
+        }
+      }}
+    />
   );
 }

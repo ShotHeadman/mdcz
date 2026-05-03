@@ -239,7 +239,7 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            navigate({ to: "/" });
+            navigate({ to: "/workbench" });
             window.dispatchEvent(
               new CustomEvent("app:open-nfo", {
                 detail: { path: selectedNfoPath ?? selectedPath },

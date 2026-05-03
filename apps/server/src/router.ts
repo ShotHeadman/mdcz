@@ -22,6 +22,7 @@ import {
   rootBrowserInputSchema,
   scanStartInputSchema,
   scanTaskIdInputSchema,
+  scrapeRecoverableSessionResolveInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
   scrapeTaskControlInputSchema,
@@ -291,6 +292,9 @@ export const appRouter = t.router({
     listResults: protectedProcedure
       .input(scrapeTaskControlInputSchema.optional())
       .query(async ({ ctx, input }) => await ctx.services.scrape.listResults(input)),
+    getRecoverableSession: protectedProcedure.query(
+      async ({ ctx }) => await ctx.services.scrape.getRecoverableSession(),
+    ),
     nfoRead: protectedProcedure
       .input(nfoReadInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.nfoRead(input)),
@@ -309,6 +313,9 @@ export const appRouter = t.router({
     retry: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.retry(input)),
+    resolveRecoverableSession: protectedProcedure
+      .input(scrapeRecoverableSessionResolveInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.scrape.resolveRecoverableSession(input)),
     start: protectedProcedure
       .input(scrapeStartInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.start(input)),

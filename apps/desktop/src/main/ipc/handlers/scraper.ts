@@ -5,6 +5,7 @@ import { ScraperServiceError } from "@main/services/scraper";
 import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
 import type { ManualScrapeOptions } from "@main/services/scraper/manualScrape";
 import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
+import { resolveRecoverableSession as resolveRuntimeRecoverableSession } from "@mdcz/runtime/tasks";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
@@ -88,17 +89,26 @@ export const createScraperHandlers = (
         withIpcErrorHandling(
           "resolve recoverable scrape session",
           async () => {
-            const action = input?.action ?? "recover";
-
-            if (action === "discard") {
-              await scraperService.discardRecoverableSession();
-              return withSuccessMessage("已放弃上次未完成的刮削任务");
-            }
-
-            return {
-              success: true as const,
-              ...withLaunchMessage(await scraperService.recoverSession(), "恢复任务已启动"),
-            };
+            const resolved = await resolveRuntimeRecoverableSession(
+              {
+                summarize: async () => await scraperService.getRecoverableSession(),
+                recover: async () => await scraperService.recoverSession(),
+                discard: async () => {
+                  await scraperService.discardRecoverableSession();
+                },
+              },
+              {
+                action: input?.action,
+                discardMessage: "已放弃上次未完成的刮削任务",
+                recoverMessage: "恢复任务已启动",
+              },
+            );
+            return resolved.task
+              ? {
+                  success: true as const,
+                  ...withLaunchMessage(resolved.task, resolved.message),
+                }
+              : withSuccessMessage(resolved.message);
           },
           { mapError: toScraperServiceIpcError },
         ),

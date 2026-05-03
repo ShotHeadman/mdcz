@@ -11,19 +11,37 @@
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AboutRouteImport } from "./routes/about";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as LibraryRouteImport } from "./routes/library";
 import { Route as LogsRouteImport } from "./routes/logs";
 import { Route as OverviewRouteImport } from "./routes/overview";
 import { Route as SettingsRouteImport } from "./routes/settings";
-import { Route as ToolRouteImport } from "./routes/tool";
+import { Route as ToolsRouteImport } from "./routes/tools";
+import { Route as WorkbenchRouteImport } from "./routes/workbench";
+import { Route as WorkbenchMaintenanceRouteImport } from "./routes/workbench.maintenance";
 
 const OverviewRoute = OverviewRouteImport.update({
   id: "/overview",
   path: "/overview",
   getParentRoute: () => rootRouteImport,
 } as any);
-const ToolRoute = ToolRouteImport.update({
-  id: "/tool",
-  path: "/tool",
+const ToolsRoute = ToolsRouteImport.update({
+  id: "/tools",
+  path: "/tools",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const WorkbenchRoute = WorkbenchRouteImport.update({
+  id: "/workbench",
+  path: "/workbench",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const WorkbenchMaintenanceRoute = WorkbenchMaintenanceRouteImport.update({
+  id: "/workbench/maintenance",
+  path: "/workbench/maintenance",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const LibraryRoute = LibraryRouteImport.update({
+  id: "/library",
+  path: "/library",
   getParentRoute: () => rootRouteImport,
 } as any);
 const SettingsRoute = SettingsRouteImport.update({
@@ -50,52 +68,113 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
+  "/library": typeof LibraryRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
   "/settings": typeof SettingsRoute;
-  "/tool": typeof ToolRoute;
+  "/tools": typeof ToolsRoute;
+  "/workbench": typeof WorkbenchRoute;
+  "/workbench/maintenance": typeof WorkbenchMaintenanceRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
+  "/library": typeof LibraryRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
   "/settings": typeof SettingsRoute;
-  "/tool": typeof ToolRoute;
+  "/tools": typeof ToolsRoute;
+  "/workbench": typeof WorkbenchRoute;
+  "/workbench/maintenance": typeof WorkbenchMaintenanceRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
+  "/library": typeof LibraryRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
   "/settings": typeof SettingsRoute;
-  "/tool": typeof ToolRoute;
+  "/tools": typeof ToolsRoute;
+  "/workbench": typeof WorkbenchRoute;
+  "/workbench/maintenance": typeof WorkbenchMaintenanceRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/about" | "/logs" | "/overview" | "/settings" | "/tool";
+  fullPaths:
+    | "/"
+    | "/about"
+    | "/library"
+    | "/logs"
+    | "/overview"
+    | "/settings"
+    | "/tools"
+    | "/workbench"
+    | "/workbench/maintenance";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/about" | "/logs" | "/overview" | "/settings" | "/tool";
-  id: "__root__" | "/" | "/about" | "/logs" | "/overview" | "/settings" | "/tool";
+  to:
+    | "/"
+    | "/about"
+    | "/library"
+    | "/logs"
+    | "/overview"
+    | "/settings"
+    | "/tools"
+    | "/workbench"
+    | "/workbench/maintenance";
+  id:
+    | "__root__"
+    | "/"
+    | "/about"
+    | "/library"
+    | "/logs"
+    | "/overview"
+    | "/settings"
+    | "/tools"
+    | "/workbench"
+    | "/workbench/maintenance";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AboutRoute: typeof AboutRoute;
+  LibraryRoute: typeof LibraryRoute;
   LogsRoute: typeof LogsRoute;
   OverviewRoute: typeof OverviewRoute;
   SettingsRoute: typeof SettingsRoute;
-  ToolRoute: typeof ToolRoute;
+  ToolsRoute: typeof ToolsRoute;
+  WorkbenchRoute: typeof WorkbenchRoute;
+  WorkbenchMaintenanceRoute: typeof WorkbenchMaintenanceRoute;
 }
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/tool": {
-      id: "/tool";
-      path: "/tool";
-      fullPath: "/tool";
-      preLoaderRoute: typeof ToolRouteImport;
+    "/tools": {
+      id: "/tools";
+      path: "/tools";
+      fullPath: "/tools";
+      preLoaderRoute: typeof ToolsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/library": {
+      id: "/library";
+      path: "/library";
+      fullPath: "/library";
+      preLoaderRoute: typeof LibraryRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/workbench": {
+      id: "/workbench";
+      path: "/workbench";
+      fullPath: "/workbench";
+      preLoaderRoute: typeof WorkbenchRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/workbench/maintenance": {
+      id: "/workbench/maintenance";
+      path: "/workbench/maintenance";
+      fullPath: "/workbench/maintenance";
+      preLoaderRoute: typeof WorkbenchMaintenanceRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/settings": {
@@ -139,9 +218,12 @@ declare module "@tanstack/react-router" {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  LibraryRoute: LibraryRoute,
   LogsRoute: LogsRoute,
   OverviewRoute: OverviewRoute,
   SettingsRoute: SettingsRoute,
-  ToolRoute: ToolRoute,
+  ToolsRoute: ToolsRoute,
+  WorkbenchRoute: WorkbenchRoute,
+  WorkbenchMaintenanceRoute: WorkbenchMaintenanceRoute,
 };
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>();

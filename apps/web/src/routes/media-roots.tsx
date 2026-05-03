@@ -4,10 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../client";
+import { ErrorBanner, formatDate, Notice } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../ui";
-import { ErrorBanner, formatDate, Notice } from "./Common";
 
+// Web-only route: registered media roots are the mounted-volume containment boundary used by the server API.
+// Desktop uses direct local paths through settings/workbench instead of managing remote root records.
 export const MediaRootsPage = () => {
   const queryClient = useQueryClient();
   const suggestedPath = new URLSearchParams(window.location.search).get("suggestedPath") ?? "";

@@ -1,36 +1,22 @@
-import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
+  buildRuntimeNamingPreview,
+  getRuntimeConfigProperty,
+  mergeRuntimeConfig,
+  parseRuntimeConfiguration,
+  parseRuntimeConfigurationContent,
+  RuntimeConfigProfileStore,
+  RuntimeConfigValidationError,
+  setRuntimeConfigProperty,
+} from "@mdcz/runtime/config";
+import {
   type Configuration,
-  configurationSchema,
   type DeepPartial,
   defaultConfiguration,
   getConfigurationPathDefault,
 } from "@mdcz/shared/config";
-import {
-  CONFIGURATION_FILE_EXTENSIONS,
-  inferConfigurationFileFormat,
-  parseConfigurationContent,
-  serializeConfiguration,
-} from "@mdcz/shared/configCodec";
-import type { NamingPreviewItem } from "@mdcz/shared/types";
-
-const ACTIVE_PROFILE_META_FILE = ".active-profile.json";
-const DEFAULT_PROFILE_NAME = "default";
-const PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
-
-const normalizeProfileName = (name: string): string => {
-  const normalized = name.trim();
-  if (!normalized) {
-    throw new Error("Profile name is required");
-  }
-  if (!PROFILE_NAME_PATTERN.test(normalized)) {
-    throw new Error('Profile name can only contain letters, numbers, "_" and "-"');
-  }
-  return normalized;
-};
+import { CONFIGURATION_FILE_EXTENSIONS } from "@mdcz/shared/configCodec";
 
 export interface ServerRuntimePaths {
   configDir: string;
@@ -62,132 +48,9 @@ export const resolveServerRuntimePaths = (options: ResolveServerRuntimePathsOpti
   };
 };
 
-export class ServerConfigValidationError extends Error {
-  constructor(
-    message: string,
-    readonly fields: string[],
-    readonly fieldErrors?: Record<string, string>,
-  ) {
-    super(message);
-  }
-}
+export class ServerConfigValidationError extends RuntimeConfigValidationError {}
 
-const CONFIG_FIELD_LABELS: Record<string, string> = {
-  "download.downloadSceneImages": "下载剧照",
-  "download.nfoNaming": "NFO 文件命名",
-  "jellyfin.userId": "Jellyfin 用户 ID",
-  "naming.assetNamingMode": "附属文件命名",
-  "naming.fileTemplate": "文件名模板",
-  "naming.folderTemplate": "文件夹模板",
-};
-
-const formatConfigValidationError = (fieldErrors: Record<string, string>): string => {
-  const details = Object.entries(fieldErrors)
-    .map(([field, message]) => `${CONFIG_FIELD_LABELS[field] ?? field}：${message}`)
-    .join("；");
-
-  return details ? `配置校验失败：${details}` : "配置校验失败";
-};
-
-const getProperty = (obj: Record<string, unknown>, propertyPath: string): unknown => {
-  const parts = propertyPath.split(".");
-  let cursor: unknown = obj;
-  for (const part of parts) {
-    if (cursor == null || typeof cursor !== "object") {
-      return undefined;
-    }
-    cursor = (cursor as Record<string, unknown>)[part];
-  }
-  return cursor;
-};
-
-const setProperty = (obj: Record<string, unknown>, propertyPath: string, value: unknown): void => {
-  const parts = propertyPath.split(".");
-  let cursor = obj;
-  for (const part of parts.slice(0, -1)) {
-    if (!cursor[part] || typeof cursor[part] !== "object") {
-      cursor[part] = {};
-    }
-    cursor = cursor[part] as Record<string, unknown>;
-  }
-  const tail = parts.at(-1);
-  if (tail) {
-    cursor[tail] = value;
-  }
-};
-
-const parseConfiguration = (value: unknown): Configuration => {
-  const parsed = configurationSchema.safeParse(value);
-  if (parsed.success) {
-    return parsed.data;
-  }
-
-  const fieldErrors: Record<string, string> = {};
-  for (const issue of parsed.error.issues) {
-    const issuePath = issue.path.join(".");
-    if (issuePath && !(issuePath in fieldErrors)) {
-      fieldErrors[issuePath] = issue.message;
-    }
-  }
-  throw new ServerConfigValidationError(
-    formatConfigValidationError(fieldErrors),
-    Object.keys(fieldErrors),
-    fieldErrors,
-  );
-};
-
-const mergeConfig = <T>(base: T, patch: DeepPartial<T>): T => {
-  if (
-    Array.isArray(base) ||
-    Array.isArray(patch) ||
-    typeof base !== "object" ||
-    base === null ||
-    typeof patch !== "object" ||
-    patch === null
-  ) {
-    return patch as T;
-  }
-
-  const merged: Record<string, unknown> = { ...(base as Record<string, unknown>) };
-  for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
-    if (value === undefined) {
-      continue;
-    }
-    merged[key] = key in merged ? mergeConfig(merged[key], value) : value;
-  }
-  return merged as T;
-};
-
-const renderNamingTemplate = (
-  template: string,
-  sample: { label: string; number: string; title: string; actor: string; file: string },
-): string =>
-  template
-    .replaceAll("{number}", sample.number)
-    .replaceAll("{rawNumber}", sample.number)
-    .replaceAll("{title}", sample.title)
-    .replaceAll("{originaltitle}", "Sample Original Title")
-    .replaceAll("{actor}", sample.actor)
-    .replaceAll("{firstActor}", sample.actor.split(" ")[0] ?? sample.actor)
-    .replaceAll("{allActors}", sample.actor)
-    .replaceAll("{filename}", sample.file.replace(/\.[^.]+$/u, ""))
-    .replaceAll("{date}", "2024-01-15")
-    .replaceAll("{release}", "2024-01-15")
-    .replaceAll("{year}", "2024")
-    .replaceAll("{studio}", "示例制片")
-    .replaceAll("{publisher}", "示例发行")
-    .replaceAll("{director}", "示例导演")
-    .replaceAll("{series}", "示例系列")
-    .replaceAll("{runtime}", "121")
-    .replaceAll("{definition}", "1080P")
-    .replaceAll("{resolution}", "1080P")
-    .replaceAll("{cnword}", sample.label === "中文字幕" ? "-C" : "")
-    .replaceAll("{subtitle}", sample.label === "中文字幕" ? "中文字幕" : "")
-    .replaceAll("{4K}", sample.label === "中文字幕" ? "4K" : "")
-    .replaceAll("{censorshipType}", sample.number.startsWith("FC2") ? "无码" : "有码")
-    .replaceAll("{score}", "4.5")
-    .replaceAll("{rating}", "4.5")
-    .replaceAll("{website}", "DMM");
+const DEFAULT_PROFILE_NAME = "default";
 
 export interface ProfileListOutput {
   profiles: string[];
@@ -208,29 +71,21 @@ export interface ProfileExportOutput {
 
 export class ServerConfigService {
   private configuration: Configuration | null = null;
-  private activeProfileName: string = DEFAULT_PROFILE_NAME;
-  private activeProfileLoaded = false;
+  private readonly store: RuntimeConfigProfileStore;
 
-  constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {}
+  constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {
+    this.store = new RuntimeConfigProfileStore({
+      configDir: paths.configDir,
+      dataDir: paths.dataDir,
+    });
+  }
 
   get runtimePaths(): ServerRuntimePaths {
     return this.paths;
   }
 
   async load(): Promise<Configuration> {
-    await mkdir(this.paths.configDir, { recursive: true });
-    await this.loadActiveProfileName();
-    const profilePath = this.getActiveProfilePath();
-
-    if (!existsSync(profilePath)) {
-      this.configuration = defaultConfiguration;
-      await this.persist();
-      return this.configuration;
-    }
-
-    const content = await readFile(profilePath, "utf8");
-    this.configuration = parseConfigurationContent(content, inferConfigurationFileFormat(profilePath));
-
+    this.configuration = await this.runWithServerValidation(() => this.store.load());
     return this.configuration;
   }
 
@@ -246,12 +101,11 @@ export class ServerConfigService {
       return configuration;
     }
 
-    return getProperty(configuration as unknown as Record<string, unknown>, propertyPath);
+    return getRuntimeConfigProperty(configuration as unknown as Record<string, unknown>, propertyPath);
   }
 
   async save(configuration: Configuration): Promise<Configuration> {
-    this.configuration = parseConfiguration(configuration);
-    await this.persist();
+    this.configuration = await this.runWithServerValidation(() => this.store.save(configuration));
     return this.configuration;
   }
 
@@ -260,31 +114,16 @@ export class ServerConfigService {
   }
 
   async update(patch: DeepPartial<Configuration>): Promise<Configuration> {
-    const current = await this.get();
-    return await this.save(parseConfiguration(mergeConfig(current, patch)));
+    return await this.runWithServerValidation(async () => {
+      const current = await this.get();
+      return await this.save(parseRuntimeConfiguration(mergeRuntimeConfig(current, patch)));
+    });
   }
 
-  async previewNaming(patch: DeepPartial<Configuration>): Promise<{ items: NamingPreviewItem[] }> {
-    const current = await this.get();
-    const config = parseConfiguration(mergeConfig(current, patch));
-    const samples = [
-      { label: "普通", number: "ABC-123", title: "示例中文标题", actor: "演员A", file: "ABC-123.mp4" },
-      { label: "中文字幕", number: "ABC-456", title: "中文字幕示例", actor: "演员B", file: "ABC-456-C.mp4" },
-      { label: "多演员", number: "DEF-012", title: "多演员作品", actor: "演员E 演员F 等演员", file: "DEF-012.mp4" },
-      { label: "演员为空", number: "FC2-123456", title: "示例中文标题", actor: "示例卖家", file: "FC2-123456.mp4" },
-    ];
-
-    return {
-      items: samples.map((sample) => ({
-        label: sample.label,
-        folder: config.behavior.successFileMove
-          ? renderNamingTemplate(config.naming.folderTemplate, sample) || "当前目录"
-          : "当前目录",
-        file: config.behavior.successFileRename
-          ? `${renderNamingTemplate(config.naming.fileTemplate, sample) || sample.number}.mp4`
-          : sample.file,
-      })),
-    };
+  async previewNaming(
+    patch: DeepPartial<Configuration>,
+  ): Promise<{ items: import("@mdcz/shared/types").NamingPreviewItem[] }> {
+    return await this.runWithServerValidation(async () => buildRuntimeNamingPreview(await this.get(), patch));
   }
 
   async reset(propertyPath?: string): Promise<Configuration> {
@@ -297,184 +136,67 @@ export class ServerConfigService {
       throw new Error(`Path not found: ${propertyPath}`);
     }
 
-    const current = JSON.parse(JSON.stringify(await this.get())) as Record<string, unknown>;
-    setProperty(current, propertyPath, resetDefault.value);
-    return await this.save(parseConfiguration(current));
+    return await this.runWithServerValidation(async () => {
+      const current = JSON.parse(JSON.stringify(await this.get())) as Record<string, unknown>;
+      setRuntimeConfigProperty(current, propertyPath, resetDefault.value);
+      return await this.save(parseRuntimeConfiguration(current));
+    });
   }
 
   async import(content: string): Promise<Configuration> {
-    return await this.save(parseConfigurationContent(content, "toml"));
+    return await this.runWithServerValidation(
+      async () => await this.save(parseRuntimeConfigurationContent(content, "toml")),
+    );
   }
 
   async export(): Promise<string> {
-    return serializeConfiguration(await this.get(), "toml");
+    return (await this.store.exportProfile(this.store.activeProfile, await this.get())).content;
   }
 
   async listProfiles(): Promise<ProfileListOutput> {
-    await mkdir(this.paths.configDir, { recursive: true });
-    if (!this.activeProfileLoaded) {
-      await this.loadActiveProfileName();
-    }
-    const entries = await readdir(this.paths.configDir);
-    const profiles = entries
-      .filter((entry) => this.isProfileConfigFile(entry) && entry !== ACTIVE_PROFILE_META_FILE)
-      .map((entry) => entry.replace(/\.(json|toml)$/u, ""))
-      .filter((name) => PROFILE_NAME_PATTERN.test(name));
-    if (!profiles.includes(DEFAULT_PROFILE_NAME)) {
-      profiles.unshift(DEFAULT_PROFILE_NAME);
-    }
-    return { profiles, active: this.activeProfileName };
+    return await this.store.listProfiles();
   }
 
   async createProfile(name: string): Promise<{ profileName: string }> {
-    const profileName = normalizeProfileName(name);
-    const filePath = this.getProfilePath(profileName);
-    if (existsSync(filePath) || existsSync(this.getLegacyProfilePath(profileName))) {
-      throw new Error(`Profile "${profileName}" already exists`);
-    }
-    await mkdir(this.paths.configDir, { recursive: true });
-    await writeFile(filePath, serializeConfiguration(defaultConfiguration), "utf8");
-    return { profileName };
+    return await this.store.createProfile(name);
   }
 
   async switchProfile(name: string): Promise<Configuration> {
-    const profileName = normalizeProfileName(name);
-    const filePath = this.getExistingProfilePath(profileName);
-    if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
-    }
-    this.activeProfileName = profileName;
-    await this.persistActiveProfileName();
-    this.configuration = null;
-    return await this.load();
+    this.configuration = await this.runWithServerValidation(() => this.store.switchProfile(name));
+    return this.configuration;
   }
 
   async deleteProfile(name: string): Promise<{ profileName: string }> {
-    const profileName = normalizeProfileName(name);
-    if (profileName === this.activeProfileName) {
-      throw new Error("Cannot delete the active profile");
-    }
-    const filePath = this.getExistingProfilePath(profileName);
-    if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
-    }
-    await unlink(filePath);
-    return { profileName };
+    return await this.store.deleteProfile(name);
   }
 
   async exportProfile(name: string): Promise<ProfileExportOutput> {
-    const profileName = normalizeProfileName(name);
-    let configuration: Configuration;
-    if (profileName === this.activeProfileName) {
-      configuration = await this.get();
-    } else {
-      const filePath = this.getExistingProfilePath(profileName);
-      if (!existsSync(filePath)) {
-        throw new Error(`Profile "${profileName}" not found`);
-      }
-      const content = await readFile(filePath, "utf8");
-      configuration = parseConfigurationContent(content, inferConfigurationFileFormat(filePath));
+    const configuration = name === this.store.activeProfile ? await this.get() : undefined;
+    return await this.store.exportProfile(name, configuration);
+  }
+
+  async importProfile(input: {
+    name: string;
+    content: string;
+    fileName?: string;
+    overwrite?: boolean;
+  }): Promise<ProfileImportOutput> {
+    const result = await this.runWithServerValidation(() => this.store.importProfile(input));
+    if (result.active) {
+      this.configuration = await this.load();
     }
-
-    return {
-      profileName,
-      fileName: `${profileName}.toml`,
-      content: serializeConfiguration(configuration, "toml"),
-    };
+    return result;
   }
 
-  async importProfile(input: { name: string; content: string; overwrite?: boolean }): Promise<ProfileImportOutput> {
-    const profileName = normalizeProfileName(input.name);
-    const targetPath = this.getProfilePath(profileName);
-    const overwritten = existsSync(targetPath) || existsSync(this.getLegacyProfilePath(profileName));
-
-    if (overwritten && !input.overwrite) {
-      throw new Error(`Profile "${profileName}" already exists`);
-    }
-
-    const configuration = parseConfiguration(parseConfigurationContent(input.content, "toml"));
-
-    await mkdir(this.paths.configDir, { recursive: true });
-    await writeFile(targetPath, serializeConfiguration(configuration), "utf8");
-
-    const active = profileName === this.activeProfileName;
-    if (active) {
-      this.configuration = configuration;
-    }
-
-    return { profileName, overwritten, active };
-  }
-
-  private getActiveProfilePath(): string {
-    return this.getExistingProfilePath(this.activeProfileName);
-  }
-
-  private getProfilePath(profileName: string): string {
-    return path.join(this.paths.configDir, `${profileName}${CONFIGURATION_FILE_EXTENSIONS.toml}`);
-  }
-
-  private getLegacyProfilePath(profileName: string): string {
-    return path.join(this.paths.configDir, `${profileName}${CONFIGURATION_FILE_EXTENSIONS.json}`);
-  }
-
-  private getExistingProfilePath(profileName: string): string {
-    const tomlPath = this.getProfilePath(profileName);
-    if (existsSync(tomlPath)) {
-      return tomlPath;
-    }
-    return this.getLegacyProfilePath(profileName);
-  }
-
-  private isProfileConfigFile(entry: string): boolean {
-    return entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.toml) || entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.json);
-  }
-
-  private getActiveProfileMetaPath(): string {
-    return path.join(this.paths.configDir, ACTIVE_PROFILE_META_FILE);
-  }
-
-  private async loadActiveProfileName(): Promise<void> {
-    const metaPath = this.getActiveProfileMetaPath();
-    if (!existsSync(metaPath)) {
-      this.activeProfileName = DEFAULT_PROFILE_NAME;
-      this.activeProfileLoaded = true;
-      return;
-    }
-
+  private async runWithServerValidation<T>(operation: () => Promise<T>): Promise<T> {
     try {
-      const content = await readFile(metaPath, "utf8");
-      const parsed = JSON.parse(content) as { active?: unknown };
-      if (typeof parsed.active === "string" && PROFILE_NAME_PATTERN.test(parsed.active.trim())) {
-        this.activeProfileName = parsed.active.trim();
-        this.activeProfileLoaded = true;
-        return;
+      return await operation();
+    } catch (error) {
+      if (error instanceof RuntimeConfigValidationError) {
+        throw new ServerConfigValidationError(error.message, error.fields, error.fieldErrors);
       }
-    } catch {
-      // fall back to default
+      throw error;
     }
-
-    this.activeProfileName = DEFAULT_PROFILE_NAME;
-    this.activeProfileLoaded = true;
-  }
-
-  private async persistActiveProfileName(): Promise<void> {
-    await mkdir(this.paths.configDir, { recursive: true });
-    await writeFile(
-      this.getActiveProfileMetaPath(),
-      JSON.stringify({ active: this.activeProfileName }, null, 2),
-      "utf8",
-    );
-  }
-
-  private async persist(): Promise<void> {
-    await mkdir(this.paths.configDir, { recursive: true });
-    await mkdir(this.paths.dataDir, { recursive: true });
-    await writeFile(
-      this.getProfilePath(this.activeProfileName),
-      serializeConfiguration(this.configuration ?? defaultConfiguration),
-      "utf8",
-    );
-    await this.persistActiveProfileName();
   }
 }
 

@@ -1,17 +1,18 @@
 import path from "node:path";
-import type { MaintenanceApplyLogRecord, MaintenancePreviewRecord, TaskRecordStatus } from "@mdcz/persistence";
-import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
-import { FetchNetworkClient } from "@mdcz/runtime/network";
+import type { MaintenancePreviewRecord } from "@mdcz/persistence";
 import {
-  ActorImageService,
-  AggregationService,
-  DownloadManager,
-  FileOrganizer,
-  NfoGenerator,
-  TranslateService,
-} from "@mdcz/runtime/scrape";
-import { type RuntimeTaskAction, type RuntimeTaskStatus, transitionTask } from "@mdcz/runtime/tasks";
+  MaintenanceExecutor,
+  type MaintenanceRuntime,
+  toMaintenanceApplyLogDto,
+  toMaintenancePreviewDto,
+} from "@mdcz/runtime/maintenance";
+import {
+  type RuntimeTaskAction,
+  RuntimeTaskQueueRunner,
+  toRuntimeTaskSnapshot,
+  toServerTaskStatus,
+  transitionTask,
+} from "@mdcz/runtime/tasks";
 import type {
   CrawlerDataDto,
   LogListResponse,
@@ -31,78 +32,21 @@ import type {
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 import { statRootPath } from "@mdcz/storage";
 import type { ServerConfigService } from "./configService";
+import { createServerMaintenanceRuntime } from "./maintenanceRuntimeFactory";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
+import { toScanTaskDto, toTaskEventDto } from "./taskDto";
 import type { TaskEventBus } from "./taskEvents";
 
-const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 const confirmationTokenFor = (taskId: string): string => `maintenance:${taskId}`;
 
-class MemoryImageHostCooldownStore {
-  private readonly entries = new Map<string, { failures: number[]; cooldownUntil?: number }>();
-
-  getActiveCooldown(key: string): { cooldownUntil: number; remainingMs: number } | null {
-    const cooldownUntil = this.entries.get(key)?.cooldownUntil;
-    if (!cooldownUntil) return null;
-    const remainingMs = cooldownUntil - Date.now();
-    if (remainingMs <= 0) {
-      this.reset(key);
-      return null;
-    }
-    return { cooldownUntil, remainingMs };
-  }
-
-  isCoolingDown(key: string): boolean {
-    return this.getActiveCooldown(key) !== null;
-  }
-
-  recordFailure(
-    key: string,
-    policy: { threshold: number; windowMs: number; cooldownMs: number },
-  ): { cooldownUntil?: number | null; failureCount: number } {
-    const now = Date.now();
-    const entry = this.entries.get(key) ?? { failures: [] };
-    const failures = [...entry.failures.filter((timestamp) => now - timestamp <= policy.windowMs), now];
-    const cooldownUntil = failures.length >= policy.threshold ? now + policy.cooldownMs : entry.cooldownUntil;
-    this.entries.set(key, { failures, cooldownUntil });
-    return { cooldownUntil, failureCount: failures.length };
-  }
-
-  reset(key: string): void {
-    this.entries.delete(key);
-  }
-}
-
-const createServerMaintenanceRuntime = (config: ServerConfigService): MaintenanceRuntime => {
-  const networkClient = new FetchNetworkClient();
-  const logger = console;
-  return new MaintenanceRuntime({
-    actorImageService: new ActorImageService({
-      cacheRoot: path.join(config.runtimePaths.dataDir, "actor-image-cache"),
-      networkClient,
-    }),
-    aggregationService: new AggregationService(new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) })),
-    config,
-    downloadManager: new DownloadManager(networkClient, {
-      imageHostCooldownStore: new MemoryImageHostCooldownStore(),
-      logger,
-    }),
-    fileOrganizer: new FileOrganizer(logger),
-    nfoGenerator: new NfoGenerator(),
-    signalService: {
-      setProgress: () => undefined,
-      showLogText: () => undefined,
-    },
-    translateService: new TranslateService(networkClient, { logger }),
-  });
-};
-
 export class MaintenanceService {
-  #running = false;
   #stopRequested = new Set<string>();
   #paused = new Set<string>();
   #pendingRefs = new Map<string, Array<{ relativePath: string }>>();
   #pendingPresets = new Map<string, MaintenancePresetId>();
+  #executors = new Map<string, MaintenanceExecutor>();
+  private readonly runner: RuntimeTaskQueueRunner<{ id: string; presetId: MaintenancePresetId }>;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
@@ -110,7 +54,23 @@ export class MaintenanceService {
     config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
     private readonly runtime = createServerMaintenanceRuntime(config),
-  ) {}
+  ) {
+    this.runner = new RuntimeTaskQueueRunner({
+      getNextTask: async () => {
+        const task = await (await this.persistence.getState()).repositories.tasks.nextQueued("maintenance");
+        if (!task) {
+          return null;
+        }
+        return {
+          id: task.id,
+          presetId: await this.resolveTaskPreset(task.id, "read_local"),
+        };
+      },
+      runTask: async (task) => {
+        await this.runTask(task.id, task.presetId);
+      },
+    });
+  }
 
   async start(input: MaintenanceStartInput): Promise<ScanTaskDto> {
     const root = await this.mediaRoots.getActiveRoot(input.rootId);
@@ -140,7 +100,7 @@ export class MaintenanceService {
     await this.addEvent(task.id, "queued", `维护任务已排队：${input.presetId}`);
     await this.addEvent(task.id, "preset", `维护预设：${input.presetId}`);
     this.taskEvents.publish({ kind: "task", task: await this.toDto(task.id) });
-    void this.drain(input.presetId);
+    this.drain(input.presetId);
     return await this.toDto(task.id);
   }
 
@@ -217,28 +177,37 @@ export class MaintenanceService {
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
 
     const applied: MaintenanceApplyLogDto[] = [];
-    let successCount = 0;
-    let failedCount = 0;
+    const executor = new MaintenanceExecutor();
+    this.#executors.set(input.taskId, executor);
     try {
-      for (const preview of previews) {
-        if (preview.status !== "ready") {
-          const skipped = await state.repositories.maintenance.addApplyLog({
-            taskId: input.taskId,
-            previewId: preview.id,
-            rootId: preview.rootId,
-            relativePath: preview.relativePath,
-            presetId: preview.presetId,
-            status: "skipped",
-            error: preview.error,
-          });
-          applied.push(toApplyLogDto(skipped));
-          continue;
-        }
-        try {
+      await executor.run<MaintenancePreviewRecord, MaintenanceApplyLogDto>({
+        state: "executing",
+        items: previews,
+        concurrency: 1,
+        runItem: async (preview, _index, signal) => {
+          if (this.#stopRequested.has(input.taskId)) {
+            return {
+              status: "skipped",
+              result: await this.recordSkippedMaintenanceApply(input.taskId, preview, "维护已停止"),
+            };
+          }
+          if (this.#paused.has(input.taskId)) {
+            return {
+              status: "skipped",
+              result: await this.recordSkippedMaintenanceApply(input.taskId, preview, "维护已暂停"),
+            };
+          }
+          if (preview.status !== "ready") {
+            return {
+              status: "skipped",
+              result: await this.recordSkippedMaintenanceApply(input.taskId, preview, preview.error),
+            };
+          }
           const root = await this.mediaRoots.getActiveRoot(preview.rootId);
           await this.runtime.apply({
             presetId: preview.presetId as MaintenancePresetId,
             root,
+            signal,
             preview: {
               relativePath: preview.relativePath,
               fieldDiffs: JSON.parse(preview.fieldDiffsJson),
@@ -277,26 +246,34 @@ export class MaintenanceService {
             presetId: preview.presetId,
             status: "success",
           });
-          applied.push(toApplyLogDto(log));
-          successCount += 1;
           await this.addEvent(input.taskId, "item-success", `已应用维护项：${preview.relativePath}`);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          await state.repositories.maintenance.upsertPreview({ ...preview, status: "failed", error: message });
-          const log = await state.repositories.maintenance.addApplyLog({
-            taskId: input.taskId,
-            previewId: preview.id,
-            rootId: preview.rootId,
-            relativePath: preview.relativePath,
-            presetId: preview.presetId,
-            status: "failed",
-            error: message,
-          });
-          applied.push(toApplyLogDto(log));
-          failedCount += 1;
-          await this.addEvent(input.taskId, "item-failed", `${preview.relativePath}: ${message}`);
-        }
-      }
+          return { status: "success", result: toMaintenanceApplyLogDto(log) };
+        },
+        callbacks: {
+          onItemComplete: async (preview, _index, itemResult) => {
+            if (itemResult.result) {
+              applied.push(itemResult.result);
+            }
+            if (itemResult.status === "failed") {
+              const message = itemResult.error ?? "维护应用失败";
+              await state.repositories.maintenance.upsertPreview({ ...preview, status: "failed", error: message });
+              const log = await state.repositories.maintenance.addApplyLog({
+                taskId: input.taskId,
+                previewId: preview.id,
+                rootId: preview.rootId,
+                relativePath: preview.relativePath,
+                presetId: preview.presetId,
+                status: "failed",
+                error: message,
+              });
+              applied.push(toMaintenanceApplyLogDto(log));
+              await this.addEvent(input.taskId, "item-failed", `${preview.relativePath}: ${message}`);
+            }
+          },
+        },
+      });
+      const successCount = applied.filter((item) => item.status === "success").length;
+      const failedCount = applied.filter((item) => item.status === "failed").length;
       await state.repositories.tasks.patch(input.taskId, {
         status: failedCount > 0 && successCount === 0 ? "failed" : "completed",
         completedAt: new Date(),
@@ -312,11 +289,14 @@ export class MaintenanceService {
       await this.addEvent(input.taskId, "failed", message);
       this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
       throw error;
+    } finally {
+      this.#executors.delete(input.taskId);
     }
   }
 
   async pause(input: MaintenanceTaskInput): Promise<ScanTaskDto> {
     this.#paused.add(input.taskId);
+    this.#executors.get(input.taskId)?.pause();
     await this.transitionTask(input.taskId, "pause");
     await this.addEvent(input.taskId, "paused", "维护任务已暂停");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
@@ -325,6 +305,7 @@ export class MaintenanceService {
 
   async stop(input: MaintenanceTaskInput): Promise<ScanTaskDto> {
     this.#stopRequested.add(input.taskId);
+    this.#executors.get(input.taskId)?.stop();
     this.#paused.delete(input.taskId);
     await this.transitionTask(input.taskId, "stop", "维护已停止");
     await this.addEvent(input.taskId, "stopping", "正在停止维护任务");
@@ -334,32 +315,22 @@ export class MaintenanceService {
 
   async resume(input: MaintenanceTaskInput): Promise<ScanTaskDto> {
     this.#paused.delete(input.taskId);
+    this.#executors.get(input.taskId)?.resume();
     await this.transitionTask(input.taskId, "resume");
     await this.addEvent(input.taskId, "queued", "维护任务已恢复排队");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
-    void this.drain(await this.resolveTaskPreset(input.taskId, "read_local"));
+    this.drain(await this.resolveTaskPreset(input.taskId, "read_local"));
     return await this.toDto(input.taskId);
   }
 
   async resumeQueued(): Promise<void> {
     await (await this.persistence.getState()).repositories.tasks.requeueRunning("maintenance");
-    void this.drain("read_local");
+    this.drain("read_local");
   }
 
-  private async drain(defaultPresetId: MaintenancePresetId): Promise<void> {
-    if (this.#running) return;
-    this.#running = true;
-    try {
-      while (true) {
-        const state = await this.persistence.getState();
-        const task = await state.repositories.tasks.nextQueued("maintenance");
-        if (!task) return;
-        const presetId = await this.resolveTaskPreset(task.id, defaultPresetId);
-        await this.runTask(task.id, presetId);
-      }
-    } finally {
-      this.#running = false;
-    }
+  private drain(defaultPresetId: MaintenancePresetId): void {
+    void defaultPresetId;
+    this.runner.drain();
   }
 
   private async runTask(taskId: string, presetId: MaintenancePresetId): Promise<void> {
@@ -378,35 +349,62 @@ export class MaintenanceService {
           ? persistedPreviews.map((preview) => ({ relativePath: preview.relativePath }))
           : undefined);
       await state.repositories.maintenance.deletePreviewsForTask(taskId);
-      const items = await this.runtime.preview({ root, presetId, refs });
-      let readyCount = 0;
-      let blockedCount = 0;
-      for (const item of items) {
-        if (this.#stopRequested.has(taskId)) {
-          throw new Error("维护已停止");
-        }
-        if (this.#paused.has(taskId)) {
-          await this.transitionTask(taskId, "pause");
-          await this.addEvent(taskId, "paused", "维护任务已暂停");
-          this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
-          return;
-        }
-        readyCount += item.status === "ready" ? 1 : 0;
-        blockedCount += item.status === "blocked" ? 1 : 0;
-        await state.repositories.maintenance.upsertPreview({
-          taskId,
-          rootId: item.rootId,
-          relativePath: item.relativePath,
-          presetId,
-          status: item.status,
-          error: item.error,
-          fieldDiffsJson: JSON.stringify(item.fieldDiffs),
-          unchangedFieldDiffsJson: JSON.stringify(item.unchangedFieldDiffs),
-          pathDiffJson: item.pathDiff ? JSON.stringify(item.pathDiff) : null,
-          proposedCrawlerDataJson: item.proposedCrawlerData ? JSON.stringify(item.proposedCrawlerData) : null,
-        });
-        await this.addEvent(taskId, item.status === "ready" ? "item-ready" : "item-blocked", item.relativePath);
+      const entries = await (refs?.length ? this.runtime.scanRefs({ root, refs }) : this.runtime.scan({ root }));
+      const executor = new MaintenanceExecutor();
+      this.#executors.set(taskId, executor);
+      type PreviewEntry = (typeof entries)[number];
+      type PreviewItem = Awaited<ReturnType<MaintenanceRuntime["previewEntries"]>>[number];
+      const items = await executor.run<PreviewEntry, PreviewItem>({
+        state: "previewing",
+        items: entries,
+        concurrency: 1,
+        runItem: async (entry, _index, signal) => {
+          if (this.#stopRequested.has(taskId)) {
+            return { status: "skipped", error: "维护已停止" };
+          }
+          if (this.#paused.has(taskId)) {
+            await this.transitionTask(taskId, "pause");
+            await this.addEvent(taskId, "paused", "维护任务已暂停");
+            this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+            return { status: "skipped", error: "维护已暂停" };
+          }
+          const [item] = await this.runtime.previewEntries({ root, presetId, entries: [entry], signal });
+          if (!item) {
+            return { status: "failed", error: "维护预览未返回结果" };
+          }
+          return {
+            status: item.status === "ready" ? "success" : "failed",
+            result: item,
+            error: item.error ?? undefined,
+          };
+        },
+        callbacks: {
+          onItemComplete: async (_entry, _index, result) => {
+            const item = result.result;
+            if (!item) {
+              return;
+            }
+            await state.repositories.maintenance.upsertPreview({
+              taskId,
+              rootId: item.rootId,
+              relativePath: item.relativePath,
+              presetId,
+              status: item.status,
+              error: item.error,
+              fieldDiffsJson: JSON.stringify(item.fieldDiffs),
+              unchangedFieldDiffsJson: JSON.stringify(item.unchangedFieldDiffs),
+              pathDiffJson: item.pathDiff ? JSON.stringify(item.pathDiff) : null,
+              proposedCrawlerDataJson: item.proposedCrawlerData ? JSON.stringify(item.proposedCrawlerData) : null,
+            });
+            await this.addEvent(taskId, item.status === "ready" ? "item-ready" : "item-blocked", item.relativePath);
+          },
+        },
+      });
+      if (this.#paused.has(taskId)) {
+        return;
       }
+      const readyCount = items.filter((item) => item.status === "ready").length;
+      const blockedCount = items.filter((item) => item.status === "blocked").length;
       await state.repositories.tasks.patch(taskId, {
         status: blockedCount > 0 && readyCount === 0 ? "failed" : "completed",
         completedAt: new Date(),
@@ -422,6 +420,7 @@ export class MaintenanceService {
       await this.addEvent(taskId, "failed", message);
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } finally {
+      this.#executors.delete(taskId);
       this.#pendingRefs.delete(taskId);
       this.#pendingPresets.delete(taskId);
       this.#stopRequested.delete(taskId);
@@ -441,6 +440,23 @@ export class MaintenanceService {
     );
   }
 
+  private async recordSkippedMaintenanceApply(
+    taskId: string,
+    preview: MaintenancePreviewRecord,
+    error: string | null,
+  ): Promise<MaintenanceApplyLogDto> {
+    const log = await (await this.persistence.getState()).repositories.maintenance.addApplyLog({
+      taskId,
+      previewId: preview.id,
+      rootId: preview.rootId,
+      relativePath: preview.relativePath,
+      presetId: preview.presetId,
+      status: "skipped",
+      error,
+    });
+    return toMaintenanceApplyLogDto(log);
+  }
+
   private async listPreviewDtos(taskId: string): Promise<MaintenancePreviewItemDto[]> {
     const previews = await (await this.persistence.getState()).repositories.maintenance.listPreviews(taskId);
     return await Promise.all(previews.map((preview) => this.previewToDto(preview)));
@@ -451,44 +467,20 @@ export class MaintenanceService {
     const task = await state.repositories.tasks.get(taskId);
     const root = await state.repositories.mediaRoots.get(task.rootId, { includeDeleted: true }).catch(() => null);
     const previews = await state.repositories.maintenance.listPreviews(taskId);
-    return {
-      id: task.id,
-      kind: task.kind,
-      rootId: task.rootId,
+    return toScanTaskDto(task, {
       rootDisplayName: root?.displayName ?? "未知媒体目录",
-      status: task.status,
-      createdAt: task.createdAt.toISOString(),
-      updatedAt: task.updatedAt.toISOString(),
-      startedAt: toIso(task.startedAt),
-      completedAt: toIso(task.completedAt),
       videoCount: task.videoCount || previews.length,
-      directoryCount: task.directoryCount,
-      error: task.error,
       videos: previews.map((preview) => preview.relativePath),
-    };
+    });
   }
 
   private async previewToDto(record: MaintenancePreviewRecord): Promise<MaintenancePreviewItemDto> {
     const root = await (await this.persistence.getState()).repositories.mediaRoots
       .get(record.rootId, { includeDeleted: true })
       .catch(() => null);
-    return {
-      id: record.id,
-      taskId: record.taskId,
-      presetId: record.presetId as MaintenancePresetId,
-      rootId: record.rootId,
+    return toMaintenancePreviewDto(record, {
       rootDisplayName: root?.displayName ?? "未知媒体目录",
-      relativePath: record.relativePath,
-      fileName: path.posix.basename(record.relativePath),
-      status: record.status,
-      error: record.error,
-      fieldDiffs: JSON.parse(record.fieldDiffsJson),
-      unchangedFieldDiffs: JSON.parse(record.unchangedFieldDiffsJson),
-      pathDiff: record.pathDiffJson ? JSON.parse(record.pathDiffJson) : null,
-      proposedCrawlerData: record.proposedCrawlerDataJson ? JSON.parse(record.proposedCrawlerDataJson) : null,
-      createdAt: record.createdAt.toISOString(),
-      updatedAt: record.updatedAt.toISOString(),
-    };
+    });
   }
 
   private async transitionTask(taskId: string, action: RuntimeTaskAction, error?: string | null): Promise<void> {
@@ -511,48 +503,4 @@ export class MaintenanceService {
   }
 }
 
-const toTaskEventDto = (event: {
-  id: string;
-  taskId: string;
-  type: string;
-  message: string;
-  createdAt: Date;
-}): TaskEventDto => ({
-  id: event.id,
-  taskId: event.taskId,
-  type: event.type,
-  message: event.message,
-  createdAt: event.createdAt.toISOString(),
-});
-
-const toApplyLogDto = (record: MaintenanceApplyLogRecord): MaintenanceApplyLogDto => ({
-  id: record.id,
-  taskId: record.taskId,
-  previewId: record.previewId,
-  rootId: record.rootId,
-  relativePath: record.relativePath,
-  presetId: record.presetId as MaintenancePresetId,
-  status: record.status,
-  error: record.error,
-  appliedAt: record.appliedAt.toISOString(),
-});
-
 const parseCrawlerData = (value: string): CrawlerDataDto => JSON.parse(value) as CrawlerDataDto;
-
-const toRuntimeTaskSnapshot = (task: {
-  id: string;
-  status: string;
-  startedAt: Date | null;
-  completedAt: Date | null;
-  error: string | null;
-}) => ({
-  id: task.id,
-  status: task.status as RuntimeTaskStatus,
-  startedAt: task.startedAt,
-  completedAt: task.completedAt,
-  error: task.error,
-});
-
-const toServerTaskStatus = (status: RuntimeTaskStatus): TaskRecordStatus => {
-  return status === "canceled" ? "failed" : status;
-};

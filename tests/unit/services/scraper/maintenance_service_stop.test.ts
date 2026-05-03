@@ -465,4 +465,45 @@ describe("MaintenanceService stop flow", () => {
     await expect(scanPromise).rejects.toThrow("Operation aborted");
     expect(service.getStatus().state).toBe("idle");
   });
+
+  it("stop aborts an active maintenance scan and waits until it becomes idle", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse(defaultConfiguration);
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    vi.spyOn(LocalScanService.prototype, "scan").mockImplementation(
+      async (_dirPath, _sceneImagesFolder, signal) =>
+        await new Promise((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(createAbortError());
+            return;
+          }
+
+          signal?.addEventListener(
+            "abort",
+            () => {
+              reject(createAbortError());
+            },
+            { once: true },
+          );
+        }),
+    );
+
+    const scanPromise = service.scan("/tmp");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(service.getStatus().state).toBe("scanning");
+    service.stop();
+
+    await expect(scanPromise).rejects.toThrow("Operation aborted");
+    expect(service.getStatus().state).toBe("idle");
+  });
 });

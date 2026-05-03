@@ -1,3 +1,4 @@
+import { ToolDetailShell } from "@mdcz/views/tools";
 import type { ComponentType } from "react";
 import { AmazonPoster } from "./AmazonPoster";
 import { BatchNfoTranslator } from "./BatchNfoTranslator";
@@ -26,5 +27,9 @@ const TOOL_COMPONENTS: Record<ToolId, ComponentType> = {
 
 export function ToolDetail({ toolId }: ToolDetailProps) {
   const ActiveTool = TOOL_COMPONENTS[toolId];
-  return <ActiveTool />;
+  return (
+    <ToolDetailShell toolId={toolId}>
+      <ActiveTool />
+    </ToolDetailShell>
+  );
 }

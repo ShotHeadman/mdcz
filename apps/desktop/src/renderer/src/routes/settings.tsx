@@ -1,11 +1,18 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import {
+  mergeConfigWithFlatPayload,
+  type SettingsCrawlerSiteInfo,
+  SettingsEditor,
+  SettingsLayout,
+  type SettingsNotifier,
+  type SettingsServices,
+  SettingsServicesProvider,
+} from "@mdcz/views/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
-import { SettingsEditor } from "@/components/settings/SettingsEditor";
-import { SettingsLayout } from "@/components/settings/SettingsLayout";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -19,7 +26,7 @@ import {
 import { Input } from "@/components/ui/Input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { useConfigProfiles } from "@/hooks/useConfigProfiles";
-import { useCurrentConfig } from "@/hooks/useCurrentConfig";
+import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { useDefaultConfig } from "@/hooks/useDefaultConfig";
 import { cn } from "@/lib/utils";
 import { useSettingsSavingStore } from "@/store/settingsSavingStore";
@@ -69,6 +76,56 @@ function SettingsComponent() {
   const profilesQ = useConfigProfiles({
     refetchOnWindowFocus: false,
   });
+  const settingsServices = useMemo(
+    () =>
+      ({
+        browsePath: async (kind, filters) => {
+          const result = await ipc.file.browse(kind, filters);
+          return { ...result, paths: result.paths ?? undefined };
+        },
+        checkCookies: ipc.network.checkCookies,
+        decrementInFlightSaves: useSettingsSavingStore.getState().decrementInFlight,
+        ensureWatermarkDirectory: ipc.app.ensureWatermarkDirectory,
+        getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
+        incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
+        listCrawlerSites: async () => {
+          const result = (await ipc.crawler.listSites()) as {
+            sites?: SettingsCrawlerSiteInfo[];
+          };
+          return { sites: result.sites ?? [] };
+        },
+        openWatermarkDirectory: async () => {
+          await ipc.app.openWatermarkDirectory();
+        },
+        previewNaming: ipc.config.previewNaming,
+        probeSiteConnectivity: ipc.crawler.probeSiteConnectivity,
+        relaunchApp: async () => {
+          await ipc.app.relaunch();
+        },
+        resetConfig: ipc.config.reset,
+        saveConfig: ipc.config.save,
+        subscribeInFlightSaves: useSettingsSavingStore.subscribe,
+        testLlm: ipc.translate.testLlm,
+        updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
+          queryClient.setQueryData(CURRENT_CONFIG_QUERY_KEY, (previous) => {
+            if (typeof previous !== "object" || previous === null || Array.isArray(previous)) {
+              return previous;
+            }
+            return mergeConfigWithFlatPayload(previous as Record<string, unknown>, flatPayload);
+          });
+        },
+      }) satisfies SettingsServices,
+    [queryClient],
+  );
+  const settingsNotifier = useMemo(
+    () =>
+      ({
+        error: toast.error,
+        info: toast.info,
+        success: toast.success,
+      }) satisfies SettingsNotifier,
+    [],
+  );
 
   const profiles = profilesQ.data?.profiles ?? [];
   const activeProfile = profilesQ.data?.active ?? null;
@@ -248,267 +305,269 @@ function SettingsComponent() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex-1 overflow-hidden">
-        {configQ.data ? (
-          <SettingsEditor
-            key={activeProfile ?? "default"}
-            data={configQ.data}
-            defaultConfig={defaultsQ.data}
-            defaultConfigReady={Boolean(defaultsQ.data)}
-            deepLinkSettingKey={search.setting ?? null}
-            profiles={profiles}
-            activeProfile={activeProfile}
-            profileLoading={profilesQ.isLoading}
-            onSwitchProfile={handleSwitchProfile}
-            onCreateProfile={() => setNewProfileDialogOpen(true)}
-            onDeleteProfile={() => setDeleteProfileDialogOpen(true)}
-            onResetConfig={handleOpenResetDialog}
-            onExportProfile={handleExportProfile}
-            onImportProfile={handleOpenImportDialog}
-          />
-        ) : (
-          <SettingsLayout
-            searchDisabled
-            profiles={profiles}
-            activeProfile={activeProfile}
-            profileLoading={profilesQ.isLoading}
-            onSwitchProfile={handleSwitchProfile}
-            onCreateProfile={() => setNewProfileDialogOpen(true)}
-            onDeleteProfile={() => setDeleteProfileDialogOpen(true)}
-            onResetConfig={handleOpenResetDialog}
-            onExportProfile={handleExportProfile}
-            onImportProfile={handleOpenImportDialog}
-          >
-            <SettingsRouteSkeleton />
-          </SettingsLayout>
-        )}
-      </div>
-
-      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
-          <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">当前档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">恢复默认设置</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              这会将 <span className="font-medium text-foreground">{activeProfile ?? "default"}</span> 重置为默认配置。
-              此操作不可撤销。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <DialogClose asChild>
-              <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
-              </Button>
-            </DialogClose>
-            <Button variant="destructive" className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME} onClick={handleReset}>
-              确定恢复
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={newProfileDialogOpen} onOpenChange={setNewProfileDialogOpen}>
-        <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
-          <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">新建配置档案</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              输入一个名称，将基于默认设置生成新的配置档案。
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={newProfileName}
-            onChange={(event) => setNewProfileName(event.target.value)}
-            placeholder="配置档案名称"
-            className={PROFILE_DIALOG_INPUT_CLASS_NAME}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                handleCreateProfile();
-              }
-            }}
-          />
-          <DialogFooter className="gap-2">
-            <DialogClose asChild>
-              <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
-              </Button>
-            </DialogClose>
-            <Button
-              className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
-              onClick={handleCreateProfile}
-              disabled={!newProfileName.trim()}
+    <SettingsServicesProvider services={settingsServices} notifier={settingsNotifier}>
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          {configQ.data ? (
+            <SettingsEditor
+              key={activeProfile ?? "default"}
+              data={configQ.data}
+              defaultConfig={defaultsQ.data}
+              defaultConfigReady={Boolean(defaultsQ.data)}
+              deepLinkSettingKey={search.setting ?? null}
+              profiles={profiles}
+              activeProfile={activeProfile}
+              profileLoading={profilesQ.isLoading}
+              onSwitchProfile={handleSwitchProfile}
+              onCreateProfile={() => setNewProfileDialogOpen(true)}
+              onDeleteProfile={() => setDeleteProfileDialogOpen(true)}
+              onResetConfig={handleOpenResetDialog}
+              onExportProfile={handleExportProfile}
+              onImportProfile={handleOpenImportDialog}
+            />
+          ) : (
+            <SettingsLayout
+              searchDisabled
+              profiles={profiles}
+              activeProfile={activeProfile}
+              profileLoading={profilesQ.isLoading}
+              onSwitchProfile={handleSwitchProfile}
+              onCreateProfile={() => setNewProfileDialogOpen(true)}
+              onDeleteProfile={() => setDeleteProfileDialogOpen(true)}
+              onResetConfig={handleOpenResetDialog}
+              onExportProfile={handleExportProfile}
+              onImportProfile={handleOpenImportDialog}
             >
-              创建
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <SettingsRouteSkeleton />
+            </SettingsLayout>
+          )}
+        </div>
 
-      <Dialog open={deleteProfileDialogOpen} onOpenChange={setDeleteProfileDialogOpen}>
-        <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
-          <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">删除配置档案</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              仅可删除非当前活动档案。删除后，该档案的设置文件将被移除。
-            </DialogDescription>
-          </DialogHeader>
-          <Select value={deleteProfileName} onValueChange={setDeleteProfileName}>
-            <SelectTrigger className={PROFILE_DIALOG_SELECT_TRIGGER_CLASS_NAME}>
-              <SelectValue placeholder="选择配置档案" />
-            </SelectTrigger>
-            <SelectContent>
-              {deletableProfiles.map((profile) => (
-                <SelectItem key={profile} value={profile}>
-                  {profile}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter className="gap-2">
-            <DialogClose asChild>
-              <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
-              </Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
-              onClick={handleDeleteProfile}
-              disabled={!deleteProfileName}
-            >
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={importDialogOpen}
-        onOpenChange={(open) => {
-          setImportDialogOpen(open);
-          if (!open) {
-            resetImportState();
-          }
-        }}
-      >
-        <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
-          <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">导入 JSON 档案</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              选择一个导出的设置文件，并决定导入为新档案，或覆盖现有档案。
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">源文件</div>
-              <div className="flex gap-2">
-                <Input
-                  value={importFilePath}
-                  readOnly
-                  placeholder="选择一个 JSON 文件"
-                  className={cn(PROFILE_DIALOG_INPUT_CLASS_NAME, "font-mono text-xs")}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}
-                  onClick={handleBrowseImportFile}
-                >
-                  选择文件
+        <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+          <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
+            <DialogHeader className="gap-3 text-left">
+              <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">当前档案</p>
+              <DialogTitle className="text-2xl font-semibold tracking-tight">恢复默认设置</DialogTitle>
+              <DialogDescription className="text-sm leading-6">
+                这会将 <span className="font-medium text-foreground">{activeProfile ?? "default"}</span>{" "}
+                重置为默认配置。 此操作不可撤销。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
+                  取消
                 </Button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">导入方式</div>
-              <div className="grid grid-cols-2 gap-2 rounded-[var(--radius-quiet)] bg-surface-low/80 p-1">
-                <button
-                  type="button"
-                  onClick={() => setImportMode("new")}
-                  className={cn(
-                    "rounded-[var(--radius-quiet-sm)] px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
-                    importMode === "new"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  新建档案
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportMode("overwrite")}
-                  className={cn(
-                    "rounded-[var(--radius-quiet-sm)] px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
-                    importMode === "overwrite"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  覆盖现有档案
-                </button>
-              </div>
-            </div>
-
-            {importMode === "new" ? (
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">档案名称</div>
-                <Input
-                  value={importProfileName}
-                  onChange={(event) => setImportProfileName(event.target.value)}
-                  placeholder="为导入档案命名"
-                  className={PROFILE_DIALOG_INPUT_CLASS_NAME}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      handleImportProfile();
-                    }
-                  }}
-                />
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">覆盖目标</div>
-                <Select value={overwriteProfileName} onValueChange={setOverwriteProfileName}>
-                  <SelectTrigger className={PROFILE_DIALOG_SELECT_TRIGGER_CLASS_NAME}>
-                    <SelectValue placeholder="选择要覆盖的档案" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {profiles.map((profile) => (
-                      <SelectItem key={profile} value={profile}>
-                        {profile}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {overwriteProfileName === activeProfile && (
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    当前活动档案会在导入完成后立即刷新为新内容。
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2">
-            <DialogClose asChild>
-              <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
+              </DialogClose>
+              <Button variant="destructive" className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME} onClick={handleReset}>
+                确定恢复
               </Button>
-            </DialogClose>
-            <Button
-              className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
-              onClick={handleImportProfile}
-              disabled={!importFilePath || !importTargetName}
-            >
-              导入
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={newProfileDialogOpen} onOpenChange={setNewProfileDialogOpen}>
+          <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
+            <DialogHeader className="gap-3 text-left">
+              <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
+              <DialogTitle className="text-2xl font-semibold tracking-tight">新建配置档案</DialogTitle>
+              <DialogDescription className="text-sm leading-6">
+                输入一个名称，将基于默认设置生成新的配置档案。
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              value={newProfileName}
+              onChange={(event) => setNewProfileName(event.target.value)}
+              placeholder="配置档案名称"
+              className={PROFILE_DIALOG_INPUT_CLASS_NAME}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleCreateProfile();
+                }
+              }}
+            />
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
+                  取消
+                </Button>
+              </DialogClose>
+              <Button
+                className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
+                onClick={handleCreateProfile}
+                disabled={!newProfileName.trim()}
+              >
+                创建
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={deleteProfileDialogOpen} onOpenChange={setDeleteProfileDialogOpen}>
+          <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
+            <DialogHeader className="gap-3 text-left">
+              <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
+              <DialogTitle className="text-2xl font-semibold tracking-tight">删除配置档案</DialogTitle>
+              <DialogDescription className="text-sm leading-6">
+                仅可删除非当前活动档案。删除后，该档案的设置文件将被移除。
+              </DialogDescription>
+            </DialogHeader>
+            <Select value={deleteProfileName} onValueChange={setDeleteProfileName}>
+              <SelectTrigger className={PROFILE_DIALOG_SELECT_TRIGGER_CLASS_NAME}>
+                <SelectValue placeholder="选择配置档案" />
+              </SelectTrigger>
+              <SelectContent>
+                {deletableProfiles.map((profile) => (
+                  <SelectItem key={profile} value={profile}>
+                    {profile}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
+                  取消
+                </Button>
+              </DialogClose>
+              <Button
+                variant="destructive"
+                className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
+                onClick={handleDeleteProfile}
+                disabled={!deleteProfileName}
+              >
+                删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={importDialogOpen}
+          onOpenChange={(open) => {
+            setImportDialogOpen(open);
+            if (!open) {
+              resetImportState();
+            }
+          }}
+        >
+          <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
+            <DialogHeader className="gap-3 text-left">
+              <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
+              <DialogTitle className="text-2xl font-semibold tracking-tight">导入 JSON 档案</DialogTitle>
+              <DialogDescription className="text-sm leading-6">
+                选择一个导出的设置文件，并决定导入为新档案，或覆盖现有档案。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">源文件</div>
+                <div className="flex gap-2">
+                  <Input
+                    value={importFilePath}
+                    readOnly
+                    placeholder="选择一个 JSON 文件"
+                    className={cn(PROFILE_DIALOG_INPUT_CLASS_NAME, "font-mono text-xs")}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}
+                    onClick={handleBrowseImportFile}
+                  >
+                    选择文件
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">导入方式</div>
+                <div className="grid grid-cols-2 gap-2 rounded-[var(--radius-quiet)] bg-surface-low/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setImportMode("new")}
+                    className={cn(
+                      "rounded-[var(--radius-quiet-sm)] px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+                      importMode === "new"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    新建档案
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportMode("overwrite")}
+                    className={cn(
+                      "rounded-[var(--radius-quiet-sm)] px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+                      importMode === "overwrite"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    覆盖现有档案
+                  </button>
+                </div>
+              </div>
+
+              {importMode === "new" ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">档案名称</div>
+                  <Input
+                    value={importProfileName}
+                    onChange={(event) => setImportProfileName(event.target.value)}
+                    placeholder="为导入档案命名"
+                    className={PROFILE_DIALOG_INPUT_CLASS_NAME}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        handleImportProfile();
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">覆盖目标</div>
+                  <Select value={overwriteProfileName} onValueChange={setOverwriteProfileName}>
+                    <SelectTrigger className={PROFILE_DIALOG_SELECT_TRIGGER_CLASS_NAME}>
+                      <SelectValue placeholder="选择要覆盖的档案" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profiles.map((profile) => (
+                        <SelectItem key={profile} value={profile}>
+                          {profile}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {overwriteProfileName === activeProfile && (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      当前活动档案会在导入完成后立即刷新为新内容。
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
+                  取消
+                </Button>
+              </DialogClose>
+              <Button
+                className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
+                onClick={handleImportProfile}
+                disabled={!importFilePath || !importTargetName}
+              >
+                导入
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </SettingsServicesProvider>
   );
 }
 
