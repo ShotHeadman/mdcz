@@ -18,7 +18,7 @@ import {
   Label,
   Textarea,
 } from "../ui";
-import { AppLink, ErrorBanner, formatDate } from "./common";
+import { AppLink, ErrorBanner, formatDate } from "./Common";
 
 const AVAILABLE_TOOL_IDS = new Set<ToolId>(["single-file-scraper", "missing-number-finder"]);
 

@@ -5,12 +5,11 @@ import { ActorImageService, getActorImageCacheDirectory } from "@main/services/A
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
-import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
 import { MaintenanceFileScraper } from "@main/services/scraper/maintenance/MaintenanceFileScraper";
 import { getPreset } from "@main/services/scraper/maintenance/presets";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import type { TranslateService } from "@main/services/scraper/TranslateService";
 import * as imageUtils from "@main/utils/image";
+import type { FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { app } from "electron";

@@ -14,7 +14,9 @@
     "apps/web/vite.config.ts",
     "packages/shared/**/*.ts",
     "packages/ui/src/**/*.ts",
-    "packages/ui/src/**/*.tsx"
+    "packages/ui/src/**/*.tsx",
+    "packages/views/src/**/*.ts",
+    "packages/views/src/**/*.tsx"
   ],
   "exclude": ["packages/**/*.test.ts"]
 }

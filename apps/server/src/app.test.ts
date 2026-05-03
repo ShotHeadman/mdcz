@@ -1,12 +1,18 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultConfiguration } from "@mdcz/shared/config";
+import type { AggregationResult, ManualScrapeOptions } from "@mdcz/runtime/scrape";
+import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it } from "vitest";
-
 import { buildServer, type ServerApp } from "./app";
 import { ServerConfigService } from "./configService";
-import { formatSseEvent } from "./taskEvents";
+import { MediaRootService } from "./mediaRootService";
+import { ServerPersistenceService } from "./persistenceService";
+import { ScrapeService } from "./scrapeService";
+import { type ServerScrapeAggregationService, ServerScrapeRuntime } from "./serverScrapePipeline";
+import { createTaskEventBus, formatSseEvent } from "./taskEvents";
 
 const textDecoder = new TextDecoder();
 
@@ -28,7 +34,11 @@ const expectedHealthPayload = {
 
 let serverApp: ServerApp | undefined;
 
-const createTestServer = async (): Promise<ServerApp> => {
+interface TestServerOptions {
+  scrapeAggregation?: ServerScrapeAggregationService;
+}
+
+const createTestServer = async (options: TestServerOptions = {}): Promise<ServerApp> => {
   const root = await mkdtemp(join(tmpdir(), "mdcz-server-app-"));
   const paths = {
     configDir: join(root, "config"),
@@ -36,8 +46,139 @@ const createTestServer = async (): Promise<ServerApp> => {
     configPath: join(root, "config", "default.toml"),
     databasePath: join(root, "data", "mdcz.sqlite"),
   };
-  serverApp = buildServer({ services: { config: new ServerConfigService(paths) } });
+  const config = new ServerConfigService(paths);
+  const persistence = new ServerPersistenceService(paths);
+  const mediaRoots = new MediaRootService(persistence);
+  const taskEvents = createTaskEventBus();
+  serverApp = buildServer({
+    services: {
+      config,
+      mediaRoots,
+      persistence,
+      taskEvents,
+      scrape: options.scrapeAggregation
+        ? new ScrapeService(
+            persistence,
+            mediaRoots,
+            config,
+            taskEvents,
+            new ServerScrapeRuntime(config, options.scrapeAggregation),
+          )
+        : undefined,
+    },
+  });
   return serverApp;
+};
+
+const createPngBytes = (): Buffer => {
+  const header = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00,
+  ]);
+  return Buffer.concat([header, Buffer.alloc(9000)]);
+};
+
+const startImageServer = async (): Promise<{ url: string; close: () => Promise<void> }> => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "image/png" });
+    response.end(createPngBytes());
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected HTTP test server address");
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}/image.png`,
+    close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+  };
+};
+
+const createFakeAggregation = (imageUrl: string, actorPhotoPath?: string): ServerScrapeAggregationService => ({
+  async aggregate(
+    number: string,
+    _configuration: Configuration,
+    _signal?: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
+  ): Promise<AggregationResult> {
+    return {
+      data: {
+        title: `Runtime Title ${number}`,
+        title_zh: `运行时标题 ${number}`,
+        number,
+        actors: ["Actor A"],
+        actor_profiles: actorPhotoPath ? [{ name: "Actor A", photo_url: actorPhotoPath }] : undefined,
+        genres: ["Drama"],
+        studio: "Runtime Studio",
+        plot: manualScrape?.detailUrl ?? "Runtime plot",
+        release_date: "2024-01-15",
+        thumb_url: imageUrl,
+        poster_url: imageUrl,
+        fanart_url: imageUrl,
+        scene_images: [],
+        website: Website.JAVDB,
+      },
+      sources: {
+        title: Website.JAVDB,
+        thumb_url: Website.JAVDB,
+        poster_url: Website.JAVDB,
+      },
+      imageAlternatives: {
+        thumb_url: [],
+        poster_url: [],
+        scene_images: [],
+        scene_image_sources: [],
+      },
+      stats: {
+        totalSites: 1,
+        successCount: 1,
+        failedCount: 0,
+        skippedCount: 0,
+        siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
+        totalElapsedMs: 1,
+      },
+    };
+  },
+});
+
+const createAbortAwareAggregation = (): {
+  aggregation: ServerScrapeAggregationService;
+  aborted: Promise<void>;
+  started: Promise<void>;
+} => {
+  let resolveStarted!: () => void;
+  let resolveAborted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    resolveStarted = resolve;
+  });
+  const aborted = new Promise<void>((resolve) => {
+    resolveAborted = resolve;
+  });
+
+  return {
+    started,
+    aborted,
+    aggregation: {
+      async aggregate(_number, _configuration, signal): Promise<AggregationResult | null> {
+        resolveStarted();
+        return await new Promise<AggregationResult | null>((resolve) => {
+          if (signal?.aborted) {
+            resolveAborted();
+            resolve(null);
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => {
+              resolveAborted();
+              resolve(null);
+            },
+            { once: true },
+          );
+        });
+      },
+    },
+  };
 };
 
 afterEach(async () => {
@@ -445,6 +586,181 @@ describe("buildServer", () => {
       payload: { query: "movie", limit: 20 },
     });
     expect(retriedLibraryResponse.json().result.data.total).toBe(0);
+  });
+
+  it("runs the full scrape runtime pipeline and indexes organized output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-runtime-root-"));
+    const actorRoot = await mkdtemp(join(tmpdir(), "mdcz-actor-root-"));
+    const actorPhotoPath = join(actorRoot, "Actor A.jpg");
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    await writeFile(actorPhotoPath, createPngBytes());
+    const imageServer = await startImageServer();
+    const { fastify } = await createTestServer({
+      scrapeAggregation: createFakeAggregation(imageServer.url, actorPhotoPath),
+    });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        download: { downloadSceneImages: false },
+        paths: { actorPhotoFolder: actorRoot },
+      },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+    });
+    const taskId = startResponse.json().result.data.id;
+
+    await expect
+      .poll(async () => {
+        const detailResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return detailResponse.json().result.data.task.status;
+      })
+      .toBe("completed");
+
+    const libraryResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.search",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { query: "ABC-123", limit: 20 },
+    });
+    const entry = libraryResponse.json().result.data.entries[0];
+    const detailResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/library.detail?input=${encodeURIComponent(JSON.stringify({ id: entry.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const overviewResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/overview.summary",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const outputRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.mp4";
+    const nfoRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.nfo";
+    const nfoContent = await readFile(join(root, nfoRelativePath), "utf8");
+    const actorPhotoContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/.actors/Actor A.jpg"));
+    const thumbContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/thumb.png"));
+
+    expect(libraryResponse.statusCode).toBe(200);
+    expect(libraryResponse.json().result.data.total).toBe(1);
+    expect(entry).toMatchObject({
+      actors: ["Actor A"],
+      available: true,
+      fileName: "ABC-123.mp4",
+      mediaIdentity: "ABC-123",
+      number: "ABC-123",
+      rootDisplayName: "Media",
+    });
+    expect(entry.relativePath).toBe(outputRelativePath);
+    expect(entry.thumbnailPath).toBe("JAV_output/Actor A/ABC-123/thumb.png");
+    expect(detailResponse.statusCode).toBe(200);
+    expect(detailResponse.json().result.data.entry.crawlerData).toMatchObject({
+      number: "ABC-123",
+      studio: "Runtime Studio",
+      title: "Runtime Title ABC-123",
+      website: "javdb",
+    });
+    expect(detailResponse.json().result.data.entry.fileRefs[0]).toMatchObject({
+      relativePath: outputRelativePath,
+      available: true,
+    });
+    expect(detailResponse.json().result.data.entry.assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "thumb", uri: "JAV_output/Actor A/ABC-123/thumb.png" }),
+        expect.objectContaining({ kind: "poster", uri: "JAV_output/Actor A/ABC-123/poster.png" }),
+      ]),
+    );
+    expect(nfoContent).toContain("Runtime Title ABC-123");
+    expect(nfoContent).toContain(".actors/Actor A.jpg");
+    expect(actorPhotoContent.length).toBeGreaterThan(8000);
+    expect(thumbContent.length).toBeGreaterThan(8000);
+    expect(overviewResponse.json().result.data.recentAcquisitions[0]).toMatchObject({
+      id: entry.id,
+      number: "ABC-123",
+      available: true,
+    });
+    await imageServer.close();
+  });
+
+  it("aborts an active scrape runtime pipeline when the task is stopped", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-stop-root-"));
+    await writeFile(join(root, "ABC-124.mp4"), "video");
+    const control = createAbortAwareAggregation();
+    const { fastify } = await createTestServer({ scrapeAggregation: control.aggregation });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { refs: [{ rootId, relativePath: "ABC-124.mp4" }] },
+    });
+    const taskId = startResponse.json().result.data.id;
+    await control.started;
+
+    const stopResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.stop",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
+
+    expect(stopResponse.statusCode).toBe(200);
+    await control.aborted;
+    await expect
+      .poll(async () => {
+        const detailResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return detailResponse.json().result.data.task.status;
+      })
+      .toBe("failed");
+
+    const resultsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(resultsResponse.json().result.data.results[0]).toMatchObject({
+      status: "skipped",
+      error: "刮削已停止",
+    });
   });
 
   it("closes the persistence database with the Fastify lifecycle", async () => {

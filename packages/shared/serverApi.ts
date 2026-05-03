@@ -19,6 +19,7 @@ import type {
   LibraryDetailResponse,
   LibraryListInput,
   LibraryListResponse,
+  LibraryRelinkInput,
   LogListResponse,
   MediaRootAvailabilityResponse,
   MediaRootCreateInput,
@@ -86,7 +87,11 @@ export interface ServerApiContract {
   };
   library: {
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
+    search(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
+    refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
+    rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
+    relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;
@@ -160,7 +165,11 @@ export type ServerApiProcedure =
   | "persistence.status"
   | "logs.list"
   | "library.list"
+  | "library.search"
   | "library.detail"
+  | "library.refresh"
+  | "library.rescan"
+  | "library.relink"
   | "overview.summary"
   | "diagnostics.summary"
   | "setup.status"

@@ -392,21 +392,3 @@ export const parseNfo = (xml: string, fallbackPath: string): CrawlerData => {
     website: Website.JAVDB,
   };
 };
-
-export const buildPlaceholderCrawlerData = (relativePath: string, manualUrl?: string | null): CrawlerData => {
-  const number = inferNumber(relativePath);
-  const title = basename(
-    relativePath,
-    relativePath.includes(".") ? relativePath.slice(relativePath.lastIndexOf(".")) : undefined,
-  );
-  return {
-    title,
-    title_zh: title,
-    number,
-    actors: [],
-    genres: [],
-    plot: manualUrl ? `Manual scrape URL: ${manualUrl}` : undefined,
-    scene_images: [],
-    website: Website.JAVDB,
-  };
-};

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { api } from "../client";
 import { buildHref } from "../routeHelpers";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../ui";
-import { ErrorBanner, formatDate, Notice } from "./common";
+import { ErrorBanner, formatDate, Notice } from "./Common";
 
 export const MediaRootsPage = () => {
   const queryClient = useQueryClient();

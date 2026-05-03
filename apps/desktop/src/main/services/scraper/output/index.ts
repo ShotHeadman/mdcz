@@ -5,21 +5,22 @@ import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
 import { resolvePosterBadgeDefinitions } from "@main/utils/movieTags";
 import { probeVideoMetadata } from "@main/utils/video";
+import type { FileOrganizer, OrganizePlan } from "@mdcz/runtime/scrape";
+import { prepareCrawlerDataForMovieOutput, prepareImageAlternativesForDownload } from "@mdcz/runtime/scrape";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import type { Logger } from "winston";
 import { throwIfAborted } from "../abort";
 import type { ImageAlternatives, SourceMap } from "../aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../DownloadManager";
-import type { FileOrganizer, OrganizePlan } from "../FileOrganizer";
 import type { NfoGenerator } from "../NfoGenerator";
 import { reconcileExistingNfoFiles } from "../NfoGenerator";
 import { PosterWatermarkService } from "../PosterWatermarkService";
-import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
-import { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
 
-export { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
-export { prepareCrawlerDataForNfo } from "./prepareCrawlerDataForNfo";
-export { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
+export {
+  prepareCrawlerDataForMovieOutput,
+  prepareCrawlerDataForNfo,
+  prepareImageAlternativesForDownload,
+} from "@mdcz/runtime/scrape";
 
 const posterWatermarkService = new PosterWatermarkService();
 

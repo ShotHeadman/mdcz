@@ -21,7 +21,7 @@ import {
   PasswordInput,
   Progress,
 } from "../ui";
-import { ErrorBanner } from "./common";
+import { ErrorBanner } from "./Common";
 
 export const SetupPage = () => {
   const queryClient = useQueryClient();

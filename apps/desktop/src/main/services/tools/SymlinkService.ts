@@ -3,8 +3,8 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
-import { inspectStrmTarget } from "@main/utils/strm";
-import { SUBTITLE_EXTENSIONS } from "@main/utils/subtitles";
+import { inspectStrmTarget } from "@mdcz/runtime/scrape/utils/strm";
+import { SUBTITLE_EXTENSIONS } from "@mdcz/runtime/scrape/utils/subtitles";
 
 const DEFAULT_MEDIA_EXTENSIONS = new Set([
   ".mp4",

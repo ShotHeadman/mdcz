@@ -91,7 +91,11 @@ export const api: ServerApiContract = {
   },
   library: {
     list: (input) => request("library.list", input),
+    search: (input) => request("library.search", input),
     detail: (input) => request("library.detail", input),
+    refresh: (input) => request("library.refresh", input),
+    rescan: (input) => request("library.rescan", input),
+    relink: (input) => request("library.relink", input),
   },
   overview: {
     summary: () => request("overview.summary"),

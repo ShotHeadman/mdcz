@@ -9,6 +9,7 @@ import {
   fileActionInputSchema,
   libraryDetailInputSchema,
   libraryListInputSchema,
+  libraryRelinkInputSchema,
   mediaRootCreateInputSchema,
   mediaRootIdInputSchema,
   mediaRootUpdateInputSchema,
@@ -170,9 +171,22 @@ export const appRouter = t.router({
     list: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
+    search: protectedProcedure
+      .input(libraryListInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.library.search(input)),
     detail: protectedProcedure
       .input(libraryDetailInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.detail(input.id)),
+    refresh: protectedProcedure
+      .input(libraryDetailInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.refresh(input.id)),
+    relink: protectedProcedure
+      .input(libraryRelinkInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.relink(input)),
+    rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
+      const detail = await ctx.services.library.detail(input.id);
+      return await ctx.services.scans.start(detail.entry.rootId);
+    }),
   }),
   overview: t.router({
     summary: protectedProcedure.query(async ({ ctx }) => await ctx.services.library.overview()),

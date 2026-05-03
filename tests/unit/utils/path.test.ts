@@ -1,4 +1,4 @@
-import { buildSafeFileName, buildSafePath } from "@main/utils/path";
+import { buildSafeFileName, buildSafePath } from "@mdcz/runtime/scrape/utils/path";
 import { describe, expect, it } from "vitest";
 
 const splitSegments = (value: string): string[] => value.split(/[\\/]+/u).filter((segment) => segment.length > 0);

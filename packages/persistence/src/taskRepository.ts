@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import {
@@ -210,7 +210,7 @@ export class TaskRepository {
     this.database.db
       .update(taskRecords)
       .set({ status: "queued", startedAt: null, updatedAt: new Date() })
-      .where(and(eq(taskRecords.kind, kind), eq(taskRecords.status, "running")))
+      .where(and(eq(taskRecords.kind, kind), inArray(taskRecords.status, ["running", "stopping"])))
       .run();
   }
 

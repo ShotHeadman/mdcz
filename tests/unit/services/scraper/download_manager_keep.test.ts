@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
-import type { NetworkClient, ProbeResult } from "@main/services/network";
-import { DownloadManager } from "@main/services/scraper/DownloadManager";
-import * as imageUtils from "@main/utils/image";
+import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
+import { DownloadManager } from "@mdcz/runtime/scrape";
+import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -77,7 +77,15 @@ const createDownloadSubject = async (
   await seedFiles(root, files);
 
   const networkClient = new FakeNetworkClient();
-  const manager = new DownloadManager(networkClient as unknown as NetworkClient, options);
+  const imageHostCooldownStore =
+    options.imageHostCooldownStore ??
+    new PersistentCooldownStore({
+      filePath: join(root, "image-host-cooldowns.json"),
+      loggerName: "DownloadManagerTestStore",
+    });
+  const manager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
+    imageHostCooldownStore,
+  });
 
   return { root, networkClient, manager };
 };
@@ -130,7 +138,7 @@ const mockPrimaryProbe = (
     withoutDimensions?: string[];
   },
 ) => {
-  networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
+  networkClient.probe.mockImplementation(async (url: string): Promise<RuntimeProbeResult> => {
     const variant = url.includes("-tiny.") ? "tiny" : url.includes("-low.") ? "low" : "high";
     const isThumb = url.includes("thumb");
     const shouldIncludeDimensions = options.includeDimensions && !options.withoutDimensions?.includes(url);
@@ -215,7 +223,7 @@ class FakeNetworkClient {
   readonly download = vi.fn(async (url: string, outputPath: string) => await writeDownloadedFile(outputPath, url));
 
   readonly probe = vi.fn(
-    async (url: string): Promise<ProbeResult> => ({
+    async (url: string): Promise<RuntimeProbeResult> => ({
       ok: true,
       status: 200,
       contentLength: 1024,
@@ -727,7 +735,7 @@ describe("DownloadManager keep flags", () => {
       {
         setup: (networkClient: FakeNetworkClient) => {
           mockResolutionAwarePrimaryValidation();
-          networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
+          networkClient.probe.mockImplementation(async (url: string): Promise<RuntimeProbeResult> => {
             if (url.includes("-missing.")) {
               return {
                 ok: false,
@@ -1125,7 +1133,7 @@ describe("DownloadManager keep flags", () => {
       filePath: storePath,
       loggerName: "DownloadManagerHostCooldownTestStoreReloaded",
     });
-    const reloadedManager = new DownloadManager(networkClient as unknown as NetworkClient, {
+    const reloadedManager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
       imageHostCooldownStore: reloadedStore,
     });
     const callsBeforeSecondRun = networkClient.download.mock.calls.length;

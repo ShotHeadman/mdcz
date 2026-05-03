@@ -26,6 +26,7 @@
     "@mdcz/runtime": "workspace:*",
     "@mdcz/shared": "workspace:*",
     "@mdcz/ui": "workspace:*",
+    "@mdcz/views": "workspace:*",
     "cheerio": "^1.2.0",
     "electron-window-state": "^5.0.3",
     "fast-xml-parser": "^5.3.0",

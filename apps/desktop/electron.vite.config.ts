@@ -5,7 +5,14 @@ import pkg from "./package.json" with { type: "json" };
 
 const appResolve = (subpath: string): string => resolve(__dirname, subpath);
 const workspaceResolve = (subpath: string): string => resolve(__dirname, "../..", subpath);
-const workspacePackages = ["@mdcz/persistence", "@mdcz/shared", "@mdcz/storage", "@mdcz/ui"];
+const workspacePackages = [
+  "@mdcz/persistence",
+  "@mdcz/runtime",
+  "@mdcz/shared",
+  "@mdcz/storage",
+  "@mdcz/ui",
+  "@mdcz/views",
+];
 const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
@@ -24,9 +31,12 @@ export default defineConfig({
       alias: {
         "@main": appResolve("src/main"),
         "@mdcz/persistence": workspaceResolve("packages/persistence/src/index.ts"),
+        "@mdcz/runtime": workspaceResolve("packages/runtime/src/index.ts"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
         "@mdcz/storage": workspaceResolve("packages/storage/src/index.ts"),
         "@mdcz/ui": workspaceResolve("packages/ui/src/index.ts"),
+        "@mdcz/views": workspaceResolve("packages/views/src/index.ts"),
+        "@mdcz/views/overview": workspaceResolve("packages/views/src/overview/index.ts"),
       },
     },
     build: {
@@ -62,6 +72,9 @@ export default defineConfig({
         "@": appResolve("src/renderer/src"),
         "@renderer": appResolve("src/renderer/src"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
+        "@mdcz/runtime": workspaceResolve("packages/runtime/src/index.ts"),
+        "@mdcz/views": workspaceResolve("packages/views/src/index.ts"),
+        "@mdcz/views/overview": workspaceResolve("packages/views/src/overview/index.ts"),
       },
     },
     build: {

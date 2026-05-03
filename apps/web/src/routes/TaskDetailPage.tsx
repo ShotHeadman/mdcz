@@ -3,7 +3,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui";
-import { ErrorBanner, formatDate, scanStatusLabels, taskKindLabels } from "./common";
+import { ErrorBanner, formatDate, scanStatusLabels, taskKindLabels } from "./Common";
 
 export const TaskDetailPage = () => {
   const queryClient = useQueryClient();

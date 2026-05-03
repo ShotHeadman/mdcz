@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { arch } from "node:os";
 import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
-import { resolvePlayableMediaTarget } from "@main/utils/strm";
+import { resolvePlayableMediaTarget } from "@mdcz/runtime/scrape/utils/strm";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { app, shell } from "electron";

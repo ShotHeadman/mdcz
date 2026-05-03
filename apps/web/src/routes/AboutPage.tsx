@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui";
-import { AppLink } from "./common";
+import { AppLink } from "./Common";
 
 export const AboutPage = () => {
   const healthQ = useQuery({ queryKey: ["health"], queryFn: () => api.health.read(), retry: false });

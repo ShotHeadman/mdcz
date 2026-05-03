@@ -1,8 +1,8 @@
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config";
 import { probeSiteConnectivity } from "@main/services/crawler/siteConnectivity";
-import { buildCrawlerOptions } from "@main/services/scraper/crawlerOptions";
 import { toErrorMessage } from "@main/utils/common";
+import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";

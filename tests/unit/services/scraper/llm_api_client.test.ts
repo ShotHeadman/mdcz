@@ -1,4 +1,4 @@
-import { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
+import { LlmApiClient } from "@mdcz/runtime/scrape";
 import { DEFAULT_LLM_BASE_URL } from "@mdcz/shared/llm";
 import { describe, expect, it, vi } from "vitest";
 

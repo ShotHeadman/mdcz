@@ -4,15 +4,10 @@ import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
 import type { AggregationResult } from "@main/services/scraper/aggregation";
-import type { OrganizePlan } from "@main/services/scraper/FileOrganizer";
 import type { FileScraperDependencies } from "@main/services/scraper/FileScraper";
-import { AggregateStage } from "@main/services/scraper/pipeline/AggregateStage";
 import { DefaultFileScraperPipeline } from "@main/services/scraper/pipeline/DefaultFileScraperPipeline";
-import { PlanStage } from "@main/services/scraper/pipeline/PlanStage";
-import { ProbeStage } from "@main/services/scraper/pipeline/ProbeStage";
-import { ScrapeContext } from "@main/services/scraper/pipeline/ScrapeContext";
-import { TranslateStage } from "@main/services/scraper/pipeline/TranslateStage";
-import type { FileScraperStageRuntime } from "@main/services/scraper/pipeline/types";
+import type { FileScraperStageRuntime, OrganizePlan } from "@mdcz/runtime/scrape";
+import { AggregateStage, PlanStage, ProbeStage, ScrapeContext, TranslateStage } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -50,7 +45,6 @@ const createAggregationResult = (data: CrawlerData): AggregationResult => ({
 
 const createRuntime = (overrides: Partial<FileScraperStageRuntime> = {}): FileScraperStageRuntime => ({
   actorImageService: {} as FileScraperStageRuntime["actorImageService"],
-  downloadManager: {} as FileScraperStageRuntime["downloadManager"],
   fileOrganizer: {
     plan: vi.fn(),
     ensureOutputReady: vi.fn(async (plan: OrganizePlan) => plan),
@@ -74,6 +68,19 @@ const createRuntime = (overrides: Partial<FileScraperStageRuntime> = {}): FileSc
   loadExistingNfoLocalState: vi.fn().mockResolvedValue(undefined),
   setProgress: vi.fn(),
   translateCrawlerData: vi.fn(async (crawlerData: CrawlerData) => crawlerData),
+  probeVideoMetadata: vi.fn().mockResolvedValue(undefined),
+  prepareOutputCrawlerData: vi.fn(async (context: ScrapeContext) => ({
+    data: context.requireCrawlerData(),
+    actorPhotoPaths: [],
+  })),
+  downloadCrawlerAssets: vi.fn().mockResolvedValue({
+    assets: {
+      downloaded: [],
+      sceneImages: [],
+    },
+  }),
+  writePreparedNfo: vi.fn().mockResolvedValue(undefined),
+  organizePreparedVideo: vi.fn(async (context: ScrapeContext) => context.fileInfo.filePath),
   ...overrides,
 });
 

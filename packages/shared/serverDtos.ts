@@ -324,6 +324,7 @@ export type LogListResponse = z.infer<typeof logListResponseSchema>;
 
 export const libraryEntrySchema = z.object({
   id: z.string(),
+  mediaIdentity: z.string().nullable(),
   rootId: z.string(),
   rootDisplayName: z.string(),
   relativePath: z.string(),
@@ -336,10 +337,35 @@ export const libraryEntrySchema = z.object({
   title: z.string().nullable(),
   number: z.string().nullable(),
   actors: z.array(z.string()),
+  crawlerData: crawlerDataSchema.nullable(),
   thumbnailPath: z.string().nullable(),
   lastKnownPath: z.string().nullable(),
   indexedAt: z.string(),
+  lastRefreshedAt: z.string().nullable(),
   available: z.boolean().nullable(),
+  fileRefs: z.array(
+    z.object({
+      id: z.string(),
+      rootId: z.string(),
+      rootDisplayName: z.string(),
+      relativePath: z.string(),
+      fileName: z.string(),
+      directory: z.string(),
+      size: z.number(),
+      modifiedAt: z.string().nullable(),
+      lastKnownPath: z.string().nullable(),
+      available: z.boolean().nullable(),
+    }),
+  ),
+  assets: z.array(
+    z.object({
+      id: z.string(),
+      kind: z.string(),
+      uri: z.string(),
+      rootId: z.string().nullable(),
+      relativePath: z.string().nullable(),
+    }),
+  ),
 });
 
 export type LibraryEntryDto = z.infer<typeof libraryEntrySchema>;
@@ -359,6 +385,13 @@ export const libraryDetailInputSchema = z.object({
 });
 
 export type LibraryDetailInput = z.infer<typeof libraryDetailInputSchema>;
+
+export const libraryRelinkInputSchema = libraryDetailInputSchema.extend({
+  rootId: z.string().trim().min(1),
+  relativePath: z.string().trim().min(1),
+});
+
+export type LibraryRelinkInput = z.infer<typeof libraryRelinkInputSchema>;
 
 export const libraryListResponseSchema = z.object({
   entries: z.array(libraryEntrySchema),

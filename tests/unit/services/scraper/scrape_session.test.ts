@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ScrapeSession } from "@main/services/scraper/session/ScrapeSession";
+import { ScrapeSession } from "@mdcz/runtime/tasks";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];

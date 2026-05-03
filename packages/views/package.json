@@ -1,0 +1,27 @@
+{
+  "name": "@mdcz/views",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./overview": "./src/overview/index.ts",
+    "./workbench": "./src/workbench/index.ts",
+    "./library": "./src/library/index.ts",
+    "./maintenance": "./src/maintenance/index.ts",
+    "./nfo": "./src/nfo/index.ts",
+    "./detail": "./src/detail/index.ts",
+    "./logs": "./src/logs/index.ts",
+    "./tools": "./src/tools/index.ts",
+    "./common": "./src/common/index.ts"
+  },
+  "dependencies": {
+    "@mdcz/shared": "workspace:*",
+    "@mdcz/ui": "workspace:*",
+    "lucide-react": "^0.563.0"
+  },
+  "peerDependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}

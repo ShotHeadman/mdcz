@@ -9,7 +9,7 @@ import {
   LocalActorSource,
   OfficialActorSource,
 } from "@main/services/actorSource";
-import { createImageHostCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
+import { createImageHostCooldownStore, PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import { RecentAcquisitionsStore } from "@main/services/history";
 import { OutputLibraryScanner } from "@main/services/library";
@@ -37,6 +37,10 @@ export const createContainer = ({
   const fetchGateway = new FetchGateway(networkClient);
   const crawlerProvider = new CrawlerProvider({
     fetchGateway,
+    siteCooldownStore: new PersistentCooldownStore({
+      fileName: "crawler-site-cooldowns.json",
+      loggerName: "CrawlerSiteCooldownStore",
+    }),
     siteRequestConfigRegistrar: networkClient,
   });
   const imageHostCooldownStore = createImageHostCooldownStore();

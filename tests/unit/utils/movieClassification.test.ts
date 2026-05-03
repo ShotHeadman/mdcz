@@ -1,4 +1,4 @@
-import { classifyMovie } from "@main/utils/movieClassification";
+import { classifyMovie } from "@mdcz/runtime/scrape/utils/movieClassification";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";

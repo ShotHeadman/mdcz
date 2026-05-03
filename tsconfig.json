@@ -31,7 +31,9 @@
       "@mdcz/shared/*": ["packages/shared/*"],
       "@mdcz/storage": ["packages/storage/src/index.ts"],
       "@mdcz/ui": ["packages/ui/src/index.ts"],
-      "@mdcz/ui/*": ["packages/ui/src/*"]
+      "@mdcz/ui/*": ["packages/ui/src/*"],
+      "@mdcz/views": ["packages/views/src/index.ts"],
+      "@mdcz/views/*": ["packages/views/src/*"]
     }
   }
 }

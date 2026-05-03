@@ -1,7 +1,7 @@
 import { configurationSchema } from "@main/services/config";
 import { NetworkClient } from "@main/services/network";
-import { TranslateService } from "@main/services/scraper/TranslateService";
-import type { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
+import type { LlmApiClient } from "@mdcz/runtime/scrape";
+import { TranslateService } from "@mdcz/runtime/scrape";
 import { TranslateEngine, Website } from "@mdcz/shared/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,6 +44,16 @@ const createLlmApiClient = (generateText = vi.fn()) => {
   } as unknown as LlmApiClient;
 };
 
+const createTranslateService = (networkClient: NetworkClient, llmApiClient: LlmApiClient) =>
+  new TranslateService(networkClient, {
+    llmApiClient,
+    mappingStore: {
+      appendMappingCandidate,
+      findMappedActorName,
+      findMappedGenreName,
+    },
+  });
+
 describe("TranslateService term consistency", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -57,7 +67,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn().mockResolvedValue("统一译名");
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -91,7 +101,7 @@ describe("TranslateService term consistency", () => {
     vi.mocked(findMappedActorName).mockResolvedValue("小花暖");
     vi.mocked(findMappedGenreName).mockResolvedValue("小花暖");
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -120,7 +130,7 @@ describe("TranslateService term consistency", () => {
 
     vi.mocked(findMappedActorName).mockResolvedValue("小花暖");
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -164,7 +174,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn().mockRejectedValueOnce(rateLimitedError).mockResolvedValueOnce("Retry 成功");
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("Retry 成功");
@@ -183,7 +193,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn().mockRejectedValueOnce(rateLimitedError).mockResolvedValueOnce("Retry 成功");
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("Retry 成功");
@@ -199,7 +209,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn().mockRejectedValueOnce(timeoutError).mockResolvedValueOnce("超时重试成功");
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("超时重试成功");
@@ -217,7 +227,7 @@ describe("TranslateService term consistency", () => {
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
 
-    const service = new TranslateService(networkClient, llmApiClient);
+    const service = createTranslateService(networkClient, llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
@@ -239,7 +249,7 @@ describe("TranslateService term consistency", () => {
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
 
-    const service = new TranslateService(networkClient, llmApiClient);
+    const service = createTranslateService(networkClient, llmApiClient);
     const config = createBaseConfig();
 
     await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
@@ -254,7 +264,7 @@ describe("TranslateService term consistency", () => {
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
 
-    const service = new TranslateService(networkClient, llmApiClient);
+    const service = createTranslateService(networkClient, llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -281,7 +291,7 @@ describe("TranslateService term consistency", () => {
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockResolvedValue([[["剧情"]]] as unknown);
 
-    const service = new TranslateService(networkClient, llmApiClient);
+    const service = createTranslateService(networkClient, llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.GOOGLE,
@@ -312,7 +322,7 @@ describe("TranslateService term consistency", () => {
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockResolvedValue([[["剧情"]]] as unknown);
 
-    const service = new TranslateService(networkClient, llmApiClient);
+    const service = createTranslateService(networkClient, llmApiClient);
     const config = createBaseConfig();
 
     const translated = await service.translateCrawlerData(
@@ -346,7 +356,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn().mockResolvedValue("混合語言標題");
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
@@ -371,7 +381,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn().mockResolvedValue("本地翻译");
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
@@ -399,7 +409,7 @@ describe("TranslateService term consistency", () => {
     const networkClient = new NetworkClient({});
     vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
 
-    const service = new TranslateService(networkClient, llmApiClient);
+    const service = createTranslateService(networkClient, llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
@@ -417,7 +427,7 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn();
     const llmApiClient = createLlmApiClient(generateText);
 
-    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,

@@ -13,7 +13,7 @@ import {
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import { describe, expect, it } from "vitest";
 import { buildHref, includesSearch, normalizeSearchText } from "./routeHelpers";
-import { taskKindLabels } from "./routes/common";
+import { taskKindLabels } from "./routes/Common";
 
 const WEB_SRC_DIR = dirname(fileURLToPath(import.meta.url));
 

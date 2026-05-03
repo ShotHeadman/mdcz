@@ -3,6 +3,23 @@ import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import { toErrorMessage } from "@main/utils/common";
+import {
+  AggregateStage,
+  AggregationCoordinator,
+  DownloadStage,
+  type FileScraperPipeline,
+  type FileScraperStageRuntime,
+  NfoStage,
+  NumberExecutionGate,
+  OrganizeStage,
+  ParseStage,
+  PlanStage,
+  PrepareOutputStage,
+  ProbeStage,
+  ScrapeContext,
+  type ScrapeStage,
+  TranslateStage,
+} from "@mdcz/runtime/scrape";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import { isAbortError, throwIfAborted } from "../abort";
 import type {
@@ -11,34 +28,15 @@ import type {
   FileScraperDependencies,
   ScrapeExecutionMode,
 } from "../FileScraper";
-import { AggregateStage } from "./AggregateStage";
-import { AggregationCoordinator } from "./AggregationCoordinator";
-import { DownloadStage } from "./DownloadStage";
-import { NfoStage } from "./NfoStage";
-import { NumberExecutionGate } from "./NumberExecutionGate";
-import { OrganizeStage } from "./OrganizeStage";
-import { ParseStage } from "./ParseStage";
-import { PlanStage } from "./PlanStage";
-import { PrepareOutputStage } from "./PrepareOutputStage";
-import { ProbeStage } from "./ProbeStage";
-import { ScrapeContext } from "./ScrapeContext";
+import {
+  applyResolvedSceneImageMetadata,
+  downloadCrawlerAssets,
+  organizePreparedVideo,
+  prepareOutputCrawlerData,
+  probeVideoMetadataOrWarn,
+  writePreparedNfo,
+} from "../output";
 import { ScrapeFailureHandler } from "./ScrapeFailureHandler";
-import { TranslateStage } from "./TranslateStage";
-import type { FileScraperStageRuntime, ScrapeStage } from "./types";
-
-export interface FileScraperPipeline {
-  readonly stages: readonly ScrapeStage[];
-
-  createContext(filePath: string, progress?: FileScrapeProgress, options?: FileScrapeOptions): ScrapeContext;
-
-  setProgress(progress: FileScrapeProgress, stepPercent: number): void;
-
-  runExclusiveByNumber<T>(number: string, operation: () => Promise<T>): Promise<T>;
-
-  handleAbort(context: ScrapeContext): Promise<ScrapeResult>;
-
-  handleError(context: ScrapeContext, error: unknown): Promise<ScrapeResult>;
-}
 
 export class DefaultFileScraperPipeline implements FileScraperPipeline {
   private readonly logger = loggerService.getLogger("FileScraper");
@@ -94,11 +92,16 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     return {
       actorImageService: this.actorImageService,
       actorSourceProvider: this.deps.actorSourceProvider,
-      downloadManager: this.deps.downloadManager,
       fileOrganizer: this.deps.fileOrganizer,
       logger: this.logger,
       nfoGenerator: this.deps.nfoGenerator,
-      signalService: this.deps.signalService,
+      signalService: {
+        showFailedInfo: (input) => this.deps.signalService.showFailedInfo(input),
+        showLogText: (message) => this.deps.signalService.showLogText(message),
+        showScrapeInfo: (input) => this.deps.signalService.showScrapeInfo(input),
+        showScrapeResult: (result) => this.deps.signalService.showScrapeResult(result),
+        setProgress: (value, current, total) => this.deps.signalService.setProgress(value, current, total),
+      },
       getConfiguration: async () => await configManager.getValidated(),
       aggregateMetadata: async (fileInfo, configuration, signal, manualScrape) =>
         await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal, manualScrape),
@@ -111,6 +114,87 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       },
       translateCrawlerData: async (crawlerData, configuration, signal) =>
         await this.translateCrawlerDataOrFallback(crawlerData, configuration, signal),
+      probeVideoMetadata: async (context) =>
+        await probeVideoMetadataOrWarn({
+          logger: this.logger,
+          sourceVideoPath: context.fileInfo.filePath,
+          warningPrefix: "Video probe failed",
+        }),
+      prepareOutputCrawlerData: async (context, signal) => {
+        const prepared = await prepareOutputCrawlerData({
+          actorImageService: this.actorImageService,
+          actorSourceProvider: this.deps.actorSourceProvider,
+          config: context.requireConfiguration(),
+          crawlerData: context.requireCrawlerData(),
+          enabled: true,
+          movieDir: context.requirePlan().outputDir,
+          sourceVideoPath: context.fileInfo.filePath,
+          signal,
+        });
+        return {
+          data: prepared.data ?? context.requireCrawlerData(),
+          actorPhotoPaths: prepared.actorPhotoPaths,
+        };
+      },
+      downloadCrawlerAssets: async (context, signal) => {
+        const aggregationResult = context.requireAggregationResult();
+        const crawlerData = context.requireCrawlerData();
+        const plan = context.requirePlan();
+        let resolvedSceneImageUrls: string[] | undefined;
+        const assets = await downloadCrawlerAssets({
+          config: context.requireConfiguration(),
+          crawlerData,
+          downloadManager: this.deps.downloadManager,
+          fileInfo: context.fileInfo,
+          imageAlternatives: aggregationResult.imageAlternatives,
+          localState: context.existingNfoLocalState,
+          logger: this.logger,
+          movieBaseName: plan.nfoPath
+            .split(/[\\/]/u)
+            .pop()
+            ?.replace(/\.nfo$/iu, ""),
+          outputDir: plan.outputDir,
+          signalService: this.deps.signalService,
+          sources: aggregationResult.sources,
+          callbacks: {
+            onResolvedSceneImageUrls: (urls) => {
+              resolvedSceneImageUrls = urls;
+            },
+            signal,
+          },
+        });
+        return {
+          assets,
+          crawlerData: applyResolvedSceneImageMetadata(crawlerData, resolvedSceneImageUrls),
+        };
+      },
+      writePreparedNfo: async (context) =>
+        await writePreparedNfo({
+          assets: context.assets ?? {
+            downloaded: [],
+            sceneImages: [],
+          },
+          config: context.requireConfiguration(),
+          crawlerData: context.requireCrawlerData(),
+          enabled: context.requireConfiguration().download.generateNfo,
+          fileInfo: context.fileInfo,
+          keepExisting: context.requireConfiguration().download.keepNfo,
+          localState: context.existingNfoLocalState,
+          logger: this.logger,
+          nfoGenerator: this.deps.nfoGenerator,
+          nfoPath: context.requirePlan().nfoPath,
+          sourceVideoPath: context.fileInfo.filePath,
+          sources: context.requireAggregationResult().sources,
+          videoMeta: context.videoMeta,
+        }),
+      organizePreparedVideo: async (context) =>
+        await organizePreparedVideo({
+          config: context.requireConfiguration(),
+          enabled: true,
+          fileInfo: context.fileInfo,
+          fileOrganizer: this.deps.fileOrganizer,
+          plan: context.requirePlan(),
+        }),
     };
   }
 

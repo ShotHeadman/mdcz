@@ -6,18 +6,19 @@ import { queryClient } from "./lib/queryClient";
 import {
   AboutPage,
   BrowserPage,
-  LibraryDetailPage,
-  LibraryPage,
   LogsPage,
   MediaRootsPage,
-  OverviewPage,
   SettingsPage,
   SetupPage,
   TaskDetailPage,
   ToolsPage,
   WorkbenchPage,
 } from "./routes";
-import { RootLayout } from "./routes/layout";
+import { LibraryDetailPage } from "./routes/LibraryDetailRoute";
+import { LibraryPage } from "./routes/LibraryRoute";
+import { OverviewPage } from "./routes/OverviewRoute";
+import { RootLayout } from "./routes/RootLayout";
+import { ScrapeResultPage } from "./routes/ScrapeResultRoute";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -52,6 +53,11 @@ const taskDetailRoute = createRoute({
   path: "/tasks/$taskId",
   component: TaskDetailPage,
 });
+const scrapeResultRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/scrape/$resultId",
+  component: ScrapeResultPage,
+});
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsPage });
 
 const routeTree = rootRoute.addChildren([
@@ -68,6 +74,7 @@ const routeTree = rootRoute.addChildren([
   toolsRoute,
   aboutRoute,
   taskDetailRoute,
+  scrapeResultRoute,
   settingsRoute,
 ]);
 const router = createRouter({ routeTree });

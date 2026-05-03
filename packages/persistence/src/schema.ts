@@ -90,6 +90,49 @@ export const libraryEntries = sqliteTable(
   (table) => ({ rootPathKey: uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath) }),
 );
 
+export const libraryItems = sqliteTable("library_items", {
+  id: text("id").primaryKey(),
+  mediaIdentity: text("media_identity"),
+  crawlerDataJson: text("crawler_data_json"),
+  sourceTaskId: text("source_task_id"),
+  scrapeOutputId: text("scrape_output_id"),
+  title: text("title"),
+  number: text("number"),
+  actorsJson: text("actors_json").notNull().default("[]"),
+  indexedAt: integer("indexed_at", { mode: "timestamp_ms" }).notNull(),
+  lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
+});
+
+export const libraryItemFiles = sqliteTable(
+  "library_item_files",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id").notNull(),
+    rootId: text("root_id").notNull(),
+    rootRelativePath: text("root_relative_path").notNull(),
+    fileName: text("file_name").notNull(),
+    directory: text("directory").notNull(),
+    size: integer("size").notNull().default(0),
+    modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
+    lastKnownPath: text("last_known_path"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => ({
+    itemFileKey: uniqueIndex("library_item_files_item_path_idx").on(table.itemId, table.rootId, table.rootRelativePath),
+  }),
+);
+
+export const libraryItemAssets = sqliteTable("library_item_assets", {
+  id: text("id").primaryKey(),
+  itemId: text("item_id").notNull(),
+  kind: text("kind").notNull(),
+  uri: text("uri").notNull(),
+  rootId: text("root_id"),
+  relativePath: text("relative_path"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const schema = {
   mediaRoots,
   taskRecords,
@@ -98,6 +141,9 @@ export const schema = {
   scrapeOutputs,
   scrapeResults,
   libraryEntries,
+  libraryItems,
+  libraryItemFiles,
+  libraryItemAssets,
 };
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;
@@ -114,3 +160,9 @@ export type ScrapeResultRow = typeof scrapeResults.$inferSelect;
 export type InsertScrapeResultRow = typeof scrapeResults.$inferInsert;
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type InsertLibraryEntryRow = typeof libraryEntries.$inferInsert;
+export type LibraryItemRow = typeof libraryItems.$inferSelect;
+export type InsertLibraryItemRow = typeof libraryItems.$inferInsert;
+export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
+export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
+export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
+export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;

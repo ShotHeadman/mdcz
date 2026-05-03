@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
-import { ImageHostCooldownTracker } from "@main/services/scraper/download/ImageHostCooldownTracker";
+import { ImageHostCooldownTracker } from "@mdcz/runtime/scrape";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];

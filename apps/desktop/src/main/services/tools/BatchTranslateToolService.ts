@@ -6,19 +6,18 @@ import type { NetworkClient } from "@main/services/network";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { writePreparedNfo } from "@main/services/scraper/output";
-import {
-  isMissingRequiredLlmApiKey,
-  LlmApiClient,
-  normalizeLlmBaseUrl,
-} from "@main/services/scraper/translate/engines/LlmApiClient";
+import { toErrorMessage } from "@main/utils/common";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,
+  isMissingRequiredLlmApiKey,
+  type LanguageTarget,
+  LlmApiClient,
+  normalizeLlmBaseUrl,
   normalizeNewlines,
-} from "@main/services/scraper/translate/shared";
-import { type LanguageTarget, toTarget } from "@main/services/scraper/translate/types";
-import { toErrorMessage } from "@main/utils/common";
-import { detectLanguage } from "@main/utils/language";
+  toTarget,
+} from "@mdcz/runtime/scrape";
+import { detectLanguage } from "@mdcz/runtime/shared";
 import type { BatchTranslateApplyResultItem, BatchTranslateField, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 

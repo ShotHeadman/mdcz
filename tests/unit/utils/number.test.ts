@@ -1,4 +1,4 @@
-import { extractNumber, parseFileInfo } from "@main/utils/number";
+import { extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { describe, expect, it } from "vitest";
 
 describe("extractNumber", () => {

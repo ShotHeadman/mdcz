@@ -2,10 +2,9 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
-import { buildGeneratedVideoSidecarTargetPath, isGeneratedSidecarVideo } from "@main/services/scraper/media";
-import * as fileUtils from "@main/utils/file";
-import { parseFileInfo } from "@main/utils/number";
+import { buildGeneratedVideoSidecarTargetPath, FileOrganizer, isGeneratedSidecarVideo } from "@mdcz/runtime/scrape";
+import * as fileUtils from "@mdcz/runtime/scrape/utils/filesystem";
+import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";

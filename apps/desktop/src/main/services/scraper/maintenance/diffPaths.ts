@@ -1,5 +1,5 @@
+import type { OrganizePlan } from "@mdcz/runtime/scrape";
 import type { LocalScanEntry, PathDiff } from "@mdcz/shared/types";
-import type { OrganizePlan } from "../FileOrganizer";
 
 /**
  * Compare a scan entry's current paths against a pre-computed organize plan.

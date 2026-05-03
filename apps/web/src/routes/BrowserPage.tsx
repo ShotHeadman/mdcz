@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { buildHref } from "../routeHelpers";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui";
-import { AppLink, ErrorBanner, formatBytes } from "./common";
+import { AppLink, ErrorBanner, formatBytes } from "./Common";
 
 const parentPath = (value: string): string => {
   const parts = value.split("/").filter(Boolean);

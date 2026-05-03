@@ -12,11 +12,15 @@ const isIgnorableUseClientSourcemapWarning = (message: string): boolean =>
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": workspaceResolve("apps/desktop/src/renderer/src"),
-      "@mdcz/shared": workspaceResolve("packages/shared"),
-      "@mdcz/ui": workspaceResolve("packages/ui/src/index.ts"),
-    },
+    alias: [
+      { find: "@", replacement: workspaceResolve("apps/desktop/src/renderer/src") },
+      { find: /^@mdcz\/shared$/, replacement: workspaceResolve("packages/shared/browser.ts") },
+      { find: /^@mdcz\/shared\/(.+)$/, replacement: workspaceResolve("packages/shared/$1") },
+      { find: /^@mdcz\/ui$/, replacement: workspaceResolve("packages/ui/src/index.ts") },
+      { find: /^@mdcz\/views$/, replacement: workspaceResolve("packages/views/src/index.ts") },
+      { find: /^@mdcz\/views\/library$/, replacement: workspaceResolve("packages/views/src/library/index.ts") },
+      { find: /^@mdcz\/views\/overview$/, replacement: workspaceResolve("packages/views/src/overview/index.ts") },
+    ],
   },
   server: {
     port: 5173,

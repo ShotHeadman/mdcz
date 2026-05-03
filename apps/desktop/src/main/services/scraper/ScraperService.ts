@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { extname } from "node:path";
+import { extname, join } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
@@ -16,17 +16,18 @@ import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
+import { isGeneratedSidecarVideo, TranslateService } from "@mdcz/runtime/scrape";
+import { ScrapeSession } from "@mdcz/runtime/tasks";
 import type { ScraperStatus } from "@mdcz/shared/types";
+import { app } from "electron";
 import { createAbortError } from "./abort";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
-import { fileOrganizer } from "./FileOrganizer";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
+import { fileOrganizer } from "./fileOrganizerAdapter";
 import type { ManualScrapeOptions } from "./manualScrape";
-import { isGeneratedSidecarVideo } from "./media";
 import { NfoGenerator } from "./NfoGenerator";
-import { ScrapeSession } from "./session/ScrapeSession";
-import { TranslateService } from "./TranslateService";
+import { translationMappingStore } from "./translationMappingStore";
 
 export interface StartScrapeResult {
   taskId: string;
@@ -143,7 +144,10 @@ const uniquePaths = (paths: string[]): string[] => {
 export class ScraperService {
   private readonly logger = loggerService.getLogger("ScraperService");
 
-  private readonly session = new ScrapeSession();
+  private readonly session = new ScrapeSession({
+    logger: loggerService.getLogger("ScrapeSession"),
+    statePath: join(app.getPath("userData"), "session-state.json"),
+  });
 
   private restGate: ScrapeRestGate | null = null;
 
@@ -439,7 +443,10 @@ export class ScraperService {
   private createFileScraperDependencies() {
     return {
       aggregationService: this.aggregationService,
-      translateService: new TranslateService(this.sharedNetworkClient),
+      translateService: new TranslateService(this.sharedNetworkClient, {
+        logger: loggerService.getLogger("TranslateService"),
+        mappingStore: translationMappingStore,
+      }),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.sharedNetworkClient, {
         imageHostCooldownStore: this.imageHostCooldownStore,

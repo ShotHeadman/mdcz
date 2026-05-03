@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../client";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "../ui";
-import { AppLink, ErrorBanner, formatDate } from "./common";
+import { AppLink, ErrorBanner, formatDate } from "./Common";
 
 const logLevelLabels: Record<string, string> = {
   completed: "OK",

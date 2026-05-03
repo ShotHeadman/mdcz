@@ -32,6 +32,9 @@ importers:
       lint-staged:
         specifier: ^16.3.1
         version: 16.4.0
+      lucide-react:
+        specifier: ^0.563.0
+        version: 0.563.0(react@19.2.5)
       react:
         specifier: ^19.2.4
         version: 19.2.5
@@ -68,6 +71,9 @@ importers:
       '@mdcz/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@mdcz/views':
+        specifier: workspace:*
+        version: link:../../packages/views
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
@@ -272,6 +278,9 @@ importers:
       '@mdcz/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@mdcz/views':
+        specifier: workspace:*
+        version: link:../../packages/views
       '@tanstack/react-query':
         specifier: ^5.90.20
         version: 5.100.6(react@19.2.5)
@@ -367,9 +376,21 @@ importers:
       '@mdcz/storage':
         specifier: workspace:*
         version: link:../storage
+      cheerio:
+        specifier: ^1.2.0
+        version: 1.2.0
       fast-xml-parser:
         specifier: ^5.3.0
         version: 5.7.2
+      opencc-js:
+        specifier: ^1.0.5
+        version: 1.3.0
+      p-queue:
+        specifier: ^9.0.0
+        version: 9.2.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.1
 
   packages/shared:
     dependencies:
@@ -414,6 +435,24 @@ importers:
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.5.0
+
+  packages/views:
+    dependencies:
+      '@mdcz/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@mdcz/ui':
+        specifier: workspace:*
+        version: link:../ui
+      lucide-react:
+        specifier: ^0.563.0
+        version: 0.563.0(react@19.2.5)
+      react:
+        specifier: ^19.1.1
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.1.1
+        version: 19.2.5(react@19.2.5)
 
 packages:
 

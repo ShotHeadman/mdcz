@@ -12,6 +12,7 @@ import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
 import { mergeDeep, toErrorMessage } from "@main/utils/common";
+import { TranslateService } from "@mdcz/runtime/scrape";
 import type {
   LocalScanEntry,
   MaintenanceCommitItem,
@@ -23,10 +24,10 @@ import PQueue from "p-queue";
 import { createAbortError } from "../abort";
 import { AggregationService } from "../aggregation";
 import { DownloadManager } from "../DownloadManager";
-import { fileOrganizer } from "../FileOrganizer";
 import type { FileScraperDependencies } from "../FileScraper";
+import { fileOrganizer } from "../fileOrganizerAdapter";
 import { NfoGenerator } from "../NfoGenerator";
-import { TranslateService } from "../TranslateService";
+import { translationMappingStore } from "../translationMappingStore";
 import { LocalScanService } from "./LocalScanService";
 import { MaintenanceFileScraper } from "./MaintenanceFileScraper";
 import { getPreset, supportsMaintenanceExecution } from "./presets";
@@ -387,7 +388,10 @@ export class MaintenanceService {
   private createDependencies(): FileScraperDependencies {
     return {
       aggregationService: new AggregationService(this.crawlerProvider, { logger: this.logger }),
-      translateService: new TranslateService(this.networkClient),
+      translateService: new TranslateService(this.networkClient, {
+        logger: loggerService.getLogger("TranslateService"),
+        mappingStore: translationMappingStore,
+      }),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.networkClient, {
         imageHostCooldownStore: this.imageHostCooldownStore,

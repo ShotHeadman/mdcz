@@ -1,5 +1,5 @@
 export interface RuntimeLogger {
-  debug?(message: string): void;
+  debug(message: string): void;
   info(message: string): void;
   warn(message: string): void;
   error(message: string): void;
@@ -15,3 +15,11 @@ export const noopRuntimeLogger: RuntimeLogger = {
   warn: () => undefined,
   error: () => undefined,
 };
+
+export const runtimeLoggerService = {
+  getLogger: (_name: string): RuntimeLogger => noopRuntimeLogger,
+};
+
+export * from "./CachedAsyncResolver";
+export * from "./language";
+export * from "./utils";

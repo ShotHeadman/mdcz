@@ -9,7 +9,7 @@ import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
-import { sanitizePathSegment } from "@main/utils/path";
+import { sanitizePathSegment } from "@mdcz/runtime/scrape/utils/path";
 import { app } from "electron";
 import { isAbortError, throwIfAborted } from "../scraper/abort";
 import { type ActorImageIndexEntry, ActorImageIndexStore } from "./ActorImageIndexStore";

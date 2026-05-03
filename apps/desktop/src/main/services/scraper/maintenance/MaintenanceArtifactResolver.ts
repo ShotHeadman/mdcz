@@ -3,8 +3,8 @@ import { basename, dirname, join } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import { moveFileSafely, pathExists } from "@main/utils/file";
+import type { OrganizePlan } from "@mdcz/runtime/scrape";
 import type { DiscoveredAssets, LocalScanEntry, MaintenanceAssetDecisions } from "@mdcz/shared/types";
-import type { OrganizePlan } from "../FileOrganizer";
 import { reconcileExistingNfoFiles, resolveCanonicalNfoPath } from "../NfoGenerator";
 
 interface ResolvedMaintenanceArtifacts {

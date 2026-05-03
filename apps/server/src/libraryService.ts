@@ -1,5 +1,7 @@
 import { stat } from "node:fs/promises";
+import type { LibraryEntryRecord } from "@mdcz/persistence";
 import type {
+  CrawlerDataDto,
   LibraryDetailResponse,
   LibraryEntryDto,
   LibraryListInput,
@@ -23,13 +25,31 @@ export class LibraryService {
     return { entries: entries.entries, total: entries.total };
   }
 
+  async search(input: LibraryListInput = {}): Promise<LibraryListResponse> {
+    return await this.list(input);
+  }
+
   async detail(id: string): Promise<LibraryDetailResponse> {
-    const { entries } = await this.listDtos({}, true);
-    const entry = entries.find((item) => item.id === id);
-    if (!entry) {
-      throw new Error(`Library entry not found: ${id}`);
-    }
-    return { entry };
+    const state = await this.persistence.getState();
+    const entry = await state.repositories.library.getEntryById(id);
+    return { entry: await this.toDto(entry, true) };
+  }
+
+  async refresh(id: string): Promise<LibraryDetailResponse> {
+    const state = await this.persistence.getState();
+    const entry = await state.repositories.library.touchEntry(id);
+    return { entry: await this.toDto(entry, true) };
+  }
+
+  async relink(input: { id: string; rootId: string; relativePath: string }): Promise<LibraryDetailResponse> {
+    await this.mediaRoots.getActiveRoot(input.rootId);
+    const state = await this.persistence.getState();
+    const entry = await state.repositories.library.relinkEntry({
+      id: input.id,
+      rootId: input.rootId,
+      rootRelativePath: input.relativePath,
+    });
+    return { entry: await this.toDto(entry, true) };
   }
 
   async overview(): Promise<OverviewSummaryResponse> {
@@ -77,7 +97,7 @@ export class LibraryService {
     const limit = input?.limit ?? 200;
 
     const filtered = records
-      .filter((entry) => !rootId || entry.rootId === rootId)
+      .filter((entry) => !rootId || entry.rootId === rootId || entry.files.some((file) => file.rootId === rootId))
       .filter((entry) => {
         const root = rootMap.get(entry.rootId);
         if (!root) {
@@ -86,41 +106,83 @@ export class LibraryService {
         if (!query) {
           return true;
         }
-        return [entry.fileName, entry.rootRelativePath, root.displayName, entry.title, entry.number]
+        return [
+          entry.fileName,
+          entry.rootRelativePath,
+          root.displayName,
+          entry.title,
+          entry.number,
+          entry.mediaIdentity,
+          ...entry.actors,
+        ]
           .filter((value): value is string => Boolean(value))
           .some((value) => value.toLowerCase().includes(query));
       });
 
-    const entries = await Promise.all(
-      filtered.slice(0, limit).map(async (entry) => {
-        const root = rootMap.get(entry.rootId);
-        if (!root) {
-          throw new Error(`Media root not found: ${entry.rootId}`);
-        }
-        const available = includeAvailability ? await this.checkAvailability(root, entry.rootRelativePath) : null;
+    return {
+      entries: await Promise.all(filtered.slice(0, limit).map((entry) => this.toDto(entry, includeAvailability))),
+      total: filtered.length,
+    };
+  }
+
+  private async toDto(entry: LibraryEntryRecord, includeAvailability: boolean): Promise<LibraryEntryDto> {
+    const roots = await this.mediaRoots.list();
+    const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
+    const root = rootMap.get(entry.rootId);
+    if (!root) {
+      throw new Error(`Media root not found: ${entry.rootId}`);
+    }
+    const available = includeAvailability ? await this.checkAvailability(root, entry.rootRelativePath) : null;
+    const fileRefs = await Promise.all(
+      entry.files.map(async (file) => {
+        const fileRoot = rootMap.get(file.rootId);
+        const fileAvailable =
+          includeAvailability && fileRoot ? await this.checkAvailability(fileRoot, file.rootRelativePath) : null;
         return {
-          id: entry.id,
-          rootId: entry.rootId,
-          rootDisplayName: root.displayName,
-          relativePath: entry.rootRelativePath,
-          fileName: entry.fileName,
-          directory: entry.directory,
-          size: entry.size,
-          modifiedAt: toIso(entry.modifiedAt),
-          taskId: entry.sourceTaskId,
-          scrapeOutputId: entry.scrapeOutputId,
-          title: entry.title,
-          number: entry.number,
-          actors: entry.actors,
-          thumbnailPath: entry.thumbnailPath,
-          lastKnownPath: entry.lastKnownPath,
-          indexedAt: entry.indexedAt.toISOString(),
-          available,
-        } satisfies LibraryEntryDto;
+          id: file.id,
+          rootId: file.rootId,
+          rootDisplayName: fileRoot?.displayName ?? "未知媒体目录",
+          relativePath: file.rootRelativePath,
+          fileName: file.fileName,
+          directory: file.directory,
+          size: file.size,
+          modifiedAt: toIso(file.modifiedAt),
+          lastKnownPath: file.lastKnownPath,
+          available: fileAvailable,
+        };
       }),
     );
 
-    return { entries, total: filtered.length };
+    return {
+      id: entry.id,
+      mediaIdentity: entry.mediaIdentity,
+      rootId: entry.rootId,
+      rootDisplayName: root.displayName,
+      relativePath: entry.rootRelativePath,
+      fileName: entry.fileName,
+      directory: entry.directory,
+      size: entry.size,
+      modifiedAt: toIso(entry.modifiedAt),
+      taskId: entry.sourceTaskId,
+      scrapeOutputId: entry.scrapeOutputId,
+      title: entry.title,
+      number: entry.number,
+      actors: entry.actors,
+      crawlerData: parseCrawlerData(entry.crawlerDataJson),
+      thumbnailPath: entry.thumbnailPath,
+      lastKnownPath: entry.lastKnownPath,
+      indexedAt: entry.indexedAt.toISOString(),
+      lastRefreshedAt: toIso(entry.lastRefreshedAt),
+      available,
+      fileRefs,
+      assets: entry.assets.map((asset) => ({
+        id: asset.id,
+        kind: asset.kind,
+        uri: asset.uri,
+        rootId: asset.rootId,
+        relativePath: asset.relativePath,
+      })),
+    };
   }
 
   private async checkAvailability(
@@ -138,3 +200,14 @@ export class LibraryService {
     }
   }
 }
+
+const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(value) as CrawlerDataDto;
+  } catch {
+    return null;
+  }
+};

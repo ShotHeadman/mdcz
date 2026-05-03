@@ -28,6 +28,9 @@ describe("MediaRootRepository", () => {
     expect(tables).toContain("scrape_outputs");
     expect(tables).toContain("scrape_results");
     expect(tables).toContain("library_entries");
+    expect(tables).toContain("library_items");
+    expect(tables).toContain("library_item_files");
+    expect(tables).toContain("library_item_assets");
     expect(tables).toContain("__drizzle_migrations");
   });
 
@@ -109,6 +112,7 @@ describe("LibraryRepository", () => {
       title: "Title",
       number: "ABC-123",
       actors: ["Actor"],
+      crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123", poster_url: "poster.jpg" }),
       indexedAt: completedAt,
     });
     await repository.upsertEntry({
@@ -124,6 +128,7 @@ describe("LibraryRepository", () => {
         rootRelativePath: "ABC-123/ABC-123.mp4",
         size: 11,
         actors: [],
+        crawlerDataJson: null,
       }),
     ]);
   });

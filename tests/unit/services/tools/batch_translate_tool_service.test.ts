@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { NetworkClient } from "@main/services/network";
-import type { LlmApiClient } from "@main/services/scraper/translate/engines/LlmApiClient";
 import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
+import type { LlmApiClient } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { LocalScanEntry } from "@mdcz/shared/types";

@@ -5,12 +5,12 @@ import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
 import { resolveLocalAssetReference, uniqueDefinedPaths } from "@main/utils/localAssetReferences";
 import { parseNfoSnapshot } from "@main/utils/nfo";
-import { parseFileInfo } from "@main/utils/number";
+import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "@mdcz/runtime/scrape";
+import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
 import { throwIfAborted } from "../abort";
-import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../media";
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 

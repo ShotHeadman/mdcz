@@ -2,14 +2,12 @@ import type { Configuration } from "@main/services/config";
 import { configManager } from "@main/services/config";
 import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
-import { parseFileInfo } from "@main/utils/number";
+import type { FileOrganizer, FileScraperStageRuntime, ScrapeContext } from "@mdcz/runtime/scrape";
+import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import type { FileInfo, ScrapeResult } from "@mdcz/shared/types";
 import type { Logger } from "winston";
-import type { FileOrganizer } from "../FileOrganizer";
 import type { FileScrapeProgress, ScrapeExecutionMode } from "../FileScraper";
 import { updateScrapeProgress } from "../output";
-import type { ScrapeContext } from "./ScrapeContext";
-import type { FileScraperStageRuntime } from "./types";
 
 export class ScrapeFailureHandler {
   constructor(

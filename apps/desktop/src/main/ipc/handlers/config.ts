@@ -8,7 +8,7 @@ import {
   type DeepPartial,
   defaultConfiguration,
 } from "@main/services/config";
-import { fileOrganizer } from "@main/services/scraper/FileOrganizer";
+import { fileOrganizer } from "@main/services/scraper/fileOrganizerAdapter";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";

@@ -84,3 +84,41 @@ CREATE TABLE `library_entries` (
   `indexed_at` integer NOT NULL,
   UNIQUE(`root_id`, `root_relative_path`)
 );
+--> statement-breakpoint
+CREATE TABLE `library_items` (
+  `id` text PRIMARY KEY NOT NULL,
+  `media_identity` text,
+  `crawler_data_json` text,
+  `source_task_id` text,
+  `scrape_output_id` text,
+  `title` text,
+  `number` text,
+  `actors_json` text NOT NULL DEFAULT '[]',
+  `indexed_at` integer NOT NULL,
+  `last_refreshed_at` integer
+);
+--> statement-breakpoint
+CREATE TABLE `library_item_files` (
+  `id` text PRIMARY KEY NOT NULL,
+  `item_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `root_relative_path` text NOT NULL,
+  `file_name` text NOT NULL,
+  `directory` text NOT NULL,
+  `size` integer NOT NULL DEFAULT 0,
+  `modified_at` integer,
+  `last_known_path` text,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL,
+  UNIQUE(`item_id`, `root_id`, `root_relative_path`)
+);
+--> statement-breakpoint
+CREATE TABLE `library_item_assets` (
+  `id` text PRIMARY KEY NOT NULL,
+  `item_id` text NOT NULL,
+  `kind` text NOT NULL,
+  `uri` text NOT NULL,
+  `root_id` text,
+  `relative_path` text,
+  `created_at` integer NOT NULL
+);

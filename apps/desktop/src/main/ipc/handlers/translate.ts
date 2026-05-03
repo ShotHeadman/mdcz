@@ -1,12 +1,8 @@
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
-import {
-  isMissingRequiredLlmApiKey,
-  LlmApiClient,
-  normalizeLlmBaseUrl,
-} from "@main/services/scraper/translate/engines/LlmApiClient";
 import { toErrorMessage } from "@main/utils/common";
+import { isMissingRequiredLlmApiKey, LlmApiClient, normalizeLlmBaseUrl } from "@mdcz/runtime/scrape";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";

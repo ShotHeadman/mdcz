@@ -1,7 +1,7 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { SceneImageDownloader } from "@main/services/scraper/download/SceneImageDownloader";
+import { SceneImageDownloader } from "@mdcz/runtime/scrape";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];

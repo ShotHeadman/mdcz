@@ -1,10 +1,10 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isStrmFile } from "@mdcz/runtime/scrape/utils/strm";
 import type { VideoMeta } from "@mdcz/shared/types";
 import { app } from "electron";
 import { isTrackType, type MediaInfoResult, mediaInfoFactory } from "mediainfo.js";
-import { isStrmFile } from "./strm";
 
 export const CHUNK_SIZE = 64 * 1024;
 

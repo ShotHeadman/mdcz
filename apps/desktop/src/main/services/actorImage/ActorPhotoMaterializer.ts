@@ -1,7 +1,7 @@
 import { copyFile, link, mkdir, rm, symlink } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 import { pathExists } from "@main/utils/file";
-import { sanitizePathSegment } from "@main/utils/path";
+import { sanitizePathSegment } from "@mdcz/runtime/scrape/utils/path";
 
 interface ActorImageLogger {
   info(message: string): void;

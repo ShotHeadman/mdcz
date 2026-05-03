@@ -3,18 +3,20 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": resolve(__dirname, "apps/desktop/src/renderer/src"),
-      "@main": resolve(__dirname, "apps/desktop/src/main"),
-      "@renderer": resolve(__dirname, "apps/desktop/src/renderer/src"),
-      "@mdcz/persistence": resolve(__dirname, "packages/persistence/src/index.ts"),
-      "@mdcz/persistence/test": resolve(__dirname, "packages/persistence/src/testDatabase.ts"),
-      "@mdcz/shared": resolve(__dirname, "packages/shared"),
-      "@mdcz/storage": resolve(__dirname, "packages/storage/src/index.ts"),
-      electron: resolve(__dirname, "tests/unit/electronMock.ts"),
-      impit: resolve(__dirname, "tests/unit/impitMock.ts"),
-      "mediainfo.js": resolve(__dirname, "tests/unit/mediaInfoMock.ts"),
-    },
+    alias: [
+      { find: "@main", replacement: resolve(__dirname, "apps/desktop/src/main") },
+      { find: "@renderer", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
+      { find: "@mdcz/persistence/test", replacement: resolve(__dirname, "packages/persistence/src/testDatabase.ts") },
+      { find: "@mdcz/persistence", replacement: resolve(__dirname, "packages/persistence/src/index.ts") },
+      { find: /^@mdcz\/runtime\/(.+)$/, replacement: resolve(__dirname, "packages/runtime/src/$1") },
+      { find: "@mdcz/runtime", replacement: resolve(__dirname, "packages/runtime/src/index.ts") },
+      { find: "@mdcz/shared", replacement: resolve(__dirname, "packages/shared") },
+      { find: "@mdcz/storage", replacement: resolve(__dirname, "packages/storage/src/index.ts") },
+      { find: "electron", replacement: resolve(__dirname, "tests/unit/electronMock.ts") },
+      { find: "impit", replacement: resolve(__dirname, "tests/unit/impitMock.ts") },
+      { find: "mediainfo.js", replacement: resolve(__dirname, "tests/unit/mediaInfoMock.ts") },
+      { find: "@", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
+    ],
   },
   test: {
     server: {

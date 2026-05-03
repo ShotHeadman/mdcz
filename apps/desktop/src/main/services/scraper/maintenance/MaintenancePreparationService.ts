@@ -2,6 +2,7 @@ import type { Configuration } from "@main/services/config/models";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
+import type { FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
 import type {
   CrawlerData,
   FieldDiff,
@@ -13,8 +14,6 @@ import type {
 import { isAbortError, throwIfAborted } from "../abort";
 import type { AggregationService } from "../aggregation";
 import type { SourceMap } from "../aggregation/types";
-import type { FileOrganizer, OrganizePlan } from "../FileOrganizer";
-import type { TranslateService } from "../TranslateService";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import type { MaintenancePreset } from "./presets";

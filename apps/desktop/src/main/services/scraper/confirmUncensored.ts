@@ -1,6 +1,6 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
-import { fileOrganizer } from "@main/services/scraper/FileOrganizer";
+import { fileOrganizer } from "@main/services/scraper/fileOrganizerAdapter";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import { MaintenanceArtifactResolver } from "@main/services/scraper/maintenance/MaintenanceArtifactResolver";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";

@@ -1,7 +1,7 @@
 import type { Configuration } from "@main/services/config";
 import type { NetworkClient } from "@main/services/network";
-import { buildCrawlerOptions } from "@main/services/scraper/crawlerOptions";
 import { toErrorMessage } from "@main/utils/common";
+import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 
 const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {

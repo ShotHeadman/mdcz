@@ -67,7 +67,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     mediaRoots,
     persistence,
     scans: options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents),
-    scrape: options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, taskEvents),
+    scrape: options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, config, taskEvents),
     taskEvents,
   };
   const fastify = Fastify({

@@ -8,7 +8,7 @@ import {
   readStrmTarget,
   resolvePlayableMediaTarget,
   writeStrmTarget,
-} from "@main/utils/strm";
+} from "@mdcz/runtime/scrape/utils/strm";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];
