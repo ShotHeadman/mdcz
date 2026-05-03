@@ -13,7 +13,11 @@
     "apps/desktop/src/renderer/src/**/*.ts",
     "apps/desktop/src/renderer/src/**/*.tsx",
     "apps/desktop/src/**/*.d.ts",
+    "apps/server/src/**/*.ts",
+    "apps/web/src/**/*.ts",
+    "apps/web/src/**/*.tsx",
     "packages/**/*.ts",
+    "packages/ui/src/**/*.tsx",
     "vitest.config.ts"
   ]
 }

@@ -1,4 +1,4 @@
-import { AlertCircle, Film, Loader2 } from "lucide-react";
+import { AlertCircle, Library, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useRecentAcquisitions } from "@/hooks/useOverview";
 import { AcquisitionCard } from "./AcquisitionCard";
@@ -41,7 +41,7 @@ export function RecentAcquisitionsGrid() {
   if (items.length === 0) {
     return (
       <div className="flex min-h-[260px] flex-col items-center justify-center rounded-quiet-xl bg-surface-low p-8 text-center">
-        <Film className="h-9 w-9 text-muted-foreground" />
+        <Library className="h-9 w-9 text-muted-foreground" />
         <h3 className="mt-4 text-lg font-semibold">暂无刮削记录</h3>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">完成一次刮削后，最近入库的影片会出现在这里。</p>
       </div>

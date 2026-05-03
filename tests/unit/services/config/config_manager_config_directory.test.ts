@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseConfigurationContent } from "@mdcz/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockUserDataPath = "";
@@ -51,7 +52,7 @@ describe("ConfigManager configDirectory", () => {
       },
     });
 
-    const expectedConfigPath = join(mockUserDataPath, "custom-config", "default.json");
+    const expectedConfigPath = join(mockUserDataPath, "custom-config", "default.toml");
     const expectedMetaPath = join(mockUserDataPath, ".config-directory.json");
 
     expect(await fileExists(expectedConfigPath)).toBe(true);
@@ -69,7 +70,7 @@ describe("ConfigManager configDirectory", () => {
     const manager = new ConfigManager();
     await manager.createProfile("windows-dev");
 
-    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(true);
+    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.toml"))).toBe(true);
 
     const createdProfiles = await manager.listProfiles();
     expect(createdProfiles.profiles).toEqual(expect.arrayContaining(["default", "windows-dev"]));
@@ -79,7 +80,7 @@ describe("ConfigManager configDirectory", () => {
 
     const switchedProfiles = await manager.listProfiles();
     expect(switchedProfiles.active).toBe("windows-dev");
-    expect(manager.list().configPath).toBe(join(mockUserDataPath, "config", "windows-dev.json"));
+    expect(manager.list().configPath).toBe(join(mockUserDataPath, "config", "windows-dev.toml"));
 
     await expect(manager.deleteProfile("windows-dev")).rejects.toThrow("Cannot delete the active profile");
 
@@ -88,10 +89,10 @@ describe("ConfigManager configDirectory", () => {
 
     const deletedProfiles = await manager.listProfiles();
     expect(deletedProfiles.profiles).toEqual(["default"]);
-    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(false);
+    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.toml"))).toBe(false);
   });
 
-  it("exports the active profile as formatted JSON", async () => {
+  it("exports the active profile as TOML by default", async () => {
     const { ConfigManager } = await import("@main/services/config/ConfigManager");
 
     const manager = new ConfigManager();
@@ -105,12 +106,12 @@ describe("ConfigManager configDirectory", () => {
     });
 
     const exportDir = join(mockUserDataPath, "exports");
-    const exportPath = join(exportDir, "quiet-settings.json");
+    const exportPath = join(exportDir, "quiet-settings.toml");
     await mkdir(exportDir, { recursive: true });
 
     await manager.exportProfile("default", exportPath);
 
-    const exported = JSON.parse(await readFile(exportPath, "utf8"));
+    const exported = parseConfigurationContent(await readFile(exportPath, "utf8"), "toml");
     expect(exported.naming.fileTemplate).toBe("{number}-{title}");
     expect(exported.ui.hideMenu).toBe(true);
   });
@@ -180,7 +181,7 @@ describe("ConfigManager configDirectory", () => {
 
     const manager = new ConfigManager();
     const configuration = await manager.getValidated();
-    const persisted = JSON.parse(await readFile(configPath, "utf8"));
+    const persisted = parseConfigurationContent(await readFile(join(configDir, "default.toml"), "utf8"), "toml");
 
     expect(configuration.ui.hideMenu).toBe(true);
     expect(configuration.network.timeout).toBe(10);
@@ -224,7 +225,7 @@ describe("ConfigManager configDirectory", () => {
 
     const manager = new ConfigManager();
     const configuration = await manager.getValidated();
-    const persisted = JSON.parse(await readFile(configPath, "utf8"));
+    const persisted = parseConfigurationContent(await readFile(join(configDir, "default.toml"), "utf8"), "toml");
 
     expect(configuration.download.downloadThumb).toBe(true);
     expect(configuration.download.generateNfo).toBe(true);

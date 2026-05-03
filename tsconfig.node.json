@@ -6,10 +6,14 @@
   },
   "include": [
     "apps/desktop/electron.vite.config.ts",
+    "apps/server/src/**/*.ts",
+    "apps/server/tsconfig*.json",
     "apps/desktop/src/main/**/*.ts",
     "apps/desktop/src/preload/**/*.ts",
     "apps/desktop/src/**/*.d.ts",
-    "packages/**/*.ts",
+    "packages/persistence/src/**/*.ts",
+    "packages/shared/**/*.ts",
+    "packages/storage/src/**/*.ts",
     "vitest.config.ts"
   ],
   "exclude": ["packages/**/*.test.ts"]

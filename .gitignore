@@ -13,6 +13,7 @@ node_modules/
 pnpm-debug.log*
 
 # Build artifacts
+dist/
 out/
 release/
 

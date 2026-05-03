@@ -9,8 +9,12 @@
     "apps/desktop/src/renderer/src/**/*.ts",
     "apps/desktop/src/renderer/src/**/*.tsx",
     "apps/desktop/src/renderer/src/**/*.d.ts",
-    "packages/client/**/*.ts",
-    "packages/shared/**/*.ts"
+    "apps/web/src/**/*.ts",
+    "apps/web/src/**/*.tsx",
+    "apps/web/vite.config.ts",
+    "packages/shared/**/*.ts",
+    "packages/ui/src/**/*.ts",
+    "packages/ui/src/**/*.tsx"
   ],
   "exclude": ["packages/**/*.test.ts"]
 }

@@ -5,7 +5,7 @@ import pkg from "./package.json" with { type: "json" };
 
 const appResolve = (subpath: string): string => resolve(__dirname, subpath);
 const workspaceResolve = (subpath: string): string => resolve(__dirname, "../..", subpath);
-const workspacePackages = ["@mdcz/client", "@mdcz/core", "@mdcz/persistence", "@mdcz/shared", "@mdcz/storage"];
+const workspacePackages = ["@mdcz/persistence", "@mdcz/shared", "@mdcz/storage", "@mdcz/ui"];
 const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
@@ -23,11 +23,10 @@ export default defineConfig({
     resolve: {
       alias: {
         "@main": appResolve("src/main"),
-        "@mdcz/client": workspaceResolve("packages/client/src/index.ts"),
-        "@mdcz/core": workspaceResolve("packages/core/src/index.ts"),
         "@mdcz/persistence": workspaceResolve("packages/persistence/src/index.ts"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
         "@mdcz/storage": workspaceResolve("packages/storage/src/index.ts"),
+        "@mdcz/ui": workspaceResolve("packages/ui/src/index.ts"),
       },
     },
     build: {
@@ -43,7 +42,6 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
     resolve: {
       alias: {
-        "@mdcz/client": workspaceResolve("packages/client/src/index.ts"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
       },
     },
@@ -63,7 +61,6 @@ export default defineConfig({
       alias: {
         "@": appResolve("src/renderer/src"),
         "@renderer": appResolve("src/renderer/src"),
-        "@mdcz/client": workspaceResolve("packages/client/src/index.ts"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
       },
     },

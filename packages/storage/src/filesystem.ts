@@ -1,4 +1,4 @@
-import { stat as fsStat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { stat as fsStat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { StorageError, storageErrorCodes, toStorageError } from "./errors";
@@ -63,6 +63,95 @@ export const listRootDirectory = async (root: MediaRoot, relativePath = ""): Pro
         };
       }),
     );
+  } catch (error) {
+    throw toStorageError(error, relativePath);
+  }
+};
+
+export interface RootFileWalkEntry {
+  absolutePath: string;
+  relativePath: RootRelativePath;
+  size: number;
+  modifiedAt: Date;
+}
+
+const resolveDirectoryKey = async (dirPath: string): Promise<string> => {
+  try {
+    return await realpath(dirPath);
+  } catch {
+    return dirPath;
+  }
+};
+
+const walkRootDirectory = async (
+  root: MediaRoot,
+  relativePath: string,
+  recursive: boolean,
+  visitedDirs: Set<string>,
+  ancestorDirs: Set<string>,
+  allowVisitedTarget = false,
+): Promise<RootFileWalkEntry[]> => {
+  const absolutePath = resolveRootRelativePath(root, relativePath);
+  const dirKey = await resolveDirectoryKey(absolutePath);
+  if (ancestorDirs.has(dirKey) || (!allowVisitedTarget && visitedDirs.has(dirKey))) {
+    return [];
+  }
+  visitedDirs.add(dirKey);
+  const nextAncestorDirs = new Set(ancestorDirs).add(dirKey);
+
+  const entries = await readdir(absolutePath, { withFileTypes: true });
+  const files: RootFileWalkEntry[] = [];
+
+  for (const entry of entries) {
+    const entryRelativePath = normalizeRootRelativePath(path.posix.join(relativePath, entry.name));
+    const entryAbsolutePath = resolveRootRelativePath(root, entryRelativePath);
+
+    try {
+      if (entry.isDirectory()) {
+        if (recursive) {
+          files.push(...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs)));
+        }
+        continue;
+      }
+
+      if (entry.isFile() || entry.isSymbolicLink()) {
+        const stats = await fsStat(entryAbsolutePath);
+        if (stats.isDirectory()) {
+          if (recursive) {
+            files.push(
+              ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, true)),
+            );
+          }
+          continue;
+        }
+
+        if (stats.isFile()) {
+          files.push({
+            absolutePath: entryAbsolutePath,
+            relativePath: entryRelativePath,
+            size: stats.size,
+            modifiedAt: stats.mtime,
+          });
+        }
+      }
+    } catch {
+      // Keep mounted filesystem scans resilient to inaccessible entries.
+    }
+  }
+
+  return files;
+};
+
+export const listRootFiles = async (
+  root: MediaRoot,
+  relativePath = "",
+  recursive = false,
+): Promise<RootFileWalkEntry[]> => {
+  assertStorageRootEnabled(root);
+  const normalizedRelativePath = normalizeRootRelativePath(relativePath);
+
+  try {
+    return await walkRootDirectory(root, normalizedRelativePath, recursive, new Set<string>(), new Set<string>());
   } catch (error) {
     throw toStorageError(error, relativePath);
   }

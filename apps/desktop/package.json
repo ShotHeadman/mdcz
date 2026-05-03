@@ -24,6 +24,7 @@
   "dependencies": {
     "@egoist/tipc": "^0.3.2",
     "@mdcz/shared": "workspace:*",
+    "@mdcz/ui": "workspace:*",
     "cheerio": "^1.2.0",
     "electron-window-state": "^5.0.3",
     "fast-xml-parser": "^5.3.0",

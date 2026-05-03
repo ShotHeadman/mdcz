@@ -7,8 +7,6 @@ export default defineConfig({
       "@": resolve(__dirname, "apps/desktop/src/renderer/src"),
       "@main": resolve(__dirname, "apps/desktop/src/main"),
       "@renderer": resolve(__dirname, "apps/desktop/src/renderer/src"),
-      "@mdcz/client": resolve(__dirname, "packages/client/src/index.ts"),
-      "@mdcz/core": resolve(__dirname, "packages/core/src/index.ts"),
       "@mdcz/persistence": resolve(__dirname, "packages/persistence/src/index.ts"),
       "@mdcz/persistence/test": resolve(__dirname, "packages/persistence/src/testDatabase.ts"),
       "@mdcz/shared": resolve(__dirname, "packages/shared"),
@@ -29,7 +27,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: ["tests/unit/**/*.test.ts", "packages/**/*.test.ts"],
+          include: ["tests/unit/**/*.test.ts", "apps/**/*.test.ts", "packages/**/*.test.ts"],
           environment: "node",
           setupFiles: ["tests/unit/setup.ts"],
         },
