@@ -1,9 +1,0 @@
-export { AboutPage } from "./routes/AboutPage";
-export { BrowserPage } from "./routes/BrowserPage";
-export { LogsPage } from "./routes/LogsPage";
-export { MediaRootsPage } from "./routes/MediaRootsPage";
-export { SettingsPage } from "./routes/SettingsPage";
-export { SetupPage } from "./routes/SetupPage";
-export { TaskDetailPage } from "./routes/TaskDetailPage";
-export { ToolsPage } from "./routes/ToolsPage";
-export { WorkbenchPage } from "./routes/WorkbenchRoute";

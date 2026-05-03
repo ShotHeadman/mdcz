@@ -16,8 +16,13 @@ export const noopRuntimeLogger: RuntimeLogger = {
   error: () => undefined,
 };
 
+let runtimeLoggerFactory: (name: string) => RuntimeLogger = () => noopRuntimeLogger;
+
 export const runtimeLoggerService = {
-  getLogger: (_name: string): RuntimeLogger => noopRuntimeLogger,
+  getLogger: (name: string): RuntimeLogger => runtimeLoggerFactory(name),
+  setFactory: (factory: (name: string) => RuntimeLogger): void => {
+    runtimeLoggerFactory = factory;
+  },
 };
 
 export * from "./CachedAsyncResolver";

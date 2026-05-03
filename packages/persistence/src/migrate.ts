@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,7 +8,15 @@ import { PersistenceError, persistenceErrorCodes } from "./errors";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const defaultMigrationsFolder = resolve(packageRoot, "drizzle");
+const migrationFolderCandidates = [
+  resolve(process.cwd(), "dist/persistence/drizzle"),
+  resolve(process.cwd(), "persistence/drizzle"),
+  resolve(packageRoot, "drizzle"),
+];
+
+export const defaultMigrationsFolder =
+  migrationFolderCandidates.find((candidate) => existsSync(resolve(candidate, "meta/_journal.json"))) ??
+  resolve(packageRoot, "drizzle");
 
 export interface RunMigrationsConfig {
   migrationsFolder?: string;

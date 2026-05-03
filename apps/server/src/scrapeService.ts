@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ScrapeResultRecord, TaskRecordStatus } from "@mdcz/persistence";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { FetchNetworkClient } from "@mdcz/runtime/network";
-import { AggregationService, NfoGenerator, parseNfo } from "@mdcz/runtime/scrape";
+import { AggregationService, MountedRootScrapeRuntime, NfoGenerator, parseNfo } from "@mdcz/runtime/scrape";
 import { type RuntimeTaskAction, type RuntimeTaskStatus, transitionTask } from "@mdcz/runtime/tasks";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import type {
@@ -39,7 +39,6 @@ import {
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
-import { ServerScrapeRuntime } from "./serverScrapePipeline";
 import type { TaskEventBus } from "./taskEvents";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
@@ -50,18 +49,18 @@ export class ScrapeService {
   #paused = new Set<string>();
   #controllers = new Map<string, AbortController>();
   private readonly nfoGenerator = new NfoGenerator();
-  private readonly runtime: ServerScrapeRuntime;
+  private readonly runtime: MountedRootScrapeRuntime;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-    runtime?: ServerScrapeRuntime,
+    runtime?: MountedRootScrapeRuntime,
   ) {
     this.runtime =
       runtime ??
-      new ServerScrapeRuntime(
+      new MountedRootScrapeRuntime(
         this.config,
         new AggregationService(new CrawlerProvider({ fetchGateway: new FetchGateway(new FetchNetworkClient()) })),
       );
@@ -435,7 +434,9 @@ export class ScrapeService {
     return dto;
   }
 
-  private resolveManualScrape(manualUrl?: string | null): Parameters<ServerScrapeRuntime["scrape"]>[0]["manualScrape"] {
+  private resolveManualScrape(
+    manualUrl?: string | null,
+  ): Parameters<MountedRootScrapeRuntime["scrape"]>[0]["manualScrape"] {
     const trimmed = manualUrl?.trim();
     if (!trimmed) {
       return undefined;

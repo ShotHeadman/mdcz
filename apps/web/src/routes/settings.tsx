@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@mdcz/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -501,6 +502,10 @@ export const SettingsPage = () => {
     </div>
   );
 };
+
+export const Route = createFileRoute("/settings")({
+  component: SettingsPage,
+});
 
 function SettingsRouteSkeleton() {
   const sectionKeys = ["section-a", "section-b", "section-c", "section-d"];

@@ -2,6 +2,9 @@ import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
 
+export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
+export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
+
 export const mediaRootAvailabilitySchema = z.object({
   available: z.boolean(),
   checkedAt: z.string(),
@@ -192,7 +195,7 @@ export type ScrapeFileRefDto = z.infer<typeof scrapeFileRefSchema>;
 export const scrapeStartInputSchema = z.object({
   outputRootId: z.string().trim().min(1).optional(),
   refs: z.array(scrapeFileRefSchema).min(1),
-  maintenancePreset: z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]).optional(),
+  maintenancePreset: maintenancePresetIdSchema.optional(),
   uncensoredConfirmed: z.boolean().optional(),
   manualUrl: z.string().trim().min(1).optional(),
 });
@@ -310,11 +313,119 @@ export const fileActionResponseSchema = z.object({
 
 export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
 
+const maintenanceFieldDiffSchema = z
+  .object({
+    changed: z.boolean(),
+    field: z.string(),
+    kind: z.enum(["value", "image", "imageCollection"]),
+    label: z.string(),
+    newValue: z.unknown(),
+    oldValue: z.unknown(),
+  })
+  .passthrough();
+
+const maintenancePathDiffSchema = z.object({
+  changed: z.boolean(),
+  currentDir: z.string(),
+  currentVideoPath: z.string(),
+  fileId: z.string(),
+  targetDir: z.string(),
+  targetVideoPath: z.string(),
+});
+
+export const maintenancePreviewItemSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  presetId: maintenancePresetIdSchema,
+  rootId: z.string(),
+  rootDisplayName: z.string(),
+  relativePath: z.string(),
+  fileName: z.string(),
+  status: z.enum(["ready", "blocked", "applied", "failed"]),
+  error: z.string().nullable(),
+  fieldDiffs: z.array(maintenanceFieldDiffSchema),
+  unchangedFieldDiffs: z.array(maintenanceFieldDiffSchema),
+  pathDiff: maintenancePathDiffSchema.nullable(),
+  proposedCrawlerData: crawlerDataSchema.nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type MaintenancePreviewItemDto = z.infer<typeof maintenancePreviewItemSchema>;
+
+export const maintenanceStartInputSchema = z.object({
+  rootId: z.string().trim().min(1),
+  presetId: maintenancePresetIdSchema,
+  refs: z.array(scrapeFileRefSchema).optional(),
+});
+
+export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
+
+export const maintenanceTaskInputSchema = z.object({
+  taskId: z.string().trim().min(1),
+});
+
+export type MaintenanceTaskInput = z.infer<typeof maintenanceTaskInputSchema>;
+
+export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
+  confirmationToken: z.string().trim().min(1).optional(),
+  previewIds: z.array(z.string().trim().min(1)).optional(),
+  selections: z
+    .array(
+      z.object({
+        previewId: z.string().trim().min(1),
+        fieldSelections: z.record(z.string(), z.enum(["old", "new"])).optional(),
+      }),
+    )
+    .optional(),
+});
+
+export type MaintenanceApplyInput = z.infer<typeof maintenanceApplyInputSchema>;
+
+export const maintenancePreviewResponseSchema = z.object({
+  task: scanTaskSchema,
+  items: z.array(maintenancePreviewItemSchema),
+  confirmationToken: z.string(),
+});
+
+export type MaintenancePreviewResponse = z.infer<typeof maintenancePreviewResponseSchema>;
+
+export const maintenanceApplyLogSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  previewId: z.string(),
+  rootId: z.string(),
+  relativePath: z.string(),
+  presetId: maintenancePresetIdSchema,
+  status: z.enum(["success", "failed", "skipped"]),
+  error: z.string().nullable(),
+  appliedAt: z.string(),
+});
+
+export type MaintenanceApplyLogDto = z.infer<typeof maintenanceApplyLogSchema>;
+
+export const maintenanceApplyResponseSchema = z.object({
+  task: scanTaskSchema,
+  items: z.array(maintenancePreviewItemSchema),
+  applied: z.array(maintenanceApplyLogSchema),
+});
+
+export type MaintenanceApplyResponse = z.infer<typeof maintenanceApplyResponseSchema>;
+
 export const logEntrySchema = taskEventSchema.extend({
-  source: z.literal("task"),
+  source: z.enum(["task", "runtime"]),
+  level: z.enum(["OK", "WARN", "ERR", "REQ", "INFO"]).optional(),
 });
 
 export type LogEntryDto = z.infer<typeof logEntrySchema>;
+
+export const logListInputSchema = z
+  .object({
+    kind: z.enum(["all", "task", "runtime"]).optional().default("all"),
+  })
+  .optional();
+
+export type LogListInput = z.infer<typeof logListInputSchema>;
 
 export const logListResponseSchema = z.object({
   logs: z.array(logEntrySchema),
@@ -451,6 +562,95 @@ export const healthResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
+export const aboutLinkSchema = z.object({
+  label: z.string(),
+  url: z.string(),
+  description: z.string().optional(),
+});
+
+export type AboutLinkDto = z.infer<typeof aboutLinkSchema>;
+
+export const systemAboutResponseSchema = z.object({
+  productName: z.string(),
+  version: z.string().nullable(),
+  homepage: z.string().nullable(),
+  repository: z.string().nullable(),
+  build: z.object({
+    mode: z.string(),
+    server: z.string().nullable(),
+    web: z.string().nullable(),
+    node: z.string(),
+    platform: z.string(),
+    arch: z.string(),
+  }),
+  community: z.object({
+    feedback: aboutLinkSchema,
+    links: z.array(aboutLinkSchema),
+  }),
+});
+
+export type SystemAboutResponse = z.infer<typeof systemAboutResponseSchema>;
+
+export const automationWebhookEventSchema = z.object({
+  taskId: z.string(),
+  kind: taskKindSchema,
+  status: scanStatusSchema,
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  summary: z.string(),
+  errors: z.array(z.string()),
+});
+
+export type AutomationWebhookEventDto = z.infer<typeof automationWebhookEventSchema>;
+
+export const automationRecentInputSchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .optional();
+
+export type AutomationRecentInput = z.infer<typeof automationRecentInputSchema>;
+
+export const automationRecentResponseSchema = z.object({
+  tasks: z.array(automationWebhookEventSchema),
+});
+
+export type AutomationRecentResponse = z.infer<typeof automationRecentResponseSchema>;
+
+export const automationWebhookDeliveryStatusSchema = z.object({
+  configured: z.boolean(),
+  delivered: z.number(),
+  failed: z.number(),
+  lastAttemptAt: z.string().nullable(),
+  lastSuccessAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+
+export type AutomationWebhookDeliveryStatusDto = z.infer<typeof automationWebhookDeliveryStatusSchema>;
+
+export const automationWebhookDeliveryStatusResponseSchema = z.object({
+  webhook: automationWebhookDeliveryStatusSchema,
+});
+
+export type AutomationWebhookDeliveryStatusResponse = z.infer<typeof automationWebhookDeliveryStatusResponseSchema>;
+
+export const automationScrapeStartInputSchema = z.object({
+  refs: z.array(scrapeFileRefSchema).min(1).optional(),
+  rootId: z.string().trim().min(1).optional(),
+  outputRootId: z.string().trim().min(1).optional(),
+  manualUrl: z.string().trim().min(1).optional(),
+  uncensoredConfirmed: z.boolean().optional(),
+});
+
+export type AutomationScrapeStartInput = z.infer<typeof automationScrapeStartInputSchema>;
+
+export const automationScrapeStartResponseSchema = z.object({
+  task: scanTaskSchema,
+  webhook: automationWebhookEventSchema,
+});
+
+export type AutomationScrapeStartResponse = z.infer<typeof automationScrapeStartResponseSchema>;
+
 export const authLoginInputSchema = z.object({
   password: z.string(),
 });
@@ -558,6 +758,7 @@ export const diagnosticCheckSchema = z.object({
   ok: z.boolean(),
   message: z.string(),
   checkedAt: z.string(),
+  detail: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type DiagnosticCheckDto = z.infer<typeof diagnosticCheckSchema>;
@@ -567,6 +768,102 @@ export const diagnosticsSummaryResponseSchema = z.object({
 });
 
 export type DiagnosticsSummaryResponse = z.infer<typeof diagnosticsSummaryResponseSchema>;
+
+export const toolCatalogResponseSchema = z.object({
+  tools: z.array(
+    z.object({
+      id: z.string(),
+    }),
+  ),
+});
+
+export type ToolCatalogResponse = z.infer<typeof toolCatalogResponseSchema>;
+
+export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
+  z.object({
+    toolId: z.literal("single-file-scraper"),
+    rootId: z.string().trim().min(1),
+    relativePath: z.string().trim().min(1),
+    manualUrl: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    toolId: z.literal("crawler-tester"),
+    number: z.string().trim().min(1),
+    site: z.nativeEnum(Website).optional(),
+    manualUrl: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    toolId: z.literal("media-library-tools"),
+    server: z.enum(["emby", "jellyfin"]).default("jellyfin"),
+    action: z.enum(["check", "sync-info", "sync-photo"]).optional().default("check"),
+    mode: z.enum(["all", "missing"]).optional().default("missing"),
+  }),
+  z.object({
+    toolId: z.literal("symlink-manager"),
+    sourceDir: z.string().trim().min(1),
+    destDir: z.string().trim().min(1),
+    copyFiles: z.boolean().optional(),
+    dryRun: z.boolean().optional(),
+  }),
+  z.object({
+    toolId: z.literal("file-cleaner"),
+    rootId: z.string().trim().min(1),
+    relativePath: z.string().optional().default(""),
+    extensions: z.array(z.string().trim().min(1)).min(1),
+    dryRun: z.boolean().optional().default(true),
+  }),
+  z.object({
+    toolId: z.literal("batch-nfo-translator"),
+    action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
+    text: z.string().trim().min(1).optional(),
+    directory: z.string().trim().min(1).optional(),
+    items: z
+      .array(
+        z.object({
+          filePath: z.string().trim().min(1),
+          nfoPath: z.string().trim().min(1),
+          directory: z.string().trim().min(1),
+          number: z.string(),
+          title: z.string(),
+          pendingFields: z.array(z.enum(["title", "plot"])),
+        }),
+      )
+      .optional(),
+  }),
+  z.object({
+    toolId: z.literal("missing-number-finder"),
+    prefix: z.string().optional().default(""),
+    start: z.number().int(),
+    end: z.number().int(),
+    existing: z.array(z.string()).default([]),
+  }),
+  z.object({
+    toolId: z.literal("amazon-poster"),
+    action: z.enum(["scan", "lookup", "apply"]).optional().default("scan"),
+    rootDir: z.string().trim().min(1).optional(),
+    nfoPath: z.string().trim().min(1).optional(),
+    title: z.string().trim().min(1).optional(),
+    items: z
+      .array(
+        z.object({
+          nfoPath: z.string().trim().min(1),
+          amazonPosterUrl: z.string().trim().min(1),
+        }),
+      )
+      .optional(),
+  }),
+]);
+
+export type ToolExecuteInput = z.infer<typeof toolExecuteInputSchema>;
+
+export const toolExecuteResponseSchema = z.object({
+  toolId: z.string(),
+  ok: z.boolean(),
+  message: z.string(),
+  data: z.unknown().optional(),
+});
+
+export type ToolExecuteResponse = z.infer<typeof toolExecuteResponseSchema>;
 
 export const setupStatusSchema = z.object({
   configured: z.boolean(),

@@ -1,4 +1,4 @@
-import type { CrawlerDataDto, LibraryEntryDto, MediaRootDto } from "@mdcz/shared";
+import type { LibraryEntryDto, MediaRootDto } from "@mdcz/shared";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn, Input } from "@mdcz/ui";
 import { AlertCircle, Database, FolderOpen, RefreshCw, Search } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
@@ -113,111 +113,6 @@ export function LibraryIndexView({
   );
 }
 
-export interface LibraryDetailViewProps {
-  entry: LibraryEntryDto | null;
-  errorMessage?: string | null;
-  isLoading?: boolean;
-  getImageSrc?: (path: string) => string;
-  onRefresh: () => void;
-  onRescan?: () => void;
-  backLink?: ReactNode;
-  browserLink?: ReactNode;
-  taskLink?: ReactNode;
-}
-
-export function LibraryDetailView({
-  entry,
-  errorMessage,
-  isLoading = false,
-  getImageSrc = (path) => path,
-  onRefresh,
-  onRescan,
-  backLink,
-  browserLink,
-  taskLink,
-}: LibraryDetailViewProps) {
-  const title = entry?.crawlerData?.title_zh || entry?.title || entry?.fileName || "媒体条目";
-  const poster = entry?.assets.find((asset) => asset.kind === "poster")?.uri ?? entry?.thumbnailPath;
-
-  return (
-    <main className="h-full overflow-y-auto bg-surface-canvas text-foreground">
-      <div className="mx-auto grid w-full max-w-[1180px] gap-7 px-6 py-8 lg:px-12 lg:py-12">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">媒体库详情</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">{title}</h1>
-            <p className="mt-3 break-all font-mono text-xs text-muted-foreground">
-              {entry?.relativePath ?? (isLoading ? "加载中..." : "无已知路径")}
-            </p>
-          </div>
-          {backLink}
-        </header>
-
-        {errorMessage && (
-          <div className="rounded-quiet border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {errorMessage}
-          </div>
-        )}
-
-        {entry && (
-          <div className="grid gap-7 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <div className="space-y-4">
-              <div className="aspect-[2/3] overflow-hidden rounded-quiet-lg bg-surface-raised">
-                {poster ? (
-                  <img src={getImageSrc(poster)} alt={title} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-muted-foreground">无封面</div>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button type="button" variant="secondary" onClick={onRefresh}>
-                  <RefreshCw className="h-4 w-4" />
-                  刷新状态
-                </Button>
-                {onRescan && (
-                  <Button type="button" variant="outline" onClick={onRescan}>
-                    重新扫描
-                  </Button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-3 text-sm">
-                {taskLink}
-                {browserLink}
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>索引信息</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-3 text-sm md:grid-cols-2">
-                  <Detail label="番号" value={entry.number ?? "—"} />
-                  <Detail label="媒体标识" value={entry.mediaIdentity ?? "—"} />
-                  <Detail label="演员" value={entry.actors.length ? entry.actors.join(" / ") : "—"} />
-                  <Detail label="大小" value={formatBytes(entry.size)} />
-                  <Detail label="修改时间" value={formatDate(entry.modifiedAt)} />
-                  <Detail label="入库时间" value={formatDate(entry.indexedAt)} />
-                  <Detail label="刷新时间" value={formatDate(entry.lastRefreshedAt)} />
-                  <Detail label="媒体目录" value={entry.rootDisplayName} />
-                  <Detail label="文件状态" value={resolveFileStatus(entry)} />
-                  <div className="md:col-span-2">
-                    <Detail label="文件路径" value={entry.lastKnownPath || entry.relativePath || "无已知路径"} />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <CrawlerDataPanel crawlerData={entry.crawlerData} />
-              <AssetPanel assets={entry.assets} />
-              <FileRefsPanel files={entry.fileRefs} />
-            </div>
-          </div>
-        )}
-      </div>
-    </main>
-  );
-}
-
 function LibraryEntryRow({
   entry,
   linkComponent: LinkComponent,
@@ -243,7 +138,7 @@ function LibraryEntryRow({
         <span className="font-mono">{formatDate(entry.indexedAt)}</span>
         {LinkComponent ? (
           <LinkComponent className={detailClass} entry={entry}>
-            详情
+            Review
           </LinkComponent>
         ) : null}
         <FolderOpen className="h-4 w-4 text-muted-foreground" />
@@ -251,91 +146,6 @@ function LibraryEntryRow({
     </div>
   );
 }
-
-const Detail = ({ label, value }: { label: string; value: string }) => (
-  <div className="rounded-quiet bg-surface-low px-4 py-3">
-    <div className="text-xs font-medium text-muted-foreground">{label}</div>
-    <div className="mt-1 break-all text-foreground">{value}</div>
-  </div>
-);
-
-const CrawlerDataPanel = ({ crawlerData }: { crawlerData: CrawlerDataDto | null }) => (
-  <Card>
-    <CardHeader>
-      <CardTitle>crawlerData</CardTitle>
-    </CardHeader>
-    <CardContent className="grid gap-3 text-sm md:grid-cols-2">
-      {crawlerData ? (
-        crawlerDataFields(crawlerData).map(([key, value]) => <Detail key={key} label={key} value={value} />)
-      ) : (
-        <div className="text-sm text-muted-foreground">暂无刮削元数据。</div>
-      )}
-    </CardContent>
-  </Card>
-);
-
-const AssetPanel = ({ assets }: { assets: LibraryEntryDto["assets"] }) => (
-  <Card>
-    <CardHeader>
-      <CardTitle>资源</CardTitle>
-    </CardHeader>
-    <CardContent className="space-y-2 text-sm">
-      {assets.length > 0 ? (
-        assets.map((asset) => (
-          <div
-            key={asset.id}
-            className="grid gap-2 rounded-quiet bg-surface-low px-4 py-3 md:grid-cols-[120px_minmax(0,1fr)]"
-          >
-            <span className="font-medium">{asset.kind}</span>
-            <span className="break-all font-mono text-xs text-muted-foreground">{asset.uri}</span>
-          </div>
-        ))
-      ) : (
-        <div className="text-muted-foreground">暂无资源引用。</div>
-      )}
-    </CardContent>
-  </Card>
-);
-
-const FileRefsPanel = ({ files }: { files: LibraryEntryDto["fileRefs"] }) => (
-  <Card>
-    <CardHeader>
-      <CardTitle>文件引用</CardTitle>
-    </CardHeader>
-    <CardContent className="space-y-2 text-sm">
-      {files.length > 0 ? (
-        files.map((file) => (
-          <div key={file.id} className="rounded-quiet bg-surface-low px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{file.rootDisplayName}</span>
-              <Badge>{file.available === false ? "文件已移动或删除" : "路径可用"}</Badge>
-            </div>
-            <div className="mt-2 break-all font-mono text-xs text-muted-foreground">
-              {file.lastKnownPath || file.relativePath || "无已知路径"}
-            </div>
-          </div>
-        ))
-      ) : (
-        <div className="text-muted-foreground">无已知路径</div>
-      )}
-    </CardContent>
-  </Card>
-);
-
-const crawlerDataFields = (crawlerData: CrawlerDataDto): Array<[string, string]> =>
-  Object.entries(crawlerData)
-    .filter(([, value]) => value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0))
-    .map(([key, value]) => [key, Array.isArray(value) ? value.join(" / ") : String(value)]);
-
-const resolveFileStatus = (entry: LibraryEntryDto): string => {
-  if (!entry.lastKnownPath && !entry.relativePath) {
-    return "无已知路径";
-  }
-  if (entry.available === false) {
-    return "文件已移动或删除";
-  }
-  return entry.available === true ? "路径可用" : "未检查";
-};
 
 const formatDate = (value: string | null | undefined): string => (value ? new Date(value).toLocaleString() : "—");
 

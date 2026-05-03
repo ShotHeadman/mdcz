@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./about": "./src/about/index.ts",
     "./overview": "./src/overview/index.ts",
     "./workbench": "./src/workbench/index.ts",
     "./library": "./src/library/index.ts",

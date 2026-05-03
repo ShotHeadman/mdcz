@@ -10,6 +10,10 @@ import {
   libraryDetailInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
+  logListInputSchema,
+  maintenanceApplyInputSchema,
+  maintenanceStartInputSchema,
+  maintenanceTaskInputSchema,
   mediaRootCreateInputSchema,
   mediaRootIdInputSchema,
   mediaRootUpdateInputSchema,
@@ -22,11 +26,13 @@ import {
   scrapeStartInputSchema,
   scrapeTaskControlInputSchema,
   setupCompleteInputSchema,
+  toolExecuteInputSchema,
 } from "@mdcz/shared/serverDtos";
 import { initTRPC, TRPCError } from "@trpc/server";
 
 import { ServerConfigValidationError } from "./configService";
 import { createHealthPayload } from "./http";
+import { decorateTaskLog } from "./runtimeLogService";
 import type { ServerServices } from "./services";
 
 interface RouterContext {
@@ -157,15 +163,30 @@ export const appRouter = t.router({
   health: t.router({
     read: t.procedure.query(() => createHealthPayload()),
   }),
+  system: t.router({
+    about: protectedProcedure.query(async ({ ctx }) => await ctx.services.system.about()),
+  }),
   logs: t.router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const [scanLogs, scrapeLogs] = await Promise.all([ctx.services.scans.logs(), ctx.services.scrape.logs()]);
+    list: protectedProcedure.input(logListInputSchema).query(async ({ ctx, input }) => {
+      const kind = input?.kind ?? "all";
+      if (kind === "runtime") {
+        return ctx.services.runtimeLogs.list(input);
+      }
+      const [scanLogs, scrapeLogs, maintenanceLogs] = await Promise.all([
+        ctx.services.scans.logs(),
+        ctx.services.scrape.logs(),
+        ctx.services.maintenance.logs(),
+      ]);
+      const taskLogs = [...scanLogs.logs, ...scrapeLogs.logs, ...maintenanceLogs.logs].map(decorateTaskLog);
+      const runtimeLogs = kind === "task" ? [] : ctx.services.runtimeLogs.list(input).logs;
       return {
-        logs: [...scanLogs.logs, ...scrapeLogs.logs].sort((left, right) =>
-          right.createdAt.localeCompare(left.createdAt),
-        ),
+        logs: [...taskLogs, ...runtimeLogs].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       };
     }),
+    clearRuntime: protectedProcedure.mutation(({ ctx }) => ({
+      ok: true as const,
+      cleared: ctx.services.runtimeLogs.clear(),
+    })),
   }),
   library: t.router({
     list: protectedProcedure
@@ -194,6 +215,12 @@ export const appRouter = t.router({
   diagnostics: t.router({
     summary: protectedProcedure.query(async ({ ctx }) => await ctx.services.diagnostics.summary()),
   }),
+  tools: t.router({
+    catalog: protectedProcedure.query(({ ctx }) => ctx.services.tools.catalog()),
+    execute: protectedProcedure
+      .input(toolExecuteInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.tools.execute(input)),
+  }),
   mediaRoots: t.router({
     availability: protectedProcedure
       .input(mediaRootIdInputSchema)
@@ -214,6 +241,27 @@ export const appRouter = t.router({
     update: protectedProcedure
       .input(mediaRootUpdateInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.update(input)),
+  }),
+  maintenance: t.router({
+    execute: protectedProcedure
+      .input(maintenanceApplyInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.apply(input)),
+    pause: protectedProcedure
+      .input(maintenanceTaskInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.pause(input)),
+    preview: protectedProcedure
+      .input(maintenanceTaskInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.maintenance.preview(input)),
+    recover: protectedProcedure.query(async ({ ctx }) => await ctx.services.maintenance.list()),
+    resume: protectedProcedure
+      .input(maintenanceTaskInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.resume(input)),
+    start: protectedProcedure
+      .input(maintenanceStartInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.start(input)),
+    stop: protectedProcedure
+      .input(maintenanceTaskInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.stop(input)),
   }),
   persistence: t.router({
     status: protectedProcedure.query(async ({ ctx }) => ({
@@ -271,23 +319,39 @@ export const appRouter = t.router({
   tasks: t.router({
     detail: protectedProcedure.input(scanTaskIdInputSchema).query(async ({ ctx, input }) => {
       const scanDetail = await ctx.services.scans.detail(input.taskId).catch(() => null);
-      return scanDetail ?? (await ctx.services.scrape.detail(input.taskId));
+      const scrapeDetail = scanDetail ?? (await ctx.services.scrape.detail(input.taskId).catch(() => null));
+      return scrapeDetail ?? (await ctx.services.maintenance.detail(input.taskId));
     }),
     events: protectedProcedure.input(scanTaskIdInputSchema).query(async ({ ctx, input }) => {
       const scanEvents = await ctx.services.scans.events(input.taskId).catch(() => null);
-      return scanEvents ?? (await ctx.services.scrape.events(input.taskId));
+      const scrapeEvents = scanEvents ?? (await ctx.services.scrape.events(input.taskId).catch(() => null));
+      return scrapeEvents ?? (await ctx.services.maintenance.events(input.taskId));
     }),
     list: protectedProcedure.query(async ({ ctx }) => {
-      const [scans, scrape] = await Promise.all([ctx.services.scans.list(), ctx.services.scrape.list()]);
+      const [scans, scrape, maintenance] = await Promise.all([
+        ctx.services.scans.list(),
+        ctx.services.scrape.list(),
+        ctx.services.maintenance.list(),
+      ]);
       return {
-        tasks: [...scans.tasks, ...scrape.tasks].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+        tasks: [...scans.tasks, ...scrape.tasks, ...maintenance.tasks].sort((left, right) =>
+          right.createdAt.localeCompare(left.createdAt),
+        ),
       };
     }),
     retry: protectedProcedure.input(scanTaskIdInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.scans.detail(input.taskId).catch(() => null);
-      return detail?.task.kind === "scan"
-        ? await ctx.services.scans.retry(input.taskId)
-        : await ctx.services.scrape.retry(input);
+      if (detail?.task.kind === "scan") {
+        return await ctx.services.scans.retry(input.taskId);
+      }
+      const scrapeDetail = await ctx.services.scrape.detail(input.taskId).catch(() => null);
+      if (scrapeDetail?.task.kind === "scrape") {
+        return await ctx.services.scrape.retry(input);
+      }
+      return await ctx.services.maintenance.start({
+        rootId: (await ctx.services.maintenance.detail(input.taskId)).task.rootId,
+        presetId: "read_local",
+      });
     }),
   }),
   setup: t.router({

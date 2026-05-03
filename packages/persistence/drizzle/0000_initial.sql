@@ -66,6 +66,34 @@ CREATE TABLE `scrape_results` (
   `updated_at` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `maintenance_previews` (
+  `id` text PRIMARY KEY NOT NULL,
+  `task_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `relative_path` text NOT NULL,
+  `preset_id` text NOT NULL,
+  `status` text NOT NULL,
+  `error_message` text,
+  `field_diffs_json` text NOT NULL DEFAULT '[]',
+  `unchanged_field_diffs_json` text NOT NULL DEFAULT '[]',
+  `path_diff_json` text,
+  `proposed_crawler_data_json` text,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `maintenance_apply_log` (
+  `id` text PRIMARY KEY NOT NULL,
+  `task_id` text NOT NULL,
+  `preview_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `relative_path` text NOT NULL,
+  `preset_id` text NOT NULL,
+  `status` text NOT NULL,
+  `error_message` text,
+  `applied_at` integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `library_entries` (
   `id` text PRIMARY KEY NOT NULL,
   `root_id` text NOT NULL,

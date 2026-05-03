@@ -167,7 +167,7 @@ export function WorkbenchView({
           <Card>
             <CardHeader>
               <CardTitle>刮削任务</CardTitle>
-              <CardDescription>支持暂停、恢复、停止、失败重试与任务详情查看。</CardDescription>
+              <CardDescription>支持暂停、恢复、停止与失败重试。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
               {tasks.map((task) => (

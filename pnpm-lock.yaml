@@ -253,6 +253,12 @@ importers:
       '@trpc/server':
         specifier: ^11.16.0
         version: 11.17.0(typescript@5.9.3)
+      better-sqlite3:
+        specifier: ^12.9.0
+        version: 12.9.0
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)
       fastify:
         specifier: ^5.8.5
         version: 5.8.5

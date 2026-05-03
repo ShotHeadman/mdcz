@@ -1,6 +1,7 @@
 import type { MediaRootAvailabilityResponse } from "@mdcz/shared";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../client";
 import { buildHref } from "../routeHelpers";
@@ -187,3 +188,7 @@ export const MediaRootsPage = () => {
     </main>
   );
 };
+
+export const Route = createFileRoute("/media-roots")({
+  component: MediaRootsPage,
+});

@@ -1,6 +1,7 @@
 import { type CrawlerDataDto, type ScrapeFileRefDto, type ScrapeResultDto, Website } from "@mdcz/shared";
 import { NfoEditorView, WorkbenchView } from "@mdcz/views";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, subscribeTaskUpdates } from "../client";
 import { AppLink, formatDate, scanStatusLabels, taskKindLabels } from "./Common";
@@ -174,14 +175,6 @@ export function WorkbenchPage() {
           打开目录
         </WorkbenchLink>
       )}
-      renderTaskLink={(task) => (
-        <AppLink
-          className="mt-3 inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
-          to={`/tasks/${task.id}`}
-        >
-          查看任务详情
-        </AppLink>
-      )}
       results={scrapeResultsQ.data?.results ?? []}
       selectedRefs={selectedRefs}
       selectedRootId={selectedRootId}
@@ -189,6 +182,10 @@ export function WorkbenchPage() {
     />
   );
 }
+
+export const Route = createFileRoute("/workbench")({
+  component: WorkbenchPage,
+});
 
 function WorkbenchLink({
   children,

@@ -1,19 +1,24 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { FetchNetworkClient } from "@mdcz/runtime/network";
+import type { Configuration } from "@mdcz/shared/config";
+import type { CrawlerData, DownloadedAssets, FileInfo, ScrapeResult } from "@mdcz/shared/types";
+import type { MediaRoot } from "@mdcz/storage";
+import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/storage";
+import { FetchNetworkClient } from "../network";
+import { ActorImageService } from "./ActorImageService";
+import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
+import { DownloadManager } from "./download";
+import { FileOrganizer } from "./FileOrganizer";
+import { FileScraper } from "./FileScraper";
+import { NfoGenerator, reconcileExistingNfoFiles } from "./nfo";
+import { prepareCrawlerDataForMovieOutput } from "./output/prepareCrawlerDataForMovieOutput";
+import { prepareImageAlternativesForDownload } from "./output/prepareImageAlternativesForDownload";
 import {
-  ActorImageService,
   AggregateStage,
   AggregationCoordinator,
-  type AggregationResult,
-  DownloadManager,
   DownloadStage,
-  FileOrganizer,
-  FileScraper,
   type FileScraperPipeline,
   type FileScraperStageRuntime,
-  type ManualScrapeOptions,
-  NfoGenerator,
   NfoStage,
   NumberExecutionGate,
   OrganizeStage,
@@ -21,39 +26,38 @@ import {
   PlanStage,
   PrepareOutputStage,
   ProbeStage,
-  prepareCrawlerDataForMovieOutput,
-  prepareImageAlternativesForDownload,
   type RuntimeScrapeSignalService,
-  reconcileExistingNfoFiles,
   ScrapeContext,
   type ScrapeStage,
-  TranslateService,
   TranslateStage,
-} from "@mdcz/runtime/scrape";
-import { isAbortError } from "@mdcz/runtime/scrape/utils/abort";
-import { pathExists } from "@mdcz/runtime/scrape/utils/filesystem";
-import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
-import type { Configuration } from "@mdcz/shared/config";
-import type { CrawlerData, DownloadedAssets, FileInfo, ScrapeResult } from "@mdcz/shared/types";
-import type { MediaRoot } from "@mdcz/storage";
-import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/storage";
-import type { ServerConfigService } from "./configService";
+} from "./pipeline";
+import { TranslateService } from "./TranslateService";
+import { isAbortError } from "./utils/abort";
+import { pathExists } from "./utils/filesystem";
+import { parseFileInfo } from "./utils/number";
 
-interface ServerScrapeLogger {
+interface MountedRootScrapeLogger {
   debug?(message: string): void;
   info(message: string): void;
   warn(message: string): void;
   error(message: string): void;
 }
 
-const toRuntimeLogger = (logger: ServerScrapeLogger) => ({
+const toRuntimeLogger = (logger: MountedRootScrapeLogger) => ({
   debug: (message: string) => logger.debug?.(message),
   info: (message: string) => logger.info(message),
   warn: (message: string) => logger.warn(message),
   error: (message: string) => logger.error(message),
 });
 
-export interface ServerScrapeAggregationService {
+export interface MountedRootScrapeRuntimeConfig {
+  runtimePaths: {
+    dataDir: string;
+  };
+  get(): Promise<Configuration>;
+}
+
+export interface MountedRootScrapeAggregationService {
   aggregate(
     number: string,
     configuration: Configuration,
@@ -62,7 +66,7 @@ export interface ServerScrapeAggregationService {
   ): Promise<AggregationResult | null>;
 }
 
-export interface ServerScrapeRuntimeItemInput {
+export interface MountedRootScrapeRuntimeItemInput {
   root: MediaRoot;
   relativePath: string;
   manualScrape?: NonNullable<Parameters<FileScraper["scrapeFile"]>[3]>["manualScrape"];
@@ -71,7 +75,7 @@ export interface ServerScrapeRuntimeItemInput {
   signal?: AbortSignal;
 }
 
-export interface ServerScrapeRuntimeItemSuccess {
+export interface MountedRootScrapeRuntimeItemSuccess {
   status: "success";
   result: ScrapeResult;
   crawlerData: CrawlerData;
@@ -81,13 +85,15 @@ export interface ServerScrapeRuntimeItemSuccess {
   modifiedAt: Date | null;
 }
 
-export interface ServerScrapeRuntimeItemFailure {
+export interface MountedRootScrapeRuntimeItemFailure {
   status: "failed" | "skipped";
   result: ScrapeResult;
   error: string;
 }
 
-export type ServerScrapeRuntimeItemResult = ServerScrapeRuntimeItemSuccess | ServerScrapeRuntimeItemFailure;
+export type MountedRootScrapeRuntimeItemResult =
+  | MountedRootScrapeRuntimeItemSuccess
+  | MountedRootScrapeRuntimeItemFailure;
 
 class MemoryImageHostCooldownStore {
   private readonly entries = new Map<string, { failures: number[]; cooldownUntil?: number }>();
@@ -127,7 +133,7 @@ class MemoryImageHostCooldownStore {
   }
 }
 
-class ServerScrapeSignalService implements RuntimeScrapeSignalService {
+class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
   constructor(private readonly emit: (type: string, message: string) => Promise<void> | void) {}
 
   showFailedInfo(input: { fileInfo: FileInfo; error: string }): void {
@@ -155,7 +161,7 @@ class ServerScrapeSignalService implements RuntimeScrapeSignalService {
   }
 }
 
-class ServerFileScraperPipeline implements FileScraperPipeline {
+class MountedRootFileScraperPipeline implements FileScraperPipeline {
   private readonly nfoGenerator = new NfoGenerator();
   private readonly networkClient = new FetchNetworkClient();
   private readonly fileOrganizer: FileOrganizer;
@@ -169,10 +175,10 @@ class ServerFileScraperPipeline implements FileScraperPipeline {
 
   constructor(
     private readonly root: MediaRoot,
-    private readonly config: ServerConfigService,
-    private readonly aggregationService: ServerScrapeAggregationService,
+    private readonly config: MountedRootScrapeRuntimeConfig,
+    private readonly aggregationService: MountedRootScrapeAggregationService,
     private readonly signalService: RuntimeScrapeSignalService,
-    private readonly logger: ServerScrapeLogger,
+    private readonly logger: MountedRootScrapeLogger,
   ) {
     const runtimeLogger = toRuntimeLogger(this.logger);
     this.fileOrganizer = new FileOrganizer(runtimeLogger);
@@ -414,20 +420,20 @@ class ServerFileScraperPipeline implements FileScraperPipeline {
   }
 }
 
-export class ServerScrapeRuntime {
+export class MountedRootScrapeRuntime {
   constructor(
-    private readonly config: ServerConfigService,
-    private readonly aggregationService: ServerScrapeAggregationService,
-    private readonly logger: ServerScrapeLogger = console,
+    private readonly config: MountedRootScrapeRuntimeConfig,
+    private readonly aggregationService: MountedRootScrapeAggregationService,
+    private readonly logger: MountedRootScrapeLogger = console,
   ) {}
 
-  async scrape(input: ServerScrapeRuntimeItemInput): Promise<ServerScrapeRuntimeItemResult> {
-    const signalService = new ServerScrapeSignalService((type, message) => {
+  async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
+    const signalService = new MountedRootScrapeSignalService((type, message) => {
       void input.onEvent?.(type, message);
       this.logger.info(`[${type}] ${message}`);
     });
     const scraper = new FileScraper(
-      new ServerFileScraperPipeline(input.root, this.config, this.aggregationService, signalService, this.logger),
+      new MountedRootFileScraperPipeline(input.root, this.config, this.aggregationService, signalService, this.logger),
     );
     const absolutePath = resolveRootRelativePath(input.root, input.relativePath);
     const result = await scraper.scrapeFile(absolutePath, input.progress, input.signal, {

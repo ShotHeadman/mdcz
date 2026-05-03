@@ -19,6 +19,7 @@ release/
 
 # Runtime scratch data
 logs/
+!packages/views/src/logs/
 tmp/
 .tmp/
 

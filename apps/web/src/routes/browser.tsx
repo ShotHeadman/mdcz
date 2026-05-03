@@ -1,6 +1,7 @@
 import type { RootBrowserEntryDto } from "@mdcz/shared";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { api } from "../client";
 import { buildHref } from "../routeHelpers";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui";
@@ -146,3 +147,7 @@ export const BrowserPage = () => {
     </main>
   );
 };
+
+export const Route = createFileRoute("/browser")({
+  component: BrowserPage,
+});

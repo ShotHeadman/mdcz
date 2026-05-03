@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../client";
@@ -266,3 +267,7 @@ export const SetupPage = () => {
     </main>
   );
 };
+
+export const Route = createFileRoute("/setup")({
+  component: SetupPage,
+});

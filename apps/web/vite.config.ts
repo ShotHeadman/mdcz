@@ -18,6 +18,7 @@ export default defineConfig({
       { find: /^@mdcz\/shared\/(.+)$/, replacement: workspaceResolve("packages/shared/$1") },
       { find: /^@mdcz\/ui$/, replacement: workspaceResolve("packages/ui/src/index.ts") },
       { find: /^@mdcz\/views$/, replacement: workspaceResolve("packages/views/src/index.ts") },
+      { find: /^@mdcz\/views\/about$/, replacement: workspaceResolve("packages/views/src/about/index.ts") },
       { find: /^@mdcz\/views\/library$/, replacement: workspaceResolve("packages/views/src/library/index.ts") },
       { find: /^@mdcz\/views\/overview$/, replacement: workspaceResolve("packages/views/src/overview/index.ts") },
     ],

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "pnpm --filter @mdcz/web build --outDir ../server/dist/web --emptyOutDir=false && vite build --config vite.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --config vitest.config.ts"
   },
@@ -15,6 +15,8 @@
     "@mdcz/shared": "workspace:*",
     "@mdcz/storage": "workspace:*",
     "@trpc/server": "^11.16.0",
+    "better-sqlite3": "^12.9.0",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.8.5"
   },
   "devDependencies": {

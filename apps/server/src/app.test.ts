@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AggregationResult, ManualScrapeOptions } from "@mdcz/runtime/scrape";
+import {
+  type AggregationResult,
+  type ManualScrapeOptions,
+  type MountedRootScrapeAggregationService,
+  MountedRootScrapeRuntime,
+  NfoGenerator,
+} from "@mdcz/runtime/scrape";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,7 +17,6 @@ import { ServerConfigService } from "./configService";
 import { MediaRootService } from "./mediaRootService";
 import { ServerPersistenceService } from "./persistenceService";
 import { ScrapeService } from "./scrapeService";
-import { type ServerScrapeAggregationService, ServerScrapeRuntime } from "./serverScrapePipeline";
 import { createTaskEventBus, formatSseEvent } from "./taskEvents";
 
 const textDecoder = new TextDecoder();
@@ -35,7 +40,11 @@ const expectedHealthPayload = {
 let serverApp: ServerApp | undefined;
 
 interface TestServerOptions {
-  scrapeAggregation?: ServerScrapeAggregationService;
+  automationWebhook?: {
+    secret?: string;
+    url?: string;
+  };
+  scrapeAggregation?: MountedRootScrapeAggregationService;
 }
 
 const createTestServer = async (options: TestServerOptions = {}): Promise<ServerApp> => {
@@ -51,6 +60,10 @@ const createTestServer = async (options: TestServerOptions = {}): Promise<Server
   const mediaRoots = new MediaRootService(persistence);
   const taskEvents = createTaskEventBus();
   serverApp = buildServer({
+    serviceOptions: {
+      automationWebhook: options.automationWebhook,
+    },
+    webStaticDir: false,
     services: {
       config,
       mediaRoots,
@@ -62,12 +75,45 @@ const createTestServer = async (options: TestServerOptions = {}): Promise<Server
             mediaRoots,
             config,
             taskEvents,
-            new ServerScrapeRuntime(config, options.scrapeAggregation),
+            new MountedRootScrapeRuntime(config, options.scrapeAggregation),
           )
         : undefined,
     },
   });
   return serverApp;
+};
+
+const startWebhookServer = async (): Promise<{
+  close: () => Promise<void>;
+  deliveries: Array<{ body: unknown; secret?: string }>;
+  url: string;
+}> => {
+  const deliveries: Array<{ body: unknown; secret?: string }> = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    request.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      deliveries.push({
+        body: raw ? JSON.parse(raw) : null,
+        secret: request.headers["x-mdcz-webhook-secret"]?.toString(),
+      });
+      response.writeHead(204);
+      response.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected webhook test server address");
+  }
+  return {
+    deliveries,
+    url: `http://127.0.0.1:${address.port}/webhook`,
+    close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+  };
 };
 
 const createPngBytes = (): Buffer => {
@@ -94,7 +140,7 @@ const startImageServer = async (): Promise<{ url: string; close: () => Promise<v
   };
 };
 
-const createFakeAggregation = (imageUrl: string, actorPhotoPath?: string): ServerScrapeAggregationService => ({
+const createFakeAggregation = (imageUrl: string, actorPhotoPath?: string): MountedRootScrapeAggregationService => ({
   async aggregate(
     number: string,
     _configuration: Configuration,
@@ -142,7 +188,7 @@ const createFakeAggregation = (imageUrl: string, actorPhotoPath?: string): Serve
 });
 
 const createAbortAwareAggregation = (): {
-  aggregation: ServerScrapeAggregationService;
+  aggregation: MountedRootScrapeAggregationService;
   aborted: Promise<void>;
   started: Promise<void>;
 } => {
@@ -210,6 +256,36 @@ describe("buildServer", () => {
         data: expectedHealthPayload,
       },
     });
+  });
+
+  it("exposes server and Web build metadata through system.about", async () => {
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+
+    const response = await fastify.inject({
+      method: "GET",
+      url: "/trpc/system.about",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data).toMatchObject({
+      productName: "MDCz",
+      community: {
+        feedback: { url: "https://github.com/ShotHeadman/mdcz/issues/new/choose" },
+      },
+      build: {
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+    });
+    expect(response.json().result.data.version).toEqual(expect.any(String));
   });
 
   it("allows WebUI dev origins to preflight tRPC requests", async () => {
@@ -339,6 +415,57 @@ describe("buildServer", () => {
           path: services.persistence.databasePath,
         },
       },
+    });
+  });
+
+  it("serves runtime logs and executes server-backed tools through tRPC", async () => {
+    const { fastify, services } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    services.runtimeLogs.append("test-runtime", "warn", "runtime warning");
+
+    const logsResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/logs.list",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { kind: "runtime" },
+    });
+    const catalogResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/tools.catalog",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const executeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/tools.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        toolId: "missing-number-finder",
+        prefix: "ABC",
+        start: 1,
+        end: 3,
+        existing: ["ABC-001", "ABC-003"],
+      },
+    });
+
+    expect(logsResponse.statusCode).toBe(200);
+    expect(logsResponse.json().result.data.logs[0]).toMatchObject({
+      level: "WARN",
+      message: "runtime warning",
+      source: "runtime",
+    });
+    expect(catalogResponse.statusCode).toBe(200);
+    expect(catalogResponse.json().result.data.tools).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "single-file-scraper" })]),
+    );
+    expect(executeResponse.statusCode).toBe(200);
+    expect(executeResponse.json().result.data).toMatchObject({
+      ok: true,
+      data: { missing: ["ABC-002"], total: 1 },
     });
   });
 
@@ -588,6 +715,148 @@ describe("buildServer", () => {
     expect(retriedLibraryResponse.json().result.data.total).toBe(0);
   });
 
+  it("protects automation REST endpoints and returns durable webhook payloads", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-automation-root-"));
+    await writeFile(join(root, "auto.mp4"), "video");
+    const { fastify } = await createTestServer();
+    const unauthorizedResponse = await fastify.inject({
+      method: "GET",
+      url: "/api/automation/library/recent",
+    });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/api/automation/scrape/start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { rootId },
+    });
+    const taskId = startResponse.json().task.id;
+
+    await expect
+      .poll(async () => {
+        const detailResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return detailResponse.json().result.data.task.status;
+      })
+      .toBe("completed");
+
+    const recentResponse = await fastify.inject({
+      method: "GET",
+      url: "/api/automation/library/recent?limit=1",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(unauthorizedResponse.statusCode).toBe(500);
+    expect(unauthorizedResponse.json().message).toContain("Authentication required");
+    expect(startResponse.statusCode).toBe(200);
+    expect(startResponse.json().webhook).toEqual({
+      taskId,
+      kind: "scan",
+      status: "queued",
+      startedAt: null,
+      completedAt: null,
+      summary: "扫描 Media: queued",
+      errors: [],
+    });
+    expect(recentResponse.statusCode).toBe(200);
+    expect(recentResponse.json().tasks[0]).toMatchObject({
+      taskId,
+      kind: "scan",
+      status: "completed",
+      summary: "扫描 Media: completed",
+      errors: [],
+    });
+    expect(recentResponse.json().tasks[0].completedAt).toEqual(expect.any(String));
+  });
+
+  it("delivers outbound automation webhooks when task updates are published", async () => {
+    const webhook = await startWebhookServer();
+    const root = await mkdtemp(join(tmpdir(), "mdcz-outbound-webhook-root-"));
+    await writeFile(join(root, "auto-webhook.mp4"), "video");
+    const { fastify } = await createTestServer({
+      automationWebhook: {
+        secret: "test-secret",
+        url: webhook.url,
+      },
+    });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/api/automation/scrape/start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { rootId },
+    });
+    const taskId = startResponse.json().task.id;
+
+    await expect
+      .poll(async () => {
+        const detailResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return detailResponse.json().result.data.task.status;
+      })
+      .toBe("completed");
+
+    await expect.poll(() => webhook.deliveries.length).toBeGreaterThanOrEqual(3);
+    const statusResponse = await fastify.inject({
+      method: "GET",
+      url: "/api/automation/webhooks/status",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(webhook.deliveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          body: expect.objectContaining({ taskId, kind: "scan", status: "queued" }),
+          secret: "test-secret",
+        }),
+        expect.objectContaining({
+          body: expect.objectContaining({ taskId, kind: "scan", status: "completed" }),
+          secret: "test-secret",
+        }),
+      ]),
+    );
+    expect(statusResponse.statusCode).toBe(200);
+    expect(statusResponse.json().webhook).toMatchObject({
+      configured: true,
+      failed: 0,
+    });
+    expect(statusResponse.json().webhook.delivered).toBeGreaterThanOrEqual(3);
+
+    await webhook.close();
+  });
+
   it("runs the full scrape runtime pipeline and indexes organized output", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-runtime-root-"));
     const actorRoot = await mkdtemp(join(tmpdir(), "mdcz-actor-root-"));
@@ -763,6 +1032,109 @@ describe("buildServer", () => {
     });
   });
 
+  it("runs maintenance preview and apply through task-backed logs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-maintenance-root-"));
+    const nfoGenerator = new NfoGenerator();
+    await writeFile(join(root, "ABC-125.mp4"), "video");
+    await writeFile(
+      join(root, "ABC-125.nfo"),
+      nfoGenerator.buildXml({
+        title: "Local Title ABC-125",
+        number: "ABC-125",
+        actors: ["Actor M"],
+        genres: ["Drama"],
+        scene_images: [],
+        website: Website.JAVDB,
+      }),
+    );
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { rootId, presetId: "read_local" },
+    });
+    const taskId = startResponse.json().result.data.id;
+
+    await expect
+      .poll(async () => {
+        const detailResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return detailResponse.json().result.data.task.status;
+      })
+      .toBe("completed");
+
+    const previewResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/maintenance.preview?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const preview = previewResponse.json().result.data;
+    const applyResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId, confirmationToken: preview.confirmationToken },
+    });
+    const logsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/logs.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const libraryResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.search",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { query: "ABC-125", limit: 20 },
+    });
+    const tasksResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/tasks.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(previewResponse.statusCode).toBe(200);
+    expect(preview.items[0]).toMatchObject({
+      presetId: "read_local",
+      relativePath: "ABC-125.mp4",
+      status: "ready",
+      proposedCrawlerData: { number: "ABC-125", title: "Local Title ABC-125" },
+    });
+    expect(applyResponse.statusCode).toBe(200);
+    expect(applyResponse.json().result.data.applied[0]).toMatchObject({
+      relativePath: "ABC-125.mp4",
+      status: "success",
+    });
+    expect(tasksResponse.json().result.data.tasks.some((task: { kind: string }) => task.kind === "maintenance")).toBe(
+      true,
+    );
+    expect(libraryResponse.json().result.data.entries[0]).toMatchObject({
+      number: "ABC-125",
+      relativePath: "ABC-125.mp4",
+      title: "Local Title ABC-125",
+    });
+    expect(logsResponse.json().result.data.logs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: "task", message: expect.stringContaining("维护") })]),
+    );
+  });
+
   it("closes the persistence database with the Fastify lifecycle", async () => {
     const { fastify, services } = await createTestServer();
 
@@ -780,6 +1152,28 @@ describe("buildServer", () => {
     const response = await fastify.inject({ method: "GET", url: "/unknown" });
 
     expect(response.statusCode).toBe(404);
+  });
+
+  it("serves the WebUI static bundle and falls back to index.html for routes", async () => {
+    const webRoot = await mkdtemp(join(tmpdir(), "mdcz-web-static-"));
+    await writeFile(join(webRoot, "index.html"), '<!doctype html><div id="root"></div>', "utf8");
+    await writeFile(join(webRoot, "app.js"), "console.log('web')", "utf8");
+    serverApp = buildServer({ webStaticDir: webRoot });
+    const { fastify } = serverApp;
+
+    const assetResponse = await fastify.inject({ method: "GET", url: "/app.js" });
+    const routeResponse = await fastify.inject({ method: "GET", url: "/settings" });
+    const rootResponse = await fastify.inject({ method: "GET", url: "/" });
+
+    expect(assetResponse.statusCode).toBe(200);
+    expect(assetResponse.headers["content-type"]).toContain("text/javascript");
+    expect(assetResponse.body).toBe("console.log('web')");
+    expect(routeResponse.statusCode).toBe(200);
+    expect(routeResponse.headers["content-type"]).toContain("text/html");
+    expect(routeResponse.body).toContain('<div id="root"></div>');
+    expect(rootResponse.statusCode).toBe(200);
+    expect(rootResponse.headers["content-type"]).toContain("text/html");
+    expect(rootResponse.body).toContain('<div id="root"></div>');
   });
 
   it("streams task updates through the SSE endpoint", async () => {
@@ -808,7 +1202,7 @@ describe("buildServer", () => {
     const initialChunk = await readStreamChunk(reader);
     expect(initialChunk).toContain(": connected\n\n");
     expect(initialChunk).toContain('data: {"kind":"snapshot","tasks":[]}');
-    expect(services.taskEvents.listenerCount()).toBe(1);
+    const listenerCountWithSse = services.taskEvents.listenerCount();
 
     const event = services.taskEvents.publish({
       kind: "task",
@@ -834,6 +1228,6 @@ describe("buildServer", () => {
     await reader.cancel();
     abortController.abort();
 
-    await expect.poll(() => services.taskEvents.listenerCount()).toBe(0);
+    await expect.poll(() => services.taskEvents.listenerCount()).toBe(listenerCountWithSse - 1);
   });
 });

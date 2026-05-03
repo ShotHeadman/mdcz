@@ -68,6 +68,34 @@ export const scrapeResults = sqliteTable("scrape_results", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+export const maintenancePreviews = sqliteTable("maintenance_previews", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  rootId: text("root_id").notNull(),
+  relativePath: text("relative_path").notNull(),
+  presetId: text("preset_id").notNull(),
+  status: text("status").notNull(),
+  errorMessage: text("error_message"),
+  fieldDiffsJson: text("field_diffs_json").notNull().default("[]"),
+  unchangedFieldDiffsJson: text("unchanged_field_diffs_json").notNull().default("[]"),
+  pathDiffJson: text("path_diff_json"),
+  proposedCrawlerDataJson: text("proposed_crawler_data_json"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const maintenanceApplyLog = sqliteTable("maintenance_apply_log", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  previewId: text("preview_id").notNull(),
+  rootId: text("root_id").notNull(),
+  relativePath: text("relative_path").notNull(),
+  presetId: text("preset_id").notNull(),
+  status: text("status").notNull(),
+  errorMessage: text("error_message"),
+  appliedAt: integer("applied_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const libraryEntries = sqliteTable(
   "library_entries",
   {
@@ -140,6 +168,8 @@ export const schema = {
   scanResults,
   scrapeOutputs,
   scrapeResults,
+  maintenancePreviews,
+  maintenanceApplyLog,
   libraryEntries,
   libraryItems,
   libraryItemFiles,
@@ -158,6 +188,10 @@ export type ScrapeOutputRow = typeof scrapeOutputs.$inferSelect;
 export type InsertScrapeOutputRow = typeof scrapeOutputs.$inferInsert;
 export type ScrapeResultRow = typeof scrapeResults.$inferSelect;
 export type InsertScrapeResultRow = typeof scrapeResults.$inferInsert;
+export type MaintenancePreviewRow = typeof maintenancePreviews.$inferSelect;
+export type InsertMaintenancePreviewRow = typeof maintenancePreviews.$inferInsert;
+export type MaintenanceApplyLogRow = typeof maintenanceApplyLog.$inferSelect;
+export type InsertMaintenanceApplyLogRow = typeof maintenanceApplyLog.$inferInsert;
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type InsertLibraryEntryRow = typeof libraryEntries.$inferInsert;
 export type LibraryItemRow = typeof libraryItems.$inferSelect;

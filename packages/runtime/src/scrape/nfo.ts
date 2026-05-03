@@ -354,6 +354,19 @@ const readTag = (xml: string, tag: string): string | undefined => {
     .trim();
 };
 
+const readUniqueId = (xml: string): { number?: string; website?: Website } => {
+  const match = xml.match(/<uniqueid\b([^>]*)>([\s\S]*?)<\/uniqueid>/u);
+  const number = match?.[2]
+    ?.replace(/&quot;/gu, '"')
+    .replace(/&gt;/gu, ">")
+    .replace(/&lt;/gu, "<")
+    .replace(/&amp;/gu, "&")
+    .trim();
+  const type = match?.[1]?.match(/type=["']([^"']+)["']/u)?.[1];
+  const website = type && Object.values(Website).includes(type as Website) ? (type as Website) : undefined;
+  return { number, website };
+};
+
 export const inferNumber = (relativePath: string): string => {
   const base = basename(
     relativePath,
@@ -368,15 +381,19 @@ export const parseNfo = (xml: string, fallbackPath: string): CrawlerData => {
     match[1].trim(),
   );
   const genres = Array.from(xml.matchAll(/<genre>([\s\S]*?)<\/genre>/gu)).map((match) => match[1].trim());
+  const title = readTag(xml, "title");
+  const originaltitle = readTag(xml, "originaltitle");
+  const uniqueid = readUniqueId(xml);
   return {
     title:
-      readTag(xml, "title") ??
+      originaltitle ??
+      title ??
       basename(
         fallbackPath,
         fallbackPath.includes(".") ? fallbackPath.slice(fallbackPath.lastIndexOf(".")) : undefined,
       ),
-    title_zh: readTag(xml, "originaltitle"),
-    number: readTag(xml, "id") ?? inferNumber(fallbackPath),
+    title_zh: title && title !== originaltitle ? title : undefined,
+    number: uniqueid.number ?? readTag(xml, "id") ?? inferNumber(fallbackPath),
     actors,
     genres,
     studio: readTag(xml, "studio"),
@@ -389,6 +406,6 @@ export const parseNfo = (xml: string, fallbackPath: string): CrawlerData => {
     thumb_url: readTag(xml, "thumb"),
     poster_url: readTag(xml, "poster"),
     scene_images: [],
-    website: Website.JAVDB,
+    website: uniqueid.website ?? Website.JAVDB,
   };
 };

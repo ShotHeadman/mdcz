@@ -83,11 +83,24 @@ export const api: ServerApiContract = {
   health: {
     read: () => request("health.read"),
   },
+  system: {
+    about: () => request("system.about"),
+  },
   diagnostics: {
     summary: () => request("diagnostics.summary"),
   },
   logs: {
-    list: () => request("logs.list"),
+    list: (input) => request("logs.list", input),
+    clearRuntime: () => request("logs.clearRuntime"),
+  },
+  maintenance: {
+    apply: (input) => request("maintenance.execute", input),
+    pause: (input) => request("maintenance.pause", input),
+    preview: (input) => request("maintenance.preview", input),
+    recover: () => request("maintenance.recover"),
+    resume: (input) => request("maintenance.resume", input),
+    start: (input) => request("maintenance.start", input),
+    stop: (input) => request("maintenance.stop", input),
   },
   library: {
     list: (input) => request("library.list", input),
@@ -111,6 +124,10 @@ export const api: ServerApiContract = {
   },
   persistence: {
     status: () => request("persistence.status"),
+  },
+  tools: {
+    catalog: () => request("tools.catalog"),
+    execute: (input) => request("tools.execute", input),
   },
   scans: {
     detail: (input) => request("scans.detail", input),

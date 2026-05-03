@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DESKTOP_ROUTE_DEFINITIONS } from "@mdcz/shared/desktopNavigation";
+import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
 import { taskKindSchema } from "@mdcz/shared/serverDtos";
 import {
   FIELD_REGISTRY,
@@ -99,6 +100,15 @@ describe("route helpers", () => {
       scan: "扫描",
       scrape: "刮削",
     });
+  });
+
+  it("uses desktop maintenance preset IDs and labels", () => {
+    expect(MAINTENANCE_PRESET_OPTIONS.map((preset) => [preset.id, preset.label])).toEqual([
+      ["read_local", "读取本地"],
+      ["refresh_data", "刷新数据"],
+      ["organize_files", "整理目录"],
+      ["rebuild_all", "全量重整"],
+    ]);
   });
 
   it("keeps WebUI primitive exports free of fabricated layout wrappers", async () => {

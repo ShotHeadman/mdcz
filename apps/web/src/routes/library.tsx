@@ -1,6 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { LibraryIndexView } from "@mdcz/views/library";
 import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { api } from "../client";
@@ -33,6 +34,10 @@ export function LibraryPage() {
   );
 }
 
+export const Route = createFileRoute("/library")({
+  component: LibraryPage,
+});
+
 function LibraryEntryLink({
   children,
   className,
@@ -40,10 +45,14 @@ function LibraryEntryLink({
 }: {
   children: ReactNode;
   className?: string;
-  entry: { id: string };
+  entry: { scrapeOutputId: string | null };
 }) {
+  if (!entry.scrapeOutputId) {
+    return null;
+  }
+
   return (
-    <AppLink className={className} to={`/library/${encodeURIComponent(entry.id)}`}>
+    <AppLink className={className} to={`/scrape/${encodeURIComponent(entry.scrapeOutputId)}`}>
       {children}
     </AppLink>
   );

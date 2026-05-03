@@ -3,6 +3,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { ScrapeResultDetailView } from "@mdcz/views/detail";
 import { NfoEditorView } from "@mdcz/views/nfo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "../client";
 import { AppLink, ErrorBanner } from "./Common";
@@ -102,3 +103,7 @@ export function ScrapeResultPage() {
     </main>
   );
 }
+
+export const Route = createFileRoute("/scrape/$resultId")({
+  component: ScrapeResultPage,
+});

@@ -1,7 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { OverviewHeroStartCard, OverviewMaintenanceCard, RecentAcquisitionsGrid } from "@mdcz/views/overview";
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { createFileRoute } from "@tanstack/react-router";
 import { api } from "../client";
 import { buildHref } from "../routeHelpers";
 import { AppLink, ErrorBanner } from "./Common";
@@ -37,7 +37,7 @@ export function OverviewPage() {
           />
           <OverviewMaintenanceCard
             onOpen={() => {
-              window.location.href = buildHref("/workbench", { intent: "maintenance" });
+              window.location.href = buildHref("/workbench/maintenance");
             }}
           />
         </section>
@@ -55,7 +55,6 @@ export function OverviewPage() {
             isError={overviewQ.isError}
             isLoading={overviewQ.isLoading}
             items={recent}
-            linkComponent={RecentAcquisitionLink}
             onRetry={() => {
               void overviewQ.refetch();
             }}
@@ -66,18 +65,6 @@ export function OverviewPage() {
   );
 }
 
-function RecentAcquisitionLink({
-  children,
-  className,
-  item,
-}: {
-  children: ReactNode;
-  className?: string;
-  item: { id?: string; number: string };
-}) {
-  return (
-    <AppLink className={className} to={`/library/${encodeURIComponent(item.id ?? item.number)}`}>
-      {children}
-    </AppLink>
-  );
-}
+export const Route = createFileRoute("/overview")({
+  component: OverviewPage,
+});

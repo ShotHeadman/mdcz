@@ -20,7 +20,13 @@ import type {
   LibraryListInput,
   LibraryListResponse,
   LibraryRelinkInput,
+  LogListInput,
   LogListResponse,
+  MaintenanceApplyInput,
+  MaintenanceApplyResponse,
+  MaintenancePreviewResponse,
+  MaintenanceStartInput,
+  MaintenanceTaskInput,
   MediaRootAvailabilityResponse,
   MediaRootCreateInput,
   MediaRootDto,
@@ -47,13 +53,20 @@ import type {
   ScrapeTaskControlInput,
   SetupCompleteInput,
   SetupStatusDto,
+  SystemAboutResponse,
   TaskEventListResponse,
+  ToolCatalogResponse,
+  ToolExecuteInput,
+  ToolExecuteResponse,
 } from "./serverDtos";
 import type { NamingPreviewItem } from "./types";
 
 export interface ServerApiContract {
   health: {
     read(): Promise<HealthResponse>;
+  };
+  system: {
+    about(): Promise<SystemAboutResponse>;
   };
   auth: {
     setup(): Promise<AuthSessionDto>;
@@ -83,7 +96,17 @@ export interface ServerApiContract {
     status(): Promise<PersistenceStatusDto>;
   };
   logs: {
-    list(): Promise<LogListResponse>;
+    list(input?: LogListInput): Promise<LogListResponse>;
+    clearRuntime(): Promise<{ ok: true; cleared: number }>;
+  };
+  maintenance: {
+    start(input: MaintenanceStartInput): Promise<ScanTaskDto>;
+    preview(input: MaintenanceTaskInput): Promise<MaintenancePreviewResponse>;
+    apply(input: MaintenanceApplyInput): Promise<MaintenanceApplyResponse>;
+    pause(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    resume(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    stop(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    recover(): Promise<ScanTaskListResponse>;
   };
   library: {
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
@@ -98,6 +121,10 @@ export interface ServerApiContract {
   };
   diagnostics: {
     summary(): Promise<DiagnosticsSummaryResponse>;
+  };
+  tools: {
+    catalog(): Promise<ToolCatalogResponse>;
+    execute(input: ToolExecuteInput): Promise<ToolExecuteResponse>;
   };
   setup: {
     status(): Promise<SetupStatusDto>;
@@ -144,6 +171,7 @@ export interface ServerApiContract {
 
 export type ServerApiProcedure =
   | "health.read"
+  | "system.about"
   | "auth.setup"
   | "auth.status"
   | "auth.login"
@@ -164,6 +192,16 @@ export type ServerApiProcedure =
   | "config.profiles.import"
   | "persistence.status"
   | "logs.list"
+  | "logs.clearRuntime"
+  | "maintenance.start"
+  | "maintenance.preview"
+  | "maintenance.execute"
+  | "maintenance.pause"
+  | "maintenance.resume"
+  | "maintenance.stop"
+  | "maintenance.recover"
+  | "tools.catalog"
+  | "tools.execute"
   | "library.list"
   | "library.search"
   | "library.detail"

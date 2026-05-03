@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { useQuery } from "@tanstack/react-query";
+import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { LogOut } from "lucide-react";
 import { type AnchorHTMLAttributes, type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -22,7 +23,7 @@ const AppLink = ({ to, search, className, children, ...props }: AppLinkProps) =>
   </a>
 );
 
-const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
+export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
@@ -164,3 +165,11 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
     </div>
   );
 };
+
+export const Route = createRootRoute({
+  component: () => (
+    <RootLayout>
+      <Outlet />
+    </RootLayout>
+  ),
+});

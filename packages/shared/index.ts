@@ -10,6 +10,7 @@ export * from "./ipcContract";
 export * from "./ipcEvents";
 export * from "./ipcTypes";
 export * from "./llm";
+export * from "./maintenancePresets";
 export * from "./manualScrapeUrl";
 export * from "./mediaExtensions";
 export * from "./mediaIdentity";
