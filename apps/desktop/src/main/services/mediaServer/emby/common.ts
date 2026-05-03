@@ -27,15 +27,15 @@ import {
 } from "@main/services/mediaServer/MediaServerClient";
 import type { NetworkClient } from "@main/services/network";
 
-export { toStringArray, toStringRecord, toStringValue };
 export type { EmbyBatchResult, EmbyMode, EmbyPerson };
+export { toStringArray, toStringRecord, toStringValue };
 export type ItemDetail = EmbyItemDetail;
 export {
-  EmbyServiceError,
   buildEmbyHeaders,
   buildEmbyPersonUpdatePayload,
   buildEmbyUrl,
   createEmbyConnectionExtraSteps,
+  EmbyServiceError,
   fetchEmbyActorPersons as fetchActorPersons,
   fetchEmbyPersonDetail as fetchPersonDetail,
   fetchEmbyPersons as fetchPersons,

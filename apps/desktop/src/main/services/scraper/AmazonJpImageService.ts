@@ -42,7 +42,7 @@ const normalizeCompareText = (value: string): string =>
 
 const normalizeAmazonImageUrl = (value: string): string | null => {
   const trimmed = value.trim();
-  if (!trimmed || !trimmed.includes(AMAZON_IMAGE_HOST) || !/\.(?:jpe?g|png)(?:$|[?#])/iu.test(trimmed)) {
+  if (!trimmed?.includes(AMAZON_IMAGE_HOST) || !/\.(?:jpe?g|png)(?:$|[?#])/iu.test(trimmed)) {
     return null;
   }
   return trimmed;

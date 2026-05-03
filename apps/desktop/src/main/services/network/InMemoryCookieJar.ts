@@ -7,7 +7,7 @@ interface ParsedSetCookie extends ResolvedCookie {
 }
 
 const defaultCookiePath = (pathname: string): string => {
-  if (!pathname || !pathname.startsWith("/")) {
+  if (!pathname?.startsWith("/")) {
     return "/";
   }
 

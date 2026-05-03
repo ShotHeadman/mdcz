@@ -25,6 +25,8 @@
       "@renderer/*": ["apps/desktop/src/renderer/src/*"],
       "@mdcz/persistence": ["packages/persistence/src/index.ts"],
       "@mdcz/persistence/test": ["packages/persistence/src/testDatabase.ts"],
+      "@mdcz/runtime": ["packages/runtime/src/index.ts"],
+      "@mdcz/runtime/*": ["packages/runtime/src/*"],
       "@mdcz/shared": ["packages/shared/index.ts"],
       "@mdcz/shared/*": ["packages/shared/*"],
       "@mdcz/storage": ["packages/storage/src/index.ts"],

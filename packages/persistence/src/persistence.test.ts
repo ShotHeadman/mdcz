@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
+import { LibraryRepository } from "./libraryRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
@@ -24,6 +25,9 @@ describe("MediaRootRepository", () => {
 
     expect(tables).toContain("media_roots");
     expect(tables).toContain("task_records");
+    expect(tables).toContain("scrape_outputs");
+    expect(tables).toContain("scrape_results");
+    expect(tables).toContain("library_entries");
     expect(tables).toContain("__drizzle_migrations");
   });
 
@@ -55,5 +59,72 @@ describe("MediaRootRepository", () => {
         name: PersistenceError.name,
       }),
     );
+  });
+});
+
+describe("LibraryRepository", () => {
+  it("persists scrape result rows for task review", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    const createdAt = new Date("2026-04-30T00:00:00.000Z");
+
+    const result = await repository.upsertScrapeResult({
+      id: "result-1",
+      taskId: "task-1",
+      rootId: "root-1",
+      relativePath: "ABC-123.mp4",
+      status: "success",
+      crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123" }),
+      nfoRelativePath: "ABC-123.nfo",
+      outputRelativePath: "ABC-123.mp4",
+      manualUrl: "https://example.invalid/detail",
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    await expect(repository.getScrapeResult("result-1")).resolves.toEqual(result);
+    await expect(repository.listScrapeResults("task-1")).resolves.toEqual([result]);
+  });
+
+  it("persists scrape outputs and upserts durable library entries by root path", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    const completedAt = new Date("2026-04-30T00:00:00.000Z");
+
+    const output = await repository.upsertScrapeOutput({
+      id: "output-1",
+      taskId: "task-1",
+      rootId: "root-1",
+      outputDirectory: "/output",
+      fileCount: 1,
+      totalBytes: 10,
+      completedAt,
+    });
+    await repository.upsertEntry({
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      size: 10,
+      sourceTaskId: "task-1",
+      scrapeOutputId: output.id,
+      title: "Title",
+      number: "ABC-123",
+      actors: ["Actor"],
+      indexedAt: completedAt,
+    });
+    await repository.upsertEntry({
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      size: 11,
+      indexedAt: new Date("2026-04-30T00:01:00.000Z"),
+    });
+
+    await expect(repository.latestScrapeOutput()).resolves.toMatchObject({ id: "output-1", fileCount: 1 });
+    await expect(repository.listEntries()).resolves.toEqual([
+      expect.objectContaining({
+        rootRelativePath: "ABC-123/ABC-123.mp4",
+        size: 11,
+        actors: [],
+      }),
+    ]);
   });
 });

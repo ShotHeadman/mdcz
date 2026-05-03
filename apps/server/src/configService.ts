@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
@@ -11,10 +11,26 @@ import {
 } from "@mdcz/shared/config";
 import {
   CONFIGURATION_FILE_EXTENSIONS,
+  inferConfigurationFileFormat,
   parseConfigurationContent,
   serializeConfiguration,
 } from "@mdcz/shared/configCodec";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
+
+const ACTIVE_PROFILE_META_FILE = ".active-profile.json";
+const DEFAULT_PROFILE_NAME = "default";
+const PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
+
+const normalizeProfileName = (name: string): string => {
+  const normalized = name.trim();
+  if (!normalized) {
+    throw new Error("Profile name is required");
+  }
+  if (!PROFILE_NAME_PATTERN.test(normalized)) {
+    throw new Error('Profile name can only contain letters, numbers, "_" and "-"');
+  }
+  return normalized;
+};
 
 export interface ServerRuntimePaths {
   configDir: string;
@@ -41,7 +57,7 @@ export const resolveServerRuntimePaths = (options: ResolveServerRuntimePathsOpti
   return {
     configDir,
     dataDir,
-    configPath: pathApi.join(configDir, `default${CONFIGURATION_FILE_EXTENSIONS.toml}`),
+    configPath: pathApi.join(configDir, `${DEFAULT_PROFILE_NAME}${CONFIGURATION_FILE_EXTENSIONS.toml}`),
     databasePath: pathApi.resolve(env.MDCZ_DATABASE_PATH ?? pathApi.join(dataDir, "mdcz.sqlite")),
   };
 };
@@ -173,8 +189,27 @@ const renderNamingTemplate = (
     .replaceAll("{rating}", "4.5")
     .replaceAll("{website}", "DMM");
 
+export interface ProfileListOutput {
+  profiles: string[];
+  active: string;
+}
+
+export interface ProfileImportOutput {
+  profileName: string;
+  overwritten: boolean;
+  active: boolean;
+}
+
+export interface ProfileExportOutput {
+  profileName: string;
+  fileName: string;
+  content: string;
+}
+
 export class ServerConfigService {
   private configuration: Configuration | null = null;
+  private activeProfileName: string = DEFAULT_PROFILE_NAME;
+  private activeProfileLoaded = false;
 
   constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {}
 
@@ -183,14 +218,18 @@ export class ServerConfigService {
   }
 
   async load(): Promise<Configuration> {
-    if (!existsSync(this.paths.configPath)) {
+    await mkdir(this.paths.configDir, { recursive: true });
+    await this.loadActiveProfileName();
+    const profilePath = this.getActiveProfilePath();
+
+    if (!existsSync(profilePath)) {
       this.configuration = defaultConfiguration;
       await this.persist();
       return this.configuration;
     }
 
-    const content = await readFile(this.paths.configPath, "utf8");
-    this.configuration = parseConfigurationContent(content, "toml");
+    const content = await readFile(profilePath, "utf8");
+    this.configuration = parseConfigurationContent(content, inferConfigurationFileFormat(profilePath));
 
     return this.configuration;
   }
@@ -271,10 +310,171 @@ export class ServerConfigService {
     return serializeConfiguration(await this.get(), "toml");
   }
 
+  async listProfiles(): Promise<ProfileListOutput> {
+    await mkdir(this.paths.configDir, { recursive: true });
+    if (!this.activeProfileLoaded) {
+      await this.loadActiveProfileName();
+    }
+    const entries = await readdir(this.paths.configDir);
+    const profiles = entries
+      .filter((entry) => this.isProfileConfigFile(entry) && entry !== ACTIVE_PROFILE_META_FILE)
+      .map((entry) => entry.replace(/\.(json|toml)$/u, ""))
+      .filter((name) => PROFILE_NAME_PATTERN.test(name));
+    if (!profiles.includes(DEFAULT_PROFILE_NAME)) {
+      profiles.unshift(DEFAULT_PROFILE_NAME);
+    }
+    return { profiles, active: this.activeProfileName };
+  }
+
+  async createProfile(name: string): Promise<{ profileName: string }> {
+    const profileName = normalizeProfileName(name);
+    const filePath = this.getProfilePath(profileName);
+    if (existsSync(filePath) || existsSync(this.getLegacyProfilePath(profileName))) {
+      throw new Error(`Profile "${profileName}" already exists`);
+    }
+    await mkdir(this.paths.configDir, { recursive: true });
+    await writeFile(filePath, serializeConfiguration(defaultConfiguration), "utf8");
+    return { profileName };
+  }
+
+  async switchProfile(name: string): Promise<Configuration> {
+    const profileName = normalizeProfileName(name);
+    const filePath = this.getExistingProfilePath(profileName);
+    if (!existsSync(filePath)) {
+      throw new Error(`Profile "${profileName}" not found`);
+    }
+    this.activeProfileName = profileName;
+    await this.persistActiveProfileName();
+    this.configuration = null;
+    return await this.load();
+  }
+
+  async deleteProfile(name: string): Promise<{ profileName: string }> {
+    const profileName = normalizeProfileName(name);
+    if (profileName === this.activeProfileName) {
+      throw new Error("Cannot delete the active profile");
+    }
+    const filePath = this.getExistingProfilePath(profileName);
+    if (!existsSync(filePath)) {
+      throw new Error(`Profile "${profileName}" not found`);
+    }
+    await unlink(filePath);
+    return { profileName };
+  }
+
+  async exportProfile(name: string): Promise<ProfileExportOutput> {
+    const profileName = normalizeProfileName(name);
+    let configuration: Configuration;
+    if (profileName === this.activeProfileName) {
+      configuration = await this.get();
+    } else {
+      const filePath = this.getExistingProfilePath(profileName);
+      if (!existsSync(filePath)) {
+        throw new Error(`Profile "${profileName}" not found`);
+      }
+      const content = await readFile(filePath, "utf8");
+      configuration = parseConfigurationContent(content, inferConfigurationFileFormat(filePath));
+    }
+
+    return {
+      profileName,
+      fileName: `${profileName}.toml`,
+      content: serializeConfiguration(configuration, "toml"),
+    };
+  }
+
+  async importProfile(input: { name: string; content: string; overwrite?: boolean }): Promise<ProfileImportOutput> {
+    const profileName = normalizeProfileName(input.name);
+    const targetPath = this.getProfilePath(profileName);
+    const overwritten = existsSync(targetPath) || existsSync(this.getLegacyProfilePath(profileName));
+
+    if (overwritten && !input.overwrite) {
+      throw new Error(`Profile "${profileName}" already exists`);
+    }
+
+    const configuration = parseConfiguration(parseConfigurationContent(input.content, "toml"));
+
+    await mkdir(this.paths.configDir, { recursive: true });
+    await writeFile(targetPath, serializeConfiguration(configuration), "utf8");
+
+    const active = profileName === this.activeProfileName;
+    if (active) {
+      this.configuration = configuration;
+    }
+
+    return { profileName, overwritten, active };
+  }
+
+  private getActiveProfilePath(): string {
+    return this.getExistingProfilePath(this.activeProfileName);
+  }
+
+  private getProfilePath(profileName: string): string {
+    return path.join(this.paths.configDir, `${profileName}${CONFIGURATION_FILE_EXTENSIONS.toml}`);
+  }
+
+  private getLegacyProfilePath(profileName: string): string {
+    return path.join(this.paths.configDir, `${profileName}${CONFIGURATION_FILE_EXTENSIONS.json}`);
+  }
+
+  private getExistingProfilePath(profileName: string): string {
+    const tomlPath = this.getProfilePath(profileName);
+    if (existsSync(tomlPath)) {
+      return tomlPath;
+    }
+    return this.getLegacyProfilePath(profileName);
+  }
+
+  private isProfileConfigFile(entry: string): boolean {
+    return entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.toml) || entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.json);
+  }
+
+  private getActiveProfileMetaPath(): string {
+    return path.join(this.paths.configDir, ACTIVE_PROFILE_META_FILE);
+  }
+
+  private async loadActiveProfileName(): Promise<void> {
+    const metaPath = this.getActiveProfileMetaPath();
+    if (!existsSync(metaPath)) {
+      this.activeProfileName = DEFAULT_PROFILE_NAME;
+      this.activeProfileLoaded = true;
+      return;
+    }
+
+    try {
+      const content = await readFile(metaPath, "utf8");
+      const parsed = JSON.parse(content) as { active?: unknown };
+      if (typeof parsed.active === "string" && PROFILE_NAME_PATTERN.test(parsed.active.trim())) {
+        this.activeProfileName = parsed.active.trim();
+        this.activeProfileLoaded = true;
+        return;
+      }
+    } catch {
+      // fall back to default
+    }
+
+    this.activeProfileName = DEFAULT_PROFILE_NAME;
+    this.activeProfileLoaded = true;
+  }
+
+  private async persistActiveProfileName(): Promise<void> {
+    await mkdir(this.paths.configDir, { recursive: true });
+    await writeFile(
+      this.getActiveProfileMetaPath(),
+      JSON.stringify({ active: this.activeProfileName }, null, 2),
+      "utf8",
+    );
+  }
+
   private async persist(): Promise<void> {
     await mkdir(this.paths.configDir, { recursive: true });
     await mkdir(this.paths.dataDir, { recursive: true });
-    await writeFile(this.paths.configPath, serializeConfiguration(this.configuration ?? defaultConfiguration), "utf8");
+    await writeFile(
+      this.getProfilePath(this.activeProfileName),
+      serializeConfiguration(this.configuration ?? defaultConfiguration),
+      "utf8",
+    );
+    await this.persistActiveProfileName();
   }
 }
 

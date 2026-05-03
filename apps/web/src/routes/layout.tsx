@@ -94,10 +94,6 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  if (authQ.data?.setupRequired && !authQ.data.authenticated) {
-    return <LoginPage nextPath="/setup" />;
-  }
-
   if (authQ.data?.setupRequired && pathname !== "/setup") {
     window.location.replace("/setup");
     return null;

@@ -62,6 +62,7 @@
       "electron",
       "electron-winstaller",
       "esbuild",
+      "impit",
       "sharp",
       "simple-git-hooks"
     ]

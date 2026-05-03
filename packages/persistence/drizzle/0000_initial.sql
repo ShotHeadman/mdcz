@@ -39,3 +39,48 @@ CREATE TABLE `scan_results` (
   `size` integer NOT NULL,
   `modified_at` integer
 );
+--> statement-breakpoint
+CREATE TABLE `scrape_outputs` (
+  `id` text PRIMARY KEY NOT NULL,
+  `task_id` text,
+  `root_id` text,
+  `output_directory` text,
+  `file_count` integer NOT NULL DEFAULT 0,
+  `total_bytes` integer NOT NULL DEFAULT 0,
+  `completed_at` integer NOT NULL,
+  `created_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `scrape_results` (
+  `id` text PRIMARY KEY NOT NULL,
+  `task_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `relative_path` text NOT NULL,
+  `status` text NOT NULL,
+  `error_message` text,
+  `crawler_data_json` text,
+  `nfo_relative_path` text,
+  `output_relative_path` text,
+  `manual_url` text,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `library_entries` (
+  `id` text PRIMARY KEY NOT NULL,
+  `root_id` text NOT NULL,
+  `root_relative_path` text NOT NULL,
+  `file_name` text NOT NULL,
+  `directory` text NOT NULL,
+  `size` integer NOT NULL DEFAULT 0,
+  `modified_at` integer,
+  `source_task_id` text,
+  `scrape_output_id` text,
+  `title` text,
+  `number` text,
+  `actors_json` text NOT NULL DEFAULT '[]',
+  `thumbnail_path` text,
+  `last_known_path` text,
+  `indexed_at` integer NOT NULL,
+  UNIQUE(`root_id`, `root_relative_path`)
+);

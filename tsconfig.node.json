@@ -12,6 +12,7 @@
     "apps/desktop/src/preload/**/*.ts",
     "apps/desktop/src/**/*.d.ts",
     "packages/persistence/src/**/*.ts",
+    "packages/runtime/src/**/*.ts",
     "packages/shared/**/*.ts",
     "packages/storage/src/**/*.ts",
     "vitest.config.ts"

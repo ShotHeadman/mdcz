@@ -1,7 +1,5 @@
 import path from "node:path";
 import type {
-  LibraryListInput,
-  LibraryListResponse,
   LogListResponse,
   ScanTaskDetailResponse,
   ScanTaskDto,
@@ -74,66 +72,6 @@ export class ScanQueueService {
       .map((event) => ({ ...event, source: "task" as const }))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return { logs };
-  }
-
-  async library(input: LibraryListInput = {}): Promise<LibraryListResponse> {
-    const state = await this.persistence.getState();
-    const [roots, results, tasks] = await Promise.all([
-      this.mediaRoots.list(),
-      state.repositories.tasks.listAllScanResults(),
-      state.repositories.tasks.list("scan"),
-    ]);
-    const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
-    const taskMap = new Map(tasks.map((task) => [task.id, task]));
-    const query = input?.query?.trim().toLowerCase() ?? "";
-    const rootId = input?.rootId?.trim();
-    const limit = input?.limit ?? 200;
-
-    const latestEntries = new Map<string, LibraryListResponse["entries"][number]>();
-    for (const entry of results
-      .map((result) => {
-        const root = rootMap.get(result.rootId);
-        const task = taskMap.get(result.taskId);
-        if (!root || !task) {
-          return null;
-        }
-        const directory = path.posix.dirname(result.relativePath);
-        return {
-          id: `${result.rootId}:${result.relativePath}`,
-          rootId: result.rootId,
-          rootDisplayName: root.displayName,
-          relativePath: result.relativePath,
-          fileName: path.posix.basename(result.relativePath),
-          directory: directory === "." ? "" : directory,
-          size: result.size,
-          modifiedAt: toIso(result.modifiedAt),
-          taskId: result.taskId,
-          scannedAt: task.completedAt?.toISOString() ?? task.updatedAt.toISOString(),
-        };
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))) {
-      const existing = latestEntries.get(entry.id);
-      if (!existing || entry.scannedAt > existing.scannedAt) {
-        latestEntries.set(entry.id, entry);
-      }
-    }
-
-    const entries = Array.from(latestEntries.values())
-      .filter((entry) => !rootId || entry.rootId === rootId)
-      .filter((entry) => {
-        if (!query) {
-          return true;
-        }
-        return [entry.fileName, entry.relativePath, entry.rootDisplayName].some((value) =>
-          value.toLowerCase().includes(query),
-        );
-      })
-      .sort(
-        (left, right) =>
-          right.scannedAt.localeCompare(left.scannedAt) || left.relativePath.localeCompare(right.relativePath, "zh-CN"),
-      );
-
-    return { entries: entries.slice(0, limit), total: entries.length };
   }
 
   async retry(taskId: string): Promise<ScanTaskDto> {

@@ -11,8 +11,8 @@ import {
   taskRecords,
 } from "./schema";
 
-export type TaskRecordKind = "scan";
-export type TaskRecordStatus = "queued" | "running" | "completed" | "failed";
+export type TaskRecordKind = "scan" | "scrape" | "maintenance";
+export type TaskRecordStatus = "queued" | "running" | "completed" | "failed" | "paused" | "stopping";
 
 export interface TaskRecord {
   id: string;
@@ -46,6 +46,13 @@ export interface ScanResultRecord {
 
 export interface CreateScanTaskInput {
   id?: string;
+  rootId: string;
+  now?: Date;
+}
+
+export interface CreateTaskInput {
+  id?: string;
+  kind: TaskRecordKind;
   rootId: string;
   now?: Date;
 }
@@ -108,10 +115,14 @@ export class TaskRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
   async createScanTask(input: CreateScanTaskInput): Promise<TaskRecord> {
+    return await this.createTask({ ...input, kind: "scan" });
+  }
+
+  async createTask(input: CreateTaskInput): Promise<TaskRecord> {
     const now = input.now ?? new Date();
     const task: TaskRecord = {
       id: input.id ?? randomUUID(),
-      kind: "scan",
+      kind: input.kind,
       rootId: input.rootId,
       status: "queued",
       createdAt: now,

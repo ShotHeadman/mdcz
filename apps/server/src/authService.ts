@@ -40,7 +40,7 @@ export class AuthService {
     const adminPassword = this.currentAdminPassword(state);
     return {
       authenticated: Boolean(token && this.#tokens.has(token)),
-      setupRequired: !state.setupCompleted || adminPassword === DEFAULT_ADMIN_PASSWORD || mediaRootCount === 0,
+      setupRequired: !state.setupCompleted && (adminPassword === DEFAULT_ADMIN_PASSWORD || mediaRootCount === 0),
       usingDefaultPassword: adminPassword === DEFAULT_ADMIN_PASSWORD,
       environmentPassword: this.environmentPassword,
     };

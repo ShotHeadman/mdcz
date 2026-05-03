@@ -5,6 +5,24 @@ import { api } from "../client";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "../ui";
 import { AppLink, ErrorBanner, formatDate } from "./common";
 
+const logLevelLabels: Record<string, string> = {
+  completed: "OK",
+  failed: "ERR",
+  "item-failed": "ERR",
+  "item-success": "OK",
+  paused: "WARN",
+  queued: "REQ",
+  running: "INFO",
+  stopping: "WARN",
+};
+
+const logLevelVariant = (type: string): "default" | "destructive" | "secondary" => {
+  const level = logLevelLabels[type] ?? "INFO";
+  if (level === "ERR") return "destructive";
+  if (level === "WARN" || level === "REQ") return "secondary";
+  return "default";
+};
+
 export const LogsPage = () => {
   const logsQ = useQuery({ queryKey: ["logs"], queryFn: () => api.logs.list(), retry: false });
   const [query, setQuery] = useState("");
@@ -84,8 +102,9 @@ export const LogsPage = () => {
                 <div className="grid gap-1 border-t border-border/40 px-4 py-3 first:border-t-0" key={log.id}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={logLevelVariant(log.type)}>{logLevelLabels[log.type] ?? "INFO"}</Badge>
                       <Badge>{log.source}</Badge>
-                      <Badge>{log.type}</Badge>
+                      <Badge variant="secondary">{log.type}</Badge>
                       <span className="font-mono text-xs text-muted-foreground">{log.taskId}</span>
                     </div>
                     <span className="font-mono text-xs text-muted-foreground">{formatDate(log.createdAt)}</span>

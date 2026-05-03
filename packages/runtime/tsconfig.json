@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "rootDir": "../.."
+  },
+  "include": ["src/**/*.ts", "../shared/**/*.ts", "../storage/**/*.ts"]
+}

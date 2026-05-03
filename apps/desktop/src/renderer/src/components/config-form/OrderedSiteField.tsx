@@ -191,8 +191,8 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
               <div className={cn("min-w-0", hasDetails && "space-y-1")}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={cn(labelClassName, !enabled && "text-muted-foreground")}>{row.label}</span>
-                  {row.chips?.map((chip, index) => (
-                    <span key={`${row.id}-${chip.label}-${index}`} className={getChipClassName(chip)}>
+                  {row.chips?.map((chip) => (
+                    <span key={`${row.id}-${chip.label}`} className={getChipClassName(chip)}>
                       {chip.label}
                     </span>
                   ))}

@@ -267,7 +267,7 @@ export class DmmCrawler extends BaseDmmCrawler {
 
     const category = parseCategory(detailUrl);
     const baseData = await this.parseCategoryData(category, $);
-    if (!baseData || !baseData.title) {
+    if (!baseData?.title) {
       return null;
     }
     const title = baseData.title;

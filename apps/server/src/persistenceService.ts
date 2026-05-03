@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   createPersistenceDatabase,
+  LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   runMigrations,
@@ -11,6 +12,7 @@ import {
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
+  library: LibraryRepository;
   mediaRoots: MediaRootRepository;
   tasks: TaskRepository;
 }
@@ -46,6 +48,7 @@ export class ServerPersistenceService {
       this.state = {
         database,
         repositories: {
+          library: new LibraryRepository(database),
           mediaRoots: new MediaRootRepository(database),
           tasks: new TaskRepository(database),
         },

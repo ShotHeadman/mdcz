@@ -9,6 +9,7 @@
   "include": [
     "src/**/*.ts",
     "../../packages/persistence/**/*.ts",
+    "../../packages/runtime/**/*.ts",
     "../../packages/shared/**/*.ts",
     "../../packages/storage/**/*.ts"
   ]

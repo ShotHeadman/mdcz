@@ -1,4 +1,4 @@
-import type { LibraryEntryDto, ScanTaskDto } from "@mdcz/shared";
+import type { LibraryEntryDto, ScanTaskDto, TaskKind } from "@mdcz/shared";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 
 import { buildHref } from "../routeHelpers";
@@ -44,9 +44,11 @@ export const scanStatusLabels: Record<ScanTaskDto["status"], string> = {
   running: "运行中",
   completed: "已完成",
   failed: "失败",
+  paused: "已暂停",
+  stopping: "停止中",
 };
 
-export const taskKindLabels: Record<string, string> = {
+export const taskKindLabels: Record<TaskKind, string> = {
   maintenance: "维护",
   scan: "扫描",
   scrape: "刮削",
@@ -55,18 +57,30 @@ export const taskKindLabels: Record<string, string> = {
 export const LibraryEntryRow = ({ entry }: { entry: LibraryEntryDto }) => (
   <div className="grid gap-2 border-t border-border/40 px-4 py-3 first:border-t-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
     <div className="min-w-0">
-      <p className="truncate font-medium text-foreground">{entry.fileName}</p>
+      <p className="truncate font-medium text-foreground">{entry.title || entry.fileName}</p>
       <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
         {entry.rootDisplayName}
         {entry.directory ? ` / ${entry.directory}` : ""}
       </p>
+      {entry.available === false && <p className="mt-1 text-xs text-destructive">文件已移动或删除</p>}
     </div>
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground lg:justify-end">
       <Badge>{formatBytes(entry.size)}</Badge>
-      <span className="font-mono">{formatDate(entry.scannedAt)}</span>
-      <AppLink className="font-medium text-foreground underline-offset-4 hover:underline" to={`/tasks/${entry.taskId}`}>
-        任务
+      <span className="font-mono">{formatDate(entry.indexedAt)}</span>
+      <AppLink
+        className="font-medium text-foreground underline-offset-4 hover:underline"
+        to={`/library/${encodeURIComponent(entry.id)}`}
+      >
+        详情
       </AppLink>
+      {entry.taskId && (
+        <AppLink
+          className="font-medium text-foreground underline-offset-4 hover:underline"
+          to={`/tasks/${entry.taskId}`}
+        >
+          任务
+        </AppLink>
+      )}
       <AppLink
         className="font-medium text-foreground underline-offset-4 hover:underline"
         to="/browser"

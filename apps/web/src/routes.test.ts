@@ -1,10 +1,50 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DESKTOP_ROUTE_DEFINITIONS } from "@mdcz/shared/desktopNavigation";
-import { SECTION_LABELS } from "@mdcz/shared/settingsRegistry";
+import { taskKindSchema } from "@mdcz/shared/serverDtos";
+import {
+  FIELD_REGISTRY,
+  type FieldAnchor,
+  SECTION_FILTER_ALIASES,
+  SECTION_LABELS,
+  SECTION_ORDER,
+} from "@mdcz/shared/settingsRegistry";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import { describe, expect, it } from "vitest";
-
 import { buildHref, includesSearch, normalizeSearchText } from "./routeHelpers";
-import { renderNamingTemplate, SETTINGS_SECTIONS } from "./settings/desktopSettingsModel";
+import { taskKindLabels } from "./routes/common";
+
+const WEB_SRC_DIR = dirname(fileURLToPath(import.meta.url));
+
+const SETTINGS_SECTIONS = Object.fromEntries(
+  SECTION_ORDER.map((anchor) => {
+    const entries = FIELD_REGISTRY.filter((entry) => entry.anchor === anchor && entry.surface === "settings");
+    return [
+      anchor,
+      {
+        keywords: [
+          anchor,
+          SECTION_LABELS[anchor],
+          ...SECTION_FILTER_ALIASES[anchor],
+          ...entries.flatMap((entry) => [entry.label, ...entry.aliases]),
+        ],
+        title: SECTION_LABELS[anchor],
+      },
+    ];
+  }),
+) as Record<FieldAnchor, { keywords: string[]; title: string }>;
+
+const previewSample: Record<string, string> = {
+  number: "SSIS-001",
+  title: "示例影片标题",
+};
+
+const renderNamingTemplate = (template: string): string =>
+  template.replace(/\{([^{}]+)\}/gu, (match, rawKey: string) => {
+    const value = previewSample[rawKey];
+    return value ?? match;
+  });
 
 describe("route helpers", () => {
   it("builds contained browser links with encoded query parameters", () => {
@@ -50,5 +90,21 @@ describe("route helpers", () => {
       "batch-nfo-translator",
       "missing-number-finder",
     ]);
+  });
+
+  it("registers generic task kinds for future workflows", () => {
+    expect(taskKindSchema.options).toEqual(["scan", "scrape", "maintenance"]);
+    expect(taskKindLabels).toEqual({
+      maintenance: "维护",
+      scan: "扫描",
+      scrape: "刮削",
+    });
+  });
+
+  it("keeps WebUI primitive exports free of fabricated layout wrappers", async () => {
+    const uiSource = await readFile(join(WEB_SRC_DIR, "ui.tsx"), "utf8");
+
+    expect(uiSource.trim()).toBe('export * from "@mdcz/ui";');
+    expect(uiSource).not.toMatch(/\b(Page|Panel|Field)\b/u);
   });
 });

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@egoist/tipc": "^0.3.2",
+    "@mdcz/runtime": "workspace:*",
     "@mdcz/shared": "workspace:*",
     "@mdcz/ui": "workspace:*",
     "cheerio": "^1.2.0",

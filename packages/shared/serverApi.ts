@@ -4,9 +4,19 @@ import type {
   AuthSessionDto,
   ConfigImportInput,
   ConfigPreviewInput,
+  ConfigProfileExportResponse,
+  ConfigProfileImportInput,
+  ConfigProfileImportResponse,
+  ConfigProfileListResponse,
+  ConfigProfileNameInput,
+  ConfigProfileNameResponse,
   ConfigUpdateInput,
   DiagnosticsSummaryResponse,
+  FileActionInput,
+  FileActionResponse,
   HealthResponse,
+  LibraryDetailInput,
+  LibraryDetailResponse,
   LibraryListInput,
   LibraryListResponse,
   LogListResponse,
@@ -16,6 +26,11 @@ import type {
   MediaRootIdInput,
   MediaRootListResponse,
   MediaRootUpdateInput,
+  NfoReadInput,
+  NfoReadResponse,
+  NfoWriteInput,
+  NfoWriteResponse,
+  OverviewSummaryResponse,
   PersistenceStatusDto,
   RootBrowserInput,
   RootBrowserResponse,
@@ -24,6 +39,11 @@ import type {
   ScanTaskDto,
   ScanTaskIdInput,
   ScanTaskListResponse,
+  ScrapeResultDetailResponse,
+  ScrapeResultIdInput,
+  ScrapeResultListResponse,
+  ScrapeStartInput,
+  ScrapeTaskControlInput,
   SetupCompleteInput,
   SetupStatusDto,
   TaskEventListResponse,
@@ -45,9 +65,18 @@ export interface ServerApiContract {
     read(): Promise<Configuration>;
     previewNaming(input: ConfigPreviewInput): Promise<{ items: NamingPreviewItem[] }>;
     update(input: ConfigUpdateInput): Promise<Configuration>;
+    save(input: ConfigUpdateInput): Promise<Configuration>;
     export(): Promise<string>;
     import(input: ConfigImportInput): Promise<Configuration>;
     reset(input?: { path?: string }): Promise<Configuration>;
+    profiles: {
+      list(): Promise<ConfigProfileListResponse>;
+      create(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
+      switch(input: ConfigProfileNameInput): Promise<Configuration>;
+      delete(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
+      export(input: ConfigProfileNameInput): Promise<ConfigProfileExportResponse>;
+      import(input: ConfigProfileImportInput): Promise<ConfigProfileImportResponse>;
+    };
   };
   persistence: {
     status(): Promise<PersistenceStatusDto>;
@@ -57,6 +86,10 @@ export interface ServerApiContract {
   };
   library: {
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
+    detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
+  };
+  overview: {
+    summary(): Promise<OverviewSummaryResponse>;
   };
   diagnostics: {
     summary(): Promise<DiagnosticsSummaryResponse>;
@@ -84,6 +117,18 @@ export interface ServerApiContract {
     events(input: ScanTaskIdInput): Promise<TaskEventListResponse>;
     retry(input: ScanTaskIdInput): Promise<ScanTaskDto>;
   };
+  scrape: {
+    start(input: ScrapeStartInput): Promise<ScanTaskDto>;
+    listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse>;
+    result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
+    stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
+    nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
+    deleteFile(input: FileActionInput): Promise<FileActionResponse>;
+  };
   tasks: {
     list(): Promise<ScanTaskListResponse>;
     detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;
@@ -102,12 +147,21 @@ export type ServerApiProcedure =
   | "config.read"
   | "config.previewNaming"
   | "config.update"
+  | "config.save"
   | "config.export"
   | "config.import"
   | "config.reset"
+  | "config.profiles.list"
+  | "config.profiles.create"
+  | "config.profiles.switch"
+  | "config.profiles.delete"
+  | "config.profiles.export"
+  | "config.profiles.import"
   | "persistence.status"
   | "logs.list"
   | "library.list"
+  | "library.detail"
+  | "overview.summary"
   | "diagnostics.summary"
   | "setup.status"
   | "setup.complete"
@@ -124,6 +178,16 @@ export type ServerApiProcedure =
   | "scans.detail"
   | "scans.events"
   | "scans.retry"
+  | "scrape.start"
+  | "scrape.listResults"
+  | "scrape.result"
+  | "scrape.stop"
+  | "scrape.pause"
+  | "scrape.resume"
+  | "scrape.retry"
+  | "scrape.nfoRead"
+  | "scrape.nfoWrite"
+  | "scrape.deleteFile"
   | "tasks.list"
   | "tasks.detail"
   | "tasks.events"

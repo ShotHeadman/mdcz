@@ -21,7 +21,7 @@ export const LibraryPage = () => {
         <header className="max-w-3xl">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">媒体库</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            基于已完成扫描任务的持久化视频索引，后续会继续承接刮削结果和 NFO 状态。
+            基于持久化媒体库索引浏览扫描与刮削结果，支持缺失路径状态和详情查看。
           </p>
         </header>
         {libraryQ.error && <ErrorBanner>{toErrorMessage(libraryQ.error)}</ErrorBanner>}
@@ -76,7 +76,7 @@ export const LibraryPage = () => {
               ))}
               {libraryQ.data?.entries.length === 0 && (
                 <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  暂无匹配的视频。先从工作台扫描媒体目录，或调整搜索条件。
+                  暂无匹配的视频。先从工作台扫描或刮削媒体目录，或调整搜索条件。
                 </div>
               )}
             </div>

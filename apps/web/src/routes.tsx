@@ -1,5 +1,6 @@
 export { AboutPage } from "./routes/AboutPage";
 export { BrowserPage } from "./routes/BrowserPage";
+export { LibraryDetailPage } from "./routes/LibraryDetailPage";
 export { LibraryPage } from "./routes/LibraryPage";
 export { LogsPage } from "./routes/LogsPage";
 export { MediaRootsPage } from "./routes/MediaRootsPage";

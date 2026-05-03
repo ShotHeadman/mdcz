@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable("media_roots", {
   id: text("id").primaryKey(),
@@ -42,11 +42,62 @@ export const scanResults = sqliteTable("scan_results", {
   modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
 });
 
+export const scrapeOutputs = sqliteTable("scrape_outputs", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id"),
+  rootId: text("root_id"),
+  outputDirectory: text("output_directory"),
+  fileCount: integer("file_count").notNull().default(0),
+  totalBytes: integer("total_bytes").notNull().default(0),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const scrapeResults = sqliteTable("scrape_results", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  rootId: text("root_id").notNull(),
+  relativePath: text("relative_path").notNull(),
+  status: text("status").notNull(),
+  errorMessage: text("error_message"),
+  crawlerDataJson: text("crawler_data_json"),
+  nfoRelativePath: text("nfo_relative_path"),
+  outputRelativePath: text("output_relative_path"),
+  manualUrl: text("manual_url"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const libraryEntries = sqliteTable(
+  "library_entries",
+  {
+    id: text("id").primaryKey(),
+    rootId: text("root_id").notNull(),
+    rootRelativePath: text("root_relative_path").notNull(),
+    fileName: text("file_name").notNull(),
+    directory: text("directory").notNull(),
+    size: integer("size").notNull().default(0),
+    modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
+    sourceTaskId: text("source_task_id"),
+    scrapeOutputId: text("scrape_output_id"),
+    title: text("title"),
+    number: text("number"),
+    actorsJson: text("actors_json").notNull().default("[]"),
+    thumbnailPath: text("thumbnail_path"),
+    lastKnownPath: text("last_known_path"),
+    indexedAt: integer("indexed_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => ({ rootPathKey: uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath) }),
+);
+
 export const schema = {
   mediaRoots,
   taskRecords,
   taskEvents,
   scanResults,
+  scrapeOutputs,
+  scrapeResults,
+  libraryEntries,
 };
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;
@@ -57,3 +108,9 @@ export type TaskEventRow = typeof taskEvents.$inferSelect;
 export type InsertTaskEventRow = typeof taskEvents.$inferInsert;
 export type ScanResultRow = typeof scanResults.$inferSelect;
 export type InsertScanResultRow = typeof scanResults.$inferInsert;
+export type ScrapeOutputRow = typeof scrapeOutputs.$inferSelect;
+export type InsertScrapeOutputRow = typeof scrapeOutputs.$inferInsert;
+export type ScrapeResultRow = typeof scrapeResults.$inferSelect;
+export type InsertScrapeResultRow = typeof scrapeResults.$inferInsert;
+export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
+export type InsertLibraryEntryRow = typeof libraryEntries.$inferInsert;

@@ -70,6 +70,15 @@ export const api: ServerApiContract = {
     previewNaming: (input) => request("config.previewNaming", input),
     reset: (input) => request("config.reset", input),
     update: (input) => request("config.update", input),
+    save: (input) => request("config.save", input),
+    profiles: {
+      list: () => request("config.profiles.list"),
+      create: (input) => request("config.profiles.create", input),
+      switch: (input) => request("config.profiles.switch", input),
+      delete: (input) => request("config.profiles.delete", input),
+      export: (input) => request("config.profiles.export", input),
+      import: (input) => request("config.profiles.import", input),
+    },
   },
   health: {
     read: () => request("health.read"),
@@ -82,6 +91,10 @@ export const api: ServerApiContract = {
   },
   library: {
     list: (input) => request("library.list", input),
+    detail: (input) => request("library.detail", input),
+  },
+  overview: {
+    summary: () => request("overview.summary"),
   },
   mediaRoots: {
     availability: (input) => request("mediaRoots.availability", input),
@@ -101,6 +114,18 @@ export const api: ServerApiContract = {
     list: () => request("scans.list"),
     retry: (input) => request("scans.retry", input),
     start: (input) => request("scans.start", input),
+  },
+  scrape: {
+    deleteFile: (input) => request("scrape.deleteFile", input),
+    listResults: (input) => request("scrape.listResults", input),
+    nfoRead: (input) => request("scrape.nfoRead", input),
+    nfoWrite: (input) => request("scrape.nfoWrite", input),
+    pause: (input) => request("scrape.pause", input),
+    result: (input) => request("scrape.result", input),
+    resume: (input) => request("scrape.resume", input),
+    retry: (input) => request("scrape.retry", input),
+    start: (input) => request("scrape.start", input),
+    stop: (input) => request("scrape.stop", input),
   },
   tasks: {
     detail: (input) => request("tasks.detail", input),

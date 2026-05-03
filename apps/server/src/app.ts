@@ -6,10 +6,12 @@ import { BrowserService } from "./browserService";
 import { ServerConfigService } from "./configService";
 import { DiagnosticsService } from "./diagnosticsService";
 import { createHealthPayload } from "./http";
+import { LibraryService } from "./libraryService";
 import { MediaRootService } from "./mediaRootService";
 import { ServerPersistenceService } from "./persistenceService";
 import { appRouter } from "./router";
 import { ScanQueueService } from "./scanQueueService";
+import { ScrapeService } from "./scrapeService";
 import type { ServerServices } from "./services";
 import { createTaskEventBus, formatSseEvent } from "./taskEvents";
 
@@ -61,9 +63,11 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
     config,
     diagnostics: options.services?.diagnostics ?? new DiagnosticsService(persistence, mediaRoots),
+    library: options.services?.library ?? new LibraryService(persistence, mediaRoots),
     mediaRoots,
     persistence,
     scans: options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents),
+    scrape: options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, taskEvents),
     taskEvents,
   };
   const fastify = Fastify({
@@ -74,6 +78,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     await services.config.load();
     await services.persistence.initialize();
     await services.scans.resumeQueued();
+    await services.scrape.resumeQueued();
   });
 
   fastify.addHook("onClose", async () => {
@@ -116,9 +121,13 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     const unsubscribe = services.taskEvents.subscribe((event) => {
       reply.raw.write(formatSseEvent(event));
     });
-    const snapshot = await services.scans.list();
+    const [scanSnapshot, scrapeSnapshot] = await Promise.all([services.scans.list(), services.scrape.list()]);
     reply.raw.write(
-      formatSseEvent({ id: "snapshot", event: "task-update", data: { kind: "snapshot", tasks: snapshot.tasks } }),
+      formatSseEvent({
+        id: "snapshot",
+        event: "task-update",
+        data: { kind: "snapshot", tasks: [...scanSnapshot.tasks, ...scrapeSnapshot.tasks] },
+      }),
     );
 
     request.raw.on("close", () => {

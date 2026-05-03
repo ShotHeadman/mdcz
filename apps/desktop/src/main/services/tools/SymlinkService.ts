@@ -152,7 +152,7 @@ export class SymlinkService {
     }
 
     const sourceStats = await stat(sourceDir).catch(() => null);
-    if (!sourceStats || !sourceStats.isDirectory()) {
+    if (!sourceStats?.isDirectory()) {
       throw new SymlinkServiceError("SOURCE_NOT_FOUND", `Source directory does not exist: ${sourceDir}`);
     }
 

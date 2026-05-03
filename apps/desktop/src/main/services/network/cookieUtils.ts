@@ -10,7 +10,7 @@ export const normalizeCookiePath = (path: string | undefined, fallbackPath = "/"
 
 export const resolveCookieAttributePath = (path: string | undefined, fallbackPath: string): string => {
   const trimmed = path?.trim();
-  if (!trimmed || !trimmed.startsWith("/")) {
+  if (!trimmed?.startsWith("/")) {
     return fallbackPath;
   }
   return trimmed;

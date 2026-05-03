@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mdcz/persistence": "workspace:*",
+    "@mdcz/runtime": "workspace:*",
     "@mdcz/shared": "workspace:*",
     "@mdcz/storage": "workspace:*",
     "@trpc/server": "^11.16.0",

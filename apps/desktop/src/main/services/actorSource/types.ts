@@ -10,8 +10,8 @@ import {
 import type { Website } from "@mdcz/shared/enums";
 import type { ActorProfile } from "@mdcz/shared/types";
 
-export { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS };
 export type { ActorImageSourceName, ActorOverviewSourceName, ActorSourceName };
+export { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS };
 export type ActorProfileField = ActorProfileMetadataField;
 
 export interface ActorSourceHint {

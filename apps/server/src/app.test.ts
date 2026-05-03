@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -101,6 +101,51 @@ describe("buildServer", () => {
       setupRequired: true,
       usingDefaultPassword: true,
     });
+  });
+
+  it("completes first-run setup without a prior session and persists completion", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-setup-root-"));
+    const { fastify, services } = await createTestServer();
+
+    const completeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/setup.complete",
+      payload: { password: "changed-password", mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+    });
+    const statusResponse = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
+    const repeatResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/setup.complete",
+      payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root, enabled: true } },
+    });
+    const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
+
+    expect(completeResponse.statusCode).toBe(200);
+    expect(completeResponse.json().result.data).toMatchObject({ authenticated: true });
+    expect(completeResponse.json().result.data.token).toEqual(expect.any(String));
+    expect(statusResponse.statusCode).toBe(200);
+    expect(statusResponse.json().result.data).toMatchObject({
+      configured: true,
+      setupRequired: false,
+      mediaRootCount: 1,
+      usingDefaultPassword: false,
+    });
+    expect(state).toEqual({ setupCompleted: true, adminPassword: "changed-password" });
+    expect(repeatResponse.statusCode).toBe(403);
+  });
+
+  it("rejects completing setup with the default admin password", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-default-setup-root-"));
+    const { fastify } = await createTestServer();
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/setup.complete",
+      payload: { password: "admin", mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error.message).toContain("不能使用默认管理员密码");
   });
 
   it("mounts tRPC config read and export procedures", async () => {
@@ -340,11 +385,17 @@ describe("buildServer", () => {
       payload: { query: "movie", limit: 20 },
     });
 
+    const overviewResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/overview.summary",
+      headers: { authorization: `Bearer ${token}` },
+    });
     const logsResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/logs.list",
       headers: { authorization: `Bearer ${token}` },
     });
+
     const retryResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/tasks.retry",
@@ -364,19 +415,10 @@ describe("buildServer", () => {
     expect(detailResponse.json().result.data.task.rootDisplayName).toBe("Media");
     expect(detailResponse.json().result.data.task.videos).toEqual(["nested/movie.mp4"]);
     expect(libraryResponse.statusCode).toBe(200);
-    expect(libraryResponse.json().result.data).toMatchObject({
-      total: 1,
-      entries: [
-        {
-          rootId,
-          rootDisplayName: "Media",
-          relativePath: "nested/movie.mp4",
-          fileName: "movie.mp4",
-          directory: "nested",
-          taskId,
-        },
-      ],
-    });
+    expect(libraryResponse.json().result.data).toEqual({ entries: [], total: 0 });
+    expect(overviewResponse.statusCode).toBe(200);
+    expect(overviewResponse.json().result.data.output).toMatchObject({ fileCount: 0, totalBytes: 0 });
+    expect(overviewResponse.json().result.data.recentAcquisitions).toEqual([]);
     expect(detailResponse.json().result.data.events.map((event: { type: string }) => event.type)).toContain(
       "completed",
     );
@@ -402,7 +444,7 @@ describe("buildServer", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { query: "movie", limit: 20 },
     });
-    expect(retriedLibraryResponse.json().result.data.total).toBe(1);
+    expect(retriedLibraryResponse.json().result.data.total).toBe(0);
   });
 
   it("closes the persistence database with the Fastify lifecycle", async () => {

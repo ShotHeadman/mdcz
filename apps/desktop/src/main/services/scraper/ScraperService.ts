@@ -172,7 +172,7 @@ export class ScraperService {
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
     this.sharedNetworkClient = networkClient;
-    this.aggregationService = new AggregationService(crawlerProvider);
+    this.aggregationService = new AggregationService(crawlerProvider, { logger: this.logger });
     this.imageHostCooldownStore = imageHostCooldownStore ?? createImageHostCooldownStore();
   }
 
