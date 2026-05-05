@@ -1,4 +1,16 @@
 import { Website } from "@mdcz/shared/enums";
+import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
+import {
+  applyMaintenanceExecutionItemResult,
+  applyMaintenancePreviewResult,
+  cancelMaintenancePreviewFlow,
+  changeMaintenancePreset,
+  clearMaintenancePreviewResults,
+  invalidateMaintenancePreview,
+  toggleMaintenanceSelectedIds,
+} from "@mdcz/shared/stores/maintenanceSession";
 import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -16,18 +28,6 @@ import {
   summarizeMaintenanceExecutionGroups,
   summarizeMaintenancePreviewGroups,
 } from "@/lib/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
-import {
-  applyMaintenanceExecutionItemResult,
-  applyMaintenancePreviewResult,
-  cancelMaintenancePreviewFlow,
-  changeMaintenancePreset,
-  clearMaintenancePreviewResults,
-  invalidateMaintenancePreview,
-  toggleMaintenanceSelectedIds,
-} from "@/store/maintenanceSession";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Old Title",

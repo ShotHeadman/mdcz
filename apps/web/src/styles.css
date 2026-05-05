@@ -3,6 +3,8 @@
 
 @source "./**/*.{ts,tsx}";
 @source "../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../packages/views/src/**/*.{ts,tsx}";
+@source "../../../packages/shared/**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -137,7 +139,7 @@
   }
 
   body {
-    @apply m-0 overflow-hidden bg-background text-foreground antialiased;
+    @apply h-full m-0 overflow-hidden bg-background text-foreground antialiased;
   }
 
   button,
@@ -170,5 +172,37 @@
 
   ::-webkit-scrollbar-corner {
     background: transparent;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  @keyframes progress-stripe {
+    from {
+      background-position: 1rem 0;
+    }
+    to {
+      background-position: 0 0;
+    }
+  }
+
+  .progress-animated [data-state="loading"] {
+    background-image: linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.1) 75%,
+      transparent 75%
+    );
+    background-size: 1rem 1rem;
+    animation: progress-stripe 0.5s linear infinite;
   }
 }

@@ -1,5 +1,9 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { RendererShortcutAction } from "@mdcz/shared/ipcEvents";
+import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
+import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useUIStore } from "@mdcz/shared/stores/uiStore";
+import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -9,10 +13,6 @@ import { ipc } from "@/client/ipc";
 import type { ConfigOutput } from "@/client/types";
 import { CURRENT_CONFIG_QUERY_KEY } from "@/hooks/useCurrentConfig";
 import { buildScrapeResultGroupActionContext, findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useScrapeStore } from "@/store/scrapeStore";
-import { useUIStore } from "@/store/uiStore";
-import { useWorkbenchSetupStore } from "@/store/workbenchSetupStore";
 import { playMediaPath } from "@/utils/playback";
 
 const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([

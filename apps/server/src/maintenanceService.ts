@@ -21,6 +21,8 @@ import type {
   MaintenanceApplyResponse,
   MaintenancePreviewItemDto,
   MaintenancePreviewResponse,
+  MaintenanceScanSelectedFilesInput,
+  MaintenanceScanSelectedFilesResponse,
   MaintenanceStartInput,
   MaintenanceTaskInput,
   ScanTaskDetailResponse,
@@ -135,6 +137,53 @@ export class MaintenanceService {
       items,
       confirmationToken: confirmationTokenFor(input.taskId),
     };
+  }
+
+  async scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse> {
+    const normalizedScanDir = path.resolve(input.scanDir);
+    const roots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
+    const refsByRootId = new Map<string, Array<{ relativePath: string }>>();
+
+    for (const filePath of input.filePaths) {
+      const resolvedPath = path.resolve(filePath);
+      const relativeToScan = path.relative(normalizedScanDir, resolvedPath);
+      if (!relativeToScan || relativeToScan.startsWith("..") || path.isAbsolute(relativeToScan)) {
+        throw new Error(`文件不在扫描目录内：${filePath}`);
+      }
+
+      const root = roots.find((candidate) => {
+        const relativeToRoot = path.relative(candidate.hostPath, resolvedPath);
+        return relativeToRoot && !relativeToRoot.startsWith("..") && !path.isAbsolute(relativeToRoot);
+      });
+      if (!root) {
+        throw new Error(`文件不在已注册媒体目录内：${filePath}`);
+      }
+
+      const relativePath = path.relative(root.hostPath, resolvedPath).replace(/\\/gu, "/");
+      refsByRootId.set(root.id, [...(refsByRootId.get(root.id) ?? []), { relativePath }]);
+    }
+
+    const entries = (
+      await Promise.all(
+        [...refsByRootId.entries()].map(async ([rootId, refs]) => {
+          const root = await this.mediaRoots.getActiveRoot(rootId);
+          const scannedEntries = await this.runtime.scanRefs({ root, refs });
+          const relativePathByAbsolutePath = new Map(
+            refs.map((ref) => [path.resolve(root.hostPath, ref.relativePath), ref.relativePath]),
+          );
+          return scannedEntries.map((entry) => {
+            const relativePath = relativePathByAbsolutePath.get(path.resolve(entry.fileInfo.filePath));
+            return {
+              ...entry,
+              fileId: relativePath ? `${root.id}:${relativePath}` : entry.fileId,
+              rootRef: relativePath ? { rootId: root.id, relativePath } : entry.rootRef,
+            };
+          });
+        }),
+      )
+    ).flat();
+
+    return { entries };
   }
 
   async apply(input: MaintenanceApplyInput): Promise<MaintenanceApplyResponse> {

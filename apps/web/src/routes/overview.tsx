@@ -37,7 +37,7 @@ export function OverviewPage() {
           />
           <OverviewMaintenanceCard
             onOpen={() => {
-              window.location.href = buildHref("/workbench/maintenance");
+              window.location.href = buildHref("/workbench", { intent: "maintenance" });
             }}
           />
         </section>

@@ -16,7 +16,7 @@ const badgeVariant = (level: string | undefined): "default" | "destructive" | "s
 };
 
 export const LogsListView = ({ logs, emptyText = "暂无日志。", endRef, formatDate }: LogsListViewProps) => (
-  <div className="grid max-h-[620px] overflow-auto rounded-quiet border border-border/50 bg-surface-low/40">
+  <div className="grid h-full overflow-auto rounded-[calc(var(--radius-quiet-xl)-0.35rem)] bg-surface-low/40">
     {logs.map((log) => (
       <div className="grid gap-1 border-t border-border/40 px-4 py-3 first:border-t-0" key={log.id}>
         <div className="flex flex-wrap items-center justify-between gap-3">

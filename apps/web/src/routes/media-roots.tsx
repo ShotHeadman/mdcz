@@ -1,5 +1,6 @@
 import type { MediaRootAvailabilityResponse } from "@mdcz/shared";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { PathAutocompleteInput, type PathAutocompleteResult } from "@mdcz/views/path";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -10,6 +11,15 @@ import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "
 
 // Web-only route: registered media roots are the mounted-volume containment boundary used by the server API.
 // Desktop uses direct local paths through settings/workbench instead of managing remote root records.
+const loadMediaRootPathSuggestions = async (value: string): Promise<PathAutocompleteResult> => {
+  const result = await api.serverPaths.suggest({ path: value, intent: "media-root" });
+  return {
+    accessible: result.accessible,
+    error: result.error,
+    entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
+  };
+};
+
 export const MediaRootsPage = () => {
   const queryClient = useQueryClient();
   const suggestedPath = new URLSearchParams(window.location.search).get("suggestedPath") ?? "";
@@ -68,10 +78,12 @@ export const MediaRootsPage = () => {
               </div>
               <div className="grid gap-2 text-sm font-medium">
                 <label htmlFor="media-root-host-path">主机路径</label>
-                <Input
+                <PathAutocompleteInput
                   id="media-root-host-path"
                   value={hostPath}
-                  onChange={(event) => setHostPath(event.target.value)}
+                  onChange={setHostPath}
+                  loadSuggestions={loadMediaRootPathSuggestions}
+                  inputClassName="h-10"
                   placeholder="E:/Media"
                 />
               </div>
@@ -100,10 +112,12 @@ export const MediaRootsPage = () => {
                       </div>
                       <div className="grid gap-2 text-sm font-medium">
                         <label htmlFor={`media-root-edit-path-${root.id}`}>主机路径</label>
-                        <Input
+                        <PathAutocompleteInput
                           id={`media-root-edit-path-${root.id}`}
                           value={editingHostPath}
-                          onChange={(event) => setEditingHostPath(event.target.value)}
+                          onChange={setEditingHostPath}
+                          loadSuggestions={loadMediaRootPathSuggestions}
+                          inputClassName="h-10"
                         />
                       </div>
                       <Button

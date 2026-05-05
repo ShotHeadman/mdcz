@@ -1,208 +1,297 @@
-import { type CrawlerDataDto, type ScrapeFileRefDto, type ScrapeResultDto, Website } from "@mdcz/shared";
-import { NfoEditorView, WorkbenchView } from "@mdcz/views";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  activateNewScrapeTask,
+  applyScrapeTaskStatus,
+  buildUncensoredConfirmationItems,
+  getFailedScrapeTargets,
+  MaintenanceWorkbenchAdapter,
+  ScrapeWorkbenchAdapter,
+  type SharedWorkbenchPorts,
+  startMaintenanceFlow,
+  useWorkbenchSessionSnapshot,
+  WorkbenchSetupAdapter,
+  type WorkbenchSetupPort,
+} from "@mdcz/shared/adapters";
+import { scrapeResultDtoToScrapeResult } from "@mdcz/shared/dtoAdapters";
+import { toErrorMessage } from "@mdcz/shared/error";
+import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
+import type { ScrapeResultDto } from "@mdcz/shared/serverDtos";
+import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useUIStore } from "@mdcz/shared/stores/uiStore";
+import {
+  applyWebTaskUpdate,
+  createTaskHydrationState,
+  hydrateScrapeResults,
+  type TaskHydrationState,
+} from "@mdcz/shared/taskHydration";
+import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
+import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
+import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api, subscribeTaskUpdates } from "../client";
-import { AppLink, formatDate, scanStatusLabels, taskKindLabels } from "../routeCommon";
 
-const emptyCrawlerData = (relativePath = ""): CrawlerDataDto => ({
-  title:
-    relativePath
-      .split("/")
-      .pop()
-      ?.replace(/\.[^.]+$/u, "") ?? "",
-  title_zh: "",
-  number: "",
-  actors: [],
-  genres: [],
-  scene_images: [],
-  website: Website.JAVDB,
+export const Route = createFileRoute("/workbench")({
+  validateSearch: (search): { intent?: "maintenance" } => ({
+    intent: search.intent === "maintenance" ? "maintenance" : undefined,
+  }),
+  component: WorkbenchPage,
 });
 
-function EditMetadataPanel({ result }: { result: ScrapeResultDto }) {
+const createWebSetupPort = (): WorkbenchSetupPort => ({
+  browseDirectory: async (_kind, currentPath) => {
+    return currentPath || null;
+  },
+  supportsPathBrowse: false,
+  suggestDirectory: async ({ kind, path }) =>
+    await api.serverPaths.suggest({
+      path,
+      intent: kind === "scan" ? "workbench-scan" : "workbench-output",
+    }),
+  scanCandidates: async (scanDir, excludeDirPath) => {
+    const result = await api.scans.candidates({
+      scanDir,
+      excludeDirs: excludeDirPath ? [excludeDirPath] : [],
+      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
+    });
+    return {
+      candidates: result.candidates,
+      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
+    };
+  },
+  savePaths: async (scanDir, targetDir) => {
+    await api.config.save({
+      paths: {
+        mediaPath: scanDir,
+        successOutputFolder: targetDir,
+      },
+    });
+  },
+});
+
+const scrapeResultsToRetryTargets = (results: ScrapeResult[]) =>
+  results
+    .filter((result) => result.status === "failed")
+    .map((result) => {
+      const [rootId, ...relativeParts] = result.fileId.split(":");
+      const relativePath = relativeParts.join(":");
+      return {
+        filePath: result.fileInfo.filePath,
+        ref: rootId && relativePath ? { rootId, relativePath } : undefined,
+      };
+    });
+
+function WorkbenchPage() {
+  const search = Route.useSearch();
   const queryClient = useQueryClient();
-  const [data, setData] = useState<CrawlerDataDto>(result.crawlerData ?? emptyCrawlerData(result.relativePath));
-  const nfoQ = useQuery({
-    enabled: Boolean(result.nfoRelativePath),
-    queryFn: () =>
-      api.scrape.nfoRead({
-        rootId: result.rootId,
-        relativePath: result.nfoRelativePath ?? `${result.relativePath}.nfo`,
-      }),
-    queryKey: ["nfo", result.rootId, result.nfoRelativePath],
-  });
-  const writeNfoM = useMutation({
-    mutationFn: () =>
-      api.scrape.nfoWrite({
-        rootId: result.rootId,
-        relativePath: result.nfoRelativePath ?? `${result.relativePath}.nfo`,
-        data,
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["scrapeResults"] });
-      await queryClient.invalidateQueries({ queryKey: ["nfo", result.rootId, result.nfoRelativePath] });
-    },
-  });
-
-  useEffect(() => {
-    setData(result.crawlerData ?? nfoQ.data?.data ?? emptyCrawlerData(result.relativePath));
-  }, [nfoQ.data?.data, result]);
-
-  return (
-    <NfoEditorView
-      data={data}
-      errorMessage={writeNfoM.error?.message}
-      nfoRelativePath={result.nfoRelativePath}
-      onArrayFieldChange={(field, value) => setData((current) => ({ ...current, [field]: value }))}
-      onFieldChange={(field, value) => setData((current) => ({ ...current, [field]: value }))}
-      onSave={() => void writeNfoM.mutate()}
-      saveDisabled={!result.nfoRelativePath || writeNfoM.isPending}
-    />
-  );
-}
-
-export function WorkbenchPage() {
-  const queryClient = useQueryClient();
-  const [selectedRootId, setSelectedRootId] = useState("");
-  const [selectedRefs, setSelectedRefs] = useState<ScrapeFileRefDto[]>([]);
-  const [manualUrl, setManualUrl] = useState("");
-  const [activeResultId, setActiveResultId] = useState<string | null>(null);
-
-  const rootsQ = useQuery({ queryFn: () => api.mediaRoots.list(), queryKey: ["mediaRoots"], retry: false });
-  const tasksQ = useQuery({ queryFn: () => api.tasks.list(), queryKey: ["tasks"], retry: false });
-  const browserQ = useQuery({
-    enabled: Boolean(selectedRootId),
-    queryFn: () => api.browser.list({ rootId: selectedRootId, relativePath: "" }),
-    queryKey: ["browser", selectedRootId],
-    retry: false,
-  });
+  const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
+  const setupPort = useMemo(() => createWebSetupPort(), []);
+  const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
+  const [hydrationState, setHydrationState] = useState<TaskHydrationState>(createTaskHydrationState);
+  const hydrationStateRef = useRef(hydrationState);
+  const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: ["config"], retry: false });
   const scrapeResultsQ = useQuery({
     queryFn: () => api.scrape.listResults(),
     queryKey: ["scrapeResults"],
     retry: false,
   });
 
-  const startScrapeM = useMutation({
-    mutationFn: () =>
-      api.scrape.start({ refs: selectedRefs, manualUrl: manualUrl.trim() || undefined, uncensoredConfirmed: true }),
-    onSuccess: async () => {
-      setSelectedRefs([]);
-      setManualUrl("");
-      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      await queryClient.invalidateQueries({ queryKey: ["scrapeResults"] });
-    },
-  });
-  const retryM = useMutation({ mutationFn: (taskId: string) => api.tasks.retry({ taskId }) });
-  const taskControlM = useMutation({
-    mutationFn: ({ action, taskId }: { action: "pause" | "resume" | "stop"; taskId: string }) =>
-      api.scrape[action]({ taskId }),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
-  });
-  const deleteFileM = useMutation({
-    mutationFn: (result: ScrapeResultDto) =>
-      api.scrape.deleteFile({ rootId: result.rootId, relativePath: result.relativePath }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["scrapeResults"] });
-      await queryClient.invalidateQueries({ queryKey: ["browser", selectedRootId] });
-    },
-  });
+  const { isScraping, scrapeStatus, results } = useScrapeStore(
+    useShallow((state) => ({
+      isScraping: state.isScraping,
+      scrapeStatus: state.scrapeStatus,
+      results: state.results,
+    })),
+  );
+  const { workbenchMode, setWorkbenchMode } = useUIStore(
+    useShallow((state) => ({
+      workbenchMode: state.workbenchMode,
+      setWorkbenchMode: state.setWorkbenchMode,
+    })),
+  );
 
-  const enabledRoots = useMemo(() => rootsQ.data?.roots.filter((root) => root.enabled) ?? [], [rootsQ.data?.roots]);
-  const scrapeTasks = tasksQ.data?.tasks.filter((task) => task.kind === "scrape") ?? [];
-  const activeResult = scrapeResultsQ.data?.results.find((result) => result.id === activeResultId) ?? null;
+  const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, search.intent);
+  const failedTargets = useMemo(() => scrapeResultsToRetryTargets(results), [results]);
 
-  const toggleRef = (ref: ScrapeFileRefDto) => {
-    const key = `${ref.rootId}:${ref.relativePath}`;
-    setSelectedRefs((current) =>
-      current.some((item) => `${item.rootId}:${item.relativePath}` === key)
-        ? current.filter((item) => `${item.rootId}:${item.relativePath}` !== key)
-        : [...current, ref],
-    );
-  };
-
-  const controlTask = async (action: "pause" | "resume" | "stop" | "retry", taskId: string) => {
-    if (action === "retry") {
-      await retryM.mutateAsync(taskId);
-      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      return;
+  useEffect(() => {
+    if (sessionSnapshot.workbenchMode !== workbenchMode) {
+      setWorkbenchMode(sessionSnapshot.workbenchMode);
     }
-    taskControlM.mutate({ action, taskId });
-  };
+  }, [sessionSnapshot.workbenchMode, setWorkbenchMode, workbenchMode]);
+
+  useEffect(() => {
+    if (scrapeResultsQ.data) {
+      hydrateScrapeResults(scrapeResultsQ.data);
+    }
+  }, [scrapeResultsQ.data]);
+
+  useEffect(() => {
+    hydrationStateRef.current = hydrationState;
+  }, [hydrationState]);
 
   useEffect(
     () =>
-      subscribeTaskUpdates(() => {
-        void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      subscribeTaskUpdates((payload) => {
+        const nextState = applyWebTaskUpdate(payload, hydrationStateRef.current);
+        hydrationStateRef.current = nextState;
+        setHydrationState(nextState);
+        if (nextState.shouldOpenUncensoredDialog) {
+          setUncensoredDialogOpen(true);
+        }
         void queryClient.invalidateQueries({ queryKey: ["scrapeResults"] });
+        void queryClient.invalidateQueries({ queryKey: ["tasks"] });
       }),
     [queryClient],
   );
 
-  useEffect(() => {
-    if (!selectedRootId && enabledRoots[0]) {
-      setSelectedRootId(enabledRoots[0].id);
+  const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
+    try {
+      activateNewScrapeTask();
+      const task = await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
+      setHydrationState((state) => ({ ...state, activeScrapeTaskId: task.id }));
+      applyScrapeTaskStatus(task.status);
+      toast.success("刮削任务已提交");
+    } catch (error) {
+      toast.error(`启动失败: ${toErrorMessage(error)}`);
     }
-  }, [enabledRoots, selectedRootId]);
+  };
+
+  const handleStartSelectedMaintenance = async (
+    filePaths: string[],
+    scanDir: string,
+    _targetDir: string,
+    presetId: MaintenancePresetId,
+  ) => {
+    await startMaintenanceFlow({
+      filePaths,
+      scanDir,
+      presetId,
+      port: ports.maintenance,
+      isScraping,
+      setWorkbenchMode,
+      onRefreshConfig: async () => {
+        await queryClient.invalidateQueries({ queryKey: ["config"] });
+      },
+      toast,
+      toErrorMessage,
+    });
+  };
+
+  const requireActiveScrapeTaskId = () => {
+    if (!hydrationState.activeScrapeTaskId) {
+      toast.info("当前没有可控制的刮削任务");
+      return null;
+    }
+    return hydrationState.activeScrapeTaskId;
+  };
+
+  const handlePauseScrape = async () => {
+    const taskId = requireActiveScrapeTaskId();
+    if (!taskId) return;
+    try {
+      const task = await api.scrape.pause({ taskId });
+      applyScrapeTaskStatus(task.status);
+      toast.info("任务已暂停");
+    } catch (error) {
+      toast.error(`暂停失败: ${toErrorMessage(error)}`);
+    }
+  };
+
+  const handleResumeScrape = async () => {
+    const taskId = requireActiveScrapeTaskId();
+    if (!taskId) return;
+    try {
+      const task = await api.scrape.resume({ taskId });
+      applyScrapeTaskStatus(task.status);
+      toast.success("任务已恢复");
+    } catch (error) {
+      toast.error(`恢复失败: ${toErrorMessage(error)}`);
+    }
+  };
+
+  const handleStopScrape = async () => {
+    const taskId = requireActiveScrapeTaskId();
+    if (!taskId) return;
+    try {
+      const task = await api.scrape.stop({ taskId });
+      applyScrapeTaskStatus(task.status);
+      toast.info("正在停止...");
+    } catch (error) {
+      toast.error(`停止失败: ${toErrorMessage(error)}`);
+    }
+  };
+
+  const handleRetryFailed = async () => {
+    const targets = getFailedScrapeTargets();
+    if (targets.length === 0) {
+      toast.info("当前没有可重试的失败项目");
+      return;
+    }
+    try {
+      const result = await ports.scrape.retrySelection(targets, { scrapeStatus });
+      if (result.strategy === "new-task") {
+        applyScrapeTaskStatus("running");
+      }
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(`重试失败: ${toErrorMessage(error)}`);
+    }
+  };
+
+  const handleConfirmUncensored = async (selections: UncensoredConfirmSelection[]) => {
+    if (!hydrationState.uncensoredTaskId) {
+      throw new Error("缺少刮削任务 ID");
+    }
+    const task = await api.scrape.confirmUncensored({
+      taskId: hydrationState.uncensoredTaskId,
+      items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
+    });
+    setHydrationState((state) => ({
+      ...state,
+      ambiguousUncensoredItems: [],
+      uncensoredTaskId: "",
+      activeScrapeTaskId: task.id,
+    }));
+    applyScrapeTaskStatus(task.status);
+    toast.success("已提交无码确认重刮任务");
+  };
 
   return (
-    <WorkbenchView
-      activeEditor={activeResult ? <EditMetadataPanel result={activeResult} /> : undefined}
-      browserEntries={browserQ.data?.entries ?? []}
-      browserLink={<WorkbenchLink to="/browser">浏览</WorkbenchLink>}
-      enabledRoots={enabledRoots}
-      errorMessage={startScrapeM.error?.message}
-      isStarting={startScrapeM.isPending}
-      labels={{ formatDate, scanStatus: scanStatusLabels, taskKind: taskKindLabels }}
-      manualUrl={manualUrl}
-      mediaRootsLink={<WorkbenchLink to="/media-roots">媒体目录</WorkbenchLink>}
-      onDeleteResult={(result) => void deleteFileM.mutate(result)}
-      onManualUrlChange={setManualUrl}
-      onRefreshTasks={() => void tasksQ.refetch()}
-      onResultSelect={setActiveResultId}
-      onRootChange={setSelectedRootId}
-      onScanRoot={(rootId) => {
-        void api.scans.start({ rootId }).then(() => queryClient.invalidateQueries({ queryKey: ["tasks"] }));
-      }}
-      onStartScrape={() => void startScrapeM.mutate()}
-      onTaskControl={(action, taskId) => void controlTask(action, taskId)}
-      onToggleRef={toggleRef}
-      renderBrowserDirectoryLink={(result) => (
-        <WorkbenchLink
-          search={{ rootId: result.rootId, path: result.relativePath.split("/").slice(0, -1).join("/") }}
-          to="/browser"
-        >
-          打开目录
-        </WorkbenchLink>
+    <div className="h-full min-h-0 overflow-hidden">
+      {sessionSnapshot.showSetup ? (
+        <WorkbenchSetupAdapter
+          mode={workbenchMode}
+          config={configQ.data}
+          configLoading={configQ.isLoading}
+          port={setupPort}
+          onStartScrape={handleStartSelectedScrape}
+          onStartMaintenance={handleStartSelectedMaintenance}
+        />
+      ) : workbenchMode === "scrape" ? (
+        <ScrapeWorkbenchAdapter
+          ports={ports}
+          failedCount={failedTargets.length}
+          onPauseScrape={() => void handlePauseScrape()}
+          onResumeScrape={() => void handleResumeScrape()}
+          onRetryFailed={() => void handleRetryFailed()}
+          onStopScrape={() => void handleStopScrape()}
+        />
+      ) : (
+        <MaintenanceWorkbenchAdapter ports={ports} />
       )}
-      results={scrapeResultsQ.data?.results ?? []}
-      selectedRefs={selectedRefs}
-      selectedRootId={selectedRootId}
-      tasks={scrapeTasks}
-    />
+      <UncensoredConfirmDialog
+        open={uncensoredDialogOpen && hydrationState.ambiguousUncensoredItems.length > 0}
+        items={hydrationState.ambiguousUncensoredItems}
+        onOpenChange={setUncensoredDialogOpen}
+        onConfirm={handleConfirmUncensored}
+      />
+    </div>
   );
 }
 
-export const Route = createFileRoute("/workbench")({
-  component: WorkbenchPage,
-});
-
-function WorkbenchLink({
-  children,
-  search,
-  to,
-}: {
-  children: ReactNode;
-  search?: Record<string, string | undefined>;
-  to: string;
-}) {
-  return (
-    <AppLink
-      className="self-center text-sm font-medium text-foreground underline-offset-4 hover:underline"
-      search={search}
-      to={to}
-    >
-      {children}
-    </AppLink>
-  );
-}
+export const __workbenchTestHooks = {
+  dtoToScrapeResult: (result: ScrapeResultDto) => scrapeResultDtoToScrapeResult(result),
+  scrapeResultsToRetryTargets,
+};

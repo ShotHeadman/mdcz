@@ -3,6 +3,7 @@ import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import { Button, Checkbox, cn } from "@mdcz/ui";
 import { AlertCircle, Check, FolderOpen, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { PathAutocompleteInput, type PathAutocompleteResult } from "../path";
 import { FloatingWorkbenchBar } from "./FloatingWorkbenchBar";
 
 export type WorkbenchSetupMode = "scrape" | "maintenance";
@@ -26,9 +27,14 @@ export interface WorkbenchSetupViewProps {
   presetId: MaintenancePresetId;
   runSummary: string;
   primaryDisabled: boolean;
+  supportsPathBrowse?: boolean;
+  onSuggestScanDir?: (input: { path: string }) => Promise<PathAutocompleteResult>;
+  onSuggestTargetDir?: (input: { path: string }) => Promise<PathAutocompleteResult>;
   formatBytes: (value: number, options?: { trimTrailingZeros?: boolean }) => string;
   onBrowseScanDir: () => void;
   onBrowseTargetDir: () => void;
+  onScanDirChange?: (value: string) => void;
+  onTargetDirChange?: (value: string) => void;
   onRefreshScan: () => void;
   onPresetChange: (presetId: MaintenancePresetId) => void;
   onStart: () => void;
@@ -82,22 +88,35 @@ function PathControl({
   value,
   placeholder,
   onBrowse,
+  onChange,
+  supportsBrowse,
+  loadSuggestions,
 }: {
   label: string;
   value: string;
   placeholder: string;
   onBrowse: () => void;
+  onChange?: (value: string) => void;
+  supportsBrowse?: boolean;
+  loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
 }) {
   return (
     <div className="space-y-2">
       <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
       <div className="flex min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1 rounded-quiet-sm bg-surface-low px-4 py-3 font-mono text-xs text-foreground/90">
-          <div className="truncate">{value || placeholder}</div>
-        </div>
-        <Button type="button" className="h-11 rounded-quiet-sm px-4 text-xs font-bold" onClick={onBrowse}>
-          浏览
-        </Button>
+        <PathAutocompleteInput
+          value={value}
+          readOnly={!onChange}
+          placeholder={placeholder}
+          loadSuggestions={loadSuggestions}
+          inputClassName="h-auto min-w-0 flex-1 truncate rounded-quiet-sm border-0 bg-surface-low px-4 py-3 font-mono text-xs leading-4 text-foreground/90 shadow-none placeholder:text-foreground/90 focus-visible:border-transparent focus-visible:ring-0"
+          onChange={onChange}
+        />
+        {(supportsBrowse ?? true) ? (
+          <Button type="button" className="h-11 rounded-quiet-sm px-4 text-xs font-bold" onClick={onBrowse}>
+            浏览
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -153,9 +172,14 @@ export function WorkbenchSetupView({
   presetId,
   runSummary,
   primaryDisabled,
+  supportsPathBrowse = true,
+  onSuggestScanDir,
+  onSuggestTargetDir,
   formatBytes,
   onBrowseScanDir,
   onBrowseTargetDir,
+  onScanDirChange,
+  onTargetDirChange,
   onRefreshScan,
   onPresetChange,
   onStart,
@@ -183,12 +207,18 @@ export function WorkbenchSetupView({
                 value={scanDir}
                 placeholder={configLoading ? "正在读取配置..." : "请选择需要扫描的媒体目录"}
                 onBrowse={onBrowseScanDir}
+                onChange={onScanDirChange}
+                supportsBrowse={supportsPathBrowse}
+                loadSuggestions={onSuggestScanDir ? (value) => onSuggestScanDir({ path: value }) : undefined}
               />
               <PathControl
                 label="输出目录"
                 value={targetDir}
                 placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
                 onBrowse={onBrowseTargetDir}
+                onChange={onTargetDirChange}
+                supportsBrowse={supportsPathBrowse}
+                loadSuggestions={onSuggestTargetDir ? (value) => onSuggestTargetDir({ path: value }) : undefined}
               />
             </div>
           </section>

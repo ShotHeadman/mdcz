@@ -1,4 +1,4 @@
-import type { RuntimeLog } from "@/store/logStore";
+import type { RuntimeLog } from "@mdcz/shared/stores/logStore";
 
 export type VisualLogLevel = "ok" | "info" | "warn" | "error" | "request";
 

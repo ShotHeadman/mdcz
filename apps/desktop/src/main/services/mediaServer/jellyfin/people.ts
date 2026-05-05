@@ -61,7 +61,7 @@ export class JellyfinActorInfoService {
 
   private readonly runtimeService: RuntimeJellyfinActorInfoService;
 
-  constructor(private readonly deps: JellyfinActorInfoDependencies) {
+  constructor(deps: JellyfinActorInfoDependencies) {
     this.runtimeService = new RuntimeJellyfinActorInfoService({
       ...deps,
       logger: this.logger,

@@ -1,21 +1,18 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { type ResultTreeManualUrlTarget, ResultTreeView } from "@mdcz/views/detail";
+import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@mdcz/ui";
+import type { MediaBrowserFilter } from "@mdcz/views/common";
+import { getScrapeResultTitle, type ResultTreeManualUrlTarget, ResultTreeView } from "@mdcz/views/detail";
 import { Copy, FileText, Link2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { deleteFile, deleteFileAndFolder, retryScrapeSelection } from "@/api/manual";
-import { ipc } from "@/client/ipc";
-import { getScrapeResultTitle } from "@/components/detail/detailViewAdapters";
-import type { MediaBrowserFilter } from "@/components/shared/MediaBrowserList";
-import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
+import { useScrapeStore } from "../stores/scrapeStore";
+import { useUIStore } from "../stores/uiStore";
 import {
   buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
   type ScrapeResultGroup,
-} from "@/lib/scrapeResultGrouping";
-import { useScrapeStore } from "@/store/scrapeStore";
-import { useUIStore } from "@/store/uiStore";
-import { playMediaPath } from "@/utils/playback";
+} from "../viewModels/scrapeResultGrouping";
+import type { ActionAvailability, ScrapeActionPort } from "./ports";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
@@ -31,10 +28,13 @@ const activateNewScrapeTask = () => {
   useUIStore.getState().setSelectedResultId(null);
 };
 
+const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
+
 function buildMenuContent(
   group: ScrapeResultGroup,
   selectedResultId: string | null,
   scrapeStatus: "idle" | "running" | "stopping" | "paused",
+  port: ScrapeActionPort,
   onManualUrlRescrape: (target: ResultTreeManualUrlTarget) => void,
 ) {
   const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
@@ -42,7 +42,8 @@ function buildMenuContent(
   const resultPath = result.fileInfo.filePath;
   const resultNumber = result.fileInfo.number;
   const nfoPath = actionContext.nfoPath ?? resultPath;
-  const groupedVideoPaths = actionContext.videoPaths;
+  const groupedTargets = actionContext.targets;
+  const groupedVideoPaths = groupedTargets.map((target) => target.filePath);
 
   const handleCopyNumber = async () => {
     if (!resultNumber) {
@@ -59,14 +60,14 @@ function buildMenuContent(
 
   const handleRetryScrape = async () => {
     try {
-      const response = await retryScrapeSelection(groupedVideoPaths, {
+      const response = await port.retrySelection(groupedTargets, {
         scrapeStatus,
         canRequeueCurrentRun: group.status === "failed",
       });
-      if (response.data.strategy === "new-task") {
+      if (response.strategy === "new-task") {
         activateNewScrapeTask();
       }
-      toast.success(response.data.message);
+      toast.success(response.message);
     } catch (error) {
       toast.error(toErrorMessage(error, "重新刮削失败"));
     }
@@ -83,7 +84,7 @@ function buildMenuContent(
       return;
     }
     try {
-      await deleteFile(groupedVideoPaths);
+      await port.deleteFile(groupedVideoPaths);
       toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "已删除文件");
     } catch {
       toast.error("删除文件失败");
@@ -93,7 +94,7 @@ function buildMenuContent(
   const handleDeleteFolder = async () => {
     if (!window.confirm(`确定删除文件和所在文件夹吗？\n${resultPath}`)) return;
     try {
-      await deleteFileAndFolder(resultPath);
+      await port.deleteFileAndFolder(resultPath);
       toast.success("已删除文件夹");
     } catch {
       toast.error("删除文件夹失败");
@@ -108,21 +109,22 @@ function buildMenuContent(
     }
 
     try {
-      await ipc.app.showItemInFolder(filePath);
+      await port.openFolder(filePath);
     } catch (error) {
       toast.error(`打开目录失败: ${toErrorMessage(error)}`);
     }
   };
 
-  const handlePlay = () => void playMediaPath(resultPath, "播放功能仅在桌面客户端可用", "播放失败");
+  const handlePlay = () => void port.play(resultPath);
 
   const handleOpenNfo = () => {
-    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: nfoPath } }));
+    void port.openNfo(nfoPath);
   };
 
   const handleManualUrlRescrape = () => {
     onManualUrlRescrape({
       videoPaths: groupedVideoPaths,
+      targets: groupedTargets,
       number: resultNumber || "未识别番号",
       canRequeueCurrentRun: group.status === "failed",
     });
@@ -144,35 +146,55 @@ function buildMenuContent(
           <Link2 className="h-3.5 w-3.5" />
         </ContextMenuShortcut>
       </ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
-        删除文件
-        <ContextMenuShortcut>D</ContextMenuShortcut>
-      </ContextMenuItem>
-      <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
-        删除文件及所在文件夹
-        <ContextMenuShortcut>A</ContextMenuShortcut>
-      </ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={handleOpenFolder}>
-        打开目录
-        <ContextMenuShortcut>F</ContextMenuShortcut>
-      </ContextMenuItem>
-      <ContextMenuItem onClick={handleOpenNfo}>
-        编辑 NFO
-        <ContextMenuShortcut>
-          <FileText className="h-3.5 w-3.5" />
-        </ContextMenuShortcut>
-      </ContextMenuItem>
-      <ContextMenuItem onClick={handlePlay}>
-        播放
-        <ContextMenuShortcut>P</ContextMenuShortcut>
-      </ContextMenuItem>
+      {isActionVisible(port.capabilities?.deleteFile) || isActionVisible(port.capabilities?.deleteFileAndFolder) ? (
+        <>
+          <ContextMenuSeparator />
+          {isActionVisible(port.capabilities?.deleteFile) ? (
+            <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
+              删除文件
+              <ContextMenuShortcut>D</ContextMenuShortcut>
+            </ContextMenuItem>
+          ) : null}
+          {isActionVisible(port.capabilities?.deleteFileAndFolder) ? (
+            <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
+              删除文件及所在文件夹
+              <ContextMenuShortcut>A</ContextMenuShortcut>
+            </ContextMenuItem>
+          ) : null}
+        </>
+      ) : null}
+      {isActionVisible(port.capabilities?.openFolder) ||
+      isActionVisible(port.capabilities?.openNfo) ||
+      isActionVisible(port.capabilities?.play) ? (
+        <>
+          <ContextMenuSeparator />
+          {isActionVisible(port.capabilities?.openFolder) ? (
+            <ContextMenuItem onClick={handleOpenFolder}>
+              打开目录
+              <ContextMenuShortcut>F</ContextMenuShortcut>
+            </ContextMenuItem>
+          ) : null}
+          {isActionVisible(port.capabilities?.openNfo) ? (
+            <ContextMenuItem onClick={handleOpenNfo}>
+              编辑 NFO
+              <ContextMenuShortcut>
+                <FileText className="h-3.5 w-3.5" />
+              </ContextMenuShortcut>
+            </ContextMenuItem>
+          ) : null}
+          {isActionVisible(port.capabilities?.play) ? (
+            <ContextMenuItem onClick={handlePlay}>
+              播放
+              <ContextMenuShortcut>P</ContextMenuShortcut>
+            </ContextMenuItem>
+          ) : null}
+        </>
+      ) : null}
     </>
   );
 }
 
-export function ResultTree() {
+export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
   const { results, clearResults, scrapeStatus } = useScrapeStore();
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
@@ -194,9 +216,9 @@ export function ResultTree() {
           setSelectedResultId(
             group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,
           ),
-        menuContent: buildMenuContent(group, selectedResultId, scrapeStatus, setManualUrlTarget),
+        menuContent: buildMenuContent(group, selectedResultId, scrapeStatus, port, setManualUrlTarget),
       })),
-    [resultGroups, scrapeStatus, selectedResultId, setSelectedResultId],
+    [port, resultGroups, scrapeStatus, selectedResultId, setSelectedResultId],
   );
 
   return (
@@ -219,15 +241,15 @@ export function ResultTree() {
       }}
       onManualUrlSubmit={async (target, manualUrl) => {
         try {
-          const response = await retryScrapeSelection(target.videoPaths, {
+          const response = await port.retrySelection(target.targets, {
             scrapeStatus,
             canRequeueCurrentRun: target.canRequeueCurrentRun,
             manualUrl,
           });
-          if (response.data.strategy === "new-task") {
+          if (response.strategy === "new-task") {
             activateNewScrapeTask();
           }
-          toast.success(response.data.message);
+          toast.success(response.message);
         } catch (error) {
           toast.error(toErrorMessage(error, "按 URL 重新刮削失败"));
         }
@@ -235,3 +257,5 @@ export function ResultTree() {
     />
   );
 }
+
+export { ResultTreeAdapter as ResultTree };

@@ -1,16 +1,14 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { buildMaintenanceCommitItem } from "@mdcz/shared/maintenanceCommit";
+import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePreviewItem } from "@mdcz/shared/types";
 import { type MaintenanceBatchBarPreviewGroup, MaintenanceBatchBarView } from "@mdcz/views/maintenance";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
-import { ipc } from "@/client/ipc";
-import { getMaintenancePresetMeta } from "@/components/maintenance/presetMeta";
-import { buildMaintenanceCommitItem } from "@/lib/maintenance";
-import { buildMaintenanceEntryViewModel } from "@/lib/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import { useMaintenanceEntryStore } from "../stores/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "../stores/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "../stores/maintenancePreviewStore";
 import {
   applyMaintenancePreviewResult,
   beginMaintenanceExecution,
@@ -18,18 +16,16 @@ import {
   cancelMaintenancePreviewFlow,
   resetMaintenanceSession,
   setMaintenancePreviewPending,
-} from "@/store/maintenanceSession";
-import { useScrapeStore } from "@/store/scrapeStore";
-
-interface MaintenanceBatchBarProps {
-  mediaPath?: string;
-}
+} from "../stores/maintenanceSession";
+import { useScrapeStore } from "../stores/scrapeStore";
+import { buildMaintenanceEntryViewModel } from "../viewModels/maintenanceGrouping";
+import type { MaintenanceActionPort } from "./ports";
 
 const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 };
 
-export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
+export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPort }) {
   const isScraping = useScrapeStore((state) => state.isScraping);
   const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceEntryStore(
     useShallow((state) => ({
@@ -133,7 +129,7 @@ export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
     const requestedEntries = selectedEntries;
 
     try {
-      const preview = await ipc.maintenance.preview(selectedEntries, presetId);
+      const preview = await port.preview(selectedEntries, presetId);
       const liveState = useMaintenanceEntryStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
@@ -221,7 +217,7 @@ export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
     setCurrentPath(commitItems[0]?.entry.fileInfo.filePath ?? currentPath);
 
     try {
-      await ipc.maintenance.execute(commitItems, presetId);
+      await port.execute(commitItems, presetId, { previewResults: effectivePreviewResults, fieldSelections });
       toast.success(`维护任务已启动，共 ${displayCount} 项`);
     } catch (error) {
       rollbackExecutionStart();
@@ -237,13 +233,13 @@ export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
     try {
       const pausingPreview = previewing;
       if (paused) {
-        await ipc.maintenance.resume();
+        await port.resume();
         setExecutionStatus(previewPending ? "previewing" : "executing");
         toast.success(previewPending ? "维护预览已恢复" : "维护任务已恢复");
         return;
       }
 
-      await ipc.maintenance.pause();
+      await port.pause();
       setExecutionStatus("paused");
       toast.info(pausingPreview ? "维护预览已暂停" : "维护任务已暂停");
     } catch (error) {
@@ -253,7 +249,7 @@ export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
 
   const handleStop = async () => {
     try {
-      await ipc.maintenance.stop();
+      await port.stop();
       setExecutionStatus("stopping");
       toast.info("正在停止维护流程...");
     } catch (error) {
@@ -295,3 +291,5 @@ export default function MaintenanceBatchBar(_props: MaintenanceBatchBarProps) {
     />
   );
 }
+
+export default MaintenanceBatchBarAdapter;

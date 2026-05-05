@@ -143,6 +143,8 @@ export interface MediaCandidate {
   extension: string;
   relativePath: string;
   relativeDirectory: string;
+  rootId?: string;
+  rootRelativePath?: string;
 }
 
 export interface ScraperStatus {
@@ -165,7 +167,6 @@ export interface IpcError {
 // ── Maintenance Mode ──────────────────────────────────────────────
 
 export type MaintenancePresetId = "read_local" | "refresh_data" | "organize_files" | "rebuild_all";
-
 /** Assets discovered on disk for an existing video. */
 export interface DiscoveredAssets {
   thumb?: string;
@@ -179,6 +180,10 @@ export interface DiscoveredAssets {
 /** A single video entry produced by local directory scanning. */
 export interface LocalScanEntry {
   fileId: FileId;
+  rootRef?: {
+    rootId: string;
+    relativePath: string;
+  };
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;
@@ -239,6 +244,8 @@ export type MaintenancePreviewStatus = "ready" | "blocked";
 
 export interface MaintenancePreviewItem {
   fileId: FileId;
+  previewId?: string;
+  taskId?: string;
   status: MaintenancePreviewStatus;
   error?: string;
   fieldDiffs?: FieldDiff[];

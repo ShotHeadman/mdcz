@@ -71,16 +71,11 @@ export const SetupPage = () => {
     setStep(1);
   };
 
-  const nextMediaRootStep = async () => {
-    setError(null);
-    const isValid = await trigger(["displayName", "hostPath"]);
-    if (isValid) {
-      setStep(2);
-    }
-  };
-
   const completeSetup = async () => {
     setError(null);
+    const isValid = await trigger(["displayName", "hostPath"]);
+    if (!isValid) return;
+
     try {
       await completeM.mutateAsync();
     } catch (setupError) {

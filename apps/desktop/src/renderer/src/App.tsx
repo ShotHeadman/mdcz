@@ -1,5 +1,7 @@
 import "./index.css";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { Suspense, useEffect, useRef } from "react";
@@ -14,8 +16,6 @@ import { useIpcSync } from "./hooks/useIpcSync";
 import { useStylesReady } from "./hooks/useStylesReady";
 import { queryClient } from "./lib/queryClient";
 import { routeTree } from "./routeTree.gen";
-import { useScrapeStore } from "./store/scrapeStore";
-import { useUIStore } from "./store/uiStore";
 
 const shouldUseHashHistory = typeof window !== "undefined" && window.location.protocol === "file:";
 

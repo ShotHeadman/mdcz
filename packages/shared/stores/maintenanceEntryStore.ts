@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 export type MaintenanceFilter = "all" | "success" | "failed";
 
-const isDev = import.meta.env.DEV;
+const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 const toggleIdsInSelection = (selectedIds: string[], ids: string[]): string[] => {
   if (ids.length === 0) {

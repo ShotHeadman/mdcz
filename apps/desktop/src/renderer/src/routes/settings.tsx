@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import {
   mergeConfigWithFlatPayload,
   type SettingsCrawlerSiteInfo,
@@ -29,7 +30,6 @@ import { useConfigProfiles } from "@/hooks/useConfigProfiles";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { useDefaultConfig } from "@/hooks/useDefaultConfig";
 import { cn } from "@/lib/utils";
-import { useSettingsSavingStore } from "@/store/settingsSavingStore";
 
 export const Route = createFileRoute("/settings")({
   validateSearch: (search): { setting?: string } => ({

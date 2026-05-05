@@ -62,6 +62,7 @@ export interface ScrapeResultRecord {
   nfoRelativePath: string | null;
   outputRelativePath: string | null;
   manualUrl: string | null;
+  uncensoredAmbiguous: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -132,6 +133,7 @@ export interface UpsertScrapeResultInput {
   nfoRelativePath?: string | null;
   outputRelativePath?: string | null;
   manualUrl?: string | null;
+  uncensoredAmbiguous?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -231,6 +233,7 @@ const toScrapeResultRecord = (row: ScrapeResultRow): ScrapeResultRecord => ({
   nfoRelativePath: row.nfoRelativePath,
   outputRelativePath: row.outputRelativePath,
   manualUrl: row.manualUrl,
+  uncensoredAmbiguous: row.uncensoredAmbiguous,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -444,6 +447,7 @@ export class LibraryRepository {
         nfoRelativePath: input.nfoRelativePath ?? null,
         outputRelativePath: input.outputRelativePath ?? null,
         manualUrl: input.manualUrl ?? null,
+        uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
         createdAt,
         updatedAt,
       })
@@ -456,6 +460,7 @@ export class LibraryRepository {
           nfoRelativePath: input.nfoRelativePath ?? null,
           outputRelativePath: input.outputRelativePath ?? null,
           manualUrl: input.manualUrl ?? null,
+          uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
           updatedAt,
         },
       })

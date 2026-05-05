@@ -1,34 +1,33 @@
+import {
+  activateNewScrapeTask,
+  applyScrapeTaskStatus,
+  MaintenanceWorkbenchAdapter,
+  ScrapeWorkbenchAdapter,
+  startMaintenanceFlow,
+  useWorkbenchSessionSnapshot,
+} from "@mdcz/shared/adapters";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
+import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
+import {
+  buildAmbiguousUncensoredScrapeGroups,
+  buildUncensoredConfirmItemsForScrapeGroups,
+  summarizeUncensoredConfirmResultForScrapeGroups,
+} from "@mdcz/shared/viewModels/scrapeResultGrouping";
+import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
+import { createDesktopWorkbenchPorts } from "@/adapters/ports";
 import { pauseScrape, resumeScrape, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
-import { UncensoredConfirmDialog } from "@/components/UncensoredConfirmDialog";
 import WorkbenchSetup from "@/components/workbench/WorkbenchSetup";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
-import { countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
-import { buildAmbiguousUncensoredScrapeGroups } from "@/lib/scrapeResultGrouping";
-import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
-import {
-  applyMaintenancePreviewResult,
-  applyMaintenanceScanResult,
-  beginMaintenancePreviewRequest,
-  cancelMaintenancePreviewFlow,
-  changeMaintenancePreset,
-  setMaintenancePreviewPending,
-} from "@/store/maintenanceSession";
-import { useScrapeStore } from "@/store/scrapeStore";
-import { useUIStore } from "@/store/uiStore";
-
-const ScrapeWorkbench = lazy(() => import("@/components/maintenance/ScrapeWorkbench"));
-const MaintenanceWorkbench = lazy(() => import("@/components/maintenance/MaintenanceWorkbench"));
 
 export const Route = createFileRoute("/workbench")({
   validateSearch: (search): { intent?: "maintenance" } => ({
@@ -41,45 +40,49 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const queryClient = useQueryClient();
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
   const configQ = useCurrentConfig();
+  const workbenchPorts = useMemo(() => createDesktopWorkbenchPorts(), []);
 
-  const { isScraping, scrapeStatus, results, setScraping, setScrapeStatus, updateProgress, clearResults } =
-    useScrapeStore(
-      useShallow((state) => ({
-        isScraping: state.isScraping,
-        scrapeStatus: state.scrapeStatus,
-        results: state.results,
-        setScraping: state.setScraping,
-        setScrapeStatus: state.setScrapeStatus,
-        updateProgress: state.updateProgress,
-        clearResults: state.clearResults,
-      })),
-    );
+  const { isScraping, scrapeStatus, results } = useScrapeStore(
+    useShallow((state) => ({
+      isScraping: state.isScraping,
+      scrapeStatus: state.scrapeStatus,
+      results: state.results,
+    })),
+  );
   const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
-  const maintenanceEntries = useMaintenanceEntryStore((state) => state.entries);
-  const maintenancePreviewResults = useMaintenancePreviewStore((state) => state.previewResults);
-  const maintenanceItemResults = useMaintenanceExecutionStore((state) => state.itemResults);
-  const { workbenchMode, setWorkbenchMode, setSelectedResultId } = useUIStore(
+  const { workbenchMode, setWorkbenchMode } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,
       setWorkbenchMode: state.setWorkbenchMode,
-      setSelectedResultId: state.setSelectedResultId,
     })),
   );
 
   const maintenanceBusy = maintenanceStatus !== "idle";
   const ambiguousItems = useMemo(() => buildAmbiguousUncensoredScrapeGroups(results), [results]);
+  const ambiguousDialogItems = useMemo(
+    () =>
+      ambiguousItems.map((group) => ({
+        id: group.id,
+        ref: {
+          rootId: "",
+          relativePath: group.display.fileInfo.filePath,
+        },
+        fileId: group.display.fileId,
+        fileName: group.display.fileInfo.fileName,
+        number: group.display.fileInfo.number,
+        title: group.display.crawlerData?.title_zh ?? group.display.crawlerData?.title ?? null,
+        nfoRelativePath: group.display.nfoPath ?? null,
+      })),
+    [ambiguousItems],
+  );
   const failedPaths = useMemo(
     () => results.filter((result) => result.status === "failed").map((result) => result.fileInfo.filePath),
     [results],
   );
-  const mediaPath = configQ.data?.paths?.mediaPath?.trim() ?? "";
-  const scrapeHasWork = isScraping || scrapeStatus !== "idle" || results.length > 0;
-  const maintenanceHasWork =
-    maintenanceStatus !== "idle" ||
-    maintenanceEntries.length > 0 ||
-    Object.keys(maintenancePreviewResults).length > 0 ||
-    Object.keys(maintenanceItemResults).length > 0;
-  const showSetup = workbenchMode === "maintenance" ? !maintenanceHasWork : !scrapeHasWork;
+  const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, routeIntent);
+  const scrapeHasWork = sessionSnapshot.scrapeHasWork;
+  const maintenanceHasWork = sessionSnapshot.maintenanceHasWork;
+  const showSetup = sessionSnapshot.showSetup;
 
   // Detect scrape completion and check for ambiguous uncensored items
   const prevScrapeStatusRef = useRef(scrapeStatus);
@@ -114,35 +117,17 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
   };
 
-  const persistWorkbenchPaths = async (scanDir: string, targetDir: string) => {
-    const currentPaths = configQ.data?.paths;
-    if (!currentPaths) {
-      throw new Error("配置尚未加载完成");
-    }
-
-    await ipc.config.save({
-      paths: {
-        ...currentPaths,
-        mediaPath: scanDir,
-        successOutputFolder: targetDir || currentPaths.successOutputFolder,
-      },
-    });
-  };
-
   const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
+    void scanDir;
+    void targetDir;
     if (maintenanceBusy) {
       toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
       return;
     }
 
     try {
-      await persistWorkbenchPaths(scanDir, targetDir);
-      updateProgress(0, 0);
-      clearResults();
-      setSelectedResultId(null);
+      activateNewScrapeTask();
       const response = await startSelectedScrape(filePaths);
-      setScraping(true);
-      setScrapeStatus("running");
       await refreshCurrentConfig();
       toast.success(response.data.message);
     } catch (error) {
@@ -164,7 +149,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleStartSelectedMaintenance = async (
     filePaths: string[],
     scanDir: string,
-    targetDir: string,
+    _targetDir: string,
     presetId: MaintenancePresetId,
   ) => {
     if (isScraping) {
@@ -172,54 +157,24 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       return;
     }
 
-    const executionStore = useMaintenanceExecutionStore.getState();
-
-    try {
-      setWorkbenchMode("maintenance");
-      changeMaintenancePreset(presetId);
-      await persistWorkbenchPaths(scanDir, targetDir);
-      executionStore.setExecutionStatus("scanning");
-
-      const scan = await ipc.maintenance.scanFiles(filePaths);
-      applyMaintenanceScanResult(scan.entries, scanDir);
-
-      if (scan.entries.length === 0) {
-        toast.info("未发现可维护项目");
-        await refreshCurrentConfig();
-        return;
-      }
-
-      if (presetId === "read_local") {
-        toast.success(`本地读取完成，共 ${countMaintenanceDisplayItems(scan.entries)} 项`);
-        await refreshCurrentConfig();
-        return;
-      }
-
-      executionStore.setExecutionStatus("previewing");
-      beginMaintenancePreviewRequest();
-      executionStore.setProgress(0, 0, scan.entries.length);
-      const preview = await ipc.maintenance.preview(scan.entries, presetId);
-      applyMaintenancePreviewResult(preview);
-      executionStore.setExecutionStatus("idle");
-      await refreshCurrentConfig();
-      toast.success("维护预览已生成");
-    } catch (error) {
-      if (toErrorMessage(error) === "Operation aborted") {
-        cancelMaintenancePreviewFlow();
-        return;
-      }
-
-      setMaintenancePreviewPending(false);
-      executionStore.setExecutionStatus("idle");
-      toast.error(`启动失败: ${toErrorMessage(error)}`);
-    }
+    await startMaintenanceFlow({
+      filePaths,
+      scanDir,
+      presetId,
+      port: workbenchPorts.maintenance,
+      isScraping,
+      setWorkbenchMode,
+      onRefreshConfig: refreshCurrentConfig,
+      toast,
+      toErrorMessage,
+    });
   };
 
   const handleStopScrape = async () => {
     if (!window.confirm("确定要停止刮削吗？")) return;
     try {
       await stopScrape();
-      setScrapeStatus("stopping");
+      applyScrapeTaskStatus("stopping");
       toast.info("正在停止...");
     } catch (_error) {
       toast.error("停止失败");
@@ -229,7 +184,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handlePauseScrape = async () => {
     try {
       await pauseScrape();
-      setScrapeStatus("paused");
+      applyScrapeTaskStatus("paused");
       toast.info("任务已暂停");
     } catch (_error) {
       toast.error("暂停失败");
@@ -239,7 +194,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleResumeScrape = async () => {
     try {
       await resumeScrape();
-      setScrapeStatus("running");
+      applyScrapeTaskStatus("running");
       toast.success("任务已恢复");
     } catch (_error) {
       toast.error("恢复失败");
@@ -247,11 +202,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   };
 
   const resetForNewTask = () => {
-    clearResults();
-    updateProgress(0, 0);
-    setScraping(true);
-    setScrapeStatus("running");
-    setSelectedResultId(null);
+    activateNewScrapeTask();
   };
 
   const handleRetryFailed = async () => {
@@ -277,6 +228,36 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
   };
 
+  const handleConfirmUncensored = async (selections: UncensoredConfirmSelection[]) => {
+    const choicesByGroupId = Object.fromEntries(selections.map((selection) => [selection.id, selection.choice]));
+    const confirmItems = buildUncensoredConfirmItemsForScrapeGroups(ambiguousItems, choicesByGroupId);
+
+    if (confirmItems.length === 0) {
+      toast.info("没有可提交的条目");
+      return;
+    }
+
+    const result = await ipc.scraper.confirmUncensored(confirmItems);
+    const { successCount, failedCount } = summarizeUncensoredConfirmResultForScrapeGroups(ambiguousItems, result.items);
+
+    if (result.updatedCount > 0) {
+      useScrapeStore.getState().resolveUncensoredResults(result.items);
+    }
+
+    if (failedCount === 0) {
+      toast.success(`已更新 ${successCount} 个条目的无码类型`);
+      return;
+    }
+
+    if (successCount > 0) {
+      toast.warning(`成功 ${successCount} 条，失败 ${failedCount} 条`);
+      throw new Error(`成功 ${successCount} 条，失败 ${failedCount} 条`);
+    }
+
+    toast.error(`成功 0 条，失败 ${failedCount} 条`);
+    throw new Error(`成功 0 条，失败 ${failedCount} 条`);
+  };
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 min-h-0">
@@ -294,7 +275,8 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
               onStartMaintenance={handleStartSelectedMaintenance}
             />
           ) : workbenchMode === "scrape" ? (
-            <ScrapeWorkbench
+            <ScrapeWorkbenchAdapter
+              ports={workbenchPorts}
               onPauseScrape={handlePauseScrape}
               onResumeScrape={handleResumeScrape}
               onStopScrape={handleStopScrape}
@@ -302,15 +284,16 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
               failedCount={failedPaths.length}
             />
           ) : (
-            <MaintenanceWorkbench mediaPath={mediaPath} />
+            <MaintenanceWorkbenchAdapter ports={workbenchPorts} />
           )}
         </Suspense>
       </div>
 
       <UncensoredConfirmDialog
-        open={uncensoredDialogOpen && ambiguousItems.length > 0}
+        open={uncensoredDialogOpen && ambiguousDialogItems.length > 0}
         onOpenChange={setUncensoredDialogOpen}
-        items={ambiguousItems}
+        items={ambiguousDialogItems}
+        onConfirm={handleConfirmUncensored}
       />
     </div>
   );

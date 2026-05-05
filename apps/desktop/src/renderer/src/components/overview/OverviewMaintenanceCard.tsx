@@ -4,5 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 export function OverviewMaintenanceCard() {
   const navigate = useNavigate();
 
-  return <SharedOverviewMaintenanceCard onOpen={() => navigate({ to: "/workbench/maintenance" })} />;
+  return (
+    <SharedOverviewMaintenanceCard onOpen={() => navigate({ to: "/workbench", search: { intent: "maintenance" } })} />
+  );
 }

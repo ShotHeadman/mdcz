@@ -19,7 +19,6 @@ import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as SetupRouteImport } from "./routes/setup";
 import { Route as ToolsRouteImport } from "./routes/tools";
 import { Route as WorkbenchRouteImport } from "./routes/workbench";
-import { Route as WorkbenchMaintenanceRouteImport } from "./routes/workbench.maintenance";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -86,12 +85,6 @@ const WorkbenchRoute = WorkbenchRouteImport.update({
   path: "/workbench",
   getParentRoute: () => rootRouteImport,
 } as any);
-const WorkbenchMaintenanceRoute = WorkbenchMaintenanceRouteImport.update({
-  id: "/workbench/maintenance",
-  path: "/workbench/maintenance",
-  getParentRoute: () => rootRouteImport,
-} as any);
-
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AboutRoute: typeof AboutRoute;
@@ -106,7 +99,6 @@ export interface RootRouteChildren {
   SetupRoute: typeof SetupRoute;
   ToolsRoute: typeof ToolsRoute;
   WorkbenchRoute: typeof WorkbenchRoute;
-  WorkbenchMaintenanceRoute: typeof WorkbenchMaintenanceRoute;
 }
 
 export interface FileRoutesByFullPath {
@@ -123,7 +115,6 @@ export interface FileRoutesByFullPath {
   "/setup": typeof SetupRoute;
   "/tools": typeof ToolsRoute;
   "/workbench": typeof WorkbenchRoute;
-  "/workbench/maintenance": typeof WorkbenchMaintenanceRoute;
 }
 
 export interface FileRoutesByTo {
@@ -140,7 +131,6 @@ export interface FileRoutesByTo {
   "/setup": typeof SetupRoute;
   "/tools": typeof ToolsRoute;
   "/workbench": typeof WorkbenchRoute;
-  "/workbench/maintenance": typeof WorkbenchMaintenanceRoute;
 }
 
 export interface FileRoutesById {
@@ -158,7 +148,6 @@ export interface FileRoutesById {
   "/setup": typeof SetupRoute;
   "/tools": typeof ToolsRoute;
   "/workbench": typeof WorkbenchRoute;
-  "/workbench/maintenance": typeof WorkbenchMaintenanceRoute;
 }
 
 export interface FileRouteTypes {
@@ -176,8 +165,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/setup"
     | "/tools"
-    | "/workbench"
-    | "/workbench/maintenance";
+    | "/workbench";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -192,8 +180,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/setup"
     | "/tools"
-    | "/workbench"
-    | "/workbench/maintenance";
+    | "/workbench";
   id:
     | "__root__"
     | "/"
@@ -208,8 +195,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/setup"
     | "/tools"
-    | "/workbench"
-    | "/workbench/maintenance";
+    | "/workbench";
   fileRoutesById: FileRoutesById;
 }
 
@@ -306,13 +292,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof WorkbenchRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/workbench/maintenance": {
-      id: "/workbench/maintenance";
-      path: "/workbench/maintenance";
-      fullPath: "/workbench/maintenance";
-      preLoaderRoute: typeof WorkbenchMaintenanceRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
   }
 }
 
@@ -330,7 +309,6 @@ const rootRouteChildren: RootRouteChildren = {
   SetupRoute,
   ToolsRoute,
   WorkbenchRoute,
-  WorkbenchMaintenanceRoute,
 };
 
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>();

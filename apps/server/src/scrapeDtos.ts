@@ -19,6 +19,7 @@ export const toScrapeResultDto = (
   nfoRelativePath: record.nfoRelativePath,
   outputRelativePath: record.outputRelativePath,
   manualUrl: record.manualUrl,
+  uncensoredAmbiguous: record.uncensoredAmbiguous,
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),
 });

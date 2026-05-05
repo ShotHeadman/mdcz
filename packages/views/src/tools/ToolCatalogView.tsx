@@ -23,12 +23,12 @@ export const ToolCatalogView = ({ tools, onSelect, renderIcon }: ToolCatalogView
         onClick={() => onSelect(tool.id)}
       >
         <div className="flex items-start justify-between gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-quiet-capsule bg-surface-floating text-foreground shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-floating text-foreground shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
             {renderIcon(tool)}
           </div>
         </div>
         <div className="mt-auto pt-12">
-          <h2 className="text-3xl font-semibold tracking-tight text-foreground">{tool.title}</h2>
+          <h2 className="text-[1.8rem] font-semibold tracking-tight text-foreground">{tool.title}</h2>
           <p className="mt-4 max-w-[26rem] text-sm leading-8 text-muted-foreground">{tool.description}</p>
         </div>
       </button>

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
+import type { MediaCandidate } from "./types";
 
 export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
 export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
@@ -94,6 +95,38 @@ export const rootBrowserResponseSchema = z.object({
 
 export type RootBrowserResponse = z.infer<typeof rootBrowserResponseSchema>;
 
+export const serverPathIntentSchema = z.enum(["settings", "workbench-scan", "workbench-output", "media-root"]);
+
+export type ServerPathIntentDto = z.infer<typeof serverPathIntentSchema>;
+
+export const serverPathSuggestInputSchema = z.object({
+  path: z.string().optional().default(""),
+  kind: z.literal("directory").optional().default("directory"),
+  intent: serverPathIntentSchema.optional(),
+});
+
+export type ServerPathSuggestInput = z.input<typeof serverPathSuggestInputSchema>;
+
+export const serverPathSuggestionEntrySchema = z.object({
+  type: z.literal("directory"),
+  name: z.string(),
+  label: z.string(),
+  path: z.string(),
+});
+
+export type ServerPathSuggestionEntryDto = z.infer<typeof serverPathSuggestionEntrySchema>;
+
+export const serverPathSuggestResponseSchema = z.object({
+  path: z.string(),
+  parentPath: z.string(),
+  exists: z.boolean(),
+  accessible: z.boolean(),
+  entries: z.array(serverPathSuggestionEntrySchema),
+  error: z.string().optional(),
+});
+
+export type ServerPathSuggestResponse = z.infer<typeof serverPathSuggestResponseSchema>;
+
 export const taskKindSchema = z.enum(["scan", "scrape", "maintenance"]);
 export type TaskKind = z.infer<typeof taskKindSchema>;
 
@@ -185,12 +218,36 @@ export const scanStartInputSchema = z.object({
 
 export type ScanStartInput = z.infer<typeof scanStartInputSchema>;
 
+export const scanCandidatesInputSchema = z.object({
+  scanDir: z.string().trim().min(1),
+  excludeDirs: z.array(z.string().trim().min(1)).optional().default([]),
+  supportedExtensions: z.array(z.string().trim().min(1)).optional(),
+});
+
+export type ScanCandidatesInput = z.infer<typeof scanCandidatesInputSchema>;
+
+export interface ScanCandidatesResponse {
+  candidates: MediaCandidate[];
+}
+
 export const scrapeFileRefSchema = z.object({
   rootId: z.string().trim().min(1),
   relativePath: z.string().trim().min(1),
 });
 
 export type ScrapeFileRefDto = z.infer<typeof scrapeFileRefSchema>;
+
+export const ambiguousUncensoredItemSchema = z.object({
+  id: z.string(),
+  ref: scrapeFileRefSchema,
+  fileId: z.string(),
+  fileName: z.string(),
+  number: z.string(),
+  title: z.string().nullable(),
+  nfoRelativePath: z.string().nullable(),
+});
+
+export type AmbiguousUncensoredItemDto = z.infer<typeof ambiguousUncensoredItemSchema>;
 
 export const scrapeStartInputSchema = z.object({
   outputRootId: z.string().trim().min(1).optional(),
@@ -202,11 +259,37 @@ export const scrapeStartInputSchema = z.object({
 
 export type ScrapeStartInput = z.infer<typeof scrapeStartInputSchema>;
 
+export const scrapeStartSelectedFilesInputSchema = z.object({
+  filePaths: z.array(z.string().trim().min(1)).min(1),
+  scanDir: z.string().trim().min(1).optional(),
+  targetDir: z.string().trim().min(1).optional(),
+  manualUrl: z.string().trim().min(1).optional(),
+  uncensoredConfirmed: z.boolean().optional(),
+});
+
+export type ScrapeStartSelectedFilesInput = z.infer<typeof scrapeStartSelectedFilesInputSchema>;
+
 export const scrapeTaskControlInputSchema = z.object({
   taskId: z.string().trim().min(1),
 });
 
 export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema>;
+
+export const scrapeConfirmUncensoredInputSchema = z.object({
+  taskId: z.string().trim().min(1),
+  refs: z.array(scrapeFileRefSchema).min(1).optional(),
+  items: z
+    .array(
+      z.object({
+        ref: scrapeFileRefSchema,
+        choice: z.enum(["umr", "leak", "uncensored"]),
+      }),
+    )
+    .min(1)
+    .optional(),
+});
+
+export type ScrapeConfirmUncensoredInput = z.infer<typeof scrapeConfirmUncensoredInputSchema>;
 
 export const scrapeRecoverableSessionResponseSchema = z.object({
   recoverable: z.boolean(),
@@ -288,6 +371,7 @@ export const scrapeResultSchema = z.object({
   nfoRelativePath: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
   manualUrl: z.string().nullable(),
+  uncensoredAmbiguous: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -385,6 +469,17 @@ export const maintenanceStartInputSchema = z.object({
 });
 
 export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
+
+export const maintenanceScanSelectedFilesInputSchema = z.object({
+  filePaths: z.array(z.string().trim().min(1)).min(1),
+  scanDir: z.string().trim().min(1),
+});
+
+export type MaintenanceScanSelectedFilesInput = z.infer<typeof maintenanceScanSelectedFilesInputSchema>;
+
+export interface MaintenanceScanSelectedFilesResponse {
+  entries: import("./types").LocalScanEntry[];
+}
 
 export const maintenanceTaskInputSchema = z.object({
   taskId: z.string().trim().min(1),
@@ -573,7 +668,11 @@ export type OverviewSummaryResponse = z.infer<typeof overviewSummaryResponseSche
 
 export const webTaskUpdateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("task"), task: scanTaskSchema }),
-  z.object({ kind: z.literal("event"), event: taskEventSchema }),
+  z.object({
+    kind: z.literal("event"),
+    event: taskEventSchema,
+    ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema).optional(),
+  }),
   z.object({ kind: z.literal("snapshot"), tasks: z.array(scanTaskSchema) }),
 ]);
 

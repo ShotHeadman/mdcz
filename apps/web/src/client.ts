@@ -35,7 +35,7 @@ const request = async <T>(procedure: ServerApiProcedure, input?: unknown): Promi
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: input === undefined ? undefined : JSON.stringify(input),
+    body: JSON.stringify(input ?? null),
   });
   const payload = (await response.json().catch(() => ({}))) as { result?: { data?: T }; error?: { message?: string } };
   if (!response.ok) {
@@ -62,13 +62,16 @@ export const api: ServerApiContract = {
   browser: {
     list: (input) => request("browser.list", input),
   },
+  serverPaths: {
+    suggest: (input) => request("serverPaths.suggest", input),
+  },
   config: {
     defaults: () => request("config.defaults"),
     export: () => request("config.export"),
     import: (input) => request("config.import", input),
-    read: () => request("config.read"),
+    read: () => request("config.read", {}),
     previewNaming: (input) => request("config.previewNaming", input),
-    reset: (input) => request("config.reset", input),
+    reset: (input) => request("config.reset", input ?? {}),
     update: (input) => request("config.update", input),
     save: (input) => request("config.save", input),
     profiles: {
@@ -94,6 +97,7 @@ export const api: ServerApiContract = {
     clearRuntime: () => request("logs.clearRuntime"),
   },
   maintenance: {
+    scanSelectedFiles: (input) => request("maintenance.scanSelectedFiles", input),
     apply: (input) => request("maintenance.execute", input),
     pause: (input) => request("maintenance.pause", input),
     preview: (input) => request("maintenance.preview", input),
@@ -130,6 +134,7 @@ export const api: ServerApiContract = {
     execute: (input) => request("tools.execute", input),
   },
   scans: {
+    candidates: (input) => request("scans.candidates", input),
     detail: (input) => request("scans.detail", input),
     events: (input) => request("scans.events", input),
     list: () => request("scans.list"),
@@ -137,6 +142,7 @@ export const api: ServerApiContract = {
     start: (input) => request("scans.start", input),
   },
   scrape: {
+    startSelectedFiles: (input) => request("scrape.startSelectedFiles", input),
     deleteFile: (input) => request("scrape.deleteFile", input),
     listResults: (input) => request("scrape.listResults", input),
     getRecoverableSession: () => request("scrape.getRecoverableSession"),
@@ -146,6 +152,7 @@ export const api: ServerApiContract = {
     result: (input) => request("scrape.result", input),
     resume: (input) => request("scrape.resume", input),
     retry: (input) => request("scrape.retry", input),
+    confirmUncensored: (input) => request("scrape.confirmUncensored", input),
     resolveRecoverableSession: (input) => request("scrape.resolveRecoverableSession", input),
     start: (input) => request("scrape.start", input),
     stop: (input) => request("scrape.stop", input),

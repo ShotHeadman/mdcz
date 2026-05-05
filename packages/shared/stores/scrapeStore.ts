@@ -2,7 +2,7 @@ import type { ScrapeResult as SharedScrapeResult, UncensoredConfirmResultItem } 
 import type { StateCreator } from "zustand";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
+import { deriveGroupingDirectoryFromPath } from "../viewModels/multipartDisplay";
 
 export type ScrapeResult = SharedScrapeResult;
 
@@ -26,7 +26,7 @@ interface ScrapeState {
 }
 
 // 开发环境下启用 HMR 状态持久化
-const isDev = import.meta.env.DEV;
+const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 const noopStorage = {
   getItem: () => null,
   setItem: () => undefined,

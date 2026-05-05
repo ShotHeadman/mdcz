@@ -1,5 +1,6 @@
 import { Website } from "@mdcz/shared/enums";
-import { OrderedSiteFieldEditor, parseBufferedNumberValue } from "@mdcz/views/config-form";
+import { OrderedSiteFieldEditor, parseBufferedNumberValue, ServerPathField } from "@mdcz/views/config-form";
+import { dedupePathAutocompleteSuggestions } from "@mdcz/views/path";
 import {
   AdvancedSettingsFooterContent,
   AssetDownloadsSection,
@@ -51,6 +52,10 @@ const testSettingsServices = {
   saveConfig: vi.fn(async () => undefined),
   testLlm: vi.fn(async () => ({ success: true, message: "" })),
 } satisfies SettingsServices;
+const createTestSettingsServices = (overrides: Partial<SettingsServices> = {}): SettingsServices => ({
+  ...testSettingsServices,
+  ...overrides,
+});
 const testSettingsNotifier = {
   error: vi.fn(),
   info: vi.fn(),
@@ -61,13 +66,21 @@ function entry(key: string) {
   return FIELD_REGISTRY.find((candidate) => candidate.key === key);
 }
 
-function FormHarness({ children, values = {} }: { children?: ReactNode; values?: Record<string, unknown> }) {
+function FormHarness({
+  children,
+  services = testSettingsServices,
+  values = {},
+}: {
+  children?: ReactNode;
+  services?: SettingsServices;
+  values?: Record<string, unknown>;
+}) {
   const form = useForm<FieldValues>({ defaultValues: values });
   const flatValues = flattenConfig(values);
 
   return createElement(
     SettingsServicesProvider,
-    { notifier: testSettingsNotifier, services: testSettingsServices },
+    { notifier: testSettingsNotifier, services },
     createElement(
       FormProvider,
       form as ComponentProps<typeof FormProvider>,
@@ -538,6 +551,20 @@ describe("settings editor save and content helpers", () => {
 });
 
 describe("settings editor render contracts", () => {
+  it("deduplicates path autocomplete suggestions by normalized host path", () => {
+    expect(
+      dedupePathAutocompleteSuggestions([
+        { label: "Drive G", path: "G:/" },
+        { label: "Drive G duplicate", path: "G:\\" },
+        { label: "Movies", path: "G:/Movies/" },
+        { label: "Movies duplicate", path: "g:/Movies" },
+      ]),
+    ).toEqual([
+      { label: "Drive G", path: "G:/" },
+      { label: "Movies", path: "G:/Movies/" },
+    ]);
+  });
+
   it("keeps OrderedSiteFieldEditor simple mode stable while rendering grouped row details", () => {
     const simpleHtml = renderToStaticMarkup(
       createElement(
@@ -668,6 +695,36 @@ describe("settings editor render contracts", () => {
 
     expect(filteredHtml).not.toContain("显示高级设置");
     expect(browseHtml).toContain("显示高级设置");
+  });
+
+  it("hides unsupported path browse buttons while keeping server path suggestions", () => {
+    const services = createTestSettingsServices({
+      getPathSuggestions: () => [
+        { label: "Movies", path: "E:/Movies" },
+        { label: "Output", path: "E:/Output" },
+      ],
+      supportsPathBrowse: false,
+    });
+    const html = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        { services, values: { paths: { mediaPath: "" } } },
+        createElement(ServerPathField, {
+          field: {
+            name: "paths.mediaPath",
+            onBlur: noop,
+            onChange: noop,
+            ref: noop,
+            value: "",
+          },
+        }),
+      ),
+    );
+
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<datalist");
+    expect(html).toContain('aria-autocomplete="list"');
+    expect(html).toContain("运行 MDCz 服务的主机路径");
   });
 
   it("renders the PRD split sections and keeps advanced-only content out of public rows", () => {

@@ -187,6 +187,45 @@ const createFakeAggregation = (imageUrl: string, actorPhotoPath?: string): Mount
   },
 });
 
+const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScrapeAggregationService => ({
+  async aggregate(number: string): Promise<AggregationResult> {
+    return {
+      data: {
+        title: `Runtime UC Title ${number}`,
+        title_zh: `运行时无码标题 ${number}`,
+        number,
+        actors: ["Actor A"],
+        genres: ["无码"],
+        studio: "Runtime Studio",
+        plot: "Runtime plot",
+        release_date: "2024-01-15",
+        thumb_url: imageUrl,
+        poster_url: imageUrl,
+        fanart_url: imageUrl,
+        scene_images: [],
+        website: Website.JAVDB,
+      },
+      sources: {
+        title: Website.JAVDB,
+      },
+      imageAlternatives: {
+        thumb_url: [],
+        poster_url: [],
+        scene_images: [],
+        scene_image_sources: [],
+      },
+      stats: {
+        totalSites: 1,
+        successCount: 1,
+        failedCount: 0,
+        skippedCount: 0,
+        siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
+        totalElapsedMs: 1,
+      },
+    };
+  },
+});
+
 const createAbortAwareAggregation = (): {
   aggregation: MountedRootScrapeAggregationService;
   aborted: Promise<void>;
@@ -607,6 +646,47 @@ describe("buildServer", () => {
     expect(response.json().error.message).toContain("escapes media root");
   });
 
+  it("suggests server host directories through tRPC without returning files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-server-path-api-"));
+    await mkdir(join(root, "Alpha"));
+    await mkdir(join(root, "Beta"));
+    await writeFile(join(root, "Alpha.txt"), "not a directory");
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+
+    const typedResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/serverPaths.suggest",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { path: join(root, "Al"), intent: "settings" },
+    });
+    const rootResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/serverPaths.suggest",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { path: "", intent: "media-root" },
+    });
+
+    expect(typedResponse.statusCode).toBe(200);
+    expect(typedResponse.json().result.data.entries).toEqual([
+      expect.objectContaining({ name: "Alpha", type: "directory" }),
+    ]);
+    expect(rootResponse.json().result.data.entries.map((entry: { path: string }) => entry.path)).toContain(
+      process.platform === "win32" ? root.replaceAll("\\", "/") : root,
+    );
+  });
+
   it("scans mounted media roots and serves persisted task details", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-scan-root-"));
     await mkdir(join(root, "nested"));
@@ -723,6 +803,70 @@ describe("buildServer", () => {
       payload: { query: "movie", limit: 20 },
     });
     expect(retriedLibraryResponse.json().result.data.total).toBe(0);
+  });
+
+  it("lists ad-hoc scan candidates and filters non-media or excluded files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-candidates-root-"));
+    const outputDir = join(root, "JAV_output");
+    await mkdir(join(root, "nested"), { recursive: true });
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(join(root, "nested", "movie.mp4"), "video");
+    await writeFile(join(root, "nested", "notes.txt"), "text");
+    await writeFile(join(outputDir, "done.mp4"), "video");
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createRootResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createRootResponse.json().result.data.id;
+
+    const response = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(
+        JSON.stringify({ scanDir: root, excludeDirs: [outputDir], supportedExtensions: ["mp4"] }),
+      )}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data.candidates).toEqual([
+      expect.objectContaining({
+        name: "movie.mp4",
+        relativePath: "nested/movie.mp4",
+        rootId,
+        rootRelativePath: "nested/movie.mp4",
+        relativeDirectory: "nested",
+        extension: "mp4",
+      }),
+    ]);
+  });
+
+  it("returns no ad-hoc scan candidates for empty directories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-empty-candidates-root-"));
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+
+    const response = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ scanDir: root }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data.candidates).toEqual([]);
   });
 
   it("protects automation REST endpoints and returns durable webhook payloads", async () => {
@@ -981,6 +1125,360 @@ describe("buildServer", () => {
       available: true,
     });
     await imageServer.close();
+  });
+
+  it("starts scrape tasks from selected host files inside scan and media roots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-selected-scrape-root-"));
+    const selectedPath = join(root, "ABC-128.mp4");
+    await writeFile(selectedPath, "video");
+    const imageServer = await startImageServer();
+    const { fastify } = await createTestServer({ scrapeAggregation: createFakeAggregation(imageServer.url) });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.startSelectedFiles",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+    });
+
+    expect(startResponse.statusCode).toBe(200);
+    expect(startResponse.json().result.data).toMatchObject({
+      kind: "scrape",
+      rootId,
+      status: expect.stringMatching(/queued|running|completed/),
+    });
+
+    const resultsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(
+        JSON.stringify({ taskId: startResponse.json().result.data.id }),
+      )}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(resultsResponse.json().result.data.results[0]).toMatchObject({
+      rootId,
+      relativePath: "ABC-128.mp4",
+    });
+    await imageServer.close();
+  });
+
+  it("emits ambiguous uncensored items on scrape completion and restarts confirmed refs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-ambiguous-uncensored-root-"));
+    await writeFile(join(root, "ABP-999-U.mp4"), "video");
+    const imageServer = await startImageServer();
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createAmbiguousUncensoredAggregation(imageServer.url),
+    });
+    const completedEvents: unknown[] = [];
+    services.taskEvents.subscribe((event) => {
+      if (event.data.kind === "event" && event.data.event.type === "completed") {
+        completedEvents.push(event.data);
+      }
+    });
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { refs: [{ rootId, relativePath: "ABP-999-U.mp4" }] },
+    });
+    const taskId = startResponse.json().result.data.id;
+
+    await expect
+      .poll(async () => {
+        const detailResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return detailResponse.json().result.data.task.status;
+      })
+      .toBe("completed");
+
+    const firstCompletedEvent = completedEvents.at(-1) as {
+      ambiguousUncensoredItems?: Array<{
+        nfoRelativePath: string | null;
+        number: string;
+        ref: { rootId: string; relativePath: string };
+      }>;
+    };
+    expect(firstCompletedEvent.ambiguousUncensoredItems).toEqual([
+      expect.objectContaining({
+        ref: { rootId, relativePath: "ABP-999-U.mp4" },
+        number: "ABP-999",
+        nfoRelativePath: expect.stringContaining("ABP-999.nfo"),
+      }),
+    ]);
+
+    const confirmResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.confirmUncensored",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        taskId,
+        items: [{ ref: { rootId, relativePath: "ABP-999-U.mp4" }, choice: "leak" }],
+      },
+    });
+
+    expect(confirmResponse.statusCode).toBe(200);
+    expect(confirmResponse.json().result.data).toMatchObject({
+      kind: "scrape",
+      rootId,
+      status: expect.stringMatching(/queued|running|completed/),
+    });
+    expect(confirmResponse.json().result.data.id).not.toBe(taskId);
+    const confirmedTaskId = confirmResponse.json().result.data.id;
+
+    await expect
+      .poll(async () => {
+        const resultsResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId: confirmedTaskId }))}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return resultsResponse.json().result.data.results[0]?.uncensoredAmbiguous;
+      })
+      .toBe(false);
+    await imageServer.close();
+  });
+
+  it("accepts each uncensored confirmation choice", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-uncensored-choice-root-"));
+    const { fastify, services } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+    const state = await services.persistence.getState();
+    const task = await state.repositories.tasks.createTask({ kind: "scrape", rootId });
+    for (const relativePath of ["UMR-001.mp4", "LEAK-001.mp4", "UNC-001.mp4"]) {
+      await state.repositories.library.upsertScrapeResult({
+        taskId: task.id,
+        rootId,
+        relativePath,
+        status: "success",
+        uncensoredAmbiguous: true,
+      });
+    }
+
+    const confirmResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.confirmUncensored",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        taskId: task.id,
+        items: [
+          { ref: { rootId, relativePath: "UMR-001.mp4" }, choice: "umr" },
+          { ref: { rootId, relativePath: "LEAK-001.mp4" }, choice: "leak" },
+          { ref: { rootId, relativePath: "UNC-001.mp4" }, choice: "uncensored" },
+        ],
+      },
+    });
+
+    expect(confirmResponse.statusCode).toBe(200);
+    const queuedResults = await state.repositories.library.listScrapeResults(confirmResponse.json().result.data.id);
+    expect(queuedResults.map((result) => result.relativePath).sort()).toEqual([
+      "LEAK-001.mp4",
+      "UMR-001.mp4",
+      "UNC-001.mp4",
+    ]);
+  });
+
+  it("scans selected maintenance files through runtime semantics", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-maintenance-selected-root-"));
+    await writeFile(join(root, "ABC-225.mp4"), "video");
+    await writeFile(
+      join(root, "ABC-225.nfo"),
+      new NfoGenerator().buildXml({
+        title: "Local Title ABC-225",
+        number: "ABC-225",
+        actors: ["Actor M"],
+        genres: ["Drama"],
+        scene_images: [],
+        website: Website.JAVDB,
+      }),
+    );
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+
+    const scanResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/maintenance.scanSelectedFiles?input=${encodeURIComponent(
+        JSON.stringify({ filePaths: [join(root, "ABC-225.mp4")], scanDir: root }),
+      )}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(scanResponse.statusCode).toBe(200);
+    expect(scanResponse.json().result.data.entries[0]).toMatchObject({
+      fileId: `${rootId}:ABC-225.mp4`,
+      rootRef: { rootId, relativePath: "ABC-225.mp4" },
+      crawlerData: { number: "ABC-225", title: "Local Title ABC-225" },
+    });
+  });
+
+  it("rejects uncensored confirmation refs outside the task", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-uncensored-invalid-root-"));
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+    const rootId = createResponse.json().result.data.id;
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { refs: [{ rootId, relativePath: "ABC-001.mp4" }] },
+    });
+
+    const confirmResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.confirmUncensored",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId: startResponse.json().result.data.id, refs: [{ rootId, relativePath: "NOPE-001.mp4" }] },
+    });
+
+    expect(confirmResponse.statusCode).toBe(400);
+    expect(confirmResponse.json().error.message).toContain("Ref does not belong to scrape task");
+  });
+
+  it("rejects uncensored confirmation for a missing task", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-uncensored-missing-root-"));
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    const createResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: root, enabled: true },
+    });
+
+    const confirmResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.confirmUncensored",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        taskId: "missing-task",
+        refs: [{ rootId: createResponse.json().result.data.id, relativePath: "ABC-001.mp4" }],
+      },
+    });
+
+    expect(confirmResponse.statusCode).toBe(400);
+    expect(confirmResponse.json().error.message).toContain("Task not found");
+  });
+
+  it("rejects selected scrape files outside the requested scan directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-selected-scrape-root-"));
+    const otherRoot = await mkdtemp(join(tmpdir(), "mdcz-selected-scrape-other-"));
+    const selectedPath = join(otherRoot, "ABC-129.mp4");
+    await writeFile(selectedPath, "video");
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.create",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Media", hostPath: otherRoot, enabled: true },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.startSelectedFiles",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+    });
+
+    expect(startResponse.statusCode).toBe(500);
+    expect(startResponse.json().error.message).toContain("文件不在扫描目录内");
+  });
+
+  it("rejects selected scrape files outside enabled registered media roots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-selected-unregistered-root-"));
+    const selectedPath = join(root, "ABC-130.mp4");
+    await writeFile(selectedPath, "video");
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.startSelectedFiles",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+    });
+
+    expect(startResponse.statusCode).toBe(500);
+    expect(startResponse.json().error.message).toContain("文件不在已注册媒体目录内");
   });
 
   it("aborts an active scrape runtime pipeline when the task is stopped", async () => {

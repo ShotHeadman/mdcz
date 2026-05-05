@@ -12,6 +12,7 @@ import {
   libraryRelinkInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
+  maintenanceScanSelectedFilesInputSchema,
   maintenanceStartInputSchema,
   maintenanceTaskInputSchema,
   mediaRootCreateInputSchema,
@@ -20,12 +21,16 @@ import {
   nfoReadInputSchema,
   nfoWriteInputSchema,
   rootBrowserInputSchema,
+  scanCandidatesInputSchema,
   scanStartInputSchema,
   scanTaskIdInputSchema,
+  scrapeConfirmUncensoredInputSchema,
   scrapeRecoverableSessionResolveInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
+  scrapeStartSelectedFilesInputSchema,
   scrapeTaskControlInputSchema,
+  serverPathSuggestInputSchema,
   setupCompleteInputSchema,
   toolExecuteInputSchema,
 } from "@mdcz/shared/serverDtos";
@@ -97,6 +102,11 @@ export const appRouter = t.router({
     list: protectedProcedure
       .input(rootBrowserInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.browser.list(input)),
+  }),
+  serverPaths: t.router({
+    suggest: protectedProcedure
+      .input(serverPathSuggestInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.serverPaths.suggest(input)),
   }),
   config: t.router({
     defaults: protectedProcedure.query(({ ctx }) => ctx.services.config.defaults()),
@@ -247,6 +257,9 @@ export const appRouter = t.router({
     execute: protectedProcedure
       .input(maintenanceApplyInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.apply(input)),
+    scanSelectedFiles: protectedProcedure
+      .input(maintenanceScanSelectedFilesInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.maintenance.scanSelectedFiles(input)),
     pause: protectedProcedure
       .input(maintenanceTaskInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.pause(input)),
@@ -271,6 +284,9 @@ export const appRouter = t.router({
     })),
   }),
   scans: t.router({
+    candidates: protectedProcedure
+      .input(scanCandidatesInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.scans.candidates(input)),
     detail: protectedProcedure
       .input(scanTaskIdInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scans.detail(input.taskId)),
@@ -313,12 +329,26 @@ export const appRouter = t.router({
     retry: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.retry(input)),
+    confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
+      try {
+        return await ctx.services.scrape.confirmUncensored(input);
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error ? error.message : "Invalid uncensored confirmation request",
+          cause: error,
+        });
+      }
+    }),
     resolveRecoverableSession: protectedProcedure
       .input(scrapeRecoverableSessionResolveInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.resolveRecoverableSession(input)),
     start: protectedProcedure
       .input(scrapeStartInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.start(input)),
+    startSelectedFiles: protectedProcedure
+      .input(scrapeStartSelectedFilesInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.scrape.startSelectedFiles(input)),
     stop: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.stop(input)),

@@ -20,6 +20,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       concurrently:
         specifier: ^9.2.1
         version: 9.2.1
@@ -29,6 +32,9 @@ importers:
       electron-vite:
         specifier: ^5.0.0
         version: 5.0.0(vite@7.3.2(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
+      entities:
+        specifier: ^7.0.1
+        version: 7.0.1
       lint-staged:
         specifier: ^16.3.1
         version: 16.4.0
@@ -62,21 +68,33 @@ importers:
       '@egoist/tipc':
         specifier: ^0.3.2
         version: 0.3.2(electron@39.8.9)(react@19.2.5)
+      '@mdcz/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
       '@mdcz/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
       '@mdcz/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@mdcz/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@mdcz/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@mdcz/views':
         specifier: workspace:*
         version: link:../../packages/views
+      better-sqlite3:
+        specifier: ^12.9.0
+        version: 12.9.0
       cheerio:
         specifier: ^1.2.0
         version: 1.2.0
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)
       electron-window-state:
         specifier: ^5.0.3
         version: 5.0.3
@@ -403,9 +421,27 @@ importers:
 
   packages/shared:
     dependencies:
+      '@mdcz/ui':
+        specifier: workspace:*
+        version: link:../ui
+      lucide-react:
+        specifier: ^0.563.0
+        version: 0.563.0(react@19.2.5)
+      react:
+        specifier: ^19.1.1
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.1.1
+        version: 19.2.5(react@19.2.5)
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       zod:
         specifier: ^4.3.6
         version: 4.4.1
+      zustand:
+        specifier: ^5.0.9
+        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
 
   packages/storage: {}
 

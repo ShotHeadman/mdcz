@@ -5,5 +5,7 @@ export * from "./logs";
 export * from "./maintenance";
 export * from "./nfo";
 export * from "./overview";
+export * from "./path";
+export * from "./scrape";
 export * from "./tools";
 export * from "./workbench";

@@ -3,7 +3,7 @@ import { create, type StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 type MaintenanceExecutionStatus = MaintenanceStatus["state"];
-const isDev = import.meta.env.DEV;
+const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 const createInitialState = () => ({
   executionStatus: "idle" as MaintenanceExecutionStatus,

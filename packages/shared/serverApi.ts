@@ -25,6 +25,8 @@ import type {
   MaintenanceApplyInput,
   MaintenanceApplyResponse,
   MaintenancePreviewResponse,
+  MaintenanceScanSelectedFilesInput,
+  MaintenanceScanSelectedFilesResponse,
   MaintenanceStartInput,
   MaintenanceTaskInput,
   MediaRootAvailabilityResponse,
@@ -41,11 +43,14 @@ import type {
   PersistenceStatusDto,
   RootBrowserInput,
   RootBrowserResponse,
+  ScanCandidatesInput,
+  ScanCandidatesResponse,
   ScanStartInput,
   ScanTaskDetailResponse,
   ScanTaskDto,
   ScanTaskIdInput,
   ScanTaskListResponse,
+  ScrapeConfirmUncensoredInput,
   ScrapeRecoverableSessionResolveInput,
   ScrapeRecoverableSessionResolveResponse,
   ScrapeRecoverableSessionResponse,
@@ -53,7 +58,10 @@ import type {
   ScrapeResultIdInput,
   ScrapeResultListResponse,
   ScrapeStartInput,
+  ScrapeStartSelectedFilesInput,
   ScrapeTaskControlInput,
+  ServerPathSuggestInput,
+  ServerPathSuggestResponse,
   SetupCompleteInput,
   SetupStatusDto,
   SystemAboutResponse,
@@ -103,6 +111,7 @@ export interface ServerApiContract {
     clearRuntime(): Promise<{ ok: true; cleared: number }>;
   };
   maintenance: {
+    scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse>;
     start(input: MaintenanceStartInput): Promise<ScanTaskDto>;
     preview(input: MaintenanceTaskInput): Promise<MaintenancePreviewResponse>;
     apply(input: MaintenanceApplyInput): Promise<MaintenanceApplyResponse>;
@@ -145,8 +154,12 @@ export interface ServerApiContract {
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;
   };
+  serverPaths: {
+    suggest(input: ServerPathSuggestInput): Promise<ServerPathSuggestResponse>;
+  };
   scans: {
     start(input: ScanStartInput): Promise<ScanTaskDto>;
+    candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse>;
     list(): Promise<ScanTaskListResponse>;
     detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;
     events(input: ScanTaskIdInput): Promise<TaskEventListResponse>;
@@ -154,11 +167,13 @@ export interface ServerApiContract {
   };
   scrape: {
     start(input: ScrapeStartInput): Promise<ScanTaskDto>;
+    startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto>;
     listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
     stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
     resolveRecoverableSession(
@@ -200,6 +215,7 @@ export type ServerApiProcedure =
   | "persistence.status"
   | "logs.list"
   | "logs.clearRuntime"
+  | "maintenance.scanSelectedFiles"
   | "maintenance.start"
   | "maintenance.preview"
   | "maintenance.execute"
@@ -227,18 +243,22 @@ export type ServerApiProcedure =
   | "mediaRoots.disable"
   | "mediaRoots.delete"
   | "browser.list"
+  | "serverPaths.suggest"
   | "scans.start"
+  | "scans.candidates"
   | "scans.list"
   | "scans.detail"
   | "scans.events"
   | "scans.retry"
   | "scrape.start"
+  | "scrape.startSelectedFiles"
   | "scrape.listResults"
   | "scrape.result"
   | "scrape.stop"
   | "scrape.pause"
   | "scrape.resume"
   | "scrape.retry"
+  | "scrape.confirmUncensored"
   | "scrape.getRecoverableSession"
   | "scrape.resolveRecoverableSession"
   | "scrape.nfoRead"

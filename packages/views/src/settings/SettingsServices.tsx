@@ -2,6 +2,7 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
+import type { PathAutocompleteResult } from "../path";
 
 export interface SettingsBrowseFilter {
   name: string;
@@ -11,6 +12,11 @@ export interface SettingsBrowseFilter {
 export interface SettingsBrowseResult {
   canceled?: boolean;
   paths?: string[];
+}
+
+export interface SettingsPathSuggestion {
+  label: string;
+  path: string;
 }
 
 export interface SettingsCookieCheckResult {
@@ -44,6 +50,9 @@ export interface SettingsTranslateTestInput {
 
 export interface SettingsServices {
   browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
+  getPathSuggestions?: (kind: "file" | "directory") => SettingsPathSuggestion[];
+  suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
+  supportsPathBrowse?: boolean;
   checkCookies: () => Promise<SettingsCookieCheckResult>;
   ensureWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryInfo>;
   getInFlightSaves: () => number;

@@ -12,5 +12,6 @@
     "../../packages/runtime/**/*.ts",
     "../../packages/shared/**/*.ts",
     "../../packages/storage/**/*.ts"
-  ]
+  ],
+  "exclude": ["../../packages/shared/adapters/**/*", "../../packages/shared/stores/**/*"]
 }

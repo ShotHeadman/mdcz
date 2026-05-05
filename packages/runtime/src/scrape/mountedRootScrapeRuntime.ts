@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
-import type { CrawlerData, DownloadedAssets, FileInfo, ScrapeResult } from "@mdcz/shared/types";
+import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import type { MediaRoot } from "@mdcz/storage";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/storage";
 import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
@@ -70,6 +70,7 @@ export interface MountedRootScrapeRuntimeItemInput {
   root: MediaRoot;
   relativePath: string;
   manualScrape?: NonNullable<Parameters<FileScraper["scrapeFile"]>[3]>["manualScrape"];
+  localState?: NfoLocalState;
   progress: { fileIndex: number; totalFiles: number };
   onEvent?: (type: string, message: string) => Promise<void> | void;
   signal?: AbortSignal;
@@ -180,6 +181,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     private readonly signalService: RuntimeScrapeSignalService,
     private readonly logger: MountedRootScrapeLogger,
     networkClient?: RuntimeDownloadNetworkClient,
+    private readonly localState?: NfoLocalState,
   ) {
     this.networkClient = networkClient ?? new NetworkClient();
     const runtimeLogger = toRuntimeLogger(this.logger);
@@ -266,7 +268,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       aggregateMetadata: async (fileInfo, configuration, signal, manualScrape) =>
         await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal, manualScrape),
       handleFailedFileMove: async (fileInfo, configuration) => await this.moveToFailedFolder(fileInfo, configuration),
-      loadExistingNfoLocalState: async () => undefined,
+      loadExistingNfoLocalState: async () => this.localState,
       setProgress: (progress, stepPercent) => {
         this.setProgress(progress, stepPercent);
       },
@@ -443,6 +445,7 @@ export class MountedRootScrapeRuntime {
         signalService,
         this.logger,
         this.networkClient,
+        input.localState,
       ),
     );
     const absolutePath = resolveRootRelativePath(input.root, input.relativePath);

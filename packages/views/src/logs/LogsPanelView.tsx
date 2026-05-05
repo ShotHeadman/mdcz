@@ -1,5 +1,6 @@
 import type { LogEntryDto } from "@mdcz/shared/serverDtos";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@mdcz/ui";
+import { Button, cn, Input } from "@mdcz/ui";
+import { ArrowDownToLine, Eraser, Search } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { LogsListView } from "./LogsListView";
 
@@ -29,89 +30,61 @@ export interface LogsPanelViewProps {
 
 export const LogsPanelView = ({
   logs,
-  total,
   query,
-  kind,
-  level,
   autoScroll,
   emptyText,
   endRef,
   error,
   formatDate,
-  link,
   onAutoScrollChange,
-  onClearSearch,
   onClearRuntime,
-  onKindChange,
-  onLevelChange,
   onQueryChange,
-  onRefresh,
 }: LogsPanelViewProps) => (
-  <Card>
-    <CardHeader>
-      <CardTitle>任务事件</CardTitle>
-      <CardDescription>聚合任务事件和 server/runtime 运行日志，保留桌面等级筛选与搜索体验。</CardDescription>
-    </CardHeader>
-    <CardContent className="space-y-4">
-      {error}
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto_auto_auto] lg:items-center">
+  <div className="flex h-full flex-col overflow-hidden">
+    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      <div className="relative w-full min-w-0 sm:mr-auto sm:max-w-[360px]">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
         <Input
           aria-label="搜索日志内容"
+          className="h-11 rounded-[var(--radius-quiet-capsule)] pl-11 pr-4 shadow-none"
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="搜索日志内容..."
           value={query}
         />
-        <select
-          aria-label="日志来源"
-          className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
-          value={kind}
-          onChange={(event) => onKindChange(event.target.value as LogsKindFilter)}
-        >
-          <option value="all">全部来源</option>
-          <option value="task">任务事件</option>
-          <option value="runtime">运行时日志</option>
-        </select>
-        <select
-          aria-label="日志等级"
-          className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
-          value={level}
-          onChange={(event) => onLevelChange(event.target.value as LogsLevelFilter)}
-        >
-          <option value="all">全部等级</option>
-          <option value="OK">OK</option>
-          <option value="WARN">WARN</option>
-          <option value="ERR">ERR</option>
-          <option value="REQ">REQ</option>
-          <option value="INFO">INFO</option>
-        </select>
-        <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <input
-            checked={autoScroll}
-            className="h-4 w-4 rounded border-border bg-surface-low text-primary focus-visible:ring-2 focus-visible:ring-ring"
-            type="checkbox"
-            onChange={(event) => onAutoScrollChange(event.target.checked)}
-          />
-          <span>自动滚动</span>
-        </label>
-        <Button variant="secondary" onClick={onRefresh}>
-          刷新
-        </Button>
-        <Button disabled={!query} variant="secondary" onClick={onClearSearch}>
-          清空搜索
-        </Button>
-        {onClearRuntime ? (
-          <Button variant="secondary" onClick={onClearRuntime}>
-            清空运行日志
-          </Button>
-        ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        {link}
-        <span className="text-sm text-muted-foreground">
-          {logs.length} / {total} 条
-        </span>
+
+      <Button
+        type="button"
+        variant="secondary"
+        className={cn(
+          "h-11 gap-2 px-4",
+          autoScroll &&
+            "border-primary/15 bg-primary text-primary-foreground shadow-[0_16px_34px_-22px_rgba(15,23,42,0.65)] hover:bg-primary/92",
+        )}
+        onClick={() => onAutoScrollChange(!autoScroll)}
+      >
+        <ArrowDownToLine className={cn("h-4 w-4", !autoScroll && "opacity-60")} />
+        <span className="text-sm font-medium">自动滚动</span>
+      </Button>
+
+      {onClearRuntime ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-11 gap-2 px-4 text-foreground hover:border-destructive/15 hover:bg-destructive/5 hover:text-destructive"
+          onClick={onClearRuntime}
+        >
+          <Eraser className="h-4 w-4" />
+          <span className="text-sm font-medium">清空</span>
+        </Button>
+      ) : null}
+    </div>
+
+    {error}
+    <section className="flex min-h-0 flex-1 flex-col rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating/96 p-1.5 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.42)] sm:p-2">
+      <div className="min-h-0 flex-1">
+        <LogsListView emptyText={emptyText} endRef={endRef} formatDate={formatDate} logs={logs} />
       </div>
-      <LogsListView emptyText={emptyText} endRef={endRef} formatDate={formatDate} logs={logs} />
-    </CardContent>
-  </Card>
+    </section>
+  </div>
 );

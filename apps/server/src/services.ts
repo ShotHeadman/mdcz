@@ -10,6 +10,7 @@ import type { ServerPersistenceService } from "./persistenceService";
 import type { RuntimeLogService } from "./runtimeLogService";
 import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
+import type { ServerPathService } from "./serverPathService";
 import type { SystemService } from "./systemService";
 import type { TaskEventBus } from "./taskEvents";
 import type { ToolsService } from "./toolsService";
@@ -27,6 +28,7 @@ export interface ServerServices {
   runtimeLogs: RuntimeLogService;
   scans: ScanQueueService;
   scrape: ScrapeService;
+  serverPaths: ServerPathService;
   system: SystemService;
   taskEvents: TaskEventBus;
   tools: ToolsService;

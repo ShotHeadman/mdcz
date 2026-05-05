@@ -1,4 +1,5 @@
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
+import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import {
   Button,
   Dialog,
@@ -15,6 +16,7 @@ import { type MediaBrowserFilter, type MediaBrowserItem, MediaBrowserList } from
 
 export interface ResultTreeManualUrlTarget {
   videoPaths: string[];
+  targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>;
   number: string;
   canRequeueCurrentRun: boolean;
 }

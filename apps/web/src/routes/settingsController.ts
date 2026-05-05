@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import {
   mergeConfigWithFlatPayload,
   type SettingsCrawlerSiteInfo,
@@ -7,9 +8,9 @@ import {
 } from "@mdcz/views/settings";
 import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { api } from "../client";
 import { ipc } from "../client/ipc";
 import { CURRENT_CONFIG_QUERY_KEY } from "../hooks/configQueries";
-import { useSettingsSavingStore } from "../store/settingsSavingStore";
 
 export const PROFILE_IMPORT_FILTERS: Array<{ name: string; extensions: string[] }> = [
   { name: "TOML/JSON", extensions: ["toml", "json"] },
@@ -18,7 +19,7 @@ export const PROFILE_IMPORT_FILTERS: Array<{ name: string; extensions: string[] 
 export type ImportMode = "new" | "overwrite";
 
 export const createSettingsServices = (queryClient: QueryClient): SettingsServices => ({
-  browsePath: ipc.file.browse,
+  browsePath: async () => ({ canceled: true, paths: [] }),
   checkCookies: ipc.network.checkCookies,
   decrementInFlightSaves: useSettingsSavingStore.getState().decrementInFlight,
   ensureWatermarkDirectory: ipc.app.ensureWatermarkDirectory,
@@ -44,7 +45,16 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
   relaunchApp: ipc.app.relaunch,
   resetConfig: ipc.config.reset,
   saveConfig: ipc.config.save,
+  suggestDirectoryPath: async (path) => {
+    const result = await api.serverPaths.suggest({ path, intent: "settings" });
+    return {
+      accessible: result.accessible,
+      error: result.error,
+      entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
+    };
+  },
   subscribeInFlightSaves: useSettingsSavingStore.subscribe,
+  supportsPathBrowse: false,
   testLlm: ipc.translate.testLlm,
   updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
     queryClient.setQueryData(CURRENT_CONFIG_QUERY_KEY, (previous) => {

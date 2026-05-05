@@ -1,20 +1,17 @@
+import { toDetailViewItemFromMaintenanceEntry } from "@mdcz/views/detail";
 import { MaintenanceWorkbenchFrame } from "@mdcz/views/workbench";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { DetailPanel } from "@/components/DetailPanel";
-import { toDetailViewItemFromMaintenanceEntry } from "@/components/detail/detailViewAdapters";
-import MaintenanceBatchBar from "@/components/maintenance/MaintenanceBatchBar";
-import MaintenanceEntryList from "@/components/maintenance/MaintenanceEntryList";
-import { findMaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import { useMaintenanceEntryStore } from "../stores/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "../stores/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "../stores/maintenancePreviewStore";
+import { findMaintenanceEntryGroup } from "../viewModels/maintenanceGrouping";
+import { DetailPanelAdapter } from "./DetailPanelAdapter";
+import { MaintenanceBatchBarAdapter } from "./MaintenanceBatchBarAdapter";
+import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
+import type { SharedWorkbenchPorts } from "./ports";
 
-interface MaintenanceWorkbenchProps {
-  mediaPath?: string;
-}
-
-export default function MaintenanceWorkbench({ mediaPath }: MaintenanceWorkbenchProps) {
+export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
   const { entries, activeId, presetId } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
@@ -81,9 +78,10 @@ export default function MaintenanceWorkbench({ mediaPath }: MaintenanceWorkbench
 
   return (
     <MaintenanceWorkbenchFrame
-      list={<MaintenanceEntryList />}
+      list={<MaintenanceEntryListAdapter port={ports.maintenance} />}
       detail={
-        <DetailPanel
+        <DetailPanelAdapter
+          port={ports.detail}
           item={detailItem}
           compare={
             usesDiffView
@@ -99,7 +97,7 @@ export default function MaintenanceWorkbench({ mediaPath }: MaintenanceWorkbench
           }
         />
       }
-      batchBar={<MaintenanceBatchBar mediaPath={mediaPath} />}
+      batchBar={<MaintenanceBatchBarAdapter port={ports.maintenance} />}
     />
   );
 }

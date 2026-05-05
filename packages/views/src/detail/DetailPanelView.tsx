@@ -36,9 +36,9 @@ export interface DetailPanelViewProps {
   posterSrc?: string;
   thumbSrc?: string;
   nfo: DetailPanelNfoState;
-  onPlay: () => void;
-  onOpenFolder: () => void;
-  onOpenNfo: () => void;
+  onPlay?: () => void;
+  onOpenFolder?: () => void;
+  onOpenNfo?: () => void;
   onPosterError?: () => void;
   onThumbError?: () => void;
   renderSceneImages?: (props: {
@@ -91,42 +91,48 @@ function DetailSectionTitle({ children }: { children: string }) {
 
 interface DetailActionButtonsProps {
   nfoLoading: boolean;
-  onPlay: () => void;
-  onOpenFolder: () => void;
-  onOpenNfo: () => void;
+  onPlay?: () => void;
+  onOpenFolder?: () => void;
+  onOpenNfo?: () => void;
 }
 
 function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: DetailActionButtonsProps) {
   return (
     <>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
-        onClick={onPlay}
-      >
-        <Play className="h-4 w-4" />
-        播放
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
-        onClick={onOpenFolder}
-      >
-        <FolderOpen className="h-4 w-4" />
-        打开文件夹
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
-        onClick={onOpenNfo}
-        disabled={nfoLoading}
-      >
-        <FileText className="h-4 w-4" />
-        编辑 NFO
-      </Button>
+      {onPlay ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
+          onClick={onPlay}
+        >
+          <Play className="h-4 w-4" />
+          播放
+        </Button>
+      ) : null}
+      {onOpenFolder ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
+          onClick={onOpenFolder}
+        >
+          <FolderOpen className="h-4 w-4" />
+          打开文件夹
+        </Button>
+      ) : null}
+      {onOpenNfo ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
+          onClick={onOpenNfo}
+          disabled={nfoLoading}
+        >
+          <FileText className="h-4 w-4" />
+          编辑 NFO
+        </Button>
+      ) : null}
     </>
   );
 }

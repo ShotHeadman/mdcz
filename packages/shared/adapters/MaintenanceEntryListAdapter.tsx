@@ -1,20 +1,19 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { LocalScanEntry } from "@mdcz/shared/types";
+import { ContextMenuItem } from "@mdcz/ui";
+import type { MediaBrowserItemStatus } from "@mdcz/views/common";
 import { MaintenanceEntryListView, type MaintenanceEntryListViewItem } from "@mdcz/views/maintenance";
 import { FileText, FolderOpen, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
-import { ipc } from "@/client/ipc";
-import { getMaintenancePresetMeta } from "@/components/maintenance/presetMeta";
-import type { MediaBrowserItemStatus } from "@/components/shared/MediaBrowserList";
-import { ContextMenuItem } from "@/components/ui/ContextMenu";
-import { buildMaintenanceEntryViewModel, type MaintenanceEntryGroupViewModel } from "@/lib/maintenanceGrouping";
-import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
-import { toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
-import { playMediaPath } from "@/utils/playback";
+import { type MaintenanceFilter, useMaintenanceEntryStore } from "../stores/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "../stores/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "../stores/maintenancePreviewStore";
+import { toggleMaintenanceSelectedIds } from "../stores/maintenanceSession";
+import { buildMaintenanceEntryViewModel, type MaintenanceEntryGroupViewModel } from "../viewModels/maintenanceGrouping";
+import type { ActionAvailability, MaintenanceActionPort } from "./ports";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
@@ -40,7 +39,9 @@ const buildGroupSubtitle = (group: MaintenanceEntryGroupViewModel): string => {
   return `${baseTitle} · 共 ${group.items.length} 个分盘文件`;
 };
 
-function buildMenuContent(entry: LocalScanEntry) {
+const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
+
+function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
   const handleOpenFolder = async () => {
     const filePath = entry.fileInfo.filePath.trim();
     if (!filePath) {
@@ -49,39 +50,43 @@ function buildMenuContent(entry: LocalScanEntry) {
     }
 
     try {
-      await ipc.app.showItemInFolder(filePath);
+      await port.openFolder(filePath);
     } catch (error) {
       toast.error(`打开目录失败: ${toErrorMessage(error)}`);
     }
   };
 
-  const handlePlay = () => void playMediaPath(entry.fileInfo.filePath, "播放功能仅在桌面客户端可用");
+  const handlePlay = () => void port.play(entry.fileInfo.filePath);
 
   const handleOpenNfo = () => {
-    window.dispatchEvent(
-      new CustomEvent("app:open-nfo", { detail: { path: entry.nfoPath ?? entry.fileInfo.filePath } }),
-    );
+    void port.openNfo(entry.nfoPath ?? entry.fileInfo.filePath);
   };
 
   return (
     <>
-      <ContextMenuItem onClick={handleOpenFolder}>
-        <FolderOpen className="mr-2 h-4 w-4" />
-        打开目录
-      </ContextMenuItem>
-      <ContextMenuItem onClick={handlePlay}>
-        <Play className="mr-2 h-4 w-4" />
-        播放
-      </ContextMenuItem>
-      <ContextMenuItem onClick={handleOpenNfo}>
-        <FileText className="mr-2 h-4 w-4" />
-        编辑 NFO
-      </ContextMenuItem>
+      {isActionVisible(port.capabilities?.openFolder) ? (
+        <ContextMenuItem onClick={handleOpenFolder}>
+          <FolderOpen className="mr-2 h-4 w-4" />
+          打开目录
+        </ContextMenuItem>
+      ) : null}
+      {isActionVisible(port.capabilities?.play) ? (
+        <ContextMenuItem onClick={handlePlay}>
+          <Play className="mr-2 h-4 w-4" />
+          播放
+        </ContextMenuItem>
+      ) : null}
+      {isActionVisible(port.capabilities?.openNfo) ? (
+        <ContextMenuItem onClick={handleOpenNfo}>
+          <FileText className="mr-2 h-4 w-4" />
+          编辑 NFO
+        </ContextMenuItem>
+      ) : null}
     </>
   );
 }
 
-export default function MaintenanceEntryList() {
+export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionPort }) {
   const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
@@ -154,7 +159,7 @@ export default function MaintenanceEntryList() {
         : undefined,
       onClick: () =>
         setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
-      menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative),
+      menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative, port),
     };
   });
 
@@ -182,3 +187,5 @@ export default function MaintenanceEntryList() {
     />
   );
 }
+
+export default MaintenanceEntryListAdapter;

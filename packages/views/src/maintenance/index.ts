@@ -20,7 +20,5 @@ export type {
   MaintenanceEntryListViewStat,
 } from "./MaintenanceEntryListView";
 export { MaintenanceEntryListView } from "./MaintenanceEntryListView";
-export type { MaintenanceApplyRequest, MaintenanceViewLabels, MaintenanceViewProps } from "./MaintenanceView";
-export { MaintenanceView } from "./MaintenanceView";
 export type { PathPlanViewProps } from "./PathPlanView";
 export { PathPlanView } from "./PathPlanView";

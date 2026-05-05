@@ -17,5 +17,5 @@
     "packages/storage/src/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["packages/**/*.test.ts"]
+  "exclude": ["packages/**/*.test.ts", "packages/shared/adapters/**/*", "packages/shared/stores/**/*"]
 }

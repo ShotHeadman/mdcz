@@ -1,4 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
+import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import type { FileInfo, ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -8,7 +9,6 @@ import {
   buildUncensoredConfirmItemsForScrapeGroups,
   summarizeUncensoredConfirmResultForScrapeGroups,
 } from "@/lib/scrapeResultGrouping";
-import { useScrapeStore } from "@/store/scrapeStore";
 
 afterEach(() => {
   useScrapeStore.getState().reset();

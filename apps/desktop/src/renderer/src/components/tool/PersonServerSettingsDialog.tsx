@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import { ConfigFieldLayoutProvider } from "@mdcz/views/config-form";
 import {
   EmbySection,
@@ -23,7 +24,6 @@ import { Form } from "@/components/ui/Form";
 import { SettingsEditorAutosaveProvider, valuesEqual } from "@/hooks/useAutoSaveField";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { cn } from "@/lib/utils";
-import { useSettingsSavingStore } from "@/store/settingsSavingStore";
 
 export type PersonServer = "jellyfin" | "emby";
 

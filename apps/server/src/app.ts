@@ -19,6 +19,7 @@ import { appRouter } from "./router";
 import { RuntimeLogService } from "./runtimeLogService";
 import { ScanQueueService } from "./scanQueueService";
 import { ScrapeService } from "./scrapeService";
+import { ServerPathService } from "./serverPathService";
 import type { ServerServiceOptions, ServerServices } from "./services";
 import { SystemService } from "./systemService";
 import { createTaskEventBus, formatSseEvent } from "./taskEvents";
@@ -136,6 +137,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     runtimeLogs,
     scans,
     scrape,
+    serverPaths: options.services?.serverPaths ?? new ServerPathService(mediaRoots, config),
     system,
     taskEvents,
     tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape, diagnostics, library),

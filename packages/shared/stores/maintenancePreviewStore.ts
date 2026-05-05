@@ -1,9 +1,10 @@
 import type { FieldDiff, MaintenancePreviewItem, MaintenancePreviewResult } from "@mdcz/shared/types";
 import { create, type StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { MaintenanceFieldSelectionSide } from "@/lib/maintenance";
 
-const isDev = import.meta.env.DEV;
+export type MaintenanceFieldSelectionSide = "old" | "new";
+
+const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 const createInitialState = () => ({
   previewPending: false,

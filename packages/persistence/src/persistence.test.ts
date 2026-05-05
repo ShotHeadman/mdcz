@@ -118,11 +118,15 @@ describe("LibraryRepository", () => {
       nfoRelativePath: "ABC-123.nfo",
       outputRelativePath: "ABC-123.mp4",
       manualUrl: "https://example.invalid/detail",
+      uncensoredAmbiguous: true,
       createdAt,
       updatedAt: createdAt,
     });
 
-    await expect(repository.getScrapeResult("result-1")).resolves.toEqual(result);
+    await expect(repository.getScrapeResult("result-1")).resolves.toEqual({
+      ...result,
+      uncensoredAmbiguous: true,
+    });
     await expect(repository.listScrapeResults("task-1")).resolves.toEqual([result]);
   });
 

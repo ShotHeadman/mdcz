@@ -5,9 +5,23 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./adapters": "./adapters/index.ts",
+    "./adapters/ports": "./adapters/ports.ts",
+    "./adapters/*": "./adapters/*.tsx",
+    "./stores": "./stores/index.ts",
+    "./stores/*": "./stores/*.ts",
+    "./viewModels/*": "./viewModels/*.ts",
     "./*": "./*.ts"
   },
   "dependencies": {
+    "@mdcz/ui": "workspace:*",
+    "lucide-react": "^0.563.0",
+    "sonner": "^2.0.7",
+    "zustand": "^5.0.9",
     "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   }
 }

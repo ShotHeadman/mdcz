@@ -64,6 +64,7 @@ export const scrapeResults = sqliteTable("scrape_results", {
   nfoRelativePath: text("nfo_relative_path"),
   outputRelativePath: text("output_relative_path"),
   manualUrl: text("manual_url"),
+  uncensoredAmbiguous: integer("uncensored_ambiguous", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

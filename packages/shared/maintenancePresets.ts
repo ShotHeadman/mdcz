@@ -11,25 +11,25 @@ export const MAINTENANCE_PRESET_META: Record<MaintenancePresetId, MaintenancePre
   read_local: {
     id: "read_local",
     label: "读取本地",
-    description: "不联网，只读取当前目录内现有视频、NFO、图片等本地产物",
+    description: "扫描本地文件，读取现有 NFO 与资源状态",
     supportsExecution: false,
   },
   refresh_data: {
     id: "refresh_data",
     label: "刷新数据",
-    description: "联网重新获取元数据和资源，生成字段替换和图片替换计划",
+    description: "联网刷新元数据，对比NFO差异",
     supportsExecution: true,
   },
   organize_files: {
     id: "organize_files",
     label: "整理目录",
-    description: "以本地已有元数据为主，按当前模板重命名文件、目录并重排结构",
+    description: "按规则重新组织文件目录结构",
     supportsExecution: true,
   },
   rebuild_all: {
     id: "rebuild_all",
     label: "全量重整",
-    description: "先联网刷新数据，再按当前模板完整重排目录与文件",
+    description: "重新获取数据并按现有设置修改目录结构",
     supportsExecution: true,
   },
 };

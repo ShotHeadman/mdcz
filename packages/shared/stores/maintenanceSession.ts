@@ -6,9 +6,9 @@ import type {
   MaintenancePreviewResult,
   MaintenanceStatus,
 } from "@mdcz/shared/types";
-import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import { useMaintenanceEntryStore } from "./maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "./maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "./maintenancePreviewStore";
 
 const isExecutionIdle = (): boolean => useMaintenanceExecutionStore.getState().executionStatus === "idle";
 
