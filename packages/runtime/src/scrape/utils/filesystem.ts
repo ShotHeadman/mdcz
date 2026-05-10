@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { mkdir, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join, parse, resolve } from "node:path";
 import { SUPPORTED_MEDIA_EXTENSIONS_WITH_DOT } from "@mdcz/shared/mediaExtensions";
@@ -22,12 +23,18 @@ const resolveDirectoryKey = async (dirPath: string): Promise<string> => {
   }
 };
 
+const isSkippableDirectoryReadError = (error: unknown): boolean => {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM";
+};
+
 const walkDirectory = async (
   dirPath: string,
   recursive: boolean,
   visitedDirs: Set<string>,
   excludedDirs: ReadonlySet<string>,
   signal?: AbortSignal,
+  isRoot = false,
 ): Promise<string[]> => {
   throwIfAborted(signal);
   const dirKey = await resolveDirectoryKey(dirPath);
@@ -36,7 +43,15 @@ const walkDirectory = async (
   }
   visitedDirs.add(dirKey);
 
-  const entries = await readdir(dirPath, { withFileTypes: true });
+  let entries: Dirent[];
+  try {
+    entries = await readdir(dirPath, { withFileTypes: true });
+  } catch (error) {
+    if (!isRoot && isSkippableDirectoryReadError(error)) {
+      return [];
+    }
+    throw error;
+  }
   const files: string[] = [];
 
   for (const entry of entries) {
@@ -45,7 +60,7 @@ const walkDirectory = async (
 
     if (entry.isDirectory()) {
       if (recursive) {
-        files.push(...(await walkDirectory(absolutePath, true, visitedDirs, excludedDirs, signal)));
+        files.push(...(await walkDirectory(absolutePath, true, visitedDirs, excludedDirs, signal, false)));
       }
       continue;
     }
@@ -60,7 +75,7 @@ const walkDirectory = async (
         const targetStats = await stat(absolutePath);
         if (targetStats.isDirectory()) {
           if (recursive) {
-            files.push(...(await walkDirectory(absolutePath, true, visitedDirs, excludedDirs, signal)));
+            files.push(...(await walkDirectory(absolutePath, true, visitedDirs, excludedDirs, signal, false)));
           }
           continue;
         }
@@ -100,7 +115,7 @@ export const listFiles = async (
     excludedKeys.add(excludedKey);
   }
 
-  return walkDirectory(dirPath, recursive, new Set<string>(), excludedKeys, signal);
+  return walkDirectory(dirPath, recursive, new Set<string>(), excludedKeys, signal, true);
 };
 
 export const listVideoFiles = async (
