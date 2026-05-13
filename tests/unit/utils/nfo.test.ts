@@ -245,4 +245,35 @@ describe("parseNfo", () => {
       tags: ["自定义标签"],
     });
   });
+
+  it("emits poster/thumb/fanart/trailer rows in the aggregation source comment", () => {
+    const xml = new NfoGenerator().buildXml(
+      {
+        title: "Source Comment",
+        number: "ABC-001",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM,
+        thumb_url: "https://example.com/thumb.jpg",
+        poster_url: "https://example.com/poster.jpg",
+        fanart_url: "https://example.com/fanart.jpg",
+        trailer_url: "https://example.com/trailer.mp4",
+      },
+      {
+        sources: {
+          title: Website.JAVDB,
+          thumb_url: Website.JAVBUS,
+          poster_url: Website.DMM,
+          fanart_url: Website.R18_DEV,
+          trailer_url: Website.DMM_TV,
+        },
+      },
+    );
+
+    expect(xml).toContain("poster_url: dmm");
+    expect(xml).toContain("thumb_url: javbus");
+    expect(xml).toContain("fanart_url: r18_dev");
+    expect(xml).toContain("trailer_url: dmm_tv");
+  });
 });

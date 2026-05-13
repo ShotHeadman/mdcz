@@ -407,8 +407,11 @@ function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
     { key: "title", label: "title" },
     { key: "plot", label: "plot", detail: () => `${data.plot?.length ?? 0} chars` },
     { key: "actors", label: "actors", detail: () => `${data.actors.length} actors` },
+    { key: "poster_url", label: "poster_url" },
     { key: "thumb_url", label: "thumb_url" },
+    { key: "fanart_url", label: "fanart_url" },
     { key: "scene_images", label: "scene_images", detail: () => `${data.scene_images.length} images` },
+    { key: "trailer_url", label: "trailer_url" },
     { key: "studio", label: "studio" },
     { key: "genres", label: "genres", detail: () => `${data.genres.length} genres` },
   ];
