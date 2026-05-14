@@ -1,5 +1,6 @@
 import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
 import { OrderedSiteFieldEditor } from "@renderer/components/config-form/OrderedSiteField";
+import { ServerPathField } from "@renderer/components/config-form/ServerPathField";
 import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
 import { SectionAnchor } from "@renderer/components/settings/SectionAnchor";
 import { AdvancedSettingsFooterContent } from "@renderer/components/settings/SettingsForm";
@@ -34,9 +35,9 @@ import {
   SettingsEditorAutosaveProvider,
 } from "@renderer/hooks/useAutoSaveField";
 import { Website } from "@shared/enums";
-import { type ComponentProps, createElement, type ReactNode } from "react";
+import { type ComponentProps, createElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { type FieldValues, FormProvider, useForm } from "react-hook-form";
+import { type ControllerRenderProps, type FieldValues, FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it, vi } from "vitest";
 
 const noop = vi.fn();
@@ -107,6 +108,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("download.tagBadgeTypes")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("download.tagBadgePosition")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("download.tagBadgeImageOverrides")).toMatchObject({ anchor: "download", visibility: "public" });
+    expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
@@ -116,6 +118,9 @@ describe("settings editor metadata and filtering", () => {
     expect(keys.has("behavior.updateCheck")).toBe(false);
     expect(keys.has("ui.theme")).toBe(false);
     expect(keys.has("ui.language")).toBe(false);
+    expect(FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.defaultScanExcludeDirs")).toBe(
+      FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.failedOutputFolder") + 1,
+    );
   });
 
   it("round-trips registered settings, including scrape order and aggregation paths", () => {
@@ -129,6 +134,9 @@ describe("settings editor metadata and filtering", () => {
       scrape: {
         sites: ["javdb"],
         r18MetadataLanguage: "en",
+      },
+      paths: {
+        defaultScanExcludeDirs: ["failed_22", "/archive/output"],
       },
       aggregation: {
         fieldPriorities: {
@@ -145,6 +153,7 @@ describe("settings editor metadata and filtering", () => {
       "download.tagBadgeImageOverrides": true,
       "scrape.sites": ["javdb"],
       "scrape.r18MetadataLanguage": "en",
+      "paths.defaultScanExcludeDirs": ["failed_22", "/archive/output"],
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
@@ -155,8 +164,29 @@ describe("settings editor metadata and filtering", () => {
         tagBadgeImageOverrides: true,
       },
       scrape: { sites: ["javdb"], r18MetadataLanguage: "en" },
+      paths: { defaultScanExcludeDirs: ["failed_22", "/archive/output"] },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
+  });
+
+  it("path inputs commit typed string values instead of DOM events", () => {
+    const onChange = vi.fn();
+    const field = {
+      name: "paths.defaultScanExcludeDirs.0",
+      value: "failed",
+      onChange,
+      onBlur: vi.fn(),
+      ref: vi.fn(),
+    } as unknown as ControllerRenderProps<FieldValues, string>;
+
+    const element = ServerPathField({ field });
+    const formControl = (element.props as { children: ReactElement[] }).children[0];
+    const input = (formControl.props as { children: ReactElement }).children;
+    const inputOnChange = (input.props as { onChange: (event: { target: { value: string } }) => void }).onChange;
+
+    inputOnChange({ target: { value: "failed_22" } });
+
+    expect(onChange).toHaveBeenCalledWith("failed_22");
   });
 
   it("applies PRD visibility rules for normal, advanced, modified, group, and deep-link browsing", () => {

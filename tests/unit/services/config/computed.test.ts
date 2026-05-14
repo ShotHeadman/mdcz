@@ -278,6 +278,7 @@ describe("buildComputedConfiguration", () => {
   it("keeps actor photo defaults empty under paths and ignores legacy personSync.actorPhotoFolder", () => {
     const defaultConfiguration = configurationSchema.parse({});
     expect(defaultConfiguration.paths.actorPhotoFolder).toBe("");
+    expect(defaultConfiguration.paths.defaultScanExcludeDirs).toEqual(["JAV_output", "failed"]);
     expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([
       Website.AVBASE,
       Website.DMM_TV,

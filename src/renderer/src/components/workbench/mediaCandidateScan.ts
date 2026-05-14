@@ -76,21 +76,20 @@ const dedupePathsByComparableKey = (paths: ReadonlyArray<string | undefined>): s
 export const resolveMediaCandidateScanPlan = (
   mode: WorkbenchSetupMode,
   scanDir: string,
-  targetDir: string | undefined,
+  _targetDir: string | undefined,
   config?: ConfigOutput,
 ): MediaCandidateScanPlan => {
   if (mode !== "scrape") {
     return { excludeDirPaths: [], extraScanDirs: [], scanKey: "" };
   }
 
-  const targetExcludeDir = targetDir?.trim() || undefined;
   const defaultExcludeDirPaths = resolveConfiguredDirs(scanDir, config?.paths?.defaultScanExcludeDirs);
   const softlinkDirPath =
     config?.behavior?.scrapeSoftlinkPath && scanDir.trim()
       ? resolveConfiguredDir(scanDir, config?.paths?.softlinkPath)
       : undefined;
 
-  const excludeDirPaths = dedupePathsByComparableKey([targetExcludeDir, ...defaultExcludeDirPaths]);
+  const excludeDirPaths = dedupePathsByComparableKey(defaultExcludeDirPaths);
   const extraScanDirs =
     softlinkDirPath && normalizeComparablePath(softlinkDirPath) !== normalizeComparablePath(scanDir)
       ? [softlinkDirPath]

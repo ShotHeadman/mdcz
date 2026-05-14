@@ -14,11 +14,17 @@ interface ServerPathFieldProps {
 }
 
 export function ServerPathField({ field, placeholder, isDirectory = true }: ServerPathFieldProps) {
+  const { onChange, ...inputField } = field;
+
   const handleBrowse = async () => {
     const response = await ipc.file.browse(isDirectory ? "directory" : "file");
     if (response.paths && response.paths.length > 0) {
-      field.onChange(response.paths[0]);
+      onChange(response.paths[0]);
     }
+  };
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(event.target.value);
   };
 
   return (
@@ -26,7 +32,8 @@ export function ServerPathField({ field, placeholder, isDirectory = true }: Serv
       <FormControl>
         <Input
           placeholder={placeholder}
-          {...field}
+          {...inputField}
+          onChange={handleChange}
           className="h-8 text-sm bg-background/50 focus:bg-background transition-all flex-1"
         />
       </FormControl>

@@ -65,7 +65,7 @@ describe("workbench setup contract", () => {
     expect(plan.extraScanDirs).toEqual([softlinkDir]);
   });
 
-  it("dedupes overlapping target and configured exclude directories", () => {
+  it("uses only configured scan exclude directories", () => {
     const plan = resolveMediaCandidateScanPlan(
       "scrape",
       rootDir,
@@ -84,6 +84,26 @@ describe("workbench setup contract", () => {
 
     const thumbnailsDir = process.platform === "win32" ? "D:\\media\\thumbnails" : "/media/thumbnails";
     expect(plan.excludeDirPaths).toEqual([successDir, failedDir, thumbnailsDir]);
+  });
+
+  it("does not hide the active success target when it is removed from configured exclusions", () => {
+    const plan = resolveMediaCandidateScanPlan(
+      "scrape",
+      rootDir,
+      successDir,
+      createConfig({
+        paths: {
+          mediaPath: rootDir,
+          successOutputFolder: "JAV_output",
+          failedOutputFolder: "failed",
+          softlinkPath: softlinkDir,
+          outputSummaryPath: "",
+          defaultScanExcludeDirs: ["failed"],
+        },
+      } as Partial<ConfigOutput>),
+    );
+
+    expect(plan.excludeDirPaths).toEqual([failedDir]);
   });
 
   it("filters output-folder candidates and dedupes merged scan roots", () => {
