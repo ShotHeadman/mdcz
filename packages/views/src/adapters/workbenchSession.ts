@@ -169,14 +169,7 @@ export const getFailedScrapeTargets = () =>
   useScrapeStore
     .getState()
     .results.filter((result) => result.status === "failed")
-    .map((result) => {
-      const [rootId, ...relativeParts] = result.fileId.split(":");
-      const relativePath = relativeParts.join(":");
-      return {
-        filePath: result.fileInfo.filePath,
-        ref: rootId && relativePath ? { rootId, relativePath } : undefined,
-      };
-    });
+    .map((result) => ({ filePath: result.fileInfo.filePath }));
 
 export interface StartMaintenanceFlowOptions {
   filePaths: string[];

@@ -5,6 +5,7 @@ import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../client";
+import { useWebTaskSync } from "../hooks/useWebTaskSync";
 import { ErrorBanner } from "../routeCommon";
 import { Button, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, PasswordInput } from "../ui";
 
@@ -105,6 +106,12 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
   if (PUBLIC_PATHS.has(pathname)) {
     return <>{children}</>;
   }
+
+  return <AuthenticatedShell pathname={pathname}>{children}</AuthenticatedShell>;
+};
+
+const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
+  useWebTaskSync();
 
   return (
     <ThemeProvider>

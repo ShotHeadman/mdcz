@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { getLogSearchText, projectLogEntryLevel } from "@mdcz/shared/logFormatting";
+import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import {
   Button,
   Dialog,
@@ -17,14 +18,13 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, subscribeTaskEvents } from "../client";
 import { ErrorBanner, formatDate } from "../routeCommon";
-import { readWebWorkbenchTaskIds } from "../workbenchTaskSession";
 
 export const LogsPage = () => {
   const queryClient = useQueryClient();
+  const { activeMaintenanceTaskId, activeScrapeTaskId } = useWorkbenchTaskStore((state) => state.hydrationState);
   const activeTaskIds = useMemo(() => {
-    const ids = readWebWorkbenchTaskIds();
-    return [ids.activeScrapeTaskId, ids.activeMaintenanceTaskId].filter((id) => id.trim().length > 0);
-  }, []);
+    return [activeScrapeTaskId, activeMaintenanceTaskId].filter((id) => id.trim().length > 0);
+  }, [activeMaintenanceTaskId, activeScrapeTaskId]);
   const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [kind, setKind] = useState<LogsKindFilter>("all");

@@ -1,4 +1,4 @@
-import { maintenancePreviewDtoToPreviewItem, scrapeResultDtoToScrapeResult } from "./dtoAdapters";
+import { maintenancePreviewDtoToPreviewItem, scrapeResultDtoToScrapeResult } from "@mdcz/shared/dtoAdapters";
 import type {
   MaintenanceApplyLogDto,
   MaintenancePreviewResponse,
@@ -6,17 +6,19 @@ import type {
   ScrapeResultListResponse,
   TaskRealtimeEventDto,
   WebTaskUpdateDto,
-} from "./serverDtos";
-import { useMaintenanceExecutionStore } from "./stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "./stores/maintenancePreviewStore";
-import { applyMaintenanceExecutionItemResult, applyMaintenancePreviewResult } from "./stores/maintenanceSession";
-import { useScrapeStore } from "./stores/scrapeStore";
-import { useUIStore } from "./stores/uiStore";
-import type { TaskHydrationState } from "./stores/workbenchTaskStore";
-import type { MaintenancePreviewItem } from "./types";
+} from "@mdcz/shared/serverDtos";
+import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
+import {
+  applyMaintenanceExecutionItemResult,
+  applyMaintenancePreviewResult,
+} from "@mdcz/shared/stores/maintenanceSession";
+import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useUIStore } from "@mdcz/shared/stores/uiStore";
+import type { TaskHydrationState } from "@mdcz/shared/stores/workbenchTaskStore";
+import type { MaintenancePreviewItem } from "@mdcz/shared/types";
 
-export type { TaskHydrationState } from "./stores/workbenchTaskStore";
-export { createTaskHydrationState, useWorkbenchTaskStore } from "./stores/workbenchTaskStore";
+export type { TaskHydrationState } from "@mdcz/shared/stores/workbenchTaskStore";
 
 const taskStatusToScrapeStatus = (
   status: ScanTaskDto["status"],
@@ -35,6 +37,9 @@ const taskStatusToMaintenanceStatus = (
   if (status === "stopping") return "stopping";
   return "idle";
 };
+
+const isActiveTaskStatus = (status: ScanTaskDto["status"]): boolean =>
+  status === "queued" || status === "running" || status === "paused" || status === "stopping";
 
 export const hydrateScrapeResults = (response: ScrapeResultListResponse): void => {
   const store = useScrapeStore.getState();
@@ -84,12 +89,12 @@ const applyScrapeTaskSnapshot = (task: ScanTaskDto): void => {
   const scrapeStatus = taskStatusToScrapeStatus(task.status);
   const store = useScrapeStore.getState();
   const total = task.videos?.length ?? task.videoCount;
-  const current = (task.status === "completed" || task.status === "failed") && total > 0 ? total : task.videoCount;
+  const isTerminal = task.status === "completed" || task.status === "failed";
+  const current = isTerminal && total > 0 ? total : Math.min(task.videoCount, total);
   store.setScrapeStatus(scrapeStatus);
   store.setScraping(scrapeStatus === "running" || scrapeStatus === "paused" || scrapeStatus === "stopping");
   const snapshotProgress = total > 0 ? (current / total) * 100 : 0;
-  const isTerminal = task.status === "completed" || task.status === "failed";
-  if (isTerminal || snapshotProgress >= store.progress) {
+  if (total > 0 && (isTerminal || current > 0 || snapshotProgress >= store.progress)) {
     store.updateProgress(current, total);
   }
 };
@@ -121,13 +126,10 @@ export const applyWebTaskUpdate = (payload: WebTaskUpdateDto, previous: TaskHydr
       (task) => task.kind === "maintenance" && task.id === previous.activeMaintenanceTaskId,
     );
     const activeScrapeTask =
-      previousScrapeTask ??
-      payload.tasks.find((task) => task.kind === "scrape" && task.status !== "completed" && task.status !== "failed");
+      previousScrapeTask ?? payload.tasks.find((task) => task.kind === "scrape" && isActiveTaskStatus(task.status));
     const activeMaintenanceTask =
       previousMaintenanceTask ??
-      payload.tasks.find(
-        (task) => task.kind === "maintenance" && task.status !== "completed" && task.status !== "failed",
-      );
+      payload.tasks.find((task) => task.kind === "maintenance" && isActiveTaskStatus(task.status));
 
     if (activeScrapeTask) {
       next.activeScrapeTaskId = activeScrapeTask.id;
@@ -176,11 +178,15 @@ export const applyTaskRealtimeEvent = (
       return next;
     case "task-progress":
       if (payload.taskKind === "scrape") {
+        next.activeScrapeTaskId = payload.taskId;
+        useScrapeStore.getState().setScraping(true);
+        useScrapeStore.getState().setScrapeStatus("running");
         useScrapeStore
           .getState()
           .updateProgress(payload.value ?? payload.current, payload.value === undefined ? payload.total : 100);
       }
       if (payload.taskKind === "maintenance") {
+        next.activeMaintenanceTaskId = payload.taskId;
         useMaintenanceExecutionStore
           .getState()
           .setProgress(

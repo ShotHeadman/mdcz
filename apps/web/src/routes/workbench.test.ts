@@ -1,19 +1,18 @@
-import type { WebTaskUpdateDto } from "@mdcz/shared";
-import {
-  applyTaskRealtimeEvent,
-  applyWebTaskUpdate,
-  createTaskHydrationState,
-  hydrateWorkbenchScrapeResults,
-  maintenancePreviewDtoToPreviewItem,
-  selectWorkbenchScrapeResults,
-} from "@mdcz/shared";
+import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
+import type { WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
 import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
 import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
+import { createTaskHydrationState, useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import { buildScrapeResultGroups } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  applyTaskRealtimeEvent,
+  applyWebTaskUpdate,
+  hydrateWorkbenchScrapeResults,
+  selectWorkbenchScrapeResults,
+} from "../taskHydration";
 import { __workbenchTestHooks } from "./workbench";
 
 describe("web workbench route contracts", () => {
@@ -69,7 +68,7 @@ describe("web workbench route contracts", () => {
       updatedAt: "2026-05-03T00:00:00.000Z",
     });
 
-    expect(__workbenchTestHooks.scrapeResultsToRetryTargets([failed])).toEqual([
+    expect(__workbenchTestHooks.scrapeResultsToWebRetryTargets([failed])).toEqual([
       {
         filePath: "nested/ABC-001.mp4",
         ref: { rootId: "root-1", relativePath: "nested/ABC-001.mp4" },
@@ -77,55 +76,9 @@ describe("web workbench route contracts", () => {
     ]);
   });
 
-  it("treats a running scrape without an active task id as uncontrollable", () => {
-    expect(__workbenchTestHooks.canControlScrapeTask({ isScraping: true, activeTaskId: "" })).toBe(false);
-    expect(__workbenchTestHooks.canControlScrapeTask({ isScraping: true, activeTaskId: "task-1" })).toBe(true);
-    expect(__workbenchTestHooks.canControlScrapeTask({ isScraping: false, activeTaskId: "" })).toBe(true);
-  });
-
-  it("shows setup immediately when scrape state has no controllable task", () => {
-    expect(
-      __workbenchTestHooks.shouldShowWorkbenchSetup({
-        baseShowSetup: false,
-        workbenchMode: "scrape",
-        isScraping: true,
-        activeTaskId: "",
-        scrapeStartPending: true,
-      }),
-    ).toBe(false);
-    expect(
-      __workbenchTestHooks.shouldShowWorkbenchSetup({
-        baseShowSetup: false,
-        workbenchMode: "scrape",
-        isScraping: true,
-        activeTaskId: "",
-        scrapeStartPending: false,
-      }),
-    ).toBe(true);
-    expect(
-      __workbenchTestHooks.shouldShowWorkbenchSetup({
-        baseShowSetup: false,
-        workbenchMode: "scrape",
-        isScraping: true,
-        activeTaskId: "task-1",
-      }),
-    ).toBe(false);
-    expect(
-      __workbenchTestHooks.shouldShowWorkbenchSetup({
-        baseShowSetup: true,
-        workbenchMode: "scrape",
-        isScraping: false,
-        activeTaskId: "task-1",
-      }),
-    ).toBe(false);
-    expect(
-      __workbenchTestHooks.shouldShowWorkbenchSetup({
-        baseShowSetup: false,
-        workbenchMode: "maintenance",
-        isScraping: true,
-        activeTaskId: "",
-      }),
-    ).toBe(false);
+  it("uses desktop-baseline confirmation copy for web scrape stop and retry", () => {
+    expect(__workbenchTestHooks.STOP_SCRAPE_CONFIRM_MESSAGE).toBe("确定要停止刮削吗？");
+    expect(__workbenchTestHooks.getRetryFailedConfirmMessage(3)).toBe("确定要批量重试 3 个失败项目吗？");
   });
 
   it("hydrates only the active scrape task results for workbench restoration", () => {
@@ -240,6 +193,45 @@ describe("web workbench route contracts", () => {
       current: 2,
       total: 4,
       progress: 50,
+    });
+  });
+
+  it("does not reset restored scrape progress from a running task snapshot with no completed count", () => {
+    useScrapeStore.getState().setScraping(true);
+    useScrapeStore.getState().setScrapeStatus("running");
+    useScrapeStore.getState().updateProgress(35, 100);
+
+    const state = applyWebTaskUpdate(
+      {
+        kind: "snapshot",
+        tasks: [
+          {
+            id: "task-running",
+            kind: "scrape",
+            rootId: "root-1",
+            rootDisplayName: "Media",
+            status: "running",
+            createdAt: "2026-05-06T00:00:00.000Z",
+            updatedAt: "2026-05-06T00:00:00.000Z",
+            startedAt: "2026-05-06T00:00:01.000Z",
+            completedAt: null,
+            videoCount: 0,
+            directoryCount: 0,
+            error: null,
+            videos: ["A.mp4", "B.mp4"],
+          },
+        ],
+      },
+      { ...createTaskHydrationState(), activeScrapeTaskId: "task-running" },
+    );
+
+    expect(state.activeScrapeTaskId).toBe("task-running");
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: true,
+      scrapeStatus: "running",
+      current: 35,
+      total: 100,
+      progress: 35,
     });
   });
 

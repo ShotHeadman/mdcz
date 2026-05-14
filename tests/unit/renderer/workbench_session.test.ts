@@ -2,7 +2,6 @@ import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntrySt
 import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
 import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { applyWebTaskUpdate, createTaskHydrationState } from "@mdcz/shared/taskHydration";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import type { MaintenanceActionPort } from "@mdcz/views/adapters";
 import { getWorkbenchSessionSnapshot, resolveWorkbenchMode, startMaintenanceFlow } from "@mdcz/views/adapters";
@@ -63,38 +62,6 @@ describe("workbench session shared controller", () => {
 
     useMaintenanceEntryStore.getState().setEntries([createEntry()], "/media");
     expect(getWorkbenchSessionSnapshot("maintenance").showSetup).toBe(false);
-  });
-
-  it("applies web task updates through shared hydration state", () => {
-    const state = applyWebTaskUpdate(
-      {
-        kind: "task",
-        task: {
-          id: "task-1",
-          kind: "scrape",
-          rootId: "root-1",
-          rootDisplayName: "Media",
-          status: "running",
-          createdAt: "2026-05-04T00:00:00.000Z",
-          updatedAt: "2026-05-04T00:00:00.000Z",
-          startedAt: "2026-05-04T00:00:00.000Z",
-          completedAt: null,
-          videoCount: 1,
-          directoryCount: 0,
-          error: null,
-          videos: ["ABC-001.mp4", "ABC-002.mp4"],
-        },
-      },
-      createTaskHydrationState(),
-    );
-
-    expect(state.activeScrapeTaskId).toBe("task-1");
-    expect(useScrapeStore.getState()).toMatchObject({
-      isScraping: true,
-      scrapeStatus: "running",
-      current: 1,
-      total: 2,
-    });
   });
 
   it("starts maintenance through real port scan and shared store updates", async () => {
