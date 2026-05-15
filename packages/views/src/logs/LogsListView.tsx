@@ -1,6 +1,7 @@
 import { getVisualLogLevel } from "@mdcz/shared/logFormatting";
 import type { LogEntryDto } from "@mdcz/shared/serverDtos";
 import { cn } from "@mdcz/ui";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { CheckCircle2, CircleX, FileText, Globe2, Info, TriangleAlert } from "lucide-react";
 import { useEffect, useRef } from "react";
 
@@ -61,16 +62,23 @@ function getLevelPresentation(level: VisualLogLevel) {
 }
 
 export const LogsListView = ({ autoScroll = true, logs, emptyText = "暂无日志。" }: LogsListViewProps) => {
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const logCount = logs.length;
+  const rowVirtualizer = useVirtualizer({
+    count: logCount,
+    estimateSize: () => 44,
+    getItemKey: (index) => logs[index]?.id ?? index,
+    getScrollElement: () => scrollRef.current,
+    overscan: 16,
+  });
 
   useEffect(() => {
     if (!autoScroll || logCount === 0) {
       return;
     }
 
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [autoScroll, logCount]);
+    rowVirtualizer.scrollToIndex(logCount - 1, { align: "end" });
+  }, [autoScroll, logCount, rowVirtualizer]);
 
   if (logCount === 0) {
     return (
@@ -88,37 +96,55 @@ export const LogsListView = ({ autoScroll = true, logs, emptyText = "暂无日�
 
   return (
     <div
+      ref={scrollRef}
       className="h-full overflow-auto px-2 pb-2 font-mono text-[12.5px] sm:px-3 sm:pb-3"
       style={{
         overflowAnchor: "none",
       }}
     >
-      {logs.map((log, index) => {
-        const presentation = getLevelPresentation(getVisualLogLevel(log));
+      <div
+        className="relative w-full"
+        style={{
+          height: rowVirtualizer.getTotalSize(),
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const index = virtualRow.index;
+          const log = logs[index];
+          if (!log) return null;
+          const presentation = getLevelPresentation(getVisualLogLevel(log));
 
-        return (
-          <div key={log.id} data-index={index} className="px-1">
-            <div className="rounded-[var(--radius-quiet-sm)] px-3 py-2 transition-colors hover:bg-surface-low/85">
-              <div className="grid grid-cols-[64px_80px_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[74px_92px_minmax(0,1fr)] sm:gap-4">
-                <span className="pt-0.5 font-numeric text-[11px] text-muted-foreground sm:text-xs">
-                  {formatTimestamp(log.createdAt)}
-                </span>
-                <span
-                  className={cn(
-                    "flex items-center gap-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-[0.16em] sm:text-xs",
-                    presentation.className,
-                  )}
-                >
-                  <presentation.Icon className="h-3.5 w-3.5 shrink-0 stroke-[2.2]" />
-                  <span>{presentation.label}</span>
-                </span>
-                <div className="min-h-5 break-words whitespace-pre-wrap leading-6 text-foreground">{log.message}</div>
+          return (
+            <div
+              key={virtualRow.key}
+              ref={rowVirtualizer.measureElement}
+              data-index={index}
+              className="absolute left-0 top-0 w-full px-1"
+              style={{
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div className="rounded-[var(--radius-quiet-sm)] px-3 py-2 transition-colors hover:bg-surface-low/85">
+                <div className="grid grid-cols-[64px_80px_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[74px_92px_minmax(0,1fr)] sm:gap-4">
+                  <span className="pt-0.5 font-numeric text-[11px] text-muted-foreground sm:text-xs">
+                    {formatTimestamp(log.createdAt)}
+                  </span>
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-[0.16em] sm:text-xs",
+                      presentation.className,
+                    )}
+                  >
+                    <presentation.Icon className="h-3.5 w-3.5 shrink-0 stroke-[2.2]" />
+                    <span>{presentation.label}</span>
+                  </span>
+                  <div className="min-h-5 break-words whitespace-pre-wrap leading-6 text-foreground">{log.message}</div>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
-      <div ref={endRef} />
+          );
+        })}
+      </div>
     </div>
   );
 };

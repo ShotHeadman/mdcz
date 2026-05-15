@@ -11,7 +11,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, getLibraryAssetSrc } from "../client";
-import { AppLink, ErrorBanner } from "../routeCommon";
+import { ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 
 export const hasWorkbenchOutput = (input: {
@@ -69,11 +69,8 @@ export function OverviewPage() {
         {overviewQ.error && <ErrorBanner>{toErrorMessage(overviewQ.error)}</ErrorBanner>}
 
         <section className="col-span-12 mt-8">
-          <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-8">
             <h2 className="text-2xl font-bold tracking-tight">最近入库</h2>
-            <AppLink className="text-sm font-medium text-foreground underline-offset-4 hover:underline" to="/library">
-              打开媒体库
-            </AppLink>
           </div>
           <RecentAcquisitionsGrid
             getImageSrc={(path, item) => getLibraryAssetSrc({ path, rootId: item.rootId })}

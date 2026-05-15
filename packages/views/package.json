@@ -34,6 +34,7 @@
   "dependencies": {
     "@mdcz/shared": "workspace:*",
     "@mdcz/ui": "workspace:*",
+    "@tanstack/react-virtual": "^3.13.12",
     "lucide-react": "^0.563.0",
     "sonner": "^2.0.7",
     "zustand": "^5.0.9"

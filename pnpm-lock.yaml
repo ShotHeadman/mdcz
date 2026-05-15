@@ -477,6 +477,9 @@ importers:
       '@mdcz/ui':
         specifier: workspace:*
         version: link:../ui
+      '@tanstack/react-virtual':
+        specifier: ^3.13.12
+        version: 3.13.24(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       lucide-react:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.5)
