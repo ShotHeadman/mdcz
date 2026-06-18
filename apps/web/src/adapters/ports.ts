@@ -15,13 +15,64 @@ const dedupeValues = (values: string[]): string[] =>
     .map((value) => value.trim())
     .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
 
+const isAbsoluteLocalPath = (value: string): boolean =>
+  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+
+const getDirName = (path: string): string => {
+  const normalized = path.replace(/[\\/]+$/u, "");
+  const slash = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  return slash >= 0 ? normalized.slice(0, slash) : "";
+};
+
+const joinPath = (left: string, right: string): string => {
+  const normalizedLeft = left.replace(/[\\/]+$/u, "");
+  const normalizedRight = right.replace(/^[\\/]+/u, "");
+  if (!normalizedLeft) {
+    return normalizedRight;
+  }
+  if (!normalizedRight) {
+    return normalizedLeft;
+  }
+  return `${normalizedLeft}/${normalizedRight}`;
+};
+
+const getRootRelativeItemPath = (item: DetailViewItem): string => {
+  const [_rootId, ...relativeParts] = item.id.split(":");
+  return relativeParts.join(":").replace(/\\/gu, "/");
+};
+
+const inferRootHostPath = (item: DetailViewItem): string => {
+  const itemPath = item.path?.replace(/\\/gu, "/") ?? "";
+  const rootRelativePath = getRootRelativeItemPath(item);
+  if (!itemPath || !rootRelativePath) {
+    return "";
+  }
+  if (itemPath === rootRelativePath) {
+    return "";
+  }
+  if (itemPath.endsWith(`/${rootRelativePath}`)) {
+    return itemPath.slice(0, -(rootRelativePath.length + 1));
+  }
+  return "";
+};
+
 const toRelativePath = (item: DetailViewItem, path: string): string => {
   const normalizedPath = path.replace(/\\/gu, "/");
-  const itemPath = item.path?.replace(/\\/gu, "/") ?? "";
-  const rootRelative = itemPath.split("/").slice(0, -1).join("/");
-  if (rootRelative && normalizedPath.startsWith(`${rootRelative}/`)) {
-    return normalizedPath.slice(rootRelative.length + 1);
+  if (!isAbsoluteLocalPath(normalizedPath)) {
+    return normalizedPath;
   }
+
+  const rootHostPath = inferRootHostPath(item);
+  if (rootHostPath && normalizedPath.startsWith(`${rootHostPath}/`)) {
+    return normalizedPath.slice(rootHostPath.length + 1);
+  }
+
+  const itemPath = item.path?.replace(/\\/gu, "/") ?? "";
+  const itemDir = getDirName(itemPath);
+  if (itemDir && normalizedPath.startsWith(`${itemDir}/`)) {
+    return joinPath(getDirName(getRootRelativeItemPath(item)), normalizedPath.slice(itemDir.length + 1));
+  }
+
   return normalizedPath;
 };
 

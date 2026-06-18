@@ -34,7 +34,7 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
         <div className="space-y-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">MDCz</p>
           <h1 className="text-2xl font-semibold tracking-tight">管理员登录</h1>
-          <p className="text-sm leading-6 text-muted-foreground">请输入管理员密码继续使用 WebUI。</p>
+          <p className="text-sm leading-6 text-muted-foreground">请输入管理员密码</p>
         </div>
 
         {error && <ErrorBanner>{error}</ErrorBanner>}

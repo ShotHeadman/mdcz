@@ -52,6 +52,25 @@ describe("web detail action port", () => {
     expect(poster).toBe("http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/ABC-001/poster.jpg?token=token-1");
     expect(remote).toBe("https://img.example/poster.jpg");
   });
+
+  it("resolves selected-maintenance absolute local image candidates relative to the media root", async () => {
+    setAdminToken("token-1");
+    const port = createWebDetailPort();
+    const [poster] = await port.resolveImageCandidates(
+      ["/srv/media/JAV_output/Actor A/GNI-006/poster.jpg"],
+      "/srv/media/JAV_output/Actor A/GNI-006",
+      {
+        id: "root-1:JAV_output/Actor A/GNI-006/GNI-006.mp4",
+        number: "GNI-006",
+        path: "/srv/media/JAV_output/Actor A/GNI-006/GNI-006.mp4",
+        status: "success",
+      },
+    );
+
+    expect(poster).toBe(
+      "http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/Actor%20A/GNI-006/poster.jpg?token=token-1",
+    );
+  });
 });
 
 describe("web scrape action port", () => {
