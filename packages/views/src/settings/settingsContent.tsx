@@ -30,10 +30,6 @@ import {
   DialogTrigger,
   FormControl,
   Switch,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from "@mdcz/ui";
 import { CircleHelp, FolderOpen, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -659,24 +655,17 @@ function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
 
   return (
     <Dialog>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="text-muted-foreground hover:text-foreground"
-                aria-label={`查看${label}占位符`}
-              >
-                <CircleHelp className="h-3.5 w-3.5" />
-              </Button>
-            </DialogTrigger>
-          </TooltipTrigger>
-          <TooltipContent>{label}占位符</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-foreground"
+          aria-label={`查看${label}占位符`}
+        >
+          <CircleHelp className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
       <DialogContent className="max-w-3xl gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6">
         <DialogHeader className="gap-2 text-left">
           <DialogTitle>{label}占位符</DialogTitle>
