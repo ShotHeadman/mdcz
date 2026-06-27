@@ -28,6 +28,7 @@ const FC2_RAW_NUMBER_WITH_CIRCLED_SUFFIX_PATTERN = new RegExp(
   "iu",
 );
 const TRAILING_SUBTITLE_PATTERN = new RegExp(`${FILENAME_DELIMITER_SOURCE}(?:${SUBTITLE_TOKEN_SOURCE})$`, "iu");
+const TRAILING_ATTACHED_CHINESE_SUBTITLE_PATTERN = /(?<=\d)(?:CHS|CH)$/iu;
 const TRAILING_UNCENSORED_PATTERN = /[-_.\s]U$/iu;
 const TRAILING_PART_PATTERN = /[-_.\s](?:CD|PART|EP)[-_\s]?\d{1,2}$/iu;
 const TRAILING_FC2_JP_PART_PATTERN = /[-_.\s](?:前番|前編|後番|後編)$/u;
@@ -59,6 +60,7 @@ const stripTrailingTokens = (value: string, options: { stripBarePart: boolean })
   while (true) {
     const next = current
       .replace(TRAILING_SUBTITLE_PATTERN, "")
+      .replace(TRAILING_ATTACHED_CHINESE_SUBTITLE_PATTERN, "")
       .replace(TRAILING_UNCENSORED_PATTERN, "")
       .replace(TRAILING_PART_PATTERN, "")
       .replace(TRAILING_FC2_JP_PART_PATTERN, "");

@@ -1,4 +1,4 @@
-import { uniqueStrings } from "@mdcz/runtime/shared";
+import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 
@@ -20,15 +20,45 @@ const DMM_PRIMARY_IMAGE_PATTERN = /p[sl]\.(?:jpe?g|png|webp)$/iu;
 const DMM_NOISE_GENRES = new Set(["サンプル動画"]);
 const DMM_DUMMY_IMAGE_PATTERN = /\/(?:dummy|loading)[^/]*\.(?:gif|png|jpe?g|webp)$/iu;
 
+const normalizeDmmLabelText = (value: string): string => normalizeText(value).replace(/[：:]\s*$/u, "");
+
+const findDmmLabelCells = ($: CheerioAPI, labels: readonly string[]) => {
+  const labelSet = new Set(labels);
+  return $("tr > th, tr > td").filter((_index: number, element: CheerioInput) => {
+    const cell = $(element).clone();
+    cell.find("script, style, noscript").remove();
+    return cell.children("a").length === 0 && labelSet.has(normalizeDmmLabelText(cell.text()));
+  });
+};
+
+const extractDmmTableValue = ($: CheerioAPI, labels: readonly string[]): string | undefined => {
+  return findDmmLabelCells($, labels)
+    .toArray()
+    .map((element: CheerioInput) => {
+      const valueCell = $(element).next("td").first().clone();
+      valueCell.find("script, style, noscript").remove();
+      return normalizeText(valueCell.text());
+    })
+    .find((text) => text.length > 0);
+};
+
+const extractDmmTableLinks = ($: CheerioAPI, labels: readonly string[]): string[] => {
+  return uniqueStrings(
+    findDmmLabelCells($, labels)
+      .toArray()
+      .flatMap((element: CheerioInput) =>
+        $(element)
+          .next("td")
+          .find("a")
+          .toArray()
+          .map((link: CheerioInput) => $(link).text().trim())
+          .filter((text) => text.length > 0),
+      ),
+  );
+};
+
 const extractRelatedTags = ($: CheerioAPI): string[] => {
-  const texts = [
-    ...$("td:contains('関連タグ') + td a")
-      .toArray()
-      .map((element: CheerioInput) => $(element).text()),
-    ...$("th:contains('関連タグ') + td a")
-      .toArray()
-      .map((element: CheerioInput) => $(element).text()),
-  ];
+  const texts = [...extractDmmTableLinks($, ["関連タグ"])];
 
   return uniqueStrings(
     texts.flatMap((text) => {
@@ -133,34 +163,20 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
   }
 
   const release =
-    parseDate(
-      extractText($, "td:contains('発売日') + td") ??
-        extractText($, "th:contains('発売日') + td") ??
-        extractText($, "td:contains('配信開始日') + td") ??
-        extractText($, "th:contains('配信開始日') + td"),
-    ) ?? undefined;
+    parseDate(extractDmmTableValue($, ["発売日"]) ?? extractDmmTableValue($, ["配信開始日"])) ?? undefined;
 
-  const studio = extractText($, "td:contains('メーカー') + td a") ?? extractText($, "th:contains('メーカー') + td a");
-  const publisher =
-    extractText($, "td:contains('レーベル') + td a") ?? extractText($, "th:contains('レーベル') + td a") ?? studio;
-  const series = extractText($, "td:contains('シリーズ') + td a") ?? extractText($, "th:contains('シリーズ') + td a");
-  const directors = uniqueStrings([
-    ...extractList($, "td:contains('監督') + td a"),
-    ...extractList($, "th:contains('監督') + td a"),
-  ]);
+  const studio = extractDmmTableLinks($, ["メーカー"])[0];
+  const publisher = extractDmmTableLinks($, ["レーベル"])[0] ?? studio;
+  const series = extractDmmTableLinks($, ["シリーズ"])[0];
+  const directors = extractDmmTableLinks($, ["監督"]);
 
   const actors = uniqueStrings([
     ...extractList($, "#performer a"),
     ...extractList($, "#fn-visibleActor a"),
-    ...extractList($, "td:contains('出演者') + td a"),
-    ...extractList($, "th:contains('出演者') + td a"),
+    ...extractDmmTableLinks($, ["出演者"]),
   ]);
 
-  const genres = normalizeDmmGenres([
-    ...extractList($, "td:contains('ジャンル') + td a"),
-    ...extractList($, "th:contains('ジャンル') + td a"),
-    ...extractRelatedTags($),
-  ]);
+  const genres = normalizeDmmGenres([...extractDmmTableLinks($, ["ジャンル"]), ...extractRelatedTags($)]);
 
   const thumb = extractDmmPrimaryImage($);
   const thumbUrl = thumb?.replace("ps.jpg", "pl.jpg");

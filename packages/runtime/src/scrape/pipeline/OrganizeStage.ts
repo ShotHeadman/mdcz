@@ -17,6 +17,7 @@ export class OrganizeStage implements ScrapeStage {
       site: crawlerData.website,
       step: "organize",
     });
+    this.runtime.signalService.showLogText(`[${context.fileInfo.number}] Organizing files...`);
 
     throwIfAborted(signal);
     context.outputVideoPath = await this.runtime.organizePreparedVideo(context, signal);

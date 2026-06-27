@@ -16,6 +16,7 @@ import {
   serializeConfiguration,
 } from "@mdcz/shared/configCodec";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
+import { NamingEngine } from "../scrape/organize/NamingEngine";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
 export const RUNTIME_DEFAULT_PROFILE_NAME = "default";
@@ -154,59 +155,16 @@ export const mergeRuntimeConfig = <T>(base: T, patch: DeepPartial<T>): T => {
   return merged as T;
 };
 
-const renderNamingTemplate = (
-  template: string,
-  sample: { label: string; number: string; title: string; actor: string; file: string },
-): string =>
-  template
-    .replaceAll("{number}", sample.number)
-    .replaceAll("{rawNumber}", sample.number)
-    .replaceAll("{title}", sample.title)
-    .replaceAll("{originaltitle}", "Sample Original Title")
-    .replaceAll("{actor}", sample.actor)
-    .replaceAll("{firstActor}", sample.actor.split(" ")[0] ?? sample.actor)
-    .replaceAll("{allActors}", sample.actor)
-    .replaceAll("{filename}", sample.file.replace(/\.[^.]+$/u, ""))
-    .replaceAll("{date}", "2024-01-15")
-    .replaceAll("{release}", "2024-01-15")
-    .replaceAll("{year}", "2024")
-    .replaceAll("{studio}", "示例制片")
-    .replaceAll("{publisher}", "示例发行")
-    .replaceAll("{director}", "示例导演")
-    .replaceAll("{series}", "示例系列")
-    .replaceAll("{runtime}", "121")
-    .replaceAll("{definition}", "1080P")
-    .replaceAll("{resolution}", "1080P")
-    .replaceAll("{cnword}", sample.label === "中文字幕" ? "-C" : "")
-    .replaceAll("{subtitle}", sample.label === "中文字幕" ? "中文字幕" : "")
-    .replaceAll("{4K}", sample.label === "中文字幕" ? "4K" : "")
-    .replaceAll("{censorshipType}", sample.number.startsWith("FC2") ? "无码" : "有码")
-    .replaceAll("{score}", "4.5")
-    .replaceAll("{rating}", "4.5")
-    .replaceAll("{website}", "DMM");
+const namingPreviewEngine = new NamingEngine();
 
 export const buildRuntimeNamingPreview = (
   configuration: Configuration,
   patch: DeepPartial<Configuration> = {},
 ): { items: NamingPreviewItem[] } => {
   const config = parseRuntimeConfiguration(mergeRuntimeConfig(configuration, patch));
-  const samples = [
-    { label: "普通", number: "ABC-123", title: "示例中文标题", actor: "演员A", file: "ABC-123.mp4" },
-    { label: "中文字幕", number: "ABC-456", title: "中文字幕示例", actor: "演员B", file: "ABC-456-C.mp4" },
-    { label: "多演员", number: "DEF-012", title: "多演员作品", actor: "演员E 演员F 等演员", file: "DEF-012.mp4" },
-    { label: "演员为空", number: "FC2-123456", title: "示例中文标题", actor: "示例卖家", file: "FC2-123456.mp4" },
-  ];
 
   return {
-    items: samples.map((sample) => ({
-      label: sample.label,
-      folder: config.behavior.successFileMove
-        ? renderNamingTemplate(config.naming.folderTemplate, sample) || "当前目录"
-        : "当前目录",
-      file: config.behavior.successFileRename
-        ? `${renderNamingTemplate(config.naming.fileTemplate, sample) || sample.number}.mp4`
-        : sample.file,
-    })),
+    items: namingPreviewEngine.buildPreview(config),
   };
 };
 

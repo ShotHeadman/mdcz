@@ -101,8 +101,25 @@ describe("runtime config helpers", () => {
       }).items[0],
     ).toMatchObject({
       label: "普通",
-      folder: "演员A/ABC-123",
       file: "ABC-123 示例中文标题.mp4",
+    });
+    expect(
+      buildRuntimeNamingPreview(defaultConfiguration, {
+        naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number} {title}" },
+      }).items[0]?.folder,
+    ).toContain("演员A");
+
+    const expandedPreview = buildRuntimeNamingPreview(defaultConfiguration, {
+      naming: {
+        folderTemplate: "{firstLetter}-{number}",
+        fileTemplate: "{rawNumber}-{4K}{cnword}-{title}",
+        cnwordStyle: "-SUB",
+      },
+    }).items.find((item) => item.label === "中文字幕");
+
+    expect(expandedPreview).toMatchObject({
+      folder: "A-ABC-456-SUB",
+      file: "ABC-456-4K-SUB-中文字幕示例.mp4",
     });
   });
 });

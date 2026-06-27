@@ -145,6 +145,55 @@ describe("DmmCrawler", () => {
         },
       },
       {
+        number: "MNGS-051",
+        searchUrl: "https://www.dmm.co.jp/search/=/searchstr=mngs00051/sort=ranking/",
+        detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=mngs00051/",
+        searchHtml: (detailUrl: string) => `
+          <html><body>
+            <script>
+              const item = {"detailUrl":"${detailUrl.replaceAll("/", "\\/")}"};
+            </script>
+          </body></html>
+        `,
+        detailHtml: `
+          <html><body>
+            <h1><span>DMM Noise Isolation</span></h1>
+            <div>
+              <span>ジャンル</span>
+              <a>レビューを見る</a>
+              <a>次へ</a>
+              <a>単月レンタルに追加</a>
+            </div>
+            <table>
+              <tr><th>出演者</th><td><a>彩月七緒</a></td></tr>
+              <tr><th>ジャンル</th><td><a>巨乳</a><a>中出し</a></td></tr>
+              <tr><th>メーカー</th><td><a>MOODYZ</a></td></tr>
+              <tr><th>レーベル</th><td><a>MOODYZ ニュージーニアス</a></td></tr>
+              <tr><th>配信開始日</th><td><span>2026/05/04</span></td></tr>
+            </table>
+            <script type="application/ld+json">
+            {
+              "name": "DMM Noise Isolation",
+              "image": ["https://pics.dmm.co.jp/digital/video/mngs00051/mngs00051pl.jpg"],
+              "subjectOf": {
+                "genre": ["巨乳", "中出し"]
+              }
+            }
+            </script>
+          </body></html>
+        `,
+        assert: (response: Awaited<ReturnType<DmmCrawler["crawl"]>>) => {
+          if (!response.result.success) {
+            throw new Error("expected success");
+          }
+
+          expect(response.result.data.genres).toEqual(["巨乳", "中出し"]);
+          expect(response.result.data.genres).not.toContain("レビューを見る");
+          expect(response.result.data.genres).not.toContain("次へ");
+          expect(response.result.data.publisher).toBe("MOODYZ ニュージーニアス");
+        },
+      },
+      {
         number: "SSIS-027",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=ssis00027/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00027/",

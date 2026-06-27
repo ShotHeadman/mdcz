@@ -21,6 +21,7 @@ describe("extractNumber", () => {
     const cases = [
       { input: "ABC-123-C-CD1", expected: "ABC-123" },
       { input: "ABC-123-中文字幕", expected: "ABC-123" },
+      { input: "MNGS-051ch", expected: "MNGS-051" },
       { input: "FC2-PPV-123456-U", expected: "FC2-123456" },
       { input: "FC-123456", expected: "FC2-123456" },
       { input: "FC2-123456-1", expected: "FC2-123456" },
@@ -201,6 +202,12 @@ describe("parseFileInfo", () => {
         subtitleTag: "中文字幕",
       });
     }
+
+    expect(parseFileInfo("/tmp/MNGS-051ch.mp4")).toMatchObject({
+      number: "MNGS-051",
+      isSubtitled: true,
+      subtitleTag: "中文字幕",
+    });
 
     expect(parseFileInfo("/tmp/ABC-123-中文字幕.mp4")).toMatchObject({
       isUncensored: false,
