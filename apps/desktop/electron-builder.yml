@@ -65,10 +65,6 @@ mac:
       arch:
         - x64
         - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
   files:
     - "!**/node_modules/@img/sharp-{win32,linux,linuxmusl}-*/**"
     - "!**/node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**"

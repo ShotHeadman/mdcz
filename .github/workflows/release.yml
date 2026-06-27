@@ -110,9 +110,7 @@ jobs:
           - os: macos-latest
             script: build:mac
             artifact: desktop-macos
-            glob: |
-              release/*/*.dmg
-              release/*/*.zip
+            glob: "release/*/*.dmg"
           - os: ubuntu-latest
             script: package:webui
             artifact: webui-portable
@@ -195,41 +193,6 @@ jobs:
         run: |
           cd dist
           find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
-
-      - name: Build release notes
-        run: |
-          cat > release-guide.md <<'NOTES'
-          ## Distribution Guide
-
-          ### Desktop users
-
-          - Windows: download the NSIS `Setup` installer for normal installs. Use the portable `.exe` only when you need a no-install copy.
-          - macOS: download the `.dmg` for manual installation. The `.zip` is also attached for users who prefer archive-based installation.
-          - Linux: download the `.AppImage`.
-          - Current Desktop builds are unsigned. Windows SmartScreen and macOS Gatekeeper may show warnings until signing and notarization certificates are added.
-          - Verify downloads with `SHA256SUMS.txt` when downloading assets manually.
-
-          ### Docker self-hosters
-
-          - Pull `ghcr.io/shotheadman/mdcz:${{ needs.version.outputs.version }}` for a pinned deployment.
-          - Pull `ghcr.io/shotheadman/mdcz:latest` only when you intentionally track the newest published image.
-
-          ### No-Docker self-hosters
-
-          - Download `mdcz-${{ needs.version.outputs.version }}.tar.gz`.
-          - This is a lightweight Node bundle and does not include `node_modules` or a bundled Node runtime.
-          - Install Node.js 24 or newer, extract the archive, then run `./install.sh` (Linux/macOS) or `.\install.ps1` (Windows). The setup helper skips Node handling when a compatible Node is already installed.
-          - Start with `./start.sh` or `.\start.bat`; follow the bundled README for systemd and environment configuration.
-
-          NOTES
-
-          gh api repos/${{ github.repository }}/releases/generate-notes \
-            -f tag_name='${{ needs.version.outputs.tag }}' \
-            --jq .body > generated-notes.md
-
-          cat release-guide.md generated-notes.md > release-notes.md
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: softprops/action-gh-release@v3
         with:
