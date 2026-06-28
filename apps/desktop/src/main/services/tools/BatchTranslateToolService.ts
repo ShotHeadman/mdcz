@@ -5,6 +5,7 @@ import type { NetworkClient } from "@mdcz/runtime/network";
 import { LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   applyBatchNfoTranslations,
+  type BatchNfoTranslatorApplyOptions,
   type BatchNfoTranslatorDependencies,
   scanBatchNfoTranslations,
 } from "@mdcz/runtime/tools";
@@ -38,14 +39,23 @@ export class BatchTranslateToolService {
     });
   }
 
-  async apply(items: BatchTranslateScanItem[], config: Configuration): Promise<BatchTranslateApplyResultItem[]> {
+  async apply(
+    items: BatchTranslateScanItem[],
+    config: Configuration,
+    options: BatchNfoTranslatorApplyOptions = {},
+  ): Promise<BatchTranslateApplyResultItem[]> {
     void this.networkClient;
-    return await applyBatchNfoTranslations(items, config, {
-      llmApiClient: this.llmApiClient,
-      localScanService: this.localScanService,
-      logger: this.logger,
-      nfoGenerator: this.nfoGenerator,
-      writeNfo: this.writeNfo,
-    });
+    return await applyBatchNfoTranslations(
+      items,
+      config,
+      {
+        llmApiClient: this.llmApiClient,
+        localScanService: this.localScanService,
+        logger: this.logger,
+        nfoGenerator: this.nfoGenerator,
+        writeNfo: this.writeNfo,
+      },
+      options,
+    );
   }
 }
