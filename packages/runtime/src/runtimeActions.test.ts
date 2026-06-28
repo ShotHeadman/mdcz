@@ -53,6 +53,7 @@ describe("settings parity runtime helpers", () => {
         baseUrl: "https://example.test/v1",
         model: "gpt-test",
         prompt: "简体中文:ある日の暮方の事である。",
+        timeout: 10_000,
       }),
     );
   });

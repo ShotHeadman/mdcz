@@ -402,6 +402,7 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "translate.llmBaseUrl", label: "LLM API 地址", anchor: "translate" },
   { key: "translate.llmPrompt", label: "LLM 翻译提示词", anchor: "translate" },
   { key: "translate.llmTemperature", label: "LLM 温度", anchor: "translate" },
+  { key: "translate.llmTimeout", label: "LLM 请求超时", anchor: "translate" },
   { key: "translate.llmMaxRetries", label: "LLM 最大重试次数", anchor: "translate" },
   { key: "translate.llmMaxRequestsPerSecond", label: "LLM 每秒最大请求数", anchor: "translate" },
   { key: "translate.targetLanguage", label: "目标语言", anchor: "translate" },

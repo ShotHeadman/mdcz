@@ -783,6 +783,7 @@ export function TranslateSection() {
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
       llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
       llmTemperature: Number(form.getValues("translate.llmTemperature") ?? 0),
+      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 10),
     };
 
     setTesting(true);
@@ -845,6 +846,7 @@ export function TranslateSection() {
           />
           <PromptFieldWrapper name="translate.llmPrompt" label="LLM 翻译提示词" />
           <NumberField name="translate.llmTemperature" label="LLM 温度" min={0} max={2} step={0.1} />
+          <NumberField name="translate.llmTimeout" label="LLM 请求超时(秒)" min={1} max={300} />
           <NumberField name="translate.llmMaxRetries" label="LLM 最大重试次数" min={1} max={20} />
           <NumberField name="translate.llmMaxRequestsPerSecond" label="LLM 每秒最大请求数" min={1} max={100} />
         </>

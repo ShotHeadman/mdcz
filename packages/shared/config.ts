@@ -81,6 +81,7 @@ const translateSchema = z.object({
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
   llmPrompt: z.string().default("自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}"),
   llmTemperature: z.number().min(0).max(2).default(1.0),
+  llmTimeout: z.number().int().min(1).max(300).default(10),
   llmMaxRetries: z.number().int().min(1).max(20).default(3),
   llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
   targetLanguage: translationTargetSchema,

@@ -13,6 +13,7 @@ export interface TranslateTestLlmInput {
   llmBaseUrl?: string;
   llmPrompt?: string;
   llmTemperature?: number;
+  llmTimeout?: number;
 }
 
 export interface TranslateTestLlmResult {
@@ -35,6 +36,10 @@ export const testLlmConnectivity = async (
     typeof input?.llmTemperature === "number" && Number.isFinite(input.llmTemperature)
       ? input.llmTemperature
       : configuration.translate.llmTemperature;
+  const llmTimeout =
+    typeof input?.llmTimeout === "number" && Number.isFinite(input.llmTimeout)
+      ? input.llmTimeout
+      : configuration.translate.llmTimeout;
 
   if (!llmModelName.trim()) {
     return { success: false, message: "请先填写 LLM 模型名称" };
@@ -54,6 +59,7 @@ export const testLlmConnectivity = async (
       baseUrl: normalizedBaseUrl,
       temperature: Math.min(2, Math.max(0, llmTemperature)),
       prompt: llmPrompt.replaceAll("{lang}", "简体中文").replaceAll("{content}", "ある日の暮方の事である。"),
+      timeout: Math.max(1, Math.trunc(llmTimeout)) * 1000,
     });
     logger?.info(`Test LLM connectivity: Success, reply="${content}"`);
 
