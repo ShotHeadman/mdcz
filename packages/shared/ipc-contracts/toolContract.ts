@@ -3,6 +3,7 @@ import type {
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
+  BatchTranslateApplyInput,
   BatchTranslateApplyResultItem,
   BatchTranslateScanItem,
   EmbyConnectionCheckResult,
@@ -20,7 +21,7 @@ export type ToolIpcContract = {
   >;
   [IpcChannel.Tool_BatchTranslateScan]: IpcProcedure<{ directory?: string }, { items: BatchTranslateScanItem[] }>;
   [IpcChannel.Tool_BatchTranslateApply]: IpcProcedure<
-    { items?: BatchTranslateScanItem[] },
+    BatchTranslateApplyInput,
     { results: BatchTranslateApplyResultItem[] }
   >;
   [IpcChannel.Tool_CreateSymlink]: IpcProcedure<

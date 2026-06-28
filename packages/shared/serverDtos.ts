@@ -1022,6 +1022,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
     text: z.string().trim().min(1).optional(),
     directory: z.string().trim().min(1).optional(),
+    batchSize: z.number().int().min(1).max(20).optional(),
     items: z
       .array(
         z.object({

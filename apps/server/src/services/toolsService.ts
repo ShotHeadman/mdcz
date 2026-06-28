@@ -169,12 +169,19 @@ export class ToolsService {
         }
         if (input.action === "apply") {
           const items = input.items ?? [];
-          const results = await applyBatchNfoTranslations(items, config, {
-            llmApiClient: this.llmApiClient,
-            localScanService: this.localScanService,
-            nfoGenerator: this.nfoGenerator,
-            writeNfo: writePreparedNfo,
-          });
+          const results = await applyBatchNfoTranslations(
+            items,
+            config,
+            {
+              llmApiClient: this.llmApiClient,
+              localScanService: this.localScanService,
+              nfoGenerator: this.nfoGenerator,
+              writeNfo: writePreparedNfo,
+            },
+            {
+              maxBatchItems: input.batchSize,
+            },
+          );
           return {
             toolId: input.toolId,
             ok: results.every((item) => item.success),

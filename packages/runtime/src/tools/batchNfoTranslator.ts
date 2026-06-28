@@ -58,6 +58,11 @@ type PendingTranslation = {
   text: string;
 };
 
+type PendingTranslationResult = {
+  translatedByKey: Map<string, string>;
+  failedReasonByKey: Map<string, string>;
+};
+
 export interface BatchNfoTranslatorDependencies {
   localScanService?: BatchTranslateLocalScanService;
   llmApiClient?: Pick<LlmApiClient, "generateText">;
@@ -70,6 +75,10 @@ const MAX_BATCH_ITEMS = 20;
 const MAX_BATCH_CHARS = 12_000;
 const CODE_FENCE_PATTERN = /^```(?:json)?\s*|\s*```$/giu;
 const MOVIE_NFO_NAME = "movie.nfo";
+
+export interface BatchNfoTranslatorApplyOptions {
+  maxBatchItems?: number;
+}
 
 const noopLogger: RuntimeLogger = {
   debug: () => undefined,
@@ -119,15 +128,23 @@ const parseJsonStringArray = (content: string, expectedLength: number): string[]
   return null;
 };
 
-const buildBatchChunks = (items: PendingTranslation[]): PendingTranslation[][] => {
+const normalizeMaxBatchItems = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return MAX_BATCH_ITEMS;
+  return Math.min(MAX_BATCH_ITEMS, Math.max(1, Math.trunc(parsed)));
+};
+
+const buildBatchChunks = (items: PendingTranslation[], maxBatchItems = MAX_BATCH_ITEMS): PendingTranslation[][] => {
   const chunks: PendingTranslation[][] = [];
   let currentChunk: PendingTranslation[] = [];
   let currentChars = 0;
+  const normalizedMaxBatchItems = normalizeMaxBatchItems(maxBatchItems);
 
   for (const item of items) {
     const itemChars = item.text.length;
     const shouldFlush =
-      currentChunk.length > 0 && (currentChunk.length >= MAX_BATCH_ITEMS || currentChars + itemChars > MAX_BATCH_CHARS);
+      currentChunk.length > 0 &&
+      (currentChunk.length >= normalizedMaxBatchItems || currentChars + itemChars > MAX_BATCH_CHARS);
 
     if (shouldFlush) {
       chunks.push(currentChunk);
@@ -267,10 +284,13 @@ const translatePendingTexts = async (
   target: LanguageTarget,
   config: Configuration,
   logger: RuntimeLogger,
-): Promise<Map<string, string>> => {
+  options: BatchNfoTranslatorApplyOptions = {},
+): Promise<PendingTranslationResult> => {
   const translatedByKey = new Map<string, string>();
+  const failedReasonByKey = new Map<string, string>();
+  const maxBatchItems = normalizeMaxBatchItems(options.maxBatchItems);
 
-  for (const chunk of buildBatchChunks(items)) {
+  for (const chunk of buildBatchChunks(items, maxBatchItems)) {
     try {
       const translated = await translateChunk(
         llmApiClient,
@@ -281,13 +301,18 @@ const translatePendingTexts = async (
       chunk.forEach((item, index) => {
         const value = translated[index]?.trim();
         if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
+        else failedReasonByKey.set(item.key, "LLM 返回了空翻译结果");
       });
     } catch (error) {
-      logger.warn(`Batch translation chunk failed: ${toErrorMessage(error)}`);
+      const message = toErrorMessage(error);
+      logger.warn(`Batch translation chunk failed: ${message}`);
+      for (const item of chunk) {
+        failedReasonByKey.set(item.key, message);
+      }
     }
   }
 
-  return translatedByKey;
+  return { failedReasonByKey, translatedByKey };
 };
 
 export const scanBatchNfoTranslations = async (
@@ -311,6 +336,7 @@ export const applyBatchNfoTranslations = async (
   items: BatchTranslateScanItem[],
   config: Configuration,
   dependencies: BatchNfoTranslatorDependencies,
+  options: BatchNfoTranslatorApplyOptions = {},
 ): Promise<BatchTranslateApplyResultItem[]> => {
   if (items.length === 0) return [];
   if (!dependencies.localScanService) {
@@ -352,12 +378,13 @@ export const applyBatchNfoTranslations = async (
     plans.push({ entry, titleAction, plotAction });
   }
 
-  const translatedByKey = await translatePendingTexts(
+  const { failedReasonByKey, translatedByKey } = await translatePendingTexts(
     dependencies.llmApiClient,
     [...pendingByKey.values()],
     target,
     config,
     logger,
+    options,
   );
   const results: BatchTranslateApplyResultItem[] = [];
 
@@ -400,7 +427,8 @@ export const applyBatchNfoTranslations = async (
         else nextCrawlerData.plot_zh = translated;
         translatedFields.push(action.field);
       } else {
-        errors.push(`${action.field === "title" ? "标题" : "简介"}翻译失败`);
+        const reason = failedReasonByKey.get(action.key);
+        errors.push(`${action.field === "title" ? "标题" : "简介"}翻译失败${reason ? `：${reason}` : ""}`);
       }
     }
 
