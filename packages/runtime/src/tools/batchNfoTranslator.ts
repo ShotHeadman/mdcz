@@ -251,6 +251,7 @@ const translateChunk = async (
       baseUrl: config.translate.llmBaseUrl,
       temperature: 0,
       prompt: buildBatchPrompt(texts, target),
+      timeout: Math.max(1, Math.trunc(config.translate.llmTimeout)) * 1000,
     },
     undefined,
   );

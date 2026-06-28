@@ -104,6 +104,7 @@ export class OpenAiTranslator {
             baseUrl: config.translate.llmBaseUrl,
             temperature,
             prompt,
+            timeout: this.getTimeoutMs(config),
           },
           signal,
         ),
@@ -118,6 +119,15 @@ export class OpenAiTranslator {
     }
 
     return Math.max(1, Math.trunc(configured));
+  }
+
+  private getTimeoutMs(config: Configuration): number {
+    const configured = Number(config.translate.llmTimeout);
+    if (!Number.isFinite(configured)) {
+      return 10_000;
+    }
+
+    return Math.max(1, Math.trunc(configured)) * 1000;
   }
 
   private getQueue(config: Configuration): PQueue {

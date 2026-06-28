@@ -24,6 +24,7 @@ export type TranslateTestLlmInput = {
   llmBaseUrl?: string;
   llmPrompt?: string;
   llmTemperature?: number;
+  llmTimeout?: number;
 };
 
 export type ConnectionCheckStatus = "ok" | "error" | "skipped";
