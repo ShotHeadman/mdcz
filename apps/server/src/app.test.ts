@@ -6,19 +6,15 @@ import {
   type AggregationResult,
   type ManualScrapeOptions,
   type MountedRootScrapeAggregationService,
-  MountedRootScrapeRuntime,
   NfoGenerator,
 } from "@mdcz/runtime/scrape";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer, type ServerApp } from "./app";
-import { ServerConfigService } from "./services/configService";
-import { MediaRootService } from "./services/mediaRootService";
-import { ServerPersistenceService } from "./services/persistenceService";
+import { closeTestServers, createTestServer, releaseTestServer } from "./app.testSupport";
 import type { RuntimeActionService } from "./services/runtimeActionService";
-import { ScrapeService } from "./services/scrapeService";
-import { createTaskEventBus, formatSseEvent } from "./taskEvents";
+import { formatSseEvent } from "./taskEvents";
 
 const textDecoder = new TextDecoder();
 
@@ -32,59 +28,7 @@ const readStreamChunk = async (reader: ReadableStreamDefaultReader<Uint8Array>):
   return textDecoder.decode(chunk.value);
 };
 
-const expectedHealthPayload = {
-  service: "mdcz-server",
-  status: "ok",
-  slice: "app-skeleton",
-} as const;
-
-let serverApp: ServerApp | undefined;
-
-interface TestServerOptions {
-  automationWebhook?: {
-    secret?: string;
-    url?: string;
-  };
-  runtimeActions?: RuntimeActionService;
-  scrapeAggregation?: MountedRootScrapeAggregationService;
-}
-
-const createTestServer = async (options: TestServerOptions = {}): Promise<ServerApp> => {
-  const root = await mkdtemp(join(tmpdir(), "mdcz-server-app-"));
-  const paths = {
-    configDir: join(root, "config"),
-    dataDir: join(root, "data"),
-    configPath: join(root, "config", "default.toml"),
-    databasePath: join(root, "data", "mdcz.sqlite"),
-  };
-  const config = new ServerConfigService(paths);
-  const persistence = new ServerPersistenceService(paths);
-  const mediaRoots = new MediaRootService(persistence);
-  const taskEvents = createTaskEventBus();
-  serverApp = buildServer({
-    serviceOptions: {
-      automationWebhook: options.automationWebhook,
-    },
-    webStaticDir: false,
-    services: {
-      config,
-      mediaRoots,
-      persistence,
-      runtimeActions: options.runtimeActions,
-      taskEvents,
-      scrape: options.scrapeAggregation
-        ? new ScrapeService(
-            persistence,
-            mediaRoots,
-            config,
-            taskEvents,
-            new MountedRootScrapeRuntime(config, options.scrapeAggregation),
-          )
-        : undefined,
-    },
-  });
-  return serverApp;
-};
+let standaloneServerApp: ServerApp | undefined;
 
 const syncMediaRootFromConfig = async (
   fastify: ServerApp["fastify"],
@@ -337,8 +281,9 @@ const createAbortAwareAggregation = (): {
 };
 
 afterEach(async () => {
-  await serverApp?.fastify.close();
-  serverApp = undefined;
+  await closeTestServers();
+  await standaloneServerApp?.fastify.close();
+  standaloneServerApp = undefined;
 });
 
 beforeEach(() => {
@@ -352,106 +297,6 @@ beforeEach(() => {
 });
 
 describe("buildServer", () => {
-  it("preserves the root and health HTTP contracts", async () => {
-    const { fastify } = await createTestServer();
-
-    const rootResponse = await fastify.inject({ method: "GET", url: "/" });
-    const healthResponse = await fastify.inject({ method: "GET", url: "/health" });
-
-    expect(rootResponse.statusCode).toBe(200);
-    expect(rootResponse.json()).toEqual(expectedHealthPayload);
-    expect(healthResponse.statusCode).toBe(200);
-    expect(healthResponse.json()).toEqual(expectedHealthPayload);
-  });
-
-  it("mounts a tRPC health procedure", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({ method: "GET", url: "/trpc/health.read" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      result: {
-        data: expectedHealthPayload,
-      },
-    });
-  });
-
-  it("returns a localized error for invalid admin login", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "wrong-password" },
-    });
-
-    expect(response.statusCode).toBe(500);
-    expect(response.json().error.message).toContain("管理员密码错误");
-  });
-
-  it("exposes server and Web build metadata through system.about", async () => {
-    const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
-
-    const response = await fastify.inject({
-      method: "GET",
-      url: "/trpc/system.about",
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json().result.data).toMatchObject({
-      productName: "MDCz",
-      community: {
-        feedback: { url: "https://github.com/ShotHeadman/mdcz/issues/new/choose" },
-      },
-      build: {
-        node: process.version,
-        platform: process.platform,
-        arch: process.arch,
-      },
-    });
-    expect(response.json().result.data.version).toEqual(expect.any(String));
-  });
-
-  it("allows WebUI dev origins to preflight tRPC requests", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({
-      method: "OPTIONS",
-      url: "/trpc/auth.login",
-      headers: {
-        origin: "http://localhost:5173",
-        "access-control-request-headers": "content-type,authorization",
-        "access-control-request-method": "POST",
-      },
-    });
-
-    expect(response.statusCode).toBe(204);
-    expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:5173");
-    expect(response.headers["access-control-allow-methods"]).toContain("POST");
-    expect(response.headers["access-control-allow-headers"]).toContain("authorization");
-  });
-
-  it("exposes auth setup state before login", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({ method: "GET", url: "/trpc/auth.setup" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json().result.data).toEqual({
-      authenticated: false,
-      setupRequired: true,
-      usingDefaultPassword: true,
-    });
-  });
-
   it("completes first-run setup without a prior session and persists completion", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-setup-root-"));
     const { fastify, services } = await createTestServer();
@@ -2117,14 +1962,15 @@ describe("buildServer", () => {
   });
 
   it("closes the persistence database with the Fastify lifecycle", async () => {
-    const { fastify, services } = await createTestServer();
+    const app = await createTestServer();
+    const { fastify, services } = app;
 
     await fastify.ready();
     expect(services.persistence.initialized).toBe(true);
 
     await fastify.close();
     expect(services.persistence.initialized).toBe(false);
-    serverApp = undefined;
+    await releaseTestServer(app);
   });
 
   it("returns not found for unknown routes", async () => {
@@ -2139,8 +1985,8 @@ describe("buildServer", () => {
     const webRoot = await mkdtemp(join(tmpdir(), "mdcz-web-static-"));
     await writeFile(join(webRoot, "index.html"), '<!doctype html><div id="root"></div>', "utf8");
     await writeFile(join(webRoot, "app.js"), "console.log('web')", "utf8");
-    serverApp = buildServer({ webStaticDir: webRoot });
-    const { fastify } = serverApp;
+    standaloneServerApp = buildServer({ webStaticDir: webRoot });
+    const { fastify } = standaloneServerApp;
 
     const assetResponse = await fastify.inject({ method: "GET", url: "/app.js" });
     const routeResponse = await fastify.inject({ method: "GET", url: "/settings" });

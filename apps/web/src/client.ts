@@ -3,11 +3,33 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
 import { createTRPCUntypedClient, httpLink } from "@trpc/client";
 
-const DEFAULT_API_BASE = "http://127.0.0.1:3838";
+const FALLBACK_API_BASE = "http://127.0.0.1:3838";
 const API_BASE_KEY = "mdcz-web-api-base";
 const TOKEN_KEY = "mdcz-admin-token";
 
-export const getApiBase = (): string => localStorage.getItem(API_BASE_KEY) ?? DEFAULT_API_BASE;
+export const resolveDefaultApiBase = ({
+  configuredBase = import.meta.env.VITE_MDCZ_API_BASE,
+  development = import.meta.env.DEV,
+  location = globalThis.location,
+}: {
+  configuredBase?: string;
+  development?: boolean;
+  location?: Pick<Location, "hostname" | "origin" | "protocol">;
+} = {}): string => {
+  const configured = configuredBase?.trim().replace(/\/+$/u, "");
+  if (configured) {
+    return configured;
+  }
+  if (!location?.origin || location.origin === "null") {
+    return FALLBACK_API_BASE;
+  }
+  if (development) {
+    return `${location.protocol}//${location.hostname}:3838`;
+  }
+  return location.origin.replace(/\/+$/u, "");
+};
+
+export const getApiBase = (): string => localStorage.getItem(API_BASE_KEY) ?? resolveDefaultApiBase();
 
 export const setApiBase = (baseUrl: string): void => {
   const trimmed = baseUrl.trim().replace(/\/+$/u, "");

@@ -26,6 +26,7 @@ export interface ServerPersistenceState {
 
 export class ServerPersistenceService {
   private state: ServerPersistenceState | null = null;
+  private closed = false;
 
   constructor(private readonly paths: Pick<ServerRuntimePaths, "databasePath">) {}
 
@@ -38,6 +39,9 @@ export class ServerPersistenceService {
   }
 
   async initialize(): Promise<ServerPersistenceState> {
+    if (this.closed) {
+      throw new Error("Server persistence service is closed");
+    }
     if (this.state) {
       return this.state;
     }
@@ -68,6 +72,7 @@ export class ServerPersistenceService {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     this.state?.database.close();
     this.state = null;
   }

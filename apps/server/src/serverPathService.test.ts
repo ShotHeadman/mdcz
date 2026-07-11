@@ -1,41 +1,7 @@
 import type { Dirent, Stats } from "node:fs";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it } from "vitest";
-import type { ServerConfigService } from "./services/configService";
-import type { MediaRootService } from "./services/mediaRootService";
+import { createFakeConfig, createFakeMediaRoots } from "./serverPathService.testSupport";
 import { type ServerPathFs, ServerPathService } from "./services/serverPathService";
-
-const createFakeMediaRoots = (hostPath: string): MediaRootService =>
-  ({
-    list: async () => ({
-      roots: [
-        {
-          id: "root",
-          displayName: "Media",
-          hostPath,
-          rootType: "mounted-filesystem",
-          enabled: true,
-          deleted: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-    }),
-  }) as MediaRootService;
-
-const createFakeConfig = (mediaPath = ""): ServerConfigService =>
-  ({
-    get: async () => ({
-      ...defaultConfiguration,
-      paths: {
-        ...defaultConfiguration.paths,
-        mediaPath,
-      },
-    }),
-  }) as ServerConfigService;
 
 const fakeDirectoryStats = {
   isDirectory: () => true,
@@ -43,46 +9,6 @@ const fakeDirectoryStats = {
 } as Stats;
 
 describe("ServerPathService", () => {
-  it("lists matching child directories without returning files or symlinks", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "mdcz-server-path-"));
-    const movies = path.join(root, "Movies");
-    const music = path.join(root, "Music");
-    const linked = path.join(root, "MovieLink");
-    await mkdir(movies);
-    await mkdir(music);
-    await writeFile(path.join(root, "Movie.txt"), "not a directory");
-
-    let symlinkCreated = false;
-    try {
-      await symlink(movies, linked, process.platform === "win32" ? "junction" : "dir");
-      symlinkCreated = true;
-    } catch {
-      symlinkCreated = false;
-    }
-
-    const service = new ServerPathService(createFakeMediaRoots(root), createFakeConfig(root));
-    const response = await service.suggest({ path: path.join(root, "Mov") });
-
-    expect(response.accessible).toBe(true);
-    expect(response.parentPath).toBe(process.platform === "win32" ? root.replaceAll("\\", "/") : root);
-    expect(response.entries.map((entry) => entry.name)).toEqual(["Movies"]);
-    expect(response.entries.every((entry) => entry.type === "directory")).toBe(true);
-    if (symlinkCreated) {
-      expect(response.entries.map((entry) => entry.name)).not.toContain("MovieLink");
-    }
-  });
-
-  it("returns configured and system root shortcuts for an empty path", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "mdcz-server-path-root-"));
-    const service = new ServerPathService(createFakeMediaRoots(root), createFakeConfig(root));
-    const response = await service.suggest({ path: "" });
-
-    expect(response.accessible).toBe(true);
-    expect(response.entries.map((entry) => entry.path)).toContain(
-      process.platform === "win32" ? root.replaceAll("\\", "/") : root,
-    );
-  });
-
   it("handles inaccessible directories as controlled empty responses", async () => {
     const fs: ServerPathFs = {
       access: async () => undefined,

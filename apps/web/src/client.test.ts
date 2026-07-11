@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, setAdminToken } from "./client";
+import { api, resolveDefaultApiBase, setAdminToken } from "./client";
 
 describe("web api client", () => {
   const originalFetch = globalThis.fetch;
@@ -63,5 +63,29 @@ describe("web api client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       authorization: "Bearer token-1",
     });
+  });
+
+  it("uses the serving origin for packaged WebUI API calls", () => {
+    expect(
+      resolveDefaultApiBase({
+        development: false,
+        location: { hostname: "127.0.0.1", origin: "http://127.0.0.1:8767", protocol: "http:" },
+      }),
+    ).toBe("http://127.0.0.1:8767");
+  });
+
+  it("keeps the Server port while running through the Vite development origin", () => {
+    expect(
+      resolveDefaultApiBase({
+        development: true,
+        location: { hostname: "192.0.2.10", origin: "http://192.0.2.10:5173", protocol: "http:" },
+      }),
+    ).toBe("http://192.0.2.10:3838");
+  });
+
+  it("prefers an explicitly configured API base", () => {
+    expect(resolveDefaultApiBase({ configuredBase: "https://api.example.test/", development: false })).toBe(
+      "https://api.example.test",
+    );
   });
 });

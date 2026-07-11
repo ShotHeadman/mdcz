@@ -3,10 +3,69 @@ import { describe, expect, it } from "vitest";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import {
   type RecoverableSessionPort,
+  RuntimeTaskQueueRunner,
   type RuntimeTaskSnapshot,
   resolveRecoverableSession,
   transitionTask,
 } from "./tasks";
+
+describe("runtime task queue runner", () => {
+  it("lets shutdown wait for the active drain to become idle", async () => {
+    let resolveTask!: () => void;
+    const taskFinished = new Promise<void>((resolve) => {
+      resolveTask = resolve;
+    });
+    let nextTaskCalls = 0;
+    const runner = new RuntimeTaskQueueRunner({
+      getNextTask: async () => {
+        nextTaskCalls += 1;
+        return nextTaskCalls === 1 ? { id: "task-1" } : null;
+      },
+      runTask: async () => {
+        await taskFinished;
+      },
+    });
+
+    runner.drain();
+    const idle = runner.waitForIdle();
+
+    expect(runner.isRunning).toBe(true);
+    resolveTask();
+    await idle;
+    expect(runner.isRunning).toBe(false);
+  });
+
+  it("stops before starting another queued task during shutdown", async () => {
+    let resolveFirstTask!: () => void;
+    let signalFirstTaskStarted!: () => void;
+    const firstTaskFinished = new Promise<void>((resolve) => {
+      resolveFirstTask = resolve;
+    });
+    const firstTaskStarted = new Promise<void>((resolve) => {
+      signalFirstTaskStarted = resolve;
+    });
+    const startedTasks: string[] = [];
+    const queuedTasks = [{ id: "task-1" }, { id: "task-2" }];
+    const runner = new RuntimeTaskQueueRunner({
+      getNextTask: async () => queuedTasks.shift() ?? null,
+      runTask: async (task) => {
+        startedTasks.push(task.id);
+        if (task.id === "task-1") {
+          signalFirstTaskStarted();
+          await firstTaskFinished;
+        }
+      },
+    });
+
+    runner.drain();
+    await firstTaskStarted;
+    runner.requestStop();
+    resolveFirstTask();
+    await runner.waitForIdle();
+
+    expect(startedTasks).toEqual(["task-1"]);
+  });
+});
 
 const configurationWithScrape = (scrape: Partial<typeof defaultConfiguration.scrape>) => ({
   ...defaultConfiguration,

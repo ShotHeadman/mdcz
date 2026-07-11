@@ -16,6 +16,9 @@ pnpm-debug.log*
 dist/
 out/
 release/
+playwright-report/
+test-results/
+.vitest-attachments/
 
 # Generated native bindings (Electron-ABI better_sqlite3.node from postinstall)
 apps/desktop/native/

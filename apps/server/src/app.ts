@@ -86,6 +86,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   });
 
   fastify.addHook("onClose", async () => {
+    await services.scrape.close();
     await services.persistence.close();
   });
 
