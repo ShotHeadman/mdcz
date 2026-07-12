@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { type ElectronApplication, _electron as electron, expect, type Page, test } from "@playwright/test";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const desktopEntry = path.join(workspaceRoot, "apps", "desktop", "out", "main", "index.js");
+const desktopRoot = path.join(workspaceRoot, "apps", "desktop");
 const userDataDir = process.env.MDCZ_E2E_DESKTOP_USER_DATA_DIR;
 const desktopMainLogs: string[] = [];
 
@@ -23,8 +23,8 @@ const launchDesktop = async (): Promise<DesktopSession> => {
     ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []),
   ];
   const app = await electron.launch({
-    args: [...launchSwitches, desktopEntry],
-    cwd: path.dirname(desktopEntry),
+    args: [...launchSwitches, desktopRoot],
+    cwd: desktopRoot,
     env: {
       ...process.env,
       ELECTRON_ENABLE_LOGGING: "1",
