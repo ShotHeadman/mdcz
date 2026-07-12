@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 import { playwright } from "@vitest/browser-playwright";
 import { configDefaults, defineConfig } from "vitest/config";
 
+const browserExecutablePath = process.env.MDCZ_BROWSER_EXECUTABLE?.trim() || undefined;
+
 const workspaceAliases = [
   { find: "@main", replacement: resolve(__dirname, "apps/desktop/src/main") },
   { find: "@renderer", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
@@ -208,7 +210,9 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            provider: playwright(),
+            provider: playwright({
+              launchOptions: browserExecutablePath ? { executablePath: browserExecutablePath } : undefined,
+            }),
             instances: [{ browser: "chromium" }],
           },
         },

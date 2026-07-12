@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.MDCZ_E2E_BASE_URL ?? "http://127.0.0.1:3838";
-const browserExecutablePath = process.env.MDCZ_E2E_BROWSER_EXECUTABLE?.trim() || undefined;
+const browserExecutablePath = process.env.MDCZ_BROWSER_EXECUTABLE?.trim() || undefined;
 
 export default defineConfig({
   testDir: "./tests/e2e",

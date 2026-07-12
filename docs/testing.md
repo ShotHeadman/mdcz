@@ -58,18 +58,19 @@ pnpm test:unit
 pnpm test:integration # Node, Desktop, and contract projects
 pnpm test:coverage # Core Server/package V8 baseline and HTML/JSON reports
 pnpm exec vitest run --project component --silent
+MDCZ_BROWSER_EXECUTABLE=/path/to/chromium pnpm exec vitest run --project component --silent
 pnpm test
 pnpm exec playwright install chromium # first local run or browser-version change
 pnpm test:e2e
 pnpm test:e2e -- --project=web-chromium # focused headless Web product run
-MDCZ_E2E_BROWSER_EXECUTABLE=/path/to/brave pnpm test:e2e -- --project=web-chromium
+MDCZ_BROWSER_EXECUTABLE=/path/to/chromium pnpm test:e2e -- --project=web-chromium
 ```
 
 `pnpm test` remains the repository-wide Vitest aggregate command and now includes the Chromium component project. App-local tests continue to run through filtered workspace commands such as `pnpm --filter @mdcz/server test`. The focused component command intentionally stays a direct Vitest project selection so the root `package.json` does not accumulate another alias.
 
 `pnpm test:coverage` runs unit, Node integration, Desktop integration, and contract projects with the V8 provider. It includes core source under `apps/server`, `packages/shared`, `packages/runtime`, `packages/persistence`, and `packages/media-store`, writes reports to the ignored `coverage/` directory, and fails when either the aggregate or a workspace baseline decreases. Browser component and Playwright product coverage remain separate because they require different instrumentation and should not distort the core Node baseline.
 
-`pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the Web base/media paths and the isolated Electron user-data directory. Playwright arguments are forwarded through the harness, so `pnpm test:e2e -- --project=web-chromium` runs only the headless Web project while preserving the same topology. A local Chromium-compatible browser such as Brave can be reused by setting `MDCZ_E2E_BROWSER_EXECUTABLE`; focused custom-browser runs retain trace/screenshots but disable Playwright video so they do not require its managed ffmpeg. CI leaves the variable unset, uses Playwright's managed Chromium, and retains failure video. Linux CI runs the full command through `xvfb-run`.
+`pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the Web base/media paths and the isolated Electron user-data directory. Playwright arguments are forwarded through the harness, so `pnpm test:e2e -- --project=web-chromium` runs only the headless Web project while preserving the same topology. Local Browser Mode and Web E2E runs can reuse a Chromium-compatible browser by setting `MDCZ_BROWSER_EXECUTABLE` to its actual executable path. Focused custom-browser E2E runs retain trace/screenshots but disable Playwright video so they do not require its managed ffmpeg. CI leaves the variable unset, uses Playwright's managed Chromium, and retains failure video. Linux CI runs the full command through `xvfb-run`.
 
 ## Directory responsibilities
 
