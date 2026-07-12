@@ -20,6 +20,20 @@ Thirty-eight legacy files that use real SQLite, temporary filesystems, Fastify/H
 
 The product layer now includes two Playwright suites with six smoke journeys. Web covers real Server health/startup, first-run setup plus fresh-browser login, and configuration persistence across a browser refresh. Desktop covers a built Electron window, preload/main-process IPC, and renderer-driven configuration persistence across an application restart.
 
+The first V8 coverage baseline covers Server and the shared, runtime, persistence, and media-store business foundations through the non-browser Vitest projects. The checked-in floor is statements 78.8%, branches 64.1%, functions 80.4%, and lines 79.4%. It is a non-regression baseline, not a claim that every included file is sufficiently tested.
+
+Workspace floors are derived from the same combined run, so coverage follows the production source file rather than the location or type of the test that executed it:
+
+| Workspace | Statements | Branches | Functions | Lines |
+| --- | ---: | ---: | ---: | ---: |
+| Server | 73.5% | 60.8% | 74.4% | 73.8% |
+| Shared | 72.5% | 49.1% | 65.5% | 73.4% |
+| Runtime | 80.3% | 65.8% | 84.3% | 81.0% |
+| Persistence | 89.5% | 83.9% | 89.8% | 89.2% |
+| Media store | 85.6% | 70.4% | 90.0% | 86.0% |
+
+Both the aggregate and every workspace floor must pass. This prevents a coverage improvement in Persistence, for example, from hiding a regression in Shared.
+
 ## Test layers
 
 | Layer | File convention | Purpose |
@@ -42,6 +56,7 @@ Do not convert an old test to E2E by name alone. An E2E test must start a real W
 ```bash
 pnpm test:unit
 pnpm test:integration # Node, Desktop, and contract projects
+pnpm test:coverage # Core Server/package V8 baseline and HTML/JSON reports
 pnpm exec vitest run --project component --silent
 pnpm test
 pnpm exec playwright install chromium # first local run or browser-version change
@@ -49,6 +64,8 @@ pnpm test:e2e
 ```
 
 `pnpm test` remains the repository-wide Vitest aggregate command and now includes the Chromium component project. App-local tests continue to run through filtered workspace commands such as `pnpm --filter @mdcz/server test`. The focused component command intentionally stays a direct Vitest project selection so the root `package.json` does not accumulate another alias.
+
+`pnpm test:coverage` runs unit, Node integration, Desktop integration, and contract projects with the V8 provider. It includes core source under `apps/server`, `packages/shared`, `packages/runtime`, `packages/persistence`, and `packages/media-store`, writes reports to the ignored `coverage/` directory, and fails when either the aggregate or a workspace baseline decreases. Browser component and Playwright product coverage remain separate because they require different instrumentation and should not distort the core Node baseline.
 
 `pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the Web base/media paths and the isolated Electron user-data directory. Linux CI runs the command through `xvfb-run`.
 
@@ -104,7 +121,7 @@ Colocated tests under `apps/*` and `packages/*` are encouraged when they exercis
 
 ## CI model
 
-Pull requests run static quality, unit tests, Chromium component tests, Node/Desktop integration plus contract tests, product E2E smoke, and product builds as separate jobs. Component and E2E jobs install Chromium independently. Component failures upload Vitest browser screenshots; the E2E job uses Xvfb for Electron on Linux and always uploads the HTML report, JUnit output, Server/Desktop logs, traces, screenshots, and video files that were produced. CI retries a failing smoke once, while local runs do not retry.
+Pull requests run static quality, unit tests, Chromium component tests, Node/Desktop integration plus contract tests, core coverage, product E2E smoke, and product builds as separate jobs. The coverage job enforces the checked-in non-regression floor and always uploads its HTML and JSON reports. Component and E2E jobs install Chromium independently. Component failures upload Vitest browser screenshots; the E2E job uses Xvfb for Electron on Linux and always uploads the HTML report, JUnit output, Server/Desktop logs, traces, screenshots, and video files that were produced. CI retries a failing smoke once, while local runs do not retry.
 
 ## Remaining roadmap
 
@@ -114,4 +131,4 @@ The current committed checkpoint covers layered Vitest execution, Browser compon
 * Expand Browser Mode coverage to settings validation, focus management, and additional async error states as those components are touched.
 * Observe and harden the Web smoke suite before expanding it to scan/scrape/maintenance journeys.
 * Observe and harden Electron smoke across Windows/Linux before expanding its workflow coverage.
-* Add V8 coverage baselines, CI reports, and the flaky-test lifecycle.
+* Extend the V8 baseline toward changed-line/workspace-specific policy and add the flaky-test lifecycle.

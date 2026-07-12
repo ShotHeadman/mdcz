@@ -16,6 +16,7 @@ pnpm-debug.log*
 dist/
 out/
 release/
+coverage/
 playwright-report/
 test-results/
 .vitest-attachments/

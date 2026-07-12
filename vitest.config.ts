@@ -80,6 +80,56 @@ export default defineConfig({
     alias: workspaceAliases,
   },
   test: {
+    coverage: {
+      provider: "v8",
+      include: [
+        "apps/server/src/**/*.ts",
+        "packages/media-store/src/**/*.ts",
+        "packages/persistence/src/**/*.ts",
+        "packages/runtime/src/**/*.ts",
+        "packages/shared/**/*.ts",
+      ],
+      exclude: ["**/*.test.ts", "**/*.test.tsx", "**/*.testSupport.ts", "**/testDatabase.ts"],
+      reporter: ["text-summary", "json-summary", "html"],
+      reportsDirectory: "coverage",
+      reportOnFailure: true,
+      thresholds: {
+        statements: 78.8,
+        branches: 64.1,
+        functions: 80.4,
+        lines: 79.4,
+        "apps/server/src/**": {
+          statements: 73.5,
+          branches: 60.8,
+          functions: 74.4,
+          lines: 73.8,
+        },
+        "packages/shared/**": {
+          statements: 72.5,
+          branches: 49.1,
+          functions: 65.5,
+          lines: 73.4,
+        },
+        "packages/runtime/src/**": {
+          statements: 80.3,
+          branches: 65.8,
+          functions: 84.3,
+          lines: 81,
+        },
+        "packages/persistence/src/**": {
+          statements: 89.5,
+          branches: 83.9,
+          functions: 89.8,
+          lines: 89.2,
+        },
+        "packages/media-store/src/**": {
+          statements: 85.6,
+          branches: 70.4,
+          functions: 90,
+          lines: 86,
+        },
+      },
+    },
     server: {
       deps: {
         inline: ["@egoist/tipc"],
