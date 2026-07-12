@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.MDCZ_E2E_BASE_URL ?? "http://127.0.0.1:3838";
+const browserExecutablePath = process.env.MDCZ_E2E_BROWSER_EXECUTABLE?.trim() || undefined;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -24,13 +25,16 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    video: browserExecutablePath ? "off" : "retain-on-failure",
   },
   projects: [
     {
       name: "web-chromium",
       testMatch: "web/**/*.e2e.spec.ts",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: browserExecutablePath ? { executablePath: browserExecutablePath } : undefined,
+      },
     },
     {
       name: "desktop-electron",

@@ -59,6 +59,33 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   return app;
 };
 
+export const syncMediaRootFromConfig = async (
+  fastify: ServerApp["fastify"],
+  token: string,
+  hostPath: string,
+): Promise<string> => {
+  await fastify.inject({
+    method: "POST",
+    url: "/trpc/config.update",
+    headers: { authorization: `Bearer ${token}` },
+    payload: { paths: { mediaPath: hostPath } },
+  });
+  const rootsResponse = await fastify.inject({
+    method: "GET",
+    url: "/trpc/mediaRoots.list",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const rootId = rootsResponse
+    .json()
+    .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === hostPath)?.id;
+
+  if (!rootId) {
+    throw new Error("Expected paths.mediaPath to create an enabled media root");
+  }
+
+  return rootId;
+};
+
 export const releaseTestServer = async (app: ServerApp): Promise<void> => {
   const directory = activeServers.get(app);
   activeServers.delete(app);

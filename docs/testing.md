@@ -6,19 +6,19 @@ MDCz uses risk-based test layers. Keep tests at the lowest layer that can prove 
 
 The baseline recorded before this structure was introduced was 129 passing test files and 701 passing tests in about 13 seconds on a local Windows development machine. The repository had about 27,783 lines of tests, with most files classified under `tests/unit` regardless of their real boundary.
 
-The current migration baseline is 138 passing Vitest files and 714 passing Vitest tests, plus six Playwright Web/Desktop smoke tests:
+The current migration baseline is 139 passing Vitest files and 714 passing Vitest tests, plus seven Playwright Web/Desktop smoke tests:
 
 | Project | Files | Tests |
 | --- | ---: | ---: |
 | Unit | 88 | 436 |
 | Browser component | 3 | 4 |
-| Node integration | 11 | 79 |
+| Node integration | 12 | 79 |
 | Desktop integration | 35 | 193 |
 | Contract | 1 | 2 |
 
 Thirty-eight legacy files that use real SQLite, temporary filesystems, Fastify/HTTP, or desktop runtime boundaries now execute as integration tests rather than unit tests.
 
-The product layer now includes two Playwright suites with six smoke journeys. Web covers real Server health/startup, first-run setup plus fresh-browser login, and configuration persistence across a browser refresh. Desktop covers a built Electron window, preload/main-process IPC, and renderer-driven configuration persistence across an application restart.
+The product layer now includes two Playwright suites with seven smoke journeys. Web covers real Server health/startup, first-run setup plus fresh-browser login, configuration persistence across a browser refresh, and discovery of an isolated configured media directory through the built workbench. Desktop covers a built Electron window, preload/main-process IPC, and renderer-driven configuration persistence across an application restart.
 
 The first V8 coverage baseline covers Server and the shared, runtime, persistence, and media-store business foundations through the non-browser Vitest projects. The checked-in floor is statements 78.8%, branches 64.1%, functions 80.4%, and lines 79.4%. It is a non-regression baseline, not a claim that every included file is sufficiently tested.
 
@@ -61,13 +61,15 @@ pnpm exec vitest run --project component --silent
 pnpm test
 pnpm exec playwright install chromium # first local run or browser-version change
 pnpm test:e2e
+pnpm test:e2e -- --project=web-chromium # focused headless Web product run
+MDCZ_E2E_BROWSER_EXECUTABLE=/path/to/brave pnpm test:e2e -- --project=web-chromium
 ```
 
 `pnpm test` remains the repository-wide Vitest aggregate command and now includes the Chromium component project. App-local tests continue to run through filtered workspace commands such as `pnpm --filter @mdcz/server test`. The focused component command intentionally stays a direct Vitest project selection so the root `package.json` does not accumulate another alias.
 
 `pnpm test:coverage` runs unit, Node integration, Desktop integration, and contract projects with the V8 provider. It includes core source under `apps/server`, `packages/shared`, `packages/runtime`, `packages/persistence`, and `packages/media-store`, writes reports to the ignored `coverage/` directory, and fails when either the aggregate or a workspace baseline decreases. Browser component and Playwright product coverage remain separate because they require different instrumentation and should not distort the core Node baseline.
 
-`pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the Web base/media paths and the isolated Electron user-data directory. Linux CI runs the command through `xvfb-run`.
+`pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the Web base/media paths and the isolated Electron user-data directory. Playwright arguments are forwarded through the harness, so `pnpm test:e2e -- --project=web-chromium` runs only the headless Web project while preserving the same topology. A local Chromium-compatible browser such as Brave can be reused by setting `MDCZ_E2E_BROWSER_EXECUTABLE`; focused custom-browser runs retain trace/screenshots but disable Playwright video so they do not require its managed ffmpeg. CI leaves the variable unset, uses Playwright's managed Chromium, and retains failure video. Linux CI runs the full command through `xvfb-run`.
 
 ## Directory responsibilities
 

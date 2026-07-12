@@ -14,6 +14,8 @@ const resultDir = path.join(workspaceRoot, "test-results");
 const serverLogPath = path.join(resultDir, "web-e2e-server.log");
 const host = "127.0.0.1";
 const pnpmCli = process.env.npm_execpath;
+const rawPlaywrightArgs = process.argv.slice(2);
+const playwrightArgs = rawPlaywrightArgs[0] === "--" ? rawPlaywrightArgs.slice(1) : rawPlaywrightArgs;
 
 const run = (command, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -96,8 +98,10 @@ await rm(path.join(workspaceRoot, "playwright-report"), { recursive: true, force
 await rm(path.join(resultDir, "playwright-web"), { recursive: true, force: true });
 await rm(path.join(resultDir, "playwright"), { recursive: true, force: true });
 await mkdir(mediaDir, { recursive: true });
+await mkdir(path.join(mediaDir, "incoming"), { recursive: true });
 await mkdir(desktopUserDataDir, { recursive: true });
 await mkdir(resultDir, { recursive: true });
+await writeFile(path.join(mediaDir, "incoming", "MDCZ-001.mp4"), "deterministic e2e media fixture", "utf8");
 await writeFile(serverLogPath, "", "utf8");
 
 let server;
@@ -128,7 +132,7 @@ try {
   server.stderr.on("data", capture);
 
   await waitForHealth(baseURL, server);
-  await runPnpm(["exec", "playwright", "test", "--config", "playwright.config.ts"], {
+  await runPnpm(["exec", "playwright", "test", "--config", "playwright.config.ts", ...playwrightArgs], {
     env: {
       ...process.env,
       MDCZ_E2E_BASE_URL: baseURL,

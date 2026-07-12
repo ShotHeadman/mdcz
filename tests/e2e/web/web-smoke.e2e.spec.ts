@@ -63,4 +63,20 @@ test.describe
       await page.getByRole("combobox").fill("并发线程数");
       await expect(page.getByRole("spinbutton")).toHaveValue("7");
     });
+
+    test("discovers the configured media directory through the built Web workbench", async ({ page }) => {
+      await page.goto("/workbench");
+      await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
+      await page.getByLabel("密码", { exact: true }).fill(adminPassword);
+      const candidateResponse = page.waitForResponse(
+        (response) => response.url().includes("/trpc/scans.candidates") && response.ok(),
+      );
+      await page.getByRole("button", { name: "登录" }).click();
+      await candidateResponse;
+
+      await expect(page).toHaveURL(/\/workbench$/u);
+      await expect(page.getByText("MDCZ-001.mp4", { exact: true })).toBeVisible();
+      await expect(page.getByText("incoming", { exact: true })).toBeVisible();
+      await expect(page.getByText(/1 个文件/u).first()).toBeVisible();
+    });
   });
