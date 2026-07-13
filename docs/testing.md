@@ -130,7 +130,7 @@ Pull requests run static quality, unit tests, Chromium component tests, Node/Des
 
 The current committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, diagnostics, and CI separation. The migration remains active for the following quality-enhancement work:
 
-* Continue splitting the large Server, renderer, and scraper suites instead of only changing their project mapping.
+* Continue splitting remaining large renderer and scraper suites when their domains are touched; the Server business flows and aggregation suite have completed the initial two-file split target.
 * Expand Browser Mode coverage to settings validation, focus management, and additional async error states as those components are touched.
 * Observe and harden the Web smoke suite before expanding it to scan/scrape/maintenance journeys.
 * Observe and harden Electron smoke across Windows/Linux before expanding its workflow coverage.
