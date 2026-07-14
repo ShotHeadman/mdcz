@@ -41,3 +41,4 @@ tmp/
 .agent
 .agents
 .trellis
+.omp/
