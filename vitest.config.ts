@@ -173,7 +173,7 @@ export default defineConfig({
           ],
           environment: "node",
           testTimeout: 120000,
-          exclude: [...configDefaults.exclude, ...(process.env.CI ? ["tests/integration/crawlers/**"] : [])],
+          exclude: configDefaults.exclude,
         },
       },
       {

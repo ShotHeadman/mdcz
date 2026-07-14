@@ -51,6 +51,19 @@ Legacy filenames are explicitly assigned to either `integration` or `desktop-int
 
 Do not convert an old test to E2E by name alone. An E2E test must start a real Web or Electron product topology and drive it through a user-facing boundary. Existing service/module tests with real I/O belong in integration; browser and Electron E2E are added as new Playwright journeys rather than relabeled unit tests.
 
+## Test responsibility and overlap
+
+Assign each business contract one primary owner layer. Tests may cover the same domain at several layers, but they should not repeat the same normal-path input and assertion merely because the implementation crosses several modules.
+
+* Unit owns pure rules, state transitions, input combinations, and focused error/cancel/retry/rollback behavior that is difficult to observe or diagnose at a higher layer.
+* Integration owns real lightweight composition such as SQLite, temporary filesystems, Fastify, streams, random loopback HTTP, and app-neutral runtime adapters.
+* Component owns focused browser interaction and accessibility semantics.
+* E2E owns built-product, browser/Electron, preload/IPC, transport, and target-specific user-journey wiring.
+
+Before retiring a lower-layer test, identify a stable replacement that proves the same business contract, confirm the old test owns no unique branch or diagnostic boundary, run focused tests plus `pnpm test:coverage`, and record the replacement evidence. Zero removals is valid; reducing test count is not a quality target.
+
+This testing guide is the durable source of truth for layer ownership; task-specific audits may keep a temporary responsibility matrix as evidence. Add a short file-local responsibility note only when a suite spans several domains or its boundary cannot be inferred from its name and focused counterparts; do not maintain a mandatory `Owns / Delegates / Counterparts` template.
+
 ## Commands
 
 ```bash
@@ -64,6 +77,12 @@ pnpm exec playwright install chromium # first local run or browser-version chang
 pnpm test:e2e
 pnpm test:e2e -- --project=web-chromium # focused headless Web product run
 MDCZ_BROWSER_EXECUTABLE=/path/to/chromium pnpm test:e2e -- --project=web-chromium
+pnpm test:e2e:live:web     # explicit Web external E2E/live
+pnpm test:e2e:live:desktop # explicit Desktop external E2E/live
+pnpm test:e2e:live         # both live targets
+pnpm test:e2e:live:headed  # visible combined run
+pnpm test:e2e:live:debug   # Playwright debug mode
+pnpm test:e2e:live:ui      # Playwright UI mode
 ```
 
 `pnpm test` remains the repository-wide Vitest aggregate command and now includes the Chromium component project. App-local tests continue to run through filtered workspace commands such as `pnpm --filter @mdcz/server test`. The focused component command intentionally stays a direct Vitest project selection so the root `package.json` does not accumulate another alias.
@@ -97,6 +116,15 @@ Colocated tests under `apps/*` and `packages/*` are encouraged when they exercis
 * PR tests must not use uncontrolled public network services.
 * Prefer a local fake HTTP server or deterministic fixture for external data.
 * Restore fake timers, environment variables, spies, and module state after each test.
+* Feature-specific crawler/live failures belong in a canonical local harness or the focused test file. Do not grow global setup with crawler/provider/network mocks used by only one feature.
+
+## External and live tests
+
+`live` describes an external-runtime dependency; it is not a new layer beside unit, integration, component, and E2E. A direct real-provider compatibility test would be integration/live, while a built Web or Electron user journey using the real provider is E2E/live.
+
+MDCz ordinary PR commands must remain offline from uncontrolled public services. Real crawler verification is exposed only through explicit Web and Desktop external E2E/live entry points. Both targets use isolated product state and the same test-side case catalog and journey helper, while independently driving their existing frontend, transport, configuration, lifecycle, and error boundaries.
+
+Live cases use public identifiers and minimum stable field contracts. They must not contain credentials, request headers, private paths, or raw response bodies. The explicit Playwright runner controls request count and per-case timeout, continues after individual failures where practical, respects existing site rate limits, and attaches redacted JSON diagnostics without adding a production batch API. Live specs use the `*.live.e2e.spec.ts` suffix; default Playwright discovery excludes them, while the explicit commands select only those files.
 
 ## Fixtures and factories
 

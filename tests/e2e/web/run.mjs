@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import process from "node:process";
@@ -15,7 +15,11 @@ const serverLogPath = path.join(resultDir, "web-e2e-server.log");
 const host = "127.0.0.1";
 const pnpmCli = process.env.npm_execpath;
 const rawPlaywrightArgs = process.argv.slice(2);
-const playwrightArgs = rawPlaywrightArgs[0] === "--" ? rawPlaywrightArgs.slice(1) : rawPlaywrightArgs;
+const normalizedPlaywrightArgs = rawPlaywrightArgs[0] === "--" ? rawPlaywrightArgs.slice(1) : rawPlaywrightArgs;
+const liveMode = normalizedPlaywrightArgs.includes("--live");
+const playwrightArgs = normalizedPlaywrightArgs.filter((argument) => argument !== "--live");
+const workspacePackage = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+const appVersion = typeof workspacePackage.version === "string" ? workspacePackage.version : "unknown";
 
 const run = (command, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -136,6 +140,9 @@ try {
     env: {
       ...process.env,
       MDCZ_E2E_BASE_URL: baseURL,
+      MDCZ_E2E_LIVE: liveMode ? "1" : "0",
+      MDCZ_E2E_ADMIN_PASSWORD: "mdcz-e2e-admin-password",
+      MDCZ_APP_VERSION: appVersion,
       MDCZ_E2E_DESKTOP_USER_DATA_DIR: desktopUserDataDir,
       MDCZ_E2E_MEDIA_DIR: mediaDir,
     },
