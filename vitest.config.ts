@@ -50,8 +50,6 @@ const legacyDesktopIntegrationTests = [
   "tests/unit/services/crawler/provider.test.ts",
   "tests/unit/services/jellyfin/jellyfin_services.test.ts",
   "tests/unit/services/library/output_library_scanner.test.ts",
-  "tests/unit/services/scraper/download_manager_keep.test.ts",
-  "tests/unit/services/scraper/file_organizer_settings.test.ts",
   "tests/unit/services/scraper/file_scraper_actor_images.test.ts",
   "tests/unit/services/scraper/file_scraper_multipart.test.ts",
   "tests/unit/services/scraper/file_scraper_pipeline_stages.test.ts",
