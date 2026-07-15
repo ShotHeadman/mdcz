@@ -4,23 +4,34 @@ MDCz uses risk-based test layers. Keep tests at the lowest layer that can prove 
 
 ## Current baseline
 
-The baseline recorded before this structure was introduced was 129 passing test files and 701 passing tests in about 13 seconds on a local Windows development machine. The repository had about 27,783 lines of tests, with most files classified under `tests/unit` regardless of their real boundary.
+Historical checkpoints (pre-layering ~129 files / 701 tests; early layered migration ~139 Vitest files / 714 tests) are superseded by the post-simplification measurement below (Child F remeasure after B–E, 2026-07-15, commit `5e32127`).
 
-The current migration baseline is 139 passing Vitest files and 714 passing Vitest tests, plus seven Playwright Web/Desktop smoke tests:
+Measured Vitest discovery (`vitest list --json`; component uses `--staticParse`):
 
 | Project | Files | Tests |
 | --- | ---: | ---: |
-| Unit | 88 | 436 |
-| Browser component | 3 | 4 |
-| Node integration | 12 | 79 |
-| Desktop integration | 35 | 193 |
+| Unit | 96 | 464 |
+| Browser component | 6 | 18 |
+| Node integration | 14 | 81 |
+| Desktop integration | 35 | 181 |
 | Contract | 1 | 2 |
+| Integration/live (explicit) | 1 | 1 |
+| **Vitest total** | **153** | **747** |
 
-Thirty-eight legacy files that use real SQLite, temporary filesystems, Fastify/HTTP, or desktop runtime boundaries now execute as integration tests rather than unit tests.
+Playwright product discovery (title scan of committed specs):
 
-The product layer now includes two Playwright suites with seven smoke journeys. Web covers real Server health/startup, first-run setup plus fresh-browser login, configuration persistence across a browser refresh, and discovery of an isolated configured media directory through the built workbench. Desktop covers a built Electron window, preload/main-process IPC, and renderer-driven configuration persistence across an application restart.
+| Bucket | Specs | Tests |
+| --- | ---: | ---: |
+| Ordinary offline E2E | 2 | 7 |
+| E2E/live workbench | 2 | 4 |
 
-The first V8 coverage baseline covers Server and the shared, runtime, persistence, and media-store business foundations through the non-browser Vitest projects. The checked-in floor is statements 78.8%, branches 64.1%, functions 80.4%, and lines 79.4%. It is a non-regression baseline, not a claim that every included file is sufficiently tested.
+Executable scenario grand total: **758** (747 Vitest + 7 ordinary E2E + 4 E2E/live). Ordinary PR discovery never includes live specs.
+
+Legacy filenames still mapped in `vitest.config.ts` run as Node or Desktop integration even when the path remains under `tests/unit`. Files that were substantially reorganized (Server composition, organizer, download keep, maintenance renderer) were renamed/moved and removed from the legacy maps.
+
+The product layer keeps two offline Playwright smoke suites (7 journeys) and the fixed live set of 1 provider integration/live plus 4 workbench E2E/live journeys (Web/Desktop × scrape / `refresh_data`). Web smoke covers Server health, first-run setup plus login, configuration persistence across refresh, and isolated workbench media discovery. Desktop smoke covers a built Electron window, preload/main-process IPC, and configuration persistence across restart.
+
+The V8 coverage baseline covers Server and the shared, runtime, persistence, and media-store business foundations through the non-browser Vitest projects. The checked-in floor is statements 78.8%, branches 64.1%, functions 80.4%, and lines 79.4%. It is a non-regression baseline, not a claim that every included file is sufficiently tested. Thresholds must not be lowered.
 
 Workspace floors are derived from the same combined run, so coverage follows the production source file rather than the location or type of the test that executed it:
 
@@ -157,10 +168,10 @@ Pull requests run static quality, unit tests, Chromium component tests, Node/Des
 
 ## Remaining roadmap
 
-The current committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, provider integration/live, workbench E2E/live, the unified `test:live` coordinator, diagnostics, and CI separation. Remaining quality-enhancement work:
+The committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, provider integration/live, workbench E2E/live, the unified `test:live` coordinator, diagnostics, CI separation, and the 2026-07-15 ownership simplification (no remaining unexempted 1,000-line suites; measured discovery above). Remaining quality-enhancement work:
 
-* Continue splitting remaining large renderer and scraper suites when their domains are touched; the Server business flows and aggregation suite have completed the initial two-file split target.
-* Expand Browser Mode coverage to settings validation, focus management, and additional async error states as those components are touched.
-* Observe and harden workbench live journeys across network conditions; keep ordinary PR gates offline.
+* Continue trimming residual ≥500-line suites when their domains are touched (aggregation fixtures, Emby/Jellyfin shared rules, requeue setup, fixture-heavy actor sources) without deleting unique abort/rollback/parser risks.
+* Expand Browser Mode coverage to additional settings focus and async error states as those components are touched.
+* Observe and harden workbench live journeys across network conditions; keep ordinary PR gates offline and the live set at 1+4.
 * Observe and harden Electron smoke across Windows/Linux before expanding its offline workflow coverage.
 * Extend the V8 baseline toward changed-line/workspace-specific policy and add the flaky-test lifecycle.
