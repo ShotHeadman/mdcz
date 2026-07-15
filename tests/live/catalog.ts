@@ -1,50 +1,46 @@
 import { Website } from "@mdcz/shared/enums";
 
-export const CRAWLER_LIVE_CATALOG_VERSION = "2026-07-13";
+export const LIVE_CATALOG_VERSION = "2026-07-15";
 
-export const CRAWLER_LIVE_REQUIRED_FIELDS = ["number", "title", "website", "thumb_url", "actors"] as const;
+/** Fields every live case must require. */
+export const COMMON_LIVE_REQUIRED_FIELDS = ["number", "title", "website"] as const;
 
-export type CrawlerLiveRequiredField = (typeof CRAWLER_LIVE_REQUIRED_FIELDS)[number];
+/** Fields allowed in a live case requiredFields list (common + evidence-backed extras). */
+export const LIVE_ALLOWED_REQUIRED_FIELDS = ["number", "title", "website", "thumb_url", "actors"] as const;
 
-export interface CrawlerLiveCase {
+export type LiveRequiredField = (typeof LIVE_ALLOWED_REQUIRED_FIELDS)[number];
+
+export interface LiveCase {
   id: string;
   site: Website;
   number: string;
   label: string;
-  requiredFields: CrawlerLiveRequiredField[];
+  requiredFields: LiveRequiredField[];
   enabledByDefault: boolean;
   notes?: string;
 }
 
-export const CRAWLER_LIVE_CASES: readonly CrawlerLiveCase[] = [
-  {
-    id: "javdb-ssis-243",
-    site: Website.JAVDB,
-    number: "SSIS-243",
-    label: "JavDB standard catalog entry",
-    requiredFields: ["title"],
-    enabledByDefault: true,
-  },
+/**
+ * Live network catalog is intentionally DMM-only.
+ * Goal: prove one rich real provider + downstream workbench pipeline.
+ * JavDB/JavBus remain covered by offline unit tests, not default live discovery.
+ */
+export const WORKBENCH_LIVE_CASE_ID = "dmm-ssis-497" as const;
+
+export const LIVE_CASES: readonly LiveCase[] = [
   {
     id: "dmm-ssis-497",
     site: Website.DMM,
     number: "SSIS-497",
-    label: "DMM standard catalog entry",
-    requiredFields: ["title"],
+    label: "DMM representative catalog entry for live provider + workbench pipeline",
+    requiredFields: ["number", "title", "website"],
     enabledByDefault: true,
-  },
-  {
-    id: "javbus-abp-075",
-    site: Website.JAVBUS,
-    number: "ABP-075",
-    label: "JavBus standard catalog entry",
-    requiredFields: ["title"],
-    enabledByDefault: true,
+    notes: "Primary live egress expectation is JP. Non-JP DMM region blocks are external constraints.",
   },
 ] as const;
 
-const DEFAULT_CRITICAL_SITES = [Website.JAVDB, Website.DMM, Website.JAVBUS] as const;
-const REQUIRED_FIELD_SET = new Set<string>(CRAWLER_LIVE_REQUIRED_FIELDS);
+const DEFAULT_CRITICAL_SITES = [Website.DMM] as const;
+const ALLOWED_FIELD_SET = new Set<string>(LIVE_ALLOWED_REQUIRED_FIELDS);
 const SENSITIVE_KEY_PATTERN = /(?:authorization|cookie|headers?|password|private.?path|raw.?response|secret|token)/iu;
 const SENSITIVE_VALUE_PATTERN = /(?:\bbearer\s+[a-z0-9._~+/-]+=*|(?:^|[\\/])users?[\\/]|\/home\/|[a-z]:\\)/iu;
 
@@ -61,8 +57,19 @@ const collectSensitiveKeys = (value: unknown, path = "case"): string[] => {
   ]);
 };
 
-export const validateCrawlerLiveCatalog = (
-  cases: readonly CrawlerLiveCase[],
+export const resolveLiveCase = (caseId: string, cases: readonly LiveCase[] = LIVE_CASES): LiveCase => {
+  const liveCase = cases.find((entry) => entry.id === caseId);
+  if (!liveCase) {
+    throw new Error(`Unknown live case id '${caseId}'`);
+  }
+  return liveCase;
+};
+
+export const resolveWorkbenchLiveCase = (cases: readonly LiveCase[] = LIVE_CASES): LiveCase =>
+  resolveLiveCase(WORKBENCH_LIVE_CASE_ID, cases);
+
+export const validateLiveCatalog = (
+  cases: readonly LiveCase[],
   registeredSites: readonly Website[],
   criticalSites: readonly Website[] = DEFAULT_CRITICAL_SITES,
 ): string[] => {
@@ -99,8 +106,13 @@ export const validateCrawlerLiveCatalog = (
       errors.push(`Case '${liveCase.id}' contains duplicate required fields`);
     }
     for (const field of liveCase.requiredFields) {
-      if (!REQUIRED_FIELD_SET.has(field)) {
+      if (!ALLOWED_FIELD_SET.has(field)) {
         errors.push(`Case '${liveCase.id}' contains unsupported required field '${field}'`);
+      }
+    }
+    for (const field of COMMON_LIVE_REQUIRED_FIELDS) {
+      if (!uniqueFields.has(field)) {
+        errors.push(`Case '${liveCase.id}' must require common field '${field}'`);
       }
     }
 
@@ -118,15 +130,16 @@ export const validateCrawlerLiveCatalog = (
     }
   }
 
+  if (!cases.some((liveCase) => liveCase.id === WORKBENCH_LIVE_CASE_ID && liveCase.enabledByDefault)) {
+    errors.push(`Workbench live case '${WORKBENCH_LIVE_CASE_ID}' must be present and enabled by default`);
+  }
+
   return errors;
 };
 
-export const assertCrawlerLiveCatalog = (
-  cases: readonly CrawlerLiveCase[],
-  registeredSites: readonly Website[],
-): void => {
-  const errors = validateCrawlerLiveCatalog(cases, registeredSites);
+export const assertLiveCatalog = (cases: readonly LiveCase[], registeredSites: readonly Website[]): void => {
+  const errors = validateLiveCatalog(cases, registeredSites);
   if (errors.length > 0) {
-    throw new Error(`Invalid crawler live catalog:\n${errors.map((error) => `- ${error}`).join("\n")}`);
+    throw new Error(`Invalid live catalog:\n${errors.map((error) => `- ${error}`).join("\n")}`);
   }
 };

@@ -77,19 +77,18 @@ pnpm exec playwright install chromium # first local run or browser-version chang
 pnpm test:e2e
 pnpm test:e2e -- --project=web-chromium # focused headless Web product run
 MDCZ_BROWSER_EXECUTABLE=/path/to/chromium pnpm test:e2e -- --project=web-chromium
-pnpm test:e2e:live:web     # explicit Web external E2E/live
-pnpm test:e2e:live:desktop # explicit Desktop external E2E/live
-pnpm test:e2e:live         # both live targets
-pnpm test:e2e:live:headed  # visible combined run
-pnpm test:e2e:live:debug   # Playwright debug mode
-pnpm test:e2e:live:ui      # Playwright UI mode
+pnpm test:live             # full live gate: integration-live, Web E2E/live, Desktop E2E/live
+node tests/e2e/web/run.mjs --live --project=web-chromium   # focused Web live diagnosis
+node tests/e2e/web/run.mjs --live --project=desktop-electron # focused Desktop live diagnosis
+node tests/e2e/web/run.mjs --live --project=web-chromium --headed # visible Web live
+pnpm exec vitest run --project integration-live            # focused provider live
 ```
 
 `pnpm test` remains the repository-wide Vitest aggregate command and now includes the Chromium component project. App-local tests continue to run through filtered workspace commands such as `pnpm --filter @mdcz/server test`. The focused component command intentionally stays a direct Vitest project selection so the root `package.json` does not accumulate another alias.
 
 `pnpm test:coverage` runs unit, Node integration, Desktop integration, and contract projects with the V8 provider. It includes core source under `apps/server`, `packages/shared`, `packages/runtime`, `packages/persistence`, and `packages/media-store`, writes reports to the ignored `coverage/` directory, and fails when either the aggregate or a workspace baseline decreases. Browser component and Playwright product coverage remain separate because they require different instrumentation and should not distort the core Node baseline.
 
-`pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the Web base/media paths and the isolated Electron user-data directory. Playwright arguments are forwarded through the harness, so `pnpm test:e2e -- --project=web-chromium` runs only the headless Web project while preserving the same topology. Local Browser Mode and Web E2E runs can reuse a Chromium-compatible browser by setting `MDCZ_BROWSER_EXECUTABLE` to its actual executable path. Focused custom-browser E2E runs retain trace/screenshots but disable Playwright video so they do not require its managed ffmpeg. CI leaves the variable unset, uses Playwright's managed Chromium, and retains failure video. Linux CI runs the full command through `xvfb-run`.
+`pnpm test:e2e` builds the production WebUI, Server, and Desktop bundles. It allocates an available loopback port, creates isolated `.tmp/e2e-web` and `.tmp/e2e-desktop` runtime roots, starts the real Server, and runs both Chromium and Electron Playwright projects. It must be used instead of launching a spec directly because the harness supplies the target-specific Server persistence/media paths and the isolated Electron user-data directory. Focused Web/Desktop runs use disjoint runtime, media, server-log, report, and artifact paths, so sequential diagnosis cannot resume or overwrite sibling state. Playwright arguments are forwarded through the harness, so `pnpm test:e2e -- --project=web-chromium` runs only the headless Web project while preserving the same topology. Local Browser Mode and Web E2E runs can reuse a Chromium-compatible browser by setting `MDCZ_BROWSER_EXECUTABLE` to its actual executable path. Focused custom-browser E2E runs retain trace/screenshots but disable Playwright video so they do not require its managed ffmpeg. CI leaves the variable unset, uses Playwright's managed Chromium, and retains failure video. Linux CI runs the full command through `xvfb-run`.
 
 ## Directory responsibilities
 
@@ -98,8 +97,10 @@ tests/
   unit/          unit tests plus legacy files temporarily mapped by project
   desktop-integration/ desktop runtime integration tests added after the migration
   integration/   cross-workspace or root-level integration tests
+  live/          shared live catalog/report helpers, provider integration/live, live coordinator
   e2e/web/       Playwright Web product journeys and their lifecycle runner
   e2e/desktop/   Playwright Electron window, preload/IPC, and persistence smoke
+  e2e/live/      shared workbench scrape/refresh journey helpers
   component/     Chromium-rendered React component interaction tests
   contracts/     shared contract samples and assertions
   fixtures/      small, deterministic, sanitized inputs
@@ -120,11 +121,11 @@ Colocated tests under `apps/*` and `packages/*` are encouraged when they exercis
 
 ## External and live tests
 
-`live` describes an external-runtime dependency; it is not a new layer beside unit, integration, component, and E2E. A direct real-provider compatibility test would be integration/live, while a built Web or Electron user journey using the real provider is E2E/live.
+`live` describes an external-runtime dependency; it is not a new layer beside unit, integration, component, and E2E. Direct real-provider compatibility is `integration/live`. Built Web or Electron user journeys that call real providers are `E2E/live`.
 
-MDCz ordinary PR commands must remain offline from uncontrolled public services. Real crawler verification is exposed only through explicit Web and Desktop external E2E/live entry points. Both targets use isolated product state and the same test-side case catalog and journey helper, while independently driving their existing frontend, transport, configuration, lifecycle, and error boundaries.
+MDCz ordinary PR commands remain offline from uncontrolled public services. The only package-level live entry point is `pnpm test:live`, which runs three isolated subprocesses in order: Vitest `integration-live`, Web Playwright live, and Desktop Playwright live. The coordinator continues after a failed child, keeps every layer's report, and exits non-zero if any step failed. The hard overall budget is 50 minutes including a reserved 5-second TERM/KILL grace: when a child is still running, cancellation starts inside the budget and remaining steps are skipped. SIGINT/SIGTERM also terminate all active process trees before exit. `test:live` rejects selection/interactive arguments; focused diagnosis uses the underlying runner or Vitest project directly.
 
-Live cases use public identifiers and minimum stable field contracts. They must not contain credentials, request headers, private paths, or raw response bodies. The explicit Playwright runner controls request count and per-case timeout, continues after individual failures where practical, respects existing site rate limits, and attaches redacted JSON diagnostics without adding a production batch API. Live specs use the `*.live.e2e.spec.ts` suffix; default Playwright discovery excludes them, while the explicit commands select only those files.
+Default live catalog is DMM-only (`dmm-ssis-497`). Integration/live discovers 1 provider case / 1 spec. Playwright live discovers 4 workbench journeys / 2 specs (Web/Desktop scrape and `refresh_data`). Ordinary E2E stays at 7 tests / 2 offline smoke specs and never discovers live files. Live cases use public identifiers and minimum stable field contracts. Reports record layer, target, phase, duration, and failure classification, and must not store credentials, request headers, private paths, or raw third-party bodies. Playwright Web and Desktop write to separate report/artifact directories (`playwright-report-web` / `playwright-report-desktop`, `test-results/playwright-web` / `test-results/playwright-desktop`) and separate `web-e2e-server.log` / `desktop-e2e-server.log` files so sequential coordinator steps never wipe sibling evidence. A `failureKind: parser` / `parse_error` is a provider contract failure, not an external network flake.
 
 ## Fixtures and factories
 
@@ -156,10 +157,10 @@ Pull requests run static quality, unit tests, Chromium component tests, Node/Des
 
 ## Remaining roadmap
 
-The current committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, diagnostics, and CI separation. The migration remains active for the following quality-enhancement work:
+The current committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, provider integration/live, workbench E2E/live, the unified `test:live` coordinator, diagnostics, and CI separation. Remaining quality-enhancement work:
 
 * Continue splitting remaining large renderer and scraper suites when their domains are touched; the Server business flows and aggregation suite have completed the initial two-file split target.
 * Expand Browser Mode coverage to settings validation, focus management, and additional async error states as those components are touched.
-* Observe and harden the Web smoke suite before expanding it to scan/scrape/maintenance journeys.
-* Observe and harden Electron smoke across Windows/Linux before expanding its workflow coverage.
+* Observe and harden workbench live journeys across network conditions; keep ordinary PR gates offline.
+* Observe and harden Electron smoke across Windows/Linux before expanding its offline workflow coverage.
 * Extend the V8 baseline toward changed-line/workspace-specific policy and add the flaky-test lifecycle.

@@ -1,7 +1,8 @@
-import type { CrawlerLiveCase } from "./crawler-live-catalog";
+import type { LiveCase } from "./catalog";
 
-export type CrawlerLiveTarget = "web" | "desktop";
-export type CrawlerLiveFailureKind =
+export type LiveLayer = "integration" | "e2e";
+export type LiveTarget = "provider" | "web" | "desktop";
+export type LiveFailureKind =
   | "network"
   | "timeout"
   | "rate_limited"
@@ -12,21 +13,25 @@ export type CrawlerLiveFailureKind =
   | "parser"
   | "unknown";
 
-export interface CrawlerLiveCaseResult {
+export interface LiveCaseResult {
   caseId: string;
   site: string;
   number: string;
   label: string;
+  layer: LiveLayer;
+  target: LiveTarget;
+  phase: string;
   durationMs: number;
   status: "passed" | "failed";
-  failureKind?: CrawlerLiveFailureKind;
+  failureKind?: LiveFailureKind;
   summary: string;
 }
 
-export interface CrawlerLiveReport {
+export interface LiveReport {
   schemaVersion: 1;
   catalogVersion: string;
-  target: CrawlerLiveTarget;
+  layer: LiveLayer;
+  target: LiveTarget;
   appVersion: string;
   commit: string | null;
   startedAt: string;
@@ -36,7 +41,7 @@ export interface CrawlerLiveReport {
     failed: number;
     total: number;
   };
-  cases: CrawlerLiveCaseResult[];
+  cases: LiveCaseResult[];
 }
 
 const SENSITIVE_ASSIGNMENT_PATTERN =
@@ -46,7 +51,7 @@ const UNIX_PRIVATE_PATH_PATTERN = /\/(?:home|users|private|var\/folders)\/[^\s"'
 const WINDOWS_PRIVATE_PATH_PATTERN = /\b[a-z]:\\[^\s"']+/giu;
 const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
 
-export const sanitizeCrawlerLiveDiagnostic = (value: unknown): string => {
+export const sanitizeLiveDiagnostic = (value: unknown): string => {
   const text = value instanceof Error ? value.message : String(value ?? "Unknown failure");
   return text
     .replace(ANSI_ESCAPE_PATTERN, "")
@@ -57,8 +62,8 @@ export const sanitizeCrawlerLiveDiagnostic = (value: unknown): string => {
     .slice(0, 800);
 };
 
-export const classifyCrawlerLiveFailure = (value: unknown): CrawlerLiveFailureKind => {
-  const message = sanitizeCrawlerLiveDiagnostic(value).toLowerCase();
+export const classifyLiveFailure = (value: unknown): LiveFailureKind => {
+  const message = sanitizeLiveDiagnostic(value).toLowerCase();
   if (/429|rate.?limit|too many requests|请求过于频繁/u.test(message)) return "rate_limited";
   if (/401|403|auth|login|cookie|credential|unauthori[sz]ed|forbidden|认证|登录/u.test(message)) {
     return "authentication";
@@ -74,49 +79,63 @@ export const classifyCrawlerLiveFailure = (value: unknown): CrawlerLiveFailureKi
   return "unknown";
 };
 
-export const passedCrawlerLiveCase = (
-  liveCase: CrawlerLiveCase,
-  durationMs: number,
-  summary: string,
-): CrawlerLiveCaseResult => ({
-  caseId: liveCase.id,
-  site: liveCase.site,
-  number: liveCase.number,
-  label: liveCase.label,
-  durationMs,
+export const passedLiveCase = (input: {
+  liveCase: LiveCase;
+  layer: LiveLayer;
+  target: LiveTarget;
+  phase: string;
+  durationMs: number;
+  summary: string;
+}): LiveCaseResult => ({
+  caseId: input.liveCase.id,
+  site: input.liveCase.site,
+  number: input.liveCase.number,
+  label: input.liveCase.label,
+  layer: input.layer,
+  target: input.target,
+  phase: input.phase,
+  durationMs: input.durationMs,
   status: "passed",
-  summary: sanitizeCrawlerLiveDiagnostic(summary),
+  summary: sanitizeLiveDiagnostic(input.summary),
 });
 
-export const failedCrawlerLiveCase = (
-  liveCase: CrawlerLiveCase,
-  durationMs: number,
-  error: unknown,
-): CrawlerLiveCaseResult => ({
-  caseId: liveCase.id,
-  site: liveCase.site,
-  number: liveCase.number,
-  label: liveCase.label,
-  durationMs,
+export const failedLiveCase = (input: {
+  liveCase: LiveCase;
+  layer: LiveLayer;
+  target: LiveTarget;
+  phase: string;
+  durationMs: number;
+  error: unknown;
+}): LiveCaseResult => ({
+  caseId: input.liveCase.id,
+  site: input.liveCase.site,
+  number: input.liveCase.number,
+  label: input.liveCase.label,
+  layer: input.layer,
+  target: input.target,
+  phase: input.phase,
+  durationMs: input.durationMs,
   status: "failed",
-  failureKind: classifyCrawlerLiveFailure(error),
-  summary: sanitizeCrawlerLiveDiagnostic(error),
+  failureKind: classifyLiveFailure(input.error),
+  summary: sanitizeLiveDiagnostic(input.error),
 });
 
-export const buildCrawlerLiveReport = (input: {
+export const buildLiveReport = (input: {
   catalogVersion: string;
-  target: CrawlerLiveTarget;
+  layer: LiveLayer;
+  target: LiveTarget;
   appVersion: string;
   commit?: string;
   startedAt: Date;
   finishedAt: Date;
-  cases: CrawlerLiveCaseResult[];
-}): CrawlerLiveReport => {
+  cases: LiveCaseResult[];
+}): LiveReport => {
   const passed = input.cases.filter((result) => result.status === "passed").length;
   const failed = input.cases.length - passed;
   return {
     schemaVersion: 1,
     catalogVersion: input.catalogVersion,
+    layer: input.layer,
     target: input.target,
     appVersion: input.appVersion,
     commit: input.commit?.trim() || null,

@@ -135,7 +135,7 @@ jobs:
         with:
           name: product-e2e-diagnostics
           path: |
-            playwright-report/
+            playwright-report*/
             test-results/
           if-no-files-found: warn
           retention-days: 14

@@ -162,6 +162,41 @@ describe("MaintenanceService stop flow", () => {
     });
   });
 
+  it("passes renderer-committed crawler data through Desktop execution", async () => {
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
+    const config = configurationSchema.parse(defaultConfiguration);
+    const item = createCommitItem("ssis-497");
+    item.crawlerData = {
+      title: "Remote SSIS-497 Title",
+      number: "SSIS-497",
+      actors: [],
+      genres: [],
+      scene_images: [],
+      website: Website.DMM,
+    };
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const processFile = vi
+      .spyOn(MaintenanceFileScraper.prototype, "processFile")
+      .mockImplementation(async (entry, _config, _progress, _signal, committed) => ({
+        status: "success",
+        fileId: entry.fileId,
+        crawlerData: committed?.crawlerData,
+      }));
+
+    await service.execute([item], "refresh_data");
+    await waitForIdle(service);
+
+    expect(processFile).toHaveBeenCalledOnce();
+    expect(processFile.mock.calls[0]?.[4]?.crawlerData?.title).toBe("Remote SSIS-497 Title");
+  });
+
   it("pauses queued maintenance work and resumes it later", async () => {
     const signalService = new CaptureSignalService(null);
     const networkClient = new NetworkClient();

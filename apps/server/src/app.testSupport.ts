@@ -1,8 +1,10 @@
 import { join } from "node:path";
+import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { type MountedRootScrapeAggregationService, MountedRootScrapeRuntime } from "@mdcz/runtime/scrape";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
 import { buildServer, type ServerApp } from "./app";
 import { ServerConfigService } from "./services/configService";
+import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
 import { ServerPersistenceService } from "./services/persistenceService";
 import type { RuntimeActionService } from "./services/runtimeActionService";
@@ -16,6 +18,7 @@ export interface TestServerOptions {
   };
   runtimeActions?: RuntimeActionService;
   scrapeAggregation?: MountedRootScrapeAggregationService;
+  createMaintenanceRuntime?: (config: ServerConfigService) => MaintenanceRuntime;
 }
 
 const activeServers = new Map<ServerApp, TempDirectoryHarness>();
@@ -51,6 +54,9 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
             taskEvents,
             new MountedRootScrapeRuntime(config, options.scrapeAggregation),
           )
+        : undefined,
+      maintenance: options.createMaintenanceRuntime
+        ? new MaintenanceService(persistence, mediaRoots, config, taskEvents, options.createMaintenanceRuntime(config))
         : undefined,
     },
   });

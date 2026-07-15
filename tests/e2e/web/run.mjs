@@ -4,22 +4,21 @@ import { createServer } from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { resolveE2ERunnerLayout, resolvePlaywrightTarget, resolvePnpmCli } from "../runner-layout.mjs";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const runtimeRoot = path.join(workspaceRoot, ".tmp", "e2e-web");
-const mediaDir = path.join(runtimeRoot, "media");
-const desktopRuntimeRoot = path.join(workspaceRoot, ".tmp", "e2e-desktop");
-const desktopUserDataDir = path.join(desktopRuntimeRoot, "user-data");
-const resultDir = path.join(workspaceRoot, "test-results");
-const serverLogPath = path.join(resultDir, "web-e2e-server.log");
 const host = "127.0.0.1";
-const pnpmCli = process.env.npm_execpath;
+const pnpmCli = resolvePnpmCli(process.env.npm_execpath);
 const rawPlaywrightArgs = process.argv.slice(2);
 const normalizedPlaywrightArgs = rawPlaywrightArgs[0] === "--" ? rawPlaywrightArgs.slice(1) : rawPlaywrightArgs;
 const liveMode = normalizedPlaywrightArgs.includes("--live");
 const playwrightArgs = normalizedPlaywrightArgs.filter((argument) => argument !== "--live");
 const workspacePackage = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
 const appVersion = typeof workspacePackage.version === "string" ? workspacePackage.version : "unknown";
+
+const playwrightTarget = resolvePlaywrightTarget(playwrightArgs);
+const isDesktopOnly = playwrightTarget === "desktop-electron";
+const layout = resolveE2ERunnerLayout(workspaceRoot, playwrightTarget);
 
 const run = (command, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -40,9 +39,6 @@ const run = (command, args, options = {}) =>
   });
 
 const runPnpm = (args, options) => {
-  if (!pnpmCli) {
-    throw new Error("npm_execpath is required to run pnpm from the Web E2E harness");
-  }
   return /\.(?:c?js|mjs)$/iu.test(pnpmCli)
     ? run(process.execPath, [pnpmCli, ...args], options)
     : run(pnpmCli, args, options);
@@ -96,17 +92,19 @@ const stopServer = async (server) => {
   }
 };
 
-await rm(runtimeRoot, { recursive: true, force: true });
-await rm(desktopRuntimeRoot, { recursive: true, force: true });
-await rm(path.join(workspaceRoot, "playwright-report"), { recursive: true, force: true });
-await rm(path.join(resultDir, "playwright-web"), { recursive: true, force: true });
-await rm(path.join(resultDir, "playwright"), { recursive: true, force: true });
-await mkdir(mediaDir, { recursive: true });
-await mkdir(path.join(mediaDir, "incoming"), { recursive: true });
-await mkdir(desktopUserDataDir, { recursive: true });
-await mkdir(resultDir, { recursive: true });
-await writeFile(path.join(mediaDir, "incoming", "MDCZ-001.mp4"), "deterministic e2e media fixture", "utf8");
-await writeFile(serverLogPath, "", "utf8");
+for (const runtimeRoot of layout.cleanupRuntimeRoots) {
+  await rm(runtimeRoot, { recursive: true, force: true });
+}
+await rm(layout.reportDir, { recursive: true, force: true });
+await rm(layout.outputDir, { recursive: true, force: true });
+await mkdir(layout.mediaDir, { recursive: true });
+await mkdir(layout.desktopUserDataDir, { recursive: true });
+await mkdir(layout.resultDir, { recursive: true });
+if (!isDesktopOnly) {
+  await mkdir(path.join(layout.mediaDir, "incoming"), { recursive: true });
+  await writeFile(path.join(layout.mediaDir, "incoming", "MDCZ-001.mp4"), Buffer.alloc(0));
+}
+await writeFile(layout.serverLogPath, "", "utf8");
 
 let server;
 const serverLogs = [];
@@ -120,7 +118,7 @@ try {
     cwd: workspaceRoot,
     env: {
       ...process.env,
-      MDCZ_HOME: runtimeRoot,
+      MDCZ_HOME: layout.serverRuntimeRoot,
       MDCZ_HOST: host,
       MDCZ_WEB_DIST_DIR: path.join(workspaceRoot, "apps", "server", "dist", "web"),
       PORT: String(port),
@@ -143,8 +141,10 @@ try {
       MDCZ_E2E_LIVE: liveMode ? "1" : "0",
       MDCZ_E2E_ADMIN_PASSWORD: "mdcz-e2e-admin-password",
       MDCZ_APP_VERSION: appVersion,
-      MDCZ_E2E_DESKTOP_USER_DATA_DIR: desktopUserDataDir,
-      MDCZ_E2E_MEDIA_DIR: mediaDir,
+      MDCZ_E2E_DESKTOP_USER_DATA_DIR: layout.desktopUserDataDir,
+      MDCZ_E2E_MEDIA_DIR: layout.mediaDir,
+      MDCZ_E2E_OUTPUT_DIR: layout.outputDir,
+      MDCZ_E2E_REPORT_DIR: layout.reportDir,
     },
   });
 } catch (error) {
@@ -152,5 +152,5 @@ try {
   console.error(error);
 } finally {
   await stopServer(server);
-  await writeFile(serverLogPath, serverLogs.join(""), "utf8");
+  await writeFile(layout.serverLogPath, serverLogs.join(""), "utf8");
 }

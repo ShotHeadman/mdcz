@@ -15,6 +15,7 @@ import { DmmCategory, parseCategory, parseDigitalDetail, parseMonoLikeDetail } f
 interface DmmContext extends Context {
   number00?: string;
   numberNo00?: string;
+  searchCandidate?: DmmSearchCandidate;
   searchKeywords: string[];
 }
 
@@ -37,6 +38,7 @@ const isDmmSearchCandidateDetailUrl = (value: string): boolean => {
 interface DmmSearchCandidate {
   detailUrl: string;
   contentId?: string;
+  thumbnailUrl?: string;
   title?: string;
   order: number;
 }
@@ -99,8 +101,8 @@ const extractJsonStringField = (value: string, names: string[]): string | undefi
 
 const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: string): DmmSearchCandidate[] => {
   const htmlText = $.html();
-  const escapedMatches = htmlText.matchAll(/detailUrl\\":\\"(.*?)\\"/giu);
-  const plainMatches = htmlText.matchAll(/"detail(?:Url|URL)"\s*:\s*"(.*?)"/giu);
+  const escapedMatches = htmlText.matchAll(/(?:detailUrl|detailURL|detail_url)\\":\\"(.*?)\\"/giu);
+  const plainMatches = htmlText.matchAll(/"(?:detailUrl|detailURL|detail_url)"\s*:\s*"(.*?)"/giu);
   const candidates: DmmSearchCandidate[] = [];
   let order = 0;
 
@@ -118,25 +120,33 @@ const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: 
     if (!isDmmSearchCandidateDetailUrl(parsed)) {
       return;
     }
-    if (candidates.some((candidate) => candidate.detailUrl === parsed)) {
+    const existing = candidates.find((candidate) => candidate.detailUrl === parsed);
+    if (existing) {
+      existing.contentId ??= metadata.contentId;
+      existing.thumbnailUrl ??= metadata.thumbnailUrl;
+      existing.title ??= metadata.title;
       return;
     }
 
     candidates.push({
       detailUrl: parsed,
       contentId: metadata.contentId,
+      thumbnailUrl: metadata.thumbnailUrl,
       title: metadata.title,
       order,
     });
     order += 1;
   };
 
-  const objectMatches = htmlText.matchAll(/\{[^{}]*(?:"detail(?:Url|URL)"|detailUrl\\":\\")[^{}]*\}/giu);
+  const objectMatches = htmlText.matchAll(
+    /\{[^{}]*(?:"(?:detailUrl|detailURL|detail_url)"|(?:detailUrl|detailURL|detail_url)\\":\\")[^{}]*\}/giu,
+  );
   for (const match of objectMatches) {
     const objectText = match[0] ?? "";
-    pushCandidate(extractJsonStringField(objectText, ["detailUrl", "detailURL"]), {
-      contentId: extractJsonStringField(objectText, ["contentId", "contentID"]),
-      title: extractJsonStringField(objectText, ["title"]),
+    pushCandidate(extractJsonStringField(objectText, ["detailUrl", "detailURL", "detail_url"]), {
+      contentId: extractJsonStringField(objectText, ["contentId", "contentID", "content_id"]),
+      thumbnailUrl: extractJsonStringField(objectText, ["thumbnailUrl", "thumbnail_image_url"]),
+      title: extractJsonStringField(objectText, ["title", "name"]),
     });
   }
 
@@ -267,7 +277,7 @@ export class DmmCrawler extends BaseDmmCrawler {
     const category = parseCategory(detailUrl);
     const baseData = await this.parseCategoryData(category, $);
     if (!baseData?.title) {
-      return null;
+      return classified ? null : this.buildSearchCandidateFallback(context, detailUrl);
     }
     const title = baseData.title;
 
@@ -319,12 +329,35 @@ export class DmmCrawler extends BaseDmmCrawler {
     searchUrl: string,
   ): string | SearchPageResolution | null {
     const candidates = collectDetailCandidates(context, $, searchUrl);
-    const detailUrl = candidates[0]?.detailUrl;
-    if (!detailUrl) {
+    const candidate = candidates[0];
+    if (!candidate) {
       return null;
     }
 
-    return isDmmVideoLikeUrl(detailUrl) ? this.reuseSearchDocument(detailUrl) : detailUrl;
+    context.searchCandidate = candidate;
+    return isDmmVideoLikeUrl(candidate.detailUrl) ? this.reuseSearchDocument(candidate.detailUrl) : candidate.detailUrl;
+  }
+
+  private buildSearchCandidateFallback(context: DmmContext, detailUrl: string): CrawlerData | null {
+    const candidate = context.searchCandidate;
+    const title = candidate?.title?.trim();
+    if (!candidate || candidate.detailUrl !== detailUrl || !title) {
+      return null;
+    }
+
+    const posterUrl = candidate.thumbnailUrl;
+    const thumbUrl = posterUrl?.replace(/ps(\.(?:jpe?g|png|webp)(?:[?#].*)?)$/iu, "pl$1");
+
+    return {
+      title,
+      number: context.number,
+      actors: [],
+      genres: [],
+      thumb_url: thumbUrl,
+      poster_url: posterUrl,
+      scene_images: [],
+      website: Website.DMM,
+    };
   }
 }
 

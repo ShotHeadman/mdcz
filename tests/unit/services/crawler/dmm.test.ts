@@ -468,6 +468,86 @@ describe("DmmCrawler", () => {
     expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl]);
   });
 
+  it("falls back to matched public search metadata when DMM Video GraphQL has no result", async () => {
+    const number = "SSIS-497";
+    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=ssis00497/sort=ranking/";
+    const tvDetailUrl = "https://tv.dmm.co.jp/list/?content=ssis00497&i3_ref=search&i3_ord=1";
+    const graphqlUrl = "https://api.video.dmm.co.jp/graphql";
+    const title = "Matched DMM Search Fallback Title";
+    const posterUrl = "https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497ps.jpg";
+    const searchHtml = `
+      <html><body>
+        <script>
+          self.__next_f.push([1,"{\\"content_id\\":\\"ssis00497\\",\\"title\\":\\"${title}\\",\\"detail_url\\":\\"${tvDetailUrl.replaceAll("&", "\\u0026")}\\",\\"thumbnail_image_url\\":\\"${posterUrl}\\"}"])
+        </script>
+        <p>出演者：Search Actor</p>
+      </body></html>
+    `;
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        [searchUrl, searchHtml],
+        [graphqlUrl, { data: { ppvContent: null } }],
+      ]),
+    );
+    const crawler = new DmmCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number,
+      site: Website.DMM,
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error("expected success");
+    }
+
+    expect(response.result.data).toMatchObject({
+      title,
+      number,
+      website: Website.DMM,
+      thumb_url: "https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497pl.jpg",
+      poster_url: posterUrl,
+    });
+    expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl]);
+  });
+
+  it("does not let matched search metadata mask a DMM region block", async () => {
+    const number = "SSIS-497";
+    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=ssis00497/sort=ranking/";
+    const detailUrl = "https://tv.dmm.co.jp/list/?content=ssis00497";
+    const graphqlUrl = "https://api.video.dmm.co.jp/graphql";
+    const searchHtml = `
+      <html><body>
+        <script>
+          const item = {"contentId":"ssis00497","name":"Candidate Title","detailUrl":"${detailUrl}"};
+        </script>
+        <p>このサービスはお住まいの地域からはご利用になれません。</p>
+      </body></html>
+    `;
+    const crawler = new DmmCrawler(
+      withGateway(
+        new FixtureNetworkClient(
+          new Map<string, unknown>([
+            [searchUrl, searchHtml],
+            [graphqlUrl, { data: { ppvContent: null } }],
+          ]),
+        ),
+      ),
+    );
+
+    const response = await crawler.crawl({
+      number,
+      site: Website.DMM,
+    });
+
+    expect(response.result.success).toBe(false);
+    if (response.result.success) {
+      throw new Error("expected failure");
+    }
+    expect(response.result.failureReason).toBe("region_blocked");
+    expect(response.result.error).toBe("DMM: region blocked");
+  });
+
   it("falls back to additional search keywords and parses direct detail anchors", async () => {
     const number = "KNBM-007";
     const primarySearchUrl = "https://www.dmm.co.jp/search/=/searchstr=knbm00007/sort=ranking/";

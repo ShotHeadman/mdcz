@@ -17,7 +17,7 @@ dist/
 out/
 release/
 coverage/
-playwright-report/
+playwright-report*/
 test-results/
 .vitest-attachments/
 

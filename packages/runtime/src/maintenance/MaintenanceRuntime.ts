@@ -252,17 +252,20 @@ export class MaintenanceRuntime {
     const entry = input.entry;
     const config = await this.getPresetConfig(input.presetId, input.root);
     const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(input.signalService), preset);
-    const committedCrawlerData = buildCommittedCrawlerData(
-      entry,
-      {
-        fileId: entry.fileId,
-        status: "ready",
-        fieldDiffs: input.committed?.fieldDiffs ?? [],
-        proposedCrawlerData: input.committed?.crawlerData,
-        imageAlternatives: input.committed?.imageAlternatives,
-      },
-      input.committed?.fieldSelections,
-    );
+    const committedCrawlerData =
+      input.committed?.crawlerData && input.committed.fieldDiffs === undefined
+        ? input.committed.crawlerData
+        : buildCommittedCrawlerData(
+            entry,
+            {
+              fileId: entry.fileId,
+              status: "ready",
+              fieldDiffs: input.committed?.fieldDiffs ?? [],
+              proposedCrawlerData: input.committed?.crawlerData,
+              imageAlternatives: input.committed?.imageAlternatives,
+            },
+            input.committed?.fieldSelections,
+          );
     const result = await scraper.processFile(
       entry,
       config,
