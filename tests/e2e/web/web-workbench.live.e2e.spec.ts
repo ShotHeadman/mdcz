@@ -1,8 +1,6 @@
-import { writeFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
-import { LIVE_CATALOG_VERSION, resolveWorkbenchLiveCase } from "../../live/catalog";
-import { buildLiveReport, failedLiveCase, passedLiveCase } from "../../live/report";
 import { createWorkbenchMediaFixture, createWorkbenchRefreshMediaFixture } from "../../live/workbench-fixture";
+import { runReportedWorkbenchJourney } from "../live/reported-workbench-journey";
 import { runWorkbenchRefreshJourney, WORKBENCH_REFRESH_JOURNEY_TIMEOUT_MS } from "../live/workbench-refresh-journey";
 import { runWorkbenchScrapeJourney, WORKBENCH_SCRAPE_JOURNEY_TIMEOUT_MS } from "../live/workbench-scrape-journey";
 
@@ -46,150 +44,52 @@ test.describe
   .serial("Web workbench E2E/live", () => {
     test("scrapes the workbench representative case through the built Web product", async ({ page }, testInfo) => {
       test.setTimeout(WORKBENCH_SCRAPE_JOURNEY_TIMEOUT_MS);
-      const liveCase = resolveWorkbenchLiveCase();
-      const fixture = createWorkbenchMediaFixture({
+      await runReportedWorkbenchJourney({
+        testInfo,
         target: "web",
-        journey: "scrape-live",
-        number: liveCase.number,
+        phase: "workbench-scrape",
+        reportBaseName: "web-workbench-scrape-live-report",
+        createFixture: (liveCase) =>
+          createWorkbenchMediaFixture({
+            target: "web",
+            journey: "scrape-live",
+            number: liveCase.number,
+          }),
+        run: async ({ liveCase, fixture }) => {
+          await ensureWebSession(page);
+          return await runWorkbenchScrapeJourney({
+            page,
+            target: "web",
+            liveCase,
+            fixture,
+            timeoutMs: WORKBENCH_SCRAPE_JOURNEY_TIMEOUT_MS,
+          });
+        },
       });
-      const startedAt = new Date();
-      const caseStartedAt = Date.now();
-
-      try {
-        await ensureWebSession(page);
-        const summary = await runWorkbenchScrapeJourney({
-          page,
-          target: "web",
-          liveCase,
-          fixture,
-          timeoutMs: WORKBENCH_SCRAPE_JOURNEY_TIMEOUT_MS,
-        });
-        const result = passedLiveCase({
-          liveCase,
-          layer: "e2e",
-          target: "web",
-          phase: "workbench-scrape",
-          durationMs: Date.now() - caseStartedAt,
-          summary,
-        });
-        const report = buildLiveReport({
-          catalogVersion: LIVE_CATALOG_VERSION,
-          layer: "e2e",
-          target: "web",
-          appVersion: process.env.MDCZ_APP_VERSION ?? "unknown",
-          commit: process.env.GITHUB_SHA ?? process.env.MDCZ_GIT_COMMIT,
-          startedAt,
-          finishedAt: new Date(),
-          cases: [result],
-        });
-        const reportPath = testInfo.outputPath("web-workbench-scrape-live-report.json");
-        await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-        await testInfo.attach("web-workbench-scrape-live-report", {
-          path: reportPath,
-          contentType: "application/json",
-        });
-      } catch (error) {
-        const result = failedLiveCase({
-          liveCase,
-          layer: "e2e",
-          target: "web",
-          phase: "workbench-scrape",
-          durationMs: Date.now() - caseStartedAt,
-          error,
-        });
-        const report = buildLiveReport({
-          catalogVersion: LIVE_CATALOG_VERSION,
-          layer: "e2e",
-          target: "web",
-          appVersion: process.env.MDCZ_APP_VERSION ?? "unknown",
-          commit: process.env.GITHUB_SHA ?? process.env.MDCZ_GIT_COMMIT,
-          startedAt,
-          finishedAt: new Date(),
-          cases: [result],
-        });
-        const reportPath = testInfo.outputPath("web-workbench-scrape-live-report.json");
-        await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-        await testInfo.attach("web-workbench-scrape-live-report", {
-          path: reportPath,
-          contentType: "application/json",
-        });
-        throw error;
-      } finally {
-        await fixture.cleanup();
-      }
     });
 
     test("refreshes seeded NFO data through the built Web product", async ({ page }, testInfo) => {
       test.setTimeout(WORKBENCH_REFRESH_JOURNEY_TIMEOUT_MS);
-      const liveCase = resolveWorkbenchLiveCase();
-      const fixture = createWorkbenchRefreshMediaFixture({
+      await runReportedWorkbenchJourney({
+        testInfo,
         target: "web",
-        number: liveCase.number,
+        phase: "workbench-refresh",
+        reportBaseName: "web-workbench-refresh-live-report",
+        createFixture: (liveCase) =>
+          createWorkbenchRefreshMediaFixture({
+            target: "web",
+            number: liveCase.number,
+          }),
+        run: async ({ liveCase, fixture }) => {
+          await ensureWebSession(page);
+          return await runWorkbenchRefreshJourney({
+            page,
+            target: "web",
+            liveCase,
+            fixture,
+            timeoutMs: WORKBENCH_REFRESH_JOURNEY_TIMEOUT_MS,
+          });
+        },
       });
-      const startedAt = new Date();
-      const caseStartedAt = Date.now();
-
-      try {
-        await ensureWebSession(page);
-        const summary = await runWorkbenchRefreshJourney({
-          page,
-          target: "web",
-          liveCase,
-          fixture,
-          timeoutMs: WORKBENCH_REFRESH_JOURNEY_TIMEOUT_MS,
-        });
-        const result = passedLiveCase({
-          liveCase,
-          layer: "e2e",
-          target: "web",
-          phase: "workbench-refresh",
-          durationMs: Date.now() - caseStartedAt,
-          summary,
-        });
-        const report = buildLiveReport({
-          catalogVersion: LIVE_CATALOG_VERSION,
-          layer: "e2e",
-          target: "web",
-          appVersion: process.env.MDCZ_APP_VERSION ?? "unknown",
-          commit: process.env.GITHUB_SHA ?? process.env.MDCZ_GIT_COMMIT,
-          startedAt,
-          finishedAt: new Date(),
-          cases: [result],
-        });
-        const reportPath = testInfo.outputPath("web-workbench-refresh-live-report.json");
-        await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-        await testInfo.attach("web-workbench-refresh-live-report", {
-          path: reportPath,
-          contentType: "application/json",
-        });
-      } catch (error) {
-        const result = failedLiveCase({
-          liveCase,
-          layer: "e2e",
-          target: "web",
-          phase: "workbench-refresh",
-          durationMs: Date.now() - caseStartedAt,
-          error,
-        });
-        const report = buildLiveReport({
-          catalogVersion: LIVE_CATALOG_VERSION,
-          layer: "e2e",
-          target: "web",
-          appVersion: process.env.MDCZ_APP_VERSION ?? "unknown",
-          commit: process.env.GITHUB_SHA ?? process.env.MDCZ_GIT_COMMIT,
-          startedAt,
-          finishedAt: new Date(),
-          cases: [result],
-        });
-        const reportPath = testInfo.outputPath("web-workbench-refresh-live-report.json");
-        await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-        await testInfo.attach("web-workbench-refresh-live-report", {
-          path: reportPath,
-          contentType: "application/json",
-        });
-        throw error;
-      } finally {
-        await fixture.cleanup();
-      }
     });
   });

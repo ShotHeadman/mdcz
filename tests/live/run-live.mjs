@@ -7,8 +7,8 @@ import {
   LIVE_COORDINATOR_DEADLINE_MS,
   resolveLiveCoordinatorExitCode,
   runLiveCoordinatorSequence,
-} from "./live-coordinator.mjs";
-import { createLiveStepProcessRunner, LIVE_CHILD_TERMINATION_GRACE_MS } from "./process-runner.mjs";
+} from "./live-coordinator.ts";
+import { createLiveStepProcessRunner, LIVE_CHILD_TERMINATION_GRACE_MS } from "./process-runner.ts";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const processRunner = createLiveStepProcessRunner({ workspaceRoot, env: process.env });

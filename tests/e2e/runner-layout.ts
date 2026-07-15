@@ -1,8 +1,23 @@
 import path from "node:path";
 
-export const resolvePnpmCli = (npmExecPath) => npmExecPath?.trim() || "pnpm";
+export type PlaywrightTarget = "web-chromium" | "desktop-electron" | undefined;
 
-export const resolvePlaywrightTarget = (args) => {
+export interface E2ERunnerLayout {
+  webRuntimeRoot: string;
+  desktopRuntimeRoot: string;
+  cleanupRuntimeRoots: string[];
+  serverRuntimeRoot: string;
+  mediaDir: string;
+  desktopUserDataDir: string;
+  resultDir: string;
+  serverLogPath: string;
+  reportDir: string;
+  outputDir: string;
+}
+
+export const resolvePnpmCli = (npmExecPath: string | undefined): string => npmExecPath?.trim() || "pnpm";
+
+export const resolvePlaywrightTarget = (args: readonly string[]): string | undefined => {
   for (const [index, argument] of args.entries()) {
     if (argument.startsWith("--project=")) {
       return argument.slice("--project=".length);
@@ -14,7 +29,7 @@ export const resolvePlaywrightTarget = (args) => {
   return undefined;
 };
 
-export const resolveE2ERunnerLayout = (workspaceRoot, playwrightTarget) => {
+export const resolveE2ERunnerLayout = (workspaceRoot: string, playwrightTarget: PlaywrightTarget): E2ERunnerLayout => {
   const webRuntimeRoot = path.join(workspaceRoot, ".tmp", "e2e-web");
   const desktopRuntimeRoot = path.join(workspaceRoot, ".tmp", "e2e-desktop");
   const resultDir = path.join(workspaceRoot, "test-results");

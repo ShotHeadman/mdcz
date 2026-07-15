@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { resolveE2ERunnerLayout, resolvePlaywrightTarget, resolvePnpmCli } from "../runner-layout.mjs";
+import { resolveE2ERunnerLayout, resolvePlaywrightTarget, resolvePnpmCli } from "../runner-layout.ts";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const host = "127.0.0.1";

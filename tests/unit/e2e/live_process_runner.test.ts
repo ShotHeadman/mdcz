@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import type { LiveCoordinatorStep } from "../../live/live-coordinator";
-import { createLiveStepProcessRunner } from "../../live/process-runner.mjs";
+import { createLiveStepProcessRunner } from "../../live/process-runner";
 
 class FakeChild extends EventEmitter {
   pid = 4242;
