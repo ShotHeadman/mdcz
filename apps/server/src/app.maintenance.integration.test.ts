@@ -1,6 +1,4 @@
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { AggregationResult, AggregationService } from "@mdcz/runtime/scrape";
@@ -8,9 +6,16 @@ import { FileOrganizer, NfoGenerator } from "@mdcz/runtime/scrape";
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
-import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeTestServers, createTestServer, syncMediaRootFromConfig } from "./app.testSupport";
+import {
+  closeTestServers,
+  createTempRoot,
+  createTestServer,
+  loginAsAdmin,
+  startLocalHttpServer,
+  syncMediaRootFromConfig,
+  waitForTaskStatus,
+} from "./app.testSupport";
 import type { ServerConfigService } from "./services/configService";
 
 const createPngBytes = (): Buffer => {
@@ -22,22 +27,13 @@ const createPngBytes = (): Buffer => {
 };
 
 const startImageServer = async (): Promise<{ url: string; close: () => Promise<void> }> => {
-  const server = createServer((_request, response) => {
+  const server = await startLocalHttpServer((_request, response) => {
     response.writeHead(200, { "content-type": "image/png" });
     response.end(createPngBytes());
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Expected HTTP test server address");
-  }
   return {
-    url: `http://127.0.0.1:${address.port}/image.png`,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.closeAllConnections();
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
+    url: `${server.url}/image.png`,
+    close: server.close,
   };
 };
 
@@ -107,33 +103,6 @@ const createMaintenanceRuntime = (
     } as never,
   });
 
-const loginAsAdmin = async (fastify: FastifyInstance): Promise<string> => {
-  const loginResponse = await fastify.inject({
-    method: "POST",
-    url: "/trpc/auth.login",
-    payload: { password: "admin" },
-  });
-  return loginResponse.json().result.data.token as string;
-};
-
-const waitForTaskStatus = async (
-  fastify: FastifyInstance,
-  token: string,
-  taskId: string,
-  status: string,
-): Promise<void> => {
-  await expect
-    .poll(async () => {
-      const detailResponse = await fastify.inject({
-        method: "GET",
-        url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-        headers: { authorization: `Bearer ${token}` },
-      });
-      return detailResponse.json().result.data.task.status;
-    })
-    .toBe(status);
-};
-
 afterEach(async () => {
   await closeTestServers();
 });
@@ -150,7 +119,7 @@ beforeEach(() => {
 
 describe("buildServer maintenance integration", () => {
   it("scans selected maintenance files through read_local semantics without preview or execute", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-maintenance-selected-root-"));
+    const root = await createTempRoot("maintenance-selected-root");
     await writeFile(join(root, "ABC-225.mp4"), "video");
     await writeFile(
       join(root, "ABC-225.nfo"),
@@ -184,7 +153,7 @@ describe("buildServer maintenance integration", () => {
   });
 
   it("runs organize_files preview and apply through task-backed logs with filesystem moves", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-maintenance-organize-root-"));
+    const root = await createTempRoot("maintenance-organize-root");
     const nfoGenerator = new NfoGenerator();
     await writeFile(join(root, "ABC-125.mp4"), "video");
     await writeFile(
@@ -295,7 +264,7 @@ describe("buildServer maintenance integration", () => {
   });
 
   it("rebuilds all offline with fake aggregation and organizes output", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-maintenance-rebuild-root-"));
+    const root = await createTempRoot("maintenance-rebuild-root");
     const nfoGenerator = new NfoGenerator();
     await writeFile(join(root, "ABC-300.mp4"), "video");
     await writeFile(
@@ -401,7 +370,7 @@ describe("buildServer maintenance integration", () => {
   });
 
   it("keeps refresh_data source path while rebuild_all plans organize moves", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-maintenance-override-root-"));
+    const root = await createTempRoot("maintenance-override-root");
     const nfoGenerator = new NfoGenerator();
     await writeFile(join(root, "ABC-400.mp4"), "video");
     await writeFile(

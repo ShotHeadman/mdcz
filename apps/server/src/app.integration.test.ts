@@ -1,12 +1,18 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildServer, type ServerApp } from "./app";
-import { closeTestServers, createTestServer, releaseTestServer, syncMediaRootFromConfig } from "./app.testSupport";
+import {
+  closeTestServers,
+  createTempRoot,
+  createTestServer,
+  loginAsAdmin,
+  releaseTestServer,
+  startLocalHttpServer,
+  syncMediaRootFromConfig,
+  waitForTaskStatus,
+} from "./app.testSupport";
 import type { RuntimeActionService } from "./services/runtimeActionService";
 import { formatSseEvent } from "./taskEvents";
 
@@ -20,41 +26,6 @@ const readStreamChunk = async (reader: ReadableStreamDefaultReader<Uint8Array>):
   }
 
   return textDecoder.decode(chunk.value);
-};
-
-let standaloneServerApp: ServerApp | undefined;
-
-const startWebhookServer = async (): Promise<{
-  close: () => Promise<void>;
-  deliveries: Array<{ body: unknown; secret?: string }>;
-  url: string;
-}> => {
-  const deliveries: Array<{ body: unknown; secret?: string }> = [];
-  const server = createServer((request, response) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => {
-      chunks.push(chunk);
-    });
-    request.on("end", () => {
-      const raw = Buffer.concat(chunks).toString("utf8");
-      deliveries.push({
-        body: raw ? JSON.parse(raw) : null,
-        secret: request.headers["x-mdcz-webhook-secret"]?.toString(),
-      });
-      response.writeHead(204);
-      response.end();
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Expected webhook test server address");
-  }
-  return {
-    deliveries,
-    url: `http://127.0.0.1:${address.port}/webhook`,
-    close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
-  };
 };
 
 const isWebhookTaskBody = (
@@ -95,10 +66,37 @@ const createFakeRuntimeActions = (): RuntimeActionService =>
     }),
   }) as RuntimeActionService;
 
+const startWebhookServer = async (): Promise<{
+  close: () => Promise<void>;
+  deliveries: Array<{ body: unknown; secret?: string }>;
+  url: string;
+}> => {
+  const deliveries: Array<{ body: unknown; secret?: string }> = [];
+  const server = await startLocalHttpServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    request.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      deliveries.push({
+        body: raw ? JSON.parse(raw) : null,
+        secret: request.headers["x-mdcz-webhook-secret"]?.toString(),
+      });
+      response.writeHead(204);
+      response.end();
+    });
+  });
+
+  return {
+    deliveries,
+    url: `${server.url}/webhook`,
+    close: server.close,
+  };
+};
+
 afterEach(async () => {
   await closeTestServers();
-  await standaloneServerApp?.fastify.close();
-  standaloneServerApp = undefined;
 });
 
 beforeEach(() => {
@@ -111,9 +109,9 @@ beforeEach(() => {
   };
 });
 
-describe("buildServer", () => {
+describe("buildServer composition integration", () => {
   it("completes first-run setup without a prior session and persists completion", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-setup-root-"));
+    const root = await createTempRoot("setup-root");
     const { fastify, services } = await createTestServer();
 
     const completeResponse = await fastify.inject({
@@ -149,7 +147,7 @@ describe("buildServer", () => {
   });
 
   it("rejects completing setup with the default admin password", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-default-setup-root-"));
+    const root = await createTempRoot("default-setup-root");
     const { fastify } = await createTestServer();
 
     const response = await fastify.inject({
@@ -165,13 +163,8 @@ describe("buildServer", () => {
   it("mounts tRPC config read and export procedures", async () => {
     const { fastify, services } = await createTestServer();
     await services.config.save(defaultConfiguration);
+    const token = await loginAsAdmin(fastify);
 
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
     const readResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/config.read",
@@ -199,13 +192,7 @@ describe("buildServer", () => {
 
   it("initializes SQLite migrations before serving tRPC persistence status", async () => {
     const { fastify, services } = await createTestServer();
-
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const response = await fastify.inject({
       method: "GET",
       url: "/trpc/persistence.status",
@@ -225,12 +212,7 @@ describe("buildServer", () => {
 
   it("serves runtime logs and executes server-backed tools through tRPC", async () => {
     const { fastify, services } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     services.runtimeLogs.append("test-runtime", "warn", "runtime warning");
     services.runtimeLogs.append("test-runtime", "info", "runtime info");
 
@@ -264,12 +246,7 @@ describe("buildServer", () => {
 
   it("updates TOML-backed config through tRPC", async () => {
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
 
     const defaultsResponse = await fastify.inject({
       method: "GET",
@@ -306,15 +283,10 @@ describe("buildServer", () => {
   });
 
   it("syncs the single enabled media root from paths.mediaPath", async () => {
-    const firstRoot = await mkdtemp(join(tmpdir(), "mdcz-config-media-root-a-"));
-    const secondRoot = await mkdtemp(join(tmpdir(), "mdcz-config-media-root-b-"));
+    const firstRoot = await createTempRoot("config-media-root-a");
+    const secondRoot = await createTempRoot("config-media-root-b");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
 
     const firstResponse = await fastify.inject({
       method: "POST",
@@ -344,12 +316,7 @@ describe("buildServer", () => {
 
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {
     const { fastify } = await createTestServer({ runtimeActions: createFakeRuntimeActions() });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
 
     const listSitesResponse = await fastify.inject({
       method: "GET",
@@ -412,14 +379,9 @@ describe("buildServer", () => {
   });
 
   it("exposes synced media roots as read-only tRPC state", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-media-root-"));
+    const root = await createTempRoot("media-root");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
 
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const listResponse = await fastify.inject({
@@ -460,16 +422,11 @@ describe("buildServer", () => {
   });
 
   it("builds overview fallback output from library entries independently of recent visibility", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-overview-root-"));
+    const root = await createTempRoot("overview-root");
     await writeFile(join(root, "visible.mp4"), "visible");
     await writeFile(join(root, "hidden.mp4"), "hidden entry bytes");
     const { fastify, services } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     await state.repositories.library.upsertEntry({
@@ -527,31 +484,10 @@ describe("buildServer", () => {
   });
 
   it("rejects root browser escape attempts", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-browser-root-"));
+    const root = await createTempRoot("browser-root");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: root } },
-    });
-    const rootsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/mediaRoots.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const rootId = rootsResponse
-      .json()
-      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
-    if (!rootId) {
-      throw new Error("Expected paths.mediaPath to create an enabled media root");
-    }
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const response = await fastify.inject({
       method: "GET",
@@ -564,17 +500,12 @@ describe("buildServer", () => {
   });
 
   it("suggests server host directories through tRPC without returning files", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-server-path-api-"));
+    const root = await createTempRoot("server-path-api");
     await mkdir(join(root, "Alpha"));
     await mkdir(join(root, "Beta"));
     await writeFile(join(root, "Alpha.txt"), "not a directory");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     await syncMediaRootFromConfig(fastify, token, root);
 
     const typedResponse = await fastify.inject({
@@ -600,36 +531,15 @@ describe("buildServer", () => {
   });
 
   it("protects automation REST endpoints and returns durable webhook payloads", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-automation-root-"));
+    const root = await createTempRoot("automation-root");
     await writeFile(join(root, "auto.mp4"), "video");
     const { fastify } = await createTestServer();
     const unauthorizedResponse = await fastify.inject({
       method: "GET",
       url: "/api/automation/library/recent",
     });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: root } },
-    });
-    const rootsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/mediaRoots.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const rootId = rootsResponse
-      .json()
-      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
-    if (!rootId) {
-      throw new Error("Expected paths.mediaPath to create an enabled media root");
-    }
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -639,16 +549,7 @@ describe("buildServer", () => {
     });
     const taskId = startResponse.json().task.id;
 
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("completed");
+    await waitForTaskStatus(fastify, token, taskId, "completed");
 
     const recentResponse = await fastify.inject({
       method: "GET",
@@ -681,7 +582,7 @@ describe("buildServer", () => {
 
   it("delivers outbound automation webhooks when task updates are published", async () => {
     const webhook = await startWebhookServer();
-    const root = await mkdtemp(join(tmpdir(), "mdcz-outbound-webhook-root-"));
+    const root = await createTempRoot("outbound-webhook-root");
     await writeFile(join(root, "auto-webhook.mp4"), "video");
     const { fastify } = await createTestServer({
       automationWebhook: {
@@ -689,29 +590,8 @@ describe("buildServer", () => {
         url: webhook.url,
       },
     });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: root } },
-    });
-    const rootsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/mediaRoots.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const rootId = rootsResponse
-      .json()
-      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
-    if (!rootId) {
-      throw new Error("Expected paths.mediaPath to create an enabled media root");
-    }
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -721,16 +601,7 @@ describe("buildServer", () => {
     });
     const taskId = startResponse.json().task.id;
 
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("completed");
+    await waitForTaskStatus(fastify, token, taskId, "completed");
 
     await expect
       .poll(() =>
@@ -779,44 +650,9 @@ describe("buildServer", () => {
     await releaseTestServer(app);
   });
 
-  it("returns not found for unknown routes", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({ method: "GET", url: "/unknown" });
-
-    expect(response.statusCode).toBe(404);
-  });
-
-  it("serves the WebUI static bundle and falls back to index.html for routes", async () => {
-    const webRoot = await mkdtemp(join(tmpdir(), "mdcz-web-static-"));
-    await writeFile(join(webRoot, "index.html"), '<!doctype html><div id="root"></div>', "utf8");
-    await writeFile(join(webRoot, "app.js"), "console.log('web')", "utf8");
-    standaloneServerApp = buildServer({ webStaticDir: webRoot });
-    const { fastify } = standaloneServerApp;
-
-    const assetResponse = await fastify.inject({ method: "GET", url: "/app.js" });
-    const routeResponse = await fastify.inject({ method: "GET", url: "/settings" });
-    const rootResponse = await fastify.inject({ method: "GET", url: "/" });
-
-    expect(assetResponse.statusCode).toBe(200);
-    expect(assetResponse.headers["content-type"]).toContain("text/javascript");
-    expect(assetResponse.body).toBe("console.log('web')");
-    expect(routeResponse.statusCode).toBe(200);
-    expect(routeResponse.headers["content-type"]).toContain("text/html");
-    expect(routeResponse.body).toContain('<div id="root"></div>');
-    expect(rootResponse.statusCode).toBe(200);
-    expect(rootResponse.headers["content-type"]).toContain("text/html");
-    expect(rootResponse.body).toContain('<div id="root"></div>');
-  });
-
   it("streams task updates through the SSE endpoint", async () => {
     const { fastify, services } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const address = await fastify.listen({ host: "127.0.0.1", port: 0 });
     const abortController = new AbortController();
     const response = await fetch(`${address}/events/tasks?token=${encodeURIComponent(token)}`, {

@@ -1,12 +1,18 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AggregationResult, ManualScrapeOptions, MountedRootScrapeAggregationService } from "@mdcz/runtime/scrape";
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeTestServers, createTestServer, syncMediaRootFromConfig } from "./app.testSupport";
+import {
+  closeTestServers,
+  createTempRoot,
+  createTestServer,
+  loginAsAdmin,
+  startLocalHttpServer,
+  syncMediaRootFromConfig,
+  waitForTaskStatus,
+} from "./app.testSupport";
 
 const createPngBytes = (): Buffer => {
   const png = Buffer.from(
@@ -17,22 +23,13 @@ const createPngBytes = (): Buffer => {
 };
 
 const startImageServer = async (): Promise<{ url: string; close: () => Promise<void> }> => {
-  const server = createServer((_request, response) => {
+  const server = await startLocalHttpServer((_request, response) => {
     response.writeHead(200, { "content-type": "image/png" });
     response.end(createPngBytes());
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Expected HTTP test server address");
-  }
   return {
-    url: `http://127.0.0.1:${address.port}/image.png`,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.closeAllConnections();
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
+    url: `${server.url}/image.png`,
+    close: server.close,
   };
 };
 
@@ -178,8 +175,8 @@ beforeEach(() => {
 
 describe("buildServer scrape integration", () => {
   it("runs the full scrape runtime pipeline and indexes organized output", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-runtime-root-"));
-    const actorRoot = await mkdtemp(join(tmpdir(), "mdcz-actor-root-"));
+    const root = await createTempRoot("scrape-runtime-root");
+    const actorRoot = await createTempRoot("actor-root");
     const actorPhotoPath = join(actorRoot, "Actor A.jpg");
     await writeFile(join(root, "ABC-123.mp4"), "video");
     await writeFile(actorPhotoPath, createPngBytes());
@@ -191,12 +188,7 @@ describe("buildServer scrape integration", () => {
     const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
       taskEvents.push(event.data);
     });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -233,16 +225,7 @@ describe("buildServer scrape integration", () => {
     const taskId = startResponse.json().result.data.id;
     expect(startResponse.json().result.data.videoCount).toBe(0);
 
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("completed");
+    await waitForTaskStatus(fastify, token, taskId, "completed");
 
     const libraryResponse = await fastify.inject({
       method: "POST",
@@ -363,17 +346,12 @@ describe("buildServer scrape integration", () => {
   });
 
   it("starts scrape tasks from selected host files inside scan and media roots", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-selected-scrape-root-"));
+    const root = await createTempRoot("selected-scrape-root");
     const selectedPath = join(root, "ABC-128.mp4");
     await writeFile(selectedPath, "video");
     const imageServer = await startImageServer();
     const { fastify } = await createTestServer({ scrapeAggregation: createFakeAggregation(imageServer.url) });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -416,21 +394,12 @@ describe("buildServer scrape integration", () => {
       rootId,
       relativePath: "ABC-128.mp4",
     });
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("completed");
+    await waitForTaskStatus(fastify, token, taskId, "completed");
     await imageServer.close();
   });
 
   it("emits ambiguous uncensored items on scrape completion and restarts confirmed refs", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-ambiguous-uncensored-root-"));
+    const root = await createTempRoot("ambiguous-uncensored-root");
     await writeFile(join(root, "ABP-999-U.mp4"), "video");
     const imageServer = await startImageServer();
     const { fastify, services } = await createTestServer({
@@ -442,12 +411,7 @@ describe("buildServer scrape integration", () => {
         completedEvents.push(event.data);
       }
     });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     await fastify.inject({
       method: "POST",
@@ -464,16 +428,7 @@ describe("buildServer scrape integration", () => {
     });
     const taskId = startResponse.json().result.data.id;
 
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("completed");
+    await waitForTaskStatus(fastify, token, taskId, "completed");
 
     const firstCompletedEvent = completedEvents.at(-1) as {
       ambiguousUncensoredItems?: Array<{
@@ -509,16 +464,7 @@ describe("buildServer scrape integration", () => {
     expect(confirmResponse.json().result.data.id).not.toBe(taskId);
     const confirmedTaskId = confirmResponse.json().result.data.id;
 
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId: confirmedTaskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("completed");
+    await waitForTaskStatus(fastify, token, confirmedTaskId, "completed");
     const confirmedResultsResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId: confirmedTaskId }))}`,
@@ -529,14 +475,9 @@ describe("buildServer scrape integration", () => {
   });
 
   it("accepts each uncensored confirmation choice", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-uncensored-choice-root-"));
+    const root = await createTempRoot("uncensored-choice-root");
     const { fastify, services } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     const task = await state.repositories.tasks.createTask({ kind: "scrape", rootId });
@@ -574,14 +515,9 @@ describe("buildServer scrape integration", () => {
   });
 
   it("rejects uncensored confirmation refs outside the task", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-uncensored-invalid-root-"));
+    const root = await createTempRoot("uncensored-invalid-root");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const startResponse = await fastify.inject({
       method: "POST",
@@ -602,14 +538,9 @@ describe("buildServer scrape integration", () => {
   });
 
   it("rejects uncensored confirmation for a missing task", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-uncensored-missing-root-"));
+    const root = await createTempRoot("uncensored-missing-root");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const confirmResponse = await fastify.inject({
@@ -627,17 +558,12 @@ describe("buildServer scrape integration", () => {
   });
 
   it("rejects selected scrape files outside the requested scan directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-selected-scrape-root-"));
-    const otherRoot = await mkdtemp(join(tmpdir(), "mdcz-selected-scrape-other-"));
+    const root = await createTempRoot("selected-scrape-root");
+    const otherRoot = await createTempRoot("selected-scrape-other");
     const selectedPath = join(otherRoot, "ABC-129.mp4");
     await writeFile(selectedPath, "video");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -657,17 +583,12 @@ describe("buildServer scrape integration", () => {
   });
 
   it("rejects selected scrape files outside configured media path", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-selected-unregistered-root-"));
-    const configuredRoot = await mkdtemp(join(tmpdir(), "mdcz-configured-media-root-"));
+    const root = await createTempRoot("selected-unregistered-root");
+    const configuredRoot = await createTempRoot("configured-media-root");
     const selectedPath = join(root, "ABC-130.mp4");
     await writeFile(selectedPath, "video");
     const { fastify } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -687,16 +608,11 @@ describe("buildServer scrape integration", () => {
   });
 
   it("aborts an active scrape runtime pipeline when the task is stopped", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-stop-root-"));
+    const root = await createTempRoot("scrape-stop-root");
     await writeFile(join(root, "ABC-124.mp4"), "video");
     const control = createAbortAwareAggregation();
     const { fastify } = await createTestServer({ scrapeAggregation: control.aggregation });
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
@@ -717,16 +633,7 @@ describe("buildServer scrape integration", () => {
 
     expect(stopResponse.statusCode).toBe(200);
     await control.aborted;
-    await expect
-      .poll(async () => {
-        const detailResponse = await fastify.inject({
-          method: "GET",
-          url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return detailResponse.json().result.data.task.status;
-      })
-      .toBe("failed");
+    await waitForTaskStatus(fastify, token, taskId, "failed");
 
     const resultsResponse = await fastify.inject({
       method: "GET",
@@ -740,16 +647,11 @@ describe("buildServer scrape integration", () => {
   });
 
   it("recovers and discards persisted recoverable scrape sessions", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-scrape-recover-root-"));
+    const root = await createTempRoot("scrape-recover-root");
     await writeFile(join(root, "ABC-126.mp4"), "video");
     await writeFile(join(root, "ABC-127.mp4"), "video");
     const { fastify, services } = await createTestServer();
-    const loginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "admin" },
-    });
-    const token = loginResponse.json().result.data.token;
+    const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     const recoverTask = await state.repositories.tasks.createTask({

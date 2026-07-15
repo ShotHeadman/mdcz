@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
-import { closeTestServers, createTestServer, syncMediaRootFromConfig } from "./app.testSupport";
+import { closeTestServers, createTestServer, loginAsAdmin, syncMediaRootFromConfig } from "./app.testSupport";
 
 let mediaDirectory: TempDirectoryHarness | undefined;
 
@@ -11,17 +11,6 @@ afterEach(async () => {
   await mediaDirectory?.cleanup();
   mediaDirectory = undefined;
 });
-
-const loginAsAdmin = async (fastify: Awaited<ReturnType<typeof createTestServer>>["fastify"]): Promise<string> => {
-  const response = await fastify.inject({
-    method: "POST",
-    url: "/trpc/auth.login",
-    payload: { password: "admin" },
-  });
-
-  expect(response.statusCode).toBe(200);
-  return response.json().result.data.token;
-};
 
 describe("buildServer scan integration", () => {
   it("scans a configured media root and persists task details across Server boundaries", async () => {

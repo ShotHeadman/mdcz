@@ -31,7 +31,6 @@ const unitRuntimeAliases = [
 ] as const;
 
 const legacyNodeIntegrationTests = [
-  "apps/server/src/app.test.ts",
   "apps/server/src/configService.test.ts",
   "packages/media-store/src/storage.test.ts",
   "packages/persistence/src/persistence.test.ts",
