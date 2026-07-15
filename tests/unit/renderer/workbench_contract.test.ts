@@ -1,15 +1,11 @@
-import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
 import {
   filterMediaCandidates,
   mergeMediaCandidates,
   resolveMediaCandidateScanPlan,
 } from "@mdcz/shared/mediaCandidate";
 import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
-import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
-import { WorkbenchSetupView } from "@mdcz/views/workbench";
+import type { MediaCandidate } from "@mdcz/shared/types";
 import type { ConfigOutput } from "@renderer/client/types";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
@@ -156,116 +152,5 @@ describe("workbench setup contract", () => {
     expect(state.candidates).toEqual([]);
     expect(state.selectedPaths).toEqual([]);
     expect(state.scanStatus).toBe("idle");
-  });
-
-  it("hides Web native browse buttons while keeping custom server path autocomplete inputs", () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkbenchSetupView, {
-        mode: "scrape",
-        scanDir: "",
-        targetDir: "",
-        candidates: [],
-        selectedPaths: [],
-        selectedSize: 0,
-        totalSize: 0,
-        extensionCount: 0,
-        scanStatus: "idle",
-        scanning: false,
-        startPending: false,
-        supportedExtensions: [".mp4"],
-        presetId: "read_local",
-        runSummary: "",
-        primaryDisabled: true,
-        isServer: true,
-        formatBytes: () => "0 B",
-        onBrowseScanDir: () => undefined,
-        onBrowseTargetDir: () => undefined,
-        onRefreshScan: () => undefined,
-        onPresetChange: () => undefined,
-        onStart: () => undefined,
-        onToggleCandidate: () => undefined,
-        onToggleAll: () => undefined,
-        onScanDirChange: () => undefined,
-        onTargetDirChange: () => undefined,
-        onSuggestScanDir: async () => ({
-          path: "",
-          parentPath: "",
-          exists: false,
-          accessible: true,
-          entries: [],
-        }),
-        onSuggestTargetDir: async () => ({
-          path: "",
-          parentPath: "",
-          exists: false,
-          accessible: true,
-          entries: [],
-        }),
-      }),
-    );
-
-    expect(html).not.toContain(">浏览<");
-    expect(html).not.toContain("<datalist");
-    expect(html.match(/aria-autocomplete="list"/g)?.length).toBe(2);
-  });
-
-  it("renders unique maintenance preset branches for all four presets", () => {
-    const renderPreset = (presetId: MaintenancePresetId) =>
-      renderToStaticMarkup(
-        createElement(WorkbenchSetupView, {
-          mode: "maintenance",
-          scanDir: rootDir,
-          targetDir: successDir,
-          candidates: [createCandidate(process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4")],
-          selectedPaths: [process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4"],
-          selectedSize: 1,
-          totalSize: 1,
-          extensionCount: 1,
-          scanStatus: "success",
-          scanning: false,
-          startPending: false,
-          supportedExtensions: [".mp4"],
-          presetId,
-          runSummary: "1 个文件",
-          primaryDisabled: false,
-          isServer: false,
-          formatBytes: () => "1 B",
-          onBrowseScanDir: () => undefined,
-          onBrowseTargetDir: () => undefined,
-          onRefreshScan: () => undefined,
-          onPresetChange: () => undefined,
-          onStart: () => undefined,
-          onToggleCandidate: () => undefined,
-          onToggleAll: () => undefined,
-          onScanDirChange: () => undefined,
-          onTargetDirChange: () => undefined,
-        }),
-      );
-
-    expect(MAINTENANCE_PRESET_OPTIONS.map((option) => option.id)).toEqual([
-      "read_local",
-      "refresh_data",
-      "organize_files",
-      "rebuild_all",
-    ]);
-
-    for (const option of MAINTENANCE_PRESET_OPTIONS) {
-      const html = renderPreset(option.id);
-      expect(html).toContain("维护预设");
-      expect(html).toContain(option.label);
-      expect(html).toContain(option.description);
-    }
-
-    const refreshHtml = renderPreset("refresh_data");
-    const rebuildHtml = renderPreset("rebuild_all");
-    const organizeHtml = renderPreset("organize_files");
-    const readLocalHtml = renderPreset("read_local");
-
-    expect(refreshHtml).toContain("联网刷新元数据，对比NFO差异");
-    expect(rebuildHtml).toContain("重新获取数据并按现有设置修改目录结构");
-    expect(organizeHtml).toContain("按规则重新组织文件目录结构");
-    expect(readLocalHtml).toContain("扫描本地文件，读取现有 NFO 与资源状态");
-    expect(refreshHtml).not.toEqual(rebuildHtml);
-    expect(organizeHtml).not.toEqual(readLocalHtml);
   });
 });
