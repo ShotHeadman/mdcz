@@ -101,11 +101,11 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
       />,
     );
 
-  expect(MAINTENANCE_PRESET_OPTIONS.map((option) => option.id)).toEqual([
-    "read_local",
-    "refresh_data",
-    "organize_files",
-    "rebuild_all",
+  expect(MAINTENANCE_PRESET_OPTIONS.map((option) => [option.id, option.label])).toEqual([
+    ["read_local", "读取本地"],
+    ["refresh_data", "刷新数据"],
+    ["organize_files", "整理目录"],
+    ["rebuild_all", "全量重整"],
   ]);
 
   for (const option of MAINTENANCE_PRESET_OPTIONS) {
@@ -115,19 +115,4 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
     await expect.element(screen.getByText(option.description)).toBeVisible();
     await screen.unmount();
   }
-
-  const refresh = await renderPreset("refresh_data");
-  await expect.element(refresh.getByText("联网刷新元数据，对比NFO差异")).toBeVisible();
-  await refresh.unmount();
-
-  const rebuild = await renderPreset("rebuild_all");
-  await expect.element(rebuild.getByText("重新获取数据并按现有设置修改目录结构")).toBeVisible();
-  await rebuild.unmount();
-
-  const organize = await renderPreset("organize_files");
-  await expect.element(organize.getByText("按规则重新组织文件目录结构")).toBeVisible();
-  await organize.unmount();
-
-  const readLocal = await renderPreset("read_local");
-  await expect.element(readLocal.getByText("扫描本地文件，读取现有 NFO 与资源状态")).toBeVisible();
 });

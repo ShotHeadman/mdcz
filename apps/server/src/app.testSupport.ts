@@ -1,7 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
-import { type MountedRootScrapeAggregationService, MountedRootScrapeRuntime } from "@mdcz/runtime/scrape";
+import {
+  type AggregationResult,
+  type MountedRootScrapeAggregationService,
+  MountedRootScrapeRuntime,
+} from "@mdcz/runtime/scrape";
+import type { Configuration } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
@@ -28,6 +34,12 @@ export interface LocalHttpServer {
   close: () => Promise<void>;
   port: number;
   url: string;
+}
+
+export interface TestAggregationOptions {
+  actorPhotoPath?: string;
+  titlePrefix?: string;
+  titleZhPrefix?: string;
 }
 
 const activeServers = new Map<ServerApp, TempDirectoryHarness>();
@@ -141,6 +153,65 @@ export const startLocalHttpServer = async (
   activeLocalServers.add(localServer);
   return localServer;
 };
+
+export const createTestPngBytes = (): Buffer => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAFgwJ/lUOh9QAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  return Buffer.concat([png, Buffer.alloc(9000)]);
+};
+
+export const startTestImageServer = async (): Promise<LocalHttpServer> =>
+  await startLocalHttpServer((_request, response) => {
+    response.writeHead(200, { "content-type": "image/png" });
+    response.end(createTestPngBytes());
+  });
+
+export const createTestAggregation = (
+  imageUrl: string,
+  options: TestAggregationOptions = {},
+): MountedRootScrapeAggregationService => ({
+  async aggregate(number: string, _configuration: Configuration): Promise<AggregationResult> {
+    return {
+      data: {
+        title: `${options.titlePrefix ?? "Runtime Title"} ${number}`,
+        title_zh: `${options.titleZhPrefix ?? "运行时标题"} ${number}`,
+        number,
+        actors: ["Actor A"],
+        actor_profiles: options.actorPhotoPath ? [{ name: "Actor A", photo_url: options.actorPhotoPath }] : undefined,
+        genres: ["Drama"],
+        studio: "Runtime Studio",
+        plot: "Runtime plot",
+        release_date: "2024-01-15",
+        thumb_url: imageUrl,
+        poster_url: imageUrl,
+        fanart_url: imageUrl,
+        scene_images: [],
+        website: Website.JAVDB,
+      },
+      sources: {
+        title: Website.JAVDB,
+        thumb_url: Website.JAVDB,
+        poster_url: Website.JAVDB,
+      },
+      imageAlternatives: {
+        thumb_url: [],
+        poster_url: [],
+        scene_images: [],
+        scene_image_sources: [],
+      },
+      stats: {
+        totalSites: 1,
+        successCount: 1,
+        failedCount: 0,
+        skippedCount: 0,
+        siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
+        totalElapsedMs: 1,
+      },
+    };
+  },
+});
 
 export const syncMediaRootFromConfig = async (
   fastify: ServerApp["fastify"],

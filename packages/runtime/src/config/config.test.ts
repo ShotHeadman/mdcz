@@ -13,7 +13,7 @@ import {
 } from "./index";
 
 describe("RuntimeConfigProfileStore", () => {
-  it("creates and loads a default TOML profile", async () => {
+  it("creates a default TOML profile and reloads persisted configuration", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });
 
@@ -22,6 +22,14 @@ describe("RuntimeConfigProfileStore", () => {
 
     expect(configuration).toEqual(defaultConfiguration);
     expect(persisted).toContain("[network]");
+
+    await store.save({
+      ...defaultConfiguration,
+      network: { ...defaultConfiguration.network, timeout: 22 },
+    });
+
+    const reloaded = new RuntimeConfigProfileStore({ configDir });
+    expect((await reloaded.load()).network.timeout).toBe(22);
   });
 
   it("manages profile lifecycle and preserves active profile injection", async () => {

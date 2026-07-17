@@ -1,0 +1,13 @@
+<section class="l-content__body">
+  <h1 class="p-talent-detail__name-pc">一宮 希帆</h1>
+  <div class="p-talent-detail__vis-name-item">Ichimiya Kiho</div>
+  <div class="p-talent-detail__vis-slider-img" style="background-image: url(https://www.t-powers.co.jp/wp-content/uploads/profile.jpg);"></div>
+  <dl class="p-talent-detail__spec">
+    <dt class="p-talent-detail__term">生年月日</dt>
+    <dt class="p-talent-detail__desc">2004年3月3日</dt>
+    <dt class="p-talent-detail__term">出身地</dt>
+    <dt class="p-talent-detail__desc">東京都</dt>
+    <dt class="p-talent-detail__term">身長</dt>
+    <dt class="p-talent-detail__desc">159cm</dt>
+  </dl>
+</section>

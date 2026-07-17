@@ -1,84 +1,19 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AggregationResult, ManualScrapeOptions, MountedRootScrapeAggregationService } from "@mdcz/runtime/scrape";
-import type { Configuration } from "@mdcz/shared/config";
+import type { AggregationResult, MountedRootScrapeAggregationService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   closeTestServers,
   createTempRoot,
+  createTestAggregation,
+  createTestPngBytes,
   createTestServer,
   loginAsAdmin,
-  startLocalHttpServer,
+  startTestImageServer,
   syncMediaRootFromConfig,
   waitForTaskStatus,
 } from "./app.testSupport";
-
-const createPngBytes = (): Buffer => {
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAFgwJ/lUOh9QAAAABJRU5ErkJggg==",
-    "base64",
-  );
-  return Buffer.concat([png, Buffer.alloc(9000)]);
-};
-
-const startImageServer = async (): Promise<{ url: string; close: () => Promise<void> }> => {
-  const server = await startLocalHttpServer((_request, response) => {
-    response.writeHead(200, { "content-type": "image/png" });
-    response.end(createPngBytes());
-  });
-  return {
-    url: `${server.url}/image.png`,
-    close: server.close,
-  };
-};
-
-const createFakeAggregation = (imageUrl: string, actorPhotoPath?: string): MountedRootScrapeAggregationService => ({
-  async aggregate(
-    number: string,
-    _configuration: Configuration,
-    _signal?: AbortSignal,
-    manualScrape?: ManualScrapeOptions,
-  ): Promise<AggregationResult> {
-    return {
-      data: {
-        title: `Runtime Title ${number}`,
-        title_zh: `运行时标题 ${number}`,
-        number,
-        actors: ["Actor A"],
-        actor_profiles: actorPhotoPath ? [{ name: "Actor A", photo_url: actorPhotoPath }] : undefined,
-        genres: ["Drama"],
-        studio: "Runtime Studio",
-        plot: manualScrape?.detailUrl ?? "Runtime plot",
-        release_date: "2024-01-15",
-        thumb_url: imageUrl,
-        poster_url: imageUrl,
-        fanart_url: imageUrl,
-        scene_images: [],
-        website: Website.JAVDB,
-      },
-      sources: {
-        title: Website.JAVDB,
-        thumb_url: Website.JAVDB,
-        poster_url: Website.JAVDB,
-      },
-      imageAlternatives: {
-        thumb_url: [],
-        poster_url: [],
-        scene_images: [],
-        scene_image_sources: [],
-      },
-      stats: {
-        totalSites: 1,
-        successCount: 1,
-        failedCount: 0,
-        skippedCount: 0,
-        siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
-        totalElapsedMs: 1,
-      },
-    };
-  },
-});
 
 const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScrapeAggregationService => ({
   async aggregate(number: string): Promise<AggregationResult> {
@@ -179,33 +114,17 @@ describe("buildServer scrape integration", () => {
     const actorRoot = await createTempRoot("actor-root");
     const actorPhotoPath = join(actorRoot, "Actor A.jpg");
     await writeFile(join(root, "ABC-123.mp4"), "video");
-    await writeFile(actorPhotoPath, createPngBytes());
-    const imageServer = await startImageServer();
+    await writeFile(actorPhotoPath, createTestPngBytes());
+    const imageServer = await startTestImageServer();
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createFakeAggregation(imageServer.url, actorPhotoPath),
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`, { actorPhotoPath }),
     });
     const taskEvents: unknown[] = [];
     const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
       taskEvents.push(event.data);
     });
     const token = await loginAsAdmin(fastify);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: root } },
-    });
-    const rootsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/mediaRoots.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const rootId = rootsResponse
-      .json()
-      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
-    if (!rootId) {
-      throw new Error("Expected paths.mediaPath to create an enabled media root");
-    }
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -342,33 +261,18 @@ describe("buildServer scrape integration", () => {
       ),
     ).toBe(false);
     unsubscribeTaskEvents();
-    await imageServer.close();
   });
 
   it("starts scrape tasks from selected host files inside scan and media roots", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const selectedPath = join(root, "ABC-128.mp4");
     await writeFile(selectedPath, "video");
-    const imageServer = await startImageServer();
-    const { fastify } = await createTestServer({ scrapeAggregation: createFakeAggregation(imageServer.url) });
+    const imageServer = await startTestImageServer();
+    const { fastify } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
     const token = await loginAsAdmin(fastify);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: root } },
-    });
-    const rootsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/mediaRoots.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const rootId = rootsResponse
-      .json()
-      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
-    if (!rootId) {
-      throw new Error("Expected paths.mediaPath to create an enabled media root");
-    }
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -395,15 +299,14 @@ describe("buildServer scrape integration", () => {
       relativePath: "ABC-128.mp4",
     });
     await waitForTaskStatus(fastify, token, taskId, "completed");
-    await imageServer.close();
   });
 
   it("emits ambiguous uncensored items on scrape completion and restarts confirmed refs", async () => {
     const root = await createTempRoot("ambiguous-uncensored-root");
     await writeFile(join(root, "ABP-999-U.mp4"), "video");
-    const imageServer = await startImageServer();
+    const imageServer = await startTestImageServer();
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createAmbiguousUncensoredAggregation(imageServer.url),
+      scrapeAggregation: createAmbiguousUncensoredAggregation(`${imageServer.url}/image.png`),
     });
     const completedEvents: unknown[] = [];
     services.taskEvents.subscribe((event) => {
@@ -471,7 +374,6 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(confirmedResultsResponse.json().result.data.results[0]?.uncensoredAmbiguous).toBe(false);
-    await imageServer.close();
   });
 
   it("accepts each uncensored confirmation choice", async () => {

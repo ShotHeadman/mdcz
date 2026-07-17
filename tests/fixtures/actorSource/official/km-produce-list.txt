@@ -1,0 +1,14 @@
+<section class="senzoku col">
+  <div class="col4">
+    <div class="act">
+      <a href="satsukiena">
+        <p class="photo"><img src="https://www.km-produce.com/file/actress_17641394042.jpg" alt="沙月恵奈"></p>
+        <div class="arw_r">
+          <h4>沙月恵奈<aside>Satsuki Ena</aside></h4>
+          <p class="size">152cm/B85-E/W58/H86</p>
+          <p class="works"><a href="https://www.km-produce.com/works/category/沙月恵奈">works</a></p>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>

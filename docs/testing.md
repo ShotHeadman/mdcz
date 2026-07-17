@@ -4,19 +4,19 @@ MDCz uses risk-based test layers. Keep tests at the lowest layer that can prove 
 
 ## Current baseline
 
-Historical checkpoints (pre-layering ~129 files / 701 tests; early layered migration ~139 Vitest files / 714 tests) are superseded by the post-simplification measurement below (Child F remeasure after B–E, 2026-07-15, commit `5e32127`).
+Historical checkpoints (pre-layering ~129 files / 701 tests; early layered migration ~139 Vitest files / 714 tests; Child F 153 files / 747 tests) are superseded by the Wave 2 residual-reduction measurement below (2026-07-16, commit `e5f68c9`).
 
 Measured Vitest discovery (`vitest list --json`; component uses `--staticParse`):
 
 | Project | Files | Tests |
 | --- | ---: | ---: |
-| Unit | 96 | 464 |
+| Unit | 79 | 366 |
 | Browser component | 6 | 18 |
-| Node integration | 14 | 81 |
-| Desktop integration | 35 | 181 |
+| Node integration | 14 | 76 |
+| Desktop integration | 27 | 149 |
 | Contract | 1 | 2 |
 | Integration/live (explicit) | 1 | 1 |
-| **Vitest total** | **153** | **747** |
+| **Vitest total** | **128** | **612** |
 
 Playwright product discovery (title scan of committed specs):
 
@@ -25,7 +25,9 @@ Playwright product discovery (title scan of committed specs):
 | Ordinary offline E2E | 2 | 7 |
 | E2E/live workbench | 2 | 4 |
 
-Executable scenario grand total: **758** (747 Vitest + 7 ordinary E2E + 4 E2E/live). Ordinary PR discovery never includes live specs.
+Executable scenario grand total: **623** (612 Vitest + 7 ordinary E2E + 4 E2E/live). Ordinary PR discovery never includes live specs.
+
+The tracked test-code snapshot is **26,203 core LOC + 2,792 support LOC = 28,995 LOC** across 132 core and 28 support files. The largest suite is `download_manager_keep.integration.test.ts` at 957 lines; no tracked core suite reaches 1,000 lines. The reduction preserved coverage floors and the fixed live/E2E discovery contracts.
 
 Legacy filenames still mapped in `vitest.config.ts` run as Node or Desktop integration even when the path remains under `tests/unit`. Files that were substantially reorganized (Server composition, organizer, download keep, maintenance renderer) were renamed/moved and removed from the legacy maps.
 
@@ -168,9 +170,9 @@ Pull requests run static quality, unit tests, Chromium component tests, Node/Des
 
 ## Remaining roadmap
 
-The committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, provider integration/live, workbench E2E/live, the unified `test:live` coordinator, diagnostics, CI separation, and the 2026-07-15 ownership simplification (no remaining unexempted 1,000-line suites; measured discovery above). Remaining quality-enhancement work:
+The committed checkpoint covers layered Vitest execution, Browser component interaction, Web/Desktop product smoke, provider integration/live, workbench E2E/live, the unified `test:live` coordinator, diagnostics, CI separation, and the 2026-07-16 ownership reduction (623 executable scenarios, 28,995 test/support LOC, and no unexempted 1,000-line suites). Remaining quality-enhancement work:
 
-* Continue trimming residual ≥500-line suites when their domains are touched (aggregation fixtures, Emby/Jellyfin shared rules, requeue setup, fixture-heavy actor sources) without deleting unique abort/rollback/parser risks.
+* Trim residual ≥500-line suites opportunistically when their domains are touched, without reopening completed reduction work or deleting unique abort/rollback/parser risks.
 * Expand Browser Mode coverage to additional settings focus and async error states as those components are touched.
 * Observe and harden workbench live journeys across network conditions; keep ordinary PR gates offline and the live set at 1+4.
 * Observe and harden Electron smoke across Windows/Linux before expanding its offline workflow coverage.

@@ -32,6 +32,8 @@ export const applyWorkbenchLiveScrapeConfig = async (input: {
   fixture: WorkbenchMediaFixture;
 }): Promise<void> => {
   const patch = {
+    aggregation: { perCrawlerTimeoutMs: 60_000, globalTimeoutMs: 120_000 },
+    network: { timeout: 30 },
     scrape: {
       sites: [input.liveCase.site],
     },

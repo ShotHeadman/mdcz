@@ -1,5 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
@@ -10,12 +9,13 @@ import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTempDirectory, type TempDirectoryHarness } from "../../../harness/tempDirectory";
 
-const tempDirs: string[] = [];
+const tempDirs: TempDirectoryHarness[] = [];
 const createTempDir = async (): Promise<string> => {
-  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-download-manager-"));
-  tempDirs.push(dirPath);
-  return dirPath;
+  const directory = await createTempDirectory("download-manager");
+  tempDirs.push(directory);
+  return directory.path;
 };
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>
@@ -50,6 +50,23 @@ const sceneOnly = (extra: Partial<typeof defaultConfiguration.download> = {}) =>
     downloadFanart: false,
     downloadTrailer: false,
     ...extra,
+  });
+
+const sequentialSceneSet = (maxSceneImages: number) =>
+  createConfig({
+    download: {
+      ...defaultConfiguration.download,
+      downloadThumb: false,
+      downloadPoster: false,
+      downloadFanart: false,
+      downloadTrailer: false,
+      keepSceneImages: false,
+      sceneImageConcurrency: 1,
+    },
+    aggregation: {
+      ...defaultConfiguration.aggregation,
+      behavior: { ...defaultConfiguration.aggregation.behavior, maxSceneImages },
+    },
   });
 
 const seedFiles = async (root: string, files: Record<string, string>): Promise<void> => {
@@ -174,7 +191,9 @@ const expectSceneImages = async (
   expect(assets.sceneImages).toEqual(expectedPaths);
   await Promise.all(
     expectedUrls.map(async (url, index) => {
-      await expect(readFile(expectedPaths[index]!, "utf8")).resolves.toBe(`downloaded:${url}`);
+      const expectedPath = expectedPaths[index];
+      if (!expectedPath) throw new Error(`Missing scene image path at index ${index}`);
+      await expect(readFile(expectedPath, "utf8")).resolves.toBe(`downloaded:${url}`);
     }),
   );
 };
@@ -201,9 +220,7 @@ const expectPrimary = async (
 describe("DownloadManager keep flags", () => {
   afterEach(async () => {
     vi.restoreAllMocks();
-    await Promise.all(
-      tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
-    );
+    await Promise.all(tempDirs.splice(0, tempDirs.length).map((directory) => directory.cleanup()));
   });
 
   it("names companion assets after the shared movie base when follow-video naming is enabled", async () => {
@@ -832,21 +849,7 @@ describe("DownloadManager keep flags", () => {
       if (url.includes("slow.example.com")) throw new Error("Request timeout");
       return writeDownloadedFile(outputPath, url);
     });
-    const config = createConfig({
-      download: {
-        ...defaultConfiguration.download,
-        downloadThumb: false,
-        downloadPoster: false,
-        downloadFanart: false,
-        downloadTrailer: false,
-        keepSceneImages: false,
-        sceneImageConcurrency: 1,
-      },
-      aggregation: {
-        ...defaultConfiguration.aggregation,
-        behavior: { ...defaultConfiguration.aggregation.behavior, maxSceneImages: 2 },
-      },
-    });
+    const config = sequentialSceneSet(2);
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
@@ -876,21 +879,7 @@ describe("DownloadManager keep flags", () => {
       }
       return writeDownloadedFile(outputPath, url);
     });
-    const config = createConfig({
-      download: {
-        ...defaultConfiguration.download,
-        downloadThumb: false,
-        downloadPoster: false,
-        downloadFanart: false,
-        downloadTrailer: false,
-        keepSceneImages: false,
-        sceneImageConcurrency: 1,
-      },
-      aggregation: {
-        ...defaultConfiguration.aggregation,
-        behavior: { ...defaultConfiguration.aggregation.behavior, maxSceneImages: 3 },
-      },
-    });
+    const config = sequentialSceneSet(3);
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
@@ -931,21 +920,7 @@ describe("DownloadManager keep flags", () => {
       if (url.includes("blocked.example.com")) throw new Error("Request timeout");
       return writeDownloadedFile(outputPath, url);
     });
-    const config = createConfig({
-      download: {
-        ...defaultConfiguration.download,
-        downloadThumb: false,
-        downloadPoster: false,
-        downloadFanart: false,
-        downloadTrailer: false,
-        keepSceneImages: false,
-        sceneImageConcurrency: 1,
-      },
-      aggregation: {
-        ...defaultConfiguration.aggregation,
-        behavior: { ...defaultConfiguration.aggregation.behavior, maxSceneImages: 1 },
-      },
-    });
+    const config = sequentialSceneSet(1);
     const firstAssets = await manager.downloadAll(
       root,
       createCrawlerData({ scene_images: ["https://blocked.example.com/scene-001.jpg"] }),

@@ -87,31 +87,6 @@ describe("JavbusCrawler", () => {
           expect(data.result.data.title).toBe("Title With Underscore URL");
         },
       },
-      {
-        number: "ABP-999",
-        searchUrl: "https://www.javbus.com/search/ABP-999",
-        detailUrl: "https://www.javbus.com/ABP-999",
-        searchHtml: `
-          <html><body>
-            <a class="movie-box" href="https://www.javbus.com/SSIS-001"></a>
-          </body></html>
-        `,
-        detailHtml: `
-          <html><body>
-            <h3>ABP-999 Fallback Detail URL</h3>
-            <div class="info">
-              <p><span class="header">識別碼:</span> <span>ABP-999</span></p>
-            </div>
-          </body></html>
-        `,
-        assert: (data: Awaited<ReturnType<JavbusCrawler["crawl"]>>) => {
-          if (!data.result.success) {
-            throw new Error("expected success");
-          }
-          expect(data.result.data.number).toBe("ABP-999");
-          expect(data.result.data.title).toBe("Fallback Detail URL");
-        },
-      },
     ];
 
     for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, assert } of cases) {

@@ -1,0 +1,20 @@
+<section class="details col" id="profileWrap">
+  <div class="profile">
+    <div class="photo">
+      <img src="https://www.km-produce.com/file/actress_17641394042.jpg" alt="沙月恵奈" class="main">
+    </div>
+    <div class="data">
+      <div class="name">
+        <h1>沙月恵奈</h1>
+        <p>Satsuki Ena</p>
+      </div>
+      <dl>
+        <dt>生年月日</dt><dd>1999年6月11日</dd>
+        <dt>血液型</dt><dd>A型</dd>
+        <dt>身長</dt><dd>152cm</dd>
+        <dt>スリーサイズ</dt><dd>B85(Eカップ) W58 H86</dd>
+        <dt>趣味</dt><dd>ゲーム・アニメ</dd>
+      </dl>
+    </div>
+  </div>
+</section>

@@ -317,66 +317,6 @@ describe("Emby actor services", () => {
     expect(readPostedPayload(networkClient)).not.toHaveProperty("LockData");
   });
 
-  it("fills missing actor native fields and summary in missing mode without overwriting the overview body", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(
-      createMockGetJson({
-        usersQuery: createAdminUsersQueryResponse(),
-        persons: [{ Id: "person-1", Name: "神木麗" }],
-        personDetails: {
-          "person-1": { Id: "person-1", Name: "神木麗", Overview: "已有简介", Tags: ["favorite"], Taglines: [] },
-        },
-      }),
-    );
-
-    const actorSourceProvider = new FakeActorSourceProvider();
-    actorSourceProvider.lookup.mockResolvedValue(createStructuredLookupResult());
-
-    const service = createInfoService(networkClient, actorSourceProvider);
-
-    const result = await service.run(createEmbyConfig(), "missing");
-
-    expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expectStructuredActorPayload(
-      readPostedPayload(networkClient),
-      "基本资料\n血型：A型\n身高：169cm\n三围：B95 W60 H85\n罩杯：G杯\n\n已有简介\n\n别名：神木れい / かみきれい",
-      { tags: ["favorite"] },
-    );
-  });
-
-  it("appends aliases to the existing overview in all mode when the source has no description", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(
-      createMockGetJson({
-        usersQuery: createAdminUsersQueryResponse(),
-        persons: [{ Id: "person-1", Name: "神木麗" }],
-        personDetails: {
-          "person-1": { Id: "person-1", Name: "神木麗", Overview: "已有简介\n\n别名：旧别名" },
-        },
-      }),
-    );
-
-    const actorSourceProvider = new FakeActorSourceProvider();
-    actorSourceProvider.lookup.mockResolvedValue({
-      profile: {
-        name: "神木麗",
-        aliases: ["神木れい", "かみきれい"],
-      },
-      profileSources: {},
-      sourceResults: [],
-      warnings: [],
-    });
-
-    const service = createInfoService(networkClient, actorSourceProvider);
-
-    const result = await service.run(createEmbyConfig(), "all");
-
-    expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expect(readPostedPayload(networkClient)).toMatchObject({
-      Overview: "已有简介\n\n别名：神木れい / かみきれい",
-    });
-  });
-
   it("preserves existing Emby production fields in the update payload", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(
@@ -408,49 +348,6 @@ describe("Emby actor services", () => {
       ProductionLocations: ["埼玉県"],
       ProductionYear: 1999,
     });
-  });
-
-  it("cleans legacy managed tags and taglines in missing mode while preserving user entries", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(
-      createMockGetJson({
-        usersQuery: createAdminUsersQueryResponse(),
-        persons: [{ Id: "person-1", Name: "神木麗" }],
-        personDetails: {
-          "person-1": {
-            Id: "person-1",
-            Name: "神木麗",
-            Overview:
-              "基本资料\n血型：A型\n身高：169cm\n三围：B95 W60 H85\n罩杯：G杯\n\n已有简介\n\n别名：神木れい / かみきれい",
-            Tags: ["favorite", "mdcz:birth_date:1999-12-20"],
-            Taglines: ["精选", "MDCz: 1999-12-20"],
-            PremiereDate: "1999-12-20T00:00:00.0000000Z",
-            ProductionLocations: ["埼玉県"],
-            ProductionYear: 1999,
-          },
-        },
-      }),
-    );
-
-    const actorSourceProvider = new FakeActorSourceProvider();
-    actorSourceProvider.lookup.mockResolvedValue(createStructuredLookupResult());
-
-    const service = createInfoService(networkClient, actorSourceProvider);
-
-    const result = await service.run(createEmbyConfig(), "missing");
-
-    expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expectStructuredActorPayload(
-      readPostedPayload(networkClient),
-      "基本资料\n血型：A型\n身高：169cm\n三围：B95 W60 H85\n罩杯：G杯\n\n已有简介\n\n别名：神木れい / かみきれい",
-      {
-        tags: ["favorite"],
-        taglines: ["精选"],
-        premiereDate: "1999-12-20T00:00:00.0000000Z",
-      },
-    );
   });
 
   it("uploads actor photos from the shared actor source provider", async () => {

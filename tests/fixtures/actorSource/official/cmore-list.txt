@@ -1,0 +1,8 @@
+<li class="list-box_item">
+  <a href="model-julia.html" class="box">
+    <p class="box_eyecatch"><img src="img/model/julia/julia.jpg" alt="JULIA"></p>
+  </a>
+  <dl class="box_text">
+    <dt class="heading-lv4">JULIA<br><div class="listicon"></div></dt>
+  </dl>
+</li>

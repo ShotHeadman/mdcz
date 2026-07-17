@@ -1,7 +1,5 @@
-import { scrapeResultDtoToScrapeResult } from "@mdcz/shared/dtoAdapters";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
-import type { ScrapeResultDto } from "@mdcz/shared/serverDtos";
 import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
@@ -283,7 +281,6 @@ function WorkbenchPage() {
 }
 
 export const __workbenchTestHooks = {
-  dtoToScrapeResult: (result: ScrapeResultDto) => scrapeResultDtoToScrapeResult(result),
   getRetryFailedConfirmMessage,
   scrapeResultsToWebRetryTargets,
   STOP_SCRAPE_CONFIRM_MESSAGE,

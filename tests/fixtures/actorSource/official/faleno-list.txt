@@ -1,0 +1,12 @@
+<div class="box_actress01">
+  <ul>
+    <li>
+      <div class="img_actress01">
+        <a href="https://faleno.jp/top/actress/ran_kamiki/">
+          <img src="https://faleno.jp/top/wp-content/uploads/2022/07/kamiki.jpg">
+        </a>
+      </div>
+      <div class="text_name">神木蘭<span>Ran Kamiki</span></div>
+    </li>
+  </ul>
+</div>

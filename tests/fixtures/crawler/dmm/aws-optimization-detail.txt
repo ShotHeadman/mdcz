@@ -1,0 +1,8 @@
+<html><body>
+  <h1><span>AWS Optimization Test</span></h1>
+  <meta property="og:image" content="https://pics.dmm.co.jp/digital/video/ssis00027/ssis00027ps.jpg">
+  <table>
+    <tr><th>出演者</th><td><a>Actor AWS</a></td></tr>
+    <tr><th>配信開始日</th><td><span>2024/03/15</span></td></tr>
+  </table>
+</body></html>

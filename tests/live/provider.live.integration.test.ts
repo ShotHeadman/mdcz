@@ -27,6 +27,7 @@ describe("provider integration/live", () => {
         const response = await provider.crawl({
           number: liveCase.number,
           site: liveCase.site,
+          options: { timeoutMs: 30_000 },
         });
 
         if (!response.result.success) {

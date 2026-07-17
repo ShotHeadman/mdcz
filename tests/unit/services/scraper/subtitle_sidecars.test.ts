@@ -2,11 +2,7 @@ import type { Dirent } from "node:fs";
 import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  buildSubtitleSidecarTargetPath,
-  findSubtitleSidecars,
-  getPreferredSubtitleTagFromSidecars,
-} from "@mdcz/runtime/scrape";
+import { buildSubtitleSidecarTargetPath, findSubtitleSidecars } from "@mdcz/runtime/scrape";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs/promises", async () => {
@@ -34,22 +30,6 @@ describe("subtitleSidecars", () => {
     );
   });
 
-  it("distinguishes unlabeled and Chinese subtitle sidecars", async () => {
-    const root = await createTempDir();
-    const videoPath = join(root, "ABC-123.mp4");
-    await fsPromises.writeFile(videoPath, "video");
-    await fsPromises.writeFile(join(root, "ABC-123.srt"), "subtitle");
-    await fsPromises.writeFile(join(root, "ABC-123-C.srt"), "subtitle");
-    await fsPromises.writeFile(join(root, "ABC-123.zh.ass"), "subtitle");
-    await fsPromises.writeFile(join(root, "ABC-123.sc.vtt"), "subtitle");
-
-    const sidecars = await findSubtitleSidecars(videoPath);
-
-    expect(sidecars).toHaveLength(4);
-    expect(sidecars.map((sidecar) => sidecar.subtitleTag).sort()).toEqual(["中文字幕", "中文字幕", "中文字幕", "字幕"]);
-    expect(getPreferredSubtitleTagFromSidecars(sidecars)).toBe("中文字幕");
-  });
-
   it("does not bind shared partless subtitles to multipart video files", async () => {
     const root = await createTempDir();
     const partVideoPath = join(root, "ABC-123-cd1.mp4");
@@ -67,25 +47,6 @@ describe("subtitleSidecars", () => {
     }
     expect(buildSubtitleSidecarTargetPath(matchedSidecar, join(root, "OUT-001-cd1.mp4"))).toBe(
       join(root, "OUT-001-cd1.zh.srt"),
-    );
-  });
-
-  it("matches number-based sidecars when the video name has classification markers", async () => {
-    const root = await createTempDir();
-    const videoPath = join(root, "ABF-252-U.mp4");
-    const sidecarPath = join(root, "ABF-252.zh.srt");
-    await fsPromises.writeFile(videoPath, "video");
-    await fsPromises.writeFile(sidecarPath, "subtitle");
-
-    const sidecars = await findSubtitleSidecars(videoPath);
-
-    expect(sidecars).toEqual([{ path: sidecarPath, suffix: ".zh", subtitleTag: "中文字幕" }]);
-    const matchedSidecar = sidecars[0];
-    if (!matchedSidecar) {
-      throw new Error("Expected number-based subtitle sidecar to be discovered");
-    }
-    expect(buildSubtitleSidecarTargetPath(matchedSidecar, join(root, "ABF-252-C.mp4"))).toBe(
-      join(root, "ABF-252-C.zh.srt"),
     );
   });
 

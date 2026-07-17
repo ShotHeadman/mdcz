@@ -6,7 +6,7 @@ import { NetworkClient } from "@mdcz/runtime/network";
  * Live provider tests must use this path — not Server/Electron process launch.
  */
 export const createProductionCrawlerProvider = (): CrawlerProvider => {
-  const networkClient = new NetworkClient();
+  const networkClient = new NetworkClient({ timeoutMs: 30_000 });
   return new CrawlerProvider({
     fetchGateway: new FetchGateway(networkClient),
     siteRequestConfigRegistrar: networkClient,

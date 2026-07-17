@@ -1,0 +1,18 @@
+<section class="back01">
+  <div class="bar02_category"><h1>美乃すずめ<span>Suzume Mino</span></h1></div>
+  <div class="box_actress02">
+    <div class="box_actress02_left"><img src="https://cdn.faleno.net/dahlia/wp-content/uploads/2023/04/mino2.jpg"></div>
+    <div class="box_actress02_list">
+      <ul>
+        <li><span>誕生日</span><p>5/10</p></li>
+        <li><span>身長</span><p>168cm</p></li>
+        <li><span>スリーサイズ</span><p>B93 W60 H89</p></li>
+      </ul>
+      <ul>
+        <li><span>出身地</span><p>兵庫県</p></li>
+        <li><span>趣味</span><p>料理</p></li>
+        <li><span>特技</span><p>二重跳び</p></li>
+      </ul>
+    </div>
+  </div>
+</section>

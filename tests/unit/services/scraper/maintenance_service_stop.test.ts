@@ -67,29 +67,61 @@ const createCommitItem = (id: string): MaintenanceCommitItem => ({
   },
 });
 
+const createService = () => {
+  const signalService = new CaptureSignalService(null);
+  const networkClient = new NetworkClient();
+  return {
+    signalService,
+    service: new MaintenanceService(
+      signalService,
+      networkClient,
+      new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
+    ),
+  };
+};
+
+const mockConfig = (scrape: Partial<typeof defaultConfiguration.scrape> = {}) => {
+  const config = configurationSchema.parse({
+    ...defaultConfiguration,
+    scrape: { ...defaultConfiguration.scrape, ...scrape },
+  });
+  vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+  vi.spyOn(configManager, "get").mockResolvedValue(config);
+  return config;
+};
+
+const abortableOperation = <T>(signal?: AbortSignal): Promise<T> =>
+  new Promise((_resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    signal?.addEventListener("abort", () => reject(createAbortError()), { once: true });
+  });
+
+const successResult = (fileId: string): MaintenanceItemResult => ({
+  status: "success",
+  fileId,
+  crawlerData: {
+    title: fileId.toUpperCase(),
+    number: fileId.toUpperCase(),
+    actors: [],
+    genres: [],
+    scene_images: [],
+    website: Website.DMM,
+  },
+});
+
 describe("MaintenanceService stop flow", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("marks cleared maintenance items with a terminal result after stopping", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const { signalService, service } = createService();
+    mockConfig({ threadNumber: 1 });
     const runningTask = deferred<MaintenanceItemResult>();
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(MaintenanceFileScraper.prototype, "processFile").mockImplementationOnce(
       () => runningTask.promise as never,
     );
@@ -97,18 +129,7 @@ describe("MaintenanceService stop flow", () => {
     await service.execute([createCommitItem("abp-123"), createCommitItem("abp-456")], "organize_files");
     service.stop();
 
-    runningTask.resolve({
-      status: "success",
-      fileId: "abp-123",
-      crawlerData: {
-        title: "ABP-123",
-        number: "ABP-123",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.DMM,
-      },
-    });
+    runningTask.resolve(successResult("abp-123"));
 
     await waitForIdle(service);
 
@@ -139,16 +160,8 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("rejects executing the scan-only local-read preset", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const { service } = createService();
+    mockConfig();
 
     await expect(service.execute([createCommitItem("abp-123")], "read_local")).rejects.toThrow(
       "当前预设仅用于扫描本地数据，无需执行",
@@ -163,13 +176,8 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("passes renderer-committed crawler data through Desktop execution", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
+    const { service } = createService();
+    mockConfig();
     const item = createCommitItem("ssis-497");
     item.crawlerData = {
       title: "Remote SSIS-497 Title",
@@ -180,8 +188,6 @@ describe("MaintenanceService stop flow", () => {
       website: Website.DMM,
     };
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     const processFile = vi
       .spyOn(MaintenanceFileScraper.prototype, "processFile")
       .mockImplementation(async (entry, _config, _progress, _signal, committed) => ({
@@ -198,40 +204,13 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("pauses queued maintenance work and resumes it later", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const { signalService, service } = createService();
+    mockConfig({ threadNumber: 1 });
     const firstTask = deferred<MaintenanceItemResult>();
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(MaintenanceFileScraper.prototype, "processFile")
       .mockImplementationOnce(() => firstTask.promise as never)
-      .mockImplementationOnce(
-        async (_entry) =>
-          ({
-            status: "success",
-            fileId: "abp-457",
-            crawlerData: {
-              title: "ABP-457",
-              number: "ABP-457",
-              actors: [],
-              genres: [],
-              scene_images: [],
-              website: Website.DMM,
-            },
-          }) as MaintenanceItemResult,
-      );
+      .mockImplementationOnce(async (_entry) => successResult("abp-457"));
 
     await service.execute([createCommitItem("abp-456"), createCommitItem("abp-457")], "organize_files");
     await new Promise((resolve) => {
@@ -241,18 +220,7 @@ describe("MaintenanceService stop flow", () => {
     service.pause();
     expect(service.getStatus().state).toBe("paused");
 
-    firstTask.resolve({
-      status: "success",
-      fileId: "abp-456",
-      crawlerData: {
-        title: "ABP-456",
-        number: "ABP-456",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.DMM,
-      },
-    });
+    firstTask.resolve(successResult("abp-456"));
 
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
@@ -287,32 +255,10 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("shutdown aborts the active maintenance run and waits until it becomes idle", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const { service } = createService();
+    mockConfig();
     vi.spyOn(MaintenanceFileScraper.prototype, "processFile").mockImplementation(
-      (_entry, _config, _progress, signal) =>
-        new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          signal?.addEventListener(
-            "abort",
-            () => {
-              reject(createAbortError());
-            },
-            { once: true },
-          );
-        }) as never,
+      (_entry, _config, _progress, signal) => abortableOperation(signal) as never,
     );
 
     await service.execute([createCommitItem("abp-789")], "organize_files");
@@ -322,32 +268,10 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("shutdown aborts an active maintenance preview and waits until it becomes idle", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
-    vi.spyOn(MaintenanceFileScraper.prototype, "previewFile").mockImplementation(
-      (_entry, _config, signal) =>
-        new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          signal?.addEventListener(
-            "abort",
-            () => {
-              reject(createAbortError());
-            },
-            { once: true },
-          );
-        }),
+    const { service } = createService();
+    mockConfig();
+    vi.spyOn(MaintenanceFileScraper.prototype, "previewFile").mockImplementation((_entry, _config, signal) =>
+      abortableOperation(signal),
     );
 
     const previewPromise = service.preview([createCommitItem("abp-900").entry], "organize_files");
@@ -358,32 +282,10 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("stop aborts an active maintenance preview and waits until it becomes idle", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
-    vi.spyOn(MaintenanceFileScraper.prototype, "previewFile").mockImplementation(
-      (_entry, _config, signal) =>
-        new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          signal?.addEventListener(
-            "abort",
-            () => {
-              reject(createAbortError());
-            },
-            { once: true },
-          );
-        }),
+    const { service } = createService();
+    mockConfig();
+    vi.spyOn(MaintenanceFileScraper.prototype, "previewFile").mockImplementation((_entry, _config, signal) =>
+      abortableOperation(signal),
     );
 
     const previewPromise = service.preview([createCommitItem("abp-901").entry], "organize_files");
@@ -399,19 +301,8 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("pauses queued maintenance preview work and resumes it later", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const { service } = createService();
+    mockConfig({ threadNumber: 1 });
     const firstPreview = deferred<MaintenancePreviewItem>();
     const previewSpy = vi
       .spyOn(MaintenanceFileScraper.prototype, "previewFile")
@@ -420,9 +311,6 @@ describe("MaintenanceService stop flow", () => {
         fileId: entry.fileId,
         status: "ready",
       }));
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
 
     const previewPromise = service.preview(
       [createCommitItem("abp-902").entry, createCommitItem("abp-903").entry],
@@ -466,32 +354,10 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("shutdown aborts an active maintenance scan and waits until it becomes idle", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const { service } = createService();
+    mockConfig();
     vi.spyOn(LocalScanService.prototype, "scan").mockImplementation(
-      async (_dirPath, _sceneImagesFolder, signal) =>
-        await new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          signal?.addEventListener(
-            "abort",
-            () => {
-              reject(createAbortError());
-            },
-            { once: true },
-          );
-        }),
+      async (_dirPath, _sceneImagesFolder, signal) => await abortableOperation(signal),
     );
 
     const scanPromise = service.scan("/tmp");
@@ -502,32 +368,10 @@ describe("MaintenanceService stop flow", () => {
   });
 
   it("stop aborts an active maintenance scan and waits until it becomes idle", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new MaintenanceService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const { service } = createService();
+    mockConfig();
     vi.spyOn(LocalScanService.prototype, "scan").mockImplementation(
-      async (_dirPath, _sceneImagesFolder, signal) =>
-        await new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          signal?.addEventListener(
-            "abort",
-            () => {
-              reject(createAbortError());
-            },
-            { once: true },
-          );
-        }),
+      async (_dirPath, _sceneImagesFolder, signal) => await abortableOperation(signal),
     );
 
     const scanPromise = service.scan("/tmp");

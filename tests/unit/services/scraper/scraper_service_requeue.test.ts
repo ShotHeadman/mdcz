@@ -1,6 +1,5 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import { configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
 import { AggregationService } from "@main/services/scraper/aggregation";
@@ -13,6 +12,7 @@ import { NetworkClient } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTempDirectory, type TempDirectoryHarness } from "../../../harness/tempDirectory";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -44,36 +44,60 @@ const waitForIdle = async (service: ScraperService): Promise<void> => {
   await waitFor(() => !service.getStatus().running, 2000);
 };
 
-const tempDirs: string[] = [];
+const tempDirs: TempDirectoryHarness[] = [];
 
 const createTempDir = async (): Promise<string> => {
-  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-scraper-requeue-"));
-  tempDirs.push(dirPath);
-  return dirPath;
+  const directory = await createTempDirectory("scraper-requeue");
+  tempDirs.push(directory);
+  return directory.path;
+};
+
+const createService = (): ScraperService => {
+  const networkClient = new NetworkClient();
+  return new ScraperService(
+    new SignalService(null),
+    networkClient,
+    new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
+  );
+};
+
+const mockConfig = () => {
+  const config = configurationSchema.parse({
+    ...defaultConfiguration,
+    scrape: { ...defaultConfiguration.scrape, threadNumber: 1 },
+  });
+  vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+  vi.spyOn(configManager, "get").mockResolvedValue(config);
+  return config;
+};
+
+const scrapeResult = (
+  filePath: string,
+  website: NonNullable<ScrapeResult["crawlerData"]>["website"],
+  status: "success" | "failed" = "success",
+): ScrapeResult => {
+  const fileName = basename(filePath);
+  const number = fileName.slice(0, -extname(fileName).length);
+  const fileInfo = { filePath, fileName, extension: ".mp4", number, isSubtitled: false };
+  return status === "failed"
+    ? { status, fileId: number.toLowerCase(), error: "lookup failed", fileInfo }
+    : {
+        status,
+        fileId: number.toLowerCase(),
+        fileInfo,
+        crawlerData: { title: number, number, actors: [], genres: [], scene_images: [], website },
+      };
 };
 
 describe("ScraperService requeue flow", () => {
   afterEach(async () => {
     vi.restoreAllMocks();
-    await Promise.all(
-      tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
-    );
+    await Promise.all(tempDirs.splice(0, tempDirs.length).map((directory) => directory.cleanup()));
   });
 
   it("rejects duplicate retry queue entries for the same failed file", async () => {
-    const signalService = new SignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const service = createService();
+    const config = mockConfig();
     const dirPath = await createTempDir();
     const secondFileTask = deferred<ScrapeResult>();
     const firstFilePath = join(dirPath, "ABP-111.mp4");
@@ -83,45 +107,12 @@ describe("ScraperService requeue flow", () => {
     await writeFile(firstFilePath, "video", "utf8");
     await writeFile(secondFilePath, "video", "utf8");
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation((filePath) => {
       if (filePath === firstFilePath) {
         firstFileAttempts += 1;
-        if (firstFileAttempts === 1) {
-          return Promise.resolve({
-            status: "failed",
-            fileId: "abp-111",
-            error: "lookup failed",
-            fileInfo: {
-              filePath: firstFilePath,
-              fileName: "ABP-111.mp4",
-              extension: ".mp4",
-              number: "ABP-111",
-              isSubtitled: false,
-            },
-          });
-        }
-
-        return Promise.resolve({
-          status: "success",
-          fileId: "abp-111",
-          fileInfo: {
-            filePath: firstFilePath,
-            fileName: "ABP-111.mp4",
-            extension: ".mp4",
-            number: "ABP-111",
-            isSubtitled: false,
-          },
-          crawlerData: {
-            title: "ABP-111",
-            number: "ABP-111",
-            actors: [],
-            genres: [],
-            scene_images: [],
-            website: config.scrape.sites[0],
-          },
-        });
+        return Promise.resolve(
+          scrapeResult(firstFilePath, config.scrape.sites[0], firstFileAttempts === 1 ? "failed" : "success"),
+        );
       }
 
       if (filePath === secondFilePath) {
@@ -137,25 +128,7 @@ describe("ScraperService requeue flow", () => {
     await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 1 });
     await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 0 });
 
-    secondFileTask.resolve({
-      status: "success",
-      fileId: "abp-222",
-      fileInfo: {
-        filePath: secondFilePath,
-        fileName: "ABP-222.mp4",
-        extension: ".mp4",
-        number: "ABP-222",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-222",
-        number: "ABP-222",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
+    secondFileTask.resolve(scrapeResult(secondFilePath, config.scrape.sites[0]));
 
     await waitForIdle(service);
 
@@ -171,19 +144,8 @@ describe("ScraperService requeue flow", () => {
   });
 
   it("does not advance retry progress numbering when an earlier file is already retrying", async () => {
-    const signalService = new SignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const service = createService();
+    const config = mockConfig();
     const dirPath = await createTempDir();
     const thirdFileTask = deferred<ScrapeResult>();
     const fourthFileTask = deferred<ScrapeResult>();
@@ -198,8 +160,6 @@ describe("ScraperService requeue flow", () => {
       await writeFile(filePath, "video", "utf8");
     }
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation((filePath, progress) => {
       const attempt = (attemptCounts.get(filePath) ?? 0) + 1;
       attemptCounts.set(filePath, attempt);
@@ -214,77 +174,15 @@ describe("ScraperService requeue flow", () => {
       }
 
       if (filePath === firstFilePath) {
-        if (attempt === 1) {
-          return Promise.resolve({
-            status: "failed",
-            fileId: "abp-311",
-            error: "lookup failed",
-            fileInfo: {
-              filePath: firstFilePath,
-              fileName: "ABP-311.mp4",
-              extension: ".mp4",
-              number: "ABP-311",
-              isSubtitled: false,
-            },
-          });
-        }
-
-        return Promise.resolve({
-          status: "success",
-          fileId: "abp-311",
-          fileInfo: {
-            filePath: firstFilePath,
-            fileName: "ABP-311.mp4",
-            extension: ".mp4",
-            number: "ABP-311",
-            isSubtitled: false,
-          },
-          crawlerData: {
-            title: "ABP-311",
-            number: "ABP-311",
-            actors: [],
-            genres: [],
-            scene_images: [],
-            website: config.scrape.sites[0],
-          },
-        });
+        return Promise.resolve(
+          scrapeResult(firstFilePath, config.scrape.sites[0], attempt === 1 ? "failed" : "success"),
+        );
       }
 
       if (filePath === secondFilePath) {
-        if (attempt === 1) {
-          return Promise.resolve({
-            status: "failed",
-            fileId: "abp-322",
-            error: "lookup failed",
-            fileInfo: {
-              filePath: secondFilePath,
-              fileName: "ABP-322.mp4",
-              extension: ".mp4",
-              number: "ABP-322",
-              isSubtitled: false,
-            },
-          });
-        }
-
-        return Promise.resolve({
-          status: "success",
-          fileId: "abp-322",
-          fileInfo: {
-            filePath: secondFilePath,
-            fileName: "ABP-322.mp4",
-            extension: ".mp4",
-            number: "ABP-322",
-            isSubtitled: false,
-          },
-          crawlerData: {
-            title: "ABP-322",
-            number: "ABP-322",
-            actors: [],
-            genres: [],
-            scene_images: [],
-            website: config.scrape.sites[0],
-          },
-        });
+        return Promise.resolve(
+          scrapeResult(secondFilePath, config.scrape.sites[0], attempt === 1 ? "failed" : "success"),
+        );
       }
 
       if (filePath === thirdFilePath) {
@@ -309,44 +207,8 @@ describe("ScraperService requeue flow", () => {
     await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 1 });
     await expect(service.requeue([firstFilePath, secondFilePath])).resolves.toEqual({ requeuedCount: 1 });
 
-    thirdFileTask.resolve({
-      status: "success",
-      fileId: "abp-333",
-      fileInfo: {
-        filePath: thirdFilePath,
-        fileName: "ABP-333.mp4",
-        extension: ".mp4",
-        number: "ABP-333",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-333",
-        number: "ABP-333",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
-    fourthFileTask.resolve({
-      status: "success",
-      fileId: "abp-344",
-      fileInfo: {
-        filePath: fourthFilePath,
-        fileName: "ABP-344.mp4",
-        extension: ".mp4",
-        number: "ABP-344",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-344",
-        number: "ABP-344",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
+    thirdFileTask.resolve(scrapeResult(thirdFilePath, config.scrape.sites[0]));
+    fourthFileTask.resolve(scrapeResult(fourthFilePath, config.scrape.sites[0]));
 
     await waitForIdle(service);
 
@@ -354,27 +216,14 @@ describe("ScraperService requeue flow", () => {
   });
 
   it("reuses the same aggregation service for requeues and clears its cache when the session ends", async () => {
-    const signalService = new SignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const service = createService();
+    const config = mockConfig();
     const secondFileTask = deferred<ScrapeResult>();
     const firstFilePath = "/tmp/ABP-911.mp4";
     const secondFilePath = "/tmp/ABP-922.mp4";
     const createdDependencies: FileScraperDependencies[] = [];
     const attemptCounts = new Map<string, number>();
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     const clearCacheSpy = vi.spyOn(AggregationService.prototype, "clearCache");
     vi.spyOn(FileScraperModule, "createFileScraper").mockImplementation((deps) => {
       createdDependencies.push(deps);
@@ -385,40 +234,9 @@ describe("ScraperService requeue flow", () => {
           attemptCounts.set(filePath, attempt);
 
           if (filePath === firstFilePath) {
-            if (attempt === 1) {
-              return Promise.resolve({
-                status: "failed",
-                fileId: "abp-911",
-                error: "lookup failed",
-                fileInfo: {
-                  filePath: firstFilePath,
-                  fileName: "ABP-911.mp4",
-                  extension: ".mp4",
-                  number: "ABP-911",
-                  isSubtitled: false,
-                },
-              });
-            }
-
-            return Promise.resolve({
-              status: "success",
-              fileId: "abp-911",
-              fileInfo: {
-                filePath: firstFilePath,
-                fileName: "ABP-911.mp4",
-                extension: ".mp4",
-                number: "ABP-911",
-                isSubtitled: false,
-              },
-              crawlerData: {
-                title: "ABP-911",
-                number: "ABP-911",
-                actors: [],
-                genres: [],
-                scene_images: [],
-                website: config.scrape.sites[0],
-              },
-            });
+            return Promise.resolve(
+              scrapeResult(firstFilePath, config.scrape.sites[0], attempt === 1 ? "failed" : "success"),
+            );
           }
 
           if (filePath === secondFilePath) {
@@ -435,25 +253,7 @@ describe("ScraperService requeue flow", () => {
 
     await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 1 });
 
-    secondFileTask.resolve({
-      status: "success",
-      fileId: "abp-922",
-      fileInfo: {
-        filePath: secondFilePath,
-        fileName: "ABP-922.mp4",
-        extension: ".mp4",
-        number: "ABP-922",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-922",
-        number: "ABP-922",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
+    secondFileTask.resolve(scrapeResult(secondFilePath, config.scrape.sites[0]));
 
     await waitForIdle(service);
 
@@ -463,19 +263,8 @@ describe("ScraperService requeue flow", () => {
   });
 
   it("passes manual scrape options to retry file tasks", async () => {
-    const signalService = new SignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 1,
-      },
-    });
+    const service = createService();
+    mockConfig();
     const dirPath = await createTempDir();
     const filePath = join(dirPath, "ABP-123.mp4");
     const manualScrape = {
@@ -485,27 +274,9 @@ describe("ScraperService requeue flow", () => {
 
     await writeFile(filePath, "video", "utf8");
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
-    const scrapeFile = vi.spyOn(FileScraper.prototype, "scrapeFile").mockResolvedValue({
-      status: "success",
-      fileId: "abp-123",
-      fileInfo: {
-        filePath,
-        fileName: "ABP-123.mp4",
-        extension: ".mp4",
-        number: "ABP-123",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-123",
-        number: "ABP-123",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.DMM_TV,
-      },
-    });
+    const scrapeFile = vi
+      .spyOn(FileScraper.prototype, "scrapeFile")
+      .mockResolvedValue(scrapeResult(filePath, Website.DMM_TV));
 
     await service.retryFiles([filePath], manualScrape);
     await waitForIdle(service);

@@ -245,7 +245,7 @@ describe("buildServer composition integration", () => {
   });
 
   it("updates TOML-backed config through tRPC", async () => {
-    const { fastify } = await createTestServer();
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
 
     const defaultsResponse = await fastify.inject({
@@ -258,6 +258,18 @@ describe("buildServer composition integration", () => {
       url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
       payload: { network: { timeout: 25 }, scrape: { threadNumber: 4 } },
+    });
+    const readPathResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.read",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { path: "network.timeout" },
+    });
+    const resetPathResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.reset",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { path: "network.timeout" },
     });
     const resetResponse = await fastify.inject({
       method: "POST",
@@ -276,10 +288,17 @@ describe("buildServer composition integration", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().result.data.network.timeout).toBe(25);
     expect(response.json().result.data.scrape.threadNumber).toBe(4);
+    expect(readPathResponse.json().result.data).toBe(25);
+    expect(resetPathResponse.json().result.data.network.timeout).toBe(
+      defaultsResponse.json().result.data.network.timeout,
+    );
     expect(resetResponse.statusCode).toBe(200);
     expect(resetResponse.json().result.data.network.timeout).toBe(defaultsResponse.json().result.data.network.timeout);
     expect(importResponse.statusCode).toBe(200);
     expect(importResponse.json().result.data.network.timeout).toBe(33);
+    await expect(services.config.update({ download: { nfoNaming: "invalid" as never } })).rejects.toMatchObject({
+      fields: ["download.nfoNaming"],
+    });
   });
 
   it("syncs the single enabled media root from paths.mediaPath", async () => {

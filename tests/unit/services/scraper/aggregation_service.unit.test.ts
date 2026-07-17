@@ -17,6 +17,9 @@ const makeCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => (
   ...overrides,
 });
 
+const makeSiteResults = (...entries: ReadonlyArray<readonly [Website, Partial<CrawlerData>]>) =>
+  new Map(entries.map(([website, overrides]) => [website, makeCrawlerData({ website, ...overrides })]));
+
 const waitForDelay = async (delayMs: number, signal?: AbortSignal): Promise<void> => {
   if (delayMs <= 0) {
     return;
@@ -103,39 +106,53 @@ class RecordingCrawlerProvider extends MultiResultCrawlerProvider {
 }
 
 describe("AggregationService", () => {
-  const makeConfig = (overrides: Record<string, unknown> = {}) =>
-    configurationSchema.parse({
+  type AggregationOverrides = Omit<Partial<typeof defaultConfiguration.aggregation>, "behavior" | "fieldPriorities"> & {
+    behavior?: Partial<typeof defaultConfiguration.aggregation.behavior>;
+    fieldPriorities?: Partial<typeof defaultConfiguration.aggregation.fieldPriorities>;
+  };
+
+  const makeConfig = (
+    overrides: {
+      scrape?: Partial<typeof defaultConfiguration.scrape>;
+      aggregation?: AggregationOverrides;
+      download?: Partial<typeof defaultConfiguration.download>;
+    } & Record<string, unknown> = {},
+  ) => {
+    const { scrape, aggregation, download, ...rest } = overrides;
+    return configurationSchema.parse({
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
         sites: [Website.DMM, Website.JAVDB, Website.JAVBUS],
-        siteOrder: [Website.DMM, Website.JAVDB, Website.JAVBUS],
+        ...scrape,
       },
-      ...overrides,
+      aggregation: {
+        ...defaultConfiguration.aggregation,
+        ...aggregation,
+        behavior: { ...defaultConfiguration.aggregation.behavior, ...aggregation?.behavior },
+        fieldPriorities: {
+          ...defaultConfiguration.aggregation.fieldPriorities,
+          ...aggregation?.fieldPriorities,
+        },
+      },
+      download: { ...defaultConfiguration.download, ...download },
+      ...rest,
     });
+  };
 
   it("aggregates results from multiple successful crawlers", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          title: undefined,
-          plot: "Short DMM plot",
-          thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
+    const siteResults = makeSiteResults(
+      [Website.DMM, { title: undefined, plot: "Short DMM plot", thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg" }],
       [
         Website.JAVDB,
-        makeCrawlerData({
+        {
           title: "JAVDB Title",
           plot: "Longer JAVDB plot description here",
           actors: ["Actor A", "Actor B"],
           genres: ["Tag 1", "Tag 2"],
-          website: Website.JAVDB,
-        }),
+        },
       ],
-    ]);
+    );
 
     const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
       "ABF-075",
@@ -153,26 +170,20 @@ describe("AggregationService", () => {
   });
 
   it("records DMM blocked failures and uses avwikidb only when it is enabled", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.AVWIKIDB,
-        makeCrawlerData({
-          title: "AVWikiDB Title",
-          actors: ["Actor From AVWikiDB"],
-          thumb_url: "https://avwikidb.example/thumb.jpg",
-          website: Website.AVWIKIDB,
-        }),
-      ],
+    const siteResults = makeSiteResults([
+      Website.AVWIKIDB,
+      {
+        title: "AVWikiDB Title",
+        actors: ["Actor From AVWikiDB"],
+        thumb_url: "https://avwikidb.example/thumb.jpg",
+      },
     ]);
     const siteFailures = new Map<Website, { error: string; failureReason?: FailureReason }>([
       [Website.DMM, { error: "DMM region blocked", failureReason: "region_blocked" }],
     ]);
     const provider = new MultiResultCrawlerProvider(siteResults, {}, siteFailures);
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        sites: [Website.DMM, Website.AVWIKIDB],
-      },
+      scrape: { sites: [Website.DMM, Website.AVWIKIDB] },
     });
 
     const result = await new AggregationService(provider).aggregate("ABF-075", config);
@@ -187,30 +198,13 @@ describe("AggregationService", () => {
   });
 
   it("marks crawler budget overruns as timeout failures", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          title: "Slow DMM Title",
-          thumb_url: "https://dmm.example/thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
-      [
-        Website.JAVDB,
-        makeCrawlerData({
-          title: "Fast JAVDB Title",
-          thumb_url: "https://javdb.example/thumb.jpg",
-          website: Website.JAVDB,
-        }),
-      ],
-    ]);
+    const siteResults = makeSiteResults(
+      [Website.DMM, { title: "Slow DMM Title", thumb_url: "https://dmm.example/thumb.jpg" }],
+      [Website.JAVDB, { title: "Fast JAVDB Title", thumb_url: "https://javdb.example/thumb.jpg" }],
+    );
     const provider = new MultiResultCrawlerProvider(siteResults, { [Website.DMM]: 30 });
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        sites: [Website.DMM, Website.JAVDB],
-      },
+      scrape: { sites: [Website.DMM, Website.JAVDB] },
     });
     config.aggregation.maxParallelCrawlers = 2;
     config.aggregation.perCrawlerTimeoutMs = 5;
@@ -225,27 +219,14 @@ describe("AggregationService", () => {
   });
 
   it("does not query avwikidb when it is not enabled", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.AVBASE,
-        makeCrawlerData({
-          title: "AVBase Title",
-          actors: ["Actor A"],
-          thumb_url: "https://avbase.example/thumb.jpg",
-          website: Website.AVBASE,
-        }),
-      ],
+    const siteResults = makeSiteResults([
+      Website.AVBASE,
+      { title: "AVBase Title", actors: ["Actor A"], thumb_url: "https://avbase.example/thumb.jpg" },
     ]);
     const provider = new MultiResultCrawlerProvider(siteResults);
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        sites: [Website.AVBASE],
-      },
-      download: {
-        ...defaultConfiguration.download,
-        downloadSceneImages: false,
-      },
+      scrape: { sites: [Website.AVBASE] },
+      download: { downloadSceneImages: false },
     });
 
     const result = await new AggregationService(provider).aggregate("ABF-075", config);
@@ -257,41 +238,21 @@ describe("AggregationService", () => {
   });
 
   it("uses configured durationSeconds priority instead of completion order", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.AVBASE,
-        makeCrawlerData({
-          title: undefined,
-          durationSeconds: 8_100,
-          thumb_url: undefined,
-          website: Website.AVBASE,
-        }),
-      ],
-      [
-        Website.DMM_TV,
-        makeCrawlerData({
-          durationSeconds: 7_200,
-          thumb_url: "https://dmmtv.example/thumb.jpg",
-          website: Website.DMM_TV,
-        }),
-      ],
-    ]);
+    const siteResults = makeSiteResults(
+      [Website.AVBASE, { title: undefined, durationSeconds: 8_100, thumb_url: undefined }],
+      [Website.DMM_TV, { durationSeconds: 7_200, thumb_url: "https://dmmtv.example/thumb.jpg" }],
+    );
 
     const provider = new MultiResultCrawlerProvider(siteResults, {
       [Website.AVBASE]: 0,
       [Website.DMM_TV]: 30,
     });
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
+    const config = makeConfig({
       scrape: {
-        ...defaultConfiguration.scrape,
         sites: [Website.AVBASE, Website.DMM_TV],
-        siteOrder: [Website.AVBASE, Website.DMM_TV],
       },
       aggregation: {
-        ...defaultConfiguration.aggregation,
         fieldPriorities: {
-          ...defaultConfiguration.aggregation.fieldPriorities,
           durationSeconds: [Website.DMM_TV, Website.AVBASE],
         },
       },
@@ -305,10 +266,10 @@ describe("AggregationService", () => {
   });
 
   it("prefers FC2HUB ahead of JAVDB for FC2 family metadata under the default priorities", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
+    const siteResults = makeSiteResults(
       [
         Website.FC2HUB,
-        makeCrawlerData({
+        {
           title: "FC2HUB Title",
           number: "FC2-4515706",
           thumb_url: "https://fc2hub.example/thumb.jpg",
@@ -316,12 +277,11 @@ describe("AggregationService", () => {
           publisher: "Seller FC2HUB",
           durationSeconds: 8_068,
           rating: 4.7,
-          website: Website.FC2HUB,
-        }),
+        },
       ],
       [
         Website.JAVDB,
-        makeCrawlerData({
+        {
           title: "JAVDB Title",
           number: "FC2-4515706",
           thumb_url: "https://javdb.example/thumb.jpg",
@@ -329,17 +289,13 @@ describe("AggregationService", () => {
           publisher: "Publisher JAVDB",
           durationSeconds: 7_200,
           rating: 4.1,
-          website: Website.JAVDB,
-        }),
+        },
       ],
-    ]);
+    );
 
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
+    const config = makeConfig({
       scrape: {
-        ...defaultConfiguration.scrape,
         sites: [Website.FC2HUB, Website.JAVDB],
-        siteOrder: [Website.FC2HUB, Website.JAVDB],
       },
     });
 
@@ -362,39 +318,34 @@ describe("AggregationService", () => {
   });
 
   it("keeps official FC2 seller metadata ahead of FC2HUB seller fallback", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
+    const siteResults = makeSiteResults(
       [
         Website.FC2,
-        makeCrawlerData({
+        {
           title: "Official FC2 Title",
           number: "FC2-2896877",
           actors: [],
           thumb_url: "https://fc2.example/thumb.jpg",
           studio: "趣味はめ",
           publisher: "趣味はめ",
-          website: Website.FC2,
-        }),
+        },
       ],
       [
         Website.FC2HUB,
-        makeCrawlerData({
+        {
           title: "FC2HUB Title",
           number: "FC2-2896877",
           actors: [],
           thumb_url: "https://fc2hub.example/thumb.jpg",
           studio: "アビス",
           publisher: "アビス",
-          website: Website.FC2HUB,
-        }),
+        },
       ],
-    ]);
+    );
 
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
+    const config = makeConfig({
       scrape: {
-        ...defaultConfiguration.scrape,
         sites: [Website.FC2, Website.FC2HUB],
-        siteOrder: [Website.FC2, Website.FC2HUB],
       },
     });
 
@@ -413,10 +364,10 @@ describe("AggregationService", () => {
   });
 
   it("keeps DMM family identity fields aligned with the title-winning source", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
+    const siteResults = makeSiteResults(
       [
         Website.DMM,
-        makeCrawlerData({
+        {
           title: "DMM Title",
           genres: ["DMM Genre"],
           studio: "DMM Studio",
@@ -424,12 +375,11 @@ describe("AggregationService", () => {
           rating: 4.6,
           trailer_url: "https://dmm.example.com/trailer.mp4",
           thumb_url: "https://awsimgsrc.dmm.co.jp/dmm.jpg",
-          website: Website.DMM,
-        }),
+        },
       ],
       [
         Website.DMM_TV,
-        makeCrawlerData({
+        {
           title: "DMM TV Title",
           genres: ["DMM TV Genre 1", "DMM TV Genre 2"],
           studio: "DMM TV Studio",
@@ -437,21 +387,14 @@ describe("AggregationService", () => {
           rating: 3.2,
           trailer_url: "https://video.example.com/trailer.mp4",
           thumb_url: "https://video.example.com/thumb.jpg",
-          website: Website.DMM_TV,
-        }),
+        },
       ],
-    ]);
+    );
 
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM, Website.DMM_TV],
-        siteOrder: [Website.DMM, Website.DMM_TV],
-      },
+      scrape: { sites: [Website.DMM, Website.DMM_TV] },
       aggregation: {
-        ...defaultConfiguration.aggregation,
         fieldPriorities: {
-          ...defaultConfiguration.aggregation.fieldPriorities,
           title: [Website.DMM_TV, Website.DMM],
           genres: [Website.DMM, Website.DMM_TV],
           studio: [Website.DMM, Website.DMM_TV],
@@ -482,10 +425,10 @@ describe("AggregationService", () => {
   });
 
   it("uses PPVDATABANK as an FC2 fallback when higher-priority sources miss seller and image fields", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
+    const siteResults = makeSiteResults(
       [
         Website.FC2HUB,
-        makeCrawlerData({
+        {
           title: "FC2HUB Title",
           number: "FC2-4663355",
           thumb_url: undefined,
@@ -494,12 +437,11 @@ describe("AggregationService", () => {
           publisher: undefined,
           release_date: undefined,
           durationSeconds: undefined,
-          website: Website.FC2HUB,
-        }),
+        },
       ],
       [
         Website.PPVDATABANK,
-        makeCrawlerData({
+        {
           title: "PPVDATABANK Title",
           number: "FC2-4663355",
           thumb_url: "https://ppvdatabank.example/thumb.webp",
@@ -509,17 +451,13 @@ describe("AggregationService", () => {
           publisher: "ゆず故障",
           release_date: "2025-04-03",
           durationSeconds: 3_080,
-          website: Website.PPVDATABANK,
-        }),
+        },
       ],
-    ]);
+    );
 
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
+    const config = makeConfig({
       scrape: {
-        ...defaultConfiguration.scrape,
         sites: [Website.FC2HUB, Website.PPVDATABANK],
-        siteOrder: [Website.FC2HUB, Website.PPVDATABANK],
       },
     });
 
@@ -555,17 +493,7 @@ describe("AggregationService", () => {
       },
       {
         provider: new MultiResultCrawlerProvider(
-          new Map<Website, CrawlerData>([
-            [
-              Website.DMM,
-              makeCrawlerData({
-                title: "Has title",
-                thumb_url: undefined,
-                poster_url: undefined,
-                website: Website.DMM,
-              }),
-            ],
-          ]),
+          makeSiteResults([Website.DMM, { title: "Has title", thumb_url: undefined, poster_url: undefined }]),
         ),
         config: makeConfig(),
       },
@@ -577,15 +505,7 @@ describe("AggregationService", () => {
   });
 
   it("caches results until clearCache is called", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          thumb_url: "https://example.com/thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
-    ]);
+    const siteResults = makeSiteResults([Website.DMM, { thumb_url: "https://example.com/thumb.jpg" }]);
 
     const provider = new MultiResultCrawlerProvider(siteResults);
     const service = new AggregationService(provider);
@@ -605,25 +525,15 @@ describe("AggregationService", () => {
   });
 
   it("caps the cache and keeps recently used entries", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          number: undefined,
-          thumb_url: "https://example.com/thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
+    const siteResults = makeSiteResults([
+      Website.DMM,
+      { number: undefined, thumb_url: "https://example.com/thumb.jpg" },
     ]);
 
     const provider = new RecordingCrawlerProvider(siteResults);
     const service = new AggregationService(provider);
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        sites: [Website.DMM],
-        siteOrder: [Website.DMM],
-      },
+      scrape: { sites: [Website.DMM] },
     });
 
     for (let index = 1; index <= 200; index++) {
@@ -647,35 +557,14 @@ describe("AggregationService", () => {
   });
 
   it("stops launching lower-priority sites once minimum threshold is satisfied", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          title: "Fast DMM Title",
-          thumb_url: "https://thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
-      [
-        Website.JAVDB,
-        makeCrawlerData({
-          title: "Slower JAVDB Title",
-          thumb_url: "https://javdb-thumb.jpg",
-          website: Website.JAVDB,
-        }),
-      ],
-    ]);
+    const siteResults = makeSiteResults(
+      [Website.DMM, { title: "Fast DMM Title", thumb_url: "https://thumb.jpg" }],
+      [Website.JAVDB, { title: "Slower JAVDB Title", thumb_url: "https://javdb-thumb.jpg" }],
+    );
 
     const config = makeConfig({
-      aggregation: {
-        ...defaultConfiguration.aggregation,
-        maxParallelCrawlers: 1,
-      },
-      download: {
-        ...defaultConfiguration.download,
-        downloadSceneImages: false,
-        generateNfo: false,
-      },
+      aggregation: { maxParallelCrawlers: 1 },
+      download: { downloadSceneImages: false, generateNfo: false },
     });
 
     const provider = new MultiResultCrawlerProvider(siteResults);
@@ -685,24 +574,14 @@ describe("AggregationService", () => {
   });
 
   it("forces manual URL scrapes to the selected site only", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [Website.DMM, makeCrawlerData({ title: "DMM Title", website: Website.DMM })],
-      [
-        Website.DMM_TV,
-        makeCrawlerData({
-          title: "DMM TV Title",
-          thumb_url: "https://video.example/thumb.jpg",
-          website: Website.DMM_TV,
-        }),
-      ],
-      [Website.JAVDB, makeCrawlerData({ title: "JAVDB Title", website: Website.JAVDB })],
-    ]);
+    const siteResults = makeSiteResults(
+      [Website.DMM, { title: "DMM Title" }],
+      [Website.DMM_TV, { title: "DMM TV Title", thumb_url: "https://video.example/thumb.jpg" }],
+      [Website.JAVDB, { title: "JAVDB Title" }],
+    );
     const provider = new RecordingCrawlerProvider(siteResults);
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        sites: [Website.DMM, Website.DMM_TV, Website.JAVDB],
-      },
+      scrape: { sites: [Website.DMM, Website.DMM_TV, Website.JAVDB] },
     });
 
     const result = await new AggregationService(provider).aggregate("ABF-075", config, undefined, {
@@ -716,9 +595,7 @@ describe("AggregationService", () => {
 
   it("passes manual detail URLs to the forced crawler", async () => {
     const detailUrl = "https://video.dmm.co.jp/av/content/?id=1abf00075";
-    const siteResults = new Map<Website, CrawlerData>([
-      [Website.DMM_TV, makeCrawlerData({ title: "DMM TV Title", website: Website.DMM_TV })],
-    ]);
+    const siteResults = makeSiteResults([Website.DMM_TV, { title: "DMM TV Title" }]);
     const provider = new RecordingCrawlerProvider(siteResults);
 
     await new AggregationService(provider).aggregate("ABF-075", makeConfig(), undefined, {
@@ -731,58 +608,19 @@ describe("AggregationService", () => {
   });
 
   it("limits FC2 numbers to the FC2 crawler family only", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.FC2,
-        makeCrawlerData({
-          title: "FC2 Title",
-          number: "FC2-4775286",
-          thumb_url: "https://fc2.example/thumb.jpg",
-          website: Website.FC2,
-        }),
-      ],
-      [
-        Website.FC2HUB,
-        makeCrawlerData({
-          title: "FC2HUB Title",
-          number: "FC2-4775286",
-          website: Website.FC2HUB,
-        }),
-      ],
-      [
-        Website.PPVDATABANK,
-        makeCrawlerData({
-          title: "PPVDATABANK FC2 Title",
-          number: "FC2-4775286",
-          website: Website.PPVDATABANK,
-        }),
-      ],
-      [
-        Website.JAVDB,
-        makeCrawlerData({
-          title: "JAVDB FC2 Title",
-          number: "FC2-4775286",
-          website: Website.JAVDB,
-        }),
-      ],
-    ]);
+    const siteResults = makeSiteResults(
+      [Website.FC2, { title: "FC2 Title", number: "FC2-4775286", thumb_url: "https://fc2.example/thumb.jpg" }],
+      [Website.FC2HUB, { title: "FC2HUB Title", number: "FC2-4775286" }],
+      [Website.PPVDATABANK, { title: "PPVDATABANK FC2 Title", number: "FC2-4775286" }],
+      [Website.JAVDB, { title: "JAVDB FC2 Title", number: "FC2-4775286" }],
+    );
 
     const provider = new MultiResultCrawlerProvider(siteResults);
     const result = await new AggregationService(provider).aggregate(
       "FC2-4775286",
       makeConfig({
         scrape: {
-          ...defaultConfiguration.scrape,
           sites: [
-            Website.DMM,
-            Website.MGSTAGE,
-            Website.FC2,
-            Website.FC2HUB,
-            Website.PPVDATABANK,
-            Website.JAVDB,
-            Website.JAVBUS,
-          ],
-          siteOrder: [
             Website.DMM,
             Website.MGSTAGE,
             Website.FC2,
@@ -802,57 +640,20 @@ describe("AggregationService", () => {
   });
 
   it("skips FC2-only sites when aggregating a non-FC2 number", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          title: "DMM Title",
-          thumb_url: "https://dmm.example/thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
-      [
-        Website.JAVDB,
-        makeCrawlerData({
-          title: "JAVDB Title",
-          thumb_url: "https://javdb.example/thumb.jpg",
-          website: Website.JAVDB,
-        }),
-      ],
-      [
-        Website.FC2,
-        makeCrawlerData({
-          title: "FC2 Title",
-          thumb_url: "https://fc2.example/thumb.jpg",
-          website: Website.FC2,
-        }),
-      ],
-      [
-        Website.FC2HUB,
-        makeCrawlerData({
-          title: "FC2HUB Title",
-          thumb_url: "https://fc2hub.example/thumb.jpg",
-          website: Website.FC2HUB,
-        }),
-      ],
-      [
-        Website.PPVDATABANK,
-        makeCrawlerData({
-          title: "PPVDATABANK Title",
-          thumb_url: "https://ppvdatabank.example/thumb.webp",
-          website: Website.PPVDATABANK,
-        }),
-      ],
-    ]);
+    const siteResults = makeSiteResults(
+      [Website.DMM, { title: "DMM Title", thumb_url: "https://dmm.example/thumb.jpg" }],
+      [Website.JAVDB, { title: "JAVDB Title", thumb_url: "https://javdb.example/thumb.jpg" }],
+      [Website.FC2, { title: "FC2 Title", thumb_url: "https://fc2.example/thumb.jpg" }],
+      [Website.FC2HUB, { title: "FC2HUB Title", thumb_url: "https://fc2hub.example/thumb.jpg" }],
+      [Website.PPVDATABANK, { title: "PPVDATABANK Title", thumb_url: "https://ppvdatabank.example/thumb.webp" }],
+    );
 
     const provider = new MultiResultCrawlerProvider(siteResults);
     const result = await new AggregationService(provider).aggregate(
       "ABF-075",
       makeConfig({
         scrape: {
-          ...defaultConfiguration.scrape,
           sites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
-          siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
         },
       }),
     );
@@ -862,26 +663,16 @@ describe("AggregationService", () => {
   });
 
   it("aborts a slow crawler once its wall-clock budget is exhausted", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [
-        Website.DMM,
-        makeCrawlerData({
-          title: "Slow DMM Title",
-          thumb_url: "https://slow-thumb.jpg",
-          website: Website.DMM,
-        }),
-      ],
+    const siteResults = makeSiteResults([
+      Website.DMM,
+      { title: "Slow DMM Title", thumb_url: "https://slow-thumb.jpg" },
     ]);
 
     const provider = new MultiResultCrawlerProvider(siteResults, {
       [Website.DMM]: 80,
     });
     const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        sites: [Website.DMM],
-        siteOrder: [Website.DMM],
-      },
+      scrape: { sites: [Website.DMM] },
     });
     config.aggregation.maxParallelCrawlers = 1;
     config.aggregation.perCrawlerTimeoutMs = 20;

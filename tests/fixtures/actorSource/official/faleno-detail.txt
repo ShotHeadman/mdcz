@@ -1,0 +1,18 @@
+<section class="back01">
+  <div class="bar02_category"><h1>神木蘭<span>Ran Kamiki</span></h1></div>
+  <div class="box_actress02">
+    <div class="box_actress02_left"><img src="https://faleno.jp/top/wp-content/uploads/2022/07/kamiki.jpg"></div>
+    <div class="box_actress02_list">
+      <ul>
+        <li><span>誕生日</span><p>10/23</p></li>
+        <li><span>身長</span><p>163cm</p></li>
+        <li><span>スリーサイズ</span><p>B84 W56 H84</p></li>
+      </ul>
+      <ul>
+        <li><span>出身地</span><p>東京都</p></li>
+        <li><span>趣味</span><p>映画鑑賞</p></li>
+        <li><span>特技</span><p>ダンス</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
