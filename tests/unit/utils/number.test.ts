@@ -184,8 +184,30 @@ describe("parseFileInfo", () => {
     expect(parseFileInfo("/tmp/ABC-123-UC.mp4")).toMatchObject({
       number: "ABC-123",
       isUncensored: true,
+      filenameUncensoredChoice: "uncensored",
       isSubtitled: true,
       subtitleTag: "中文字幕",
+    });
+  });
+
+  it("classifies explicit cracked filename tokens without broad text matching", () => {
+    for (const input of ["/tmp/ABC-123-C-U.mp4", "/tmp/ABC-123-UMR.mp4", "/tmp/ABC-123-破解.mp4"]) {
+      expect(parseFileInfo(input)).toMatchObject({
+        number: "ABC-123",
+        isUncensored: true,
+        filenameUncensoredChoice: "umr",
+        isSubtitled: false,
+        subtitleTag: undefined,
+        part: undefined,
+      });
+    }
+
+    expect(parseFileInfo("/tmp/ABC-123-破解版本.mp4")).toMatchObject({
+      filenameUncensoredChoice: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/ABC-123-U.mp4")).toMatchObject({
+      filenameUncensoredChoice: "uncensored",
     });
   });
 

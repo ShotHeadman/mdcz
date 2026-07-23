@@ -64,6 +64,8 @@ export interface FileInfo {
   isSubtitled: boolean;
   subtitleTag?: SubtitleTag;
   isUncensored?: boolean;
+  /** Classification marker parsed from the filename; user/NFO choices remain authoritative. */
+  filenameUncensoredChoice?: UncensoredChoice;
   resolution?: string;
   part?: {
     number: number;

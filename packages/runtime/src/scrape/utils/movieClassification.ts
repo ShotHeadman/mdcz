@@ -43,6 +43,12 @@ export const classifyMovie = (
   let uncensored =
     isLikelyUncensoredNumber(data.number || fileInfo.number) || Boolean(fileInfo.isUncensored) || umr || leak;
 
+  if (fileInfo.filenameUncensoredChoice) {
+    uncensored = true;
+    umr = fileInfo.filenameUncensoredChoice === "umr";
+    leak = fileInfo.filenameUncensoredChoice === "leak";
+  }
+
   if (localState?.uncensoredChoice) {
     uncensored = true;
     umr = localState.uncensoredChoice === "umr";
