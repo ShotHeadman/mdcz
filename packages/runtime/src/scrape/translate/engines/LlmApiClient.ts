@@ -7,7 +7,7 @@ export interface LlmApiTransport {
   postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init?: { headers?: LlmHeadersInit; signal?: AbortSignal },
+    init?: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number },
   ): Promise<RuntimeNetworkJsonResponse<TResponse>>;
 }
 
@@ -26,6 +26,7 @@ export interface LlmTextRequest {
   baseUrl: string;
   temperature: number;
   prompt: string;
+  timeout?: number;
 }
 
 interface ResponsesApiResponse {
@@ -87,16 +88,23 @@ class FetchLlmApiTransport implements LlmApiTransport {
   async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init: { headers?: LlmHeadersInit; signal?: AbortSignal } = {},
+    init: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number } = {},
   ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
-    const response = await globalThis.fetch(url, {
-      body: JSON.stringify(payload),
-      headers,
-      method: "POST",
-      signal: init.signal,
-    });
+    const { signal, cleanup } = this.resolveSignal(init.signal, init.timeout);
+    let response: Response;
+
+    try {
+      response = await globalThis.fetch(url, {
+        body: JSON.stringify(payload),
+        headers,
+        method: "POST",
+        signal,
+      });
+    } finally {
+      cleanup();
+    }
 
     return {
       data: await this.parseJsonResponseBody<TResponse>(response),
@@ -120,6 +128,33 @@ class FetchLlmApiTransport implements LlmApiTransport {
       return text;
     }
   }
+
+  private resolveSignal(signal?: AbortSignal, timeout?: number): { signal?: AbortSignal; cleanup: () => void } {
+    if (!timeout || !Number.isFinite(timeout)) {
+      return { signal, cleanup: () => undefined };
+    }
+
+    const controller = new AbortController();
+    const timeoutMs = Math.max(1, Math.trunc(timeout));
+    const onAbort = () => controller.abort(signal?.reason);
+    const timeoutId = globalThis.setTimeout(() => {
+      controller.abort(new Error(`Request timeout (${timeoutMs} ms)`));
+    }, timeoutMs);
+
+    if (signal?.aborted) {
+      onAbort();
+    } else {
+      signal?.addEventListener("abort", onAbort, { once: true });
+    }
+
+    return {
+      signal: controller.signal,
+      cleanup: () => {
+        globalThis.clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", onAbort);
+      },
+    };
+  }
 }
 
 export class LlmApiClient {
@@ -141,7 +176,7 @@ export class LlmApiClient {
         input: request.prompt,
         temperature: request.temperature,
       },
-      { headers, signal },
+      { headers, signal, timeout: request.timeout },
     );
 
     if (responsesResponse.ok) {
@@ -178,7 +213,7 @@ export class LlmApiClient {
           },
         ],
       },
-      { headers, signal },
+      { headers, signal, timeout: request.timeout },
     );
 
     if (!response.ok) {
@@ -199,7 +234,7 @@ export class LlmApiClient {
   private async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init?: { headers?: LlmHeadersInit; signal?: AbortSignal },
+    init?: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number },
   ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);

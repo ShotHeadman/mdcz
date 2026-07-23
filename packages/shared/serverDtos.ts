@@ -860,6 +860,7 @@ export const translateTestLlmInputSchema = z.object({
   llmBaseUrl: z.string().optional(),
   llmPrompt: z.string().optional(),
   llmTemperature: z.number().optional(),
+  llmTimeout: z.number().optional(),
 });
 
 export type TranslateTestLlmInputDto = z.infer<typeof translateTestLlmInputSchema>;
