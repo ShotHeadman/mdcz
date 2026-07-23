@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@mdcz/shared/error";
 import type { BatchTranslateApplyResultItem, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { MediaRootDto } from "@mdcz/shared/serverDtos";
 import {
@@ -16,7 +17,7 @@ import {
   Progress,
 } from "@mdcz/ui";
 import { FolderOpen, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const TOOL_ICON_BUTTON_CLASS =
   "h-11 w-11 shrink-0 rounded-quiet-sm bg-surface-low text-foreground hover:bg-surface-raised/75";
@@ -29,6 +30,59 @@ const TOOL_SECONDARY_BUTTON_CLASS =
   "h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75";
 const TOOL_SUBSECTION_CLASS = "space-y-4 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5";
 const TOOL_TABLE_SHELL_CLASS = "overflow-hidden rounded-quiet-lg bg-surface-floating/96";
+
+const DEFAULT_BATCH_TRANSLATE_SIZE = 20;
+const MIN_BATCH_TRANSLATE_SIZE = 1;
+const MAX_BATCH_TRANSLATE_SIZE = 20;
+
+type BatchTranslateItemApplyStatus = "idle" | "processing" | "success" | "partial" | "failed";
+
+type BatchNfoTranslatorApplySummary = {
+  successCount: number;
+  partialCount: number;
+  failedCount: number;
+  totalCount: number;
+};
+
+const normalizeBatchTranslateSize = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_BATCH_TRANSLATE_SIZE;
+  return Math.min(MAX_BATCH_TRANSLATE_SIZE, Math.max(MIN_BATCH_TRANSLATE_SIZE, Math.trunc(parsed)));
+};
+
+const toBatchTranslateItemApplyStatus = (result: BatchTranslateApplyResultItem): BatchTranslateItemApplyStatus => {
+  if (result.success) return "success";
+  if (result.translatedFields.length > 0) return "partial";
+  return "failed";
+};
+
+const buildBatchTranslateApplyStatusLabel = (status: BatchTranslateItemApplyStatus): string => {
+  switch (status) {
+    case "processing":
+      return "翻译中";
+    case "success":
+      return "成功";
+    case "partial":
+      return "部分成功";
+    case "failed":
+      return "失败";
+    default:
+      return "待处理";
+  }
+};
+
+const buildFailedBatchTranslateResult = (
+  item: BatchTranslateScanItem,
+  error: string,
+): BatchTranslateApplyResultItem => ({
+  directory: item.directory,
+  error,
+  filePath: item.filePath,
+  nfoPath: item.nfoPath,
+  number: item.number,
+  success: false,
+  translatedFields: [],
+});
 
 const CLEANUP_PRESET_EXTENSIONS = [".html", ".url", ".txt", ".nfo", ".jpg", ".png", ".torrent", ".ass", ".srt"];
 
@@ -398,28 +452,177 @@ export function FileCleanerWorkspaceDetail({
 }
 
 export interface BatchNfoTranslatorWorkspaceDetailProps {
-  applying?: boolean;
   items: BatchTranslateScanItem[];
-  results: BatchTranslateApplyResultItem[];
   scanning?: boolean;
-  onApply: (items: BatchTranslateScanItem[]) => void | Promise<void>;
+  onApply: (items: BatchTranslateScanItem[], batchSize: number) => Promise<BatchTranslateApplyResultItem[]>;
+  onApplyComplete?: (summary: BatchNfoTranslatorApplySummary) => void;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
   onScan: (directory: string) => void | Promise<void>;
 }
 
 export function BatchNfoTranslatorWorkspaceDetail({
-  applying = false,
   items,
-  results,
   scanning = false,
   onApply,
+  onApplyComplete,
   onBrowseDirectory,
   onScan,
 }: BatchNfoTranslatorWorkspaceDetailProps) {
   const [directory, setDirectory] = useState("");
+  const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_TRANSLATE_SIZE);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set());
+  const [applying, setApplying] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const [applyProgress, setApplyProgress] = useState<{
+    completed: number;
+    total: number;
+    currentLabel?: string;
+  } | null>(null);
+  const [results, setResults] = useState<BatchTranslateApplyResultItem[]>([]);
+  const [itemStatusByPath, setItemStatusByPath] = useState<Record<string, BatchTranslateItemApplyStatus>>({});
   const previewRows = items.slice(0, 300);
   const resultRows = results.slice(0, 300);
   const pendingFieldCount = useMemo(() => items.reduce((sum, item) => sum + item.pendingFields.length, 0), [items]);
+  const selectedItems = useMemo(() => items.filter((item) => selectedPaths.has(item.filePath)), [items, selectedPaths]);
+  const selectedPendingFieldCount = useMemo(
+    () => selectedItems.reduce((sum, item) => sum + item.pendingFields.length, 0),
+    [selectedItems],
+  );
+  const allSelected = items.length > 0 && selectedPaths.size === items.length;
+  const someSelected = selectedPaths.size > 0 && selectedPaths.size < items.length;
+  const normalizedBatchSize = normalizeBatchTranslateSize(batchSize);
+  const applyProgressPercent = applyProgress
+    ? Math.round((applyProgress.completed / Math.max(applyProgress.total, 1)) * 100)
+    : 0;
+  const resultSummary = useMemo(() => {
+    let successCount = 0;
+    let partialCount = 0;
+    let failedCount = 0;
+
+    for (const result of results) {
+      const status = toBatchTranslateItemApplyStatus(result);
+      if (status === "success") successCount += 1;
+      else if (status === "partial") partialCount += 1;
+      else failedCount += 1;
+    }
+
+    return { successCount, partialCount, failedCount };
+  }, [results]);
+
+  const setApplyPaused = (nextPaused: boolean) => {
+    pausedRef.current = nextPaused;
+    setPaused(nextPaused);
+  };
+
+  const waitWhileApplyPaused = async () => {
+    while (pausedRef.current) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 150));
+    }
+  };
+
+  useEffect(() => {
+    setSelectedPaths(new Set(items.map((item) => item.filePath)));
+    setResults([]);
+    setItemStatusByPath({});
+    setApplyProgress(null);
+    pausedRef.current = false;
+    setPaused(false);
+  }, [items]);
+
+  const toggleItem = (filePath: string) => {
+    setSelectedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(filePath)) next.delete(filePath);
+      else next.add(filePath);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedPaths(allSelected ? new Set() : new Set(items.map((item) => item.filePath)));
+  };
+
+  const handleScan = async () => {
+    setResults([]);
+    setItemStatusByPath({});
+    setApplyProgress(null);
+    setApplyPaused(false);
+    await onScan(directory);
+  };
+
+  const handleApply = async () => {
+    if (selectedItems.length === 0 || applying) return;
+
+    setApplying(true);
+    setApplyPaused(false);
+    setResults([]);
+    setItemStatusByPath(Object.fromEntries(selectedItems.map((item) => [item.filePath, "idle"])));
+    setApplyProgress({ completed: 0, total: selectedItems.length });
+
+    const accumulatedResults: BatchTranslateApplyResultItem[] = [];
+    let successCount = 0;
+    let partialCount = 0;
+    let failedCount = 0;
+
+    for (let index = 0; index < selectedItems.length; index += normalizedBatchSize) {
+      await waitWhileApplyPaused();
+      const chunk = selectedItems.slice(index, index + normalizedBatchSize);
+      const chunkLabel = chunk.length === 1 ? chunk[0]?.number : `${chunk[0]?.number ?? "..."} 等 ${chunk.length} 项`;
+      setItemStatusByPath((current) => ({
+        ...current,
+        ...Object.fromEntries(chunk.map((item) => [item.filePath, "processing"])),
+      }));
+      setApplyProgress({
+        completed: accumulatedResults.length,
+        currentLabel: chunkLabel,
+        total: selectedItems.length,
+      });
+
+      let chunkResults: BatchTranslateApplyResultItem[];
+      try {
+        chunkResults = await onApply(chunk, normalizedBatchSize);
+      } catch (error) {
+        chunkResults = chunk.map((item) => buildFailedBatchTranslateResult(item, toErrorMessage(error)));
+      }
+
+      const resultByPath = new Map(chunkResults.map((result) => [result.filePath, result]));
+      for (const item of chunk) {
+        const result = resultByPath.get(item.filePath) ?? buildFailedBatchTranslateResult(item, "未返回翻译结果");
+        accumulatedResults.push(result);
+        const status = toBatchTranslateItemApplyStatus(result);
+        if (status === "success") successCount += 1;
+        else if (status === "partial") partialCount += 1;
+        else failedCount += 1;
+      }
+
+      setResults([...accumulatedResults]);
+      setItemStatusByPath((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          chunk.map((item) => {
+            const result = resultByPath.get(item.filePath) ?? buildFailedBatchTranslateResult(item, "未返回翻译结果");
+            return [item.filePath, toBatchTranslateItemApplyStatus(result)];
+          }),
+        ),
+      }));
+      setApplyProgress({
+        completed: accumulatedResults.length,
+        currentLabel: chunkLabel,
+        total: selectedItems.length,
+      });
+    }
+
+    setApplying(false);
+    setApplyPaused(false);
+    setApplyProgress(null);
+    onApplyComplete?.({
+      failedCount,
+      partialCount,
+      successCount,
+      totalCount: selectedItems.length,
+    });
+  };
 
   const browseDirectory = async () => {
     const selected = await onBrowseDirectory?.();
@@ -458,39 +661,127 @@ export function BatchNfoTranslatorWorkspaceDetail({
         <p className={TOOL_NOTE_CLASS}>该工具使用当前配置中的 LLM 模型、Base URL 与 API Key，独立于主刮削翻译流程。</p>
       </div>
 
+      <div className={cn(TOOL_SUBSECTION_CLASS, "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between")}>
+        <div className="max-w-2xl space-y-2">
+          <Label
+            htmlFor="batch-translate-size"
+            className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+          >
+            每批翻译条数
+          </Label>
+          <p className={TOOL_NOTE_CLASS}>
+            1 为逐项翻译；20 为最多合并 20 条待翻译内容后请求大模型统一翻译，本地模型不稳定时建议调小。
+          </p>
+        </div>
+        <div className="flex items-center gap-2 sm:shrink-0">
+          <Input
+            id="batch-translate-size"
+            type="number"
+            min={MIN_BATCH_TRANSLATE_SIZE}
+            max={MAX_BATCH_TRANSLATE_SIZE}
+            value={batchSize}
+            onBlur={() => setBatchSize(normalizedBatchSize)}
+            onChange={(event) => setBatchSize(normalizeBatchTranslateSize(event.target.value))}
+            className={cn(TOOL_INPUT_CLASS, "w-28")}
+          />
+          <span className="text-sm text-muted-foreground">条/批</span>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row">
         <Button
           variant="secondary"
-          onClick={() => void onScan(directory)}
+          onClick={() => void handleScan()}
           disabled={scanning || applying}
           className={cn(TOOL_SECONDARY_BUTTON_CLASS, "flex-1")}
         >
           {scanning ? "正在扫描..." : "扫描待翻译条目"}
         </Button>
         <Button
-          onClick={() => void onApply(items)}
-          disabled={applying || scanning || items.length === 0}
+          onClick={() => void handleApply()}
+          disabled={applying || scanning || selectedItems.length === 0}
           className={cn(TOOL_PRIMARY_BUTTON_CLASS, "flex-1")}
         >
-          {applying ? "正在批量翻译..." : "开始批量翻译并回写"}
+          {applying
+            ? applyProgress
+              ? `翻译中 (${applyProgress.completed}/${applyProgress.total})`
+              : "正在翻译..."
+            : selectedItems.length === items.length
+              ? "开始批量翻译并回写"
+              : `翻译选中项 (${selectedItems.length})`}
         </Button>
+        {applying ? (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setApplyPaused(!paused)}
+            className={cn(TOOL_SECONDARY_BUTTON_CLASS, "sm:w-32")}
+          >
+            {paused ? "继续" : "暂停"}
+          </Button>
+        ) : null}
       </div>
+
+      {applying && applyProgress ? (
+        <div className={TOOL_SUBSECTION_CLASS}>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+            <span>
+              {paused ? "暂停中" : "正在翻译"} {applyProgress.currentLabel ?? "..."} ({applyProgress.completed}/
+              {applyProgress.total})
+            </span>
+            <span>{applyProgressPercent}%</span>
+          </div>
+          <Progress value={applyProgressPercent} className="h-2 bg-surface-floating" />
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <span className="text-muted-foreground">待处理条目</span>
         <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
           {items.length}
         </Badge>
+        <span className="text-muted-foreground">已选中</span>
+        <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
+          {selectedItems.length}
+        </Badge>
         <span className="text-muted-foreground">待处理字段</span>
         <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
           {pendingFieldCount}
         </Badge>
+        {selectedItems.length < items.length ? (
+          <>
+            <span className="text-muted-foreground">选中字段</span>
+            <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
+              {selectedPendingFieldCount}
+            </Badge>
+          </>
+        ) : null}
         {results.length > 0 ? (
           <>
-            <span className="text-muted-foreground">本次执行结果</span>
+            <span className="text-muted-foreground">已完成</span>
             <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
               {results.length}
             </Badge>
+            <span className="text-muted-foreground">成功</span>
+            <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
+              {resultSummary.successCount}
+            </Badge>
+            {resultSummary.partialCount > 0 ? (
+              <>
+                <span className="text-muted-foreground">部分成功</span>
+                <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
+                  {resultSummary.partialCount}
+                </Badge>
+              </>
+            ) : null}
+            {resultSummary.failedCount > 0 ? (
+              <>
+                <span className="text-muted-foreground">失败</span>
+                <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
+                  {resultSummary.failedCount}
+                </Badge>
+              </>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -500,22 +791,37 @@ export function BatchNfoTranslatorWorkspaceDetail({
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-surface-low/90 text-muted-foreground">
+                <th className="w-12 px-4 py-3 text-left">
+                  <Checkbox
+                    checked={someSelected ? "indeterminate" : allSelected}
+                    disabled={items.length === 0 || scanning || applying}
+                    onCheckedChange={toggleAll}
+                  />
+                </th>
                 <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">番号</th>
                 <th className="px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">标题</th>
                 <th className="w-40 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">待处理字段</th>
+                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">状态</th>
                 <th className="w-72 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">NFO</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5 dark:divide-white/5">
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center text-muted-foreground italic">
+                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground italic">
                     暂无待翻译条目
                   </td>
                 </tr>
               ) : (
                 previewRows.map((item) => (
                   <tr key={item.filePath} className="transition-colors hover:bg-surface-low/45">
+                    <td className="px-4 py-3">
+                      <Checkbox
+                        checked={selectedPaths.has(item.filePath)}
+                        disabled={applying || scanning}
+                        onCheckedChange={() => toggleItem(item.filePath)}
+                      />
+                    </td>
                     <td className="px-4 py-3 font-mono font-medium">{item.number}</td>
                     <td className="px-4 py-3">{item.title}</td>
                     <td className="px-4 py-3">
@@ -530,6 +836,11 @@ export function BatchNfoTranslatorWorkspaceDetail({
                           </Badge>
                         ))}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="secondary" className="rounded-quiet-capsule px-2.5 py-1">
+                        {buildBatchTranslateApplyStatusLabel(itemStatusByPath[item.filePath] ?? "idle")}
+                      </Badge>
                     </td>
                     <td className="break-all px-4 py-3 font-mono text-[11px] text-muted-foreground">{item.nfoPath}</td>
                   </tr>

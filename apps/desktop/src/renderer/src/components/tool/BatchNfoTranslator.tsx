@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { BatchTranslateApplyResultItem, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import { BatchNfoTranslatorWorkspaceDetail } from "@mdcz/views/tools";
 import { useState } from "react";
 import { ipc } from "@/client/ipc";
@@ -9,9 +9,7 @@ import { browseDirectoryPath } from "./toolUtils";
 export function BatchNfoTranslator() {
   const { showError, showInfo, showSuccess } = useToast();
   const [batchTranslateItems, setBatchTranslateItems] = useState<BatchTranslateScanItem[]>([]);
-  const [batchTranslateResults, setBatchTranslateResults] = useState<BatchTranslateApplyResultItem[]>([]);
   const [batchTranslateScanning, setBatchTranslateScanning] = useState(false);
-  const [batchTranslateApplying, setBatchTranslateApplying] = useState(false);
 
   const scanBatchTranslateItems = async (directory: string, options: { silent?: boolean } = {}) => {
     const targetDirectory = directory.trim();
@@ -47,44 +45,34 @@ export function BatchNfoTranslator() {
   };
 
   const handleBatchTranslateScan = async (directory: string) => {
-    setBatchTranslateResults([]);
     await scanBatchTranslateItems(directory);
   };
 
-  const handleBatchTranslateApply = async (items: BatchTranslateScanItem[]) => {
-    if (items.length === 0) {
-      showInfo("当前没有待翻译条目。");
+  const handleBatchTranslateApplyComplete = ({
+    successCount,
+    partialCount,
+    failedCount,
+    totalCount,
+  }: {
+    successCount: number;
+    partialCount: number;
+    failedCount: number;
+    totalCount: number;
+  }) => {
+    if (failedCount === 0) {
+      showSuccess(`批量翻译完成：${successCount}/${totalCount} 成功，部分成功 ${partialCount}。`);
       return;
     }
 
-    setBatchTranslateApplying(true);
-    try {
-      const result = await ipc.tool.batchTranslateApply(items);
-      setBatchTranslateResults(result.results);
-
-      const successCount = result.results.filter((item) => item.success).length;
-      const partialCount = result.results.filter((item) => !item.success && item.translatedFields.length > 0).length;
-      const failedCount = result.results.length - successCount - partialCount;
-
-      if (failedCount === 0) {
-        showSuccess(`批量翻译完成：成功 ${successCount}，部分成功 ${partialCount}。`);
-      } else {
-        showError(`批量翻译完成：成功 ${successCount}，部分成功 ${partialCount}，失败 ${failedCount}。`);
-      }
-    } catch (error) {
-      showError(`批量翻译执行失败: ${toErrorMessage(error)}`);
-    } finally {
-      setBatchTranslateApplying(false);
-    }
+    showError(`批量翻译完成：成功 ${successCount}，部分成功 ${partialCount}，失败 ${failedCount}。`);
   };
 
   return (
     <BatchNfoTranslatorWorkspaceDetail
-      applying={batchTranslateApplying}
       items={batchTranslateItems}
-      results={batchTranslateResults}
       scanning={batchTranslateScanning}
-      onApply={handleBatchTranslateApply}
+      onApply={async (items, batchSize) => (await ipc.tool.batchTranslateApply({ batchSize, items })).results}
+      onApplyComplete={handleBatchTranslateApplyComplete}
       onBrowseDirectory={browseDirectoryPath}
       onScan={handleBatchTranslateScan}
     />

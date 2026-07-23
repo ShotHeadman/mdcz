@@ -121,3 +121,8 @@ export type BatchTranslateApplyResultItem = {
   savedNfoPath?: string;
   error?: string;
 };
+
+export type BatchTranslateApplyInput = {
+  items?: BatchTranslateScanItem[];
+  batchSize?: number;
+};
