@@ -155,7 +155,7 @@ export const crawlerDataSchema = z.object({
   trailer_source_url: z.string().optional(),
   scene_images: z.array(z.string()),
   trailer_url: z.string().optional(),
-  website: z.nativeEnum(Website),
+  website: z.nativeEnum(Website).optional(),
 });
 
 export type CrawlerDataDto = z.infer<typeof crawlerDataSchema>;

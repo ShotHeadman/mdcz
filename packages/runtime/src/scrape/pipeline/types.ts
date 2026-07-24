@@ -1,4 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import type { RuntimeActorImageService } from "../actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "../aggregation";
@@ -15,7 +16,7 @@ export interface RuntimeScrapeSignalService {
   showLogText(message: string): void;
   showScrapeInfo(input: {
     fileInfo: FileInfo;
-    site: CrawlerData["website"];
+    site: Website;
     step: "search" | "download" | "parse" | "organize";
   }): void;
   showScrapeResult(result: ScrapeResult): void;

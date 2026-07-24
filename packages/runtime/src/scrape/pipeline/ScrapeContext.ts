@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Configuration } from "@mdcz/shared/config";
+import type { Website } from "@mdcz/shared/enums";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type {
   CrawlerData,
@@ -101,6 +102,15 @@ export class ScrapeContext {
     }
 
     return crawlerData;
+  }
+
+  requireCrawlerWebsite(): Website {
+    const website = this.requireCrawlerData().website;
+    if (!website) {
+      throw new Error("Scrape crawler website not initialized");
+    }
+
+    return website;
   }
 
   requirePlan(): OrganizePlan {

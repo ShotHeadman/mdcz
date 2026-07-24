@@ -150,6 +150,10 @@ const buildMdczNode = (data: CrawlerData, rawTitle?: string): Record<string, unk
 
 export class NfoGenerator {
   buildXml(data: CrawlerData, options?: NfoOptions): string {
+    if (!data.website) {
+      throw new Error("NFO missing website");
+    }
+
     const rawTitle = data.title_zh?.trim() || data.title;
     const originaltitle = data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";

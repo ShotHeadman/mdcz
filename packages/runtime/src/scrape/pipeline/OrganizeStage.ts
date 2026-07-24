@@ -14,7 +14,7 @@ export class OrganizeStage implements ScrapeStage {
 
     this.runtime.signalService.showScrapeInfo({
       fileInfo: context.fileInfo,
-      site: crawlerData.website,
+      site: context.requireCrawlerWebsite(),
       step: "organize",
     });
     this.runtime.signalService.showLogText(`[${context.fileInfo.number}] Organizing files...`);

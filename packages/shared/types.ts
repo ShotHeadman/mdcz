@@ -53,7 +53,11 @@ export interface CrawlerData {
   trailer_source_url?: string;
   scene_images: string[];
   trailer_url?: string;
-  website: Website;
+  /**
+   * The originating crawler site. Local NFO snapshots from external tools may
+   * not retain this provenance; freshly aggregated crawler data always has it.
+   */
+  website?: Website;
 }
 
 export interface FileInfo {

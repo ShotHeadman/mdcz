@@ -6,11 +6,28 @@ import { isManagedMovieTag, normalizeNfoLocalState, parseManagedMovieTags, tagTo
 const WEBSITE_VALUES = new Set(Object.values(Website));
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
 
+// MDCx writes external IDs as <{site}id>. Keep only sites present in both projects.
+const MDCX_PROVIDER_TAGS: Readonly<Record<string, Website>> = {
+  dahliaid: Website.DAHLIA,
+  dmmid: Website.DMM,
+  falenoid: Website.FALENO,
+  fc2hubid: Website.FC2HUB,
+  fc2id: Website.FC2,
+  jav321id: Website.JAV321,
+  javbusid: Website.JAVBUS,
+  javdbid: Website.JAVDB,
+  javdbsearchid: Website.JAVDB,
+  mgstageid: Website.MGSTAGE,
+  prestigeid: Website.PRESTIGE,
+};
+
 const toArray = <T>(value: T | T[] | undefined): T[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
 
 const parseWebsite = (value: unknown): Website | null =>
-  typeof value === "string" && WEBSITE_VALUES.has(value as Website) ? (value as Website) : null;
+  typeof value === "string" && WEBSITE_VALUES.has(value.trim().toLowerCase() as Website)
+    ? (value.trim().toLowerCase() as Website)
+    : null;
 
 const toStringValue = (value: unknown): string | undefined => {
   if (typeof value === "string") {
@@ -29,6 +46,35 @@ const toStringArray = (value: unknown): string[] =>
     .map((item) => toStringValue(item) ?? "")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+
+const getNodeText = (value: unknown): string | undefined => toStringValue(toRecord(value)?.["#text"] ?? value);
+
+interface NfoIdentifier {
+  number?: string;
+  website?: Website;
+}
+
+const resolveNfoIdentifier = (movieNode: Record<string, unknown>): NfoIdentifier => {
+  const uniqueIds = toArray(movieNode.uniqueid);
+  const standardUniqueId = uniqueIds.find((item) => parseWebsite(toRecord(item)?.["@_type"]));
+  if (standardUniqueId !== undefined) {
+    return {
+      number: getNodeText(standardUniqueId),
+      website: parseWebsite(toRecord(standardUniqueId)?.["@_type"]) ?? undefined,
+    };
+  }
+
+  const number =
+    getNodeText(movieNode.num) ??
+    uniqueIds.map((item) => toRecord(item)).find((item) => !toStringValue(item?.["@_type"]))?.["#text"] ??
+    uniqueIds.find((item) => !toRecord(item));
+
+  const providerWebsite = Object.entries(MDCX_PROVIDER_TAGS).find(([tag]) => getNodeText(movieNode[tag]))?.[1];
+  return {
+    number: toStringValue(number),
+    website: providerWebsite,
+  };
+};
 
 interface ThumbEntry {
   aspect?: string;
@@ -81,12 +127,10 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const releasedate = toStringValue(movieNode.releasedate);
   const releaseDate = premiered ?? releasedate;
   const ratingText = toStringValue(movieNode.rating);
-  const uniqueidNode = movieNode.uniqueid;
-  const uniqueid = toRecord(uniqueidNode)?.["#text"] ?? uniqueidNode;
-  const number = toStringValue(uniqueid) ?? "";
-  const website = toRecord(uniqueidNode) ? parseWebsite(toRecord(uniqueidNode)?.["@_type"]) : null;
-  if (!website) throw new Error("NFO missing website");
-  if (!title || !number) throw new Error("NFO missing required fields");
+  const identifier = resolveNfoIdentifier(movieNode);
+  const number = identifier.number ?? "";
+  if (!number) throw new Error("NFO missing number");
+  if (!title) throw new Error("NFO missing title");
 
   const actorNodes = toArray(movieNode.actor);
   const actors = actorNodes
@@ -162,7 +206,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       trailer_source_url: toStringValue(mdczNode?.trailer_source_url),
       scene_images: toStringArray(mdczSceneImagesNode?.image),
       trailer_url: toStringValue(movieNode.trailer),
-      website,
+      website: identifier.website,
     },
     localState: normalizeNfoLocalState({ uncensoredChoice, tags: localTags }),
   };

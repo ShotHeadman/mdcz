@@ -80,6 +80,39 @@ describe("LocalScanService", () => {
     expect(entries.some((entry) => entry.fileInfo.filePath === skippedPath)).toBe(false);
   });
 
+  it("keeps external NFO metadata and assets when its source website is unknown", async () => {
+    const root = await createTempDir();
+    const movieDir = join(root, "ABP-123");
+    const videoPath = join(movieDir, "ABP-123.mp4");
+    const nfoPath = join(movieDir, "ABP-123.nfo");
+    const posterPath = join(movieDir, "poster.jpg");
+
+    await mkdir(movieDir, { recursive: true });
+    await writeFile(videoPath, "video");
+    await writeFile(posterPath, "poster");
+    await writeFile(
+      nfoPath,
+      `
+        <movie>
+          <title>External Metadata</title>
+          <num>ABP-123</num>
+          <thumb aspect="poster">poster.jpg</thumb>
+        </movie>
+      `,
+    );
+
+    const [entry] = await new LocalScanService().scan(root, "extrafanart");
+
+    expect(entry?.scanError).toBeUndefined();
+    expect(entry?.crawlerData).toMatchObject({
+      title: "External Metadata",
+      number: "ABP-123",
+      poster_url: "poster.jpg",
+    });
+    expect(entry?.crawlerData?.website).toBeUndefined();
+    expect(entry?.assets.poster).toBe(posterPath);
+  });
+
   it("skips FC2 feature sidecars and prefers the multipart base NFO over movie.nfo", async () => {
     const root = await createTempDir();
     const movieDir = join(root, "FC2-123456");
