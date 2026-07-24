@@ -456,6 +456,9 @@ importers:
 
   packages/shared:
     dependencies:
+      smol-toml:
+        specifier: 1.7.0
+        version: 1.7.0
       zod:
         specifier: ^4.3.6
         version: 4.4.1
@@ -4387,6 +4390,10 @@ packages:
   smart-buffer@4.2.0:
     resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
     engines: {node: '>= 6.0.0', npm: '>= 3.0.0'}
+
+  smol-toml@1.7.0:
+    resolution: {integrity: sha512-aqVvWoyO21L23mb+drl4RmMXbf6N7FdHjAhTRA9ZBL7apWBgfWC16KjrASI+1p9GAroljyMHj6fK67i0UiTNvQ==}
+    engines: {node: '>= 18'}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -8731,6 +8738,8 @@ snapshots:
 
   smart-buffer@4.2.0:
     optional: true
+
+  smol-toml@1.7.0: {}
 
   sonic-boom@4.2.1:
     dependencies:

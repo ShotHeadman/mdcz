@@ -155,7 +155,7 @@ export class NfoGenerator {
     }
 
     const rawTitle = data.title_zh?.trim() || data.title;
-    const originaltitle = data.title.trim();
+    const originaltitle = data.original_title?.trim() || data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
     const title = renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
     const plot = data.plot_zh?.trim() || data.plot?.trim();

@@ -28,6 +28,8 @@ export interface VideoMeta {
 
 export interface CrawlerData {
   title: string;
+  /** Original crawler title retained when a configured title repair changes `title`. */
+  original_title?: string;
   title_zh?: string;
   number: string;
   actors: string[];

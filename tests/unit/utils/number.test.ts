@@ -10,6 +10,9 @@ describe("extractNumber", () => {
       { input: "H0930-gol205", expected: "H0930-GOL205" },
       { input: "h0930_gol205", expected: "H0930-GOL205" },
       { input: "h0930 gol205", expected: "H0930-GOL205" },
+      { input: "H4610-ori696", expected: "H4610-ORI696" },
+      { input: "h4610_ori641", expected: "H4610-ORI641" },
+      { input: "h4610 ori641", expected: "H4610-ORI641" },
     ];
 
     for (const { input, expected } of cases) {

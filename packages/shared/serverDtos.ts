@@ -113,6 +113,7 @@ export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
 export const crawlerDataSchema = z.object({
   title: z.string(),
+  original_title: z.string().optional(),
   title_zh: z.string().optional(),
   number: z.string(),
   actors: z.array(z.string()),

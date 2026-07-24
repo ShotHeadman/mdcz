@@ -308,6 +308,29 @@ test("settings sections expose public labels and naming placeholder help", async
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
 });
 
+test("title repair settings expose ordered rules and add validated rows", async () => {
+  const screen = await render(
+    <FormHarness
+      values={{
+        naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
+        titleRepair: {
+          enabled: true,
+          rules: [{ source: "催●", replacement: "催眠" }],
+        },
+      }}
+    >
+      <NamingSection />
+    </FormHarness>,
+  );
+
+  await expect.element(screen.getByText("修复遮蔽标题")).toBeVisible();
+  await expect.element(screen.getByLabelText("第 1 条规则的替换原文")).toHaveValue("催●");
+  await screen.getByLabelText("新规则的替换原文").fill("●●");
+  await screen.getByLabelText("新规则的替换结果").fill("秘密");
+  await screen.getByRole("button", { name: "添加规则" }).click();
+  await expect.element(screen.getByLabelText("第 2 条规则的替换原文")).toHaveValue("●●");
+});
+
 test("poster badge controls follow download and badge visibility gates", async () => {
   const posterDisabled = await render(
     <FormHarness values={{ download: { downloadPoster: false, tagBadges: true } }}>

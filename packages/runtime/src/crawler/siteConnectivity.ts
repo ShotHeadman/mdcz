@@ -25,6 +25,7 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {
   [Website.FC2]: "https://adult.contents.fc2.com",
   [Website.FC2HUB]: "https://javten.com",
   [Website.H0930]: "https://www.h0930.com",
+  [Website.H4610]: "https://www.h4610.com",
   [Website.PPVDATABANK]: "https://ppvdatabank.com",
   [Website.JAV321]: "https://www.jav321.com",
   [Website.JAVBUS]: "https://www.javbus.com",

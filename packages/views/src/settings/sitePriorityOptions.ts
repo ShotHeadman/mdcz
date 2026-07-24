@@ -82,6 +82,12 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
     aliases: ["h0930", "h0930.com"],
   },
   {
+    id: Website.H4610,
+    label: Website.H4610,
+    sites: [Website.H4610],
+    aliases: ["h4610", "h4610.com"],
+  },
+  {
     id: Website.FC2,
     label: Website.FC2,
     description: "FC2 官方商品页，卖家名与官方发行信息可信度高，适合 FC2 编号；无法作用于已下架作品。",

@@ -159,6 +159,7 @@ const ORDERED_NUMBER_EXTRACTION_RULES: NumberExtractionRule[] = [
   { pattern: /(HEYZO\d{3,})/iu },
   { pattern: /(TH101-\d{3,}-\d{5,})/iu },
   { pattern: /H0930-?([A-Z]{2,}\d{2,}[A-Z]?)/iu, format: formatFirstCapture("H0930") },
+  { pattern: /H4610-?([A-Z]{2,}\d{2,}[A-Z]?)/iu, format: formatFirstCapture("H4610") },
   { pattern: /(T28-?\d{3,})/iu },
   { pattern: /(S2M[BD]*-\d{3,})/iu },
   { pattern: /(MCB3D[BD]*-\d{2,})/iu },

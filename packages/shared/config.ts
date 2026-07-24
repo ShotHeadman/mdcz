@@ -170,6 +170,39 @@ const behaviorSchema = z.object({
   updateCheck: z.boolean().default(true),
 });
 
+const titleRepairRuleSchema = z.object({
+  source: z.string().trim().min(1, "替换原文不能为空"),
+  replacement: z.string().trim().min(1, "替换结果不能为空"),
+});
+
+const titleRepairSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    rules: z.array(titleRepairRuleSchema).default([]),
+  })
+  .superRefine((data, ctx) => {
+    const seenSources = new Set<string>();
+
+    for (const [index, rule] of data.rules.entries()) {
+      if (seenSources.has(rule.source)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", index, "source"],
+          message: "替换原文不能重复",
+        });
+      }
+      seenSources.add(rule.source);
+
+      if (rule.source === rule.replacement) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", index, "replacement"],
+          message: "替换结果必须与原文不同",
+        });
+      }
+    }
+  });
+
 const fieldPrioritiesSchema = z.object({
   title: z
     .array(z.enum(Website))
@@ -328,6 +361,7 @@ export const configurationSchema = z
     ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),
     behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
+    titleRepair: titleRepairSchema.default(() => titleRepairSchema.parse({})),
     aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),
   })
   .superRefine((data, ctx) => {

@@ -4,6 +4,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeCrawlerFailureReason, RuntimeCrawlerOptions, RuntimeCrawlerProvider } from "../crawler/types";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
+import { applyTitleRepair } from "./titleRepair";
 
 export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
 
@@ -563,7 +564,9 @@ export class AggregationService {
       sources: aggregatedSources,
       imageAlternatives,
     } = fieldAggregator.aggregate(successes);
-    const { data, sources } = this.cohereDmmFamilyIdentity(aggregatedData, aggregatedSources, successes, config);
+    const coherentData = this.cohereDmmFamilyIdentity(aggregatedData, aggregatedSources, successes, config);
+    const data = applyTitleRepair(coherentData.data, config.titleRepair);
+    const sources = coherentData.sources;
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
         `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,

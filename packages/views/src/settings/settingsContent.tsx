@@ -17,6 +17,7 @@ import {
   POSTER_TAG_BADGE_TYPE_OPTIONS,
   POSTER_TAG_BADGE_WIDTH_RATIO,
 } from "@mdcz/shared/posterBadges";
+import { previewTitleRepair } from "@mdcz/shared/titleRepair";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import {
   Button,
@@ -29,9 +30,10 @@ import {
   DialogTitle,
   DialogTrigger,
   FormControl,
+  Input,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, RotateCcw } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleHelp, FolderOpen, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -196,6 +198,8 @@ const NAMING_SECTION_FIELD_KEYS = [
   "naming.uncensoredStyle",
   "naming.censoredStyle",
   "naming.partStyle",
+  "titleRepair.enabled",
+  "titleRepair.rules",
 ] as const;
 
 const PERSON_SYNC_SHARED_FIELD_KEYS = ["personSync.personOverviewSources", "personSync.personImageSources"] as const;
@@ -648,6 +652,215 @@ function NamingPreview() {
   );
 }
 
+type TitleRepairRule = Configuration["titleRepair"]["rules"][number];
+
+function toTitleRepairRules(value: unknown): TitleRepairRule[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((rule) => {
+    if (!isRecord(rule) || typeof rule.source !== "string" || typeof rule.replacement !== "string") {
+      return [];
+    }
+    return [{ source: rule.source, replacement: rule.replacement }];
+  });
+}
+
+function TitleRepairRuleRow({
+  rule,
+  index,
+  total,
+  onCommit,
+  onMove,
+  onRemove,
+}: {
+  rule: TitleRepairRule;
+  index: number;
+  total: number;
+  onCommit: (next: TitleRepairRule) => void;
+  onMove: (direction: -1 | 1) => void;
+  onRemove: () => void;
+}) {
+  const [source, setSource] = useState(rule.source);
+  const [replacement, setReplacement] = useState(rule.replacement);
+
+  useEffect(() => {
+    setSource(rule.source);
+    setReplacement(rule.replacement);
+  }, [rule.replacement, rule.source]);
+
+  const commit = () => {
+    const next = { source: source.trim(), replacement: replacement.trim() };
+    if (!next.source || !next.replacement || (next.source === rule.source && next.replacement === rule.replacement)) {
+      return;
+    }
+    onCommit(next);
+  };
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 px-2 py-2 first:border-t-0">
+      <Input
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+        onBlur={commit}
+        aria-label={`第 ${index + 1} 条规则的替换原文`}
+        placeholder="遮蔽原文"
+        className="h-8 min-w-0"
+      />
+      <Input
+        value={replacement}
+        onChange={(event) => setReplacement(event.target.value)}
+        onBlur={commit}
+        aria-label={`第 ${index + 1} 条规则的替换结果`}
+        placeholder="替换结果"
+        className="h-8 min-w-0"
+      />
+      <div className="flex items-center gap-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="上移规则"
+          title="上移规则"
+          disabled={index === 0}
+          onClick={() => onMove(-1)}
+        >
+          <ArrowUp className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="下移规则"
+          title="下移规则"
+          disabled={index === total - 1}
+          onClick={() => onMove(1)}
+        >
+          <ArrowDown className="h-3.5 w-3.5" />
+        </Button>
+        <Button type="button" variant="ghost" size="icon-xs" aria-label="删除规则" title="删除规则" onClick={onRemove}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function TitleRepairSection() {
+  const form = useFormContext<FieldValues>();
+  const enabled = Boolean(useWatch({ control: form.control, name: "titleRepair.enabled" }));
+  const rules = toTitleRepairRules(useWatch({ control: form.control, name: "titleRepair.rules" }));
+  const [newSource, setNewSource] = useState("");
+  const [newReplacement, setNewReplacement] = useState("");
+  const [previewTitle, setPreviewTitle] = useState("");
+  const preview = previewTitleRepair(previewTitle, { enabled, rules });
+
+  return (
+    <>
+      <BoolField
+        name="titleRepair.enabled"
+        label="修复遮蔽标题"
+        description="只应用下方明确规则，原始标题会随刮削结果保留。"
+      />
+      {enabled && (
+        <BaseField
+          name="titleRepair.rules"
+          label="标题修复规则"
+          description="按顺序执行字面替换；保存时会拒绝重复、空白或无效规则。"
+          layout="vertical"
+          commitMode="debounce"
+        >
+          {(field) => {
+            const addRule = () => {
+              const source = newSource.trim();
+              const replacement = newReplacement.trim();
+              if (!source || !replacement || source === replacement || rules.some((rule) => rule.source === source)) {
+                return;
+              }
+              field.onChange([...rules, { source, replacement }]);
+              setNewSource("");
+              setNewReplacement("");
+            };
+
+            return (
+              <div className="w-full space-y-3">
+                <div className="overflow-hidden rounded-[var(--radius-quiet-sm)] border border-border/60 bg-surface-low/40">
+                  {rules.length === 0 ? (
+                    <div className="px-3 py-3 text-xs text-muted-foreground">尚未添加规则</div>
+                  ) : (
+                    rules.map((rule, index) => (
+                      <TitleRepairRuleRow
+                        key={rule.source}
+                        rule={rule}
+                        index={index}
+                        total={rules.length}
+                        onCommit={(next) => {
+                          const nextRules = [...rules];
+                          nextRules[index] = next;
+                          field.onChange(nextRules);
+                        }}
+                        onMove={(direction) => {
+                          const target = index + direction;
+                          if (target < 0 || target >= rules.length) {
+                            return;
+                          }
+                          const nextRules = [...rules];
+                          [nextRules[index], nextRules[target]] = [nextRules[target], nextRules[index]];
+                          field.onChange(nextRules);
+                        }}
+                        onRemove={() => field.onChange(rules.filter((_, ruleIndex) => ruleIndex !== index))}
+                      />
+                    ))
+                  )}
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+                  <Input
+                    value={newSource}
+                    onChange={(event) => setNewSource(event.target.value)}
+                    aria-label="新规则的替换原文"
+                    placeholder="遮蔽原文"
+                    className="h-8 min-w-0"
+                  />
+                  <Input
+                    value={newReplacement}
+                    onChange={(event) => setNewReplacement(event.target.value)}
+                    aria-label="新规则的替换结果"
+                    placeholder="替换结果"
+                    className="h-8 min-w-0"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!newSource.trim() || !newReplacement.trim() || newSource.trim() === newReplacement.trim()}
+                    onClick={addRule}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    添加规则
+                  </Button>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs">
+                  <Input
+                    value={previewTitle}
+                    onChange={(event) => setPreviewTitle(event.target.value)}
+                    aria-label="标题修复预览原文"
+                    placeholder="输入标题预览"
+                    className="h-8 min-w-0"
+                  />
+                  <div className="flex min-h-8 items-center rounded-[var(--radius-quiet-sm)] border border-border/60 bg-surface-low px-2 text-muted-foreground">
+                    {previewTitle ? preview.repairedTitle : "修复结果预览"}
+                  </div>
+                </div>
+              </div>
+            );
+          }}
+        </BaseField>
+      )}
+    </>
+  );
+}
+
 type NamingTemplateHelpKind = "folder" | "file";
 
 function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
@@ -741,6 +954,7 @@ export function NamingSection() {
         label="NFO 标题模板"
         description="NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}"
       />
+      <TitleRepairSection />
       {sectionMode === "public" && <NamingPreview />}
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
