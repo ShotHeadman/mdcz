@@ -21,14 +21,17 @@ const safeEquals = (a: string, b: string): boolean => {
 export class AuthService {
   readonly #tokens = new Set<string>();
   #state: AuthState | null = null;
+  private readonly environmentPassword?: string;
 
   constructor(
     private readonly paths: Pick<ServerRuntimePaths, "configDir">,
-    private readonly environmentPassword = process.env.MDCZ_ADMIN_PASSWORD,
-  ) {}
+    environmentPassword = process.env.MDCZ_ADMIN_PASSWORD,
+  ) {
+    this.environmentPassword = environmentPassword || undefined;
+  }
 
-  get passwordFromEnvironment(): string | undefined {
-    return this.environmentPassword;
+  get environmentPasswordConfigured(): boolean {
+    return Boolean(this.environmentPassword);
   }
 
   async setup(mediaRootCount = 0): Promise<AuthSessionDto> {
@@ -42,7 +45,7 @@ export class AuthService {
       authenticated: Boolean(token && this.#tokens.has(token)),
       setupRequired: !state.setupCompleted && (adminPassword === DEFAULT_ADMIN_PASSWORD || mediaRootCount === 0),
       usingDefaultPassword: adminPassword === DEFAULT_ADMIN_PASSWORD,
-      environmentPassword: this.environmentPassword,
+      environmentPasswordConfigured: this.environmentPasswordConfigured,
     };
   }
 
@@ -70,18 +73,27 @@ export class AuthService {
     }
   }
 
-  async completeSetup(password: string): Promise<AuthSessionDto> {
+  assertValidSetupPassword(password?: string): void {
+    if (this.environmentPassword) {
+      return;
+    }
+    if (!password) {
+      throw new Error("请输入管理员密码");
+    }
     if (password === DEFAULT_ADMIN_PASSWORD) {
       throw new Error("不能使用默认管理员密码 admin 完成初始化");
     }
+  }
 
+  async completeSetup(password?: string): Promise<AuthSessionDto> {
+    this.assertValidSetupPassword(password);
     const state = await this.loadState();
     state.setupCompleted = true;
     if (!this.environmentPassword) {
       state.adminPassword = password;
     }
     await this.persistState(state);
-    return await this.login(this.environmentPassword ?? password);
+    return await this.login(this.currentAdminPassword(state));
   }
 
   private currentAdminPassword(state: AuthState): string {

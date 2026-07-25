@@ -18,7 +18,7 @@ import {
 } from "@mdcz/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../client";
 import { queryKeys } from "../lib/queryKeys";
@@ -42,22 +42,17 @@ export const SetupPage = () => {
     },
   });
 
-  const { watch, setValue, trigger } = form;
+  const { watch, trigger } = form;
   const password = watch("password");
   const displayName = watch("displayName");
   const hostPath = watch("hostPath");
 
-  useEffect(() => {
-    if (setupQ.data?.environmentPassword) {
-      setValue("password", setupQ.data.environmentPassword);
-      setValue("confirmPassword", setupQ.data.environmentPassword);
-    }
-  }, [setupQ.data?.environmentPassword, setValue]);
+  const environmentPasswordConfigured = Boolean(setupQ.data?.environmentPasswordConfigured);
 
   const completeM = useMutation({
     mutationFn: () =>
       api.setup.complete({
-        password,
+        ...(environmentPasswordConfigured ? {} : { password }),
         mediaRoot: { displayName, hostPath, enabled: true },
       }),
     onSuccess: async () => {
@@ -74,6 +69,10 @@ export const SetupPage = () => {
 
   const nextPasswordStep = async () => {
     setError(null);
+    if (environmentPasswordConfigured) {
+      setStep(1);
+      return;
+    }
     const isValid = await trigger(["password", "confirmPassword"]);
     if (!isValid) return;
     setStep(1);
@@ -135,39 +134,45 @@ export const SetupPage = () => {
                   <CardTitle className="text-xl">设置管理员密码</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid gap-5">
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      rules={{ required: "请输入密码" }}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>密码</FormLabel>
-                          <FormControl>
-                            <PasswordInput placeholder="••••••••" autoFocus {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="confirmPassword"
-                      rules={{
-                        required: "请确认密码",
-                        validate: (value) => value === password || "两次输入的密码不一致",
-                      }}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>确认密码</FormLabel>
-                          <FormControl>
-                            <PasswordInput placeholder="••••••••" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  {environmentPasswordConfigured ? (
+                    <p className="rounded-quiet-lg bg-surface-low px-4 py-3 text-sm text-muted-foreground">
+                      管理员密码已通过环境变量 MDCZ_ADMIN_PASSWORD 配置，无需在此设置。
+                    </p>
+                  ) : (
+                    <div className="grid gap-5">
+                      <FormField
+                        control={form.control}
+                        name="password"
+                        rules={{ required: "请输入密码" }}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>密码</FormLabel>
+                            <FormControl>
+                              <PasswordInput placeholder="••••••••" autoFocus {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="confirmPassword"
+                        rules={{
+                          required: "请确认密码",
+                          validate: (value) => value === password || "两次输入的密码不一致",
+                        }}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>确认密码</FormLabel>
+                            <FormControl>
+                              <PasswordInput placeholder="••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
                   <div className="flex justify-end pt-4">
                     <Button className="h-11 px-10 rounded-quiet-capsule font-semibold" onClick={nextPasswordStep}>
                       继续

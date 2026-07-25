@@ -160,6 +160,50 @@ describe("buildServer composition integration", () => {
     expect(response.json().error.message).toContain("不能使用默认管理员密码");
   });
 
+  it("keeps an environment password server-side and completes setup without a password field", async () => {
+    const root = await createTempRoot("environment-setup-root");
+    const environmentPassword = "environment-only-password";
+    const { fastify, services } = await createTestServer({ environmentPassword });
+
+    const authSetupResponse = await fastify.inject({ method: "GET", url: "/trpc/auth.setup" });
+    const setupStatusResponse = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
+    const completeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/setup.complete",
+      payload: { mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+    });
+    const wrongLoginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "wrong-password" },
+    });
+    const correctLoginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: environmentPassword },
+    });
+    const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
+
+    expect(authSetupResponse.statusCode).toBe(200);
+    expect(authSetupResponse.body).not.toContain(environmentPassword);
+    expect(authSetupResponse.json().result.data).toEqual({
+      authenticated: false,
+      setupRequired: true,
+      usingDefaultPassword: false,
+      environmentPasswordConfigured: true,
+    });
+    expect(setupStatusResponse.json().result.data).toMatchObject({
+      setupRequired: true,
+      usingDefaultPassword: false,
+      environmentPasswordConfigured: true,
+    });
+    expect(completeResponse.statusCode).toBe(200);
+    expect(completeResponse.json().result.data).toMatchObject({ authenticated: true });
+    expect(wrongLoginResponse.statusCode).toBe(500);
+    expect(correctLoginResponse.statusCode).toBe(200);
+    expect(state).toEqual({ setupCompleted: true });
+  });
+
   it("mounts tRPC config read and export procedures", async () => {
     const { fastify, services } = await createTestServer();
     await services.config.save(defaultConfiguration);

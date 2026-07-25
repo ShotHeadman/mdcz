@@ -12,6 +12,7 @@ import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
 import { buildServer, type ServerApp } from "./app";
+import { AuthService } from "./services/authService";
 import { ServerConfigService } from "./services/configService";
 import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
@@ -21,6 +22,7 @@ import { ScrapeService } from "./services/scrapeService";
 import { createTaskEventBus } from "./taskEvents";
 
 export interface TestServerOptions {
+  environmentPassword?: string;
   automationWebhook?: {
     secret?: string;
     url?: string;
@@ -64,6 +66,10 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
     },
     webStaticDir: false,
     services: {
+      auth:
+        options.environmentPassword === undefined
+          ? undefined
+          : new AuthService(config.runtimePaths, options.environmentPassword),
       config,
       mediaRoots,
       persistence,

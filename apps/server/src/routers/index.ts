@@ -388,6 +388,7 @@ export const appRouter = t.router({
   }),
   setup: t.router({
     complete: setupProcedure.input(setupCompleteInputSchema).mutation(async ({ ctx, input }) => {
+      ctx.services.auth.assertValidSetupPassword(input.password);
       const config = await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
       await syncMediaRootFromConfig(ctx.services, config, { displayName: input.mediaRoot.displayName });
       return await ctx.services.auth.completeSetup(input.password);
@@ -400,7 +401,7 @@ export const appRouter = t.router({
         setupRequired: Boolean(authStatus.setupRequired),
         mediaRootCount: mediaRootStatus.mediaRootCount,
         usingDefaultPassword: Boolean(authStatus.usingDefaultPassword),
-        environmentPassword: authStatus.environmentPassword,
+        environmentPasswordConfigured: Boolean(authStatus.environmentPasswordConfigured),
       };
     }),
   }),

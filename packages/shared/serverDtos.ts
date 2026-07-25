@@ -880,7 +880,9 @@ export const authLoginInputSchema = z.object({
 export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;
 
 export const setupCompleteInputSchema = z.object({
-  password: z.string().min(1),
+  // The server-side MDCZ_ADMIN_PASSWORD is used when configured, so the setup
+  // wizard must be able to complete without sending a client-supplied value.
+  password: z.string().min(1).optional(),
   mediaRoot: mediaRootCreateInputSchema,
 });
 
@@ -891,7 +893,7 @@ export const authSessionSchema = z.object({
   token: z.string().optional(),
   setupRequired: z.boolean().optional(),
   usingDefaultPassword: z.boolean().optional(),
-  environmentPassword: z.string().optional(),
+  environmentPasswordConfigured: z.boolean().optional(),
 });
 
 export type AuthSessionDto = z.infer<typeof authSessionSchema>;
@@ -1071,7 +1073,7 @@ export const setupStatusSchema = z.object({
   setupRequired: z.boolean(),
   mediaRootCount: z.number(),
   usingDefaultPassword: z.boolean(),
-  environmentPassword: z.string().optional(),
+  environmentPasswordConfigured: z.boolean(),
 });
 
 export type SetupStatusDto = z.infer<typeof setupStatusSchema>;

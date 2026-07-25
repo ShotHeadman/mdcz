@@ -107,6 +107,7 @@ describe("buildServer HTTP integration", () => {
       authenticated: false,
       setupRequired: true,
       usingDefaultPassword: true,
+      environmentPasswordConfigured: false,
     });
   });
 
