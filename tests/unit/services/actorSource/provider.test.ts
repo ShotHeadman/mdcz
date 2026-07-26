@@ -25,6 +25,58 @@ const createSource = (
 };
 
 describe("ActorSourceProvider image lookup", () => {
+  it("uses the configured canonical name and the same alias candidates for either spelling", async () => {
+    const source = createSource("official", { photo_url: "https://official.example.com/actor.jpg" });
+    const provider = new ActorSourceProvider({ registry: new ActorSourceRegistry([source]) });
+    const config = createConfig({
+      personSync: {
+        ...defaultConfiguration.personSync,
+        personImageSources: ["official"],
+        actorAliases: {
+          河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"],
+        },
+      },
+    });
+
+    await provider.lookup(config, { name: "河北彩伽", requiredField: "photo_url" });
+    await provider.lookup(config, { name: "河北彩花", requiredField: "photo_url" });
+
+    expect(source.lookup).toHaveBeenCalledTimes(1);
+    expect(source.lookup).toHaveBeenCalledWith(
+      config,
+      expect.objectContaining({
+        name: "河北彩花",
+        aliases: ["河北彩伽", "河北彩花（河北彩伽）"],
+      }),
+    );
+  });
+
+  it("does not reuse actor lookup cache entries after alias configuration changes", async () => {
+    const source = createSource("official", { photo_url: "https://official.example.com/actor.jpg" });
+    const provider = new ActorSourceProvider({ registry: new ActorSourceRegistry([source]) });
+    const basePersonSync = {
+      ...defaultConfiguration.personSync,
+      personImageSources: ["official"] as const,
+    };
+    const initialConfig = createConfig({
+      personSync: {
+        ...basePersonSync,
+        actorAliases: { 河北彩花: ["河北彩伽"] },
+      },
+    });
+    const updatedConfig = createConfig({
+      personSync: {
+        ...basePersonSync,
+        actorAliases: { 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] },
+      },
+    });
+
+    await provider.lookup(initialConfig, { name: "河北彩花", requiredField: "photo_url" });
+    await provider.lookup(updatedConfig, { name: "河北彩花", requiredField: "photo_url" });
+
+    expect(source.lookup).toHaveBeenCalledTimes(2);
+  });
+
   it("respects image-source ordering and stops once an earlier source returns photo_url", async () => {
     const cases = [
       {

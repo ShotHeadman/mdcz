@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES, isSharedDirectoryMode } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLanguage, Website } from "./enums";
@@ -108,9 +109,67 @@ const downloadSchema = z.object({
   keepNfo: z.boolean().default(true),
 });
 
+const actorAliasesSchema = z
+  .record(z.string(), z.array(z.string()).min(1, "演员别名列表不能为空"))
+  .default({})
+  .superRefine((actorAliases, ctx) => {
+    const owners = new Map<string, { canonicalName: string; rawCanonicalName: string }>();
+
+    for (const [rawCanonicalName, rawAliases] of Object.entries(actorAliases)) {
+      const canonicalName = toTrimmedActorName(rawCanonicalName);
+      if (!canonicalName) {
+        ctx.addIssue({
+          code: "custom",
+          path: [rawCanonicalName],
+          message: "演员规范名称不能为空",
+        });
+        continue;
+      }
+
+      if (
+        !rawAliases.some((alias) => {
+          const normalizedAlias = toTrimmedActorName(alias);
+          return normalizedAlias && normalizeActorName(normalizedAlias) !== normalizeActorName(canonicalName);
+        })
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [rawCanonicalName],
+          message: "演员别名列表至少需要一个有效别名",
+        });
+      }
+
+      const names = [canonicalName, ...rawAliases];
+      for (const [index, rawName] of names.entries()) {
+        const name = toTrimmedActorName(rawName);
+        const path = index === 0 ? [rawCanonicalName] : [rawCanonicalName, index - 1];
+        if (!name) {
+          if (index > 0) {
+            ctx.addIssue({ code: "custom", path, message: "演员别名不能为空" });
+          }
+          continue;
+        }
+
+        const normalizedName = normalizeActorName(name);
+        const owner = owners.get(normalizedName);
+        if (owner && (owner.canonicalName !== canonicalName || owner.rawCanonicalName !== rawCanonicalName)) {
+          ctx.addIssue({
+            code: "custom",
+            path,
+            message: `演员名称与“${owner.canonicalName}”别名组冲突`,
+          });
+          continue;
+        }
+        owners.set(normalizedName, { canonicalName, rawCanonicalName });
+      }
+    }
+  })
+  .transform((actorAliases) => normalizeActorAliasMap(actorAliases));
+
 const personSyncSchema = z.object({
   personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["official", "avjoho", "avbase"]),
   personImageSources: z.array(z.enum(ACTOR_IMAGE_SOURCE_OPTIONS)).default(["local", "gfriends", "official", "avbase"]),
+  actorAliases: actorAliasesSchema,
 });
 
 const jellyfinSchema = z.object({

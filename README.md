@@ -63,6 +63,18 @@ pnpm build:mac     # macOS (DMG)
 pnpm build:linux   # Linux (AppImage)
 ```
 
+## 演员别名
+
+在 active profile 的 TOML 中加入以下配置，可将不同来源的演员写法统一为一个规范名称。规范名称必须使用引号；每行是一个独立的演员组：
+
+```toml
+[personSync.actorAliases]
+"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]
+"三上悠亚" = ["鬼頭桃菜", "鬼头桃菜"]
+```
+
+新刮削会以键名输出演员、`{actor}` 路径和 NFO 名称，同时保留原始写法为人物资料别名，用于头像和资料查询。修改 active profile 文件后，请重启 Desktop 或 Server；也可以通过导入或切换 profile 使配置重新加载。已有影片和 NFO 不会被自动重命名。
+
 ## 注意事项
 
 > [!WARNING]

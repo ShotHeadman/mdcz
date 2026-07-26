@@ -9,6 +9,7 @@ import type {
   PathDiff,
 } from "@mdcz/shared/types";
 import type { AggregationService, FileOrganizer, OrganizePlan, SourceMap, TranslateService } from "../scrape";
+import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
@@ -143,22 +144,26 @@ export class MaintenancePreparationService {
   }): Promise<PreparedMaintenanceFile> {
     throwIfAborted(input.signal);
 
+    const crawlerData = input.crawlerData
+      ? canonicalizeCrawlerDataActorAliases(input.crawlerData, input.config)
+      : undefined;
+
     const { fieldDiffs, unchangedFieldDiffs } = this.partitionDiffs(
       input.entry,
       input.config,
-      input.crawlerData,
+      crawlerData,
       input.imageAlternatives,
     );
 
     input.onProgress?.(50);
 
-    const { plan, pathDiff } = await this.buildPlan(input.entry, input.config, input.crawlerData, {
+    const { plan, pathDiff } = await this.buildPlan(input.entry, input.config, crawlerData, {
       createDirectories: input.createDirectories,
       signal: input.signal,
     });
 
     return {
-      crawlerData: input.crawlerData,
+      crawlerData,
       fieldDiffs,
       unchangedFieldDiffs,
       aggregationSources: input.aggregationSources,

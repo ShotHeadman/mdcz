@@ -1,6 +1,7 @@
 export * from "./ActorImageService";
 export * from "./actorOutput";
 export * from "./aggregation";
+export * from "./canonicalizeActorAliases";
 export * from "./crawlerOptions";
 export * from "./download";
 export * from "./executionPolicy";

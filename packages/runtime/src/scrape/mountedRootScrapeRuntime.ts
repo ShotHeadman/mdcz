@@ -16,6 +16,7 @@ import { prepareImageAlternativesForDownload } from "./output/prepareImageAltern
 import {
   AggregateStage,
   AggregationCoordinator,
+  CanonicalizeActorAliasesStage,
   DownloadStage,
   type FileScraperPipeline,
   type FileScraperStageRuntime,
@@ -348,6 +349,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       new ProbeStage(runtime),
       new AggregateStage(runtime),
       new TranslateStage(runtime),
+      new CanonicalizeActorAliasesStage(),
       new PlanStage(runtime),
       new PrepareOutputStage(runtime),
       new DownloadStage(runtime),

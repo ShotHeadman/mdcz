@@ -1,3 +1,4 @@
+export * from "./actorAliases";
 export * from "./actorSource";
 export * from "./assetNaming";
 export * from "./config";
