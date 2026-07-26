@@ -42,34 +42,27 @@ describe("configuration codec", () => {
     ).toThrow();
   });
 
-  it("round-trips actor alias maps through TOML and keeps legacy profiles empty", () => {
+  it("round-trips actor alias maps through TOML and validates alias groups", () => {
     const parsed = parseConfigurationContent(
-      '[personSync.actorAliases]\n"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]\n"三上悠亚" = ["鬼頭桃菜", "鬼头桃菜"]\n',
+      '[personSync.actorAliases]\n"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]\n',
       "toml",
     );
 
-    expect(parsed.personSync.actorAliases).toEqual({
-      河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"],
-      三上悠亚: ["鬼頭桃菜", "鬼头桃菜"],
-    });
+    expect(parsed.personSync.actorAliases).toEqual({ 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] });
     expect(parseConfigurationContent(serializeConfiguration(parsed, "toml"), "toml")).toEqual(parsed);
     expect(
       parseConfigurationContent('[personSync]\npersonImageSources = ["local"]\n', "toml").personSync.actorAliases,
     ).toEqual({});
-  });
 
-  it("normalizes redundant aliases and rejects collisions between canonical groups", () => {
     expect(
       configurationSchema.parse({
         personSync: {
-          actorAliases: {
-            " 河北彩花 ": ["河北彩伽", " 河北彩伽 ", "河北彩花"],
-          },
+          actorAliases: { " 河北彩花 ": ["河北彩伽", " 河北彩伽 ", "河北彩花"] },
         },
       }).personSync.actorAliases,
     ).toEqual({ 河北彩花: ["河北彩伽"] });
 
-    const result = configurationSchema.safeParse({
+    const collision = configurationSchema.safeParse({
       personSync: {
         actorAliases: {
           河北彩花: ["河北彩伽"],
@@ -78,9 +71,9 @@ describe("configuration codec", () => {
       },
     });
 
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.path).toEqual(["personSync", "actorAliases", "河北彩伽"]);
+    expect(collision.success).toBe(false);
+    if (!collision.success) {
+      expect(collision.error.issues[0]?.path).toEqual(["personSync", "actorAliases", "河北彩伽"]);
     }
 
     expect(

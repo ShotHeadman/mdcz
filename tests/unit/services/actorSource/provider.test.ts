@@ -25,16 +25,17 @@ const createSource = (
 };
 
 describe("ActorSourceProvider image lookup", () => {
-  it("uses the configured canonical name and the same alias candidates for either spelling", async () => {
+  it("applies configured aliases to lookups and refreshes the cache when the mapping changes", async () => {
     const source = createSource("official", { photo_url: "https://official.example.com/actor.jpg" });
     const provider = new ActorSourceProvider({ registry: new ActorSourceRegistry([source]) });
+    const basePersonSync = {
+      ...defaultConfiguration.personSync,
+      personImageSources: ["official"] as const,
+    };
     const config = createConfig({
       personSync: {
-        ...defaultConfiguration.personSync,
-        personImageSources: ["official"],
-        actorAliases: {
-          河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"],
-        },
+        ...basePersonSync,
+        actorAliases: { 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] },
       },
     });
 
@@ -49,29 +50,13 @@ describe("ActorSourceProvider image lookup", () => {
         aliases: ["河北彩伽", "河北彩花（河北彩伽）"],
       }),
     );
-  });
 
-  it("does not reuse actor lookup cache entries after alias configuration changes", async () => {
-    const source = createSource("official", { photo_url: "https://official.example.com/actor.jpg" });
-    const provider = new ActorSourceProvider({ registry: new ActorSourceRegistry([source]) });
-    const basePersonSync = {
-      ...defaultConfiguration.personSync,
-      personImageSources: ["official"] as const,
-    };
-    const initialConfig = createConfig({
+    const updatedConfig = createConfig({
       personSync: {
         ...basePersonSync,
         actorAliases: { 河北彩花: ["河北彩伽"] },
       },
     });
-    const updatedConfig = createConfig({
-      personSync: {
-        ...basePersonSync,
-        actorAliases: { 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] },
-      },
-    });
-
-    await provider.lookup(initialConfig, { name: "河北彩花", requiredField: "photo_url" });
     await provider.lookup(updatedConfig, { name: "河北彩花", requiredField: "photo_url" });
 
     expect(source.lookup).toHaveBeenCalledTimes(2);

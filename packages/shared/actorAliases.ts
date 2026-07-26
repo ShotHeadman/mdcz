@@ -54,26 +54,28 @@ export const normalizeActorAliasMap = (actorAliases: Record<string, ReadonlyArra
   return output;
 };
 
-export const resolveActorAlias = (actorAliases: ActorAliasMap, value: string): ResolvedActorAlias => {
-  const name = toTrimmedActorName(value) ?? "";
+const findActorAliasGroup = (actorAliases: ActorAliasMap, name: string): ResolvedActorAlias | undefined => {
   const normalizedName = normalizeActorName(name);
+  if (!normalizedName) {
+    return undefined;
+  }
 
   for (const [canonicalName, aliases] of Object.entries(actorAliases)) {
     const candidates = [canonicalName, ...aliases];
-    if (!candidates.some((candidate) => normalizeActorName(candidate) === normalizedName)) {
-      continue;
+    if (candidates.some((candidate) => normalizeActorName(candidate) === normalizedName)) {
+      return {
+        canonicalName,
+        aliases: toUniqueActorNames(candidates),
+      };
     }
-
-    return {
-      canonicalName,
-      aliases: toUniqueActorNames(candidates),
-    };
   }
 
-  return {
-    canonicalName: name,
-    aliases: name ? [name] : [],
-  };
+  return undefined;
+};
+
+export const resolveActorAlias = (actorAliases: ActorAliasMap, value: string): ResolvedActorAlias => {
+  const name = toTrimmedActorName(value) ?? "";
+  return findActorAliasGroup(actorAliases, name) ?? { canonicalName: name, aliases: name ? [name] : [] };
 };
 
 export const resolveActorAliasCandidates = (
@@ -81,14 +83,20 @@ export const resolveActorAliasCandidates = (
   values: ReadonlyArray<string | undefined | null>,
 ): ResolvedActorAlias => {
   const names = toUniqueActorNames(values);
-  const resolved = names.map((name) => resolveActorAlias(actorAliases, name));
-  const configured = resolved.find((entry) => entry.aliases.length > 1 || entry.canonicalName !== names[0]);
-  const match = configured ?? resolved[0];
-
-  if (!match) {
+  const [firstName] = names;
+  if (!firstName) {
     return { canonicalName: "", aliases: [] };
   }
 
+  let group: ResolvedActorAlias | undefined;
+  for (const name of names) {
+    group = findActorAliasGroup(actorAliases, name);
+    if (group) {
+      break;
+    }
+  }
+
+  const match = group ?? { canonicalName: firstName, aliases: [firstName] };
   return {
     canonicalName: match.canonicalName,
     aliases: toUniqueActorNames([match.canonicalName, ...match.aliases, ...names]),
