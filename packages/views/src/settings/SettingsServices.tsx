@@ -1,5 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
+import type { NetworkCookieCheckStatus } from "@mdcz/shared/serverDtos";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { PathAutocompleteResult } from "../path";
@@ -20,7 +21,7 @@ export interface SettingsPathSuggestion {
 }
 
 export interface SettingsCookieCheckResult {
-  results: Array<{ site: string; valid: boolean; message: string }>;
+  results: Array<{ site: string; valid: boolean; message: string; status: NetworkCookieCheckStatus }>;
 }
 
 export interface SettingsCrawlerSiteInfo {

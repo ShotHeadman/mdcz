@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders } from "./crawler/siteConnectivity";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { ensureWatermarkDirectory } from "./scrape/watermarkDirectory";
+import { JAVBUS_REQUEST_HEADERS } from "./shared";
 import type { LlmApiClient } from "./translate";
 import { testLlmConnectivity } from "./translate/llmTest";
 
@@ -22,16 +23,88 @@ describe("settings parity runtime helpers", () => {
     expect(buildSiteConnectivityHeaders(Website.SOKMIL, config)).toEqual({ cookie: "AGEAUTH=ok" });
   });
 
-  it("reports missing cookies without network requests", async () => {
-    const getText = vi.fn();
+  it("reports when JavBus is anonymously accessible while JavDB remains unconfigured", async () => {
+    const getText = vi.fn(async () => '<a class="movie-box" href="/ABP-123"></a>');
 
     await expect(checkConfiguredSiteCookies(cloneConfig(), { getText })).resolves.toEqual({
       results: [
-        { site: "JavDB", valid: false, message: "未配置 Cookie" },
-        { site: "JavBus", valid: false, message: "未配置 Cookie" },
+        { site: "JavDB", valid: false, message: "未配置 Cookie", status: "not_configured" },
+        {
+          site: "JavBus",
+          valid: true,
+          message: "JavBus 影片页面可匿名访问，无需 Cookie",
+          status: "ready_without_cookie",
+        },
       ],
     });
-    expect(getText).not.toHaveBeenCalled();
+    expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", { headers: { ...JAVBUS_REQUEST_HEADERS } });
+  });
+
+  // HTML→classification coverage lives in javbusPage.test.ts; here we only
+  // verify the classification→status/message mapping.
+  it.each([
+    [
+      "age verification",
+      '<title>Age Verification JavBus</title><div id="ageVerify"></div>',
+      "verification_required",
+      "JavBus 影片页面需要完成年龄/地区验证。请在浏览器完成验证后复制 Cookie。",
+    ],
+    [
+      "login wall",
+      '<form><h2>Login</h2><input type="password" /></form>',
+      "login_wall",
+      "JavBus 影片页面返回登录墙，当前 Cookie 无法访问影片内容。",
+    ],
+    [
+      "unrecognized page",
+      "<main>temporarily unavailable</main>",
+      "unexpected_page",
+      "JavBus 影片页面未返回可识别内容，请稍后重试。",
+    ],
+  ] as const)("reports JavBus %s without treating it as a valid Cookie", async (_name, html, status, message) => {
+    const config = cloneConfig();
+    config.network.javbusCookie = "javbus_session=valid";
+    const getText = vi.fn(async () => html);
+
+    const result = await checkConfiguredSiteCookies(config, { getText });
+    const javbus = result.results.find((entry) => entry.site === "JavBus");
+
+    expect(javbus).toMatchObject({ valid: false, status, message });
+    expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", {
+      headers: { ...JAVBUS_REQUEST_HEADERS, cookie: "javbus_session=valid" },
+    });
+  });
+
+  it("reports a configured JavBus Cookie only after film content is available", async () => {
+    const config = cloneConfig();
+    config.network.javbusCookie = "javbus_session=valid";
+    const getText = vi.fn(async () => '<a class="movie-box" href="/ABP-123"></a>');
+
+    const result = await checkConfiguredSiteCookies(config, { getText });
+
+    expect(result.results.find((entry) => entry.site === "JavBus")).toEqual({
+      site: "JavBus",
+      valid: true,
+      message: "JavBus Cookie 有效",
+      status: "ready_with_cookie",
+    });
+  });
+
+  it("does not expose a configured JavBus Cookie when the probe fails", async () => {
+    const config = cloneConfig();
+    config.network.javbusCookie = "javbus_session=secret-token; other=second-secret";
+    const getText = vi.fn(async () => {
+      throw new Error("JavBus rejected javbus_session=secret-token (value secret-token, extra second-secret)");
+    });
+
+    const result = await checkConfiguredSiteCookies(config, { getText });
+    const javbus = result.results.find((entry) => entry.site === "JavBus");
+
+    expect(javbus).toMatchObject({ valid: false, status: "request_failed" });
+    expect(javbus?.message).toContain("[REDACTED]");
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("secret-token");
+    expect(serialized).not.toContain("second-secret");
   });
 
   it("uses Desktop LLM validation semantics before sending a request", async () => {

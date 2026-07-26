@@ -843,12 +843,26 @@ export const siteConnectivityProbeResponseSchema = z.object({
 
 export type SiteConnectivityProbeResponse = z.infer<typeof siteConnectivityProbeResponseSchema>;
 
+export const networkCookieCheckStatusSchema = z.enum([
+  "not_configured",
+  "ready_without_cookie",
+  "ready_with_cookie",
+  "invalid_or_expired",
+  "verification_required",
+  "login_wall",
+  "unexpected_page",
+  "request_failed",
+]);
+
+export type NetworkCookieCheckStatus = z.infer<typeof networkCookieCheckStatusSchema>;
+
 export const networkCheckCookiesResponseSchema = z.object({
   results: z.array(
     z.object({
       site: z.string(),
       valid: z.boolean(),
       message: z.string(),
+      status: networkCookieCheckStatusSchema,
     }),
   ),
 });

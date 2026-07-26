@@ -133,6 +133,8 @@ describe("JavbusCrawler", () => {
       throw new Error("expected failure");
     }
 
-    expect(response.result.error).toContain("age verification");
+    expect(response.result.error).toContain("age/region verification");
+    expect(response.result.error).toContain("论坛账号注册不能解决此问题");
+    expect(response.result.failureReason).toBe("region_blocked");
   });
 });

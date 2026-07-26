@@ -56,8 +56,13 @@ const createFakeRuntimeActions = (): RuntimeActionService =>
     }),
     checkCookies: async () => ({
       results: [
-        { site: "JavDB", valid: true, message: "Cookie 有效" },
-        { site: "JavBus", valid: false, message: "未配置 Cookie" },
+        { site: "JavDB", valid: true, message: "Cookie 有效", status: "ready_with_cookie" },
+        {
+          site: "JavBus",
+          valid: true,
+          message: "JavBus 影片页面可匿名访问，无需 Cookie",
+          status: "ready_without_cookie",
+        },
       ],
     }),
     testLlm: async (input: { llmModelName?: string }) => ({
