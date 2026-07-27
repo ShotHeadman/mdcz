@@ -97,6 +97,27 @@ describe("buildServer HTTP integration", () => {
     expect(response.headers["access-control-allow-headers"]).toContain("authorization");
   });
 
+  it("handles LAN development origins only when the host matches", async () => {
+    const { fastify } = await createTestServer();
+    const request = {
+      method: "OPTIONS" as const,
+      url: "/trpc/auth.login",
+      headers: {
+        origin: "http://192.168.1.20:5173",
+        host: "192.168.1.20:3838",
+      },
+    };
+
+    const matching = await fastify.inject(request);
+    expect(matching.headers["access-control-allow-origin"]).toBe(request.headers.origin);
+
+    const mismatched = await fastify.inject({
+      ...request,
+      headers: { ...request.headers, host: "192.168.1.21:3838" },
+    });
+    expect(mismatched.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
   it("exposes auth setup state before login", async () => {
     const { fastify } = await createTestServer();
 
