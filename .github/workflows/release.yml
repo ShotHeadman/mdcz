@@ -199,6 +199,5 @@ jobs:
           tag_name: ${{ needs.version.outputs.tag }}
           name: MDCz ${{ needs.version.outputs.tag }}
           draft: true
-          body_path: release-notes.md
           overwrite_files: true
           files: dist/**/*
