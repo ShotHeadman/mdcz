@@ -1,0 +1,23 @@
+<html><body>
+  <h1><span>Genre Merge Test</span></h1>
+  <table>
+    <tr><th>ジャンル</th><td>
+      <a>Tag 1</a><a>サンプル動画</a><a>Tag 2</a><a>Tag 3</a><a>Tag 4</a><a>Tag 5</a>
+      <a>Tag 6</a><a>Tag 7</a><a>Tag 8</a><a>Tag 9</a><a>Tag 10</a>
+    </td></tr>
+    <tr><th>関連タグ</th><td>
+      <ul>
+        <li><a>#Tag11 #Tag12</a></li>
+        <li><a>#Tag12 #Tag13</a></li>
+      </ul>
+    </td></tr>
+    <tr><th>メーカー</th><td><a>Studio Merge</a></td></tr>
+  </table>
+  <script type="application/ld+json">
+  {
+    "name": "Genre Merge Test",
+    "image": ["https://pics.dmm.co.jp/digital/video/acpdp01102/acpdp01102pl.jpg"],
+    "subjectOf": {"genre": ["Tag 1", "Tag 2"]}
+  }
+  </script>
+</body></html>

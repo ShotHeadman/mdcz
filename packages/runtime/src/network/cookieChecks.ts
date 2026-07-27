@@ -1,5 +1,12 @@
 import type { Configuration } from "@mdcz/shared/config";
-import { toErrorMessage } from "../shared";
+import type { NetworkCookieCheckStatus } from "@mdcz/shared/serverDtos";
+import {
+  classifyJavbusPage,
+  JAVBUS_HOME_URL,
+  JAVBUS_REQUEST_HEADERS,
+  javbusVerificationGuidance,
+  toErrorMessage,
+} from "../shared";
 
 interface CookieCheckNetworkClient {
   getText(url: string, init?: { headers?: Record<string, string> }): Promise<string>;
@@ -9,14 +16,28 @@ export interface CookieCheckResult {
   site: string;
   valid: boolean;
   message: string;
+  status: NetworkCookieCheckStatus;
 }
+
+const toCookieSafeErrorMessage = (error: unknown, cookie: string): string => {
+  // Redact the full cookie plus each pair and each value, so partial echoes
+  // (a single key=value or a bare value) never leak into user-facing messages.
+  const secrets = [cookie, ...cookie.split(";").flatMap((pair) => [pair.trim(), pair.split("=").slice(1).join("=")])]
+    .filter((secret) => secret.length >= 4)
+    .sort((a, b) => b.length - a.length);
+  let message = toErrorMessage(error);
+  for (const secret of secrets) {
+    message = message.replaceAll(secret, "[REDACTED]");
+  }
+  return message;
+};
 
 const checkJavdbCookie = async (
   cookie: string,
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
   if (!cookie) {
-    return { site: "JavDB", valid: false, message: "未配置 Cookie" };
+    return { site: "JavDB", valid: false, message: "未配置 Cookie", status: "not_configured" };
   }
 
   try {
@@ -24,9 +45,19 @@ const checkJavdbCookie = async (
       headers: { cookie },
     });
     const valid = !html.includes('href="/login"') && !html.includes("sign_in");
-    return { site: "JavDB", valid, message: valid ? "Cookie 有效" : "Cookie 无效或已过期" };
+    return {
+      site: "JavDB",
+      valid,
+      message: valid ? "Cookie 有效" : "Cookie 无效或已过期",
+      status: valid ? "ready_with_cookie" : "invalid_or_expired",
+    };
   } catch (error) {
-    return { site: "JavDB", valid: false, message: `请求失败: ${toErrorMessage(error)}` };
+    return {
+      site: "JavDB",
+      valid: false,
+      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
+      status: "request_failed",
+    };
   }
 };
 
@@ -34,18 +65,55 @@ const checkJavbusCookie = async (
   cookie: string,
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
-  if (!cookie) {
-    return { site: "JavBus", valid: false, message: "未配置 Cookie" };
-  }
-
   try {
-    const html = await networkClient.getText("https://www.javbus.com/forum/", {
-      headers: { cookie },
+    const html = await networkClient.getText(JAVBUS_HOME_URL, {
+      headers: {
+        ...JAVBUS_REQUEST_HEADERS,
+        ...(cookie ? { cookie } : {}),
+      },
     });
-    const valid = !html.includes('login"') || html.includes("logout");
-    return { site: "JavBus", valid, message: valid ? "Cookie 有效" : "Cookie 无效或已过期" };
+    const page = classifyJavbusPage(html);
+
+    if (page === "content") {
+      return {
+        site: "JavBus",
+        valid: true,
+        message: cookie ? "JavBus Cookie 有效" : "JavBus 影片页面可匿名访问，无需 Cookie",
+        status: cookie ? "ready_with_cookie" : "ready_without_cookie",
+      };
+    }
+
+    if (page === "verification_required") {
+      return {
+        site: "JavBus",
+        valid: false,
+        message: javbusVerificationGuidance,
+        status: "verification_required",
+      };
+    }
+
+    if (page === "login_wall") {
+      return {
+        site: "JavBus",
+        valid: false,
+        message: "JavBus 影片页面返回登录墙，当前 Cookie 无法访问影片内容。",
+        status: "login_wall",
+      };
+    }
+
+    return {
+      site: "JavBus",
+      valid: false,
+      message: "JavBus 影片页面未返回可识别内容，请稍后重试。",
+      status: "unexpected_page",
+    };
   } catch (error) {
-    return { site: "JavBus", valid: false, message: `请求失败: ${toErrorMessage(error)}` };
+    return {
+      site: "JavBus",
+      valid: false,
+      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
+      status: "request_failed",
+    };
   }
 };
 

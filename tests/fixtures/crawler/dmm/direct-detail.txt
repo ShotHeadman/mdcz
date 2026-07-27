@@ -1,0 +1,4 @@
+<html><body>
+  <h1><span>Direct Detail Title</span></h1>
+  <meta property="og:image" content="https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497ps.jpg">
+</body></html>

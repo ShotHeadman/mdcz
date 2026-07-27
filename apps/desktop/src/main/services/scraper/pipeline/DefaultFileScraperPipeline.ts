@@ -6,6 +6,7 @@ import { LocalScanService } from "@mdcz/runtime/maintenance";
 import {
   AggregateStage,
   AggregationCoordinator,
+  CanonicalizeActorAliasesStage,
   DownloadStage,
   type FileScraperPipeline,
   type FileScraperStageRuntime,
@@ -205,6 +206,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       new ProbeStage(runtime),
       new AggregateStage(runtime),
       new TranslateStage(runtime),
+      new CanonicalizeActorAliasesStage(),
       new PlanStage(runtime),
       new PrepareOutputStage(runtime),
       new DownloadStage(runtime),

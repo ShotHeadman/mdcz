@@ -10,6 +10,7 @@ import { SignalService } from "@main/services/SignalService";
 import { TrayService } from "@main/services/TrayService";
 import { UpdateService } from "@main/services/UpdateService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
+import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { app, BrowserWindow } from "electron";
 
@@ -139,7 +140,7 @@ if (!app.requestSingleInstanceLock()) {
         });
 
         // Check for updates on startup (after a short delay to avoid blocking)
-        if (initialConfig.behavior.updateCheck) {
+        if (shouldRunStartupUpdateCheck({ enabled: initialConfig.behavior.updateCheck, isPackaged: app.isPackaged })) {
           setTimeout(() => {
             void updateService.checkAndNotify(signalService);
           }, 5000);

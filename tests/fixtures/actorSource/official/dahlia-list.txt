@@ -1,0 +1,12 @@
+<div class="box_actress01">
+  <ul>
+    <li>
+      <div class="img_actress01">
+        <a href="https://dahlia-av.jp/actress/suzume_mino/">
+          <img src="https://cdn.faleno.net/dahlia/wp-content/uploads/2023/04/mino2.jpg">
+        </a>
+      </div>
+      <div class="text_name">美乃すずめ<span>Suzume Mino</span></div>
+    </li>
+  </ul>
+</div>

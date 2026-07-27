@@ -4,6 +4,7 @@ import { normalizeActorName, toUniqueActorNames } from "@main/utils/actor";
 import { hasActorProfileFieldValue } from "@main/utils/actorProfile";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { toErrorMessage } from "@main/utils/common";
+import { resolveActorAliasCandidates } from "@mdcz/shared/actorAliases";
 import { ActorProfileAggregator } from "./ActorProfileAggregator";
 import type { ActorSourceRegistry } from "./registry";
 import { mergeActorSourceHints } from "./sourceHints";
@@ -78,6 +79,20 @@ const normalizeHintsForCache = (hints: ActorLookupQuery["sourceHints"]): string[
   return mergeActorSourceHints(hints).map((hint) => JSON.stringify(hint));
 };
 
+const applyConfiguredAliases = (configuration: Configuration, query: ActorLookupQuery): ActorLookupQuery => {
+  const resolved = resolveActorAliasCandidates(configuration.personSync.actorAliases, [
+    query.name,
+    ...(query.aliases ?? []),
+  ]);
+  const name = resolved.canonicalName || query.name;
+
+  return {
+    ...query,
+    name,
+    aliases: mergeAliases(name, resolved.aliases),
+  };
+};
+
 export class ActorSourceProvider {
   private readonly logger = loggerService.getLogger("ActorSource");
 
@@ -103,7 +118,8 @@ export class ActorSourceProvider {
             aliases: mergeAliases(query.name, query.aliases ?? []),
             sourceHints: mergeActorSourceHints(query.sourceHints),
           };
-    const normalized = normalizeActorName(baseQuery.name);
+    const configuredQuery = applyConfiguredAliases(configuration, baseQuery);
+    const normalized = normalizeActorName(configuredQuery.name);
     const bucket = String(Math.floor(Date.now() / LOOKUP_CACHE_TTL_MS));
 
     if (bucket !== this.lookupBucket) {
@@ -112,22 +128,22 @@ export class ActorSourceProvider {
     }
 
     if (!normalized) {
-      return this.aggregator.aggregate(configuration, baseQuery, []);
+      return this.aggregator.aggregate(configuration, configuredQuery, []);
     }
 
-    return this.lookupResolver.resolve(this.buildCacheKey(configuration, normalized, baseQuery), async () => {
+    return this.lookupResolver.resolve(this.buildCacheKey(configuration, normalized, configuredQuery), async () => {
       const selected = uniqueSourceNames(configuration);
-      const executionOrder = buildExecutionOrder(configuration, selected, baseQuery.requiredField);
+      const executionOrder = buildExecutionOrder(configuration, selected, configuredQuery.requiredField);
       const results: ActorSourceResult[] = [];
-      let enrichedQuery = baseQuery;
+      let enrichedQuery = configuredQuery;
 
       for (const sourceName of executionOrder) {
         const result = await this.lookupSource(sourceName, configuration, enrichedQuery);
         results.push(result);
         if (
-          baseQuery.requiredField &&
+          configuredQuery.requiredField &&
           result.success &&
-          hasActorProfileFieldValue(result.profile?.[baseQuery.requiredField])
+          hasActorProfileFieldValue(result.profile?.[configuredQuery.requiredField])
         ) {
           break;
         }
@@ -175,6 +191,7 @@ export class ActorSourceProvider {
       actorPhotoFolder: configuration.paths.actorPhotoFolder.trim(),
       personOverviewSources: configuration.personSync.personOverviewSources,
       personImageSources: configuration.personSync.personImageSources,
+      actorAliases: configuration.personSync.actorAliases,
     });
   }
 }

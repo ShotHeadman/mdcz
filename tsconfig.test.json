@@ -19,7 +19,8 @@
     "packages/**/*.ts",
     "packages/**/*.tsx",
     "packages/ui/src/**/*.tsx",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "playwright.config.ts"
   ],
   "exclude": [
     "apps/desktop/src/renderer/src/App.tsx",

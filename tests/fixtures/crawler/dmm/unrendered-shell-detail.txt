@@ -1,0 +1,4 @@
+<html><body>
+  <script>self.__next_f.push([1,"shell"])</script>
+  <script src="/_next/static/chunks/main.js"></script>
+</body></html>

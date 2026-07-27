@@ -1,0 +1,13 @@
+<html>
+  <head>
+    <title>JULIA｜AVプロダクション C-more シーモア エンターテイメント</title>
+  </head>
+  <body>
+    <div class="block-item_media-large"><img src="img/model/julia/julia.jpg"></div>
+    <div class="block-item_content">
+      <span class="org">【生年月日】</span><br>1987年05月25日<br>
+      <span class="org">【サイズ】</span><br>B101 W55 H85<br>
+      公式プロフィール本文
+    </div>
+  </body>
+</html>

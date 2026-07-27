@@ -4,6 +4,18 @@ import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 describe("parseNfo", () => {
+  it("refuses to write an MDCz NFO without an originating website", () => {
+    expect(() =>
+      new NfoGenerator().buildXml({
+        title: "No Source",
+        number: "ABC-000",
+        actors: [],
+        genres: [],
+        scene_images: [],
+      }),
+    ).toThrow("NFO missing website");
+  });
+
   it("reads poster, thumb, and fanart by aspect", () => {
     const xml = `
       <movie>

@@ -76,6 +76,11 @@ const SITE_RULES: readonly ManualScrapeSiteRule[] = [
     isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/[a-z\d]+\/index\.html$/iu),
   },
   {
+    site: Website.H4610,
+    hosts: ["h4610.com", "www.h4610.com"],
+    isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/[a-z\d]+\/index\.html$/iu),
+  },
+  {
     site: Website.PPVDATABANK,
     hosts: ["ppvdatabank.com", "www.ppvdatabank.com"],
     isDetailUrl: (url) => pathMatches(url, /^\/article\/\d+\/?$/iu),

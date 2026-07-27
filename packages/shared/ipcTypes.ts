@@ -24,6 +24,7 @@ export type TranslateTestLlmInput = {
   llmBaseUrl?: string;
   llmPrompt?: string;
   llmTemperature?: number;
+  llmTimeout?: number;
 };
 
 export type ConnectionCheckStatus = "ok" | "error" | "skipped";
@@ -119,4 +120,9 @@ export type BatchTranslateApplyResultItem = {
   translatedFields: BatchTranslateField[];
   savedNfoPath?: string;
   error?: string;
+};
+
+export type BatchTranslateApplyInput = {
+  items?: BatchTranslateScanItem[];
+  batchSize?: number;
 };

@@ -1,5 +1,12 @@
 import type { SiteRequestConfig } from "@mdcz/runtime/network";
-import { normalizeCode, normalizeText } from "@mdcz/runtime/shared";
+import {
+  classifyJavbusPage,
+  JAVBUS_BASE_URL,
+  JAVBUS_REQUEST_HEADERS,
+  javbusBlockedPageMessage,
+  normalizeCode,
+  normalizeText,
+} from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
@@ -9,34 +16,16 @@ import type { Context } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { extractParentTextByLabelSelector, toAbsoluteUrl } from "./helpers";
 
-const JAVBUS_BASE_URL = "https://www.javbus.com";
 const JAVBUS_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
   {
     id: "crawler:javbus",
     matches: (url) => url.hostname === "javbus.com" || url.hostname.endsWith(".javbus.com"),
-    headers: {
-      referer: `${JAVBUS_BASE_URL}/`,
-      "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,ja;q=0.6",
-    },
+    headers: JAVBUS_REQUEST_HEADERS,
   },
 ];
 
 type CheerioInput = Parameters<CheerioAPI>[0];
 type JavbusSearchResult = { detailUrl: string; matched: boolean };
-
-const isAgeVerificationPage = ($: CheerioAPI): boolean => {
-  const title = $("title").first().text().trim();
-  if (title.includes("Age Verification JavBus")) {
-    return true;
-  }
-
-  if ($("#ageVerify").length > 0) {
-    return true;
-  }
-
-  const modalTitle = $("h4.modal-title").first().text().trim();
-  return modalTitle.includes("你是否已經成年");
-};
 
 const buildPosterUrl = (thumbUrl: string | undefined): string | undefined => {
   if (!thumbUrl) {
@@ -97,8 +86,9 @@ export class JavbusCrawler extends BaseCrawler {
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
-    if (isAgeVerificationPage($)) {
-      throw new Error("Javbus age verification page detected; provide JAVBUS_COOKIE or use an accessible network");
+    const blockedMessage = javbusBlockedPageMessage(classifyJavbusPage($.html()));
+    if (blockedMessage) {
+      throw new Error(blockedMessage);
     }
 
     const candidates = $("a.movie-box")
@@ -174,6 +164,10 @@ export class JavbusCrawler extends BaseCrawler {
       trailer_url: undefined,
       website: Website.JAVBUS,
     };
+  }
+
+  protected override classifyDetailFailure(_context: Context, detailHtml: string): string | null {
+    return javbusBlockedPageMessage(classifyJavbusPage(detailHtml));
   }
 }
 

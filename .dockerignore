@@ -19,5 +19,5 @@ tests
 !apps/server/.env.example
 **/*.log
 coverage
-playwright-report
+playwright-report*
 test-results

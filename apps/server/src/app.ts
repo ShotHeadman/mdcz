@@ -86,6 +86,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   });
 
   fastify.addHook("onClose", async () => {
+    await services.scrape.close();
     await services.persistence.close();
   });
 
@@ -133,7 +134,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.get("/events/tasks", async (request, reply) => {
     services.auth.assertAuthenticated(getBearerToken(request));
     reply.hijack();
-    await writeTaskEventsStream(services, reply.raw, request.headers.origin);
+    await writeTaskEventsStream(services, reply.raw, request.headers.origin, request.headers.host);
   });
 
   registerLibraryAssets(fastify, services);

@@ -294,7 +294,7 @@ const NAMING_PREVIEW_SAMPLES: Array<{
 export class NamingEngine {
   buildLayout(fileInfo: FileInfo, data: CrawlerData, config: Configuration, localState?: NfoLocalState): NamingLayout {
     const title = data.title_zh?.trim() || data.title;
-    const originaltitle = data.title.trim();
+    const originaltitle = data.original_title?.trim() || data.title.trim();
     const actorTemplateValue = pickActorTemplateValue(config, data.actors ?? [], data);
     const classification = classifyMovie(fileInfo, data, localState);
     const markers = buildNamingMarkers(fileInfo, config, classification);

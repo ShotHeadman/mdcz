@@ -28,6 +28,8 @@ export interface VideoMeta {
 
 export interface CrawlerData {
   title: string;
+  /** Original crawler title retained when a configured title repair changes `title`. */
+  original_title?: string;
   title_zh?: string;
   number: string;
   actors: string[];
@@ -53,7 +55,11 @@ export interface CrawlerData {
   trailer_source_url?: string;
   scene_images: string[];
   trailer_url?: string;
-  website: Website;
+  /**
+   * The originating crawler site. Local NFO snapshots from external tools may
+   * not retain this provenance; freshly aggregated crawler data always has it.
+   */
+  website?: Website;
 }
 
 export interface FileInfo {
@@ -64,6 +70,8 @@ export interface FileInfo {
   isSubtitled: boolean;
   subtitleTag?: SubtitleTag;
   isUncensored?: boolean;
+  /** Classification marker parsed from the filename; user/NFO choices remain authoritative. */
+  filenameUncensoredChoice?: UncensoredChoice;
   resolution?: string;
   part?: {
     number: number;

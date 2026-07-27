@@ -260,7 +260,7 @@ export class MaintenanceService {
             };
           }
           const root = await this.mediaRoots.getActiveRoot(preview.rootId);
-          await this.runtime.apply({
+          const applyResult = await this.runtime.apply({
             presetId: preview.presetId as MaintenancePresetId,
             root,
             progress: { fileIndex: index + 1, totalFiles: previews.length },
@@ -275,14 +275,18 @@ export class MaintenanceService {
                 : null,
             },
           });
-          const crawlerData = preview.proposedCrawlerDataJson
-            ? parseCrawlerData(preview.proposedCrawlerDataJson)
-            : null;
+          if (applyResult.status === "failed") {
+            throw new Error(applyResult.error);
+          }
+          const crawlerData =
+            applyResult.crawlerData ??
+            (preview.proposedCrawlerDataJson ? parseCrawlerData(preview.proposedCrawlerDataJson) : null);
+          const outputRelativePath = applyResult.outputRelativePath || preview.relativePath;
           if (crawlerData) {
-            const file = await statRootPath(root, preview.relativePath);
+            const file = await statRootPath(root, outputRelativePath);
             await state.repositories.library.upsertEntry({
               rootId: preview.rootId,
-              rootRelativePath: preview.relativePath,
+              rootRelativePath: outputRelativePath,
               mediaIdentity: crawlerData.number,
               size: file.size,
               modifiedAt: file.modifiedAt,
@@ -292,7 +296,7 @@ export class MaintenanceService {
               actors: crawlerData.actors,
               crawlerDataJson: JSON.stringify(crawlerData),
               thumbnailPath: crawlerData.thumb_url ?? crawlerData.poster_url ?? null,
-              lastKnownPath: preview.relativePath,
+              lastKnownPath: outputRelativePath,
             });
           }
           await state.repositories.maintenance.upsertPreview({ ...preview, status: "applied" });

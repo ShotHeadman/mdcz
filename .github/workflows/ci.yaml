@@ -7,20 +7,22 @@ on:
       - "apps/**"
       - "packages/**"
       - "tests/**"
-      - "docs/package-boundaries.md"
+      - "docs/**"
+      - "CONTRIBUTING.md"
       - "package.json"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - "mise.toml"
       - "biome.json"
       - "vitest.config.ts"
+      - "playwright.config.ts"
       - "tsconfig*.json"
   pull_request:
     branches: [main]
 
 jobs:
-  quality:
-    name: Typecheck Test Build
+  static:
+    name: Static Quality
     runs-on: ubuntu-latest
 
     steps:
@@ -30,6 +32,124 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm check
+      - run: pnpm typecheck
+
+      - run: pnpm exec biome check .
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test:unit
+
+  integration-contract:
+    name: Node/Desktop Integration and Contract Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Node, Desktop, and shared contract integration
+        run: pnpm test:integration
+
+  component:
+    name: Browser Component Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run browser components
+        run: pnpm exec vitest run --project component --silent
+
+      - name: Upload component diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-test-diagnostics
+          path: .vitest-attachments/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  coverage:
+    name: Core Coverage Baseline
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Enforce the core source coverage baseline
+        run: pnpm test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-coverage-report
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+  product-e2e-smoke:
+    name: Product E2E Smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Web and Electron product smoke
+        run: xvfb-run -a pnpm test:e2e
+
+      - name: Upload Playwright diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-e2e-diagnostics
+          path: |
+            playwright-report*/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  build:
+    name: Build Products
+    needs: [static, unit, integration-contract, component, coverage]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm build:desktop && pnpm build:webui

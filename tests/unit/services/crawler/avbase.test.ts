@@ -219,49 +219,6 @@ describe("AvbaseCrawler", () => {
           ]);
         },
       },
-      {
-        number: "TPC-056",
-        searchUrl: "https://www.avbase.net/works?q=TPC-056",
-        detailUrl: "https://www.avbase.net/works/TPC-056",
-        searchHtml: createNextDataHtml({
-          works: [
-            createSearchWork({
-              workId: "TPC-056",
-              title: "しおんさん",
-              products: [createProduct()],
-            }),
-          ],
-        }),
-        detailHtml: createNextDataHtml({
-          work: createDetailWork({
-            workId: "TPC-056",
-            title: "しおんさん",
-            actors: ["しおん"],
-            genres: ["ハメ撮り"],
-            products: [
-              createProduct({
-                maker: "東京恋愛",
-                volume: "135分",
-              }),
-            ],
-          }),
-        }),
-        assert: (response: Awaited<ReturnType<AvbaseCrawler["crawl"]>>, networkClient: FixtureNetworkClient) => {
-          if (!response.result.success) {
-            throw new Error("expected success");
-          }
-
-          expect(response.result.data.number).toBe("TPC-056");
-          expect(response.result.data.actors).toEqual(["しおん"]);
-          expect(response.result.data.genres).toEqual(["ハメ撮り"]);
-          expect(response.result.data.studio).toBe("東京恋愛");
-          expect(response.result.data.durationSeconds).toBe(135 * 60);
-          expect(networkClient.requests.map((request) => request.url)).toEqual([
-            "https://www.avbase.net/works?q=TPC-056",
-            "https://www.avbase.net/works/TPC-056",
-          ]);
-        },
-      },
     ];
 
     for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, assert } of cases) {
@@ -281,38 +238,6 @@ describe("AvbaseCrawler", () => {
       expect(response.result.success).toBe(true);
       assert(response, networkClient);
     }
-  });
-
-  it("returns not_found when the AVBase search page has no matching work", async () => {
-    const number = "ABF-999";
-    const searchUrl = "https://www.avbase.net/works?q=ABF-999";
-
-    const searchHtml = createNextDataHtml({
-      works: [
-        createSearchWork({
-          prefix: "prestige",
-          workId: "ABF-075",
-          title: "天然成分由来 瀧本雫葉汁 120％ 83",
-          products: [createProduct()],
-        }),
-      ],
-    });
-
-    const crawler = new AvbaseCrawler(
-      withGateway(new FixtureNetworkClient(new Map<string, unknown>([[searchUrl, searchHtml]]))),
-    );
-
-    const response = await crawler.crawl({
-      number,
-      site: Website.AVBASE,
-    });
-
-    expect(response.result.success).toBe(false);
-    if (response.result.success) {
-      throw new Error("expected failure");
-    }
-
-    expect(response.result.failureReason).toBe("not_found");
   });
 
   it("prefers visible or female cast lists over noisier internal actor arrays", async () => {

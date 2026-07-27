@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { mkdir, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
+import { copyFile, mkdir, readdir, realpath, rename, rm, stat, statfs, unlink } from "node:fs/promises";
 import { dirname, extname, join, parse, resolve } from "node:path";
 import { SUPPORTED_MEDIA_EXTENSIONS_WITH_DOT } from "@mdcz/shared/mediaExtensions";
 import { throwIfAborted } from "./abort";
@@ -151,11 +152,63 @@ export const resolveAvailablePath = async (targetPath: string, ignoreExistingPat
   return resolvedPath;
 };
 
+const cleanupFailedCrossDeviceTarget = async (
+  sourcePath: string,
+  targetPath: string,
+  operation: string,
+  error: unknown,
+): Promise<never> => {
+  try {
+    await rm(targetPath, { force: true });
+  } catch (cleanupError) {
+    const operationMessage = error instanceof Error ? error.message : String(error);
+    const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+    throw new Error(
+      `Failed to ${operation} for ${sourcePath} to ${targetPath}: ${operationMessage}. Failed to clean up target ${targetPath}: ${cleanupMessage}`,
+      { cause: error },
+    );
+  }
+
+  throw error;
+};
+
+const createCrossDeviceTemporaryPath = (targetPath: string): string => {
+  const parsed = parse(targetPath);
+  return join(parsed.dir, `.${parsed.base}.${randomUUID()}.part`);
+};
+
 export const moveFileSafely = async (sourcePath: string, targetPath: string): Promise<string> => {
   await ensureParentDirectory(targetPath);
   const resolved = await resolveAvailablePath(targetPath, sourcePath);
 
-  await rename(sourcePath, resolved);
+  try {
+    await rename(sourcePath, resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code !== "EXDEV") {
+      throw error;
+    }
+
+    const temporaryPath = createCrossDeviceTemporaryPath(resolved);
+
+    try {
+      await copyFile(sourcePath, temporaryPath);
+    } catch (copyError) {
+      await cleanupFailedCrossDeviceTarget(sourcePath, temporaryPath, "copy", copyError);
+    }
+
+    try {
+      await rename(temporaryPath, resolved);
+    } catch (publishError) {
+      await cleanupFailedCrossDeviceTarget(sourcePath, temporaryPath, "publish copied file", publishError);
+    }
+
+    try {
+      await unlink(sourcePath);
+    } catch (unlinkError) {
+      await cleanupFailedCrossDeviceTarget(sourcePath, resolved, "remove the source file", unlinkError);
+    }
+  }
+
   return resolved;
 };
 

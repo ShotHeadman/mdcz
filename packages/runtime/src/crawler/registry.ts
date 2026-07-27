@@ -10,6 +10,7 @@ import { crawlerRegistration as falenoRegistration } from "./sites/faleno";
 import { crawlerRegistration as fc2Registration } from "./sites/fc2";
 import { crawlerRegistration as fc2hubRegistration } from "./sites/fc2hub";
 import { crawlerRegistration as h0930Registration } from "./sites/h0930";
+import { crawlerRegistration as h4610Registration } from "./sites/h4610";
 import { crawlerRegistration as jav321Registration } from "./sites/jav321";
 import { crawlerRegistration as javbusRegistration } from "./sites/javbus";
 import { crawlerRegistration as javdbRegistration } from "./sites/javdb";
@@ -53,6 +54,7 @@ const crawlerRegistrations: CrawlerRegistration[] = [
   fc2Registration,
   fc2hubRegistration,
   h0930Registration,
+  h4610Registration,
   jav321Registration,
   javbusRegistration,
   javdbRegistration,

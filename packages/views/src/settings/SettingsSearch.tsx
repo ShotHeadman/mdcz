@@ -1,5 +1,5 @@
 import { cn } from "@mdcz/ui";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 
@@ -22,7 +22,7 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
           disabled={disabled}
           placeholder={placeholder}
           className={cn(
-            "h-9 w-full rounded-[var(--radius-quiet)] bg-surface-low pl-10 pr-3 text-sm text-foreground",
+            "h-9 w-full rounded-[var(--radius-quiet)] bg-surface-low pl-10 pr-9 text-sm text-foreground",
             "placeholder:text-muted-foreground outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
             "focus-visible:ring-2 focus-visible:ring-ring/40",
           )}
@@ -55,6 +55,13 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
             return;
           }
 
+          if (event.key === "Escape" && search.query) {
+            event.preventDefault();
+            search.setQuery("");
+            setActiveSuggestionIndex(0);
+            return;
+          }
+
           if (event.key === "ArrowDown" && suggestions.length > 0) {
             event.preventDefault();
             setActiveSuggestionIndex((current) => (current + 1) % suggestions.length);
@@ -79,11 +86,25 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
         }}
         placeholder={placeholder}
         className={cn(
-          "h-9 w-full rounded-[var(--radius-quiet)] bg-surface-low pl-10 pr-3 text-sm text-foreground",
+          "h-9 w-full rounded-[var(--radius-quiet)] bg-surface-low pl-10 pr-9 text-sm text-foreground",
           "placeholder:text-muted-foreground outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
           "focus-visible:ring-2 focus-visible:ring-ring/40",
         )}
       />
+
+      {Boolean(search.query) && !disabled && (
+        <button
+          type="button"
+          aria-label="清空搜索"
+          onClick={() => {
+            search.setQuery("");
+            setActiveSuggestionIndex(0);
+          }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-surface-low hover:text-foreground transition-colors"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {suggestions.length > 0 && !disabled && (
         <div

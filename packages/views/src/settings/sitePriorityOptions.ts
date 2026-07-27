@@ -2,7 +2,7 @@ import { Website } from "@mdcz/shared/enums";
 import { normalizeEnabledSites } from "./orderedSite";
 import type { OrderedSiteSummary } from "./orderedSiteSummary";
 
-export type SitePriorityOptionId = Website | "dmm_family" | "official";
+export type SitePriorityOptionId = Website | "dmm_family" | "h0930_family" | "official";
 
 type SitePriorityOptionStateValue = "none" | "partial" | "all";
 
@@ -76,10 +76,11 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
     sites: [Website.JAV321],
   },
   {
-    id: Website.H0930,
-    label: Website.H0930,
-    sites: [Website.H0930],
-    aliases: ["h0930", "h0930.com"],
+    id: "h0930_family",
+    label: "H0930 / H4610",
+    description: "网络自营独立制作站。采用专属站内编号（如 H0930/H4610）",
+    sites: [Website.H0930, Website.H4610],
+    aliases: ["h0930", "h0930.com", "h4610", "h4610.com"],
   },
   {
     id: Website.FC2,

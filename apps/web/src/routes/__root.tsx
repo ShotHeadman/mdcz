@@ -1,12 +1,15 @@
+import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
 import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
+import { ToolsRouteView } from "@mdcz/views/tools";
 import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../client";
 import { LoginPage } from "../components/auth/LoginPage";
 import { useWebTaskSync } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
+import { ToolDetail } from "./tools/ToolDetail";
 
 const PUBLIC_PATHS = new Set(["/setup", "/login"]);
 
@@ -68,11 +71,27 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 
 const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
   useWebTaskSync();
+  const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
+  const isToolsRoute = pathname === "/tools";
+
+  useEffect(() => {
+    if (isToolsRoute) {
+      setHasVisitedTools(true);
+    }
+  }, [isToolsRoute]);
 
   return (
     <ThemeProvider>
       <AppShell currentPath={pathname} linkComponent={ShellLink}>
         {children}
+        {hasVisitedTools || isToolsRoute ? (
+          <div className="h-full w-full" style={{ display: isToolsRoute ? "block" : "none" }}>
+            <ToolsRouteView
+              tools={TOOL_DEFINITIONS}
+              renderDetail={(toolId: ToolId) => <ToolDetail toolId={toolId} />}
+            />
+          </div>
+        ) : null}
       </AppShell>
     </ThemeProvider>
   );

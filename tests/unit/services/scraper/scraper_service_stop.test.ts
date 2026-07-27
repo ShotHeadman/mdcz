@@ -33,8 +33,8 @@ class CaptureSignalService extends SignalService {
   }
 }
 
-const deferred = <T>() => {
-  let resolve!: (value: T) => void;
+const withResolvers = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
   const promise = new Promise<T>((res, rej) => {
     resolve = res;
@@ -43,21 +43,62 @@ const deferred = <T>() => {
   return { promise, resolve, reject };
 };
 
-const waitForIdle = async (service: ScraperService, signalService?: CaptureSignalService): Promise<void> => {
-  for (let i = 0; i < 60; i += 1) {
-    const idle = !service.getStatus().running;
-    const buttonsReset =
-      !signalService ||
-      (signalService.buttonStatusEvents.at(-1)?.startEnabled === true &&
-        signalService.buttonStatusEvents.at(-1)?.stopEnabled === false);
-    if (idle && buttonsReset) {
-      return;
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
+const deferred = <T>() => withResolvers<T>();
+
+const createService = (signalService = new CaptureSignalService(null)) => {
+  const networkClient = new NetworkClient();
+  const crawlerProvider = new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) });
+  return {
+    signalService,
+    service: new ScraperService(signalService, networkClient, crawlerProvider),
+  };
+};
+
+const mockConfig = (config = configurationSchema.parse(defaultConfiguration)) => {
+  vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+  vi.spyOn(configManager, "get").mockResolvedValue(config);
+  return config;
+};
+
+const successResult = (
+  filePath: string,
+  number: string,
+  website: NonNullable<ScrapeResult["crawlerData"]>["website"],
+): ScrapeResult => ({
+  status: "success",
+  fileId: number.toLowerCase(),
+  fileInfo: {
+    filePath,
+    fileName: `${number}.mp4`,
+    extension: ".mp4",
+    number,
+    isSubtitled: false,
+  },
+  crawlerData: {
+    title: number,
+    number,
+    actors: [],
+    genres: [],
+    scene_images: [],
+    website,
+  },
+});
+
+const abortableScrape = (_filePath: string, _progress: unknown, signal?: AbortSignal) => {
+  const { promise, reject } = withResolvers<ScrapeResult>();
+  if (signal?.aborted) {
+    reject(createAbortError());
+    return promise;
   }
-  throw new Error("Scraper did not become idle in time");
+
+  signal?.addEventListener(
+    "abort",
+    () => {
+      reject(createAbortError());
+    },
+    { once: true },
+  );
+  return promise;
 };
 
 describe("ScraperService stop flow", () => {
@@ -69,18 +110,10 @@ describe("ScraperService stop flow", () => {
   });
 
   it("emits immediate stopping button status and finishes cleanly", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
+    const { signalService, service } = createService();
+    const config = mockConfig();
     const runningTask = deferred<ScrapeResult>();
     const mediaFilePath = await createTempMediaFile("ABP-123.mp4");
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation(() => runningTask.promise);
 
     await service.startSingle([mediaFilePath]);
@@ -93,27 +126,8 @@ describe("ScraperService stop flow", () => {
       { startEnabled: false, stopEnabled: false },
     ]);
 
-    runningTask.resolve({
-      status: "success",
-      fileId: "abp-123",
-      fileInfo: {
-        filePath: mediaFilePath,
-        fileName: "ABP-123.mp4",
-        extension: ".mp4",
-        number: "ABP-123",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-123",
-        number: "ABP-123",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
-
-    await waitForIdle(service, signalService);
+    runningTask.resolve(successResult(mediaFilePath, "ABP-123", config.scrape.sites[0]));
+    await service.waitForIdle();
 
     expect(service.getStatus().running).toBe(false);
     expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });
@@ -122,10 +136,6 @@ describe("ScraperService stop flow", () => {
   it("persists successful acquisitions to the library and invalidates output summary before clearing aggregation cache", async () => {
     const events: string[] = [];
     const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
     const upsertRoot = vi.fn(async (input) => input);
     const upsertScrapeOutput = vi.fn(async (input: { fileCount: number }) => {
       events.push(`persist-output:${input.fileCount}`);
@@ -138,13 +148,8 @@ describe("ScraperService stop flow", () => {
     const persistenceService = {
       getState: vi.fn(async () => ({
         repositories: {
-          library: {
-            upsertScrapeOutput,
-            upsertEntry,
-          },
-          mediaRoots: {
-            upsert: upsertRoot,
-          },
+          library: { upsertScrapeOutput, upsertEntry },
+          mediaRoots: { upsert: upsertRoot },
         },
       })),
     } as unknown as DesktopPersistenceService;
@@ -153,6 +158,8 @@ describe("ScraperService stop flow", () => {
         events.push("invalidate");
       }),
     } as unknown as OutputLibraryScanner;
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) });
     const service = new ScraperService(
       signalService,
       networkClient,
@@ -164,20 +171,17 @@ describe("ScraperService stop flow", () => {
       persistenceService,
     );
     const outputRoot = join(tmpdir(), "mdcz-output");
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      paths: {
-        ...defaultConfiguration.paths,
-        outputSummaryPath: outputRoot,
-      },
-    });
+    const config = mockConfig(
+      configurationSchema.parse({
+        ...defaultConfiguration,
+        paths: { ...defaultConfiguration.paths, outputSummaryPath: outputRoot },
+      }),
+    );
     const mediaFilePath = await createTempMediaFile("ABP-789.mp4");
     const outputVideoPath = join(outputRoot, "ABP-789.mp4");
     const outputFolderPath = join(outputRoot, "ABP-789");
     const posterPath = join(outputFolderPath, "poster.jpg");
 
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(AggregationService.prototype, "clearCache").mockImplementation(() => {
       events.push("clear-cache");
     });
@@ -199,16 +203,12 @@ describe("ScraperService stop flow", () => {
         scene_images: [],
         website: config.scrape.sites[0],
       },
-      assets: {
-        poster: posterPath,
-        sceneImages: [],
-        downloaded: [posterPath],
-      },
+      assets: { poster: posterPath, sceneImages: [], downloaded: [posterPath] },
       outputPath: outputFolderPath,
     });
 
     await service.startSingle([mediaFilePath]);
-    await waitForIdle(service, signalService);
+    await service.waitForIdle();
 
     expect(upsertScrapeOutput).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -237,118 +237,60 @@ describe("ScraperService stop flow", () => {
     );
     expect(upsertRoot).toHaveBeenCalledWith(expect.objectContaining({ id: "desktop-output", hostPath: outputRoot }));
     expect(outputLibraryScanner.invalidate).toHaveBeenCalledTimes(1);
-    expect(events).toEqual([`persist-output:1`, "persist-entry:ABP-789:ABP-789.mp4", "invalidate", "clear-cache"]);
+    expect(events).toEqual(["persist-output:1", "persist-entry:ABP-789:ABP-789.mp4", "invalidate", "clear-cache"]);
   });
 
-  it("updates status state when pausing and resuming", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
+  it("projects pause and resume onto scraper status without shared FSM retesting", async () => {
+    const { signalService, service } = createService();
+    const config = mockConfig();
     const runningTask = deferred<ScrapeResult>();
     const mediaFilePath = await createTempMediaFile("ABP-456.mp4");
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
     vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation(() => runningTask.promise);
 
     await service.startSingle([mediaFilePath]);
     expect(service.getStatus().state).toBe("running");
-
     service.pause();
     expect(service.getStatus().state).toBe("paused");
-
     service.resume();
     expect(service.getStatus().state).toBe("running");
 
-    runningTask.resolve({
-      status: "success",
-      fileId: "abp-456",
-      fileInfo: {
-        filePath: mediaFilePath,
-        fileName: "ABP-456.mp4",
-        extension: ".mp4",
-        number: "ABP-456",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-456",
-        number: "ABP-456",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
-
-    await waitForIdle(service, signalService);
+    runningTask.resolve(successResult(mediaFilePath, "ABP-456", config.scrape.sites[0]));
+    await service.waitForIdle();
     expect(service.getStatus().state).toBe("idle");
+    expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });
   });
 
   it("finishes cleanly when stop aborts a task waiting in the rest gate", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      scrape: {
-        ...defaultConfiguration.scrape,
-        threadNumber: 2,
-        restAfterCount: 1,
-        restDuration: 60,
-      },
-    });
+    const { service } = createService();
+    const config = mockConfig(
+      configurationSchema.parse({
+        ...defaultConfiguration,
+        scrape: { ...defaultConfiguration.scrape, threadNumber: 2, restAfterCount: 1, restDuration: 60 },
+      }),
+    );
     const firstTask = deferred<ScrapeResult>();
-    const filePaths = ["/tmp/ABP-777.mp4", "/tmp/ABP-888.mp4"];
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    const firstPath = "/tmp/ABP-777.mp4";
+    const secondPath = "/tmp/ABP-888.mp4";
+    const filePaths = [firstPath, secondPath];
+    const firstStarted = deferred<void>();
     const scrapeFileSpy = vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation((filePath) => {
-      if (filePath === filePaths[0]) {
+      if (filePath === firstPath) {
+        firstStarted.resolve();
         return firstTask.promise;
       }
-
       throw new Error(`Unexpected scrape start for ${filePath}`);
     });
 
-    await service.retryFiles(filePaths);
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0);
-    });
-
+    const retryPromise = service.retryFiles(filePaths);
+    await firstStarted.promise;
     service.stop();
-
-    firstTask.resolve({
-      status: "success",
-      fileId: "abp-777",
-      fileInfo: {
-        filePath: filePaths[0],
-        fileName: "ABP-777.mp4",
-        extension: ".mp4",
-        number: "ABP-777",
-        isSubtitled: false,
-      },
-      crawlerData: {
-        title: "ABP-777",
-        number: "ABP-777",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: config.scrape.sites[0],
-      },
-    });
-
-    await waitForIdle(service, signalService);
+    firstTask.resolve(successResult(firstPath, "ABP-777", config.scrape.sites[0]));
+    await retryPromise;
+    await service.waitForIdle();
 
     expect(scrapeFileSpy).toHaveBeenCalledTimes(1);
     expect(scrapeFileSpy).toHaveBeenCalledWith(
-      filePaths[0],
+      firstPath,
       { fileIndex: 1, totalFiles: filePaths.length },
       expect.any(AbortSignal),
     );
@@ -356,34 +298,10 @@ describe("ScraperService stop flow", () => {
   });
 
   it("shutdown aborts the active scrape and waits until the session is idle", async () => {
-    const signalService = new CaptureSignalService(null);
-    const networkClient = new NetworkClient();
-    const crawlerProvider = new CrawlerProvider({
-      fetchGateway: new FetchGateway(networkClient),
-    });
-    const service = new ScraperService(signalService, networkClient, crawlerProvider);
-    const config = configurationSchema.parse(defaultConfiguration);
+    const { signalService, service } = createService();
+    mockConfig();
     const mediaFilePath = await createTempMediaFile("ABP-999.mp4");
-
-    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
-    vi.spyOn(configManager, "get").mockResolvedValue(config);
-    vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation(
-      (_filePath, _progress, signal) =>
-        new Promise((_resolve, reject) => {
-          if (signal?.aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          signal?.addEventListener(
-            "abort",
-            () => {
-              reject(createAbortError());
-            },
-            { once: true },
-          );
-        }),
-    );
+    vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation(abortableScrape);
 
     await service.startSingle([mediaFilePath]);
     await service.shutdown({ timeoutMs: 500 });

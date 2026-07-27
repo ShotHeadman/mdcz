@@ -6,6 +6,7 @@ import { SUBTITLE_EXTENSIONS } from "../scrape/utils/subtitles";
 export { applyAmazonPosters, lookupAmazonPoster, scanAmazonPosters } from "./amazonPoster";
 export {
   applyBatchNfoTranslations,
+  type BatchNfoTranslatorApplyOptions,
   type BatchNfoTranslatorDependencies,
   scanBatchNfoTranslations,
 } from "./batchNfoTranslator";

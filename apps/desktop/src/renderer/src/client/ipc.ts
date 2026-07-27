@@ -11,7 +11,7 @@ import type {
   ScrapeInfoPayload,
   ShortcutPayload,
 } from "@mdcz/shared/ipcEvents";
-import type { BatchTranslateScanItem, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
 import type { LibraryListInput } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
@@ -129,7 +129,7 @@ export const ipc = {
     amazonPosterApply: (items: Array<{ nfoPath: string; amazonPosterUrl: string }>) =>
       client[IpcChannel.Tool_AmazonPosterApply]({ items }),
     batchTranslateScan: (directory: string) => client[IpcChannel.Tool_BatchTranslateScan]({ directory }),
-    batchTranslateApply: (items: BatchTranslateScanItem[]) => client[IpcChannel.Tool_BatchTranslateApply]({ items }),
+    batchTranslateApply: (input: BatchTranslateApplyInput) => client[IpcChannel.Tool_BatchTranslateApply](input),
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
   maintenance: {

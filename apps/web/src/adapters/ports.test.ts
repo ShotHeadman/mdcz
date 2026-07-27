@@ -38,10 +38,6 @@ afterEach(() => {
 });
 
 describe("web detail action port", () => {
-  it("hides low-value relative file paths in the WebUI detail panel", () => {
-    expect(createWebDetailPort().showFilePath).toBe(false);
-  });
-
   it("does not render the root-relative file path block in the WebUI detail panel", () => {
     const html = renderToStaticMarkup(
       createElement(DetailPanelAdapter, {
@@ -58,6 +54,9 @@ describe("web detail action port", () => {
 
     expect(html).not.toContain("文件路径");
     expect(html).not.toContain("ABC-001.mp4");
+    expect(html).not.toContain("播放");
+    expect(html).not.toContain("打开文件夹");
+    expect(html).toContain("编辑 NFO");
   });
 
   it("resolves root-relative image candidates through authenticated library assets", async () => {

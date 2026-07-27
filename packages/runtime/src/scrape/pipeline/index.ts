@@ -5,6 +5,7 @@ import type { ScrapeStage } from "./types";
 
 export { AggregateStage } from "./AggregateStage";
 export { AggregationCoordinator } from "./AggregationCoordinator";
+export { CanonicalizeActorAliasesStage } from "./CanonicalizeActorAliasesStage";
 export { DownloadStage } from "./DownloadStage";
 export { NfoStage } from "./NfoStage";
 export { NumberExecutionGate } from "./NumberExecutionGate";

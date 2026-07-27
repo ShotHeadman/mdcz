@@ -10,6 +10,9 @@ describe("extractNumber", () => {
       { input: "H0930-gol205", expected: "H0930-GOL205" },
       { input: "h0930_gol205", expected: "H0930-GOL205" },
       { input: "h0930 gol205", expected: "H0930-GOL205" },
+      { input: "H4610-ori696", expected: "H4610-ORI696" },
+      { input: "h4610_ori641", expected: "H4610-ORI641" },
+      { input: "h4610 ori641", expected: "H4610-ORI641" },
     ];
 
     for (const { input, expected } of cases) {
@@ -184,8 +187,30 @@ describe("parseFileInfo", () => {
     expect(parseFileInfo("/tmp/ABC-123-UC.mp4")).toMatchObject({
       number: "ABC-123",
       isUncensored: true,
+      filenameUncensoredChoice: "uncensored",
       isSubtitled: true,
       subtitleTag: "中文字幕",
+    });
+  });
+
+  it("classifies explicit cracked filename tokens without broad text matching", () => {
+    for (const input of ["/tmp/ABC-123-C-U.mp4", "/tmp/ABC-123-UMR.mp4", "/tmp/ABC-123-破解.mp4"]) {
+      expect(parseFileInfo(input)).toMatchObject({
+        number: "ABC-123",
+        isUncensored: true,
+        filenameUncensoredChoice: "umr",
+        isSubtitled: false,
+        subtitleTag: undefined,
+        part: undefined,
+      });
+    }
+
+    expect(parseFileInfo("/tmp/ABC-123-破解版本.mp4")).toMatchObject({
+      filenameUncensoredChoice: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/ABC-123-U.mp4")).toMatchObject({
+      filenameUncensoredChoice: "uncensored",
     });
   });
 

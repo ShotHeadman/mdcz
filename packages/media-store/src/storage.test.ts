@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, symlink } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
 
 import {
   atomicWriteRootFile,
@@ -18,40 +18,40 @@ import {
   toRootRelativePath,
 } from "./index";
 
-const tempRoots: string[] = [];
+const tempRoots: TempDirectoryHarness[] = [];
 
 const createTempRoot = async () => {
-  const rootPath = await mkdtemp(path.join(tmpdir(), "mdcz-storage-"));
-  tempRoots.push(rootPath);
+  const directory = await createTempDirectory("storage");
+  tempRoots.push(directory);
   return createMediaRoot({
     id: "root-1",
     displayName: "Movies",
-    hostPath: rootPath,
+    hostPath: directory.path,
     now: new Date("2026-04-28T00:00:00.000Z"),
   });
 };
 
 afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((rootPath) => rm(rootPath, { recursive: true, force: true })));
+  await Promise.all(tempRoots.splice(0).map((directory) => directory.cleanup()));
 });
 
 describe("storage root-relative paths", () => {
   it("creates stable mounted filesystem roots", async () => {
-    const rootPath = await mkdtemp(path.join(tmpdir(), "mdcz-storage-"));
-    tempRoots.push(rootPath);
+    const directory = await createTempDirectory("storage");
+    tempRoots.push(directory);
 
     expect(
       createMediaRoot({
         id: "root-1",
         displayName: "  Movies  ",
-        hostPath: path.join(rootPath, "."),
+        hostPath: path.join(directory.path, "."),
         enabled: false,
         now: new Date("2026-04-28T00:00:00.000Z"),
       }),
     ).toEqual({
       id: "root-1",
       displayName: "Movies",
-      hostPath: path.resolve(rootPath),
+      hostPath: path.resolve(directory.path),
       rootType: "mounted-filesystem",
       enabled: false,
       createdAt: new Date("2026-04-28T00:00:00.000Z"),

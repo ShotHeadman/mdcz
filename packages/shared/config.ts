@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES, isSharedDirectoryMode } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLanguage, Website } from "./enums";
@@ -81,6 +82,7 @@ const translateSchema = z.object({
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
   llmPrompt: z.string().default("自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}"),
   llmTemperature: z.number().min(0).max(2).default(1.0),
+  llmTimeout: z.number().int().min(1).max(300).default(10),
   llmMaxRetries: z.number().int().min(1).max(20).default(3),
   llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
   targetLanguage: translationTargetSchema,
@@ -107,9 +109,67 @@ const downloadSchema = z.object({
   keepNfo: z.boolean().default(true),
 });
 
+const actorAliasesSchema = z
+  .record(z.string(), z.array(z.string()).min(1, "演员别名列表不能为空"))
+  .default({})
+  .superRefine((actorAliases, ctx) => {
+    const owners = new Map<string, { canonicalName: string; rawCanonicalName: string }>();
+
+    for (const [rawCanonicalName, rawAliases] of Object.entries(actorAliases)) {
+      const canonicalName = toTrimmedActorName(rawCanonicalName);
+      if (!canonicalName) {
+        ctx.addIssue({
+          code: "custom",
+          path: [rawCanonicalName],
+          message: "演员规范名称不能为空",
+        });
+        continue;
+      }
+
+      if (
+        !rawAliases.some((alias) => {
+          const normalizedAlias = toTrimmedActorName(alias);
+          return normalizedAlias && normalizeActorName(normalizedAlias) !== normalizeActorName(canonicalName);
+        })
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: [rawCanonicalName],
+          message: "演员别名列表至少需要一个有效别名",
+        });
+      }
+
+      const names = [canonicalName, ...rawAliases];
+      for (const [index, rawName] of names.entries()) {
+        const name = toTrimmedActorName(rawName);
+        const path = index === 0 ? [rawCanonicalName] : [rawCanonicalName, index - 1];
+        if (!name) {
+          if (index > 0) {
+            ctx.addIssue({ code: "custom", path, message: "演员别名不能为空" });
+          }
+          continue;
+        }
+
+        const normalizedName = normalizeActorName(name);
+        const owner = owners.get(normalizedName);
+        if (owner && (owner.canonicalName !== canonicalName || owner.rawCanonicalName !== rawCanonicalName)) {
+          ctx.addIssue({
+            code: "custom",
+            path,
+            message: `演员名称与“${owner.canonicalName}”别名组冲突`,
+          });
+          continue;
+        }
+        owners.set(normalizedName, { canonicalName, rawCanonicalName });
+      }
+    }
+  })
+  .transform((actorAliases) => normalizeActorAliasMap(actorAliases));
+
 const personSyncSchema = z.object({
   personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["official", "avjoho", "avbase"]),
   personImageSources: z.array(z.enum(ACTOR_IMAGE_SOURCE_OPTIONS)).default(["local", "gfriends", "official", "avbase"]),
+  actorAliases: actorAliasesSchema,
 });
 
 const jellyfinSchema = z.object({
@@ -168,6 +228,39 @@ const behaviorSchema = z.object({
   saveLog: z.boolean().default(true),
   updateCheck: z.boolean().default(true),
 });
+
+const titleRepairRuleSchema = z.object({
+  source: z.string().trim().min(1, "替换原文不能为空"),
+  replacement: z.string().trim().min(1, "替换结果不能为空"),
+});
+
+const titleRepairSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    rules: z.array(titleRepairRuleSchema).default([]),
+  })
+  .superRefine((data, ctx) => {
+    const seenSources = new Set<string>();
+
+    for (const [index, rule] of data.rules.entries()) {
+      if (seenSources.has(rule.source)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", index, "source"],
+          message: "替换原文不能重复",
+        });
+      }
+      seenSources.add(rule.source);
+
+      if (rule.source === rule.replacement) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", index, "replacement"],
+          message: "替换结果必须与原文不同",
+        });
+      }
+    }
+  });
 
 const fieldPrioritiesSchema = z.object({
   title: z
@@ -327,6 +420,7 @@ export const configurationSchema = z
     ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),
     behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
+    titleRepair: titleRepairSchema.default(() => titleRepairSchema.parse({})),
     aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),
   })
   .superRefine((data, ctx) => {

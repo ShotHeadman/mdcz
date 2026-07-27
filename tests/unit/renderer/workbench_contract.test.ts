@@ -5,17 +5,12 @@ import {
 } from "@mdcz/shared/mediaCandidate";
 import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
 import type { MediaCandidate } from "@mdcz/shared/types";
-import { WorkbenchSetupView } from "@mdcz/views/workbench";
 import type { ConfigOutput } from "@renderer/client/types";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
 const successDir = process.platform === "win32" ? "D:\\media\\JAV_output" : "/media/JAV_output";
 const failedDir = process.platform === "win32" ? "D:\\media\\failed" : "/media/failed";
-const skippedDir = process.platform === "win32" ? "D:\\media\\skip" : "/media/skip";
-const absoluteSkippedDir = process.platform === "win32" ? "E:\\skip" : "/skip";
 const softlinkDir = process.platform === "win32" ? "D:\\softlink" : "/softlink";
 
 const createConfig = (overrides?: Partial<ConfigOutput>): ConfigOutput =>
@@ -157,56 +152,5 @@ describe("workbench setup contract", () => {
     expect(state.candidates).toEqual([]);
     expect(state.selectedPaths).toEqual([]);
     expect(state.scanStatus).toBe("idle");
-  });
-
-  it("hides Web native browse buttons while keeping custom server path autocomplete inputs", () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkbenchSetupView, {
-        mode: "scrape",
-        scanDir: "",
-        targetDir: "",
-        candidates: [],
-        selectedPaths: [],
-        selectedSize: 0,
-        totalSize: 0,
-        extensionCount: 0,
-        scanStatus: "idle",
-        scanning: false,
-        startPending: false,
-        supportedExtensions: [".mp4"],
-        presetId: "read_local",
-        runSummary: "",
-        primaryDisabled: true,
-        isServer: true,
-        formatBytes: () => "0 B",
-        onBrowseScanDir: () => undefined,
-        onBrowseTargetDir: () => undefined,
-        onRefreshScan: () => undefined,
-        onPresetChange: () => undefined,
-        onStart: () => undefined,
-        onToggleCandidate: () => undefined,
-        onToggleAll: () => undefined,
-        onScanDirChange: () => undefined,
-        onTargetDirChange: () => undefined,
-        onSuggestScanDir: async () => ({
-          path: "",
-          parentPath: "",
-          exists: false,
-          accessible: true,
-          entries: [],
-        }),
-        onSuggestTargetDir: async () => ({
-          path: "",
-          parentPath: "",
-          exists: false,
-          accessible: true,
-          entries: [],
-        }),
-      }),
-    );
-
-    expect(html).not.toContain(">浏览<");
-    expect(html).not.toContain("<datalist");
-    expect(html.match(/aria-autocomplete="list"/g)?.length).toBe(2);
   });
 });

@@ -1,0 +1,8 @@
+<div class="p-talent__list-item">
+  <a href="https://www.t-powers.co.jp/talent/ichimiya-kiho/">
+    <div class="p-talent__list-thumb">
+      <img src="https://www.t-powers.co.jp/wp-content/uploads/thumb.jpg">
+    </div>
+    <h3 class="p-talent__list-name">一宮 希帆</h3>
+  </a>
+</div>

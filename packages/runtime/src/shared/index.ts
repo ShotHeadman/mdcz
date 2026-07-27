@@ -26,5 +26,6 @@ export const runtimeLoggerService = {
 };
 
 export * from "./CachedAsyncResolver";
+export * from "./javbusPage";
 export * from "./language";
 export * from "./utils";

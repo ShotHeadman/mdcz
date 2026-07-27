@@ -1,3 +1,4 @@
+export * from "./actorAliases";
 export * from "./actorSource";
 export * from "./assetNaming";
 export * from "./config";
@@ -23,6 +24,7 @@ export * from "./r18";
 export * from "./serverApi";
 export * from "./serverDtos";
 export * from "./settingsRegistry";
+export * from "./titleRepair";
 export * from "./toolCatalog";
 export * from "./types";
 export * from "./videoClassification";

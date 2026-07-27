@@ -7,9 +7,10 @@ export async function writeTaskEventsStream(
   services: ServerServices,
   raw: ServerResponse,
   origin?: string,
+  requestHost?: string,
 ): Promise<void> {
   raw.writeHead(200, {
-    ...buildCorsHeaders(origin),
+    ...buildCorsHeaders(origin, requestHost),
     "cache-control": "no-cache, no-transform",
     connection: "keep-alive",
     "content-type": "text/event-stream; charset=utf-8",

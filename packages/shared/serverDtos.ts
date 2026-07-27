@@ -113,6 +113,7 @@ export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
 export const crawlerDataSchema = z.object({
   title: z.string(),
+  original_title: z.string().optional(),
   title_zh: z.string().optional(),
   number: z.string(),
   actors: z.array(z.string()),
@@ -155,7 +156,7 @@ export const crawlerDataSchema = z.object({
   trailer_source_url: z.string().optional(),
   scene_images: z.array(z.string()),
   trailer_url: z.string().optional(),
-  website: z.nativeEnum(Website),
+  website: z.nativeEnum(Website).optional(),
 });
 
 export type CrawlerDataDto = z.infer<typeof crawlerDataSchema>;
@@ -842,12 +843,26 @@ export const siteConnectivityProbeResponseSchema = z.object({
 
 export type SiteConnectivityProbeResponse = z.infer<typeof siteConnectivityProbeResponseSchema>;
 
+export const networkCookieCheckStatusSchema = z.enum([
+  "not_configured",
+  "ready_without_cookie",
+  "ready_with_cookie",
+  "invalid_or_expired",
+  "verification_required",
+  "login_wall",
+  "unexpected_page",
+  "request_failed",
+]);
+
+export type NetworkCookieCheckStatus = z.infer<typeof networkCookieCheckStatusSchema>;
+
 export const networkCheckCookiesResponseSchema = z.object({
   results: z.array(
     z.object({
       site: z.string(),
       valid: z.boolean(),
       message: z.string(),
+      status: networkCookieCheckStatusSchema,
     }),
   ),
 });
@@ -860,6 +875,7 @@ export const translateTestLlmInputSchema = z.object({
   llmBaseUrl: z.string().optional(),
   llmPrompt: z.string().optional(),
   llmTemperature: z.number().optional(),
+  llmTimeout: z.number().optional(),
 });
 
 export type TranslateTestLlmInputDto = z.infer<typeof translateTestLlmInputSchema>;
@@ -878,7 +894,9 @@ export const authLoginInputSchema = z.object({
 export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;
 
 export const setupCompleteInputSchema = z.object({
-  password: z.string().min(1),
+  // The server-side MDCZ_ADMIN_PASSWORD is used when configured, so the setup
+  // wizard must be able to complete without sending a client-supplied value.
+  password: z.string().min(1).optional(),
   mediaRoot: mediaRootCreateInputSchema,
 });
 
@@ -889,7 +907,7 @@ export const authSessionSchema = z.object({
   token: z.string().optional(),
   setupRequired: z.boolean().optional(),
   usingDefaultPassword: z.boolean().optional(),
-  environmentPassword: z.string().optional(),
+  environmentPasswordConfigured: z.boolean().optional(),
 });
 
 export type AuthSessionDto = z.infer<typeof authSessionSchema>;
@@ -1022,6 +1040,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
     text: z.string().trim().min(1).optional(),
     directory: z.string().trim().min(1).optional(),
+    batchSize: z.number().int().min(1).max(20).optional(),
     items: z
       .array(
         z.object({
@@ -1068,7 +1087,7 @@ export const setupStatusSchema = z.object({
   setupRequired: z.boolean(),
   mediaRootCount: z.number(),
   usingDefaultPassword: z.boolean(),
-  environmentPassword: z.string().optional(),
+  environmentPasswordConfigured: z.boolean(),
 });
 
 export type SetupStatusDto = z.infer<typeof setupStatusSchema>;

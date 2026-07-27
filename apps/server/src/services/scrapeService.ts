@@ -214,6 +214,14 @@ export class ScrapeService {
     return await this.toDto(input.taskId);
   }
 
+  async close(): Promise<void> {
+    this.runner.requestStop();
+    for (const controller of this.#controllers.values()) {
+      controller.abort();
+    }
+    await this.runner.waitForIdle();
+  }
+
   async pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
     this.#paused.add(input.taskId);
     await this.transitionTask(input.taskId, "pause");

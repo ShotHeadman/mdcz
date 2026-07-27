@@ -3,7 +3,8 @@ export interface RuntimeQueuedTask {
 }
 
 export class RuntimeTaskQueueRunner<TTask extends RuntimeQueuedTask> {
-  private running = false;
+  private activeDrain: Promise<void> | null = null;
+  private stopRequested = false;
 
   constructor(
     private readonly deps: {
@@ -16,26 +17,41 @@ export class RuntimeTaskQueueRunner<TTask extends RuntimeQueuedTask> {
     void this.drainAsync();
   }
 
-  async drainAsync(): Promise<void> {
-    if (this.running) {
-      return;
+  drainAsync(): Promise<void> {
+    if (this.stopRequested) {
+      return Promise.resolve();
+    }
+    if (this.activeDrain) {
+      return this.activeDrain;
     }
 
-    this.running = true;
+    this.activeDrain = this.runDrain();
+    return this.activeDrain;
+  }
+
+  async waitForIdle(): Promise<void> {
+    await this.activeDrain;
+  }
+
+  requestStop(): void {
+    this.stopRequested = true;
+  }
+
+  private async runDrain(): Promise<void> {
     try {
       while (true) {
         const task = await this.deps.getNextTask();
-        if (!task) {
+        if (!task || this.stopRequested) {
           break;
         }
         await this.deps.runTask(task);
       }
     } finally {
-      this.running = false;
+      this.activeDrain = null;
     }
   }
 
   get isRunning(): boolean {
-    return this.running;
+    return this.activeDrain !== null;
   }
 }

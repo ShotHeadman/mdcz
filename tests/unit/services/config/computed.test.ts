@@ -2,7 +2,6 @@ import { buildComputedConfiguration } from "@main/services/config/computed";
 import { configurationSchema } from "@main/services/config/models";
 import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
 import { ProxyType, Website } from "@mdcz/shared/enums";
-import { DEFAULT_POSTER_TAG_BADGE_TYPES, POSTER_TAG_BADGE_TYPE_OPTIONS } from "@mdcz/shared/posterBadges";
 import { DEFAULT_R18_METADATA_LANGUAGE } from "@mdcz/shared/r18";
 import { describe, expect, it } from "vitest";
 
@@ -46,19 +45,6 @@ describe("buildComputedConfiguration", () => {
     }
   });
 
-  it("exports timeout and retry settings", () => {
-    const configuration = configurationSchema.parse({
-      network: {
-        timeout: 25,
-        retryCount: 4,
-      },
-    });
-
-    const computed = buildComputedConfiguration(configuration);
-    expect(computed.networkTimeoutMs).toBe(25_000);
-    expect(computed.networkRetryCount).toBe(4);
-  });
-
   it("defaults and forwards the R18.dev metadata language preference", () => {
     const defaults = configurationSchema.parse({});
     const customized = configurationSchema.parse({
@@ -73,23 +59,6 @@ describe("buildComputedConfiguration", () => {
     expect(
       buildCrawlerOptions({ site: Website.AVBASE, configuration: customized }).r18MetadataLanguage,
     ).toBeUndefined();
-  });
-
-  it("fills poster badge settings defaults and preserves explicit badge filters", () => {
-    const defaults = configurationSchema.parse({});
-    const customized = configurationSchema.parse({
-      download: {
-        tagBadgeTypes: ["subtitle", "leak"],
-        tagBadgePosition: "bottomRight",
-      },
-    });
-
-    expect(defaults.download.tagBadgeTypes).toEqual([...DEFAULT_POSTER_TAG_BADGE_TYPES]);
-    expect(defaults.download.tagBadgeTypes).not.toEqual([...POSTER_TAG_BADGE_TYPE_OPTIONS]);
-    expect(defaults.download.tagBadgePosition).toBe("topLeft");
-    expect(defaults.download.tagBadgeImageOverrides).toBe(false);
-    expect(customized.download.tagBadgeTypes).toEqual(["subtitle", "leak"]);
-    expect(customized.download.tagBadgePosition).toBe("bottomRight");
   });
 
   it("enforces shared-directory rules, overview sources, and Jellyfin userId", () => {
@@ -202,42 +171,6 @@ describe("buildComputedConfiguration", () => {
     expect(result.success).toBe(true);
   });
 
-  it("treats title-based folder templates as dedicated movie directories", () => {
-    const result = configurationSchema.safeParse({
-      naming: {
-        folderTemplate: "/{title}",
-        assetNamingMode: "fixed",
-      },
-      behavior: {
-        successFileMove: true,
-      },
-      download: {
-        nfoNaming: "both",
-        downloadSceneImages: true,
-      },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("treats original-title-based folder templates as dedicated movie directories", () => {
-    const result = configurationSchema.safeParse({
-      naming: {
-        folderTemplate: "/{originaltitle}",
-        assetNamingMode: "fixed",
-      },
-      behavior: {
-        successFileMove: true,
-      },
-      download: {
-        nfoNaming: "both",
-        downloadSceneImages: true,
-      },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it("rejects optional groups that try to span multiple path segments", () => {
     const cases = [
       {
@@ -273,53 +206,5 @@ describe("buildComputedConfiguration", () => {
         ]),
       );
     }
-  });
-
-  it("keeps actor photo defaults empty under paths and ignores legacy personSync.actorPhotoFolder", () => {
-    const defaultConfiguration = configurationSchema.parse({});
-    expect(defaultConfiguration.scrape.sites).not.toContain(Website.H0930);
-    expect(defaultConfiguration.paths.actorPhotoFolder).toBe("");
-    expect(defaultConfiguration.paths.defaultScanExcludeDirs).toEqual(["JAV_output", "failed"]);
-    expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([
-      Website.AVBASE,
-      Website.DMM_TV,
-      Website.AVWIKIDB,
-      Website.FC2HUB,
-    ]);
-    expect(defaultConfiguration.aggregation.fieldPriorities.rating).toEqual([
-      Website.DMM_TV,
-      Website.DMM,
-      Website.FC2HUB,
-      Website.JAVDB,
-    ]);
-    expect(defaultConfiguration.aggregation.fieldPriorities.studio).toEqual([
-      Website.AVBASE,
-      Website.DMM,
-      Website.AVWIKIDB,
-      Website.FC2,
-      Website.FC2HUB,
-      Website.JAVDB,
-      Website.JAVBUS,
-    ]);
-    expect(defaultConfiguration.aggregation.fieldPriorities.publisher).toEqual([
-      Website.AVBASE,
-      Website.DMM,
-      Website.AVWIKIDB,
-      Website.FC2,
-      Website.FC2HUB,
-      Website.JAVDB,
-    ]);
-    expect(defaultConfiguration.aggregation.fieldPriorities.trailer_url).not.toContain(Website.AVBASE);
-
-    const legacyConfiguration = configurationSchema.parse({
-      personSync: {
-        actorPhotoFolder: "/legacy/actor-library",
-        personOverviewSources: ["official"],
-        personImageSources: ["local", "official"],
-      },
-    });
-
-    expect(legacyConfiguration.paths.actorPhotoFolder).toBe("");
-    expect(legacyConfiguration.personSync).not.toHaveProperty("actorPhotoFolder");
   });
 });

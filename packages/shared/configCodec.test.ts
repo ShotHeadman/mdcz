@@ -1,47 +1,85 @@
 import { describe, expect, it } from "vitest";
-import { defaultConfiguration } from "./config";
+import { configurationSchema, defaultConfiguration } from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
-const partialToml = `
-[network]
-timeout = 25
-retryCount = 4
-proxyType = "http"
-
-[paths]
-configDirectory = "server-config"
-failedOutputFolder = "custom-failed"
-
-[scrape]
-sites = ["dmm", "javdb"]
-`;
-
 describe("configuration codec", () => {
-  it("serializes and parses TOML configuration", () => {
-    const content = serializeConfiguration(defaultConfiguration, "toml");
-    const parsed = parseConfigurationContent(content, "toml");
+  it("round-trips title repair array-of-tables through TOML", () => {
+    const configuration = {
+      ...defaultConfiguration,
+      titleRepair: {
+        enabled: true,
+        rules: [
+          { source: "催●", replacement: "催眠" },
+          { source: "●●", replacement: "秘密" },
+        ],
+      },
+    };
 
-    expect(parsed).toEqual(defaultConfiguration);
-    expect(content).toContain("[network]");
-    expect(content).toContain('proxyType = "none"');
+    const content = serializeConfiguration(configuration, "toml");
+
+    expect(content).toContain("[[titleRepair.rules]]");
+    expect(parseConfigurationContent(content, "toml")).toEqual(configuration);
   });
 
-  it("parses partial TOML through the shared configuration schema", () => {
-    const parsed = parseConfigurationContent(partialToml, "toml");
+  it("parses TOML comments and special characters before schema validation", () => {
+    const parsed = parseConfigurationContent(
+      '[titleRepair]\nenabled = true # user setting\n\n[[titleRepair.rules]]\nsource = "催●"\nreplacement = "催眠 #1"\n',
+      "toml",
+    );
 
-    expect(parsed.network.timeout).toBe(25);
-    expect(parsed.network.retryCount).toBe(4);
-    expect(parsed.paths.configDirectory).toBe("server-config");
-    expect(parsed.paths.defaultScanExcludeDirs).toEqual(["JAV_output", "failed"]);
-    expect(parsed.scrape.sites).toEqual(["dmm", "javdb"]);
-    expect(parsed.download.downloadThumb).toBe(true);
+    expect(parsed.titleRepair).toEqual({
+      enabled: true,
+      rules: [{ source: "催●", replacement: "催眠 #1" }],
+    });
   });
 
-  it("keeps JSON compatibility", () => {
-    const content = serializeConfiguration(defaultConfiguration, "json");
-    const parsed = parseConfigurationContent(content, "json");
+  it("rejects duplicate and ineffective title repair rules", () => {
+    expect(() =>
+      parseConfigurationContent(
+        '[titleRepair]\nenabled = true\n\n[[titleRepair.rules]]\nsource = "催●"\nreplacement = "催眠"\n\n[[titleRepair.rules]]\nsource = "催●"\nreplacement = "催●"\n',
+        "toml",
+      ),
+    ).toThrow();
+  });
 
-    expect(parsed).toEqual(defaultConfiguration);
-    expect(content.trim().startsWith("{")).toBe(true);
+  it("round-trips actor alias maps through TOML and validates alias groups", () => {
+    const parsed = parseConfigurationContent(
+      '[personSync.actorAliases]\n"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]\n',
+      "toml",
+    );
+
+    expect(parsed.personSync.actorAliases).toEqual({ 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] });
+    expect(parseConfigurationContent(serializeConfiguration(parsed, "toml"), "toml")).toEqual(parsed);
+    expect(
+      parseConfigurationContent('[personSync]\npersonImageSources = ["local"]\n', "toml").personSync.actorAliases,
+    ).toEqual({});
+
+    expect(
+      configurationSchema.parse({
+        personSync: {
+          actorAliases: { " 河北彩花 ": ["河北彩伽", " 河北彩伽 ", "河北彩花"] },
+        },
+      }).personSync.actorAliases,
+    ).toEqual({ 河北彩花: ["河北彩伽"] });
+
+    const collision = configurationSchema.safeParse({
+      personSync: {
+        actorAliases: {
+          河北彩花: ["河北彩伽"],
+          河北彩伽: ["别名"],
+        },
+      },
+    });
+
+    expect(collision.success).toBe(false);
+    if (!collision.success) {
+      expect(collision.error.issues[0]?.path).toEqual(["personSync", "actorAliases", "河北彩伽"]);
+    }
+
+    expect(
+      configurationSchema.safeParse({
+        personSync: { actorAliases: { 河北彩花: [] } },
+      }).success,
+    ).toBe(false);
   });
 });

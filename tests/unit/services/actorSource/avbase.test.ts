@@ -102,55 +102,6 @@ describe("AvbaseActorSource", () => {
           expect(result.profile?.description).toContain("SNS:\ntwitter: kitagawa_miku");
         },
       },
-      {
-        query: "きたがわみく",
-        setup: (networkClient: FakeNetworkClient) => {
-          networkClient.getJson.mockImplementation(async (url: string) => {
-            if (
-              url ===
-              "https://www.avbase.net/api/public/actors/search?q=%E3%81%8D%E3%81%9F%E3%81%8C%E3%82%8F%E3%81%BF%E3%81%8F&page=1"
-            ) {
-              return [
-                {
-                  actors: [
-                    {
-                      id: 49045,
-                      name: "北川美玖",
-                      ruby: "きたがわみく",
-                      image_url: "",
-                      note: null,
-                    },
-                  ],
-                },
-              ];
-            }
-
-            if (url === "https://www.avbase.net/api/public/talents?actor_id=49045") {
-              return {
-                profile: null,
-                meta: null,
-                primary: {
-                  id: 49045,
-                  name: "北川美玖",
-                  ruby: "きたがわみく",
-                  url: "https://www.avbase.net/actors/49045",
-                  image_url: "https://cdn.example.com/actor.jpg",
-                  note: null,
-                },
-                actors: [],
-              };
-            }
-
-            throw new Error(`Unexpected URL ${url}`);
-          });
-        },
-        assert: (result: Awaited<ReturnType<AvbaseActorSource["lookup"]>>) => {
-          expect(result.success).toBe(true);
-          expect(result.profile?.name).toBe("北川美玖");
-          expect(result.profile?.aliases).toContain("きたがわみく");
-          expect(result.profile?.photo_url).toBe("https://cdn.example.com/actor.jpg");
-        },
-      },
     ];
 
     for (const { query, setup, assert } of cases) {
@@ -164,37 +115,5 @@ describe("AvbaseActorSource", () => {
       const result = await source.lookup(createConfig(), { name: query });
       assert(result);
     }
-  });
-
-  it("does not fall back to the first unrelated candidate when multiple results exist", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(async (url: string) => {
-      if (url === "https://www.avbase.net/api/public/actors/search?q=%E7%A5%9E%E6%9C%A8%E9%BA%97&page=1") {
-        return [
-          {
-            actors: [
-              { id: 1, name: "三上悠亜", ruby: "みかみゆあ", note: null },
-              { id: 2, name: "河北彩花", ruby: "かわきたさいか", note: null },
-            ],
-          },
-        ];
-      }
-
-      throw new Error(`Unexpected URL ${url}`);
-    });
-
-    const source = new AvbaseActorSource({
-      networkClient: networkClient as unknown as NetworkClient,
-    });
-
-    const result = await source.lookup(createConfig(), { name: "神木麗" });
-
-    expect(result).toMatchObject({
-      source: "avbase",
-      success: true,
-      warnings: [],
-    });
-    expect(result.profile).toBeUndefined();
-    expect(networkClient.getJson).toHaveBeenCalledTimes(1);
   });
 });

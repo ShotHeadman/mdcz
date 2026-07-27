@@ -16,6 +16,7 @@ import { prepareImageAlternativesForDownload } from "./output/prepareImageAltern
 import {
   AggregateStage,
   AggregationCoordinator,
+  CanonicalizeActorAliasesStage,
   DownloadStage,
   type FileScraperPipeline,
   type FileScraperStageRuntime,
@@ -138,6 +139,8 @@ class MemoryImageHostCooldownStore {
 }
 
 class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
+  private readonly pending = new Set<Promise<void>>();
+
   constructor(
     private readonly emit: (type: string, message: string) => Promise<void> | void,
     private readonly emitProgress: (progress: {
@@ -154,7 +157,7 @@ class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
   showFailedInfo(_input: { fileInfo: FileInfo; error: string }): void {}
 
   showLogText(message: string): void {
-    void this.emit("log", message);
+    this.track(this.emit("log", message));
   }
 
   showScrapeInfo(input: {
@@ -162,13 +165,31 @@ class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
     site: CrawlerData["website"];
     step: "search" | "download" | "parse" | "organize";
   }): void {
-    void this.emitStage(input.step, `${input.fileInfo.fileName}${input.fileInfo.extension}: ${input.site}`);
+    this.track(this.emitStage(input.step, `${input.fileInfo.fileName}${input.fileInfo.extension}: ${input.site}`));
   }
 
   showScrapeResult(_result: ScrapeResult): void {}
 
   setProgress(value: number, current: number, total: number): void {
-    void this.emitProgress({ value, current, total });
+    this.track(this.emitProgress({ value, current, total }));
+  }
+
+  async flush(): Promise<void> {
+    while (this.pending.size > 0) {
+      await Promise.allSettled([...this.pending]);
+    }
+  }
+
+  private track(result: Promise<void> | void): void {
+    if (!result) {
+      return;
+    }
+
+    this.pending.add(result);
+    result.then(
+      () => this.pending.delete(result),
+      () => this.pending.delete(result),
+    );
   }
 }
 
@@ -328,6 +349,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       new ProbeStage(runtime),
       new AggregateStage(runtime),
       new TranslateStage(runtime),
+      new CanonicalizeActorAliasesStage(),
       new PlanStage(runtime),
       new PrepareOutputStage(runtime),
       new DownloadStage(runtime),
@@ -446,50 +468,50 @@ export class MountedRootScrapeRuntime {
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
     const signalService = new MountedRootScrapeSignalService(
       (type, message) => {
-        void input.onEvent?.(type, message);
         console.info(message);
+        return input.onEvent?.(type, message);
       },
-      (progress) => {
-        void input.onProgress?.(progress);
-      },
-      (stage, message) => {
-        void input.onStage?.(stage, message);
-      },
+      (progress) => input.onProgress?.(progress),
+      (stage, message) => input.onStage?.(stage, message),
     );
-    const scraper = new FileScraper(
-      new MountedRootFileScraperPipeline(
-        input.root,
-        this.config,
-        this.aggregationService,
-        signalService,
-        this.logger,
-        this.networkClient,
-        input.localState,
-      ),
-    );
-    const absolutePath = resolveRootRelativePath(input.root, input.relativePath);
-    const result = await scraper.scrapeFile(absolutePath, input.progress, input.signal, {
-      manualScrape: input.manualScrape,
-    });
+    try {
+      const scraper = new FileScraper(
+        new MountedRootFileScraperPipeline(
+          input.root,
+          this.config,
+          this.aggregationService,
+          signalService,
+          this.logger,
+          this.networkClient,
+          input.localState,
+        ),
+      );
+      const absolutePath = resolveRootRelativePath(input.root, input.relativePath);
+      const result = await scraper.scrapeFile(absolutePath, input.progress, input.signal, {
+        manualScrape: input.manualScrape,
+      });
 
-    if (result.status !== "success" || !result.crawlerData) {
+      if (result.status !== "success" || !result.crawlerData) {
+        return {
+          status: result.status === "skipped" ? "skipped" : "failed",
+          result,
+          error: result.error ?? "刮削失败",
+        };
+      }
+
+      const outputVideoPath = result.fileInfo.filePath;
+      const stats = await stat(outputVideoPath).catch(() => null);
       return {
-        status: result.status === "skipped" ? "skipped" : "failed",
+        status: "success",
         result,
-        error: result.error ?? "刮削失败",
+        crawlerData: result.crawlerData,
+        nfoRelativePath: result.nfoPath ? toRootRelativePath(input.root, result.nfoPath) : null,
+        outputRelativePath: toRootRelativePath(input.root, outputVideoPath),
+        size: stats?.size ?? 0,
+        modifiedAt: stats?.mtime ?? null,
       };
+    } finally {
+      await signalService.flush();
     }
-
-    const outputVideoPath = result.fileInfo.filePath;
-    const stats = await stat(outputVideoPath).catch(() => null);
-    return {
-      status: "success",
-      result,
-      crawlerData: result.crawlerData,
-      nfoRelativePath: result.nfoPath ? toRootRelativePath(input.root, result.nfoPath) : null,
-      outputRelativePath: toRootRelativePath(input.root, outputVideoPath),
-      size: stats?.size ?? 0,
-      modifiedAt: stats?.mtime ?? null,
-    };
   }
 }

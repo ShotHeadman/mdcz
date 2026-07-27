@@ -45,7 +45,7 @@ const plan = {
   nfoPath: "/organized/ABC-123/ABC-123.nfo",
 };
 
-const createScraper = (crawlerData: CrawlerData) =>
+const createScraper = (crawlerData: CrawlerData, presetId: "refresh_data" | "rebuild_all" = "refresh_data") =>
   new MaintenanceFileScraper(
     {
       aggregationService: {
@@ -70,7 +70,7 @@ const createScraper = (crawlerData: CrawlerData) =>
       } as never,
       signalService: new SignalService(null),
     },
-    getPreset("refresh_data"),
+    getPreset(presetId),
   );
 
 describe("MaintenanceFileScraper preview diffs", () => {
@@ -114,6 +114,43 @@ describe("MaintenanceFileScraper preview diffs", () => {
     expect(getPreset("refresh_data").configOverrides.behavior).toMatchObject({
       successFileMove: false,
       successFileRename: false,
+    });
+  });
+
+  it("plans rebuild_all path reorganization while refresh_data keeps source path", async () => {
+    const crawlerData = createCrawlerData({ title: "Remote Title" });
+    const refreshResult = await createScraper(crawlerData, "refresh_data").previewFile(
+      createEntry(),
+      configurationSchema.parse(defaultConfiguration),
+    );
+    const rebuildResult = await createScraper(crawlerData, "rebuild_all").previewFile(
+      createEntry(),
+      configurationSchema.parse({
+        ...defaultConfiguration,
+        behavior: {
+          ...defaultConfiguration.behavior,
+          successFileMove: true,
+          successFileRename: true,
+        },
+        paths: {
+          ...defaultConfiguration.paths,
+          successOutputFolder: "JAV_output",
+        },
+      }),
+    );
+
+    expect(refreshResult.pathDiff).toBeUndefined();
+    expect(getPreset("refresh_data").configOverrides.behavior).toMatchObject({
+      successFileMove: false,
+      successFileRename: false,
+    });
+    expect(getPreset("rebuild_all").configOverrides.behavior).toMatchObject({
+      successFileMove: true,
+      successFileRename: true,
+    });
+    expect(rebuildResult.pathDiff).toMatchObject({
+      currentVideoPath: "/media/ABC-123.mp4",
+      targetVideoPath: "/organized/ABC-123/ABC-123.mp4",
     });
   });
 });

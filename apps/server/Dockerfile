@@ -32,6 +32,9 @@ ENV NODE_ENV=production \
     MDCZ_HOST=0.0.0.0 \
     MDCZ_HOME=/data \
     MDCZ_WEB_DIST_DIR=/app/web
+# Fresh named volumes inherit the mountpoint's ownership from the image; without
+# this, /data and /media are root-owned and the non-root runtime cannot write.
+RUN mkdir -p /data /media && chown node:node /data /media
 EXPOSE 3838
 VOLUME /data
 USER node

@@ -74,7 +74,6 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const [singleFileRootId, setSingleFileRootId] = useState("");
   const [fileCleanerCandidates, setFileCleanerCandidates] = useState<FileCleanerCandidateView[]>([]);
   const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
-  const [batchResults, setBatchResults] = useState<BatchTranslateApplyResultItem[]>([]);
   const [amazonDialogOpen, setAmazonDialogOpen] = useState(false);
   const [amazonItems, setAmazonItems] = useState<AmazonPosterScanItem[]>([]);
   const [personServer, setPersonServer] = useState<PersonServer>("jellyfin");
@@ -172,20 +171,17 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
       )}
       {toolId === "batch-nfo-translator" && (
         <BatchNfoTranslatorWorkspaceDetail
-          applying={executeM.isPending}
           items={batchItems}
-          results={batchResults}
-          scanning={executeM.isPending}
-          onApply={async (items) => {
-            const response = await executeM.mutateAsync({ toolId, action: "apply", items });
+          onApply={async (items, batchSize) => {
+            const response = await executeM.mutateAsync({ toolId, action: "apply", batchSize, items });
             const data = response.data as { results?: BatchTranslateApplyResultItem[] } | undefined;
-            setBatchResults(data?.results ?? []);
+            return data?.results ?? [];
           }}
+          scanning={executeM.isPending && executeM.variables?.toolId === toolId && executeM.variables.action === "scan"}
           onScan={async (directory) => {
             const response = await executeM.mutateAsync({ toolId, action: "scan", directory });
             const data = response.data as { items?: BatchTranslateScanItem[] } | undefined;
             setBatchItems(data?.items ?? []);
-            setBatchResults([]);
           }}
         />
       )}

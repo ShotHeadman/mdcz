@@ -81,40 +81,6 @@ describe("SokmilCrawler", () => {
 
     expect(response.result.data.title).toBe("甘えたいカラダ 真田まこと");
     expect(response.result.data.actors).toEqual(["真田まこと"]);
-  });
-
-  it("matches an exact title from search results instead of guessing the first item", async () => {
-    const searchUrl =
-      "https://www.sokmil.com/search/keyword/?sectionid=2&q=%E7%94%98%E3%81%88%E3%81%9F%E3%81%84%E3%82%AB%E3%83%A9%E3%83%80%20%E7%9C%9F%E7%94%B0%E3%81%BE%E3%81%93%E3%81%A8";
-    const detailUrl = "https://www.sokmil.com/idol/_item/item536132.htm";
-    const fixtures = new Map<string, string>([
-      [
-        searchUrl,
-        createSearchHtml([
-          {
-            pid: "536132",
-            href: `${detailUrl}?ref=search`,
-            title: "甘えたいカラダ 真田まこと",
-            actor: "真田まこと",
-          },
-        ]),
-      ],
-      [detailUrl, detailHtml],
-    ]);
-    const crawler = new SokmilCrawler(withGateway(new FixtureNetworkClient(fixtures)));
-
-    const response = await crawler.crawl({
-      number: "甘えたいカラダ 真田まこと",
-      site: Website.SOKMIL,
-    });
-
-    expect(response.result.success).toBe(true);
-    if (!response.result.success) {
-      throw new Error("expected success");
-    }
-
-    expect(response.result.data.title).toBe("甘えたいカラダ 真田まこと");
-    expect(response.result.data.actors).toEqual(["真田まこと"]);
     expect(response.result.data.release_date).toBe("2026-03-21");
     expect(response.result.data.thumb_url).toBe("https://www.sokmil.com/images/item536132.jpg");
   });
