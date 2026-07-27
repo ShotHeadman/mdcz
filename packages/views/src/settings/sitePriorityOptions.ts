@@ -114,6 +114,12 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
     sites: [Website.KINGDOM],
     aliases: ["empress", "princess", "queen", "bambini"],
   },
+  {
+    id: Website.FANTIA,
+    label: Website.FANTIA,
+    description: "Fantia 官方站点，适合 Fantia 编号作品，通用性较低。",
+    sites: [Website.FANTIA],
+  },
 ];
 
 export const SITE_PRIORITY_EDITOR_ALIASES = Array.from(

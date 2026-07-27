@@ -117,14 +117,44 @@ const checkJavbusCookie = async (
   }
 };
 
+const checkFantiaCookie = async (
+  cookie: string,
+  networkClient: CookieCheckNetworkClient,
+): Promise<CookieCheckResult> => {
+  if (!cookie) {
+    return { site: "Fantia", valid: false, message: "未配置 Cookie", status: "not_configured" };
+  }
+
+  try {
+    const html = await networkClient.getText("https://fantia.jp/mypage/dashboard", {
+      headers: { cookie },
+    });
+    const valid = !html.includes("外部サービスでログイン");
+    return {
+      site: "Fantia",
+      valid,
+      message: valid ? "Cookie 有效" : "Cookie 无效或已过期",
+      status: valid ? "ready_with_cookie" : "invalid_or_expired",
+    };
+  } catch (error) {
+    return {
+      site: "Fantia",
+      valid: false,
+      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
+      status: "request_failed",
+    };
+  }
+};
+
 export const checkConfiguredSiteCookies = async (
   configuration: Configuration,
   networkClient: CookieCheckNetworkClient,
 ): Promise<{ results: CookieCheckResult[] }> => {
-  const [javdb, javbus] = await Promise.all([
+  const [javdb, javbus, fantia] = await Promise.all([
     checkJavdbCookie(configuration.network.javdbCookie.trim(), networkClient),
     checkJavbusCookie(configuration.network.javbusCookie.trim(), networkClient),
+    checkFantiaCookie(configuration.network.fantiaCookie.trim(), networkClient),
   ]);
 
-  return { results: [javdb, javbus] };
+  return { results: [javdb, javbus, fantia] };
 };

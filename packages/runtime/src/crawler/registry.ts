@@ -7,6 +7,7 @@ import { crawlerRegistration as dahliaRegistration } from "./sites/dahlia";
 import { crawlerRegistration as dmmRegistration } from "./sites/dmm";
 import { crawlerRegistration as dmmTvRegistration } from "./sites/dmm/dmm_tv";
 import { crawlerRegistration as falenoRegistration } from "./sites/faleno";
+import { crawlerRegistration as fantiaRegistration } from "./sites/fantia";
 import { crawlerRegistration as fc2Registration } from "./sites/fc2";
 import { crawlerRegistration as fc2hubRegistration } from "./sites/fc2hub";
 import { crawlerRegistration as h0930Registration } from "./sites/h0930";
@@ -51,6 +52,7 @@ const crawlerRegistrations: CrawlerRegistration[] = [
   dmmRegistration,
   dmmTvRegistration,
   falenoRegistration,
+  fantiaRegistration,
   fc2Registration,
   fc2hubRegistration,
   h0930Registration,

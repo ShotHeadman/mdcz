@@ -202,6 +202,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   "scrape.sites": SITE_PRIORITY_EDITOR_ALIASES,
   "network.javdbCookie": ["cookie", "javdb", "凭证"],
   "network.javbusCookie": ["cookie", "javbus", "凭证"],
+  "network.fantiaCookie": ["cookie", "fantia", "凭证"],
   "translate.engine": ["translator", "translation", "翻译引擎"],
   "translate.llmModelName": ["model", "openai", "llm"],
   "translate.llmApiKey": ["api key", "token", "openai key", "密钥"],
@@ -311,6 +312,7 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "network.retryCount", label: "重试次数", anchor: "network" },
   { key: "network.javdbCookie", label: "JavDB Cookie", anchor: "network" },
   { key: "network.javbusCookie", label: "JavBus Cookie", anchor: "network" },
+  { key: "network.fantiaCookie", label: "Fantia Cookie", anchor: "network" },
   ...AGGREGATION_PRIORITY_FIELDS.map((entry) => ({
     key: entry.key,
     label: entry.label,

@@ -23,7 +23,7 @@ describe("settings parity runtime helpers", () => {
     expect(buildSiteConnectivityHeaders(Website.SOKMIL, config)).toEqual({ cookie: "AGEAUTH=ok" });
   });
 
-  it("reports when JavBus is anonymously accessible while JavDB remains unconfigured", async () => {
+  it("reports when JavBus is anonymously accessible while JavDB and Fantia remains unconfigured", async () => {
     const getText = vi.fn(async () => '<a class="movie-box" href="/ABP-123"></a>');
 
     await expect(checkConfiguredSiteCookies(cloneConfig(), { getText })).resolves.toEqual({
@@ -35,6 +35,7 @@ describe("settings parity runtime helpers", () => {
           message: "JavBus 影片页面可匿名访问，无需 Cookie",
           status: "ready_without_cookie",
         },
+        { site: "Fantia", valid: false, message: "未配置 Cookie", status: "not_configured" },
       ],
     });
     expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", { headers: { ...JAVBUS_REQUEST_HEADERS } });
