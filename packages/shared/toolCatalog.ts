@@ -71,7 +71,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "扫描并删除无用附件、临时文件和冗余产物。",
     detailTitle: "文件清理",
     detailDescription: "根据扩展名扫描目标目录，先预览待删文件，再批量确认清理。",
-    overviewLayout: "compactFull",
+    overviewLayout: "standardHalf",
     overviewIcon: "trash",
   },
   {

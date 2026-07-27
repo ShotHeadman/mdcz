@@ -75,7 +75,7 @@ export const normalizeLlmBaseUrl = (baseUrl: string): string => {
     return DEFAULT_LLM_BASE_URL;
   }
 
-  return trimmed.replace(/\/+$/u, "");
+  return trimmed.replace(/\/+$/u, "").replace(/\/(chat\/completions|responses)$/iu, "");
 };
 
 export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>

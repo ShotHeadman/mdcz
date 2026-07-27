@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   FormControl,
   FormField,
@@ -19,6 +18,7 @@ import { Loader2 } from "lucide-react";
 import { createContext, type ReactElement, type ReactNode, useContext, useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
+import { toast } from "sonner";
 import { ResetToDefaultButton } from "../settings/ResetToDefaultButton";
 import { SettingRow } from "../settings/SettingRow";
 import { useOptionalSettingsSearch } from "../settings/SettingsSearchContext";
@@ -347,47 +347,40 @@ const COOKIE_VALIDATE_FIELDS = new Set(["network.javdbCookie", "network.javbusCo
 function CookieValidateButton({ fieldKey }: { fieldKey: string }) {
   const services = useSettingsServices();
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<{ valid: boolean; message: string } | null>(null);
   const siteName = fieldKey.includes("javdb") ? "JavDB" : "JavBus";
 
   const handleCheck = async () => {
     setChecking(true);
-    setResult(null);
     try {
       const response = await services.checkCookies();
       const entry = response.results.find((r) => r.site === siteName);
-      setResult(entry ?? { valid: false, message: "未找到验证结果" });
+      if (!entry) {
+        toast.error(`${siteName} Cookie 验证失败: 未找到验证结果`);
+        return;
+      }
+      if (entry.valid) {
+        toast.success(entry.message);
+      } else {
+        toast.error(entry.message);
+      }
     } catch (error) {
-      setResult({ valid: false, message: error instanceof Error ? error.message : "验证请求失败" });
+      const msg = error instanceof Error ? error.message : "验证请求失败";
+      toast.error(`${siteName} Cookie 验证失败: ${msg}`);
     } finally {
       setChecking(false);
     }
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 text-xs"
-        onClick={handleCheck}
-        disabled={checking}
-      >
-        {checking ? (
-          <>
-            <Loader2 className="h-3 w-3 mr-1 animate-spin" /> 验证中...
-          </>
-        ) : (
-          "验证 Cookie"
-        )}
-      </Button>
-      {result && (
-        <Badge variant={result.valid ? "default" : "destructive"} className="text-xs">
-          {result.message}
-        </Badge>
+    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleCheck} disabled={checking}>
+      {checking ? (
+        <>
+          <Loader2 className="h-3 w-3 mr-1 animate-spin" /> 验证中...
+        </>
+      ) : (
+        "验证 Cookie"
       )}
-    </div>
+    </Button>
   );
 }
 

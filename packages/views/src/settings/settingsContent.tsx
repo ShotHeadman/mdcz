@@ -1056,7 +1056,7 @@ export function TranslateSection() {
           <UrlField
             name="translate.llmBaseUrl"
             label="LLM API 地址"
-            description={`默认值：${DEFAULT_LLM_BASE_URL}。本地常见示例：Ollama 用 http://127.0.0.1:11434/v1，LM Studio 用 http://127.0.0.1:1234/v1`}
+            description={`默认值：${DEFAULT_LLM_BASE_URL}。Google Gemini 示例：https://generativelanguage.googleapis.com/v1beta/openai。本地示例：Ollama 用 http://127.0.0.1:11434/v1`}
           />
           <PromptFieldWrapper name="translate.llmPrompt" label="LLM 翻译提示词" />
           <NumberField name="translate.llmTemperature" label="LLM 温度" min={0} max={2} step={0.1} />
