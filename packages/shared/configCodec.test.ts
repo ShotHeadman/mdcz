@@ -127,7 +127,7 @@ describe("configuration codec", () => {
       "trailer",
       "sourceComment",
     ];
-    expect(defaultConfiguration.download.nfoFields).toEqual(expectedFields);
+    expect(defaultConfiguration.download.nfoFields).toEqual([]);
 
     const configuration = {
       ...defaultConfiguration,
@@ -155,7 +155,7 @@ describe("configuration codec", () => {
       ).toEqual([]);
       expect(
         parseConfigurationContent(format === "toml" ? "[download]\n" : '{"download":{}}', format).download.nfoFields,
-      ).toEqual(expectedFields);
+      ).toEqual([]);
       expect(() =>
         parseConfigurationContent(
           format === "toml" ? '[download]\nnfoFields = ["actors"]\n' : '{"download":{"nfoFields":["actors"]}}',

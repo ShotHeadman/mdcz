@@ -359,12 +359,12 @@ export function FilenameFilteringSection() {
       <ChipArrayFieldWrapper
         name="scrape.filenameIgnoreTokens"
         label="番号识别忽略词"
-        description="匹配时不区分大小写，并按原样匹配文字；仅影响番号识别，不会修改文件名。"
+        description="番号识别前忽略这些文字；仅影响识别，不修改文件名。支持 Enter、逗号或空格分割添加。"
       />
       <ChipArrayFieldWrapper
         name="scrape.filenameBlacklistTokens"
         label="自动扫描黑名单词"
-        description="自动扫描时排除文件名中包含这些文字的影片；匹配时不区分大小写。"
+        description="自动扫描时排除包含这些文字的文件；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。"
       />
     </>
   );
