@@ -135,6 +135,11 @@ const SITE_RULES: readonly ManualScrapeSiteRule[] = [
     hosts: ["avwikidb.com", "www.avwikidb.com"],
     isDetailUrl: (url) => pathMatches(url, /^\/work\/[^/]+\/?$/iu),
   },
+  {
+    site: Website.FANTIA,
+    hosts: ["fantia.jp", "www.fantia.jp"],
+    isDetailUrl: (url) => pathMatches(url, /^\/(?:products|posts)\/[^/]+\/?$/iu),
+  },
 ];
 
 const parseInputUrl = (input: string): URL | null => {

@@ -3,6 +3,7 @@ export enum Website {
   DMM = "dmm",
   DMM_TV = "dmm_tv",
   FALENO = "faleno",
+  FANTIA = "fantia",
   FC2 = "fc2",
   FC2HUB = "fc2hub",
   H0930 = "h0930",
