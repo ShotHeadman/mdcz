@@ -37,8 +37,22 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
   const [proxyType, proxy, useProxy, javdbCookie, javbusCookie, fantiaCookie] =
     (useWatch({
       control: form.control,
-      name: ["network.proxyType", "network.proxy", "network.useProxy", "network.javdbCookie", "network.javbusCookie", "network.fantiaCookie"],
-    }) as [string | undefined, string | undefined, boolean | undefined, string | undefined, string | undefined, string | undefined]) ?? [];
+      name: [
+        "network.proxyType",
+        "network.proxy",
+        "network.useProxy",
+        "network.javdbCookie",
+        "network.javbusCookie",
+        "network.fantiaCookie",
+      ],
+    }) as [
+      string | undefined,
+      string | undefined,
+      boolean | undefined,
+      string | undefined,
+      string | undefined,
+      string | undefined,
+    ]) ?? [];
   const probeDependencyKey = [proxyType, proxy, useProxy, javdbCookie, javbusCookie, fantiaCookie].join("::");
 
   useEffect(() => {
