@@ -108,26 +108,57 @@ describe("configuration codec", () => {
   });
 
   it("defaults, validates, and round-trips NFO fields through every configuration codec", () => {
-    expect(defaultConfiguration.download.nfoFields).toEqual(["director", "trailer"]);
+    const expectedFields: NfoField[] = [
+      "plot",
+      "release",
+      "runtime",
+      "fileinfo",
+      "rating",
+      "studio",
+      "director",
+      "publisher",
+      "series",
+      "genres",
+      "tags",
+      "poster",
+      "thumb",
+      "fanart",
+      "sceneImages",
+      "trailer",
+      "sourceComment",
+    ];
+    expect(defaultConfiguration.download.nfoFields).toEqual(expectedFields);
 
     const configuration = {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        nfoFields: ["director"] as NfoField[],
+        nfoFields: ["plot", "director"] as NfoField[],
       },
     };
 
     for (const format of ["toml", "json"] as const) {
       expect(
         parseConfigurationContent(serializeConfiguration(configuration, format), format).download.nfoFields,
-      ).toEqual(["director"]);
+      ).toEqual(["plot", "director"]);
+      expect(
+        parseConfigurationContent(
+          serializeConfiguration(
+            {
+              ...configuration,
+              download: { ...configuration.download, nfoFields: [] },
+            },
+            format,
+          ),
+          format,
+        ).download.nfoFields,
+      ).toEqual([]);
       expect(
         parseConfigurationContent(format === "toml" ? "[download]\n" : '{"download":{}}', format).download.nfoFields,
-      ).toEqual(["director", "trailer"]);
+      ).toEqual(expectedFields);
       expect(() =>
         parseConfigurationContent(
-          format === "toml" ? '[download]\nnfoFields = ["plot"]\n' : '{"download":{"nfoFields":["plot"]}}',
+          format === "toml" ? '[download]\nnfoFields = ["actors"]\n' : '{"download":{"nfoFields":["actors"]}}',
           format,
         ),
       ).toThrow();

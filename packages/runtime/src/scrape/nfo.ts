@@ -122,21 +122,22 @@ const isNfoFieldEnabled = (enabledFields: readonly NfoField[] | undefined, field
 const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
-  includeTrailerSource: boolean,
+  enabledFields: readonly NfoField[] | undefined,
 ): Record<string, unknown> | undefined => {
-  const thumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
-  const posterSourceUrl = data.poster_source_url ?? toRemoteImageSourceUrl(data.poster_url);
-  const fanartSourceUrl =
-    data.fanart_source_url ??
-    toRemoteImageSourceUrl(data.fanart_url) ??
-    thumbSourceUrl ??
-    toRemoteImageSourceUrl(data.thumb_url);
-  const trailerSourceUrl = includeTrailerSource
+  const remoteThumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
+  const thumbSourceUrl = isNfoFieldEnabled(enabledFields, "thumb") ? remoteThumbSourceUrl : undefined;
+  const posterSourceUrl = isNfoFieldEnabled(enabledFields, "poster")
+    ? (data.poster_source_url ?? toRemoteImageSourceUrl(data.poster_url))
+    : undefined;
+  const fanartSourceUrl = isNfoFieldEnabled(enabledFields, "fanart")
+    ? (data.fanart_source_url ?? toRemoteImageSourceUrl(data.fanart_url) ?? remoteThumbSourceUrl)
+    : undefined;
+  const trailerSourceUrl = isNfoFieldEnabled(enabledFields, "trailer")
     ? (data.trailer_source_url ?? toRemoteImageSourceUrl(data.trailer_url))
     : undefined;
-  const sceneImageUrls = data.scene_images
-    .map((value) => toRemoteImageSourceUrl(value))
-    .filter((value): value is string => Boolean(value));
+  const sceneImageUrls = isNfoFieldEnabled(enabledFields, "sceneImages")
+    ? data.scene_images.map((value) => toRemoteImageSourceUrl(value)).filter((value): value is string => Boolean(value))
+    : [];
 
   if (
     !rawTitle &&
@@ -182,53 +183,58 @@ export class NfoGenerator {
     const tags = Array.from(new Set(options?.buildTags?.(data, fileInfo, localState) ?? []));
     const videoNode = buildVideoNode(videoMeta);
     const movie: Record<string, unknown> = {};
+    const enabledFields = options?.enabledFields;
 
-    if (sources && Object.keys(sources).length > 0) {
+    if (isNfoFieldEnabled(enabledFields, "sourceComment") && sources && Object.keys(sources).length > 0) {
       movie["#comment"] = buildSourceComment(data, sources);
     }
 
     movie.title = title;
     movie.originaltitle = originaltitle;
-    movie.plot = plot && plot.length > 0 ? plot : undefined;
-    movie.outline = outline;
-    movie.premiered = data.release_date;
-    movie.releasedate = data.release_date;
+    movie.plot = isNfoFieldEnabled(enabledFields, "plot") && plot && plot.length > 0 ? plot : undefined;
+    movie.outline = isNfoFieldEnabled(enabledFields, "plot") ? outline : undefined;
+    movie.premiered = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
+    movie.releasedate = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.dateadded = new Date().toISOString();
-    movie.year = parseReleaseYear(data.release_date);
-    movie.runtime = runtimeMinutes;
-    movie.rating = data.rating;
-    movie.studio = data.studio;
-    movie.director = isNfoFieldEnabled(options?.enabledFields, "director") ? data.director : undefined;
-    movie.publisher = data.publisher;
+    movie.year = isNfoFieldEnabled(enabledFields, "release") ? parseReleaseYear(data.release_date) : undefined;
+    movie.runtime = isNfoFieldEnabled(enabledFields, "runtime") ? runtimeMinutes : undefined;
+    movie.rating = isNfoFieldEnabled(enabledFields, "rating") ? data.rating : undefined;
+    movie.studio = isNfoFieldEnabled(enabledFields, "studio") ? data.studio : undefined;
+    movie.director = isNfoFieldEnabled(enabledFields, "director") ? data.director : undefined;
+    movie.publisher = isNfoFieldEnabled(enabledFields, "publisher") ? data.publisher : undefined;
     movie.mpaa = "JP-18+";
-    movie.set = data.series;
-    movie.trailer = isNfoFieldEnabled(options?.enabledFields, "trailer")
+    movie.set = isNfoFieldEnabled(enabledFields, "series") ? data.series : undefined;
+    movie.trailer = isNfoFieldEnabled(enabledFields, "trailer")
       ? assets?.trailer
         ? basename(assets.trailer)
         : data.trailer_url
       : undefined;
     movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
-    movie.genre = genres;
-    movie.tag = tags.length > 0 ? tags : undefined;
+    movie.genre = isNfoFieldEnabled(enabledFields, "genres") ? genres : undefined;
+    movie.tag = isNfoFieldEnabled(enabledFields, "tags") && tags.length > 0 ? tags : undefined;
     movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
 
     const thumbs: Array<Record<string, unknown>> = [];
-    if (assets?.poster) thumbs.push({ "@_aspect": "poster", "#text": basename(assets.poster) });
-    else if (data.poster_url) thumbs.push({ "@_aspect": "poster", "#text": data.poster_url });
-    if (assets?.thumb) thumbs.push({ "@_aspect": "thumb", "#text": basename(assets.thumb) });
-    else if (data.thumb_url) thumbs.push({ "@_aspect": "thumb", "#text": data.thumb_url });
+    if (isNfoFieldEnabled(enabledFields, "poster")) {
+      if (assets?.poster) thumbs.push({ "@_aspect": "poster", "#text": basename(assets.poster) });
+      else if (data.poster_url) thumbs.push({ "@_aspect": "poster", "#text": data.poster_url });
+    }
+    if (isNfoFieldEnabled(enabledFields, "thumb")) {
+      if (assets?.thumb) thumbs.push({ "@_aspect": "thumb", "#text": basename(assets.thumb) });
+      else if (data.thumb_url) thumbs.push({ "@_aspect": "thumb", "#text": data.thumb_url });
+    }
     if (thumbs.length > 0) movie.thumb = thumbs;
 
-    const fanartNode = buildFanartNode(data, assets);
-    if (fanartNode) movie.fanart = fanartNode;
+    if (isNfoFieldEnabled(enabledFields, "fanart")) {
+      const fanartNode = buildFanartNode(data, assets);
+      if (fanartNode) movie.fanart = fanartNode;
+    }
     const hasCustomTitleTemplate = titleTemplate !== "{title}";
-    const mdczNode = buildMdczNode(
-      data,
-      hasCustomTitleTemplate ? rawTitle : undefined,
-      isNfoFieldEnabled(options?.enabledFields, "trailer"),
-    );
+    const mdczNode = buildMdczNode(data, hasCustomTitleTemplate ? rawTitle : undefined, enabledFields);
     if (mdczNode) movie.mdcz = mdczNode;
-    if (videoNode) movie.fileinfo = { streamdetails: { video: videoNode } };
+    if (isNfoFieldEnabled(enabledFields, "fileinfo") && videoNode) {
+      movie.fileinfo = { streamdetails: { video: videoNode } };
+    }
 
     const xmlBody = builder.build({ movie });
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xmlBody}`;

@@ -1,7 +1,6 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@mdcz/shared/actorSource";
 import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
-import type { Configuration } from "@mdcz/shared/config";
-import { NFO_FIELD_OPTIONS } from "@mdcz/shared/config";
+import { type Configuration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@mdcz/shared/llm";
 import {
@@ -84,10 +83,29 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "movie", label: "仅 movie.nfo" },
   { value: "filename", label: "仅 文件名.nfo" },
 ];
-const NFO_ENABLED_FIELD_OPTIONS: EnumOption[] = [
-  { value: NFO_FIELD_OPTIONS[0], label: "导演" },
-  { value: NFO_FIELD_OPTIONS[1], label: "预告片" },
-];
+const NFO_ENABLED_FIELD_LABELS: Record<NfoField, string> = {
+  plot: "简介与摘要",
+  release: "发行信息",
+  runtime: "片长",
+  fileinfo: "视频技术信息",
+  rating: "评分",
+  studio: "片商",
+  director: "导演",
+  publisher: "发行商",
+  series: "系列",
+  genres: "类型",
+  tags: "标签",
+  poster: "海报",
+  thumb: "横版缩略图",
+  fanart: "背景图",
+  sceneImages: "剧照来源",
+  trailer: "预告片",
+  sourceComment: "聚合来源注释",
+};
+const NFO_ENABLED_FIELD_OPTIONS: EnumOption[] = NFO_FIELD_OPTIONS.map((value) => ({
+  value,
+  label: NFO_ENABLED_FIELD_LABELS[value],
+}));
 const TAG_BADGE_TYPE_OPTIONS = POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({
   value,
   label: POSTER_TAG_BADGE_TYPE_LABELS[value],
@@ -599,7 +617,7 @@ export function NfoSection() {
           <ChipArrayFieldWrapper
             name="download.nfoFields"
             label="NFO 写入字段"
-            description="选择写入 NFO 的导演和预告片字段；关闭预告片只影响 XML，不影响预告片下载。"
+            description="选择可选 NFO 字段；标题、番号、演员等核心字段始终保留。关闭预告片只影响 XML，不影响预告片下载。"
             options={NFO_ENABLED_FIELD_OPTIONS}
             showBulkActions
           />

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findExistingNfoPath, NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { parseNfo } from "@main/utils/nfo";
+import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -369,5 +370,168 @@ describe("NfoGenerator", () => {
     expect(neither).not.toContain("<director>");
     expect(neither).not.toContain("<trailer>");
     expect(neither).not.toContain("trailer_source_url");
+  });
+  it("gates optional NFO field groups while retaining core metadata", () => {
+    const generator = new NfoGenerator();
+    const data = createCrawlerData({
+      title: "Original",
+      title_zh: "中文标题",
+      original_title: "Original",
+      plot: "A long plot",
+      release_date: "2024-01-02",
+      durationSeconds: 3600,
+      rating: 8.5,
+      studio: "Studio",
+      director: "Director",
+      publisher: "Publisher",
+      series: "Series",
+      actors: ["Actor"],
+      genres: ["Drama"],
+      scene_images: ["https://example.com/scene.jpg"],
+      poster_url: "https://example.com/poster.jpg",
+      thumb_url: "https://example.com/thumb.jpg",
+      fanart_url: "https://example.com/fanart.jpg",
+      trailer_url: "https://example.com/trailer.mp4",
+      poster_source_url: "https://example.com/poster-source.jpg",
+      thumb_source_url: "https://example.com/thumb-source.jpg",
+      fanart_source_url: "https://example.com/fanart-source.jpg",
+      trailer_source_url: "https://example.com/trailer-source.mp4",
+    });
+    const assets = createAssets();
+    const videoMeta = { width: 1920, height: 1080, durationSeconds: 3600 };
+    const sources = { title: Website.DMM };
+    const allFields: NfoField[] = [...NFO_FIELD_OPTIONS];
+
+    const all = generator.buildXml(data, {
+      assets,
+      videoMeta,
+      sources,
+      enabledFields: allFields,
+      buildTags: () => ["中字"],
+    });
+    expect(all).toContain("<plot>A long plot</plot>");
+    expect(all).toContain("<outline>A long plot</outline>");
+    expect(all).toContain("<premiered>2024-01-02</premiered>");
+    expect(all).toContain("<runtime>60</runtime>");
+    expect(all).toContain("<rating>8.5</rating>");
+    expect(all).toContain("<director>Director</director>");
+    expect(all).toContain("<set>Series</set>");
+    expect(all).toContain("<genre>Drama</genre>");
+    expect(all).toContain("<tag>中字</tag>");
+    expect(all).toContain('<thumb aspect="poster">poster.jpg</thumb>');
+    expect(all).toContain('<thumb aspect="thumb">thumb.jpg</thumb>');
+    expect(all).toContain("<fanart>");
+    expect(all).toContain("<scene_images>");
+    expect(all).toContain("<trailer>trailer.mp4</trailer>");
+    expect(all).toContain("Aggregation Sources:");
+    expect(all).toContain("<streamdetails>");
+    expect(all).toContain("<actor>");
+
+    const empty = generator.buildXml(data, { assets, videoMeta, sources, enabledFields: [] });
+    expect(empty).toContain("<title>中文标题</title>");
+    expect(empty).toContain("<originaltitle>Original</originaltitle>");
+    expect(empty).toContain("<uniqueid");
+    expect(empty).toContain("<actor>");
+    expect(empty).toContain("<dateadded>");
+    expect(empty).not.toContain("<plot>");
+    expect(empty).not.toContain("<premiered>");
+    expect(empty).not.toContain("<runtime>");
+    expect(empty).not.toContain("<rating>");
+    expect(empty).not.toContain("<director>");
+    expect(empty).not.toContain("<genre>");
+    expect(empty).not.toContain("<tag>");
+    expect(empty).not.toContain("<thumb");
+    expect(empty).not.toContain("<fanart>");
+    expect(empty).not.toContain("<trailer>");
+    expect(empty).not.toContain("<fileinfo>");
+    expect(empty).not.toContain("Aggregation Sources:");
+    expect(empty).not.toContain("<scene_images>");
+    expect(empty).not.toContain("poster-source.jpg");
+    expect(empty).not.toContain("trailer-source.mp4");
+
+    const optionalFieldTokens: Record<NfoField, string[]> = {
+      plot: ["<plot>", "<outline>"],
+      release: ["<premiered>", "<releasedate>", "<year>"],
+      runtime: ["<runtime>"],
+      fileinfo: ["<fileinfo>", "<streamdetails>"],
+      rating: ["<rating>"],
+      studio: ["<studio>"],
+      director: ["<director>"],
+      publisher: ["<publisher>"],
+      series: ["<set>"],
+      genres: ["<genre>"],
+      tags: ["<tag>"],
+      poster: ['<thumb aspect="poster">', "<poster_source_url>"],
+      thumb: ['<thumb aspect="thumb">', "<thumb_source_url>"],
+      fanart: ["<fanart>", "<fanart_source_url>"],
+      sceneImages: ["<scene_images>"],
+      trailer: ["<trailer>", "<trailer_source_url>"],
+      sourceComment: ["Aggregation Sources:"],
+    };
+
+    const omittedPolicy = generator.buildXml(data, {
+      assets,
+      videoMeta,
+      sources,
+      buildTags: () => ["中字"],
+    });
+    for (const tokens of Object.values(optionalFieldTokens)) {
+      for (const token of tokens) {
+        expect(omittedPolicy).toContain(token);
+        expect(empty).not.toContain(token);
+      }
+    }
+
+    for (const disabledField of NFO_FIELD_OPTIONS) {
+      const enabledFields = NFO_FIELD_OPTIONS.filter((field) => field !== disabledField);
+      const xml = generator.buildXml(data, {
+        assets,
+        videoMeta,
+        sources,
+        enabledFields,
+        buildTags: () => ["中字"],
+      });
+      for (const field of NFO_FIELD_OPTIONS) {
+        const tokens = optionalFieldTokens[field];
+        for (const token of tokens) {
+          if (field === disabledField) {
+            expect(xml).not.toContain(token);
+          } else {
+            expect(xml).toContain(token);
+          }
+        }
+      }
+      expect(xml).toContain("<title>中文标题</title>");
+      expect(xml).toContain("<originaltitle>Original</originaltitle>");
+      expect(xml).toContain("<uniqueid");
+      expect(xml).toContain("<actor>");
+      expect(xml).toContain("<dateadded>");
+    }
+
+    const customTitleWithEmptyPolicy = generator.buildXml(data, {
+      nfoTitleTemplate: "{number} {title}",
+      enabledFields: [],
+    });
+    expect(customTitleWithEmptyPolicy).toContain("<raw_title>中文标题</raw_title>");
+    expect(customTitleWithEmptyPolicy).not.toContain("<poster_source_url>");
+    expect(customTitleWithEmptyPolicy).not.toContain("<thumb_source_url>");
+    expect(customTitleWithEmptyPolicy).not.toContain("<fanart_source_url>");
+    expect(customTitleWithEmptyPolicy).not.toContain("<trailer_source_url>");
+    expect(customTitleWithEmptyPolicy).not.toContain("<scene_images>");
+  });
+
+  it("keeps fanart fallback metadata independent from the thumb field", () => {
+    const xml = new NfoGenerator().buildXml(
+      createCrawlerData({
+        thumb_url: "thumb.jpg",
+        thumb_source_url: "https://example.com/original-thumb.jpg",
+      }),
+      { enabledFields: ["fanart"] },
+    );
+
+    expect(xml).toContain("<fanart>");
+    expect(xml).toContain("<thumb>thumb.jpg</thumb>");
+    expect(xml).toContain("<fanart_source_url>https://example.com/original-thumb.jpg</fanart_source_url>");
+    expect(xml).not.toContain("<thumb_source_url>");
   });
 });

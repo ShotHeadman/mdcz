@@ -328,8 +328,15 @@ test("NFO settings render the configured enum list only while NFO generation is 
   await expect.element(enabled.getByText("NFO 写入字段")).toBeVisible();
   await expect.element(enabled.getByText("导演")).toBeVisible();
   await expect.element(enabled.getByText("预告片")).toBeVisible();
+  await expect.element(enabled.getByText("简介与摘要")).toBeVisible();
+  await expect.element(enabled.getByText("剧照来源")).toBeVisible();
+  await expect.element(enabled.getByText("聚合来源注释")).toBeVisible();
   await expect
-    .element(enabled.getByText("选择写入 NFO 的导演和预告片字段；关闭预告片只影响 XML，不影响预告片下载。"))
+    .element(
+      enabled.getByText(
+        "选择可选 NFO 字段；标题、番号、演员等核心字段始终保留。关闭预告片只影响 XML，不影响预告片下载。",
+      ),
+    )
     .toBeVisible();
 
   const disabled = await render(

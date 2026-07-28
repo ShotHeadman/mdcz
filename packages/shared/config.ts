@@ -29,7 +29,25 @@ const DEFAULT_SITES: Website[] = [
 
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
 const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
-export const NFO_FIELD_OPTIONS = ["director", "trailer"] as const;
+export const NFO_FIELD_OPTIONS = [
+  "plot",
+  "release",
+  "runtime",
+  "fileinfo",
+  "rating",
+  "studio",
+  "director",
+  "publisher",
+  "series",
+  "genres",
+  "tags",
+  "poster",
+  "thumb",
+  "fanart",
+  "sceneImages",
+  "trailer",
+  "sourceComment",
+] as const;
 export type NfoField = (typeof NFO_FIELD_OPTIONS)[number];
 
 const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
