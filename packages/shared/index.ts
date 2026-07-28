@@ -7,6 +7,7 @@ export * from "./desktopNavigation";
 export * from "./dtoAdapters";
 export * from "./enums";
 export * from "./error";
+export * from "./filenameTokens";
 export * from "./IpcChannel";
 export * from "./ipcContract";
 export * from "./ipcEvents";

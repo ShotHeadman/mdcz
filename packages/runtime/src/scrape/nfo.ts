@@ -1,5 +1,6 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder } from "fast-xml-parser";
@@ -28,6 +29,7 @@ export interface NfoOptions {
   localState?: NfoLocalState;
   nfoNaming?: NfoNamingMode;
   nfoTitleTemplate?: string;
+  enabledFields?: readonly NfoField[];
   buildTags?: (data: CrawlerData, fileInfo: FileInfo | undefined, localState: NfoLocalState | undefined) => string[];
   pathExists?: PathExists;
   writeFile?: NfoFileWriter;
@@ -114,7 +116,14 @@ const buildFanartNode = (
   return primaryFanartUrl ? { thumb: { "#text": primaryFanartUrl } } : undefined;
 };
 
-const buildMdczNode = (data: CrawlerData, rawTitle?: string): Record<string, unknown> | undefined => {
+const isNfoFieldEnabled = (enabledFields: readonly NfoField[] | undefined, field: NfoField): boolean =>
+  enabledFields === undefined || enabledFields.includes(field);
+
+const buildMdczNode = (
+  data: CrawlerData,
+  rawTitle: string | undefined,
+  includeTrailerSource: boolean,
+): Record<string, unknown> | undefined => {
   const thumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
   const posterSourceUrl = data.poster_source_url ?? toRemoteImageSourceUrl(data.poster_url);
   const fanartSourceUrl =
@@ -122,7 +131,9 @@ const buildMdczNode = (data: CrawlerData, rawTitle?: string): Record<string, unk
     toRemoteImageSourceUrl(data.fanart_url) ??
     thumbSourceUrl ??
     toRemoteImageSourceUrl(data.thumb_url);
-  const trailerSourceUrl = data.trailer_source_url ?? toRemoteImageSourceUrl(data.trailer_url);
+  const trailerSourceUrl = includeTrailerSource
+    ? (data.trailer_source_url ?? toRemoteImageSourceUrl(data.trailer_url))
+    : undefined;
   const sceneImageUrls = data.scene_images
     .map((value) => toRemoteImageSourceUrl(value))
     .filter((value): value is string => Boolean(value));
@@ -187,11 +198,15 @@ export class NfoGenerator {
     movie.runtime = runtimeMinutes;
     movie.rating = data.rating;
     movie.studio = data.studio;
-    movie.director = data.director;
+    movie.director = isNfoFieldEnabled(options?.enabledFields, "director") ? data.director : undefined;
     movie.publisher = data.publisher;
     movie.mpaa = "JP-18+";
     movie.set = data.series;
-    movie.trailer = assets?.trailer ? basename(assets.trailer) : data.trailer_url;
+    movie.trailer = isNfoFieldEnabled(options?.enabledFields, "trailer")
+      ? assets?.trailer
+        ? basename(assets.trailer)
+        : data.trailer_url
+      : undefined;
     movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
     movie.genre = genres;
     movie.tag = tags.length > 0 ? tags : undefined;
@@ -207,7 +222,11 @@ export class NfoGenerator {
     const fanartNode = buildFanartNode(data, assets);
     if (fanartNode) movie.fanart = fanartNode;
     const hasCustomTitleTemplate = titleTemplate !== "{title}";
-    const mdczNode = buildMdczNode(data, hasCustomTitleTemplate ? rawTitle : undefined);
+    const mdczNode = buildMdczNode(
+      data,
+      hasCustomTitleTemplate ? rawTitle : undefined,
+      isNfoFieldEnabled(options?.enabledFields, "trailer"),
+    );
     if (mdczNode) movie.mdcz = mdczNode;
     if (videoNode) movie.fileinfo = { streamdetails: { video: videoNode } };
 

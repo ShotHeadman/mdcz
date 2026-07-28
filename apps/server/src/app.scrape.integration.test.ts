@@ -117,7 +117,12 @@ describe("buildServer scrape integration", () => {
     await writeFile(actorPhotoPath, createTestPngBytes());
     const imageServer = await startTestImageServer();
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`, { actorPhotoPath }),
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`, {
+        actorPhotoPath,
+        director: "Runtime Director",
+        trailerUrl: "https://example.com/runtime-trailer.mp4",
+        trailerSourceUrl: "https://example.com/runtime-trailer-source.mp4",
+      }),
     });
     const taskEvents: unknown[] = [];
     const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
@@ -130,7 +135,7 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        download: { downloadSceneImages: false },
+        download: { downloadSceneImages: false, downloadTrailer: false, nfoFields: ["director"] },
         paths: { actorPhotoFolder: actorRoot },
       },
     });
@@ -218,6 +223,9 @@ describe("buildServer scrape integration", () => {
     );
     expect(nfoContent).toContain("Runtime Title ABC-123");
     expect(nfoContent).toContain(".actors/Actor A.jpg");
+    expect(nfoContent).toContain("<director>Runtime Director</director>");
+    expect(nfoContent).not.toContain("<trailer>");
+    expect(nfoContent).not.toContain("trailer_source_url");
     expect(actorPhotoContent.length).toBeGreaterThan(8000);
     expect(posterContent.length).toBeGreaterThan(0);
     expect(assetResponse.statusCode).toBe(200);

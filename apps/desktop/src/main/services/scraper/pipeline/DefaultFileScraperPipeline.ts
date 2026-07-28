@@ -65,12 +65,13 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     this.stages = this.createStages();
   }
 
-  createContext(
+  async createContext(
     filePath: string,
     progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 },
     options: FileScrapeOptions = {},
-  ): ScrapeContext {
-    return new ScrapeContext(filePath, progress, this.scrapeMode, options.manualScrape);
+  ): Promise<ScrapeContext> {
+    const configuration = await configManager.getValidated();
+    return new ScrapeContext(filePath, progress, this.scrapeMode, options.manualScrape, configuration);
   }
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {

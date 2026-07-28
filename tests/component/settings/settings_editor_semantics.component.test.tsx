@@ -6,6 +6,7 @@ import {
   flattenConfig,
   NamingSection,
   NetworkTopLevelSection,
+  NfoSection,
   PathsSection,
   ProfileCapsule,
   SectionAnchor,
@@ -306,6 +307,37 @@ test("settings sections expose public labels and naming placeholder help", async
   );
   await expect.element(advancedDownload.getByText("剧照下载并发")).toBeVisible();
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
+});
+
+test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {
+  const enabled = await render(
+    <FormHarness
+      values={{
+        download: {
+          generateNfo: true,
+          keepNfo: true,
+          nfoFields: ["director", "trailer"],
+          nfoNaming: "both",
+        },
+      }}
+    >
+      <NfoSection />
+    </FormHarness>,
+  );
+
+  await expect.element(enabled.getByText("NFO 写入字段")).toBeVisible();
+  await expect.element(enabled.getByText("导演")).toBeVisible();
+  await expect.element(enabled.getByText("预告片")).toBeVisible();
+  await expect
+    .element(enabled.getByText("选择写入 NFO 的导演和预告片字段；关闭预告片只影响 XML，不影响预告片下载。"))
+    .toBeVisible();
+
+  const disabled = await render(
+    <FormHarness values={{ download: { generateNfo: false, nfoFields: ["director", "trailer"] } }}>
+      <NfoSection />
+    </FormHarness>,
+  );
+  await expect.element(disabled.getByText("NFO 写入字段")).not.toBeInTheDocument();
 });
 
 test("title repair settings expose ordered rules and add validated rows", async () => {

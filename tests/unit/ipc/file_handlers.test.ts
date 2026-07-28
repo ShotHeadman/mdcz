@@ -1,10 +1,13 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createFileHandlers } from "@main/ipc/handlers/file";
+import { configManager } from "@main/services/config/ConfigManager";
+import { defaultConfiguration } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@egoist/tipc/main", () => {
   type MockProcedure = {
@@ -69,10 +72,15 @@ const createTempDir = async (): Promise<string> => {
 };
 
 describe("createFileHandlers", () => {
+  beforeEach(() => {
+    vi.spyOn(configManager, "getValidated").mockResolvedValue(defaultConfiguration);
+  });
+
   afterEach(async () => {
     await Promise.all(
       tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
     );
+    vi.restoreAllMocks();
   });
 
   it("lists recursive media candidates with metadata and skips generated sidecars", async () => {
@@ -109,6 +117,28 @@ describe("createFileHandlers", () => {
         size: 7,
       }),
     ]);
+  });
+  it("excludes blacklisted basenames using case-insensitive literal token matching", async () => {
+    const root = await createTempDir();
+    const keptVideo = join(root, "ABC-123.mp4");
+    const nearMatchVideo = join(root, "Ads-2024-GHI-789.mp4");
+    const blacklistedVideo = join(root, "DEF-456-AdS+[2024].mkv");
+
+    await writeFile(keptVideo, "keep");
+    await writeFile(nearMatchVideo, "near");
+    await writeFile(blacklistedVideo, "blocked");
+    vi.mocked(configManager.getValidated).mockResolvedValue({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        filenameBlacklistTokens: ["ads+[2024]", "   "],
+      },
+    });
+
+    const handlers = createFileHandlers(createContext());
+    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
+
+    expect(result.candidates.map((candidate) => candidate.name)).toEqual(["ABC-123.mp4", "Ads-2024-GHI-789.mp4"]);
   });
 
   it("skips media files inside an excluded output directory nested under the scan root", async () => {
@@ -154,5 +184,39 @@ describe("createFileHandlers", () => {
         path: videoPath,
       }),
     );
+  });
+  it("applies configured NFO fields when manually saving metadata", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123.nfo");
+    vi.mocked(configManager.getValidated).mockResolvedValue({
+      ...defaultConfiguration,
+      download: {
+        ...defaultConfiguration.download,
+        nfoFields: ["director"],
+      },
+    });
+
+    const handlers = createFileHandlers(createContext());
+    await handlers[IpcChannel.File_NfoWrite].action(
+      actionArgs({
+        nfoPath,
+        data: {
+          title: "Manual NFO",
+          number: "ABC-123",
+          actors: [],
+          genres: [],
+          director: "Director",
+          trailer_url: "https://example.com/trailer.mp4",
+          trailer_source_url: "https://example.com/trailer-source.mp4",
+          scene_images: [],
+          website: Website.JAVDB,
+        },
+      }),
+    );
+
+    const xml = await readFile(nfoPath, "utf8");
+    expect(xml).toContain("<director>Director</director>");
+    expect(xml).not.toContain("<trailer>");
+    expect(xml).not.toContain("trailer_source_url");
   });
 });

@@ -25,7 +25,7 @@ export interface FileScraperPipeline {
     filePath: string,
     progress?: { fileIndex: number; totalFiles: number },
     options?: { manualScrape?: ManualScrapeOptions },
-  ): ScrapeContext;
+  ): Promise<ScrapeContext>;
 
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void;
 

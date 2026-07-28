@@ -431,8 +431,14 @@ export class ScrapeService {
   }
 
   async nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse> {
-    const root = await this.mediaRoots.getActiveRoot(input.rootId);
-    await atomicWriteRootFile(root, input.relativePath, this.nfoGenerator.buildXml(input.data));
+    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
+    await atomicWriteRootFile(
+      root,
+      input.relativePath,
+      this.nfoGenerator.buildXml(input.data, {
+        enabledFields: configuration.download.nfoFields,
+      }),
+    );
     return { rootId: input.rootId, relativePath: input.relativePath, data: input.data };
   }
 

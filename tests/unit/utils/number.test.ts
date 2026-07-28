@@ -43,6 +43,21 @@ describe("extractNumber", () => {
 });
 
 describe("parseFileInfo", () => {
+  it("ignores configured literal tokens without changing the original file identity", () => {
+    const filePath = "/tmp/[7SiS-001]+ ABF-252-CD2.mkv";
+
+    expect(parseFileInfo(filePath).number).toBe("7SIS-001");
+    expect(parseFileInfo(filePath, ["[7sis-001]+"])).toMatchObject({
+      filePath,
+      fileName: "[7SiS-001]+ ABF-252-CD2",
+      number: "ABF-252",
+      part: {
+        number: 2,
+        suffix: "-CD2",
+      },
+    });
+  });
+
   it("parses multipart suffixes and preserves their raw text", () => {
     expect(parseFileInfo("/tmp/ABC-123-C-CD1.mkv")).toMatchObject({
       number: "ABC-123",

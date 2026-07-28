@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configurationSchema, defaultConfiguration } from "./config";
+import { configurationSchema, defaultConfiguration, type NfoField } from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
@@ -81,5 +81,56 @@ describe("configuration codec", () => {
         personSync: { actorAliases: { 河北彩花: [] } },
       }).success,
     ).toBe(false);
+  });
+  it("defaults filename token lists to empty and round-trips configured literal values", () => {
+    expect(defaultConfiguration.scrape).toMatchObject({
+      filenameIgnoreTokens: [],
+      filenameBlacklistTokens: [],
+    });
+
+    const configuration = {
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
+        filenameBlacklistTokens: ["sample.", "广告"],
+      },
+    };
+
+    expect(parseConfigurationContent(serializeConfiguration(configuration, "toml"), "toml").scrape).toMatchObject({
+      filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
+      filenameBlacklistTokens: ["sample.", "广告"],
+    });
+    expect(parseConfigurationContent("[scrape]\n", "toml").scrape).toMatchObject({
+      filenameIgnoreTokens: [],
+      filenameBlacklistTokens: [],
+    });
+  });
+
+  it("defaults, validates, and round-trips NFO fields through every configuration codec", () => {
+    expect(defaultConfiguration.download.nfoFields).toEqual(["director", "trailer"]);
+
+    const configuration = {
+      ...defaultConfiguration,
+      download: {
+        ...defaultConfiguration.download,
+        nfoFields: ["director"] as NfoField[],
+      },
+    };
+
+    for (const format of ["toml", "json"] as const) {
+      expect(
+        parseConfigurationContent(serializeConfiguration(configuration, format), format).download.nfoFields,
+      ).toEqual(["director"]);
+      expect(
+        parseConfigurationContent(format === "toml" ? "[download]\n" : '{"download":{}}', format).download.nfoFields,
+      ).toEqual(["director", "trailer"]);
+      expect(() =>
+        parseConfigurationContent(
+          format === "toml" ? '[download]\nnfoFields = ["plot"]\n' : '{"download":{"nfoFields":["plot"]}}',
+          format,
+        ),
+      ).toThrow();
+    }
   });
 });

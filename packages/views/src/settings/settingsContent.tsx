@@ -1,6 +1,7 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@mdcz/shared/actorSource";
 import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
+import { NFO_FIELD_OPTIONS } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@mdcz/shared/llm";
 import {
@@ -82,6 +83,10 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "both", label: "同时生成两种" },
   { value: "movie", label: "仅 movie.nfo" },
   { value: "filename", label: "仅 文件名.nfo" },
+];
+const NFO_ENABLED_FIELD_OPTIONS: EnumOption[] = [
+  { value: NFO_FIELD_OPTIONS[0], label: "导演" },
+  { value: NFO_FIELD_OPTIONS[1], label: "预告片" },
 ];
 const TAG_BADGE_TYPE_OPTIONS = POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({
   value,
@@ -330,6 +335,22 @@ export function ScrapePacingSection() {
     </>
   );
 }
+export function FilenameFilteringSection() {
+  return (
+    <>
+      <ChipArrayFieldWrapper
+        name="scrape.filenameIgnoreTokens"
+        label="番号识别忽略词"
+        description="匹配时不区分大小写，并按原样匹配文字；仅影响番号识别，不会修改文件名。"
+      />
+      <ChipArrayFieldWrapper
+        name="scrape.filenameBlacklistTokens"
+        label="自动扫描黑名单词"
+        description="自动扫描时排除文件名中包含这些文字的影片；匹配时不区分大小写。"
+      />
+    </>
+  );
+}
 
 export function NetworkConnectionSection() {
   return (
@@ -575,6 +596,13 @@ export function NfoSection() {
       {shouldMountConditionalSettings(generateNfo, search) && (
         <>
           <EnumField name="download.nfoNaming" label="NFO 文件命名" options={NFO_NAMING_OPTIONS} />
+          <ChipArrayFieldWrapper
+            name="download.nfoFields"
+            label="NFO 写入字段"
+            description="选择写入 NFO 的导演和预告片字段；关闭预告片只影响 XML，不影响预告片下载。"
+            options={NFO_ENABLED_FIELD_OPTIONS}
+            showBulkActions
+          />
           <BoolField name="download.keepNfo" label="保留已有 NFO" />
         </>
       )}

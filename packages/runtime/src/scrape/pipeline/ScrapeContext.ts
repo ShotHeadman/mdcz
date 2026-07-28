@@ -59,8 +59,10 @@ export class ScrapeContext {
     readonly progress: { fileIndex: number; totalFiles: number } = { fileIndex: 1, totalFiles: 1 },
     readonly mode: ScrapeExecutionMode = "batch",
     readonly manualScrape?: ManualScrapeOptions,
+    configuration?: Configuration,
   ) {
-    this.parsedFileInfo = parseFileInfo(filePath);
+    this.configuration = configuration;
+    this.parsedFileInfo = parseFileInfo(filePath, configuration?.scrape.filenameIgnoreTokens);
     this.fileId = buildFileId(this.parsedFileInfo.filePath);
     this.fileInfo = this.parsedFileInfo;
     this.fileInfoWithSubtitlesPromise = resolveFileInfoWithSubtitles(filePath, {

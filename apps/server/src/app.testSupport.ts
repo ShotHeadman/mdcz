@@ -40,8 +40,11 @@ export interface LocalHttpServer {
 
 export interface TestAggregationOptions {
   actorPhotoPath?: string;
+  director?: string;
   titlePrefix?: string;
   titleZhPrefix?: string;
+  trailerUrl?: string;
+  trailerSourceUrl?: string;
 }
 
 const activeServers = new Map<ServerApp, TempDirectoryHarness>();
@@ -188,6 +191,9 @@ export const createTestAggregation = (
         actor_profiles: options.actorPhotoPath ? [{ name: "Actor A", photo_url: options.actorPhotoPath }] : undefined,
         genres: ["Drama"],
         studio: "Runtime Studio",
+        director: options.director,
+        trailer_url: options.trailerUrl,
+        trailer_source_url: options.trailerSourceUrl,
         plot: "Runtime plot",
         release_date: "2024-01-15",
         thumb_url: imageUrl,

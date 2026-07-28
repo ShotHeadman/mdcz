@@ -172,6 +172,7 @@ export const confirmUncensoredItems = async (
           fileInfo: sharedFileInfo,
           localState: sharedSeed.nextLocalState,
           nfoNaming: config.download.nfoNaming,
+          enabledFields: config.download.nfoFields,
           nfoTitleTemplate: config.naming.nfoTitleTemplate,
         },
       );

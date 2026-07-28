@@ -265,6 +265,7 @@ export const writePreparedNfo = async (input: {
     fileInfo: input.fileInfo,
     localState: input.localState,
     nfoNaming: input.config.download.nfoNaming,
+    enabledFields: input.config.download.nfoFields,
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
   });
 };

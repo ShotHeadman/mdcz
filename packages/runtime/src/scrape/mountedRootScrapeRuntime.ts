@@ -231,12 +231,13 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     this.stages = this.createStages();
   }
 
-  createContext(
+  async createContext(
     filePath: string,
     progress: { fileIndex: number; totalFiles: number } = { fileIndex: 1, totalFiles: 1 },
     options: Parameters<FileScraperPipeline["createContext"]>[2] = {},
-  ): ScrapeContext {
-    return new ScrapeContext(filePath, progress, "batch", options.manualScrape);
+  ): Promise<ScrapeContext> {
+    const configuration = await this.getConfiguration();
+    return new ScrapeContext(filePath, progress, "batch", options.manualScrape, configuration);
   }
 
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void {
@@ -450,6 +451,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       fileInfo: context.fileInfo,
       localState: context.existingNfoLocalState,
       nfoNaming: configuration.download.nfoNaming,
+      enabledFields: configuration.download.nfoFields,
       nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
       sources: context.requireAggregationResult().sources,
       videoMeta: context.videoMeta,

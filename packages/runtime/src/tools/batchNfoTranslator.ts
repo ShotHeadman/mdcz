@@ -179,6 +179,7 @@ const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration[
 const defaultWriteNfo: BatchTranslateWriteNfo = async ({ config, crawlerData, nfoGenerator, nfoPath }) => {
   return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
     nfoNaming: config.download.nfoNaming,
+    enabledFields: config.download.nfoFields,
     nfoTitleTemplate: config.naming.nfoTitleTemplate,
   });
 };

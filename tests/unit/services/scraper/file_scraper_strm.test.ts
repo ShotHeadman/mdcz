@@ -253,6 +253,7 @@ describe("FileScraper .strm support", () => {
     const config = createConfig({
       generateNfo: true,
       keepNfo: true,
+      nfoFields: ["director"],
     });
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
@@ -287,6 +288,7 @@ describe("FileScraper .strm support", () => {
           uncensoredChoice: "leak",
           tags: ["保留标签"],
         },
+        enabledFields: ["director"],
       }),
     );
   });

@@ -1,5 +1,5 @@
 import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
-import { dirname, extname, join, relative } from "node:path";
+import { basename, dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
@@ -7,6 +7,7 @@ import { findExistingNfoPath, nfoGenerator } from "@main/services/scraper/NfoGen
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
 import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
+import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
@@ -121,6 +122,7 @@ export const createFileHandlers = (
           }
 
           await assertDirectory(dirPath);
+          const configuration = await configManager.getValidated();
 
           const discoveredPaths = await listVideoFiles(
             dirPath,
@@ -129,7 +131,15 @@ export const createFileHandlers = (
             undefined,
             excludeDirPaths,
           );
-          const uniquePaths = [...new Set(discoveredPaths.filter((filePath) => isPrimaryVideoFileName(filePath)))];
+          const uniquePaths = [
+            ...new Set(
+              discoveredPaths.filter(
+                (filePath) =>
+                  isPrimaryVideoFileName(filePath) &&
+                  !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens),
+              ),
+            ),
+          ];
           const candidates: MediaCandidate[] = [];
 
           for (const filePath of uniquePaths) {
@@ -245,6 +255,7 @@ export const createFileHandlers = (
           await nfoGenerator.writeNfo(nfoPath, data, {
             localState: existingSnapshot,
             nfoNaming: config.download.nfoNaming,
+            enabledFields: config.download.nfoFields,
             nfoTitleTemplate: config.naming.nfoTitleTemplate,
           });
           return { success: true as const };

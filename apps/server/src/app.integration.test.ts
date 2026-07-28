@@ -706,6 +706,54 @@ describe("buildServer composition integration", () => {
     await webhook.close();
   });
 
+  it("applies NFO field settings to manual saves without coupling trailer downloads", async () => {
+    const root = await createTempRoot("manual-nfo-root");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const data = {
+      title: "Manual NFO",
+      number: "ABC-123",
+      actors: [],
+      genres: [],
+      director: "Director",
+      trailer_url: "https://example.com/trailer.mp4",
+      trailer_source_url: "https://example.com/trailer-source.mp4",
+      scene_images: [],
+      website: Website.JAVDB,
+    };
+    const writeManualNfo = async (relativePath: string) =>
+      await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.nfoWrite",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { rootId, relativePath, data },
+      });
+
+    await services.config.update({ download: { nfoFields: ["director"] } });
+    const directorOnlyResponse = await writeManualNfo("director-only.nfo");
+    const directorOnlyXml = await readFile(join(root, "director-only.nfo"), "utf8");
+
+    expect(directorOnlyResponse.statusCode).toBe(200);
+    expect(directorOnlyXml).toContain("<director>Director</director>");
+    expect(directorOnlyXml).not.toContain("<trailer>");
+    expect(directorOnlyXml).not.toContain("trailer_source_url");
+
+    await services.config.update({
+      download: {
+        downloadTrailer: false,
+        nfoFields: ["trailer"],
+      },
+    });
+    const trailerOnlyResponse = await writeManualNfo("trailer-only.nfo");
+    const trailerOnlyXml = await readFile(join(root, "trailer-only.nfo"), "utf8");
+
+    expect(trailerOnlyResponse.statusCode).toBe(200);
+    expect(trailerOnlyXml).not.toContain("<director>");
+    expect(trailerOnlyXml).toContain("<trailer>https://example.com/trailer.mp4</trailer>");
+    expect(trailerOnlyXml).toContain("<trailer_source_url>https://example.com/trailer-source.mp4</trailer_source_url>");
+  });
+
   it("closes the persistence database with the Fastify lifecycle", async () => {
     const app = await createTestServer();
     const { fastify, services } = app;

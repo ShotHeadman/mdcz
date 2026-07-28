@@ -8,6 +8,7 @@ const createConfig = (): Configuration =>
   ({
     download: {
       generateNfo: true,
+      nfoFields: ["director"],
     },
     naming: {},
     paths: {
@@ -156,6 +157,7 @@ describe("confirmUncensoredItems", () => {
         localState: expect.objectContaining({
           uncensoredChoice: "uncensored",
         }),
+        enabledFields: ["director"],
       }),
     );
     expect(resolve).toHaveBeenCalledTimes(2);

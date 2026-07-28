@@ -11,6 +11,7 @@ import {
   AggregationScrapeSection,
   AssetDownloadsSection,
   BehaviorSection,
+  FilenameFilteringSection,
   NamingSection,
   NetworkConnectionSection,
   NetworkCookiesSection,
@@ -75,6 +76,9 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
       </Subsection>
       <Subsection title="刮削节奏" className="mb-6 last:mb-0">
         <ScrapePacingSection />
+      </Subsection>
+      <Subsection title="文件名过滤" className="mb-6 last:mb-0">
+        <FilenameFilteringSection />
       </Subsection>
     </SectionAnchor>
   );

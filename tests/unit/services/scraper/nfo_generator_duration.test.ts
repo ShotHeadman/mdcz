@@ -337,4 +337,37 @@ describe("NfoGenerator", () => {
 
     await expect(findExistingNfoPath(nfoPath, "movie")).resolves.toBe(movieNfoPath);
   });
+  it("writes configurable director and trailer fields without coupling trailer downloads", () => {
+    const data = createCrawlerData({
+      director: "Director",
+      trailer_url: "https://example.com/trailer.mp4",
+      trailer_source_url: "https://example.com/source-trailer.mp4",
+    });
+    const generator = new NfoGenerator();
+
+    const defaults = generator.buildXml(data);
+    expect(defaults).toContain("<director>Director</director>");
+    expect(defaults).toContain("<trailer>https://example.com/trailer.mp4</trailer>");
+    expect(defaults).toContain("<trailer_source_url>https://example.com/source-trailer.mp4</trailer_source_url>");
+
+    const directorOnly = generator.buildXml(data, { assets: createAssets(), enabledFields: ["director"] });
+    expect(directorOnly).toContain("<director>Director</director>");
+    expect(directorOnly).not.toContain("<trailer>");
+    expect(directorOnly).not.toContain("trailer_source_url");
+
+    const trailerOnlyWithLocalAsset = generator.buildXml(data, {
+      assets: createAssets(),
+      enabledFields: ["trailer"],
+    });
+    expect(trailerOnlyWithLocalAsset).not.toContain("<director>");
+    expect(trailerOnlyWithLocalAsset).toContain("<trailer>trailer.mp4</trailer>");
+    expect(trailerOnlyWithLocalAsset).toContain(
+      "<trailer_source_url>https://example.com/source-trailer.mp4</trailer_source_url>",
+    );
+
+    const neither = generator.buildXml(data, { enabledFields: [] });
+    expect(neither).not.toContain("<director>");
+    expect(neither).not.toContain("<trailer>");
+    expect(neither).not.toContain("trailer_source_url");
+  });
 });
