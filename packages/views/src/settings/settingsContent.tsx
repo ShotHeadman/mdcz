@@ -104,7 +104,7 @@ const NFO_ENABLED_FIELD_LABELS: Record<NfoField, string> = {
 };
 const NFO_ENABLED_FIELD_OPTIONS: EnumOption[] = NFO_FIELD_OPTIONS.map((value) => ({
   value,
-  label: NFO_ENABLED_FIELD_LABELS[value],
+  label: `${value}（${NFO_ENABLED_FIELD_LABELS[value]}）`,
 }));
 const TAG_BADGE_TYPE_OPTIONS = POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({
   value,
@@ -615,9 +615,9 @@ export function NfoSection() {
         <>
           <EnumField name="download.nfoNaming" label="NFO 文件命名" options={NFO_NAMING_OPTIONS} />
           <ChipArrayFieldWrapper
-            name="download.nfoFields"
-            label="NFO 写入字段"
-            description="选择可选 NFO 字段；标题、番号、演员等核心字段始终保留。关闭预告片只影响 XML，不影响预告片下载。"
+            name="download.nfoIgnoreFields"
+            label="NFO 忽略字段"
+            description="选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。"
             options={NFO_ENABLED_FIELD_OPTIONS}
             showBulkActions
           />

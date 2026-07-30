@@ -135,7 +135,7 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        download: { downloadSceneImages: false, downloadTrailer: false, nfoFields: ["director"] },
+        download: { downloadSceneImages: false, downloadTrailer: false, nfoIgnoreFields: ["director"] },
         paths: { actorPhotoFolder: actorRoot },
       },
     });

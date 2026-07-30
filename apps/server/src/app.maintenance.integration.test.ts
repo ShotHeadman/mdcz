@@ -228,7 +228,7 @@ describe("buildServer maintenance integration", () => {
         generateNfo: true,
         downloadSceneImages: false,
         downloadTrailer: false,
-        nfoFields: ["director"],
+        nfoIgnoreFields: ["director"],
       },
       translate: { enableTranslation: false },
     });

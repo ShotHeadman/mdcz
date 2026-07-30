@@ -253,7 +253,7 @@ describe("FileScraper .strm support", () => {
     const config = createConfig({
       generateNfo: true,
       keepNfo: true,
-      nfoFields: ["director"],
+      nfoIgnoreFields: ["director"],
     });
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {

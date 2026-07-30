@@ -10,7 +10,7 @@ import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
 import { DownloadManager } from "./download";
 import { FileOrganizer } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
-import { NfoGenerator, reconcileExistingNfoFiles } from "./nfo";
+import { NfoGenerator, nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "./nfo";
 import { prepareCrawlerDataForMovieOutput } from "./output/prepareCrawlerDataForMovieOutput";
 import { prepareImageAlternativesForDownload } from "./output/prepareImageAlternativesForDownload";
 import {
@@ -451,7 +451,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       fileInfo: context.fileInfo,
       localState: context.existingNfoLocalState,
       nfoNaming: configuration.download.nfoNaming,
-      enabledFields: configuration.download.nfoFields,
+      enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
       nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
       sources: context.requireAggregationResult().sources,
       videoMeta: context.videoMeta,

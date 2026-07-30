@@ -730,28 +730,30 @@ describe("buildServer composition integration", () => {
         payload: { rootId, relativePath, data },
       });
 
-    await services.config.update({ download: { nfoFields: ["director"] } });
+    await services.config.update({ download: { nfoIgnoreFields: ["director"] } });
     const directorOnlyResponse = await writeManualNfo("director-only.nfo");
     const directorOnlyXml = await readFile(join(root, "director-only.nfo"), "utf8");
 
     expect(directorOnlyResponse.statusCode).toBe(200);
-    expect(directorOnlyXml).toContain("<director>Director</director>");
-    expect(directorOnlyXml).not.toContain("<trailer>");
+    expect(directorOnlyXml).not.toContain("<director>Director</director>");
+    expect(directorOnlyXml).toContain("<trailer>");
     expect(directorOnlyXml).not.toContain("trailer_source_url");
 
     await services.config.update({
       download: {
         downloadTrailer: false,
-        nfoFields: ["trailer"],
+        nfoIgnoreFields: ["trailer"],
       },
     });
     const trailerOnlyResponse = await writeManualNfo("trailer-only.nfo");
     const trailerOnlyXml = await readFile(join(root, "trailer-only.nfo"), "utf8");
 
     expect(trailerOnlyResponse.statusCode).toBe(200);
-    expect(trailerOnlyXml).not.toContain("<director>");
-    expect(trailerOnlyXml).toContain("<trailer>https://example.com/trailer.mp4</trailer>");
-    expect(trailerOnlyXml).toContain("<trailer_source_url>https://example.com/trailer-source.mp4</trailer_source_url>");
+    expect(trailerOnlyXml).toContain("<director>Director</director>");
+    expect(trailerOnlyXml).not.toContain("<trailer>https://example.com/trailer.mp4</trailer>");
+    expect(trailerOnlyXml).not.toContain(
+      "<trailer_source_url>https://example.com/trailer-source.mp4</trailer_source_url>",
+    );
   });
 
   it("closes the persistence database with the Fastify lifecycle", async () => {

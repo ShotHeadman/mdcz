@@ -192,7 +192,7 @@ describe("createFileHandlers", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        nfoFields: ["director"],
+        nfoIgnoreFields: ["director"],
       },
     });
 

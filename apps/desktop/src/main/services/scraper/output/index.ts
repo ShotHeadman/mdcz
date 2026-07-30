@@ -6,7 +6,11 @@ import { toErrorMessage } from "@main/utils/common";
 import { resolvePosterBadgeDefinitions } from "@main/utils/movieTags";
 import { probeVideoMetadata } from "@main/utils/video";
 import type { FileOrganizer, OrganizePlan } from "@mdcz/runtime/scrape";
-import { prepareCrawlerDataForMovieOutput, prepareImageAlternativesForDownload } from "@mdcz/runtime/scrape";
+import {
+  nfoIgnoreFieldsToEnabledFields,
+  prepareCrawlerDataForMovieOutput,
+  prepareImageAlternativesForDownload,
+} from "@mdcz/runtime/scrape";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import type { Logger } from "winston";
 import { throwIfAborted } from "../abort";
@@ -265,7 +269,7 @@ export const writePreparedNfo = async (input: {
     fileInfo: input.fileInfo,
     localState: input.localState,
     nfoNaming: input.config.download.nfoNaming,
-    enabledFields: input.config.download.nfoFields,
+    enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
   });
 };

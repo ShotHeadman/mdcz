@@ -214,7 +214,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   "titleRepair.rules": ["title repair", "replacement", "replace", "标题替换", "修复规则"],
   "download.generateNfo": ["nfo", "metadata file"],
   "download.nfoNaming": ["nfo", "naming", "metadata file"],
-  "download.nfoFields": [
+  "download.nfoIgnoreFields": [
     "nfo",
     "metadata file",
     "plot",
@@ -403,11 +403,10 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "download.generateNfo", label: "生成 NFO", anchor: "download" },
   { key: "download.nfoNaming", label: "NFO 文件命名", anchor: "download" },
   {
-    key: "download.nfoFields",
-    label: "NFO 写入字段",
+    key: "download.nfoIgnoreFields",
+    label: "NFO 忽略字段",
     anchor: "download",
-    description:
-      "选择生成的 NFO 中写入哪些可选字段；演员、标题和番号等核心字段始终保留，关闭预告片只影响 XML，不影响预告片下载。",
+    description: "选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。",
   },
   { key: "download.keepThumb", label: "保留已有横版缩略图", anchor: "download" },
   { key: "download.keepPoster", label: "保留已有海报", anchor: "download" },

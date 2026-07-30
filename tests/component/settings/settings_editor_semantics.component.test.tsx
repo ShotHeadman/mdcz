@@ -60,8 +60,8 @@ function FormHarness({
   services?: SettingsServices;
   values?: Record<string, unknown>;
 }) {
-  const form = useForm<FieldValues>({ defaultValues: values });
   const flatValues = useMemo(() => flattenConfig(values), [values]);
+  const form = useForm<FieldValues>({ defaultValues: flatValues });
 
   return (
     <SettingsServicesProvider notifier={settingsNotifier} services={services}>
@@ -310,13 +310,20 @@ test("settings sections expose public labels and naming placeholder help", async
 });
 
 test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {
+  const disabled = await render(
+    <FormHarness values={{ download: { generateNfo: false, nfoIgnoreFields: ["director", "trailer"] } }}>
+      <NfoSection />
+    </FormHarness>,
+  );
+  await expect.element(disabled.getByText("NFO 忽略字段")).not.toBeInTheDocument();
+
   const enabled = await render(
     <FormHarness
       values={{
         download: {
           generateNfo: true,
           keepNfo: true,
-          nfoFields: ["director", "trailer"],
+          nfoIgnoreFields: ["director", "trailer"],
           nfoNaming: "both",
         },
       }}
@@ -325,26 +332,14 @@ test("NFO settings render the configured enum list only while NFO generation is 
     </FormHarness>,
   );
 
-  await expect.element(enabled.getByText("NFO 写入字段")).toBeVisible();
-  await expect.element(enabled.getByText("导演")).toBeVisible();
-  await expect.element(enabled.getByText("预告片")).toBeVisible();
-  await expect.element(enabled.getByText("简介与摘要")).toBeVisible();
-  await expect.element(enabled.getByText("剧照来源")).toBeVisible();
-  await expect.element(enabled.getByText("聚合来源注释")).toBeVisible();
+  await expect.element(enabled.getByText("NFO 忽略字段")).toBeVisible();
+  await expect.element(enabled.getByText("director（导演）")).toBeVisible();
+  await expect.element(enabled.getByText("trailer（预告片）")).toBeVisible();
   await expect
     .element(
-      enabled.getByText(
-        "选择可选 NFO 字段；标题、番号、演员等核心字段始终保留。关闭预告片只影响 XML，不影响预告片下载。",
-      ),
+      enabled.getByText("选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。"),
     )
     .toBeVisible();
-
-  const disabled = await render(
-    <FormHarness values={{ download: { generateNfo: false, nfoFields: ["director", "trailer"] } }}>
-      <NfoSection />
-    </FormHarness>,
-  );
-  await expect.element(disabled.getByText("NFO 写入字段")).not.toBeInTheDocument();
 });
 
 test("title repair settings expose ordered rules and add validated rows", async () => {

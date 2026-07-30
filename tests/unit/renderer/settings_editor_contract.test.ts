@@ -18,7 +18,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("translate.engine")?.anchor).toBe("translate");
     expect(entry("download.sceneImageConcurrency")?.visibility).toBe("advanced");
     expect(entry("download.tagBadgeTypes")).toMatchObject({ anchor: "download", visibility: "public" });
-    expect(entry("download.nfoFields")).toMatchObject({ anchor: "download", visibility: "public" });
+    expect(entry("download.nfoIgnoreFields")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
     expect(entry("scrape.filenameIgnoreTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
@@ -36,7 +36,7 @@ describe("settings editor metadata and filtering", () => {
     const flat = flattenConfig({
       download: {
         tagBadgeTypes: ["subtitle", "leak"],
-        nfoFields: ["director"],
+        nfoIgnoreFields: ["director"],
       },
       scrape: {
         sites: ["javdb"],
@@ -55,7 +55,7 @@ describe("settings editor metadata and filtering", () => {
 
     expect(flat).toMatchObject({
       "download.tagBadgeTypes": ["subtitle", "leak"],
-      "download.nfoFields": ["director"],
+      "download.nfoIgnoreFields": ["director"],
       "scrape.sites": ["javdb"],
       "scrape.filenameIgnoreTokens": ["[7SIS-001]+"],
       "scrape.filenameBlacklistTokens": ["sample."],
@@ -63,7 +63,7 @@ describe("settings editor metadata and filtering", () => {
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
-      download: { nfoFields: ["director"], tagBadgeTypes: ["subtitle", "leak"] },
+      download: { nfoIgnoreFields: ["director"], tagBadgeTypes: ["subtitle", "leak"] },
       scrape: {
         sites: ["javdb"],
         filenameIgnoreTokens: ["[7SIS-001]+"],

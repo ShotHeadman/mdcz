@@ -26,12 +26,12 @@ describe("RuntimeConfigProfileStore", () => {
     await store.save({
       ...defaultConfiguration,
       network: { ...defaultConfiguration.network, timeout: 22 },
-      download: { ...defaultConfiguration.download, nfoFields: ["plot", "director"] },
+      download: { ...defaultConfiguration.download, nfoIgnoreFields: ["plot", "director"] },
     });
 
     const reloaded = await new RuntimeConfigProfileStore({ configDir }).load();
     expect(reloaded.network.timeout).toBe(22);
-    expect(reloaded.download.nfoFields).toEqual(["plot", "director"]);
+    expect(reloaded.download.nfoIgnoreFields).toEqual(["plot", "director"]);
   });
 
   it("manages profile lifecycle and preserves active profile injection", async () => {

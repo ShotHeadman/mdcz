@@ -127,38 +127,41 @@ describe("configuration codec", () => {
       "trailer",
       "sourceComment",
     ];
-    expect(defaultConfiguration.download.nfoFields).toEqual([]);
+    expect(defaultConfiguration.download.nfoIgnoreFields).toEqual([]);
 
     const configuration = {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        nfoFields: ["plot", "director"] as NfoField[],
+        nfoIgnoreFields: ["plot", "director"] as NfoField[],
       },
     };
 
     for (const format of ["toml", "json"] as const) {
       expect(
-        parseConfigurationContent(serializeConfiguration(configuration, format), format).download.nfoFields,
+        parseConfigurationContent(serializeConfiguration(configuration, format), format).download.nfoIgnoreFields,
       ).toEqual(["plot", "director"]);
       expect(
         parseConfigurationContent(
           serializeConfiguration(
             {
               ...configuration,
-              download: { ...configuration.download, nfoFields: [] },
+              download: { ...configuration.download, nfoIgnoreFields: [] },
             },
             format,
           ),
           format,
-        ).download.nfoFields,
+        ).download.nfoIgnoreFields,
       ).toEqual([]);
       expect(
-        parseConfigurationContent(format === "toml" ? "[download]\n" : '{"download":{}}', format).download.nfoFields,
+        parseConfigurationContent(format === "toml" ? "[download]\n" : '{"download":{}}', format).download
+          .nfoIgnoreFields,
       ).toEqual([]);
       expect(() =>
         parseConfigurationContent(
-          format === "toml" ? '[download]\nnfoFields = ["actors"]\n' : '{"download":{"nfoFields":["actors"]}}',
+          format === "toml"
+            ? '[download]\nnfoIgnoreFields = ["actors"]\n'
+            : '{"download":{"nfoIgnoreFields":["actors"]}}',
           format,
         ),
       ).toThrow();

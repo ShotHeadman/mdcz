@@ -123,7 +123,7 @@ const downloadSchema = z.object({
   downloadTrailer: z.boolean().default(true),
   generateNfo: z.boolean().default(true),
   nfoNaming: z.enum(NFO_NAMING_OPTIONS).default("both"),
-  nfoFields: z.array(z.enum(NFO_FIELD_OPTIONS)).default([]),
+  nfoIgnoreFields: z.array(z.enum(NFO_FIELD_OPTIONS)).default([]),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepThumb: z.boolean().default(true),
   keepPoster: z.boolean().default(true),

@@ -16,6 +16,7 @@ import {
   createScrapeExecutionPolicy,
   type MountedRootScrapeRuntime,
   NfoGenerator,
+  nfoIgnoreFieldsToEnabledFields,
   parseNfo,
   runScrapeItems,
 } from "@mdcz/runtime/scrape";
@@ -436,7 +437,7 @@ export class ScrapeService {
       root,
       input.relativePath,
       this.nfoGenerator.buildXml(input.data, {
-        enabledFields: configuration.download.nfoFields,
+        enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
       }),
     );
     return { rootId: input.rootId, relativePath: input.relativePath, data: input.data };

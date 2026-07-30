@@ -8,7 +8,7 @@ const createConfig = (): Configuration =>
   ({
     download: {
       generateNfo: true,
-      nfoFields: ["director"],
+      nfoIgnoreFields: ["director"],
     },
     naming: {},
     paths: {

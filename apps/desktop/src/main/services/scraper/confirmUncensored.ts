@@ -6,6 +6,7 @@ import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
+import { nfoIgnoreFieldsToEnabledFields } from "@mdcz/runtime/scrape";
 import type {
   FileInfo,
   LocalScanEntry,
@@ -172,7 +173,7 @@ export const confirmUncensoredItems = async (
           fileInfo: sharedFileInfo,
           localState: sharedSeed.nextLocalState,
           nfoNaming: config.download.nfoNaming,
-          enabledFields: config.download.nfoFields,
+          enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
           nfoTitleTemplate: config.naming.nfoTitleTemplate,
         },
       );

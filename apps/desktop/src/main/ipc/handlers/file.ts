@@ -7,6 +7,7 @@ import { findExistingNfoPath, nfoGenerator } from "@main/services/scraper/NfoGen
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
 import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
+import { nfoIgnoreFieldsToEnabledFields } from "@mdcz/runtime/scrape";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
@@ -255,7 +256,7 @@ export const createFileHandlers = (
           await nfoGenerator.writeNfo(nfoPath, data, {
             localState: existingSnapshot,
             nfoNaming: config.download.nfoNaming,
-            enabledFields: config.download.nfoFields,
+            enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
             nfoTitleTemplate: config.naming.nfoTitleTemplate,
           });
           return { success: true as const };

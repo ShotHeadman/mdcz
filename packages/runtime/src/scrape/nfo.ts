@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import type { NfoField } from "@mdcz/shared/config";
+import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder } from "fast-xml-parser";
@@ -118,6 +118,12 @@ const buildFanartNode = (
 
 const isNfoFieldEnabled = (enabledFields: readonly NfoField[] | undefined, field: NfoField): boolean =>
   enabledFields === undefined || enabledFields.includes(field);
+
+/** Converts the settings-layer ignore list into the generator's allow list. */
+export const nfoIgnoreFieldsToEnabledFields = (
+  ignoredFields: readonly NfoField[] | undefined,
+): readonly NfoField[] | undefined =>
+  ignoredFields === undefined ? undefined : NFO_FIELD_OPTIONS.filter((field) => !ignoredFields.includes(field));
 
 const buildMdczNode = (
   data: CrawlerData,

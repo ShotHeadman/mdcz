@@ -5,7 +5,7 @@ import type { ImageAlternatives, SourceMap } from "../scrape/aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../scrape/download";
 import type { FileOrganizer, OrganizePlan } from "../scrape/FileOrganizer";
 import type { NfoGenerator } from "../scrape/nfo";
-import { reconcileExistingNfoFiles } from "../scrape/nfo";
+import { nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "../scrape/nfo";
 import { prepareCrawlerDataForMovieOutput } from "../scrape/output/prepareCrawlerDataForMovieOutput";
 import { prepareImageAlternativesForDownload } from "../scrape/output/prepareImageAlternativesForDownload";
 import { pathExists } from "../scrape/utils/filesystem";
@@ -116,7 +116,7 @@ export const writePreparedNfo = async (input: {
     localState: input.localState,
     buildTags: buildMovieTags,
     nfoNaming: input.config.download.nfoNaming,
-    enabledFields: input.config.download.nfoFields,
+    enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
     sources: input.sources,
     videoMeta: input.videoMeta,

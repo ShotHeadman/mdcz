@@ -151,7 +151,7 @@ describe("BatchTranslateToolService", () => {
     const config = createConfig({
       download: {
         ...defaultConfiguration.download,
-        nfoFields: ["director"],
+        nfoIgnoreFields: ["director"],
       },
     });
     const generateText = vi.fn().mockResolvedValue('["相同标题","剧情一"]');
@@ -241,12 +241,12 @@ describe("BatchTranslateToolService", () => {
     expect(writeNfo).toHaveBeenCalledTimes(2);
 
     const firstWrite = writeNfo.mock.calls[0]?.[0] as {
-      config: { download: { nfoFields: string[] } };
+      config: { download: { nfoIgnoreFields: string[] } };
       crawlerData: { title_zh?: string; plot_zh?: string };
     };
     expect(firstWrite.crawlerData.title_zh).toBe("相同标题");
     expect(firstWrite.crawlerData.plot_zh).toBe("剧情一");
-    expect(firstWrite.config.download.nfoFields).toEqual(["director"]);
+    expect(firstWrite.config.download.nfoIgnoreFields).toEqual(["director"]);
 
     const secondWrite = writeNfo.mock.calls[1]?.[0] as { crawlerData: { title_zh?: string } };
     expect(secondWrite.crawlerData.title_zh).toBe("相同标题");
