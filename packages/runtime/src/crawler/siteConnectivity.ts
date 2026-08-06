@@ -22,6 +22,7 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {
   [Website.DMM]: "https://www.dmm.co.jp/",
   [Website.DMM_TV]: "https://video.dmm.co.jp/",
   [Website.FALENO]: "https://faleno.jp",
+  [Website.FANTIA]: "https://fantia.jp",
   [Website.FC2]: "https://adult.contents.fc2.com",
   [Website.FC2HUB]: "https://javten.com",
   [Website.H0930]: "https://www.h0930.com",

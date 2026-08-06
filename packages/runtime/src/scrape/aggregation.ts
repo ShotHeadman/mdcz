@@ -466,6 +466,11 @@ const buildCrawlerOptions = ({
     options.cookies = javbusCookie;
   }
 
+  const fantiaCookie = configuration.network.fantiaCookie.trim();
+  if (site === Website.FANTIA && fantiaCookie) {
+    options.cookies = fantiaCookie;
+  }
+
   if (site === Website.R18_DEV) {
     options.r18MetadataLanguage = configuration.scrape.r18MetadataLanguage;
   }

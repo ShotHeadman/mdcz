@@ -387,6 +387,7 @@ export function NetworkCookiesSection() {
     <>
       <CookieFieldWrapper name="network.javdbCookie" label="JavDB Cookie" />
       <CookieFieldWrapper name="network.javbusCookie" label="JavBus Cookie" />
+      <CookieFieldWrapper name="network.fantiaCookie" label="Fantia Cookie" />
     </>
   );
 }

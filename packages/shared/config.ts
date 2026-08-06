@@ -60,6 +60,7 @@ const networkSchema = z.object({
   retryCount: z.number().int().min(0).max(10).default(3),
   javdbCookie: z.string().default(""),
   javbusCookie: z.string().default(""),
+  fantiaCookie: z.string().default(""),
 });
 
 const scrapeSchema = z.object({
