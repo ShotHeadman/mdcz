@@ -91,6 +91,33 @@ describe("settings parity runtime helpers", () => {
     });
   });
 
+  it.each([
+    ["dashboard", '<a href="/mypage/dashboard">My page</a>', true, "ready_with_cookie", "Cookie 有效"],
+    ["login wall", '<form><input type="password" /></form>', false, "invalid_or_expired", "Cookie 无效或已过期"],
+    [
+      "unexpected page",
+      "<main>temporarily unavailable</main>",
+      false,
+      "unexpected_page",
+      "Fantia 页面未返回可识别的登录状态，请稍后重试。",
+    ],
+  ] as const)("classifies Fantia %s instead of treating arbitrary HTML as a valid Cookie", async (_name, html, valid, status, message) => {
+    const config = cloneConfig();
+    config.network.fantiaCookie = "fantia_session=valid";
+    const getText = vi.fn(async (url: string) =>
+      url === "https://fantia.jp/mypage/dashboard" ? html : '<a class="movie-box" />',
+    );
+
+    const result = await checkConfiguredSiteCookies(config, { getText });
+
+    expect(result.results.find((entry) => entry.site === "Fantia")).toEqual({
+      site: "Fantia",
+      valid,
+      message,
+      status,
+    });
+  });
+
   it("does not expose a configured JavBus Cookie when the probe fails", async () => {
     const config = cloneConfig();
     config.network.javbusCookie = "javbus_session=secret-token; other=second-secret";

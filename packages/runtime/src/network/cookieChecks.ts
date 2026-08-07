@@ -129,12 +129,31 @@ const checkFantiaCookie = async (
     const html = await networkClient.getText("https://fantia.jp/mypage/dashboard", {
       headers: { cookie },
     });
-    const valid = !html.includes("外部サービスでログイン");
+    if (html.includes("外部サービスでログイン") || /type=["']password["']/iu.test(html)) {
+      return { site: "Fantia", valid: false, message: "Cookie 无效或已过期", status: "invalid_or_expired" };
+    }
+
+    if (
+      html.includes("あなたは18歳以上ですか？") ||
+      html.includes("成人向けの画像、動画、テキストなどが表示される可能性があります")
+    ) {
+      return {
+        site: "Fantia",
+        valid: false,
+        message: "Fantia 页面需要完成年龄验证。请在浏览器完成验证后复制 Cookie。",
+        status: "verification_required",
+      };
+    }
+
+    if (/href=["']\/mypage\/dashboard["']/iu.test(html)) {
+      return { site: "Fantia", valid: true, message: "Cookie 有效", status: "ready_with_cookie" };
+    }
+
     return {
       site: "Fantia",
-      valid,
-      message: valid ? "Cookie 有效" : "Cookie 无效或已过期",
-      status: valid ? "ready_with_cookie" : "invalid_or_expired",
+      valid: false,
+      message: "Fantia 页面未返回可识别的登录状态，请稍后重试。",
+      status: "unexpected_page",
     };
   } catch (error) {
     return {

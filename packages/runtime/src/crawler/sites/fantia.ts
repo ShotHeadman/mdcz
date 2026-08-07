@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import type { SiteRequestConfig } from "@mdcz/runtime/network";
 import { normalizeCode } from "@mdcz/runtime/shared/utils";
 import { Website } from "@mdcz/shared/enums";
@@ -9,6 +8,7 @@ import { BaseCrawler } from "../base/BaseCrawler";
 import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
+import { toAbsoluteUrl } from "./helpers";
 
 const FANTIA_BASE_URL = "https://fantia.jp";
 const FANTIA_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
@@ -24,9 +24,28 @@ const FANTIA_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
 
 interface FantiaPostApiResponse {
   post: {
-    comment: string;
-    blog_comment: string;
+    comment?: string;
+    blog_comment?: string;
+    post_contents?: Array<{
+      visible_status?: string;
+      post_content_photos?: Array<{
+        url?:
+          | string
+          | {
+              thumb?: string;
+              medium?: string;
+              large?: string;
+              main?: string;
+              original?: string;
+            };
+      }>;
+    }>;
   };
+}
+
+interface FantiaPostApiData {
+  plot?: string;
+  images: string[];
 }
 
 const isAgeVerificationPage = ($: CheerioAPI): boolean => {
@@ -69,14 +88,30 @@ const getJsonLdValue = ($: CheerioAPI, key: string): string | undefined => {
   return undefined;
 };
 
-const getMainImage = ($: CheerioAPI): string | undefined => {
+const getMainImage = ($: CheerioAPI, detailUrl: string): string | undefined => {
   const ogImage = $('meta[property="og:image"]').attr("content") || "";
-  return ogImage.replace("blurred_ogp", "main");
+  const imageUrl = toAbsoluteUrl(detailUrl, ogImage);
+  return imageUrl?.replace("blurred_ogp", "main");
 };
 
 const getProductPlot = ($: CheerioAPI): string | undefined => {
   const plot = $(".product-description").first().text().trim();
-  return plot;
+  return plot || getJsonLdValue($, "description");
+};
+
+const IMAGE_FILE_PATTERN = /\.(?:jpe?g|png|webp)$/iu;
+
+const resolveImageUrl = (value: string | undefined, detailUrl: string): string | undefined => {
+  const imageUrl = toAbsoluteUrl(detailUrl, value);
+  if (!imageUrl) {
+    return undefined;
+  }
+
+  try {
+    return IMAGE_FILE_PATTERN.test(new URL(imageUrl).pathname) ? imageUrl : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 const normalizeNumber = (value: string | undefined | null): string => {
@@ -92,15 +127,6 @@ const normalizeNumber = (value: string | undefined | null): string => {
   return normalized;
 };
 
-const _saveDebugHtml = async (filePath: string, html: string) => {
-  try {
-    await fs.writeFile(filePath, html);
-    console.log(`save success: ${filePath}`);
-  } catch (error) {
-    console.error(`save fail: ${error}`);
-  }
-};
-
 const getCsrfToken = ($: CheerioAPI): string => {
   return $('meta[name="csrf-token"]').attr("content") || "";
 };
@@ -108,6 +134,9 @@ const getCsrfToken = ($: CheerioAPI): string => {
 const extractImagesFromBlogComment = (data: FantiaPostApiResponse): string[] => {
   const images: string[] = [];
   try {
+    if (!data.post.blog_comment) {
+      return images;
+    }
     const apiData = JSON.parse(data.post.blog_comment);
     const operations = apiData.ops as Array<{ insert?: { fantiaImage?: { url?: string } } }>;
     if (!operations) return images;
@@ -124,6 +153,41 @@ const extractImagesFromBlogComment = (data: FantiaPostApiResponse): string[] => 
   return images;
 };
 
+const extractImagesFromPostContents = (data: FantiaPostApiResponse): string[] => {
+  return (data.post.post_contents ?? []).flatMap((content) => {
+    if (content.visible_status !== "visible") {
+      return [];
+    }
+
+    return (content.post_content_photos ?? [])
+      .map((photo) => {
+        if (typeof photo.url === "string") {
+          return photo.url;
+        }
+        return photo.url?.main ?? photo.url?.large ?? photo.url?.original ?? photo.url?.medium ?? photo.url?.thumb;
+      })
+      .filter((imageUrl): imageUrl is string => Boolean(imageUrl));
+  });
+};
+
+const extractFantiaDetailId = (href: string): string | undefined => {
+  try {
+    return new URL(href, FANTIA_BASE_URL).pathname.match(/^\/(?:products|posts)\/(\d+)\/?$/u)?.[1];
+  } catch {
+    return undefined;
+  }
+};
+
+const isExpectedDetailPage = ($: CheerioAPI, urlpath: string): boolean => {
+  const pathMatch = urlpath.match(/^\/(posts|products)\/(\d+)$/u);
+  if (!pathMatch) {
+    return false;
+  }
+
+  const expectedType = pathMatch[1] === "posts" ? "post" : "product";
+  return getJsonLdValue($, "content_type") === expectedType && getJsonLdValue($, "content_id") === pathMatch[2];
+};
+
 export class FantiaCrawler extends BaseCrawler {
   static readonly siteRequestConfigs = FANTIA_SITE_REQUEST_CONFIGS;
 
@@ -136,11 +200,16 @@ export class FantiaCrawler extends BaseCrawler {
     try {
       const html = await this.fetch(url, context);
       const $ = load(html);
-      const title = $("title").text().trim();
-      if (title && !title.includes("検索") && !title.includes("ログイン｜ファンティア[Fantia]")) {
+      if (isAgeVerificationPage($)) {
+        throw new Error("Fantia age verification detected; please login first via browser and provide cookies");
+      }
+      if (isExpectedDetailPage($, urlpath)) {
         return url;
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Fantia age verification detected")) {
+        throw error;
+      }
       this.logger.debug(`Failed to fetch direct URL: ${url}`);
     }
     return null;
@@ -155,10 +224,15 @@ export class FantiaCrawler extends BaseCrawler {
       if (!title || title.includes("ログイン｜ファンティア[Fantia]")) {
         return null;
       }
-      const href = $("a.link-block").attr("href");
+      const href = $("a.link-block")
+        .toArray()
+        .map((element) => $(element).attr("href"))
+        .find(
+          (candidate): candidate is string =>
+            typeof candidate === "string" && extractFantiaDetailId(candidate) === number,
+        );
       if (href) {
-        const fullUrl = `${FANTIA_BASE_URL}${href}`;
-        return fullUrl;
+        return toAbsoluteUrl(FANTIA_BASE_URL, href) ?? null;
       }
     } catch {
       this.logger.debug(`Failed to fetch search URL: ${url}`);
@@ -166,10 +240,14 @@ export class FantiaCrawler extends BaseCrawler {
     return null;
   }
 
-  private async injectPostApiDataIntoDoc($: CheerioAPI, searchUrl: string, context: Context): Promise<void> {
-    const postIdMatch = searchUrl.match(/\/posts\/(\d+)/);
+  private async fetchPostApiData(
+    $: CheerioAPI,
+    detailUrl: string,
+    context: Context,
+  ): Promise<FantiaPostApiData | null> {
+    const postIdMatch = detailUrl.match(/\/posts\/(\d+)/);
     if (!postIdMatch) {
-      return;
+      return null;
     }
     const postId = postIdMatch[1];
     const apiUrl = `${FANTIA_BASE_URL}/api/v1/posts/${postId}`;
@@ -185,19 +263,13 @@ export class FantiaCrawler extends BaseCrawler {
         },
       });
 
-      const images = extractImagesFromBlogComment(data);
-
-      const $body = $("body");
-      if ($body.length > 0) {
-        if (images.length > 0) {
-          $body.append(`<div id="crawler-post-images" style="display:none">${JSON.stringify(images)}</div>`);
-        }
-        if (data.post.comment) {
-          $body.append(`<div id="crawler-post-plot" style="display:none">${JSON.stringify(data.post.comment)}</div>`);
-        }
-      }
+      return {
+        plot: data.post.comment?.trim() || undefined,
+        images: [...new Set([...extractImagesFromBlogComment(data), ...extractImagesFromPostContents(data)])],
+      };
     } catch (error) {
-      this.logger.debug(`Failed to inject post API data for ${postId}: ${error}`);
+      this.logger.debug(`Failed to fetch post API data for ${postId}: ${error}`);
+      return null;
     }
   }
 
@@ -207,7 +279,7 @@ export class FantiaCrawler extends BaseCrawler {
       return null;
     }
 
-    const directPaths = [`/products/${number}`, `/posts/${number}`];
+    const directPaths = [`/posts/${number}`, `/products/${number}`];
     for (const urlpath of directPaths) {
       const result = await this.tryDirectUrl(urlpath, context);
       if (result) {
@@ -215,7 +287,7 @@ export class FantiaCrawler extends BaseCrawler {
       }
     }
 
-    const searchPaths = [`/products`, `/posts`];
+    const searchPaths = [`/posts`, `/products`];
     for (const urlpath of searchPaths) {
       const result = await this.searchForUrl(number, urlpath, context);
       if (result) {
@@ -227,7 +299,7 @@ export class FantiaCrawler extends BaseCrawler {
   }
 
   protected async parseSearchPage(
-    context: Context,
+    _context: Context,
     $: CheerioAPI,
     searchUrl: string,
   ): Promise<string | SearchPageResolution | null> {
@@ -236,14 +308,15 @@ export class FantiaCrawler extends BaseCrawler {
       throw new Error("Fantia age verification detected; please login first via browser and provide cookies");
     }
 
-    await this.injectPostApiDataIntoDoc($, searchUrl, context);
-
     return this.reuseSearchDocument(searchUrl);
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     this.logger.debug(`url is ${_detailUrl}`);
-    // saveDebugHtml(path.join(DebugHtmlDir, `fantia_${Date.now()}.html`), $.html());
+    if (isAgeVerificationPage($)) {
+      throw new Error("Fantia age verification detected; please login first via browser and provide cookies");
+    }
+
     const number = context.number;
     const publisher = getJsonLdValue($, "fanclub_name");
     if (!publisher) {
@@ -256,7 +329,7 @@ export class FantiaCrawler extends BaseCrawler {
     if (fanclubCategory && !tags.includes(fanclubCategory)) {
       tags.push(fanclubCategory);
     }
-    const thumbUrl = getMainImage($);
+    const thumbUrl = getMainImage($, _detailUrl);
     if (!thumbUrl) {
       return null;
     }
@@ -268,23 +341,19 @@ export class FantiaCrawler extends BaseCrawler {
 
     if (_detailUrl.includes("/products")) {
       title = $(".product-title.mb-20").text().trim() || "";
-      releaseDate = parseDate(getJsonLdValue($, "uploadDate"));
+      releaseDate = parseDate(getJsonLdValue($, "uploadDate") ?? getJsonLdValue($, "datePublished"));
       plot = getProductPlot($);
-      const galleryImages: string[] = [];
-      $(".product-gallery-item img").each((_i, el) => {
-        const src = $(el).attr("src");
-        if (src?.endsWith(".jpg")) {
-          galleryImages.push(src);
-        }
-      });
+      const galleryImages = $(".product-gallery-item img")
+        .toArray()
+        .map((element) => resolveImageUrl($(element).attr("src") ?? $(element).attr("data-src"), _detailUrl))
+        .filter((imageUrl): imageUrl is string => Boolean(imageUrl));
       allSceneImages = [...new Set([thumbUrl, ...galleryImages])];
     } else if (_detailUrl.includes("/posts")) {
       title = getJsonLdValue($, "headline") || "";
       releaseDate = parseDate(getJsonLdValue($, "datePublished"));
-      const plotEl = $("#crawler-post-plot");
-      plot = plotEl.length > 0 ? JSON.parse(plotEl.text()) : getJsonLdValue($, "description");
-      const imgEl = $("#crawler-post-images");
-      allSceneImages = imgEl.length > 0 ? JSON.parse(imgEl.text()) : [thumbUrl];
+      const apiData = await this.fetchPostApiData($, _detailUrl, context);
+      plot = apiData?.plot ?? getJsonLdValue($, "description");
+      allSceneImages = apiData?.images.length ? apiData.images : [thumbUrl];
     } else {
       return null;
     }
