@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findExistingNfoPath, NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { parseNfo } from "@main/utils/nfo";
+import { getNfoReadCandidates, resolveFilenameNfoPath } from "@mdcz/runtime/scrape";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
@@ -337,6 +338,32 @@ describe("NfoGenerator", () => {
     await writeFile(movieNfoPath, "<movie />", "utf8");
 
     await expect(findExistingNfoPath(nfoPath, "movie")).resolves.toBe(movieNfoPath);
+  });
+  it("orders read candidates according to naming mode and video basename", () => {
+    expect(resolveFilenameNfoPath("/media/movie.nfo", "/media/ABC-123.mp4")).toBe("/media/ABC-123.nfo");
+    expect(getNfoReadCandidates("/media/movie.nfo", "filename", "/media/ABC-123.mp4")).toEqual([
+      "/media/ABC-123.nfo",
+      "/media/movie.nfo",
+    ]);
+    expect(getNfoReadCandidates("/media/ABC-123.nfo", "movie", "/media/ABC-123.mp4")).toEqual([
+      "/media/movie.nfo",
+      "/media/ABC-123.nfo",
+    ]);
+  });
+  it("merges editable fields without dropping unmanaged nodes or attributes", () => {
+    const existingXml = `<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="dmm" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><fileinfo><streamdetails><video><width>1920</width></video></streamdetails></fileinfo><providerid source="local">keep-me</providerid><mdcz><custom keep="yes">value</custom></mdcz></movie>`;
+    const merged = new NfoGenerator().mergeEditableXml(
+      existingXml,
+      createCrawlerData({ title: "New", actors: ["Actor A"] }),
+    );
+
+    expect(merged).toContain('<movie custom="keep">');
+    expect(merged).toContain("<title>New</title>");
+    expect(merged).toContain("<fileinfo>");
+    expect(merged).toContain('<providerid source="local">keep-me</providerid>');
+    expect(merged).toContain('<custom keep="yes">value</custom>');
+    expect(merged).toContain('<actor role="lead">');
+    expect(merged).toContain("<name>Actor A</name>");
   });
   it("writes configurable director and trailer fields without coupling trailer downloads", () => {
     const data = createCrawlerData({

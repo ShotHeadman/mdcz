@@ -1,13 +1,19 @@
-import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
-import { findExistingNfoPath, nfoGenerator } from "@main/services/scraper/NfoGenerator";
+import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
-import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
+import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
 import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
-import { nfoIgnoreFieldsToEnabledFields } from "@mdcz/runtime/scrape";
+import {
+  findExistingNfoPath,
+  getNfoReadCandidates,
+  getNfoWritePaths,
+  nfoIgnoreFieldsToEnabledFields,
+  resolveFilenameNfoPath,
+} from "@mdcz/runtime/scrape";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
@@ -33,6 +39,17 @@ export const createFileHandlers = (
   | typeof IpcChannel.File_NfoWrite
 > => {
   const { windowService } = context;
+  const atomicWriteFile = async (filePath: string, content: string): Promise<void> => {
+    const tempPath = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+    await mkdir(dirname(filePath), { recursive: true });
+    try {
+      await writeFile(tempPath, content, "utf8");
+      await rename(tempPath, filePath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  };
   const assertDirectory = async (dirPath: string): Promise<void> => {
     try {
       const stats = await stat(dirPath);
@@ -227,21 +244,29 @@ export const createFileHandlers = (
 
         return { deletedCount, failedCount };
       }),
-    [IpcChannel.File_NfoRead]: t.procedure.input<{ nfoPath?: string }>().action(async ({ input }) => {
-      try {
-        const nfoPath = input?.nfoPath?.trim();
-        if (!nfoPath) {
-          throw createIpcError(IpcErrorCode.PARSE_ERROR, "NFO path is required");
+    [IpcChannel.File_NfoRead]: t.procedure
+      .input<{ nfoPath?: string; videoPath?: string }>()
+      .action(async ({ input }) => {
+        try {
+          const nfoPath = input?.nfoPath?.trim();
+          if (!nfoPath) {
+            throw createIpcError(IpcErrorCode.PARSE_ERROR, "NFO path is required");
+          }
+          const config = await configManager.getValidated();
+          const candidates = getNfoReadCandidates(nfoPath, config.download.nfoNaming, input.videoPath?.trim());
+          for (const candidate of candidates) {
+            if (!(await pathExists(candidate))) continue;
+            const content = await readFile(candidate, "utf8");
+            return { data: parseNfo(content), nfoPath: candidate };
+          }
+          throw Object.assign(new Error(`NFO not found: ${nfoPath}`), { code: "ENOENT" });
+        } catch (error) {
+          throw asSerializableIpcError(error);
         }
-        const content = await readFile(nfoPath, "utf8");
-        return { data: parseNfo(content) };
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
+      }),
     [IpcChannel.File_NfoWrite]: t.procedure
-      .input<{ nfoPath?: string; data?: CrawlerData }>()
-      .action(async ({ input }): Promise<{ success: true }> => {
+      .input<{ nfoPath?: string; videoPath?: string; data?: CrawlerData }>()
+      .action(async ({ input }): Promise<{ success: true; nfoPath: string }> => {
         try {
           const nfoPath = input?.nfoPath?.trim();
           const data = input?.data;
@@ -249,17 +274,24 @@ export const createFileHandlers = (
             throw createIpcError(IpcErrorCode.FILE_WRITE_ERROR, "NFO path and data are required");
           }
           const config = await configManager.getValidated();
-          const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming);
-          const existingSnapshot = existingNfoPath
-            ? parseNfoSnapshot(await readFile(existingNfoPath, "utf8")).localState
-            : undefined;
-          await nfoGenerator.writeNfo(nfoPath, data, {
+          const videoPath = input.videoPath?.trim();
+          const plannedNfoPath = resolveFilenameNfoPath(nfoPath, videoPath);
+          const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming, pathExists, videoPath);
+          const existingXml = existingNfoPath ? await readFile(existingNfoPath, "utf8") : undefined;
+          const existingSnapshot = existingXml ? parseNfoSnapshot(existingXml).localState : undefined;
+          const options = {
             localState: existingSnapshot,
             nfoNaming: config.download.nfoNaming,
             enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
             nfoTitleTemplate: config.naming.nfoTitleTemplate,
-          });
-          return { success: true as const };
+          };
+          const xml = existingXml
+            ? nfoGenerator.mergeEditableXml(existingXml, data, options)
+            : nfoGenerator.buildXml(data, options);
+          const paths = getNfoWritePaths(plannedNfoPath, config.download.nfoNaming);
+          for (const requiredPath of paths.requiredPaths) await atomicWriteFile(requiredPath, xml);
+          for (const stalePath of paths.stalePaths) await rm(stalePath, { force: true });
+          return { success: true as const, nfoPath: paths.canonicalPath };
         } catch (error) {
           throw asSerializableIpcError(error);
         }

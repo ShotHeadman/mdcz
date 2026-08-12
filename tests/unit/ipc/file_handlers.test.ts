@@ -219,4 +219,40 @@ describe("createFileHandlers", () => {
     expect(xml).not.toContain("<trailer>");
     expect(xml).not.toContain("trailer_source_url");
   });
+
+  it("resolves filename NFO mode and preserves unmanaged XML while saving", async () => {
+    const root = await createTempDir();
+    const videoPath = join(root, "ABC-123.mp4");
+    const filenameNfoPath = join(root, "ABC-123.nfo");
+    await writeFile(videoPath, "video");
+    await writeFile(
+      filenameNfoPath,
+      '<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="javdb" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name></actor><providerid source="local">keep-me</providerid></movie>',
+    );
+    vi.mocked(configManager.getValidated).mockResolvedValue({
+      ...defaultConfiguration,
+      download: { ...defaultConfiguration.download, nfoNaming: "filename" },
+    });
+
+    const handlers = createFileHandlers(createContext());
+    const readResult = await handlers[IpcChannel.File_NfoRead].action(
+      actionArgs({ nfoPath: join(root, "movie.nfo"), videoPath }),
+    );
+    expect(readResult.nfoPath).toBe(filenameNfoPath);
+    expect(readResult.data.actors).toEqual(["Actor A"]);
+
+    await handlers[IpcChannel.File_NfoWrite].action(
+      actionArgs({
+        nfoPath: readResult.nfoPath,
+        videoPath,
+        data: { ...readResult.data, title: "New", title_zh: "New" },
+      }),
+    );
+    const savedXml = await readFile(filenameNfoPath, "utf8");
+    expect(savedXml).toContain("<title>New</title>");
+    expect(savedXml).toContain('<movie custom="keep">');
+    expect(savedXml).toContain('<actor role="lead">');
+    expect(savedXml).toContain('<providerid source="local">keep-me</providerid>');
+    await expect(readFile(join(root, "movie.nfo"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });

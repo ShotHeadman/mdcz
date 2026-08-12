@@ -10,14 +10,17 @@ import {
 } from "@mdcz/media-store";
 import type { ScrapeResultRecord, TaskRecord, TaskRecordStatus } from "@mdcz/persistence";
 import { toLibraryAssets } from "@mdcz/runtime/library";
+import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import {
   applyScrapeNetworkPolicy,
   createScrapeExecutionPolicy,
+  getNfoReadCandidates,
+  getNfoWritePaths,
   type MountedRootScrapeRuntime,
   NfoGenerator,
   nfoIgnoreFieldsToEnabledFields,
-  parseNfo,
+  resolveFilenameNfoPath,
   runScrapeItems,
 } from "@mdcz/runtime/scrape";
 import {
@@ -416,31 +419,75 @@ export class ScrapeService {
   }
 
   async nfoRead(input: NfoReadInput): Promise<NfoReadResponse> {
-    const root = await this.mediaRoots.getActiveRoot(input.rootId);
-    const content = await readRootFile(root, input.relativePath).catch((error: unknown) => {
-      if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) {
-        return null;
+    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
+    const candidates = getNfoReadCandidates(
+      input.relativePath,
+      configuration.download.nfoNaming,
+      input.videoRelativePath,
+    );
+    let effectiveRelativePath = candidates[0] ?? input.relativePath;
+    let content: Buffer | null = null;
+    for (const candidate of candidates) {
+      content = await readRootFile(root, candidate).catch((error: unknown) => {
+        if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
+        throw error;
+      });
+      if (content) {
+        effectiveRelativePath = candidate;
+        break;
       }
-      throw error;
-    });
+    }
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,
+      effectiveRelativePath,
       exists: content !== null,
-      data: content === null ? null : parseNfo(content.toString("utf-8"), input.relativePath),
+      data: content === null ? null : parseNfoSnapshot(content.toString("utf-8")).crawlerData,
     };
   }
 
   async nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse> {
     const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
-    await atomicWriteRootFile(
-      root,
+    const plannedRelativePath = resolveFilenameNfoPath(input.relativePath, input.videoRelativePath);
+    const candidates = getNfoReadCandidates(
       input.relativePath,
-      this.nfoGenerator.buildXml(input.data, {
-        enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
-      }),
+      configuration.download.nfoNaming,
+      input.videoRelativePath,
     );
-    return { rootId: input.rootId, relativePath: input.relativePath, data: input.data };
+    let existingXml: string | undefined;
+    let existingLocalState: ReturnType<typeof parseNfoSnapshot>["localState"];
+    for (const candidate of candidates) {
+      const content = await readRootFile(root, candidate).catch((error: unknown) => {
+        if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
+        throw error;
+      });
+      if (content) {
+        existingXml = content.toString("utf-8");
+        existingLocalState = parseNfoSnapshot(existingXml).localState;
+        break;
+      }
+    }
+    const options = {
+      buildTags: buildMovieTags,
+      enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
+      localState: existingLocalState,
+      nfoNaming: configuration.download.nfoNaming,
+      nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
+    };
+    const xml = existingXml
+      ? this.nfoGenerator.mergeEditableXml(existingXml, input.data, options)
+      : this.nfoGenerator.buildXml(input.data, options);
+    const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
+    for (const requiredPath of paths.requiredPaths) await atomicWriteRootFile(root, requiredPath, xml);
+    for (const stalePath of paths.stalePaths) {
+      await rm(resolveRootRelativePath(root, stalePath), { force: true });
+    }
+    return {
+      rootId: input.rootId,
+      relativePath: input.relativePath,
+      effectiveRelativePath: paths.canonicalPath,
+      data: input.data,
+    };
   }
 
   async deleteFile(input: FileActionInput): Promise<FileActionResponse> {

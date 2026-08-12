@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
-import { XMLBuilder } from "fast-xml-parser";
+import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
 
 const builder = new XMLBuilder({
@@ -13,10 +13,15 @@ const builder = new XMLBuilder({
   commentPropName: "#comment",
   suppressBooleanAttributes: false,
 });
+const parser = new XMLParser({
+  attributeNamePrefix: "@_",
+  ignoreAttributes: false,
+  commentPropName: "#comment",
+});
 
 const OUTLINE_MAX_CHARS = 200;
 const JELLYFIN_MOVIE_NFO_NAME = "movie.nfo";
-type NfoNamingMode = "both" | "movie" | "filename";
+export type NfoNamingMode = "both" | "movie" | "filename";
 
 type NfoFileWriter = (path: string, content: string) => Promise<void>;
 type PathExists = (path: string) => Promise<boolean>;
@@ -246,13 +251,17 @@ export class NfoGenerator {
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xmlBody}`;
   }
 
+  mergeEditableXml(existingXml: string, data: CrawlerData, options?: NfoOptions): string {
+    return mergeEditableNfoDocuments(existingXml, this.buildXml(data, options));
+  }
+
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {
     const write =
       options?.writeFile ??
       ((filePath, content) => import("node:fs/promises").then((fs) => fs.writeFile(filePath, content, "utf8")));
     const xml = this.buildXml(data, options);
     const nfoNaming = options?.nfoNaming ?? "both";
-    const { primaryPath, moviePath, canonicalPath, stalePaths } = getNfoNamingPaths(nfoPath, nfoNaming);
+    const { primaryPath, moviePath, canonicalPath, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
     await mkdir(dirname(primaryPath), { recursive: true });
 
     if (nfoNaming === "both") {
@@ -276,19 +285,120 @@ export class NfoGenerator {
 export const nfoGenerator = new NfoGenerator();
 
 export const resolveCanonicalNfoPath = (nfoPath: string, nfoNaming: NfoNamingMode = "both"): string =>
-  getNfoNamingPaths(nfoPath, nfoNaming).canonicalPath;
+  getNfoWritePaths(nfoPath, nfoNaming).canonicalPath;
+
+export const resolveFilenameNfoPath = (nfoPath: string, videoPath?: string): string =>
+  replaceExtension(videoPath ?? nfoPath, ".nfo");
+
+export const getNfoReadCandidates = (
+  nfoPath: string,
+  nfoNaming: NfoNamingMode = "both",
+  videoPath?: string,
+): string[] => {
+  const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
+  const { primaryPath, moviePath, canonicalPath } = getNfoWritePaths(plannedPath, nfoNaming);
+  return Array.from(new Set([canonicalPath, primaryPath, moviePath, nfoPath]));
+};
 
 export const findExistingNfoPath = async (
   nfoPath: string,
   nfoNaming: NfoNamingMode = "both",
   pathExists: PathExists,
+  videoPath?: string,
 ): Promise<string | undefined> => {
-  const { primaryPath, moviePath, canonicalPath } = getNfoNamingPaths(nfoPath, nfoNaming);
-  const candidates = Array.from(new Set([canonicalPath, primaryPath, moviePath]));
+  const candidates = getNfoReadCandidates(nfoPath, nfoNaming, videoPath);
   for (const candidatePath of candidates) {
     if (await pathExists(candidatePath)) return candidatePath;
   }
   return undefined;
+};
+
+const EDITABLE_MOVIE_FIELDS = [
+  "title",
+  "originaltitle",
+  "plot",
+  "outline",
+  "premiered",
+  "releasedate",
+  "year",
+  "runtime",
+  "rating",
+  "studio",
+  "director",
+  "publisher",
+  "set",
+  "trailer",
+  "uniqueid",
+  "genre",
+  "thumb",
+  "fanart",
+  "tag",
+] as const;
+const EDITABLE_MDCZ_FIELDS = [
+  "raw_title",
+  "thumb_source_url",
+  "poster_source_url",
+  "fanart_source_url",
+  "trailer_source_url",
+  "scene_images",
+] as const;
+
+const requireXmlRecord = (value: unknown, message: string): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
+  }
+  return value as Record<string, unknown>;
+};
+
+const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): string => {
+  const existingRoot = requireXmlRecord(parser.parse(existingXml), "Invalid NFO root");
+  const existingMovie = requireXmlRecord(existingRoot.movie, "Invalid NFO movie node");
+  const generatedRoot = requireXmlRecord(parser.parse(generatedXml), "Invalid generated NFO root");
+  const generatedMovie = requireXmlRecord(generatedRoot.movie, "Invalid generated NFO movie node");
+
+  for (const field of EDITABLE_MOVIE_FIELDS) {
+    if (field in generatedMovie) existingMovie[field] = generatedMovie[field];
+    else delete existingMovie[field];
+  }
+  existingMovie.actor = mergeActorNodes(existingMovie.actor, generatedMovie.actor);
+
+  const existingMdcz =
+    existingMovie.mdcz && typeof existingMovie.mdcz === "object" && !Array.isArray(existingMovie.mdcz)
+      ? (existingMovie.mdcz as Record<string, unknown>)
+      : {};
+  const generatedMdcz =
+    generatedMovie.mdcz && typeof generatedMovie.mdcz === "object" && !Array.isArray(generatedMovie.mdcz)
+      ? (generatedMovie.mdcz as Record<string, unknown>)
+      : {};
+  for (const field of EDITABLE_MDCZ_FIELDS) {
+    if (field in generatedMdcz) existingMdcz[field] = generatedMdcz[field];
+    else delete existingMdcz[field];
+  }
+  if (Object.keys(existingMdcz).length > 0) existingMovie.mdcz = existingMdcz;
+  else delete existingMovie.mdcz;
+
+  existingRoot.movie = existingMovie;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(existingRoot)}`;
+};
+
+const actorNodeName = (value: unknown): string => {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const name = (value as Record<string, unknown>).name;
+  return typeof name === "string" ? name.trim() : "";
+};
+
+const mergeActorNodes = (existing: unknown, generated: unknown): unknown => {
+  const existingActors = toArray(existing);
+  const generatedActors = toArray(generated);
+  const existingByName = new Map(existingActors.map((actor) => [normalizeActorKey(actorNodeName(actor)), actor]));
+  return generatedActors.map((actor) => {
+    const previous = existingByName.get(normalizeActorKey(actorNodeName(actor)));
+    if (!(previous && typeof previous === "object" && actor && typeof actor === "object")) return actor;
+    const merged = { ...(previous as Record<string, unknown>), ...(actor as Record<string, unknown>) };
+    if (!("thumb" in (actor as Record<string, unknown>))) delete merged.thumb;
+    return merged;
+  });
 };
 
 export const reconcileExistingNfoFiles = async (
@@ -296,7 +406,7 @@ export const reconcileExistingNfoFiles = async (
   nfoNaming: NfoNamingMode = "both",
   pathExists: PathExists,
 ): Promise<string | undefined> => {
-  const { primaryPath, canonicalPath, requiredPaths, stalePaths } = getNfoNamingPaths(nfoPath, nfoNaming);
+  const { primaryPath, canonicalPath, requiredPaths, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
   const sourcePath = await findExistingNfoPath(nfoPath, nfoNaming, pathExists);
   if (!sourcePath) return undefined;
   await mkdir(dirname(primaryPath), { recursive: true });
@@ -308,7 +418,7 @@ export const reconcileExistingNfoFiles = async (
   return canonicalPath;
 };
 
-interface NfoNamingPaths {
+export interface NfoNamingPaths {
   primaryPath: string;
   moviePath: string;
   canonicalPath: string;
@@ -316,7 +426,7 @@ interface NfoNamingPaths {
   stalePaths: string[];
 }
 
-const getNfoNamingPaths = (nfoPath: string, nfoNaming: NfoNamingMode): NfoNamingPaths => {
+export const getNfoWritePaths = (nfoPath: string, nfoNaming: NfoNamingMode = "both"): NfoNamingPaths => {
   const primaryPath = nfoPath;
   const moviePath = join(dirname(nfoPath), JELLYFIN_MOVIE_NFO_NAME);
   if (nfoNaming === "movie") {
@@ -344,6 +454,14 @@ const getNfoNamingPaths = (nfoPath: string, nfoNaming: NfoNamingMode): NfoNaming
     requiredPaths: primaryPath === moviePath ? [primaryPath] : [primaryPath, moviePath],
     stalePaths: [],
   };
+};
+
+const replaceExtension = (filePath: string, extension: string): string => {
+  const separatorIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  const extensionIndex = filePath.lastIndexOf(".");
+  return extensionIndex > separatorIndex
+    ? `${filePath.slice(0, extensionIndex)}${extension}`
+    : `${filePath}${extension}`;
 };
 
 async function tryRemoveStaleNfo(stalePath: string, pathExists?: PathExists): Promise<void> {

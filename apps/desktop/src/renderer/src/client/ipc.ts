@@ -105,8 +105,9 @@ export const ipc = {
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),
-    nfoRead: (nfoPath: string) => client[IpcChannel.File_NfoRead]({ nfoPath }),
-    nfoWrite: (nfoPath: string, data: CrawlerData) => client[IpcChannel.File_NfoWrite]({ nfoPath, data }),
+    nfoRead: (nfoPath: string, videoPath?: string) => client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
+    nfoWrite: (nfoPath: string, data: CrawlerData, videoPath?: string) =>
+      client[IpcChannel.File_NfoWrite]({ nfoPath, videoPath, data }),
   },
   tool: {
     createSymlink: (payload: {

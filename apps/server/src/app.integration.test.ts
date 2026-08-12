@@ -756,6 +756,48 @@ describe("buildServer composition integration", () => {
     );
   });
 
+  it("resolves configured filename NFO paths and preserves unmanaged XML on edit", async () => {
+    const root = await createTempRoot("nfo-editor-root");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    await services.config.update({ download: { nfoNaming: "filename" } });
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    await writeFile(
+      join(root, "ABC-123.nfo"),
+      '<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="javdb" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><providerid source="local">keep-me</providerid></movie>',
+    );
+
+    const readInput = { rootId, relativePath: "movie.nfo", videoRelativePath: "ABC-123.mp4" };
+    const readResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.nfoRead?input=${encodeURIComponent(JSON.stringify(readInput))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const readResult = readResponse.json().result.data;
+    expect(readResponse.statusCode).toBe(200);
+    expect(readResult.effectiveRelativePath).toBe("ABC-123.nfo");
+    expect(readResult.data.actors).toEqual(["Actor A"]);
+
+    const writeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.nfoWrite",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...readInput,
+        relativePath: readResult.effectiveRelativePath,
+        data: { ...readResult.data, title: "New", title_zh: "New" },
+      },
+    });
+    const savedXml = await readFile(join(root, "ABC-123.nfo"), "utf8");
+    expect(writeResponse.statusCode).toBe(200);
+    expect(writeResponse.json().result.data.effectiveRelativePath).toBe("ABC-123.nfo");
+    expect(savedXml).toContain("<title>New</title>");
+    expect(savedXml).toContain('<movie custom="keep">');
+    expect(savedXml).toContain('<actor role="lead">');
+    expect(savedXml).toContain('<providerid source="local">keep-me</providerid>');
+  });
+
   it("closes the persistence database with the Fastify lifecycle", async () => {
     const app = await createTestServer();
     const { fastify, services } = app;

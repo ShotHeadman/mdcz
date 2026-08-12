@@ -304,6 +304,7 @@ export type ScrapeResultIdInput = z.infer<typeof scrapeResultIdInputSchema>;
 export const nfoReadInputSchema = z.object({
   rootId: z.string().trim().min(1),
   relativePath: z.string().trim().min(1),
+  videoRelativePath: z.string().trim().min(1).optional(),
 });
 
 export type NfoReadInput = z.infer<typeof nfoReadInputSchema>;
@@ -372,6 +373,7 @@ export type ScrapeResultDetailResponse = z.infer<typeof scrapeResultDetailRespon
 export const nfoReadResponseSchema = z.object({
   rootId: z.string(),
   relativePath: z.string(),
+  effectiveRelativePath: z.string(),
   exists: z.boolean(),
   data: crawlerDataSchema.nullable(),
 });
@@ -381,6 +383,7 @@ export type NfoReadResponse = z.infer<typeof nfoReadResponseSchema>;
 export const nfoWriteResponseSchema = z.object({
   rootId: z.string(),
   relativePath: z.string(),
+  effectiveRelativePath: z.string(),
   data: crawlerDataSchema,
 });
 

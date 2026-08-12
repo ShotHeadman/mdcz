@@ -57,7 +57,7 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
     }
   },
   readNfo: async (_item: DetailViewItem, path: string) => {
-    const response = await readNfo(path);
+    const response = await readNfo(path, _item.path);
     return {
       path: response.data.path,
       crawlerData: response.data.crawlerData,

@@ -138,15 +138,17 @@ export const createWebDetailPort = (): DetailActionPort => ({
   readNfo: async (item, path) => {
     const rootId = getRootId(item);
     const relativePath = toRelativePath(item, path);
-    const response = await api.scrape.nfoRead({ rootId, relativePath });
+    const videoRelativePath = item.path ? toRelativePath(item, item.path) : undefined;
+    const response = await api.scrape.nfoRead({ rootId, relativePath, videoRelativePath });
     return {
-      path: response.relativePath,
+      path: response.effectiveRelativePath,
       crawlerData: response.data as CrawlerData | null,
     };
   },
   writeNfo: async (item, path, data) => {
     const rootId = getRootId(item);
-    await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), data });
+    const videoRelativePath = item.path ? toRelativePath(item, item.path) : undefined;
+    await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
   },
 });
 
