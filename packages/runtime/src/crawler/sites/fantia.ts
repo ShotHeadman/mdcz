@@ -115,6 +115,8 @@ const resolveImageUrl = (value: string | undefined, detailUrl: string): string |
 };
 
 const normalizeNumber = (value: string | undefined | null): string => {
+  // Media extensions are handled by the scanner; Fantia filenames may omit the FANTIA prefix.
+  // Any inferred numeric ID must still pass the detail page's content_type/content_id validation.
   const normalized = normalizeCode(value);
   const fantiaMatch = normalized.match(/FANTIA(\d{5,7})/);
   if (fantiaMatch) {
