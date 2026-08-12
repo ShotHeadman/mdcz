@@ -218,6 +218,8 @@ const FIELD_ALIASES: Record<string, string[]> = {
   "download.nfoIgnoreFields": [
     "nfo",
     "metadata file",
+    "num",
+    "number",
     "plot",
     "release",
     "runtime",
@@ -252,6 +254,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
     "剧照",
     "预告片",
     "来源",
+    "番号",
   ],
   "download.tagBadges": ["badge", "badges", "mark", "corner", "角标", "标签角标"],
   "download.tagBadgeTypes": [

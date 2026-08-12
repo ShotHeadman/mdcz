@@ -437,6 +437,7 @@ describe("NfoGenerator", () => {
       buildTags: () => ["中字"],
     });
     expect(all).toContain("<plot>A long plot</plot>");
+    expect(all).toContain("<num>ABC-123</num>");
     expect(all).toContain("<outline>A long plot</outline>");
     expect(all).toContain("<premiered>2024-01-02</premiered>");
     expect(all).toContain("<runtime>60</runtime>");
@@ -458,6 +459,7 @@ describe("NfoGenerator", () => {
     expect(empty).toContain("<title>中文标题</title>");
     expect(empty).toContain("<originaltitle>Original</originaltitle>");
     expect(empty).toContain("<uniqueid");
+    expect(empty).not.toContain("<num>");
     expect(empty).toContain("<actor>");
     expect(empty).toContain("<dateadded>");
     expect(empty).not.toContain("<plot>");
@@ -477,6 +479,7 @@ describe("NfoGenerator", () => {
     expect(empty).not.toContain("trailer-source.mp4");
 
     const optionalFieldTokens: Record<NfoField, string[]> = {
+      num: ["<num>"],
       plot: ["<plot>", "<outline>"],
       release: ["<premiered>", "<releasedate>", "<year>"],
       runtime: ["<runtime>"],

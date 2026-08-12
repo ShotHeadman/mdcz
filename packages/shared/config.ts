@@ -30,6 +30,7 @@ const DEFAULT_SITES: Website[] = [
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
 const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 export const NFO_FIELD_OPTIONS = [
+  "num",
   "plot",
   "release",
   "runtime",

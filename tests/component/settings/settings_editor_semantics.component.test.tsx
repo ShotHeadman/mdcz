@@ -323,7 +323,7 @@ test("NFO settings render the configured enum list only while NFO generation is 
         download: {
           generateNfo: true,
           keepNfo: true,
-          nfoIgnoreFields: ["director", "trailer"],
+          nfoIgnoreFields: ["num", "director", "trailer"],
           nfoNaming: "both",
         },
       }}
@@ -333,6 +333,7 @@ test("NFO settings render the configured enum list only while NFO generation is 
   );
 
   await expect.element(enabled.getByText("NFO 忽略字段")).toBeVisible();
+  await expect.element(enabled.getByText("num（番号兼容字段）")).toBeVisible();
   await expect.element(enabled.getByText("director（导演）")).toBeVisible();
   await expect.element(enabled.getByText("trailer（预告片）")).toBeVisible();
   await expect

@@ -84,6 +84,7 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "filename", label: "仅 文件名.nfo" },
 ];
 const NFO_ENABLED_FIELD_LABELS: Record<NfoField, string> = {
+  num: "番号兼容字段",
   plot: "简介与摘要",
   release: "发行信息",
   runtime: "片长",

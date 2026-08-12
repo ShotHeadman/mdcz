@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configurationSchema, defaultConfiguration, type NfoField } from "./config";
+import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoField } from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
@@ -109,6 +109,7 @@ describe("configuration codec", () => {
 
   it("defaults, validates, and round-trips NFO fields through every configuration codec", () => {
     const expectedFields: NfoField[] = [
+      "num",
       "plot",
       "release",
       "runtime",
@@ -127,20 +128,21 @@ describe("configuration codec", () => {
       "trailer",
       "sourceComment",
     ];
+    expect(NFO_FIELD_OPTIONS).toEqual(expectedFields);
     expect(defaultConfiguration.download.nfoIgnoreFields).toEqual([]);
 
     const configuration = {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        nfoIgnoreFields: ["plot", "director"] as NfoField[],
+        nfoIgnoreFields: ["num", "plot", "director"] as NfoField[],
       },
     };
 
     for (const format of ["toml", "json"] as const) {
       expect(
         parseConfigurationContent(serializeConfiguration(configuration, format), format).download.nfoIgnoreFields,
-      ).toEqual(["plot", "director"]);
+      ).toEqual(["num", "plot", "director"]);
       expect(
         parseConfigurationContent(
           serializeConfiguration(

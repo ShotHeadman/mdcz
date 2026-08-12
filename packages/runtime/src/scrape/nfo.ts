@@ -220,6 +220,7 @@ export class NfoGenerator {
         ? basename(assets.trailer)
         : data.trailer_url
       : undefined;
+    movie.num = isNfoFieldEnabled(enabledFields, "num") ? data.number : undefined;
     movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
     movie.genre = isNfoFieldEnabled(enabledFields, "genres") ? genres : undefined;
     movie.tag = isNfoFieldEnabled(enabledFields, "tags") && tags.length > 0 ? tags : undefined;
@@ -316,6 +317,7 @@ export const findExistingNfoPath = async (
 const EDITABLE_MOVIE_FIELDS = [
   "title",
   "originaltitle",
+  "num",
   "plot",
   "outline",
   "premiered",
