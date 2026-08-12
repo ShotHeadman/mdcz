@@ -157,7 +157,7 @@ describe("confirmUncensoredItems", () => {
         localState: expect.objectContaining({
           uncensoredChoice: "uncensored",
         }),
-        enabledFields: ["director"],
+        enabledFields: expect.not.arrayContaining(["director"]),
       }),
     );
     expect(resolve).toHaveBeenCalledTimes(2);

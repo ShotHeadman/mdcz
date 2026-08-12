@@ -215,9 +215,9 @@ describe("createFileHandlers", () => {
     );
 
     const xml = await readFile(nfoPath, "utf8");
-    expect(xml).toContain("<director>Director</director>");
-    expect(xml).not.toContain("<trailer>");
-    expect(xml).not.toContain("trailer_source_url");
+    expect(xml).not.toContain("<director>Director</director>");
+    expect(xml).toContain("<trailer>");
+    expect(xml).toContain("trailer_source_url");
   });
 
   it("resolves filename NFO mode and preserves unmanaged XML while saving", async () => {

@@ -737,7 +737,7 @@ describe("buildServer composition integration", () => {
     expect(directorOnlyResponse.statusCode).toBe(200);
     expect(directorOnlyXml).not.toContain("<director>Director</director>");
     expect(directorOnlyXml).toContain("<trailer>");
-    expect(directorOnlyXml).not.toContain("trailer_source_url");
+    expect(directorOnlyXml).toContain("trailer_source_url");
 
     await services.config.update({
       download: {

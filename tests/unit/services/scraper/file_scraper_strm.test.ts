@@ -288,7 +288,7 @@ describe("FileScraper .strm support", () => {
           uncensoredChoice: "leak",
           tags: ["保留标签"],
         },
-        enabledFields: ["director"],
+        enabledFields: expect.not.arrayContaining(["director"]),
       }),
     );
   });

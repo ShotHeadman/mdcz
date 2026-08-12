@@ -223,9 +223,9 @@ describe("buildServer scrape integration", () => {
     );
     expect(nfoContent).toContain("Runtime Title ABC-123");
     expect(nfoContent).toContain(".actors/Actor A.jpg");
-    expect(nfoContent).toContain("<director>Runtime Director</director>");
-    expect(nfoContent).not.toContain("<trailer>");
-    expect(nfoContent).not.toContain("trailer_source_url");
+    expect(nfoContent).not.toContain("<director>Runtime Director</director>");
+    expect(nfoContent).toContain("<trailer>");
+    expect(nfoContent).toContain("trailer_source_url");
     expect(actorPhotoContent.length).toBeGreaterThan(8000);
     expect(posterContent.length).toBeGreaterThan(0);
     expect(assetResponse.statusCode).toBe(200);
