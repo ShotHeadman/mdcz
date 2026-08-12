@@ -309,12 +309,20 @@ describe("buildServer scrape integration", () => {
     await waitForTaskStatus(fastify, token, taskId, "completed");
   });
 
-  it("emits ambiguous uncensored items on scrape completion and restarts confirmed refs", async () => {
+  it("confirms moved uncensored outputs in place without scraping the old source again", async () => {
     const root = await createTempRoot("ambiguous-uncensored-root");
     await writeFile(join(root, "ABP-999-U.mp4"), "video");
     const imageServer = await startTestImageServer();
+    let aggregateCount = 0;
+    const aggregation = createAmbiguousUncensoredAggregation(`${imageServer.url}/image.png`);
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createAmbiguousUncensoredAggregation(`${imageServer.url}/image.png`),
+      scrapeAggregation: {
+        async aggregate(...args) {
+          aggregateCount += 1;
+          if (aggregateCount > 1) throw new Error("confirmation must not scrape again");
+          return await aggregation.aggregate(...args);
+        },
+      },
     });
     const completedEvents: unknown[] = [];
     services.taskEvents.subscribe((event) => {
@@ -324,13 +332,6 @@ describe("buildServer scrape integration", () => {
     });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { behavior: { successFileMove: false, successFileRename: false } },
-    });
-
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.start",
@@ -340,6 +341,12 @@ describe("buildServer scrape integration", () => {
     const taskId = startResponse.json().result.data.id;
 
     await waitForTaskStatus(fastify, token, taskId, "completed");
+    const initialResults = await services.persistence
+      .getState()
+      .then((state) => state.repositories.library.listScrapeResults(taskId));
+    const initialResult = initialResults[0];
+    expect(initialResult?.outputRelativePath).not.toBe("ABP-999-U.mp4");
+    await expect(readFile(join(root, "ABP-999-U.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
 
     const firstCompletedEvent = completedEvents.at(-1) as {
       ambiguousUncensoredItems?: Array<{
@@ -352,7 +359,7 @@ describe("buildServer scrape integration", () => {
       expect.objectContaining({
         ref: { rootId, relativePath: "ABP-999-U.mp4" },
         number: "ABP-999",
-        nfoRelativePath: expect.stringContaining("ABP-999-U.nfo"),
+        nfoRelativePath: initialResult?.nfoRelativePath,
       }),
     ]);
 
@@ -370,21 +377,35 @@ describe("buildServer scrape integration", () => {
     expect(confirmResponse.json().result.data).toMatchObject({
       kind: "scrape",
       rootId,
-      status: expect.stringMatching(/queued|running|completed/),
+      status: "completed",
     });
-    expect(confirmResponse.json().result.data.id).not.toBe(taskId);
-    const confirmedTaskId = confirmResponse.json().result.data.id;
-
-    await waitForTaskStatus(fastify, token, confirmedTaskId, "completed");
+    expect(confirmResponse.json().result.data.id).toBe(taskId);
+    expect(aggregateCount).toBe(1);
     const confirmedResultsResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId: confirmedTaskId }))}`,
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(confirmedResultsResponse.json().result.data.results[0]?.uncensoredAmbiguous).toBe(false);
+    const confirmedResult = confirmedResultsResponse.json().result.data.results[0];
+    expect(confirmedResult).toMatchObject({ status: "success", uncensoredAmbiguous: false });
+    expect(confirmedResult.outputRelativePath).toContain("流出");
+    await expect(readFile(join(root, confirmedResult.outputRelativePath))).resolves.toBeTruthy();
+
+    const repeatedResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.confirmUncensored",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        taskId,
+        items: [{ ref: { rootId, relativePath: "ABP-999-U.mp4" }, choice: "leak" }],
+      },
+    });
+    expect(repeatedResponse.statusCode).toBe(200);
+    expect(repeatedResponse.json().result.data.id).toBe(taskId);
+    expect(aggregateCount).toBe(1);
   });
 
-  it("accepts each uncensored confirmation choice", async () => {
+  it("rejects confirmation items without successful persisted outputs", async () => {
     const root = await createTempRoot("uncensored-choice-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
@@ -416,12 +437,9 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(confirmResponse.statusCode).toBe(200);
-    const queuedResults = await state.repositories.library.listScrapeResults(confirmResponse.json().result.data.id);
-    expect(queuedResults.map((result) => result.relativePath).sort()).toEqual([
-      "LEAK-001.mp4",
-      "UMR-001.mp4",
-      "UNC-001.mp4",
-    ]);
+    expect(confirmResponse.json().result.data.id).toBe(task.id);
+    const results = await state.repositories.library.listScrapeResults(task.id);
+    expect(results.every((result) => result.uncensoredAmbiguous)).toBe(true);
   });
 
   it("rejects uncensored confirmation refs outside the task", async () => {

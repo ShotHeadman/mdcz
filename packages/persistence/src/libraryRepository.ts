@@ -390,10 +390,8 @@ export class LibraryRepository {
     const directory = path.posix.dirname(input.rootRelativePath);
     const now = new Date();
     this.database.db
-      .insert(libraryItemFiles)
-      .values({
-        id: `${input.id}:primary`,
-        itemId: item.id,
+      .update(libraryItemFiles)
+      .set({
         rootId: input.rootId,
         rootRelativePath: input.rootRelativePath,
         fileName: path.posix.basename(input.rootRelativePath),
@@ -401,22 +399,9 @@ export class LibraryRepository {
         size: input.size ?? 0,
         modifiedAt: input.modifiedAt ?? null,
         lastKnownPath: input.rootRelativePath,
-        createdAt: now,
         updatedAt: now,
       })
-      .onConflictDoUpdate({
-        target: libraryItemFiles.id,
-        set: {
-          rootId: input.rootId,
-          rootRelativePath: input.rootRelativePath,
-          fileName: path.posix.basename(input.rootRelativePath),
-          directory: directory === "." ? "" : directory,
-          size: input.size ?? 0,
-          modifiedAt: input.modifiedAt ?? null,
-          lastKnownPath: input.rootRelativePath,
-          updatedAt: now,
-        },
-      })
+      .where(eq(libraryItemFiles.id, `${item.id}:primary`))
       .run();
     return await this.touchEntry(item.id, now);
   }

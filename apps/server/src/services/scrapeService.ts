@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   atomicWriteRootFile,
@@ -10,11 +10,14 @@ import {
 } from "@mdcz/media-store";
 import type { ScrapeResultRecord, TaskRecord, TaskRecordStatus } from "@mdcz/persistence";
 import { toLibraryAssets } from "@mdcz/runtime/library";
-import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { buildMovieTags, LocalScanService, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import {
   applyScrapeNetworkPolicy,
+  confirmUncensoredOutputs,
   createScrapeExecutionPolicy,
+  FileOrganizer,
   getNfoReadCandidates,
   getNfoWritePaths,
   type MountedRootScrapeRuntime,
@@ -23,6 +26,7 @@ import {
   resolveFilenameNfoPath,
   runScrapeItems,
 } from "@mdcz/runtime/scrape";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   type RuntimeTaskAction,
   RuntimeTaskQueueRunner,
@@ -78,6 +82,7 @@ export class ScrapeService {
   #uncensoredConfirmedTasks = new Set<string>();
   #uncensoredChoices = new Map<string, Map<string, UncensoredChoice>>();
   private readonly networkClient = new NetworkClient();
+  private readonly fileOrganizer = new FileOrganizer();
   private readonly nfoGenerator = new NfoGenerator();
   private readonly runtime: MountedRootScrapeRuntime;
   private readonly runner: RuntimeTaskQueueRunner<TaskRecord>;
@@ -295,30 +300,119 @@ export class ScrapeService {
         choice: "uncensored" as const,
       })) ??
       [];
-    const choicesByRef = new Map(
-      selectedItems.map((item) => [`${item.ref.rootId}:${item.ref.relativePath}`, item.choice]),
-    );
-    const refs = selectedItems.map((item) => {
+    const selectedResults = selectedItems.map((item) => {
       const ref = item.ref;
       const result = resultByRef.get(`${ref.rootId}:${ref.relativePath}`);
       if (!result) {
         throw new Error(`Ref does not belong to scrape task: ${ref.rootId}:${ref.relativePath}`);
       }
-      return ref;
+      if (result.status !== "success") {
+        throw new Error(`Ref does not belong to successful scrape output: ${ref.rootId}:${ref.relativePath}`);
+      }
+      return { item, result };
     });
-    if (refs.length === 0) {
+    if (selectedResults.length === 0) {
       throw new Error("No uncensored confirmation refs provided");
     }
 
-    const newTask = await this.start(
+    const configuration = await this.config.get();
+    const roots = new Map<string, MediaRoot>();
+    for (const { result } of selectedResults) {
+      if (!roots.has(result.rootId)) roots.set(result.rootId, await this.mediaRoots.getActiveRoot(result.rootId));
+    }
+    const confirmation = await confirmUncensoredOutputs(
+      selectedResults.map(({ item, result }) => {
+        const root = roots.get(result.rootId) as MediaRoot;
+        return {
+          fileId: `${result.rootId}:${result.relativePath}`,
+          videoPath: resolveRootRelativePath(root, result.outputRelativePath ?? result.relativePath),
+          nfoPath: result.nfoRelativePath ? resolveRootRelativePath(root, result.nfoRelativePath) : undefined,
+          crawlerData: result.crawlerDataJson ? JSON.parse(result.crawlerDataJson) : undefined,
+          choice: item.choice,
+        };
+      }),
+      configuration,
       {
-        refs,
-        manualUrl: results.find((result) => result.manualUrl)?.manualUrl ?? undefined,
-        uncensoredConfirmed: true,
+        artifactResolver: new MaintenanceArtifactResolver(),
+        fileOrganizer: this.fileOrganizer,
+        localScanService: new LocalScanService(),
+        logger: runtimeLoggerService.getLogger(`scrape-confirm:${task.id}`),
+        nfoGenerator: {
+          writeNfo: async (nfoPath, data, options) =>
+            await this.nfoGenerator.writeNfo(nfoPath, data, {
+              ...options,
+              buildTags: options?.buildTags ?? buildMovieTags,
+            }),
+        },
+        pathExists: async (filePath) =>
+          await stat(filePath)
+            .then((value) => value.isFile())
+            .catch(() => false),
       },
-      { uncensoredChoices: choicesByRef },
     );
-    return newTask;
+
+    const updatedBySource = new Map(confirmation.items.map((item) => [item.sourceVideoPath, item]));
+    for (const { result } of selectedResults) {
+      const root = roots.get(result.rootId) as MediaRoot;
+      const sourceVideoPath = resolveRootRelativePath(root, result.outputRelativePath ?? result.relativePath);
+      const updated = updatedBySource.get(sourceVideoPath);
+      if (!updated) {
+        await this.addEvent(task.id, "item-failed", `Uncensored confirmation skipped: ${result.relativePath}`);
+        continue;
+      }
+      const outputRelativePath = toRootRelativeAssetPath(root, updated.targetVideoPath);
+      const nfoRelativePath = toRootRelativeAssetPath(root, updated.targetNfoPath);
+      if (!outputRelativePath) throw new Error(`Confirmed output escaped media root: ${updated.targetVideoPath}`);
+      const stored = await state.repositories.library.upsertScrapeResult({
+        ...result,
+        status: "success",
+        error: null,
+        outputRelativePath,
+        nfoRelativePath,
+        uncensoredAmbiguous: false,
+      });
+      const entry = await state.repositories.library.getEntry(
+        result.rootId,
+        result.outputRelativePath ?? result.relativePath,
+      );
+      const fileStats = await stat(updated.targetVideoPath);
+      await state.repositories.library.relinkEntry({
+        id: entry.id,
+        rootId: result.rootId,
+        rootRelativePath: outputRelativePath,
+        size: fileStats.size,
+        modifiedAt: fileStats.mtime,
+      });
+      await state.repositories.library.upsertEntry({
+        id: entry.id,
+        rootId: result.rootId,
+        rootRelativePath: outputRelativePath,
+        mediaIdentity: entry.mediaIdentity,
+        size: fileStats.size,
+        modifiedAt: fileStats.mtime,
+        sourceTaskId: entry.sourceTaskId,
+        scrapeOutputId: entry.scrapeOutputId,
+        title: entry.title,
+        number: entry.number,
+        actors: entry.actors,
+        crawlerDataJson: entry.crawlerDataJson,
+        thumbnailPath: toRootRelativeAssetPath(root, updated.assets.poster ?? updated.assets.thumb),
+        assets: toLibraryAssets(root, { ...updated.assets, downloaded: [] }),
+        lastKnownPath: outputRelativePath,
+        createdAt: entry.createdAt,
+        lastRefreshedAt: new Date(),
+      });
+      this.taskEvents.publishRealtime({
+        id: `${stored.id}:result:${stored.updatedAt.toISOString()}`,
+        taskId: task.id,
+        createdAt: stored.updatedAt.toISOString(),
+        kind: "scrape-result",
+        result: await this.resultToDto(stored),
+      });
+      await this.addEvent(task.id, "item-success", `Uncensored confirmation applied: ${outputRelativePath}`);
+    }
+    this.taskEvents.publish({ kind: "task", task: await this.toDto(task.id) });
+    return await this.toDto(task.id);
   }
 
   async getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse> {

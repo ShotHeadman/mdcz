@@ -199,6 +199,31 @@ describe("LibraryRepository", () => {
     ]);
   });
 
+  it("relinks the primary library file without retaining the old path", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "old/ABC-123.mp4",
+      size: 10,
+    });
+
+    await repository.relinkEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "new/ABC-123-流出.mp4",
+      size: 11,
+    });
+
+    await expect(repository.getEntryById("entry-1")).resolves.toMatchObject({
+      rootRelativePath: "new/ABC-123-流出.mp4",
+      size: 11,
+      files: [expect.objectContaining({ rootRelativePath: "new/ABC-123-流出.mp4" })],
+    });
+    await expect(repository.getEntry("root-1", "old/ABC-123.mp4")).rejects.toThrow("Library entry not found");
+  });
+
   it("hides entries from recent acquisitions without deleting the library item", async () => {
     database = createTestPersistenceDatabase();
     const repository = new LibraryRepository(database);
