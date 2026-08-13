@@ -15,6 +15,32 @@ const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
 const QUOTE_PATTERN = /^['\u0022\u201C\u201D]+|['\u0022\u201C\u201D]+$/gu;
 const REQUEST_TIMEOUT_PATTERN = /request timeout|timed out|timeout \(\d+ ms\)/iu;
+const COMPLETE_LEADING_THINK_PATTERN = /^<think>[\s\S]*?<\/think>\s*/iu;
+const TRANSLATION_ONLY_INSTRUCTION = "只输出最终译文，不要输出思考过程、解释、提示词或原文。";
+
+const buildTranslationPrompt = (prompt: string): string => `${prompt.trim()}
+
+${TRANSLATION_ONLY_INSTRUCTION}`;
+
+export const cleanTranslationOutput = (output: string | null, prompt: string, source: string): string | null => {
+  if (typeof output !== "string") {
+    return null;
+  }
+
+  const translated = output.replace(COMPLETE_LEADING_THINK_PATTERN, "").trim();
+  const normalizedPrompt = prompt.trim();
+  const normalizedSource = source.trim();
+  if (
+    !translated ||
+    translated === normalizedPrompt ||
+    translated === normalizedSource ||
+    translated === buildTranslationPrompt(prompt)
+  ) {
+    return null;
+  }
+
+  return translated;
+};
 
 interface RetryDecision {
   delayMs: number;
@@ -47,20 +73,19 @@ export class OpenAiTranslator {
     const prompt = config.translate.llmPrompt
       .replaceAll("{lang}", getTargetLanguageLabel(target))
       .replaceAll("{content}", text);
+    const contractedPrompt = buildTranslationPrompt(prompt);
 
-    const content = await this.requestText(config, prompt, config.translate.llmTemperature, signal).catch((error) => {
-      if (isAbortError(error)) {
-        throw error;
-      }
-      this.logger.warn(`LLM translation failed: ${toErrorMessage(error)}`);
-      return null;
-    });
+    const content = await this.requestText(config, contractedPrompt, config.translate.llmTemperature, signal).catch(
+      (error) => {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        this.logger.warn(`LLM translation failed: ${toErrorMessage(error)}`);
+        return null;
+      },
+    );
 
-    if (typeof content === "string" && content.trim().length > 0) {
-      return content.trim();
-    }
-
-    return null;
+    return cleanTranslationOutput(content, prompt, text);
   }
 
   async translateSingleLine(prompt: string, config: Configuration, signal?: AbortSignal): Promise<string | null> {
@@ -73,7 +98,8 @@ export class OpenAiTranslator {
 
     throwIfAborted(signal);
 
-    const content = await this.requestText(config, prompt, 0, signal).catch((error) => {
+    const contractedPrompt = buildTranslationPrompt(prompt);
+    const content = await this.requestText(config, contractedPrompt, 0, signal).catch((error) => {
       if (isAbortError(error)) {
         throw error;
       }
@@ -81,14 +107,12 @@ export class OpenAiTranslator {
       return null;
     });
 
-    if (typeof content !== "string" || content.trim().length === 0) {
+    const translated = cleanTranslationOutput(content, prompt, prompt);
+    if (!translated) {
       return null;
     }
 
-    const firstLine = content
-      .trim()
-      .split(/\r?\n/gu)
-      .find((line) => line.trim().length > 0);
+    const firstLine = translated.split(/\r?\n/gu).find((line) => line.trim().length > 0);
 
     return firstLine ? firstLine.trim().replace(QUOTE_PATTERN, "") : null;
   }

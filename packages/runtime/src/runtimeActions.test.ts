@@ -137,7 +137,10 @@ describe("settings parity runtime helpers", () => {
 
   it("uses Desktop LLM validation semantics before sending a request", async () => {
     const config = cloneConfig();
-    const llmApiClient = { generateText: vi.fn().mockResolvedValue("ok") } as unknown as LlmApiClient;
+    const llmApiClient = {
+      generateText: vi.fn().mockResolvedValue("ok"),
+    } as unknown as LlmApiClient;
+    const logger = { error: vi.fn(), info: vi.fn() };
 
     await expect(testLlmConnectivity({ llmModelName: "" }, config, llmApiClient)).resolves.toEqual({
       success: false,
@@ -147,16 +150,26 @@ describe("settings parity runtime helpers", () => {
 
     config.translate.llmBaseUrl = "https://example.test/v1";
     await expect(
-      testLlmConnectivity({ llmModelName: "gpt-test", llmPrompt: "{lang}:{content}" }, config, llmApiClient),
+      testLlmConnectivity(
+        { llmModelName: "gpt-test", llmPrompt: "{lang}:{content}", llmTemperature: 1.5 },
+        config,
+        llmApiClient,
+        logger,
+      ),
     ).resolves.toEqual({ success: true, message: "连接成功，LLM 回复: ok" });
     expect(llmApiClient.generateText).toHaveBeenCalledWith(
       expect.objectContaining({
         baseUrl: "https://example.test/v1",
         model: "gpt-test",
-        prompt: "简体中文:ある日の暮方の事である。",
+        prompt: expect.stringContaining("简体中文:ある日の暮方の事である。"),
+        temperature: 0,
         timeout: 10_000,
       }),
+      undefined,
     );
+    expect(logger.info).toHaveBeenCalledWith("Test LLM connectivity: Success");
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('reply="ok"');
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('reply="ok"');
   });
 
   it("creates the server-side watermark directory under runtime data", async () => {
