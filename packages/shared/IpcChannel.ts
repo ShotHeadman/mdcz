@@ -38,6 +38,8 @@ export enum IpcChannel {
   File_Delete = "file:delete",
   File_NfoRead = "file:nfo-read",
   File_NfoWrite = "file:nfo-write",
+  File_PosterCropSession = "file:poster-crop-session",
+  File_PosterCropSave = "file:poster-crop-save",
 
   Event_Log = "event:log",
   Event_Progress = "event:progress",

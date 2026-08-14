@@ -21,6 +21,7 @@ export * from "./mediaCandidate";
 export * from "./mediaExtensions";
 export * from "./mediaIdentity";
 export * from "./posterBadges";
+export * from "./posterCrop";
 export * from "./r18";
 export * from "./serverApi";
 export * from "./serverDtos";

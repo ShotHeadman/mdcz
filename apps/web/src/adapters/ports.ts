@@ -129,6 +129,7 @@ export const createWebDetailPort = (): DetailActionPort => ({
     play: "hidden",
     openFolder: "hidden",
     openNfo: "enabled",
+    editPoster: "enabled",
   },
   showFilePath: false,
   resolveImageCandidates: async (candidates, baseDir, item) =>
@@ -149,6 +150,21 @@ export const createWebDetailPort = (): DetailActionPort => ({
     const rootId = getRootId(item);
     const videoRelativePath = item.path ? toRelativePath(item, item.path) : undefined;
     await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
+  },
+  preparePosterCrop: async (item) => {
+    if (!item.resultId) throw new Error("缺少刮削结果标识");
+    const response = await api.scrape.posterCropSession({ id: item.resultId });
+    return {
+      ...response,
+      sourceUrl: getLibraryAssetSrc({ rootId: getRootId(item), path: response.sourceRelativePath }),
+    };
+  },
+  savePosterCrop: async (item, crop) => {
+    if (!item.resultId) throw new Error("缺少刮削结果标识");
+    const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
+    const posterUrl = new URL(getLibraryAssetSrc({ rootId: getRootId(item), path: response.targetRelativePath }));
+    if (response.revision) posterUrl.searchParams.set("revision", response.revision);
+    return { posterUrl: posterUrl.toString() };
   },
 });
 

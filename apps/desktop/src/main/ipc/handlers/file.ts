@@ -12,12 +12,14 @@ import {
   getNfoReadCandidates,
   getNfoWritePaths,
   nfoIgnoreFieldsToEnabledFields,
+  PosterCropService,
   resolveFilenameNfoPath,
 } from "@mdcz/runtime/scrape";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
+import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { CrawlerData, MediaCandidate } from "@mdcz/shared/types";
 import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { dialog } from "electron";
@@ -37,8 +39,11 @@ export const createFileHandlers = (
   | typeof IpcChannel.File_Delete
   | typeof IpcChannel.File_NfoRead
   | typeof IpcChannel.File_NfoWrite
+  | typeof IpcChannel.File_PosterCropSession
+  | typeof IpcChannel.File_PosterCropSave
 > => {
   const { windowService } = context;
+  const posterCropService = new PosterCropService();
   const atomicWriteFile = async (filePath: string, content: string): Promise<void> => {
     const tempPath = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
     await mkdir(dirname(filePath), { recursive: true });
@@ -292,6 +297,30 @@ export const createFileHandlers = (
           for (const requiredPath of paths.requiredPaths) await atomicWriteFile(requiredPath, xml);
           for (const stalePath of paths.stalePaths) await rm(stalePath, { force: true });
           return { success: true as const, nfoPath: paths.canonicalPath };
+        } catch (error) {
+          throw asSerializableIpcError(error);
+        }
+      }),
+    [IpcChannel.File_PosterCropSession]: t.procedure.input<{ videoPath?: string }>().action(async ({ input }) => {
+      try {
+        const videoPath = input?.videoPath?.trim();
+        if (!videoPath) throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Video path is required");
+        const config = await configManager.getValidated();
+        return await posterCropService.prepare(videoPath, config.naming.assetNamingMode);
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
+    [IpcChannel.File_PosterCropSave]: t.procedure
+      .input<{ videoPath?: string; crop?: NormalizedCropRegion }>()
+      .action(async ({ input }) => {
+        try {
+          const videoPath = input?.videoPath?.trim();
+          if (!videoPath || !input?.crop) {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Video path and crop are required");
+          }
+          const config = await configManager.getValidated();
+          return await posterCropService.save(videoPath, config.naming.assetNamingMode, input.crop);
         } catch (error) {
           throw asSerializableIpcError(error);
         }

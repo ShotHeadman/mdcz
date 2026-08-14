@@ -1,6 +1,7 @@
 export type DetailViewStatus = "success" | "failed" | "processing";
 
 export interface DetailViewItem {
+  resultId?: string;
   id: string;
   status: DetailViewStatus;
   number: string;

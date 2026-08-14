@@ -17,6 +17,7 @@ const emptyCrawlerData = (relativePath = ""): CrawlerData => ({
 });
 
 export const scrapeResultDtoToScrapeResult = (result: ScrapeResultDto): ScrapeResult => ({
+  resultId: result.id,
   fileId: `${result.rootId}:${result.relativePath}`,
   fileInfo: {
     filePath: result.relativePath,

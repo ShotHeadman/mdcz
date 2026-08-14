@@ -121,6 +121,7 @@ export const getMaintenanceDetailTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
 
 export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailViewItem => ({
+  resultId: result.resultId,
   id: result.fileId,
   status: toDetailStatus(result.status),
   number: result.fileInfo.number,

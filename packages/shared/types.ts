@@ -94,6 +94,7 @@ export interface DownloadedAssets {
 }
 
 export interface ScrapeResult {
+  resultId?: string;
   fileId: FileId;
   fileInfo: FileInfo;
   status: ScrapeResultStatus;

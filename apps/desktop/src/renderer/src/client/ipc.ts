@@ -12,6 +12,7 @@ import type {
   ShortcutPayload,
 } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { LibraryListInput } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
@@ -108,6 +109,9 @@ export const ipc = {
     nfoRead: (nfoPath: string, videoPath?: string) => client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
     nfoWrite: (nfoPath: string, data: CrawlerData, videoPath?: string) =>
       client[IpcChannel.File_NfoWrite]({ nfoPath, videoPath, data }),
+    posterCropSession: (videoPath: string) => client[IpcChannel.File_PosterCropSession]({ videoPath }),
+    posterCropSave: (videoPath: string, crop: NormalizedCropRegion) =>
+      client[IpcChannel.File_PosterCropSave]({ videoPath, crop }),
   },
   tool: {
     createSymlink: (payload: {

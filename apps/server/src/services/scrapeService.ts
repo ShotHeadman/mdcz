@@ -23,6 +23,7 @@ import {
   type MountedRootScrapeRuntime,
   NfoGenerator,
   nfoIgnoreFieldsToEnabledFields,
+  PosterCropService,
   resolveFilenameNfoPath,
   runScrapeItems,
 } from "@mdcz/runtime/scrape";
@@ -46,6 +47,8 @@ import type {
   NfoReadResponse,
   NfoWriteInput,
   NfoWriteResponse,
+  PosterCropSaveInput,
+  PosterCropSessionResponse,
   ScanTaskDetailResponse,
   ScanTaskDto,
   ScanTaskListResponse,
@@ -75,6 +78,12 @@ import { decorateTaskLog } from "./runtimeLogService";
 const recoverableTaskStatuses = new Set<TaskRecordStatus>(["queued", "running", "paused", "stopping", "failed"]);
 const recoverableResultStatuses = new Set<ScrapeResultRecord["status"]>(["pending", "processing", "failed"]);
 
+const requireRootRelativeAssetPath = (root: MediaRoot, assetPath: string): string => {
+  const relativePath = toRootRelativeAssetPath(root, assetPath);
+  if (!relativePath) throw new Error(`Poster asset is outside the active media root: ${assetPath}`);
+  return relativePath;
+};
+
 export class ScrapeService {
   #stopRequested = new Set<string>();
   #paused = new Set<string>();
@@ -84,6 +93,7 @@ export class ScrapeService {
   private readonly networkClient = new NetworkClient();
   private readonly fileOrganizer = new FileOrganizer();
   private readonly nfoGenerator = new NfoGenerator();
+  private readonly posterCropService = new PosterCropService();
   private readonly runtime: MountedRootScrapeRuntime;
   private readonly runner: RuntimeTaskQueueRunner<TaskRecord>;
 
@@ -581,6 +591,48 @@ export class ScrapeService {
       relativePath: input.relativePath,
       effectiveRelativePath: paths.canonicalPath,
       data: input.data,
+    };
+  }
+
+  async posterCropSession(id: string): Promise<PosterCropSessionResponse> {
+    const state = await this.persistence.getState();
+    const record = await state.repositories.library.getScrapeResult(id);
+    if (record.status !== "success" || !record.outputRelativePath) {
+      throw new Error("Poster editing requires a successful scrape result with local output");
+    }
+    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(record.rootId), this.config.get()]);
+    const session = await this.posterCropService.prepare(
+      resolveRootRelativePath(root, record.outputRelativePath),
+      configuration.naming.assetNamingMode,
+    );
+    return {
+      sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
+      targetRelativePath: requireRootRelativeAssetPath(root, session.targetPath),
+      width: session.width,
+      height: session.height,
+      initialCrop: session.initialCrop,
+    };
+  }
+
+  async posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
+    const state = await this.persistence.getState();
+    const record = await state.repositories.library.getScrapeResult(input.id);
+    if (record.status !== "success" || !record.outputRelativePath) {
+      throw new Error("Poster editing requires a successful scrape result with local output");
+    }
+    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(record.rootId), this.config.get()]);
+    const result = await this.posterCropService.save(
+      resolveRootRelativePath(root, record.outputRelativePath),
+      configuration.naming.assetNamingMode,
+      input.crop,
+    );
+    return {
+      sourceRelativePath: requireRootRelativeAssetPath(root, result.sourcePath),
+      targetRelativePath: requireRootRelativeAssetPath(root, result.targetPath),
+      width: result.width,
+      height: result.height,
+      initialCrop: result.initialCrop,
+      revision: result.revision,
     };
   }
 

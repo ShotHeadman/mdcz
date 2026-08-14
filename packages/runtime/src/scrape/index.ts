@@ -19,6 +19,7 @@ export * from "./organize/SidecarResolver";
 export * from "./output/prepareCrawlerDataForMovieOutput";
 export * from "./output/prepareCrawlerDataForNfo";
 export * from "./output/prepareImageAlternativesForDownload";
+export * from "./PosterCropService";
 export * from "./pipeline";
 export * from "./restGate";
 export * from "./TranslateService";

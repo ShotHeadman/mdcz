@@ -40,6 +40,8 @@ import type {
   NfoWriteResponse,
   OverviewSummaryResponse,
   PersistenceStatusDto,
+  PosterCropSaveInput,
+  PosterCropSessionResponse,
   RootBrowserInput,
   RootBrowserResponse,
   ScanCandidatesInput,
@@ -176,6 +178,8 @@ export interface ServerApiContract {
     getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
+    posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
+    posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
     pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
     resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;

@@ -151,6 +151,25 @@ describe("buildServer scrape integration", () => {
 
     await waitForTaskStatus(fastify, token, taskId, "completed");
 
+    const scrapeResultsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const scrapeResultId = scrapeResultsResponse.json().result.data.results[0].id;
+    const cropSessionResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: scrapeResultId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const cropSession = cropSessionResponse.json().result.data;
+    const cropSaveResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.posterCropSave",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { id: scrapeResultId, crop: cropSession.initialCrop },
+    });
+
     const libraryResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/library.search",
@@ -192,6 +211,11 @@ describe("buildServer scrape integration", () => {
     const posterContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/poster.png"));
 
     expect(libraryResponse.statusCode).toBe(200);
+    expect(cropSessionResponse.statusCode).toBe(200);
+    expect(cropSession.sourceRelativePath).toBe("JAV_output/Actor A/ABC-123/thumb.png");
+    expect(cropSession.targetRelativePath).toBe("JAV_output/Actor A/ABC-123/poster.png");
+    expect(cropSaveResponse.statusCode).toBe(200);
+    expect(cropSaveResponse.json().result.data.revision).toEqual(expect.any(String));
     expect(libraryResponse.json().result.data.total).toBe(1);
     expect(entry).toMatchObject({
       actors: ["Actor A"],

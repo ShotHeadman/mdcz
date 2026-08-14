@@ -39,6 +39,7 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
     play: "enabled",
     openFolder: "enabled",
     openNfo: "enabled",
+    editPoster: "enabled",
   },
   showFilePath: true,
   resolveImageCandidates: resolveDesktopImageCandidates,
@@ -65,6 +66,16 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
   },
   writeNfo: async (item: DetailViewItem, path: string, data: CrawlerData) => {
     await updateNfo(path, data, item.path);
+  },
+  preparePosterCrop: async (item) => {
+    if (!item.path) throw new Error("缺少本地视频路径");
+    const session = await ipc.file.posterCropSession(item.path);
+    return { ...session, sourceUrl: getImageSrc(session.sourcePath) };
+  },
+  savePosterCrop: async (item, crop) => {
+    if (!item.path) throw new Error("缺少本地视频路径");
+    const result = await ipc.file.posterCropSave(item.path, crop);
+    return { posterUrl: `${getImageSrc(result.targetPath)}?revision=${encodeURIComponent(result.revision)}` };
   },
 });
 

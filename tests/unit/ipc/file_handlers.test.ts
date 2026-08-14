@@ -255,4 +255,29 @@ describe("createFileHandlers", () => {
     expect(savedXml).toContain('<providerid source="local">keep-me</providerid>');
     await expect(readFile(join(root, "movie.nfo"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("prepares and saves a poster crop from configured local assets", async () => {
+    const root = await createTempDir();
+    const videoPath = join(root, "ABC-123.mp4");
+    const thumbPath = join(root, "thumb.jpg");
+    await writeFile(videoPath, "video");
+    await writeFile(
+      thumbPath,
+      '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500"><rect width="100%" height="100%" fill="#c84630"/></svg>',
+    );
+    const handlers = createFileHandlers(createContext());
+    const session = await handlers[IpcChannel.File_PosterCropSession].action(actionArgs({ videoPath }));
+    expect(session).toMatchObject({
+      sourcePath: thumbPath,
+      targetPath: join(root, "poster.jpg"),
+      width: 900,
+      height: 500,
+    });
+
+    const saved = await handlers[IpcChannel.File_PosterCropSave].action(
+      actionArgs({ videoPath, crop: session.initialCrop }),
+    );
+    expect(saved.revision).toEqual(expect.any(String));
+    expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);
+  });
 });

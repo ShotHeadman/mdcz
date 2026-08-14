@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
+import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
 export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
@@ -300,6 +301,23 @@ export const scrapeResultIdInputSchema = z.object({
 });
 
 export type ScrapeResultIdInput = z.infer<typeof scrapeResultIdInputSchema>;
+
+export const posterCropSaveInputSchema = scrapeResultIdInputSchema.extend({
+  crop: normalizedCropRegionSchema,
+});
+
+export type PosterCropSaveInput = z.infer<typeof posterCropSaveInputSchema>;
+
+export const posterCropSessionResponseSchema = z.object({
+  sourceRelativePath: z.string().trim().min(1),
+  targetRelativePath: z.string().trim().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  initialCrop: normalizedCropRegionSchema,
+  revision: z.string().optional(),
+});
+
+export type PosterCropSessionResponse = z.infer<typeof posterCropSessionResponseSchema>;
 
 export const nfoReadInputSchema = z.object({
   rootId: z.string().trim().min(1),
