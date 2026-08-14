@@ -126,6 +126,7 @@ export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailVi
   status: toDetailStatus(result.status),
   number: result.fileInfo.number,
   path: result.fileInfo.filePath,
+  nfoRootId: result.nfoRootId,
   nfoPath: result.nfoPath,
   outputPath: result.outputPath,
   errorMessage: result.error,

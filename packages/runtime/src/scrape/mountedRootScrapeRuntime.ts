@@ -8,7 +8,7 @@ import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
 import { ActorImageService } from "./ActorImageService";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
 import { DownloadManager } from "./download";
-import { FileOrganizer } from "./FileOrganizer";
+import { FileOrganizer, resolveMetadataOutputDir } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "./nfo";
 import { prepareCrawlerDataForMovieOutput } from "./output/prepareCrawlerDataForMovieOutput";
@@ -84,7 +84,7 @@ export interface MountedRootScrapeRuntimeItemSuccess {
   status: "success";
   result: ScrapeResult;
   crawlerData: CrawlerData;
-  nfoRelativePath: string | null;
+  nfoPath: string | null;
   outputRelativePath: string;
   size: number;
   modifiedAt: Date | null;
@@ -326,7 +326,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
           context.requireCrawlerData(),
           {
             enabled: true,
-            movieDir: context.requirePlan().outputDir,
+            movieDir: resolveMetadataOutputDir(context.requirePlan()),
             sourceVideoPath: context.fileInfo.filePath,
             signal,
           },
@@ -405,7 +405,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     );
     let resolvedSceneImageUrls: string[] | undefined;
     const assets = await this.downloadManager.downloadAll(
-      context.requirePlan().outputDir,
+      resolveMetadataOutputDir(context.requirePlan()),
       crawlerData,
       context.requireConfiguration(),
       preparedImageAlternatives,
@@ -507,7 +507,7 @@ export class MountedRootScrapeRuntime {
         status: "success",
         result,
         crawlerData: result.crawlerData,
-        nfoRelativePath: result.nfoPath ? toRootRelativePath(input.root, result.nfoPath) : null,
+        nfoPath: result.nfoPath ?? null,
         outputRelativePath: toRootRelativePath(input.root, outputVideoPath),
         size: stats?.size ?? 0,
         modifiedAt: stats?.mtime ?? null,

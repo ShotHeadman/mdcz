@@ -235,6 +235,7 @@ const uiSchema = z.object({
 
 const pathsSchema = z.object({
   mediaPath: z.string().default(""),
+  metadataPath: z.string().default(""),
   actorPhotoFolder: z.string().default(""),
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),

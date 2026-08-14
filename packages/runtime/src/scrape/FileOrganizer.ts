@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { dirname, join, parse, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
@@ -11,13 +11,18 @@ import { PathPlanner } from "./organize/PathPlanner";
 import { SidecarResolver } from "./organize/SidecarResolver";
 import { ensureParentDirectory, hasEnoughDiskSpace, listVideoFiles } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
+import { inspectStrmTarget, isStrmFile, writeStrmTarget } from "./utils/strm";
 
 export interface OrganizePlan {
   outputDir: string;
+  metadataDir?: string;
   targetVideoPath: string;
   nfoPath: string;
+  strmPath?: string;
   subtitleSidecars?: SubtitleSidecarMatch[];
 }
+
+export const resolveMetadataOutputDir = (plan: OrganizePlan): string => plan.metadataDir ?? plan.outputDir;
 
 interface ResolveOutputPlanOptions {
   createDirectories?: boolean;
@@ -69,12 +74,16 @@ export class FileOrganizer {
     }
 
     const targetVideoPath = join(outputDir, layout.targetVideoFileName);
-    const nfoPath = join(outputDir, layout.nfoFileName);
+    const metadataDir = this.resolveMetadataDir(outputDir, config);
+    const nfoPath = join(metadataDir, layout.nfoFileName);
+    const strmPath = metadataDir === outputDir ? undefined : join(metadataDir, `${parse(targetVideoPath).name}.strm`);
 
     return {
       outputDir,
+      metadataDir,
       targetVideoPath,
       nfoPath,
+      strmPath,
     };
   }
 
@@ -93,6 +102,10 @@ export class FileOrganizer {
   ): Promise<OrganizePlan> {
     if (options.createDirectories) {
       await ensureParentDirectory(plan.targetVideoPath);
+      await ensureParentDirectory(plan.nfoPath);
+      if (plan.strmPath) {
+        await ensureParentDirectory(plan.strmPath);
+      }
     }
 
     const outputRoot = dirname(plan.targetVideoPath);
@@ -139,40 +152,47 @@ export class FileOrganizer {
       subtitleSidecars: plan.subtitleSidecars,
     });
 
+    const metadataDir = plan.metadataDir ?? dirname(resolvedPlan.nfoPath ?? plan.nfoPath);
     return {
       outputDir: dirname(resolvedPlan.targetVideoPath),
+      metadataDir,
       targetVideoPath: resolvedPlan.targetVideoPath,
       nfoPath: resolvedPlan.nfoPath ?? plan.nfoPath,
+      strmPath: plan.strmPath ? join(metadataDir, `${parse(resolvedPlan.targetVideoPath).name}.strm`) : undefined,
       subtitleSidecars: resolvedPlan.subtitleSidecars,
     };
   }
 
   async organizeVideo(fileInfo: FileInfo, plan: OrganizePlan, config: Configuration): Promise<string> {
+    let organizedPath: string;
     if (!config.behavior.successFileMove) {
       if (!config.behavior.successFileRename) {
         this.logger.info(`successFileMove disabled; leaving file at ${fileInfo.filePath}`);
-        return fileInfo.filePath;
+        organizedPath = fileInfo.filePath;
+      } else {
+        organizedPath = await this.fileMover.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, {
+          subtitleSidecars: plan.subtitleSidecars,
+          sharedMovieBaseName: parse(plan.nfoPath).name,
+        });
       }
-
-      const renamedPath = await this.fileMover.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, {
+    } else {
+      const sourceDir = dirname(fileInfo.filePath);
+      organizedPath = await this.fileMover.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, {
         subtitleSidecars: plan.subtitleSidecars,
         sharedMovieBaseName: parse(plan.nfoPath).name,
       });
-      return renamedPath;
+
+      if (config.behavior.deleteEmptyFolder) {
+        const mediaRoot = resolve(config.paths.mediaPath.trim() || dirname(fileInfo.filePath));
+        await this.fileMover.cleanupEmptyAncestors(sourceDir, mediaRoot);
+      }
     }
 
-    const sourceDir = dirname(fileInfo.filePath);
-    const result = await this.fileMover.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, {
-      subtitleSidecars: plan.subtitleSidecars,
-      sharedMovieBaseName: parse(plan.nfoPath).name,
-    });
-
-    if (config.behavior.deleteEmptyFolder) {
-      const mediaRoot = resolve(config.paths.mediaPath.trim() || dirname(fileInfo.filePath));
-      await this.fileMover.cleanupEmptyAncestors(sourceDir, mediaRoot);
+    if (plan.strmPath) {
+      await this.writeMetadataStrm(plan.strmPath, organizedPath);
     }
 
-    return result;
+    return organizedPath;
   }
 
   async moveToFailedFolder(fileInfo: FileInfo, config: Configuration): Promise<string> {
@@ -201,6 +221,57 @@ export class FileOrganizer {
     const mediaRoot = config.paths.mediaPath.trim();
     const base = mediaRoot.length > 0 ? mediaRoot : dirname(fileInfo.filePath);
     return resolve(base, config.paths.successOutputFolder.trim());
+  }
+
+  private resolveMetadataDir(outputDir: string, config: Configuration): string {
+    const configuredMetadataRoot = config.paths.metadataPath.trim();
+    if (!configuredMetadataRoot) {
+      return outputDir;
+    }
+
+    const configuredMediaRoot = config.paths.mediaPath.trim();
+    if (!configuredMediaRoot) {
+      throw new Error("配置本地元数据目录时，媒体目录不能为空");
+    }
+    if (!isAbsolute(configuredMediaRoot) || !isAbsolute(configuredMetadataRoot)) {
+      throw new Error("媒体目录和本地元数据目录必须使用绝对路径");
+    }
+
+    const mediaRoot = resolve(configuredMediaRoot);
+    const metadataRoot = resolve(configuredMetadataRoot);
+    if (this.isPathInside(mediaRoot, metadataRoot) || this.isPathInside(metadataRoot, mediaRoot)) {
+      throw new Error("本地元数据目录不能与媒体目录相同或互相包含");
+    }
+
+    const outputRelativePath = relative(mediaRoot, resolve(outputDir));
+    if (outputRelativePath.startsWith(`..${sep}`) || outputRelativePath === ".." || isAbsolute(outputRelativePath)) {
+      throw new Error(`影片输出目录不在媒体目录内：${outputDir}`);
+    }
+
+    return resolve(metadataRoot, outputRelativePath);
+  }
+
+  private isPathInside(rootPath: string, candidatePath: string): boolean {
+    const candidateRelativePath = relative(resolve(rootPath), resolve(candidatePath));
+    return (
+      candidateRelativePath === "" ||
+      (!candidateRelativePath.startsWith(`..${sep}`) &&
+        candidateRelativePath !== ".." &&
+        !isAbsolute(candidateRelativePath))
+    );
+  }
+
+  private async writeMetadataStrm(strmPath: string, organizedVideoPath: string): Promise<void> {
+    let target = resolve(organizedVideoPath);
+    if (isStrmFile(organizedVideoPath)) {
+      const sourceTarget = await inspectStrmTarget(organizedVideoPath);
+      if (!sourceTarget) {
+        throw new Error(`STRM 文件不包含有效目标：${organizedVideoPath}`);
+      }
+      target = sourceTarget.kind === "url" ? sourceTarget.target : (sourceTarget.resolvedPath ?? sourceTarget.target);
+    }
+
+    await writeStrmTarget(strmPath, target);
   }
 
   private isSingleModeOutputDirectory(sourceDir: string, folderRelativePath: string): boolean {

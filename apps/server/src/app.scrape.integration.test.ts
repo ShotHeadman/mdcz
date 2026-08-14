@@ -295,6 +295,93 @@ describe("buildServer scrape integration", () => {
     unsubscribeTaskEvents();
   });
 
+  it("keeps organized video on the media root while serving metadata from a local mirror root", async () => {
+    const mediaRoot = await createTempRoot("separate-metadata-media");
+    const metadataRoot = await createTempRoot("separate-metadata-local");
+    await writeFile(join(mediaRoot, "ABC-123.mp4"), "video");
+    const imageServer = await startTestImageServer();
+    const { fastify } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, mediaRoot);
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        download: { downloadSceneImages: false, downloadTrailer: false },
+        paths: { metadataPath: metadataRoot },
+      },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+    });
+    const taskId = startResponse.json().result.data.id;
+    await waitForTaskStatus(fastify, token, taskId, "completed");
+
+    const resultsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const result = resultsResponse.json().result.data.results[0];
+    const outputRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.mp4";
+    const nfoRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.nfo";
+    const strmRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.strm";
+    const posterRelativePath = "JAV_output/Actor A/ABC-123/poster.png";
+
+    expect(result).toMatchObject({
+      rootId,
+      outputRelativePath,
+      nfoRelativePath,
+      nfoRootId: expect.any(String),
+      status: "success",
+    });
+    expect(result.nfoRootId).not.toBe(rootId);
+    await expect(readFile(join(mediaRoot, outputRelativePath), "utf8")).resolves.toBe("video");
+    await expect(readFile(join(mediaRoot, nfoRelativePath), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(metadataRoot, nfoRelativePath), "utf8")).resolves.toContain("Runtime Title ABC-123");
+    await expect(readFile(join(metadataRoot, strmRelativePath), "utf8")).resolves.toBe(
+      join(mediaRoot, outputRelativePath),
+    );
+    const posterContent = await readFile(join(metadataRoot, posterRelativePath));
+    expect([...posterContent.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(rootsResponse.json().result.data.roots.map((root: { id: string }) => root.id)).not.toContain(
+      result.nfoRootId,
+    );
+
+    const assetResponse = await fastify.inject({
+      method: "GET",
+      url: `/api/library/assets/${encodeURIComponent(result.nfoRootId)}/${encodeURI(posterRelativePath)}?token=${encodeURIComponent(token)}`,
+    });
+    expect(assetResponse.statusCode).toBe(200);
+
+    const nfoResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.nfoRead?input=${encodeURIComponent(
+        JSON.stringify({
+          rootId: result.nfoRootId,
+          relativePath: nfoRelativePath,
+          videoRelativePath: outputRelativePath,
+        }),
+      )}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(nfoResponse.statusCode).toBe(200);
+    expect(nfoResponse.json().result.data.data).toMatchObject({ number: "ABC-123" });
+  });
+
   it("starts scrape tasks from selected host files inside scan and media roots", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const selectedPath = join(root, "ABC-128.mp4");

@@ -17,6 +17,7 @@ import {
   PlanStage,
   PrepareOutputStage,
   ProbeStage,
+  resolveMetadataOutputDir,
   ScrapeContext,
   type ScrapeStage,
   TranslateStage,
@@ -129,7 +130,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
           config: context.requireConfiguration(),
           crawlerData: context.requireCrawlerData(),
           enabled: true,
-          movieDir: context.requirePlan().outputDir,
+          movieDir: resolveMetadataOutputDir(context.requirePlan()),
           sourceVideoPath: context.fileInfo.filePath,
           signal,
         });
@@ -155,7 +156,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
             .split(/[\\/]/u)
             .pop()
             ?.replace(/\.nfo$/iu, ""),
-          outputDir: plan.outputDir,
+          outputDir: resolveMetadataOutputDir(plan),
           signalService: this.deps.signalService,
           sources: aggregationResult.sources,
           callbacks: {

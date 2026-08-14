@@ -7,6 +7,7 @@ import {
   resolveRootRelativePath,
   StorageError,
   storageErrorCodes,
+  toRootRelativePath,
 } from "@mdcz/media-store";
 import type { ScrapeResultRecord, TaskRecord, TaskRecordStatus } from "@mdcz/persistence";
 import { toLibraryAssets } from "@mdcz/runtime/library";
@@ -329,14 +330,20 @@ export class ScrapeService {
     const roots = new Map<string, MediaRoot>();
     for (const { result } of selectedResults) {
       if (!roots.has(result.rootId)) roots.set(result.rootId, await this.mediaRoots.getActiveRoot(result.rootId));
+      const nfoRootId = result.nfoRootId ?? result.rootId;
+      if (!roots.has(nfoRootId)) roots.set(nfoRootId, await this.mediaRoots.getActiveRoot(nfoRootId));
     }
     const confirmation = await confirmUncensoredOutputs(
       selectedResults.map(({ item, result }) => {
         const root = roots.get(result.rootId) as MediaRoot;
+        const nfoRoot = roots.get(result.nfoRootId ?? result.rootId) as MediaRoot;
         return {
           fileId: `${result.rootId}:${result.relativePath}`,
           videoPath: resolveRootRelativePath(root, result.outputRelativePath ?? result.relativePath),
-          nfoPath: result.nfoRelativePath ? resolveRootRelativePath(root, result.nfoRelativePath) : undefined,
+          metadataVideoPath: result.nfoRootId
+            ? resolveRootRelativePath(nfoRoot, this.resolveMetadataVideoPath(result))
+            : undefined,
+          nfoPath: result.nfoRelativePath ? resolveRootRelativePath(nfoRoot, result.nfoRelativePath) : undefined,
           crawlerData: result.crawlerDataJson ? JSON.parse(result.crawlerDataJson) : undefined,
           choice: item.choice,
         };
@@ -364,6 +371,7 @@ export class ScrapeService {
     const updatedBySource = new Map(confirmation.items.map((item) => [item.sourceVideoPath, item]));
     for (const { result } of selectedResults) {
       const root = roots.get(result.rootId) as MediaRoot;
+      const metadataRoot = await this.resolveMetadataRoot(root);
       const sourceVideoPath = resolveRootRelativePath(root, result.outputRelativePath ?? result.relativePath);
       const updated = updatedBySource.get(sourceVideoPath);
       if (!updated) {
@@ -371,13 +379,14 @@ export class ScrapeService {
         continue;
       }
       const outputRelativePath = toRootRelativeAssetPath(root, updated.targetVideoPath);
-      const nfoRelativePath = toRootRelativeAssetPath(root, updated.targetNfoPath);
+      const nfoRelativePath = toRootRelativeAssetPath(metadataRoot, updated.targetNfoPath);
       if (!outputRelativePath) throw new Error(`Confirmed output escaped media root: ${updated.targetVideoPath}`);
       const stored = await state.repositories.library.upsertScrapeResult({
         ...result,
         status: "success",
         error: null,
         outputRelativePath,
+        nfoRootId: nfoRelativePath && metadataRoot.id !== root.id ? metadataRoot.id : null,
         nfoRelativePath,
         uncensoredAmbiguous: false,
       });
@@ -406,8 +415,8 @@ export class ScrapeService {
         number: entry.number,
         actors: entry.actors,
         crawlerDataJson: entry.crawlerDataJson,
-        thumbnailPath: toRootRelativeAssetPath(root, updated.assets.poster ?? updated.assets.thumb),
-        assets: toLibraryAssets(root, { ...updated.assets, downloaded: [] }),
+        thumbnailPath: toRootRelativeAssetPath(metadataRoot, updated.assets.poster ?? updated.assets.thumb),
+        assets: toLibraryAssets(metadataRoot, { ...updated.assets, downloaded: [] }),
         lastKnownPath: outputRelativePath,
         createdAt: entry.createdAt,
         lastRefreshedAt: new Date(),
@@ -600,9 +609,12 @@ export class ScrapeService {
     if (record.status !== "success" || !record.outputRelativePath) {
       throw new Error("Poster editing requires a successful scrape result with local output");
     }
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(record.rootId), this.config.get()]);
+    const [root, configuration] = await Promise.all([
+      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
+      this.config.get(),
+    ]);
     const session = await this.posterCropService.prepare(
-      resolveRootRelativePath(root, record.outputRelativePath),
+      resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
       configuration.naming.assetNamingMode,
     );
     return {
@@ -620,9 +632,12 @@ export class ScrapeService {
     if (record.status !== "success" || !record.outputRelativePath) {
       throw new Error("Poster editing requires a successful scrape result with local output");
     }
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(record.rootId), this.config.get()]);
+    const [root, configuration] = await Promise.all([
+      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
+      this.config.get(),
+    ]);
     const result = await this.posterCropService.save(
-      resolveRootRelativePath(root, record.outputRelativePath),
+      resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
       configuration.naming.assetNamingMode,
       input.crop,
     );
@@ -867,11 +882,13 @@ export class ScrapeService {
       return;
     }
 
+    const metadataRoot = await this.resolveMetadataRoot(root);
+    const nfoRelativePath = runtimeResult.nfoPath ? toRootRelativePath(metadataRoot, runtimeResult.nfoPath) : null;
     const thumbnailPath = toRootRelativeAssetPath(
-      root,
+      metadataRoot,
       runtimeResult.result.assets?.poster ?? runtimeResult.result.assets?.thumb,
     );
-    const libraryAssets = toLibraryAssets(root, runtimeResult.result.assets);
+    const libraryAssets = toLibraryAssets(metadataRoot, runtimeResult.result.assets);
     const stored = await state.repositories.library.upsertScrapeResult({
       id: result.id,
       taskId,
@@ -879,7 +896,8 @@ export class ScrapeService {
       relativePath: result.relativePath,
       status: "success",
       crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
-      nfoRelativePath: runtimeResult.nfoRelativePath,
+      nfoRootId: nfoRelativePath && metadataRoot.id !== root.id ? metadataRoot.id : null,
+      nfoRelativePath,
       outputRelativePath: runtimeResult.outputRelativePath,
       manualUrl: result.manualUrl,
       uncensoredAmbiguous: this.#uncensoredConfirmedTasks.has(taskId)
@@ -912,7 +930,7 @@ export class ScrapeService {
       kind: "scrape-result",
       result: await this.resultToDto(stored),
     });
-    await this.addEvent(taskId, "item-success", `Generated NFO: ${runtimeResult.nfoRelativePath ?? "not generated"}`);
+    await this.addEvent(taskId, "item-success", `Generated NFO: ${nfoRelativePath ?? "not generated"}`);
   }
 
   private async persistUnexpectedItemFailure(
@@ -1081,5 +1099,20 @@ export class ScrapeService {
   private resolveConfirmedLocalState(taskId: string, result: ScrapeResultRecord) {
     const choice = this.#uncensoredChoices.get(taskId)?.get(`${result.rootId}:${result.relativePath}`);
     return choice ? { uncensoredChoice: choice } : undefined;
+  }
+
+  private async resolveMetadataRoot(primaryRoot: MediaRoot): Promise<MediaRoot> {
+    const metadataPath = (await this.config.get()).paths.metadataPath.trim();
+    return metadataPath ? await this.mediaRoots.ensureMetadataRoot(metadataPath) : primaryRoot;
+  }
+
+  private resolveMetadataVideoPath(result: ScrapeResultRecord): string {
+    const outputRelativePath = result.outputRelativePath ?? result.relativePath;
+    return result.nfoRootId
+      ? path.posix.join(
+          path.posix.dirname(outputRelativePath),
+          `${path.posix.basename(outputRelativePath, path.posix.extname(outputRelativePath))}.strm`,
+        )
+      : outputRelativePath;
   }
 }

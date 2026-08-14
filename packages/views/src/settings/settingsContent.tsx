@@ -323,6 +323,12 @@ export function PathsSection() {
     <>
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
       <PathFieldWrapper
+        name="paths.metadataPath"
+        label="本地元数据目录"
+        description="配置后，NFO、图片和 STRM 会按影片整理后的相对路径保存到此目录；留空则继续与影片保存在一起。"
+        isDirectory
+      />
+      <PathFieldWrapper
         name="paths.actorPhotoFolder"
         label="本地演员头像库目录"
         description="仅当“人物头像来源顺序”启用“本地”时读取，用于本地头像覆盖和媒体服务器头像同步。"

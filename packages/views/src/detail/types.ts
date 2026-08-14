@@ -8,6 +8,7 @@ export interface DetailViewItem {
   minimalErrorView?: boolean;
   title?: string;
   path?: string;
+  nfoRootId?: string;
   nfoPath?: string;
   actors?: string[];
   plot?: string;

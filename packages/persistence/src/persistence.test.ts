@@ -115,6 +115,7 @@ describe("LibraryRepository", () => {
       relativePath: "ABC-123.mp4",
       status: "success",
       crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123" }),
+      nfoRootId: "metadata-root",
       nfoRelativePath: "ABC-123.nfo",
       outputRelativePath: "ABC-123.mp4",
       manualUrl: "https://example.invalid/detail",

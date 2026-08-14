@@ -7,7 +7,7 @@ export * from "./crawlerOptions";
 export * from "./download";
 export * from "./executionPolicy";
 export * from "./executor";
-export { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
+export { FileOrganizer, type OrganizePlan, resolveMetadataOutputDir } from "./FileOrganizer";
 export * from "./FileScraper";
 export * from "./media";
 export * from "./mountedRootScrapeRuntime";

@@ -102,6 +102,15 @@ describe("strm utils", () => {
     await expect(readFile(filePath, "utf8")).resolves.toBe("\uFEFF#KODIPROP:rtsp_transport=tcp\n/videos/ABC-123.mp4\n");
   });
 
+  it("creates a missing STRM file and its parent directory", async () => {
+    const root = await createTempDir();
+    const filePath = join(root, "metadata", "ABC-123.strm");
+
+    await writeStrmTarget(filePath, "/videos/ABC-123.mp4");
+
+    await expect(readFile(filePath, "utf8")).resolves.toBe("/videos/ABC-123.mp4");
+  });
+
   it("rejects Kodi-only url schemes for desktop playback", async () => {
     const root = await createTempDir();
     const filePath = join(root, "ABC-123.strm");

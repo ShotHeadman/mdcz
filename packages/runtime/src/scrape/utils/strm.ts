@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -119,7 +119,12 @@ export const writeStrmTarget = async (filePath: string, nextTarget: string): Pro
     return;
   }
 
-  const content = await readFile(filePath, "utf8");
+  const content = await readFile(filePath, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") {
+      return "";
+    }
+    throw error;
+  });
   const { lines, eol, hasBom } = parseStrmContent(content);
   const targetLineIndex = findTargetLineIndex(lines);
 
@@ -132,6 +137,7 @@ export const writeStrmTarget = async (filePath: string, nextTarget: string): Pro
     lines[targetLineIndex] = `${leading}${nextTarget}${trailing}`;
   }
 
+  await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, `${hasBom ? "\uFEFF" : ""}${lines.join(eol)}`, "utf8");
 };
 

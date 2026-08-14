@@ -30,6 +30,7 @@ export const scrapeResultDtoToScrapeResult = (result: ScrapeResultDto): ScrapeRe
   crawlerData: result.crawlerData ?? undefined,
   error: result.error ?? undefined,
   outputPath: result.outputRelativePath ?? undefined,
+  nfoRootId: result.nfoRootId ?? undefined,
   nfoPath: result.nfoRelativePath ?? undefined,
   uncensoredAmbiguous: result.uncensoredAmbiguous,
   assets: undefined,

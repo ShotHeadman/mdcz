@@ -192,6 +192,7 @@ const ADVANCED_FIELD_KEYS = new Set<string>([
 const FIELD_ALIASES: Record<string, string[]> = {
   ...AGGREGATION_PRIORITY_ALIASES,
   "paths.mediaPath": ["media", "library", "媒体库"],
+  "paths.metadataPath": ["metadata", "sidecar", "strm", "元数据", "本地目录"],
   "paths.actorPhotoFolder": ["actor", "photo", "头像", "演员"],
   "paths.softlinkPath": ["symlink", "softlink", "链接"],
   "paths.successOutputFolder": ["output", "success", "成功目录"],
@@ -316,6 +317,12 @@ const RAW_FIELD_REGISTRY: Array<
   Pick<FieldEntry, "key" | "label" | "anchor" | "description"> & Partial<Pick<FieldEntry, "surface" | "visibility">>
 > = [
   { key: "paths.mediaPath", label: "媒体目录", anchor: "paths" },
+  {
+    key: "paths.metadataPath",
+    label: "本地元数据目录",
+    anchor: "paths",
+    description: "配置后，NFO、图片和 STRM 写入本地镜像目录；留空则与影片保存在同一目录。",
+  },
   { key: "paths.actorPhotoFolder", label: "本地演员头像库目录", anchor: "paths" },
   { key: "paths.softlinkPath", label: "软链接目录", anchor: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", anchor: "paths" },

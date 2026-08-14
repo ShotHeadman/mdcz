@@ -61,6 +61,7 @@ export const scrapeResults = sqliteTable("scrape_results", {
   status: text("status").notNull(),
   errorMessage: text("error_message"),
   crawlerDataJson: text("crawler_data_json"),
+  nfoRootId: text("nfo_root_id"),
   nfoRelativePath: text("nfo_relative_path"),
   outputRelativePath: text("output_relative_path"),
   manualUrl: text("manual_url"),

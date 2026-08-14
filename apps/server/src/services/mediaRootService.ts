@@ -12,6 +12,9 @@ import type { ServerPersistenceService } from "./persistenceService";
 const isRemoteUrl = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim());
 const hasInvalidPathBytes = (value: string): boolean => value.includes("\0");
 
+export const METADATA_OUTPUT_ROOT_ID = "mdcz-metadata-output";
+const METADATA_OUTPUT_ROOT_DISPLAY_NAME = "本地元数据目录";
+
 export const toMediaRootDto = (
   root: MediaRoot & { deleted?: boolean; availability?: MediaRootAvailabilityDto },
 ): MediaRootDto => ({
@@ -31,7 +34,7 @@ export class MediaRootService {
 
   async list(): Promise<{ roots: MediaRootDto[] }> {
     const state = await this.persistence.getState();
-    const roots = await state.repositories.mediaRoots.list();
+    const roots = (await state.repositories.mediaRoots.list()).filter((root) => root.id !== METADATA_OUTPUT_ROOT_ID);
     return { roots: roots.map(toMediaRootDto) };
   }
 
@@ -52,7 +55,7 @@ export class MediaRootService {
       });
 
     for (const root of roots) {
-      if (root.id === activeRoot.id) {
+      if (root.id === activeRoot.id || root.id === METADATA_OUTPUT_ROOT_ID) {
         continue;
       }
       if (root.enabled) {
@@ -74,6 +77,31 @@ export class MediaRootService {
         updatedAt: now,
       }),
     );
+  }
+
+  async ensureMetadataRoot(hostPath: string): Promise<MediaRoot> {
+    const normalizedPath = await this.validateMountedFilesystemPath(hostPath);
+    const state = await this.persistence.getState();
+    const existing = await state.repositories.mediaRoots
+      .get(METADATA_OUTPUT_ROOT_ID, { includeDeleted: true })
+      .catch(() => null);
+    const now = new Date();
+
+    return await state.repositories.mediaRoots.upsert({
+      ...(existing ??
+        createMediaRoot({
+          id: METADATA_OUTPUT_ROOT_ID,
+          displayName: METADATA_OUTPUT_ROOT_DISPLAY_NAME,
+          hostPath: normalizedPath,
+          enabled: true,
+          now,
+        })),
+      displayName: METADATA_OUTPUT_ROOT_DISPLAY_NAME,
+      hostPath: normalizedPath,
+      enabled: true,
+      deleted: false,
+      updatedAt: now,
+    });
   }
 
   async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {

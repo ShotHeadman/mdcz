@@ -366,6 +366,7 @@ export const scrapeResultSchema = z.object({
   status: z.enum(["pending", "processing", "success", "failed", "skipped"]),
   error: z.string().nullable(),
   crawlerData: crawlerDataSchema.nullable(),
+  nfoRootId: z.string().nullable(),
   nfoRelativePath: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
   manualUrl: z.string().nullable(),

@@ -77,6 +77,7 @@ const toRelativePath = (item: DetailViewItem, path: string): string => {
 };
 
 const getRootId = (item: DetailViewItem): string => item.id.split(":")[0] || "";
+const getMetadataRootId = (item: DetailViewItem): string => item.nfoRootId ?? getRootId(item);
 
 const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
@@ -115,7 +116,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
 
-  const rootId = getRootId(item);
+  const rootId = getMetadataRootId(item);
   if (!rootId) {
     return trimmed;
   }
@@ -137,9 +138,10 @@ export const createWebDetailPort = (): DetailActionPort => ({
   play: () => undefined,
   openFolder: () => undefined,
   readNfo: async (item, path) => {
-    const rootId = getRootId(item);
+    const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
-    const videoRelativePath = item.path ? toRelativePath(item, item.path) : undefined;
+    const videoPath = item.outputPath ?? item.path;
+    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
     const response = await api.scrape.nfoRead({ rootId, relativePath, videoRelativePath });
     return {
       path: response.effectiveRelativePath,
@@ -147,8 +149,9 @@ export const createWebDetailPort = (): DetailActionPort => ({
     };
   },
   writeNfo: async (item, path, data) => {
-    const rootId = getRootId(item);
-    const videoRelativePath = item.path ? toRelativePath(item, item.path) : undefined;
+    const rootId = getMetadataRootId(item);
+    const videoPath = item.outputPath ?? item.path;
+    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
     await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
   },
   preparePosterCrop: async (item) => {
@@ -156,13 +159,15 @@ export const createWebDetailPort = (): DetailActionPort => ({
     const response = await api.scrape.posterCropSession({ id: item.resultId });
     return {
       ...response,
-      sourceUrl: getLibraryAssetSrc({ rootId: getRootId(item), path: response.sourceRelativePath }),
+      sourceUrl: getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.sourceRelativePath }),
     };
   },
   savePosterCrop: async (item, crop) => {
     if (!item.resultId) throw new Error("缺少刮削结果标识");
     const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
-    const posterUrl = new URL(getLibraryAssetSrc({ rootId: getRootId(item), path: response.targetRelativePath }));
+    const posterUrl = new URL(
+      getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.targetRelativePath }),
+    );
     if (response.revision) posterUrl.searchParams.set("revision", response.revision);
     return { posterUrl: posterUrl.toString() };
   },

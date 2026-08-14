@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type {
@@ -16,10 +17,12 @@ import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { pathExists } from "./utils/filesystem";
+import { parseFileInfo } from "./utils/number";
 
 export interface RuntimeUncensoredConfirmItem {
   fileId: FileId;
   videoPath: string;
+  metadataVideoPath?: string;
   nfoPath?: string;
   crawlerData?: CrawlerData;
   choice: UncensoredChoice;
@@ -104,7 +107,10 @@ export const confirmUncensoredOutputs = async (
         continue;
       }
 
-      const scannedEntry = await dependencies.localScanService.scanVideo(videoPath, config.paths.sceneImagesFolder);
+      const scannedEntry = await dependencies.localScanService.scanVideo(
+        item.metadataVideoPath?.trim() || videoPath,
+        config.paths.sceneImagesFolder,
+      );
       const effectiveNfoPath = scannedEntry.nfoPath ?? nfoPath;
       const crawlerData = item.crawlerData ?? scannedEntry.crawlerData;
       if (!effectiveNfoPath || !crawlerData || !(await dependencies.pathExists(effectiveNfoPath))) {
@@ -112,7 +118,16 @@ export const confirmUncensoredOutputs = async (
         continue;
       }
 
-      const entry = { ...scannedEntry, crawlerData };
+      const entry = {
+        ...scannedEntry,
+        fileInfo: {
+          ...parseFileInfo(videoPath, config.scrape.filenameIgnoreTokens),
+          isSubtitled: scannedEntry.fileInfo.isSubtitled,
+          subtitleTag: scannedEntry.fileInfo.subtitleTag,
+        },
+        crawlerData,
+        currentDir: dirname(videoPath),
+      };
       preparedItems.push({
         item,
         entry,

@@ -71,6 +71,7 @@ describe("web task sync", () => {
           status: "processing",
           error: null,
           crawlerData: null,
+          nfoRootId: null,
           nfoRelativePath: null,
           outputRelativePath: null,
           manualUrl: null,

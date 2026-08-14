@@ -60,6 +60,7 @@ export interface ScrapeResultRecord {
   status: ScrapeResultRecordStatus;
   error: string | null;
   crawlerDataJson: string | null;
+  nfoRootId: string | null;
   nfoRelativePath: string | null;
   outputRelativePath: string | null;
   manualUrl: string | null;
@@ -131,6 +132,7 @@ export interface UpsertScrapeResultInput {
   status: ScrapeResultRecordStatus;
   error?: string | null;
   crawlerDataJson?: string | null;
+  nfoRootId?: string | null;
   nfoRelativePath?: string | null;
   outputRelativePath?: string | null;
   manualUrl?: string | null;
@@ -232,6 +234,7 @@ const toScrapeResultRecord = (row: ScrapeResultRow): ScrapeResultRecord => ({
   status: row.status as ScrapeResultRecordStatus,
   error: row.errorMessage,
   crawlerDataJson: row.crawlerDataJson,
+  nfoRootId: row.nfoRootId,
   nfoRelativePath: row.nfoRelativePath,
   outputRelativePath: row.outputRelativePath,
   manualUrl: row.manualUrl,
@@ -449,6 +452,7 @@ export class LibraryRepository {
         status: input.status,
         errorMessage: input.error ?? null,
         crawlerDataJson: input.crawlerDataJson ?? null,
+        nfoRootId: input.nfoRootId ?? null,
         nfoRelativePath: input.nfoRelativePath ?? null,
         outputRelativePath: input.outputRelativePath ?? null,
         manualUrl: input.manualUrl ?? null,
@@ -462,6 +466,7 @@ export class LibraryRepository {
           status: input.status,
           errorMessage: input.error ?? null,
           crawlerDataJson: input.crawlerDataJson ?? null,
+          nfoRootId: input.nfoRootId ?? null,
           nfoRelativePath: input.nfoRelativePath ?? null,
           outputRelativePath: input.outputRelativePath ?? null,
           manualUrl: input.manualUrl ?? null,

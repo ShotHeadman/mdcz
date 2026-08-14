@@ -102,6 +102,7 @@ export interface ScrapeResult {
   videoMeta?: VideoMeta;
   error?: string;
   outputPath?: string;
+  nfoRootId?: string;
   nfoPath?: string;
   assets?: DownloadedAssets;
   /** Maps each CrawlerData field to the Website that provided the value. */

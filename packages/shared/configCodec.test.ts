@@ -3,6 +3,19 @@ import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoF
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
+  it("defaults separated metadata storage off and round-trips an explicit path", () => {
+    expect(parseConfigurationContent("[paths]\n", "toml").paths.metadataPath).toBe("");
+
+    const configuration = {
+      ...defaultConfiguration,
+      paths: { ...defaultConfiguration.paths, metadataPath: "/local/metadata" },
+    };
+
+    expect(parseConfigurationContent(serializeConfiguration(configuration, "toml"), "toml").paths.metadataPath).toBe(
+      "/local/metadata",
+    );
+  });
+
   it("round-trips title repair array-of-tables through TOML", () => {
     const configuration = {
       ...defaultConfiguration,
