@@ -655,6 +655,7 @@ export type LibraryEntryDto = z.infer<typeof libraryEntrySchema>;
 
 export const libraryListInputSchema = z
   .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
     query: z.string().optional(),
     rootId: z.string().optional(),
     limit: z.number().int().min(1).max(500).optional(),
@@ -678,10 +679,35 @@ export type LibraryRelinkInput = z.infer<typeof libraryRelinkInputSchema>;
 
 export const libraryListResponseSchema = z.object({
   entries: z.array(libraryEntrySchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
   total: z.number(),
 });
 
 export type LibraryListResponse = z.infer<typeof libraryListResponseSchema>;
+
+export const libraryAvailabilityInputSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1).max(200),
+});
+
+export type LibraryAvailabilityInput = z.infer<typeof libraryAvailabilityInputSchema>;
+
+export const libraryAvailabilityResponseSchema = z.object({
+  entries: z.array(
+    z.object({
+      id: z.string(),
+      available: z.boolean().nullable(),
+      fileRefs: z.array(
+        z.object({
+          id: z.string(),
+          available: z.boolean().nullable(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export type LibraryAvailabilityResponse = z.infer<typeof libraryAvailabilityResponseSchema>;
 
 export const libraryDetailResponseSchema = z.object({
   entry: libraryEntrySchema,

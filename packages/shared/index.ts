@@ -12,6 +12,7 @@ export * from "./IpcChannel";
 export * from "./ipcContract";
 export * from "./ipcEvents";
 export * from "./ipcTypes";
+export * from "./libraryPagination";
 export * from "./llm";
 export * from "./logFormatting";
 export * from "./maintenanceCommit";

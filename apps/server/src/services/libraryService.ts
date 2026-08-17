@@ -6,12 +6,16 @@ import {
   getLatestLibraryEntryTimestamp,
   type RuntimeLibraryEntrySummaryInput,
 } from "@mdcz/runtime/library";
+import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
   CrawlerDataDto,
+  LibraryAvailabilityInput,
+  LibraryAvailabilityResponse,
   LibraryDetailResponse,
   LibraryEntryDto,
   LibraryListInput,
   LibraryListResponse,
+  MediaRootDto,
   OverviewSummaryResponse,
 } from "@mdcz/shared/serverDtos";
 import type { MediaRootService } from "./mediaRootService";
@@ -26,8 +30,7 @@ export class LibraryService {
   ) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
-    const entries = await this.listDtos(input, true);
-    return { entries: entries.entries, total: entries.total };
+    return await this.listDtos(input);
   }
 
   async search(input: LibraryListInput = {}): Promise<LibraryListResponse> {
@@ -36,14 +39,14 @@ export class LibraryService {
 
   async detail(id: string): Promise<LibraryDetailResponse> {
     const state = await this.persistence.getState();
-    const entry = await state.repositories.library.getEntryById(id);
-    return { entry: await this.toDto(entry, true) };
+    const [entry, rootMap] = await Promise.all([state.repositories.library.getEntryById(id), this.loadRootMap()]);
+    return { entry: await this.toDto(entry, rootMap, true) };
   }
 
   async refresh(id: string): Promise<LibraryDetailResponse> {
     const state = await this.persistence.getState();
-    const entry = await state.repositories.library.touchEntry(id);
-    return { entry: await this.toDto(entry, true) };
+    const [entry, rootMap] = await Promise.all([state.repositories.library.touchEntry(id), this.loadRootMap()]);
+    return { entry: await this.toDto(entry, rootMap, true) };
   }
 
   async relink(input: { id: string; rootId: string; relativePath: string }): Promise<LibraryDetailResponse> {
@@ -54,7 +57,44 @@ export class LibraryService {
       rootId: input.rootId,
       rootRelativePath: input.relativePath,
     });
-    return { entry: await this.toDto(entry, true) };
+    return { entry: await this.toDto(entry, await this.loadRootMap(), true) };
+  }
+
+  async availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse> {
+    const state = await this.persistence.getState();
+    const [records, rootMap] = await Promise.all([
+      state.repositories.library.getEntriesByIds(input.ids),
+      this.loadRootMap(),
+    ]);
+    const checks = new Map<string, Promise<boolean>>();
+    const check = (root: MediaRootDto | undefined, relativePath: string): Promise<boolean> | null => {
+      if (!root) {
+        return null;
+      }
+      const key = `${root.id}:${relativePath}`;
+      const existing = checks.get(key);
+      if (existing) {
+        return existing;
+      }
+      const pending = this.checkAvailability(root, relativePath);
+      checks.set(key, pending);
+      return pending;
+    };
+
+    return {
+      entries: await Promise.all(
+        records.map(async (entry) => ({
+          id: entry.id,
+          available: await check(rootMap.get(entry.rootId), entry.rootRelativePath),
+          fileRefs: await Promise.all(
+            entry.files.map(async (file) => ({
+              id: file.id,
+              available: await check(rootMap.get(file.rootId), file.rootRelativePath),
+            })),
+          ),
+        })),
+      ),
+    };
   }
 
   async removeRecentAcquisition(id: string): Promise<{ success: true }> {
@@ -125,46 +165,33 @@ export class LibraryService {
     };
   }
 
-  private async listDtos(input: LibraryListInput = {}, includeAvailability: boolean): Promise<LibraryListResponse> {
+  private async listDtos(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistence.getState();
-    const [roots, records] = await Promise.all([this.mediaRoots.list(), state.repositories.library.listEntries()]);
-    const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
-    const query = input?.query?.trim().toLowerCase() ?? "";
-    const rootId = input?.rootId?.trim();
-    const limit = input?.limit ?? 200;
-
-    const filtered = records
-      .filter((entry) => !rootId || entry.rootId === rootId || entry.files.some((file) => file.rootId === rootId))
-      .filter((entry) => {
-        const root = rootMap.get(entry.rootId);
-        if (!root) {
-          return false;
-        }
-        if (!query) {
-          return true;
-        }
-        return [
-          entry.fileName,
-          entry.rootRelativePath,
-          root.displayName,
-          entry.title,
-          entry.number,
-          entry.mediaIdentity,
-          ...entry.actors,
-        ]
-          .filter((value): value is string => Boolean(value))
-          .some((value) => value.toLowerCase().includes(query));
-      });
+    const [rootMap, page] = await Promise.all([
+      this.loadRootMap(),
+      state.repositories.library.listEntriesPage({
+        cursor: decodeLibraryPageCursor(input?.cursor),
+        limit: input?.limit ?? 100,
+        query: input?.query,
+        rootId: input?.rootId,
+      }),
+    ]);
 
     return {
-      entries: await Promise.all(filtered.slice(0, limit).map((entry) => this.toDto(entry, includeAvailability))),
-      total: filtered.length,
+      entries: await Promise.all(
+        page.entries.filter((entry) => rootMap.has(entry.rootId)).map((entry) => this.toDto(entry, rootMap, false)),
+      ),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor ? encodeLibraryPageCursor(page.nextCursor) : null,
+      total: page.total,
     };
   }
 
-  private async toDto(entry: LibraryEntryRecord, includeAvailability: boolean): Promise<LibraryEntryDto> {
-    const roots = await this.mediaRoots.list();
-    const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
+  private async toDto(
+    entry: LibraryEntryRecord,
+    rootMap: ReadonlyMap<string, MediaRootDto>,
+    includeAvailability: boolean,
+  ): Promise<LibraryEntryDto> {
     const root = rootMap.get(entry.rootId);
     if (!root) {
       throw new Error(`Media root not found: ${entry.rootId}`);
@@ -221,6 +248,11 @@ export class LibraryService {
         relativePath: asset.relativePath,
       })),
     };
+  }
+
+  private async loadRootMap(): Promise<Map<string, MediaRootDto>> {
+    const roots = await this.mediaRoots.list();
+    return new Map(roots.roots.map((root) => [root.id, root]));
   }
 
   private async checkAvailability(

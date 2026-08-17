@@ -551,6 +551,70 @@ describe("buildServer composition integration", () => {
     expect(recentAcquisitions.map((entry: { id: string }) => entry.id)).not.toContain("hidden-entry");
   });
 
+  it("paginates library entries and resolves availability outside the list request", async () => {
+    const root = await createTempRoot("library-page-root");
+    await writeFile(join(root, "present-a.mp4"), "a");
+    await writeFile(join(root, "present-b.mp4"), "b");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const state = await services.persistence.getState();
+    for (const [id, relativePath, createdAt] of [
+      ["entry-a", "present-a.mp4", "2026-05-01T00:00:00.000Z"],
+      ["entry-b", "present-b.mp4", "2026-05-02T00:00:00.000Z"],
+      ["entry-c", "missing-c.mp4", "2026-05-03T00:00:00.000Z"],
+    ] as const) {
+      await state.repositories.library.upsertEntry({
+        id,
+        rootId,
+        rootRelativePath: relativePath,
+        number: id,
+        createdAt: new Date(createdAt),
+      });
+    }
+
+    const firstResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.list",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { limit: 2 },
+    });
+    const firstPage = firstResponse.json().result.data;
+    const secondResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.list",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { cursor: firstPage.nextCursor, limit: 2 },
+    });
+    const secondPage = secondResponse.json().result.data;
+    const availabilityResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.availability",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: firstPage.entries.map((entry: { id: string }) => entry.id) },
+    });
+
+    expect(firstPage).toMatchObject({
+      entries: [
+        expect.objectContaining({ id: "entry-c", available: null }),
+        expect.objectContaining({ id: "entry-b", available: null }),
+      ],
+      hasMore: true,
+      total: 3,
+    });
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+    expect(secondPage).toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-a", available: null })],
+      hasMore: false,
+      nextCursor: null,
+      total: 3,
+    });
+    expect(availabilityResponse.json().result.data.entries).toEqual([
+      expect.objectContaining({ id: "entry-c", available: false }),
+      expect.objectContaining({ id: "entry-b", available: true }),
+    ]);
+  });
+
   it("rejects root browser escape attempts", async () => {
     const root = await createTempRoot("browser-root");
     const { fastify } = await createTestServer();

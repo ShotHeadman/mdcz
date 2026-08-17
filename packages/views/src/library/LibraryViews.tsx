@@ -15,7 +15,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
-import { AlertCircle, Database, FolderOpen, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertCircle, Database, FolderOpen, LoaderCircle, RefreshCw, Search, Trash2 } from "lucide-react";
 import { type ComponentType, type ReactNode, useState } from "react";
 
 export type LibraryAvailabilityFilter = "all" | "available" | "unavailable";
@@ -26,6 +26,8 @@ export interface LibraryIndexViewProps {
   errorMessage?: string | null;
   getImageSrc?: (path: string, entry: LibraryEntryDto) => string;
   isLoading?: boolean;
+  isLoadingMore?: boolean;
+  hasMore?: boolean;
   query: string;
   total: number;
   availabilityFilter: LibraryAvailabilityFilter;
@@ -33,6 +35,7 @@ export interface LibraryIndexViewProps {
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
   onOpenFolder?: (entry: LibraryEntryDto) => void;
+  onLoadMore?: () => void;
   onQueryChange: (value: string) => void;
   onRefresh: () => void;
 }
@@ -58,6 +61,8 @@ export function LibraryIndexView({
   errorMessage,
   getImageSrc = (path) => path,
   isLoading = false,
+  isLoadingMore = false,
+  hasMore = false,
   query,
   total,
   availabilityFilter,
@@ -65,19 +70,20 @@ export function LibraryIndexView({
   onAvailabilityFilterChange,
   onDeleteEntry,
   onOpenFolder,
+  onLoadMore,
   onQueryChange,
   onRefresh,
 }: LibraryIndexViewProps) {
   const filteredEntries = entries.filter((entry) => {
     if (availabilityFilter === "available") {
-      return entry.available !== false;
+      return entry.available === true;
     }
     if (availabilityFilter === "unavailable") {
       return entry.available === false;
     }
     return true;
   });
-  const availableCount = entries.filter((entry) => entry.available !== false).length;
+  const availableCount = entries.filter((entry) => entry.available === true).length;
   const unavailableCount = entries.filter((entry) => entry.available === false).length;
   const totalSize = filteredEntries.reduce((sum, entry) => sum + (Number.isFinite(entry.size) ? entry.size : 0), 0);
 
@@ -151,6 +157,14 @@ export function LibraryIndexView({
               <div className="flex min-h-[300px] flex-col items-center justify-center rounded-quiet-xl border border-dashed border-border/60 bg-surface-low/30 text-center text-muted-foreground">
                 <Database className="mb-4 h-10 w-10 opacity-20" />
                 <p className="text-sm font-medium">暂无匹配条目</p>
+              </div>
+            )}
+            {hasMore && (
+              <div className="flex justify-center py-2">
+                <Button disabled={isLoadingMore} onClick={onLoadMore} type="button" variant="secondary">
+                  <LoaderCircle className={cn("h-4 w-4", isLoadingMore && "animate-spin")} />
+                  加载更多
+                </Button>
               </div>
             )}
           </section>

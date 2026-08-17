@@ -9,7 +9,20 @@ const logger = loggerService.getLogger("IpcRouter:library");
 
 export const createLibraryHandlers = (
   context: ServiceContainer,
-): Pick<IpcRouterContract, typeof IpcChannel.Library_List | typeof IpcChannel.Library_Delete> => ({
+): Pick<
+  IpcRouterContract,
+  typeof IpcChannel.Library_Availability | typeof IpcChannel.Library_List | typeof IpcChannel.Library_Delete
+> => ({
+  [IpcChannel.Library_Availability]: t.procedure
+    .input<Parameters<typeof context.desktopLibraryService.availability>[0]>()
+    .action(async ({ input }) => {
+      try {
+        return await context.desktopLibraryService.availability(input);
+      } catch (error) {
+        logger.error(`Library availability failed: ${toErrorMessage(error)}`);
+        throw asSerializableIpcError(error);
+      }
+    }),
   [IpcChannel.Library_List]: t.procedure
     .input<Parameters<typeof context.desktopLibraryService.list>[0]>()
     .action(async ({ input }) => {

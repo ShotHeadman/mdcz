@@ -1,6 +1,11 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
-import type { LibraryListInput, LibraryListResponse } from "../serverDtos";
+import type {
+  LibraryAvailabilityInput,
+  LibraryAvailabilityResponse,
+  LibraryListInput,
+  LibraryListResponse,
+} from "../serverDtos";
 
 export interface LibraryDeleteInput {
   deleteMediaFiles?: boolean;
@@ -8,6 +13,7 @@ export interface LibraryDeleteInput {
 }
 
 export type LibraryIpcContract = {
+  [IpcChannel.Library_Availability]: IpcProcedure<LibraryAvailabilityInput, LibraryAvailabilityResponse>;
   [IpcChannel.Library_List]: IpcProcedure<LibraryListInput, LibraryListResponse>;
   [IpcChannel.Library_Delete]: IpcProcedure<LibraryDeleteInput, { success: true }>;
 };

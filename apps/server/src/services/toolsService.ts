@@ -232,16 +232,20 @@ export class ToolsService {
 
   private async collectActorProfiles(): Promise<ActorProfile[]> {
     if (!this.library) return [];
-    const library = await this.library.list({ limit: 500 });
     const profiles = new Map<string, ActorProfile>();
-    for (const entry of library.entries) {
-      for (const profile of entry.crawlerData?.actor_profiles ?? []) {
-        const key = profile.name.trim().toLowerCase();
-        if (key && !profiles.has(key)) {
-          profiles.set(key, profile);
+    let cursor: string | undefined;
+    do {
+      const page = await this.library.list({ cursor, limit: 500 });
+      for (const entry of page.entries) {
+        for (const profile of entry.crawlerData?.actor_profiles ?? []) {
+          const key = profile.name.trim().toLowerCase();
+          if (key && !profiles.has(key)) {
+            profiles.set(key, profile);
+          }
         }
       }
-    }
+      cursor = page.hasMore ? (page.nextCursor ?? undefined) : undefined;
+    } while (cursor);
     return [...profiles.values()];
   }
 }

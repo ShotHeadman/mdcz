@@ -4,7 +4,15 @@ import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
-import type { CrawlerDataDto, LibraryEntryDto, LibraryListInput, LibraryListResponse } from "@mdcz/shared/serverDtos";
+import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
+import type {
+  CrawlerDataDto,
+  LibraryAvailabilityInput,
+  LibraryAvailabilityResponse,
+  LibraryEntryDto,
+  LibraryListInput,
+  LibraryListResponse,
+} from "@mdcz/shared/serverDtos";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 
@@ -13,36 +21,60 @@ export class DesktopLibraryService {
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistenceService.getState();
-    const [roots, records] = await Promise.all([
+    const [roots, page] = await Promise.all([
       state.repositories.mediaRoots.list(),
-      state.repositories.library.listEntries(),
+      state.repositories.library.listEntriesPage({
+        cursor: decodeLibraryPageCursor(input?.cursor),
+        limit: input?.limit ?? 100,
+        query: input?.query,
+        rootId: input?.rootId,
+      }),
     ]);
     const rootMap = new Map(roots.map((root) => [root.id, root]));
-    const query = input?.query?.trim().toLowerCase() ?? "";
-    const rootId = input?.rootId?.trim();
-    const limit = input?.limit ?? 200;
-
-    const filtered = records
-      .filter((entry) => !rootId || entry.rootId === rootId || entry.files.some((file) => file.rootId === rootId))
-      .filter((entry) => {
-        const rootDisplayName = rootMap.get(entry.rootId)?.displayName ?? fallbackRootDisplayName(entry.rootId);
-        if (!query) return true;
-        return [
-          entry.fileName,
-          entry.rootRelativePath,
-          rootDisplayName,
-          entry.title,
-          entry.number,
-          entry.mediaIdentity,
-          ...entry.actors,
-        ]
-          .filter((value): value is string => Boolean(value))
-          .some((value) => value.toLowerCase().includes(query));
-      });
 
     return {
-      entries: await Promise.all(filtered.slice(0, limit).map((entry) => this.toDto(entry, rootMap))),
-      total: filtered.length,
+      entries: await Promise.all(page.entries.map((entry) => this.toDto(entry, rootMap, false))),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor ? encodeLibraryPageCursor(page.nextCursor) : null,
+      total: page.total,
+    };
+  }
+
+  async availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse> {
+    const state = await this.persistenceService.getState();
+    const [roots, records] = await Promise.all([
+      state.repositories.mediaRoots.list(),
+      state.repositories.library.getEntriesByIds(input.ids),
+    ]);
+    const rootMap = new Map(roots.map((root) => [root.id, root]));
+    const checks = new Map<string, Promise<boolean>>();
+    const check = (root: MediaRoot | undefined, relativePath: string): Promise<boolean> | null => {
+      if (!root) {
+        return null;
+      }
+      const key = `${root.id}:${relativePath}`;
+      const existing = checks.get(key);
+      if (existing) {
+        return existing;
+      }
+      const pending = this.checkAvailability(root, relativePath);
+      checks.set(key, pending);
+      return pending;
+    };
+
+    return {
+      entries: await Promise.all(
+        records.map(async (entry) => ({
+          id: entry.id,
+          available: await check(rootMap.get(entry.rootId), entry.rootRelativePath),
+          fileRefs: await Promise.all(
+            entry.files.map(async (file) => ({
+              id: file.id,
+              available: await check(rootMap.get(file.rootId), file.rootRelativePath),
+            })),
+          ),
+        })),
+      ),
     };
   }
 
@@ -81,13 +113,18 @@ export class DesktopLibraryService {
     return { success: true };
   }
 
-  private async toDto(entry: LibraryEntryRecord, rootMap: Map<string, MediaRoot>): Promise<LibraryEntryDto> {
+  private async toDto(
+    entry: LibraryEntryRecord,
+    rootMap: Map<string, MediaRoot>,
+    includeAvailability: boolean,
+  ): Promise<LibraryEntryDto> {
     const root = rootMap.get(entry.rootId);
-    const available = root ? await this.checkAvailability(root, entry.rootRelativePath) : null;
+    const available = includeAvailability && root ? await this.checkAvailability(root, entry.rootRelativePath) : null;
     const fileRefs = await Promise.all(
       entry.files.map(async (file) => {
         const fileRoot = rootMap.get(file.rootId);
-        const fileAvailable = fileRoot ? await this.checkAvailability(fileRoot, file.rootRelativePath) : null;
+        const fileAvailable =
+          includeAvailability && fileRoot ? await this.checkAvailability(fileRoot, file.rootRelativePath) : null;
         return {
           id: file.id,
           rootId: file.rootId,

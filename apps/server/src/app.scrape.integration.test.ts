@@ -177,6 +177,12 @@ describe("buildServer scrape integration", () => {
       payload: { query: "ABC-123", limit: 20 },
     });
     const entry = libraryResponse.json().result.data.entries[0];
+    const availabilityResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.availability",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [entry.id] },
+    });
     const detailResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/library.detail?input=${encodeURIComponent(JSON.stringify({ id: entry.id }))}`,
@@ -219,7 +225,7 @@ describe("buildServer scrape integration", () => {
     expect(libraryResponse.json().result.data.total).toBe(1);
     expect(entry).toMatchObject({
       actors: ["Actor A"],
-      available: true,
+      available: null,
       fileName: "ABC-123.mp4",
       mediaIdentity: "ABC-123",
       number: "ABC-123",
@@ -227,6 +233,12 @@ describe("buildServer scrape integration", () => {
       rootDisplayName: root.split(/[\\/]+/u).at(-1),
     });
     expect(entry.relativePath).toBe(outputRelativePath);
+    expect(availabilityResponse.statusCode).toBe(200);
+    expect(availabilityResponse.json().result.data.entries[0]).toMatchObject({
+      id: entry.id,
+      available: true,
+      fileRefs: [expect.objectContaining({ available: true })],
+    });
     expect(entry.thumbnailPath).toBe("JAV_output/Actor A/ABC-123/poster.png");
     expect(detailResponse.statusCode).toBe(200);
     expect(detailResponse.json().result.data.entry.crawlerData).toMatchObject({

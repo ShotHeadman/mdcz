@@ -9,6 +9,7 @@ import {
   configUpdateInputSchema,
   crawlerProbeSiteConnectivityInputSchema,
   fileActionInputSchema,
+  libraryAvailabilityInputSchema,
   libraryDetailInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
@@ -211,6 +212,9 @@ export const appRouter = t.router({
     }),
   }),
   library: t.router({
+    availability: protectedProcedure
+      .input(libraryAvailabilityInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.library.availability(input)),
     list: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),

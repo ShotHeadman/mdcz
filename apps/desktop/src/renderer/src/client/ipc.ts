@@ -48,6 +48,7 @@ export const ipc = {
     getOutputSummary: () => client[IpcChannel.Overview_GetOutputSummary](undefined),
   },
   library: {
+    availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
     delete: (input: { deleteMediaFiles?: boolean; id: string }) => client[IpcChannel.Library_Delete](input),
   },

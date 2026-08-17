@@ -18,6 +18,8 @@ import type {
   FileActionInput,
   FileActionResponse,
   HealthResponse,
+  LibraryAvailabilityInput,
+  LibraryAvailabilityResponse,
   LibraryDetailInput,
   LibraryDetailResponse,
   LibraryListInput,
@@ -141,6 +143,7 @@ export interface ServerApiContract {
     stop(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
   };
   library: {
+    availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
     search(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;

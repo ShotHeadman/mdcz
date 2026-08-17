@@ -1,8 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
-import { LibraryDeleteDialog, LibraryIndexView } from "@mdcz/views/library";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  chunkLibraryEntryIds,
+  LibraryDeleteDialog,
+  LibraryIndexView,
+  mergeLibraryAvailability,
+} from "@mdcz/views/library";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -16,29 +21,46 @@ export function LibraryPage() {
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
-  const libraryQ = useQuery({
+  const libraryQ = useInfiniteQuery({
     queryKey: queryKeys.library.search(query),
-    queryFn: () => api.library.search({ query, limit: 300 }),
+    queryFn: ({ pageParam }) => api.library.search({ cursor: pageParam, query, limit: 100 }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
     retry: false,
   });
+  const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
+  const entryIds = pageEntries.map((entry) => entry.id);
+  const availabilityQ = useQuery({
+    enabled: entryIds.length > 0,
+    queryKey: [...queryKeys.library.search(query), "availability", entryIds],
+    queryFn: async () =>
+      await Promise.all(chunkLibraryEntryIds(entryIds).map((ids) => api.library.availability({ ids }))),
+    retry: false,
+  });
+  const entries = mergeLibraryAvailability(pageEntries, availabilityQ.data ?? []);
 
   return (
     <>
       <LibraryIndexView
         availabilityFilter={availabilityFilter}
-        entries={libraryQ.data?.entries ?? []}
+        entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
-        getImageSrc={(path, entry) => getLibraryAssetSrc({ path, rootId: entry.rootId })}
-        isLoading={libraryQ.isLoading}
+        getImageSrc={(path, entry) => getLibraryAssetSrc({ format: "webp", path, rootId: entry.rootId, width: 160 })}
+        hasMore={libraryQ.hasNextPage}
+        isLoading={libraryQ.isLoading || availabilityQ.isLoading}
+        isLoadingMore={libraryQ.isFetchingNextPage}
         linkComponent={LibraryEntryLink}
         onAvailabilityFilterChange={setAvailabilityFilter}
         onDeleteEntry={setDeleteTarget}
+        onLoadMore={() => {
+          void libraryQ.fetchNextPage();
+        }}
         onQueryChange={setQuery}
         onRefresh={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.library.search(query) });
         }}
         query={query}
-        total={libraryQ.data?.total ?? 0}
+        total={libraryQ.data?.pages[0]?.total ?? 0}
       />
       <LibraryDeleteDialog
         open={Boolean(deleteTarget)}
