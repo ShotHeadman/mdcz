@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import {
   type LibraryItemAssetRow,
@@ -98,6 +98,25 @@ export interface UpsertLibraryEntryInput {
   lastKnownPath?: string | null;
   createdAt?: Date;
   lastRefreshedAt?: Date | null;
+}
+
+export interface LibraryEntriesCursor {
+  createdAt: Date;
+  id: string;
+}
+
+export interface ListLibraryEntriesInput {
+  cursor?: LibraryEntriesCursor;
+  limit: number;
+  query?: string;
+  rootId?: string;
+}
+
+export interface LibraryEntriesPage {
+  entries: LibraryEntryRecord[];
+  hasMore: boolean;
+  nextCursor: LibraryEntriesCursor | null;
+  total: number;
 }
 
 export interface LibraryItemFileRecord {
@@ -324,9 +343,7 @@ export class LibraryRepository {
             title: input.title ?? null,
             number: input.number ?? null,
             actorsJson,
-            createdAt,
             lastRefreshedAt: input.lastRefreshedAt ?? null,
-            hiddenFromRecentAt: null,
           },
         })
         .run();
@@ -368,7 +385,7 @@ export class LibraryRepository {
       }
     });
     transaction();
-    return await this.getEntry(input.rootId, input.rootRelativePath);
+    return await this.getEntryById(id);
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {
@@ -521,6 +538,23 @@ export class LibraryRepository {
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
   }
 
+  async getEntriesByIds(ids: string[]): Promise<LibraryEntryRecord[]> {
+    const normalizedIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    if (normalizedIds.length === 0) {
+      return [];
+    }
+    const items = this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, normalizedIds)).all();
+    const [filesByItem, assetsByItem] = await Promise.all([
+      this.listFilesForItems(normalizedIds),
+      this.listAssetsForItems(normalizedIds),
+    ]);
+    const itemMap = new Map(items.map((item) => [item.id, item]));
+    return normalizedIds.flatMap((id) => {
+      const item = itemMap.get(id);
+      return item ? [toLibraryEntryRecord(item, filesByItem.get(id) ?? [], assetsByItem.get(id) ?? [])] : [];
+    });
+  }
+
   async listEntries(): Promise<LibraryEntryRecord[]> {
     const items = this.database.db.select().from(libraryItems).orderBy(desc(libraryItems.createdAt)).all();
     const ids = items.map((item) => item.id);
@@ -528,6 +562,49 @@ export class LibraryRepository {
     return items.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
+  }
+
+  async listEntriesPage(input: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {
+    const limit = Math.max(1, Math.trunc(input.limit));
+    const baseWhere = buildLibraryListWhere(input);
+    const cursorTimestamp = input.cursor?.createdAt.getTime();
+    const cursorWhere = input.cursor
+      ? sql`(${libraryItems.createdAt} < ${cursorTimestamp} OR (${libraryItems.createdAt} = ${cursorTimestamp} AND ${libraryItems.id} < ${input.cursor.id}))`
+      : undefined;
+    const where = and(baseWhere, cursorWhere);
+    const items = this.database.db
+      .select()
+      .from(libraryItems)
+      .where(where)
+      .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
+      .limit(limit + 1)
+      .all();
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+    const ids = pageItems.map((item) => item.id);
+    const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
+    const entries = pageItems.map((item) =>
+      toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
+    );
+    const countRow = this.database.db
+      .select({ count: sql<number>`count(*)` })
+      .from(libraryItems)
+      .where(baseWhere)
+      .get();
+    const lastItem = pageItems.at(-1);
+
+    return {
+      entries,
+      hasMore,
+      nextCursor:
+        hasMore && lastItem
+          ? {
+              createdAt: lastItem.createdAt,
+              id: lastItem.id,
+            }
+          : null,
+      total: Number(countRow?.count ?? 0),
+    };
   }
 
   private async getLibraryItem(id: string): Promise<LibraryItemRow> {
@@ -564,6 +641,53 @@ export class LibraryRepository {
     return groupByItem(rows.map(toLibraryItemAssetRecord));
   }
 }
+
+const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
+  const filters: SQL[] = [];
+  const rootId = input.rootId?.trim();
+  if (rootId) {
+    filters.push(
+      sql`EXISTS (
+        SELECT 1
+        FROM library_item_files AS root_file
+        WHERE root_file.item_id = ${libraryItems.id}
+          AND root_file.root_id = ${rootId}
+      )`,
+    );
+  }
+
+  const query = input.query?.trim().toLowerCase();
+  if (query) {
+    const pattern = `%${query}%`;
+    filters.push(
+      sql`(
+        lower(coalesce(${libraryItems.title}, '')) LIKE ${pattern}
+        OR lower(coalesce(${libraryItems.number}, '')) LIKE ${pattern}
+        OR lower(coalesce(${libraryItems.mediaIdentity}, '')) LIKE ${pattern}
+        OR lower(coalesce(${libraryItems.actorsJson}, '')) LIKE ${pattern}
+        OR EXISTS (
+          SELECT 1
+          FROM library_item_files AS search_file
+          WHERE search_file.item_id = ${libraryItems.id}
+            AND (
+              lower(search_file.file_name) LIKE ${pattern}
+              OR lower(search_file.root_relative_path) LIKE ${pattern}
+            )
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM library_item_files AS display_file
+          INNER JOIN media_roots AS display_root ON display_root.id = display_file.root_id
+          WHERE display_file.item_id = ${libraryItems.id}
+            AND display_root.deleted = 0
+            AND lower(display_root.display_name) LIKE ${pattern}
+        )
+      )`,
+    );
+  }
+
+  return filters.length > 0 ? and(...filters) : undefined;
+};
 
 const groupByItem = <TRecord extends { itemId: string }>(records: TRecord[]): Map<string, TRecord[]> => {
   const grouped = new Map<string, TRecord[]>();

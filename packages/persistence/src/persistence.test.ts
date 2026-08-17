@@ -1,11 +1,16 @@
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createMediaRoot } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
+import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 
-import type { PersistenceDatabase } from "./database";
+import { createPersistenceDatabase, type PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { LibraryRepository } from "./libraryRepository";
 import { MaintenanceRepository } from "./maintenanceRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
+import { defaultMigrationsFolder, runMigrations } from "./migrate";
+import { TaskRepository } from "./taskRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 let database: PersistenceDatabase | undefined;
@@ -35,6 +40,68 @@ describe("MediaRootRepository", () => {
     expect(tables).toContain("library_item_files");
     expect(tables).toContain("library_item_assets");
     expect(tables).toContain("__drizzle_migrations");
+
+    const indexes = database.sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
+      .all()
+      .map((row) => (row as { name: string }).name);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        "library_item_assets_item_idx",
+        "library_item_files_item_idx",
+        "library_item_files_root_path_idx",
+        "library_items_source_task_idx",
+        "scan_results_task_root_path_idx",
+        "scrape_results_task_path_idx",
+        "task_events_task_created_at_idx",
+      ]),
+    );
+  });
+
+  it("configures SQLite for bounded WAL concurrency", () => {
+    database = createTestPersistenceDatabase();
+
+    expect(database.sqlite.pragma("journal_mode", { simple: true })).toBe("memory");
+    expect(database.sqlite.pragma("busy_timeout", { simple: true })).toBe(5000);
+    expect(database.sqlite.pragma("synchronous", { simple: true })).toBe(1);
+  });
+
+  it("upgrades a pre-index database by deduplicating legacy scan results", async () => {
+    const migrations = await createTempDirectory("persistence-old-migrations");
+    try {
+      await mkdir(join(migrations.path, "meta"), { recursive: true });
+      await Promise.all(
+        ["0000_initial.sql", "0001_separate_metadata_root.sql"].map(
+          async (fileName) => await cp(join(defaultMigrationsFolder, fileName), join(migrations.path, fileName)),
+        ),
+      );
+      const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
+        entries: Array<{ idx: number }>;
+        version: string;
+        dialect: string;
+      };
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx < 2) }),
+      );
+
+      database = createPersistenceDatabase({ path: ":memory:" });
+      runMigrations(database, { migrationsFolder: migrations.path });
+      const insert = database.sqlite.prepare(
+        "INSERT INTO scan_results (task_id, root_id, relative_path, size, modified_at) VALUES (?, ?, ?, ?, ?)",
+      );
+      insert.run("task-1", "root-1", "ABC-001.mp4", 10, null);
+      insert.run("task-1", "root-1", "ABC-001.mp4", 20, null);
+
+      runMigrations(database);
+
+      expect(database.sqlite.prepare("SELECT task_id, root_id, relative_path FROM scan_results").all()).toEqual([
+        { task_id: "task-1", root_id: "root-1", relative_path: "ABC-001.mp4" },
+      ]);
+      expect(() => insert.run("task-1", "root-1", "ABC-001.mp4", 30, null)).toThrow(/UNIQUE constraint failed/u);
+    } finally {
+      await migrations.cleanup();
+    }
   });
 
   it("persists and reads media roots through the facade", async () => {
@@ -175,6 +242,83 @@ describe("LibraryRepository", () => {
     ]);
   });
 
+  it("uses the root-path index for library entry lookup", async () => {
+    database = createTestPersistenceDatabase();
+    const plan = database.sqlite
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT * FROM library_item_files WHERE root_id = ? AND root_relative_path = ? LIMIT 1",
+      )
+      .all("root-1", "ABC-123/ABC-123.mp4") as Array<{ detail: string }>;
+
+    expect(plan.some((row) => row.detail.includes("library_item_files_root_path_idx"))).toBe(true);
+  });
+
+  it("paginates library entries with a stable created-at and id cursor", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    const createdAt = new Date("2026-05-01T00:00:00.000Z");
+    await repository.upsertEntry({
+      id: "entry-a",
+      rootId: "root-1",
+      rootRelativePath: "A/ABC-001.mp4",
+      title: "Alpha",
+      createdAt,
+    });
+    await repository.upsertEntry({
+      id: "entry-b",
+      rootId: "root-1",
+      rootRelativePath: "B/ABC-002.mp4",
+      title: "Beta",
+      createdAt,
+    });
+    await repository.upsertEntry({
+      id: "entry-c",
+      rootId: "root-2",
+      rootRelativePath: "C/DEF-003.mp4",
+      title: "Gamma",
+      createdAt: new Date("2026-05-02T00:00:00.000Z"),
+    });
+
+    const first = await repository.listEntriesPage({ limit: 2 });
+    const second = await repository.listEntriesPage({ cursor: first.nextCursor ?? undefined, limit: 2 });
+
+    expect(first.entries.map((entry) => entry.id)).toEqual(["entry-c", "entry-b"]);
+    expect(first).toMatchObject({ hasMore: true, total: 3 });
+    expect(second.entries.map((entry) => entry.id)).toEqual(["entry-a"]);
+    expect(second).toMatchObject({ hasMore: false, nextCursor: null, total: 3 });
+  });
+
+  it("filters paged library entries by file/root and metadata in SQL", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "movies/ABC-123.mp4",
+      actors: ["Actor One"],
+      title: "First title",
+    });
+    await repository.upsertEntry({
+      id: "entry-2",
+      rootId: "root-2",
+      rootRelativePath: "other/DEF-456.mp4",
+      title: "Second title",
+    });
+
+    await expect(repository.listEntriesPage({ limit: 10, query: "actor one" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-1" })],
+      total: 1,
+    });
+    await expect(repository.listEntriesPage({ limit: 10, query: "abc-123" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-1" })],
+      total: 1,
+    });
+    await expect(repository.listEntriesPage({ limit: 10, rootId: "root-2" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-2" })],
+      total: 1,
+    });
+  });
+
   it("prefers poster assets for library row artwork", async () => {
     database = createTestPersistenceDatabase();
     const repository = new LibraryRepository(database);
@@ -228,20 +372,32 @@ describe("LibraryRepository", () => {
   it("hides entries from recent acquisitions without deleting the library item", async () => {
     database = createTestPersistenceDatabase();
     const repository = new LibraryRepository(database);
+    const createdAt = new Date("2026-05-01T00:00:00.000Z");
+    const hiddenAt = new Date("2026-05-12T00:00:00.000Z");
 
     await repository.upsertEntry({
       id: "entry-1",
       rootId: "root-1",
       rootRelativePath: "ABC-123/ABC-123.mp4",
       title: "Title",
+      createdAt,
     });
 
-    await repository.hideFromRecent("entry-1", new Date("2026-05-12T00:00:00.000Z"));
+    await repository.hideFromRecent("entry-1", hiddenAt);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      title: "Refreshed title",
+      createdAt: new Date("2026-05-20T00:00:00.000Z"),
+    });
 
     await expect(repository.getEntryById("entry-1")).resolves.toEqual(
       expect.objectContaining({
         id: "entry-1",
-        hiddenFromRecentAt: new Date("2026-05-12T00:00:00.000Z"),
+        title: "Refreshed title",
+        createdAt,
+        hiddenFromRecentAt: hiddenAt,
       }),
     );
     await expect(repository.listEntries()).resolves.toHaveLength(1);
@@ -272,5 +428,21 @@ describe("LibraryRepository", () => {
         rootRelativePath: "DEF-456/DEF-456.mp4",
       }),
     ]);
+  });
+});
+
+describe("TaskRepository", () => {
+  it("rejects duplicate scan paths within one task and root", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    const duplicate = { relativePath: "ABC-123.mp4", size: 10, modifiedAt: null };
+
+    await expect(
+      repository.replaceScanResults({
+        taskId: "task-1",
+        rootId: "root-1",
+        results: [duplicate, duplicate],
+      }),
+    ).rejects.toThrow(/UNIQUE constraint failed/u);
   });
 });
