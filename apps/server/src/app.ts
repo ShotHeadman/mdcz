@@ -47,6 +47,11 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const taskEvents = options.services?.taskEvents ?? createTaskEventBus();
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
+  config.onDiagnostic((event) => {
+    runtimeLogs
+      .getLogger("config")
+      .warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
+  });
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
   const mappingStore = createServerTranslationMappingStore(config);
   const scrape =
@@ -83,6 +88,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
 
   fastify.addHook("onReady", async () => {
     await services.config.load();
+    await services.config.startWatching();
     await services.persistence.initialize();
     await services.scans.resumeQueued();
     await services.scrape.resumeQueued();
@@ -90,6 +96,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   });
 
   fastify.addHook("onClose", async () => {
+    await services.config.stopWatching();
     await services.scrape.close();
     await services.persistence.close();
   });

@@ -14,7 +14,10 @@ const createConfig = (): Configuration =>
     paths: {
       sceneImagesFolder: "extrafanart",
     },
-  }) as Configuration;
+    scrape: {
+      filenameIgnoreTokens: [],
+    },
+  }) as unknown as Configuration;
 
 const createCrawlerData = (number = "FC2-123456"): CrawlerData => ({
   title: number,

@@ -51,6 +51,18 @@ export class ConfigManager extends EventEmitter {
 
   private activeProfileName: string | undefined;
 
+  constructor() {
+    super();
+    this.config.onChange((event) => {
+      if (event.source !== "watch") return;
+      this.applyLoadedConfiguration(event.configuration);
+      this.notify();
+    });
+    this.config.onDiagnostic((event) => {
+      this.logger.warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
+    });
+  }
+
   async ensureLoaded(): Promise<void> {
     if (!this.initializePromise) {
       this.initializePromise = this.loadInternal().catch((error) => {
@@ -60,6 +72,15 @@ export class ConfigManager extends EventEmitter {
     }
 
     await this.initializePromise;
+  }
+
+  async startWatching(): Promise<void> {
+    await this.ensureLoaded();
+    await this.config.startWatching();
+  }
+
+  async stopWatching(): Promise<void> {
+    await this.config.stopWatching();
   }
 
   async get(): Promise<Configuration>;
