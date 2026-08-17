@@ -33,6 +33,7 @@ import {
   TranslateStage,
 } from "./pipeline";
 import { TranslateService } from "./TranslateService";
+import type { TranslationMappingStore } from "./translate/types";
 import { isAbortError } from "./utils/abort";
 import { pathExists } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
@@ -213,11 +214,12 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     private readonly logger: MountedRootScrapeLogger,
     networkClient?: RuntimeDownloadNetworkClient,
     private readonly localState?: NfoLocalState,
+    mappingStore?: TranslationMappingStore,
   ) {
     this.networkClient = networkClient ?? new NetworkClient();
     const runtimeLogger = toRuntimeLogger(this.logger);
     this.fileOrganizer = new FileOrganizer(runtimeLogger);
-    this.translateService = new TranslateService(this.networkClient, { logger: runtimeLogger });
+    this.translateService = new TranslateService(this.networkClient, { logger: runtimeLogger, mappingStore });
     this.downloadManager = new DownloadManager(this.networkClient, {
       imageHostCooldownStore: new MemoryImageHostCooldownStore(),
       logger: runtimeLogger,
@@ -465,6 +467,7 @@ export class MountedRootScrapeRuntime {
     private readonly aggregationService: MountedRootScrapeAggregationService,
     private readonly logger: MountedRootScrapeLogger = console,
     private readonly networkClient?: RuntimeDownloadNetworkClient,
+    private readonly mappingStore?: TranslationMappingStore,
   ) {}
 
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
@@ -486,6 +489,7 @@ export class MountedRootScrapeRuntime {
           this.logger,
           this.networkClient,
           input.localState,
+          this.mappingStore,
         ),
       );
       const absolutePath = resolveRootRelativePath(input.root, input.relativePath);

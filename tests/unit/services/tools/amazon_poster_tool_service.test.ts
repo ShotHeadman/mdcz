@@ -11,7 +11,7 @@ const { validateImageMock } = vi.hoisted(() => ({
   validateImageMock: vi.fn(),
 }));
 
-vi.mock("@main/utils/image", () => ({
+vi.mock("@mdcz/runtime/scrape/utils/image", () => ({
   validateImage: validateImageMock,
 }));
 

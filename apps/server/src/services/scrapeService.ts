@@ -38,6 +38,7 @@ import {
   toServerTaskStatus,
   transitionTask,
 } from "@mdcz/runtime/tasks";
+import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import type {
   AmbiguousUncensoredItemDto,
@@ -104,8 +105,9 @@ export class ScrapeService {
     private readonly config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
     runtime?: MountedRootScrapeRuntime,
+    mappingStore?: TranslationMappingStore,
   ) {
-    this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient);
+    this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
     this.runner = new RuntimeTaskQueueRunner({
       getNextTask: async () => await (await this.persistence.getState()).repositories.tasks.nextQueued("scrape"),
       runTask: async (task) => {

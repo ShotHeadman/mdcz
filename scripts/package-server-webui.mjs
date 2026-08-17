@@ -65,6 +65,7 @@ const serverDist = resolve(repoRoot, "apps/server/dist");
 await requirePath(resolve(serverDist, "server.js"), "Server bundle");
 await requirePath(resolve(serverDist, "web/index.html"), "WebUI bundle");
 await requirePath(resolve(serverDist, "persistence/drizzle"), "Drizzle migrations");
+await requirePath(resolve(serverDist, "resources/mapping_table"), "Translation mappings");
 await requirePath(resolve(templatesDir, "install.sh"), "install.sh template");
 await requirePath(resolve(templatesDir, "install.ps1"), "install.ps1 template");
 await requirePath(resolve(templatesDir, "start.sh"), "start.sh template");
@@ -78,6 +79,9 @@ await mkdir(stagingDir, { recursive: true });
 await cp(resolve(serverDist, "server.js"), resolve(stagingDir, "server.js"));
 await cp(resolve(serverDist, "web"), resolve(stagingDir, "web"), { recursive: true });
 await cp(resolve(serverDist, "persistence/drizzle"), resolve(stagingDir, "persistence/drizzle"), { recursive: true });
+await cp(resolve(serverDist, "resources/mapping_table"), resolve(stagingDir, "resources/mapping_table"), {
+  recursive: true,
+});
 await cp(resolve(repoRoot, "apps/server/.env.example"), resolve(stagingDir, ".env.example"));
 await cp(resolve(templatesDir, "README.md"), resolve(stagingDir, "README.md"));
 await cp(resolve(templatesDir, "install.sh"), resolve(stagingDir, "install.sh"));

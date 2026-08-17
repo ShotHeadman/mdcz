@@ -66,7 +66,7 @@ describe("translate mapping auto promotion", () => {
     await writeMappingFile(join(bundledDir, "mapping_actor.json"), []);
     await writeMappingFile(join(bundledDir, "mapping_info.json"), []);
 
-    const translate = await import("@main/utils/translate");
+    const { translationMappingStore: translate } = await import("@main/services/scraper/translationMappingStore");
 
     for (let index = 0; index < 3; index += 1) {
       await translate.appendMappingCandidate({
@@ -106,7 +106,7 @@ describe("translate mapping auto promotion", () => {
     ]);
     await writeMappingFile(join(bundledDir, "mapping_info.json"), []);
 
-    const translate = await import("@main/utils/translate");
+    const { translationMappingStore: translate } = await import("@main/services/scraper/translationMappingStore");
 
     for (let index = 0; index < 3; index += 1) {
       await translate.appendMappingCandidate({

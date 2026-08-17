@@ -11,6 +11,7 @@ import {
   TranslateService,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { ServerConfigService } from "./services/configService";
 
 class MemoryImageHostCooldownStore {
@@ -48,7 +49,10 @@ class MemoryImageHostCooldownStore {
   }
 }
 
-export const createServerMaintenanceRuntime = (config: ServerConfigService): MaintenanceRuntime => {
+export const createServerMaintenanceRuntime = (
+  config: ServerConfigService,
+  mappingStore?: TranslationMappingStore,
+): MaintenanceRuntime => {
   const networkClient = new NetworkClient();
   const logger = runtimeLoggerService.getLogger("maintenance");
   return new MaintenanceRuntime({
@@ -72,6 +76,6 @@ export const createServerMaintenanceRuntime = (config: ServerConfigService): Mai
       setProgress: () => undefined,
       showLogText: () => undefined,
     },
-    translateService: new TranslateService(networkClient, { logger }),
+    translateService: new TranslateService(networkClient, { logger, mappingStore }),
   });
 };

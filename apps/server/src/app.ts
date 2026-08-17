@@ -28,6 +28,7 @@ import { ServerPathService } from "./services/serverPathService";
 import { SystemService } from "./services/systemService";
 import { ToolsService } from "./services/toolsService";
 import { createTaskEventBus } from "./taskEvents";
+import { createServerTranslationMappingStore } from "./translationMappingStore";
 
 export interface BuildServerOptions {
   serviceOptions?: ServerServiceOptions;
@@ -47,10 +48,13 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
-  const scrape = options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, config, taskEvents);
+  const mappingStore = createServerTranslationMappingStore(config);
+  const scrape =
+    options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, config, taskEvents, undefined, mappingStore);
   const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);
   const maintenance =
-    options.services?.maintenance ?? new MaintenanceService(persistence, mediaRoots, config, taskEvents);
+    options.services?.maintenance ??
+    new MaintenanceService(persistence, mediaRoots, config, taskEvents, undefined, mappingStore);
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents);
   const system = options.services?.system ?? new SystemService();
   const services: ServerServices = {

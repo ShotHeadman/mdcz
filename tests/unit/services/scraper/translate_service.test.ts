@@ -17,15 +17,9 @@ vi.mock("node:timers/promises", () => {
   };
 });
 
-vi.mock("@main/utils/translate", () => {
-  return {
-    appendMappingCandidate: vi.fn(),
-    findMappedActorName: vi.fn(),
-    findMappedGenreName: vi.fn(),
-  };
-});
-
-import { appendMappingCandidate, findMappedActorName, findMappedGenreName } from "@main/utils/translate";
+const appendMappingCandidate = vi.fn();
+const findMappedActorName = vi.fn();
+const findMappedGenreName = vi.fn();
 
 const createBaseConfig = () => {
   return configurationSchema.parse({

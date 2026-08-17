@@ -14,6 +14,7 @@ import {
   toServerTaskStatus,
   transitionTask,
 } from "@mdcz/runtime/tasks";
+import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type {
   CrawlerDataDto,
   LogListResponse,
@@ -49,6 +50,7 @@ export class MaintenanceService {
   #pendingRefs = new Map<string, Array<{ relativePath: string }>>();
   #pendingPresets = new Map<string, MaintenancePresetId>();
   #executors = new Map<string, MaintenanceExecutor>();
+  private readonly runtime: MaintenanceRuntime;
   private readonly runner: RuntimeTaskQueueRunner<{ id: string; presetId: MaintenancePresetId }>;
 
   constructor(
@@ -56,8 +58,10 @@ export class MaintenanceService {
     private readonly mediaRoots: MediaRootService,
     config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-    private readonly runtime = createServerMaintenanceRuntime(config),
+    runtime?: MaintenanceRuntime,
+    mappingStore?: TranslationMappingStore,
   ) {
+    this.runtime = runtime ?? createServerMaintenanceRuntime(config, mappingStore);
     this.runner = new RuntimeTaskQueueRunner({
       getNextTask: async () => {
         const task = await (await this.persistence.getState()).repositories.tasks.nextQueued("maintenance");

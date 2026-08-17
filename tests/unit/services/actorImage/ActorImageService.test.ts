@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { ActorImageService, getActorImageCacheDirectory } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import * as imageUtils from "@main/utils/image";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -169,11 +168,6 @@ describe("ActorImageService", () => {
       },
     });
     const validPngBytes = await readValidPngBytes();
-    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
-      valid: true,
-      width: 512,
-      height: 512,
-    });
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
@@ -199,11 +193,6 @@ describe("ActorImageService", () => {
     const { root } = await createActorLibrary();
     const config = createConfig(root);
     const validPngBytes = await readValidPngBytes();
-    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
-      valid: true,
-      width: 512,
-      height: 512,
-    });
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
@@ -230,12 +219,6 @@ describe("ActorImageService", () => {
         ...defaultConfiguration.paths,
         mediaPath: root,
       },
-    });
-    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
-      valid: false,
-      width: 0,
-      height: 0,
-      reason: "parse_failed",
     });
     const networkClient = {
       getContent: vi.fn(async () => Buffer.from("<html>blocked</html>", "utf8")),
@@ -266,11 +249,6 @@ describe("ActorImageService", () => {
       },
     });
     const validPngBytes = await readValidPngBytes();
-    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
-      valid: true,
-      width: 512,
-      height: 512,
-    });
     const networkClient = {
       getContent: vi.fn(async (url: string) => {
         if (url.includes("broken.example.com")) {
@@ -317,11 +295,6 @@ describe("ActorImageService", () => {
     const firstRoot = await createTempDir();
     const secondRoot = await createTempDir();
     const validPngBytes = await readValidPngBytes();
-    vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
-      valid: true,
-      width: 512,
-      height: 512,
-    });
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
