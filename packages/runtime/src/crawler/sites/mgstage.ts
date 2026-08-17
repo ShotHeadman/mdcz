@@ -62,14 +62,14 @@ export class MGStageCrawler extends BaseCrawler {
     const series = extractByLabel($, "シリーズ");
 
     const actors = uniqueStrings(
-      $("a[href*='/search/cSearch.php?tag_id=']")
+      $("a[href*='/search/cSearch.php?tag_id='], a[href*='/search/cSearch.php?actor[]=']")
         .toArray()
         .map((element: CheerioInput) => $(element).text().trim())
         .filter((name: string) => name.length > 0),
     );
 
     const genres = uniqueStrings(
-      $("a[href*='/search/cSearch.php?genre=']")
+      $("a[href*='/search/cSearch.php?genre='], a[href*='/search/cSearch.php?genre[]=']")
         .toArray()
         .map((element: CheerioInput) => $(element).text().trim())
         .filter((name: string) => name.length > 0),
@@ -87,7 +87,7 @@ export class MGStageCrawler extends BaseCrawler {
       .map((href: string) => toAbsoluteUrl(MGSTAGE_BASE_URL, href))
       .filter((url): url is string => Boolean(url));
 
-    const ratingText = extractText($, "span.review_average");
+    const ratingText = extractText($, "span.review_average") ?? extractByLabel($, "評価");
     const ratingValue = ratingText ? Number.parseFloat(ratingText) : undefined;
     const rating = Number.isFinite(ratingValue) ? (ratingValue as number) * 2 : undefined;
 
