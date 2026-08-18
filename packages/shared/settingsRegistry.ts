@@ -534,6 +534,44 @@ export const FIELD_REGISTRY: FieldEntry[] = RAW_FIELD_REGISTRY.map((entry) => ({
 
 export const FIELD_KEYS = FIELD_REGISTRY.map((entry) => entry.key);
 
+export interface SettingsSchemaExemption {
+  path: string;
+  kind: "internal" | "dynamic-record";
+  reason: string;
+}
+
+export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
+  { path: "ui.language", kind: "internal", reason: "Language selection is not exposed by the current settings UI." },
+  { path: "ui.theme", kind: "internal", reason: "Theme is controlled by the application shell." },
+  {
+    path: "behavior.updateCheck",
+    kind: "internal",
+    reason: "Update checks are controlled by the Desktop lifecycle rather than the settings editor.",
+  },
+];
+
+export interface SettingsSchemaDiff {
+  registryOnly: string[];
+  schemaOnly: string[];
+  staleExemptions: string[];
+}
+
+export function diffSettingsRegistrySchemaPaths(
+  schemaPaths: readonly string[],
+  registryPaths: readonly string[],
+  exemptions: readonly SettingsSchemaExemption[] = SETTINGS_SCHEMA_EXEMPTIONS,
+): SettingsSchemaDiff {
+  const schema = new Set(schemaPaths);
+  const registry = new Set(registryPaths);
+  const exemptionPaths = new Set(exemptions.map((entry) => entry.path));
+
+  return {
+    registryOnly: registryPaths.filter((path) => !schema.has(path)),
+    schemaOnly: schemaPaths.filter((path) => !registry.has(path) && !exemptionPaths.has(path)),
+    staleExemptions: exemptions.map((entry) => entry.path).filter((path) => !schema.has(path) || registry.has(path)),
+  };
+}
+
 export const FIELD_REGISTRY_BY_KEY = Object.fromEntries(FIELD_REGISTRY.map((entry) => [entry.key, entry])) as Record<
   string,
   FieldEntry

@@ -1,6 +1,7 @@
 export * from "./actorAliases";
 export * from "./actorSource";
 export * from "./assetNaming";
+export * from "./capabilities";
 export * from "./config";
 export * from "./configCodec";
 export * from "./desktopNavigation";
@@ -24,6 +25,7 @@ export * from "./mediaIdentity";
 export * from "./posterBadges";
 export * from "./posterCrop";
 export * from "./r18";
+export * from "./runtimeLog";
 export * from "./serverApi";
 export * from "./serverDtos";
 export * from "./settingsRegistry";

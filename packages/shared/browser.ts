@@ -1,5 +1,6 @@
 export * from "./actorSource";
 export * from "./assetNaming";
+export * from "./capabilities";
 export * from "./config";
 export * from "./desktopNavigation";
 export * from "./enums";
@@ -15,6 +16,7 @@ export * from "./mediaExtensions";
 export * from "./mediaIdentity";
 export * from "./posterBadges";
 export * from "./r18";
+export * from "./runtimeLog";
 export * from "./serverApi";
 export * from "./serverDtos";
 export * from "./settingsRegistry";
