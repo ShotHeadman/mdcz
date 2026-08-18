@@ -1,17 +1,9 @@
-import { rm, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
-import {
-  atomicWriteRootFile,
-  type MediaRoot,
-  readRootFile,
-  resolveRootRelativePath,
-  StorageError,
-  storageErrorCodes,
-  toRootRelativePath,
-} from "@mdcz/media-store";
+import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeResultRecord, TaskRecord, TaskRecordStatus } from "@mdcz/persistence";
 import { toLibraryAssets } from "@mdcz/runtime/library";
-import { buildMovieTags, LocalScanService, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import {
@@ -19,13 +11,9 @@ import {
   confirmUncensoredOutputs,
   createScrapeExecutionPolicy,
   FileOrganizer,
-  getNfoReadCandidates,
-  getNfoWritePaths,
   type MountedRootScrapeRuntime,
   NfoGenerator,
-  nfoIgnoreFieldsToEnabledFields,
   PosterCropService,
-  resolveFilenameNfoPath,
   runScrapeItems,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
@@ -76,15 +64,10 @@ import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
+import { ServerFileActionAdapter, ServerNfoAdapter, ServerPosterCropAdapter } from "./scrapeAdapters";
 
 const recoverableTaskStatuses = new Set<TaskRecordStatus>(["queued", "running", "paused", "stopping", "failed"]);
 const recoverableResultStatuses = new Set<ScrapeResultRecord["status"]>(["pending", "processing", "failed"]);
-
-const requireRootRelativeAssetPath = (root: MediaRoot, assetPath: string): string => {
-  const relativePath = toRootRelativeAssetPath(root, assetPath);
-  if (!relativePath) throw new Error(`Poster asset is outside the active media root: ${assetPath}`);
-  return relativePath;
-};
 
 export class ScrapeService {
   #stopRequested = new Set<string>();
@@ -96,6 +79,9 @@ export class ScrapeService {
   private readonly fileOrganizer = new FileOrganizer();
   private readonly nfoGenerator = new NfoGenerator();
   private readonly posterCropService = new PosterCropService();
+  private readonly nfoAdapter: ServerNfoAdapter;
+  private readonly posterCropAdapter: ServerPosterCropAdapter;
+  private readonly fileActionAdapter: ServerFileActionAdapter;
   private readonly runtime: MountedRootScrapeRuntime;
   private readonly runner: RuntimeTaskQueueRunner<TaskRecord>;
 
@@ -107,6 +93,9 @@ export class ScrapeService {
     runtime?: MountedRootScrapeRuntime,
     mappingStore?: TranslationMappingStore,
   ) {
+    this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, this.nfoGenerator);
+    this.posterCropAdapter = new ServerPosterCropAdapter(this.mediaRoots, this.config, this.posterCropService);
+    this.fileActionAdapter = new ServerFileActionAdapter(this.mediaRoots);
     this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
     this.runner = new RuntimeTaskQueueRunner({
       getNextTask: async () => await (await this.persistence.getState()).repositories.tasks.nextQueued("scrape"),
@@ -534,75 +523,11 @@ export class ScrapeService {
   }
 
   async nfoRead(input: NfoReadInput): Promise<NfoReadResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
-    const candidates = getNfoReadCandidates(
-      input.relativePath,
-      configuration.download.nfoNaming,
-      input.videoRelativePath,
-    );
-    let effectiveRelativePath = candidates[0] ?? input.relativePath;
-    let content: Buffer | null = null;
-    for (const candidate of candidates) {
-      content = await readRootFile(root, candidate).catch((error: unknown) => {
-        if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
-        throw error;
-      });
-      if (content) {
-        effectiveRelativePath = candidate;
-        break;
-      }
-    }
-    return {
-      rootId: input.rootId,
-      relativePath: input.relativePath,
-      effectiveRelativePath,
-      exists: content !== null,
-      data: content === null ? null : parseNfoSnapshot(content.toString("utf-8")).crawlerData,
-    };
+    return await this.nfoAdapter.read(input);
   }
 
   async nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
-    const plannedRelativePath = resolveFilenameNfoPath(input.relativePath, input.videoRelativePath);
-    const candidates = getNfoReadCandidates(
-      input.relativePath,
-      configuration.download.nfoNaming,
-      input.videoRelativePath,
-    );
-    let existingXml: string | undefined;
-    let existingLocalState: ReturnType<typeof parseNfoSnapshot>["localState"];
-    for (const candidate of candidates) {
-      const content = await readRootFile(root, candidate).catch((error: unknown) => {
-        if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
-        throw error;
-      });
-      if (content) {
-        existingXml = content.toString("utf-8");
-        existingLocalState = parseNfoSnapshot(existingXml).localState;
-        break;
-      }
-    }
-    const options = {
-      buildTags: buildMovieTags,
-      enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
-      localState: existingLocalState,
-      nfoNaming: configuration.download.nfoNaming,
-      nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
-    };
-    const xml = existingXml
-      ? this.nfoGenerator.mergeEditableXml(existingXml, input.data, options)
-      : this.nfoGenerator.buildXml(input.data, options);
-    const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
-    for (const requiredPath of paths.requiredPaths) await atomicWriteRootFile(root, requiredPath, xml);
-    for (const stalePath of paths.stalePaths) {
-      await rm(resolveRootRelativePath(root, stalePath), { force: true });
-    }
-    return {
-      rootId: input.rootId,
-      relativePath: input.relativePath,
-      effectiveRelativePath: paths.canonicalPath,
-      data: input.data,
-    };
+    return await this.nfoAdapter.write(input);
   }
 
   async posterCropSession(id: string): Promise<PosterCropSessionResponse> {
@@ -611,21 +536,7 @@ export class ScrapeService {
     if (record.status !== "success" || !record.outputRelativePath) {
       throw new Error("Poster editing requires a successful scrape result with local output");
     }
-    const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
-      this.config.get(),
-    ]);
-    const session = await this.posterCropService.prepare(
-      resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
-      configuration.naming.assetNamingMode,
-    );
-    return {
-      sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
-      targetRelativePath: requireRootRelativeAssetPath(root, session.targetPath),
-      width: session.width,
-      height: session.height,
-      initialCrop: session.initialCrop,
-    };
+    return await this.posterCropAdapter.session(record, (result) => this.resolveMetadataVideoPath(result));
   }
 
   async posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
@@ -634,29 +545,11 @@ export class ScrapeService {
     if (record.status !== "success" || !record.outputRelativePath) {
       throw new Error("Poster editing requires a successful scrape result with local output");
     }
-    const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
-      this.config.get(),
-    ]);
-    const result = await this.posterCropService.save(
-      resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
-      configuration.naming.assetNamingMode,
-      input.crop,
-    );
-    return {
-      sourceRelativePath: requireRootRelativeAssetPath(root, result.sourcePath),
-      targetRelativePath: requireRootRelativeAssetPath(root, result.targetPath),
-      width: result.width,
-      height: result.height,
-      initialCrop: result.initialCrop,
-      revision: result.revision,
-    };
+    return await this.posterCropAdapter.save(record, input, (result) => this.resolveMetadataVideoPath(result));
   }
 
   async deleteFile(input: FileActionInput): Promise<FileActionResponse> {
-    const root = await this.mediaRoots.getActiveRoot(input.rootId);
-    await rm(resolveRootRelativePath(root, input.relativePath), { force: true });
-    return { ok: true, rootId: input.rootId, relativePath: input.relativePath };
+    return await this.fileActionAdapter.delete(input);
   }
 
   private drain(): void {
