@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
+import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -115,6 +116,27 @@ beforeEach(() => {
 });
 
 describe("buildServer composition integration", () => {
+  it("applies watched config edits without publishing a task event", async () => {
+    const { fastify, services } = await createTestServer();
+    await fastify.ready();
+    const taskEvents: string[] = [];
+    const unsubscribe = services.taskEvents.subscribe((event) => taskEvents.push(event.event));
+    const current = await services.config.get();
+
+    await writeFile(
+      services.config.runtimePaths.configPath,
+      serializeConfiguration({
+        ...current,
+        network: { ...current.network, timeout: 41 },
+      }),
+      "utf8",
+    );
+
+    await expect.poll(async () => (await services.config.get()).network.timeout).toBe(41);
+    expect(taskEvents).toEqual([]);
+    unsubscribe();
+  });
+
   it("completes first-run setup without a prior session and persists completion", async () => {
     const root = await createTempRoot("setup-root");
     const { fastify, services } = await createTestServer();

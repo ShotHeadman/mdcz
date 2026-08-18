@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseConfigurationContent } from "@mdcz/shared";
+import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockUserDataPath = "";
@@ -325,5 +326,27 @@ describe("ConfigManager configDirectory", () => {
     });
 
     vi.doUnmock("node:fs/promises");
+  });
+
+  it("applies valid external profile edits while watching", async () => {
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+    const manager = new ConfigManager();
+    const changes: number[] = [];
+    manager.onChange((configuration) => changes.push(configuration.network.timeout));
+    await manager.startWatching();
+
+    const current = await manager.getValidated();
+    await writeFile(
+      manager.list().configPath,
+      serializeConfiguration({
+        ...current,
+        network: { ...current.network, timeout: 37 },
+      }),
+      "utf8",
+    );
+
+    await expect.poll(async () => (await manager.getValidated()).network.timeout).toBe(37);
+    expect(changes).toContain(37);
+    await manager.stopWatching();
   });
 });

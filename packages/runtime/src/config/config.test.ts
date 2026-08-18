@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -218,7 +218,40 @@ describe("RuntimeConfigService profile watcher", () => {
     expect((await service.get()).network.timeout).toBe(91);
     await service.stopWatching();
   });
+
+  it("coalesces burst writes and reloads an atomically replaced profile", async () => {
+    const configDir = await createTempDir();
+    const profilePath = join(configDir, "default.toml");
+    const service = new RuntimeConfigService({ store: new RuntimeConfigProfileStore({ configDir }) });
+    await service.load();
+    const watchedTimeouts: number[] = [];
+    service.onChange((event) => {
+      if (event.source === "watch") watchedTimeouts.push(event.configuration.network.timeout);
+    });
+    await service.startWatching({ debounceMs: 40 });
+
+    const replacementPath = join(configDir, "default.toml.next");
+    await writeFile(replacementPath, configurationWithTimeout(71), "utf8");
+    await rename(replacementPath, profilePath);
+    await waitFor(() => watchedTimeouts.includes(71));
+
+    await writeFile(profilePath, configurationWithTimeout(72), "utf8");
+    await writeFile(profilePath, configurationWithTimeout(73), "utf8");
+    await writeFile(profilePath, configurationWithTimeout(74), "utf8");
+    await waitFor(() => watchedTimeouts.includes(74));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(watchedTimeouts).toEqual([71, 74]);
+    expect((await service.get()).network.timeout).toBe(74);
+    await service.stopWatching();
+  });
 });
+
+const configurationWithTimeout = (timeout: number): string =>
+  serializeConfiguration({
+    ...defaultConfiguration,
+    network: { ...defaultConfiguration.network, timeout },
+  });
 
 const waitFor = async (predicate: () => boolean): Promise<void> => {
   const deadline = Date.now() + 2_000;
