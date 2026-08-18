@@ -1,4 +1,3 @@
-import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@mdcz/shared/actorSource";
 import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
 import { type Configuration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
@@ -56,8 +55,9 @@ import {
 } from "../config-form/FieldRenderer";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
-import { shouldRenderFieldInSectionMode, useSettingsSectionMode } from "./SettingsSectionModeContext";
+import { useSettingsSectionMode } from "./SettingsSectionModeContext";
 import { useSettingsInFlightSaves, useSettingsNotifier, useSettingsServices } from "./SettingsServices";
+import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_FIELDS, getNestedValue, isRecord, unflattenConfig } from "./settingsRegistry";
 
 // ── Constants ──
@@ -226,8 +226,6 @@ const NAMING_SECTION_FIELD_KEYS = [
   "titleRepair.rules",
 ] as const;
 
-const PERSON_SYNC_SHARED_FIELD_KEYS = ["personSync.personOverviewSources", "personSync.personImageSources"] as const;
-
 export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
   const flat: Record<string, unknown> = {};
   for (const key of NAMING_PREVIEW_FIELD_KEYS) {
@@ -263,19 +261,6 @@ function toSiteOptions(value: unknown): string[] {
     }
   }
   return outputs;
-}
-
-function useHasRenderableFields(fieldNames: readonly string[]): boolean {
-  const search = useOptionalSettingsSearch();
-  const sectionMode = useSettingsSectionMode();
-
-  return fieldNames.some((name) => {
-    if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
-      return false;
-    }
-
-    return search ? search.isFieldVisible(name) : true;
-  });
 }
 
 function shouldMountConditionalSettings(
@@ -1203,74 +1188,6 @@ export function AggregationPrioritySection({ siteOptions }: { siteOptions: strin
   );
 }
 
-export function PersonSyncSharedSection() {
-  const hasRenderableFields = useHasRenderableFields(PERSON_SYNC_SHARED_FIELD_KEYS);
-
-  if (!hasRenderableFields) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
-      <div className="space-y-1">
-        <h4 className="text-sm font-medium">共享人物资料源</h4>
-        <p className="text-xs text-muted-foreground">
-          同时服务 Jellyfin 和 Emby。人物简介会按顺序选择一个质量达标的主资料源。
-        </p>
-      </div>
-      <ChipArrayFieldWrapper
-        name="personSync.personOverviewSources"
-        label="人物简介来源顺序"
-        options={[...ACTOR_OVERVIEW_SOURCE_OPTIONS]}
-      />
-      <ChipArrayFieldWrapper
-        name="personSync.personImageSources"
-        label="人物头像来源顺序"
-        options={[...ACTOR_IMAGE_SOURCE_OPTIONS]}
-      />
-    </div>
-  );
-}
-
-export function JellyfinSection() {
-  return (
-    <>
-      <UrlField name="jellyfin.url" label="Jellyfin 服务器地址" />
-      <CookieFieldWrapper name="jellyfin.apiKey" label="Jellyfin API Key" />
-      <TextField
-        name="jellyfin.userId"
-        label="Jellyfin 用户 ID"
-        description="必须是 UUID。用于人物列表读取，留空则按服务端默认处理。"
-      />
-      <BoolField
-        name="jellyfin.refreshPersonAfterSync"
-        label="同步后刷新人物"
-        description="同步简介或头像后，额外请求 Jellyfin 刷新人物元数据与图片。"
-      />
-      <BoolField
-        name="jellyfin.lockOverviewAfterSync"
-        label="同步后锁定人物简介"
-        description="写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。"
-      />
-    </>
-  );
-}
-
-export function EmbySection() {
-  return (
-    <>
-      <UrlField name="emby.url" label="Emby 服务器地址" />
-      <CookieFieldWrapper name="emby.apiKey" label="Emby API Key" />
-      <TextField name="emby.userId" label="Emby 用户 ID" description="用于人物列表读取，留空则按服务端默认处理。" />
-      <BoolField
-        name="emby.refreshPersonAfterSync"
-        label="同步后刷新人物"
-        description="同步简介或头像后，额外请求 Emby 刷新人物元数据与图片。"
-      />
-    </>
-  );
-}
-
 export function ShortcutsSection() {
   return (
     <>
@@ -1356,3 +1273,5 @@ export function BehaviorSection() {
     </>
   );
 }
+
+export { EmbySection, JellyfinSection, PersonSyncSharedSection } from "./sections/MediaServerSections";

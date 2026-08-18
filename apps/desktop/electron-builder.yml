@@ -28,7 +28,6 @@ files:
   - package.json
   - "!**/*.map"
   - "!node_modules/mediainfo.js/dist/MediaInfoModule.wasm"
-  - "!node_modules/openai/src/**"
   # Strip the hoisted better-sqlite3 native artifacts; the Electron-ABI .node
   # is shipped via extraResources/native and loaded explicitly through
   # PersistenceDatabaseConfig.nativeBinding.

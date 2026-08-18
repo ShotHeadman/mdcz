@@ -9,7 +9,7 @@ import type { FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtim
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager } from "./helpers";
+import { mockConfigManager } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",

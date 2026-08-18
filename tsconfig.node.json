@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.node.tsbuildinfo",
     "lib": ["ES2023"],
     "types": ["node", "electron-vite/node"]
   },

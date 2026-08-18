@@ -10,7 +10,7 @@ import { NetworkClient } from "@mdcz/runtime/network";
 import { FileOrganizer, TranslateService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager } from "./helpers";
+import { mockConfigManager } from "../../../helpers/scraper";
 
 class OrderedStubCrawlerProvider extends CrawlerProvider {
   readonly calledSites: Website[] = [];
