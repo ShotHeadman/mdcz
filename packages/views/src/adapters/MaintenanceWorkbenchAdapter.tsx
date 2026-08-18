@@ -1,7 +1,7 @@
-import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
 import { findMaintenanceEntryGroup } from "@mdcz/shared/viewModels/maintenanceGrouping";
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { toDetailViewItemFromMaintenanceEntry } from "../detail";

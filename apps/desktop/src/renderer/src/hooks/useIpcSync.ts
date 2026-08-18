@@ -1,12 +1,12 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { createRuntimeLog, useLogStore } from "@mdcz/shared/stores/logStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
+import type { MaintenanceStatus, ScraperStatus } from "@mdcz/shared/types";
+import { createRuntimeLog, useLogStore } from "@mdcz/views/state/logStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
 import {
   applyMaintenanceExecutionItemResult,
   applyMaintenanceStatusSnapshot,
-} from "@mdcz/shared/stores/maintenanceSession";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import type { MaintenanceStatus, ScraperStatus } from "@mdcz/shared/types";
+} from "@mdcz/views/state/maintenanceSession";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { overviewKeys } from "@/api/overview";

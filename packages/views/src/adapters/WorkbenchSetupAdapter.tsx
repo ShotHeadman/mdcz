@@ -8,10 +8,10 @@ import {
   type WorkbenchSetupMode,
 } from "@mdcz/shared/mediaCandidate";
 import type { ServerPathSuggestResponse } from "@mdcz/shared/serverDtos";
-import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { changeMaintenancePreset } from "@mdcz/shared/stores/maintenanceSession";
-import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { changeMaintenancePreset } from "@mdcz/views/state/maintenanceSession";
+import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";

@@ -1,5 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import {
   mergeConfigWithFlatPayload,
   type SettingsCrawlerSiteInfo,
@@ -10,6 +9,7 @@ import {
   type SettingsServices,
   SettingsServicesProvider,
 } from "@mdcz/views/settings";
+import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";

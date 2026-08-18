@@ -1,6 +1,6 @@
 import { Website } from "@mdcz/shared/enums";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import type { FileInfo, ScrapeResult } from "@mdcz/shared/types";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildAmbiguousUncensoredScrapeGroups,

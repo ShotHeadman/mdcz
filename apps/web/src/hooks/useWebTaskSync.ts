@@ -1,4 +1,4 @@
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect } from "react";
 import { api, subscribeTaskRealtime } from "../client";
 import { applyTaskRealtimeEvent, applyWebTaskUpdate, hydrateWorkbenchScrapeResults } from "../taskHydration";

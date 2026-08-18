@@ -1,11 +1,11 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import {
   mergeConfigWithFlatPayload,
   type SettingsCrawlerSiteInfo,
   type SettingsNotifier,
   type SettingsServices,
 } from "@mdcz/views/settings";
+import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../client";

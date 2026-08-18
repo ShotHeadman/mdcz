@@ -1,5 +1,4 @@
 import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { CrawlerData, LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -8,6 +7,7 @@ import type {
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { api, getLibraryAssetSrc } from "../client";
 
 const dedupeValues = (values: string[]): string[] =>

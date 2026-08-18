@@ -1,5 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import { Button, Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, Form } from "@mdcz/ui";
 import { ConfigFieldLayoutProvider } from "@mdcz/views/config-form";
 import {
@@ -15,6 +14,7 @@ import {
   SettingsServicesProvider,
   valuesEqual,
 } from "@mdcz/views/settings";
+import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import type { FieldValues } from "react-hook-form";

@@ -1,4 +1,4 @@
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useShallow } from "zustand/react/shallow";
 import { ScrapeWorkbenchFrame } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";

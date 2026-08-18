@@ -1,9 +1,9 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { RendererShortcutAction } from "@mdcz/shared/ipcEvents";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
+import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";

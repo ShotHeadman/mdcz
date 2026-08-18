@@ -1,8 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
@@ -18,6 +15,9 @@ import {
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";

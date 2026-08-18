@@ -1,10 +1,10 @@
-import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import type { MaintenanceActionPort } from "@mdcz/views/adapters";
 import { getWorkbenchSessionSnapshot, resolveWorkbenchMode, startMaintenanceFlow } from "@mdcz/views/adapters";
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const resetStores = () => {

@@ -1,12 +1,8 @@
+import type { RuntimeLog } from "@mdcz/shared/runtimeLog";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
-export interface RuntimeLog {
-  id: string;
-  timestamp: string;
-  level: string;
-  message: string | object | null;
-}
+export type { RuntimeLog } from "@mdcz/shared/runtimeLog";
 
 export const createRuntimeLog = (
   level: string,

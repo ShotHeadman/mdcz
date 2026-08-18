@@ -17,6 +17,8 @@
     "./scrape": "./src/scrape/index.ts",
     "./logs": "./src/logs/index.ts",
     "./settings": "./src/settings/index.ts",
+    "./state": "./src/state/index.ts",
+    "./state/*": "./src/state/*.ts",
     "./shell": "./src/shell/index.ts",
     "./tools": "./src/tools/index.ts",
     "./common": "./src/common/index.ts",

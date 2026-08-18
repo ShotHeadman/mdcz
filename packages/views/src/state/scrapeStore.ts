@@ -1,8 +1,8 @@
 import type { ScrapeResult as SharedScrapeResult, UncensoredConfirmResultItem } from "@mdcz/shared/types";
+import { deriveGroupingDirectoryFromPath } from "@mdcz/shared/viewModels/multipartDisplay";
 import type { StateCreator } from "zustand";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { deriveGroupingDirectoryFromPath } from "../viewModels/multipartDisplay";
 
 export type ScrapeResult = SharedScrapeResult;
 

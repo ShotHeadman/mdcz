@@ -1,7 +1,7 @@
 import type { ScanTaskDto } from "@mdcz/shared/serverDtos";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

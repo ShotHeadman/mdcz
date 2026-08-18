@@ -17,5 +17,5 @@
     "packages/media-store/src/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["packages/**/*.test.ts", "packages/shared/stores/**/*"]
+  "exclude": ["packages/**/*.test.ts"]
 }

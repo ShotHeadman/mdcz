@@ -462,9 +462,6 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.4.1
-      zustand:
-        specifier: ^5.0.9
-        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
 
   packages/ui:
     dependencies:

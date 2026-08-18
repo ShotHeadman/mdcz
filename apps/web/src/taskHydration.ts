@@ -7,18 +7,18 @@ import type {
   TaskRealtimeEventDto,
   WebTaskUpdateDto,
 } from "@mdcz/shared/serverDtos";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
+import type { MaintenancePreviewItem } from "@mdcz/shared/types";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
   applyMaintenanceExecutionItemResult,
   applyMaintenancePreviewResult,
-} from "@mdcz/shared/stores/maintenanceSession";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import type { TaskHydrationState } from "@mdcz/shared/stores/workbenchTaskStore";
-import type { MaintenancePreviewItem } from "@mdcz/shared/types";
+} from "@mdcz/views/state/maintenanceSession";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
+import type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
-export type { TaskHydrationState } from "@mdcz/shared/stores/workbenchTaskStore";
+export type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
 const taskStatusToScrapeStatus = (
   status: ScanTaskDto["status"],

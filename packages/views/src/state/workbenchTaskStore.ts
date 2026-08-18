@@ -1,5 +1,5 @@
+import type { AmbiguousUncensoredItemDto } from "@mdcz/shared/serverDtos";
 import { create } from "zustand";
-import type { AmbiguousUncensoredItemDto } from "../serverDtos";
 
 export interface TaskHydrationState {
   activeScrapeTaskId: string;

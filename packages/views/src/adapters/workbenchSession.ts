@@ -1,7 +1,9 @@
 import type { AmbiguousUncensoredItemDto, ScanTaskDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
-import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
+import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
+import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
   applyMaintenancePreviewResult,
   applyMaintenanceScanResult,
@@ -9,12 +11,10 @@ import {
   cancelMaintenancePreviewFlow,
   changeMaintenancePreset,
   setMaintenancePreviewPending,
-} from "@mdcz/shared/stores/maintenanceSession";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
-import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
-import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
+} from "@mdcz/views/state/maintenanceSession";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import type { MaintenanceActionPort } from "./ports";
 
 export type WorkbenchMode = "scrape" | "maintenance";

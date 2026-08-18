@@ -1,12 +1,12 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import {
   buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
   type ScrapeResultGroup,
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@mdcz/ui";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
 import { Copy, FileText, Link2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";

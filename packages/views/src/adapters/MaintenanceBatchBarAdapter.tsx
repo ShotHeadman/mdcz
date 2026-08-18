@@ -1,9 +1,11 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildMaintenanceCommitItem } from "@mdcz/shared/maintenanceCommit";
 import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
-import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
+import type { MaintenancePreviewItem } from "@mdcz/shared/types";
+import { buildMaintenanceEntryViewModel } from "@mdcz/shared/viewModels/maintenanceGrouping";
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
   applyMaintenancePreviewResult,
   beginMaintenanceExecution,
@@ -11,10 +13,8 @@ import {
   cancelMaintenancePreviewFlow,
   resetMaintenanceSession,
   setMaintenancePreviewPending,
-} from "@mdcz/shared/stores/maintenanceSession";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import type { MaintenancePreviewItem } from "@mdcz/shared/types";
-import { buildMaintenanceEntryViewModel } from "@mdcz/shared/viewModels/maintenanceGrouping";
+} from "@mdcz/views/state/maintenanceSession";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";

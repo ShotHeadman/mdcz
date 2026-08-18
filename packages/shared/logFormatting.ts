@@ -1,5 +1,5 @@
+import type { RuntimeLog } from "./runtimeLog";
 import type { LogEntryDto } from "./serverDtos";
-import type { RuntimeLog } from "./stores/logStore";
 
 export type VisualLogLevel = "ok" | "info" | "warn" | "error" | "request";
 

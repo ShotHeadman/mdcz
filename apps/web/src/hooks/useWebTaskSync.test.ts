@@ -1,5 +1,5 @@
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, subscribeTaskRealtime } from "../client";
 import { applyWebTaskSnapshot, hydrateActiveScrapeTaskResults } from "./useWebTaskSync";

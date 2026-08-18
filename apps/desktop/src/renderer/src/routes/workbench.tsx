@@ -1,7 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 import {
   buildAmbiguousUncensoredScrapeGroups,
@@ -17,6 +14,9 @@ import {
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";

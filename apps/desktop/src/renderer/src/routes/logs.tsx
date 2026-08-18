@@ -1,5 +1,4 @@
 import type { LogEntryDto } from "@mdcz/shared/serverDtos";
-import { useLogStore } from "@mdcz/shared/stores/logStore";
 import {
   Button,
   Dialog,
@@ -11,6 +10,7 @@ import {
   DialogTitle,
 } from "@mdcz/ui";
 import { LogsPanelView } from "@mdcz/views/logs";
+import { useLogStore } from "@mdcz/views/state/logStore";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
