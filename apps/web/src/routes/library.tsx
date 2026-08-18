@@ -7,7 +7,7 @@ import {
   LibraryIndexView,
   mergeLibraryAvailability,
 } from "@mdcz/views/library";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -29,15 +29,20 @@ export function LibraryPage() {
     retry: false,
   });
   const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
-  const entryIds = pageEntries.map((entry) => entry.id);
-  const availabilityQ = useQuery({
-    enabled: entryIds.length > 0,
-    queryKey: [...queryKeys.library.search(query), "availability", entryIds],
-    queryFn: async () =>
-      await Promise.all(chunkLibraryEntryIds(entryIds).map((ids) => api.library.availability({ ids }))),
-    retry: false,
+  const availabilityQs = useQueries({
+    queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
+      chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
+        queryKey: [...queryKeys.library.search(query), "availability", ids],
+        queryFn: async () => await api.library.availability({ ids }),
+        retry: false,
+        staleTime: 30_000,
+      })),
+    ),
   });
-  const entries = mergeLibraryAvailability(pageEntries, availabilityQ.data ?? []);
+  const entries = mergeLibraryAvailability(
+    pageEntries,
+    availabilityQs.flatMap((availabilityQ) => availabilityQ.data ?? []),
+  );
 
   return (
     <>
@@ -47,7 +52,7 @@ export function LibraryPage() {
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={(path, entry) => getLibraryAssetSrc({ format: "webp", path, rootId: entry.rootId, width: 160 })}
         hasMore={libraryQ.hasNextPage}
-        isLoading={libraryQ.isLoading || availabilityQ.isLoading}
+        isLoading={libraryQ.isLoading || availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
         isLoadingMore={libraryQ.isFetchingNextPage}
         linkComponent={LibraryEntryLink}
         onAvailabilityFilterChange={setAvailabilityFilter}

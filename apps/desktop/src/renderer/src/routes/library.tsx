@@ -7,7 +7,7 @@ import {
   LibraryIndexView,
   mergeLibraryAvailability,
 } from "@mdcz/views/library";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -26,13 +26,20 @@ export function LibraryPage() {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
   const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
-  const entryIds = pageEntries.map((entry) => entry.id);
-  const availabilityQ = useQuery({
-    enabled: entryIds.length > 0,
-    queryKey: ["library", "availability", entryIds],
-    queryFn: async () => await Promise.all(chunkLibraryEntryIds(entryIds).map((ids) => ipc.library.availability(ids))),
+  const availabilityQs = useQueries({
+    queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
+      chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
+        queryKey: ["library", "availability", ids],
+        queryFn: async () => await ipc.library.availability(ids),
+        retry: false,
+        staleTime: 30_000,
+      })),
+    ),
   });
-  const entries = mergeLibraryAvailability(pageEntries, availabilityQ.data ?? []);
+  const entries = mergeLibraryAvailability(
+    pageEntries,
+    availabilityQs.flatMap((availabilityQ) => availabilityQ.data ?? []),
+  );
 
   return (
     <>
@@ -42,7 +49,7 @@ export function LibraryPage() {
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={getImageSrc}
         hasMore={libraryQ.hasNextPage}
-        isLoading={libraryQ.isLoading || availabilityQ.isLoading}
+        isLoading={libraryQ.isLoading || availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
         isLoadingMore={libraryQ.isFetchingNextPage}
         onAvailabilityFilterChange={setAvailabilityFilter}
         onDeleteEntry={setDeleteTarget}

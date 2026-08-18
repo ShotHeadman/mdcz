@@ -1,7 +1,9 @@
 import { rm, stat } from "node:fs/promises";
+import path from "node:path";
 import type { DesktopPersistenceService } from "@main/services/persistence";
+import { mapWithConcurrency } from "@main/utils/async";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath } from "@mdcz/media-store";
+import { assertInsideRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
@@ -15,8 +17,12 @@ import type {
 } from "@mdcz/shared/serverDtos";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
+const AVAILABILITY_CACHE_TTL_MS = 30_000;
+const AVAILABILITY_CONCURRENCY = 8;
 
 export class DesktopLibraryService {
+  private readonly availabilityCache = new Map<string, { available: boolean; expiresAt: number }>();
+
   constructor(private readonly persistenceService: DesktopPersistenceService) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
@@ -47,34 +53,40 @@ export class DesktopLibraryService {
       state.repositories.library.getEntriesByIds(input.ids),
     ]);
     const rootMap = new Map(roots.map((root) => [root.id, root]));
-    const checks = new Map<string, Promise<boolean>>();
-    const check = (root: MediaRoot | undefined, relativePath: string): Promise<boolean> | null => {
-      if (!root) {
-        return null;
+    const paths = new Map<string, { root: MediaRoot; relativePath: string }>();
+    for (const entry of records) {
+      const root = rootMap.get(entry.rootId);
+      if (root) {
+        paths.set(availabilityKey(root, entry.rootRelativePath), { root, relativePath: entry.rootRelativePath });
       }
-      const key = `${root.id}:${relativePath}`;
-      const existing = checks.get(key);
-      if (existing) {
-        return existing;
+      for (const file of entry.files) {
+        const fileRoot = rootMap.get(file.rootId);
+        if (fileRoot) {
+          paths.set(availabilityKey(fileRoot, file.rootRelativePath), {
+            root: fileRoot,
+            relativePath: file.rootRelativePath,
+          });
+        }
       }
-      const pending = this.checkAvailability(root, relativePath);
-      checks.set(key, pending);
-      return pending;
-    };
+    }
+    const availability = new Map(
+      await mapWithConcurrency([...paths.entries()], AVAILABILITY_CONCURRENCY, async ([key, pathInfo]) => [
+        key,
+        await this.checkAvailability(pathInfo.root, pathInfo.relativePath),
+      ]),
+    );
+    const resolveAvailability = (root: MediaRoot | undefined, relativePath: string): boolean | null =>
+      root ? (availability.get(availabilityKey(root, relativePath)) ?? false) : null;
 
     return {
-      entries: await Promise.all(
-        records.map(async (entry) => ({
-          id: entry.id,
-          available: await check(rootMap.get(entry.rootId), entry.rootRelativePath),
-          fileRefs: await Promise.all(
-            entry.files.map(async (file) => ({
-              id: file.id,
-              available: await check(rootMap.get(file.rootId), file.rootRelativePath),
-            })),
-          ),
+      entries: records.map((entry) => ({
+        id: entry.id,
+        available: resolveAvailability(rootMap.get(entry.rootId), entry.rootRelativePath),
+        fileRefs: entry.files.map((file) => ({
+          id: file.id,
+          available: resolveAvailability(rootMap.get(file.rootId), file.rootRelativePath),
         })),
-      ),
+      })),
     };
   }
 
@@ -102,7 +114,7 @@ export class DesktopLibraryService {
       const rootMap = new Map(roots.map((root) => [root.id, root]));
       const filePaths = new Set(
         entry.files
-          .map((file) => resolveAssetDisplayPath(rootMap, file.rootId, file.lastKnownPath ?? file.rootRelativePath))
+          .map((file) => resolveAssetDeletionPath(rootMap, file.rootId, file.lastKnownPath ?? file.rootRelativePath))
           .filter((filePath): filePath is string => typeof filePath === "string" && !isRemotePath(filePath)),
       );
       for (const filePath of filePaths) {
@@ -180,12 +192,20 @@ export class DesktopLibraryService {
     if (!root.enabled) {
       return false;
     }
+    const key = availabilityKey(root, relativePath);
+    const cached = this.availabilityCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.available;
+    }
+    let available = false;
     try {
       const stats = await stat(resolveRootRelativePath(root, relativePath));
-      return stats.isFile();
+      available = stats.isFile();
     } catch {
-      return false;
+      available = false;
     }
+    this.availabilityCache.set(key, { available, expiresAt: Date.now() + AVAILABILITY_CACHE_TTL_MS });
+    return available;
   }
 }
 
@@ -220,6 +240,28 @@ const resolveAssetDisplayPath = (
   const root = rootMap.get(rootId);
   return root ? resolveRootRelativePath(root, trimmed) : trimmed;
 };
+
+const resolveAssetDeletionPath = (
+  rootMap: ReadonlyMap<string, MediaRoot>,
+  rootId: string,
+  value: string | null | undefined,
+): string | null => {
+  const trimmed = value?.trim();
+  const root = rootMap.get(rootId);
+  if (!trimmed || !root || isRemotePath(trimmed)) {
+    return null;
+  }
+  try {
+    const candidate = isAbsoluteLocalPath(trimmed) ? path.resolve(trimmed) : resolveRootRelativePath(root, trimmed);
+    assertInsideRoot(root, candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
+};
+
+const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>
+  `${root.hostPath}\u0000${relativePath}`;
 
 const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
   if (!value) {

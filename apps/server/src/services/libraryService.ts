@@ -22,8 +22,12 @@ import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
+const AVAILABILITY_CACHE_TTL_MS = 30_000;
+const AVAILABILITY_CONCURRENCY = 8;
 
 export class LibraryService {
+  private readonly availabilityCache = new Map<string, { available: boolean; expiresAt: number }>();
+
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
@@ -66,34 +70,40 @@ export class LibraryService {
       state.repositories.library.getEntriesByIds(input.ids),
       this.loadRootMap(),
     ]);
-    const checks = new Map<string, Promise<boolean>>();
-    const check = (root: MediaRootDto | undefined, relativePath: string): Promise<boolean> | null => {
-      if (!root) {
-        return null;
+    const paths = new Map<string, { root: MediaRootDto; relativePath: string }>();
+    for (const entry of records) {
+      const root = rootMap.get(entry.rootId);
+      if (root) {
+        paths.set(availabilityKey(root, entry.rootRelativePath), { root, relativePath: entry.rootRelativePath });
       }
-      const key = `${root.id}:${relativePath}`;
-      const existing = checks.get(key);
-      if (existing) {
-        return existing;
+      for (const file of entry.files) {
+        const fileRoot = rootMap.get(file.rootId);
+        if (fileRoot) {
+          paths.set(availabilityKey(fileRoot, file.rootRelativePath), {
+            root: fileRoot,
+            relativePath: file.rootRelativePath,
+          });
+        }
       }
-      const pending = this.checkAvailability(root, relativePath);
-      checks.set(key, pending);
-      return pending;
-    };
+    }
+    const availability = new Map(
+      await mapWithConcurrency([...paths.entries()], AVAILABILITY_CONCURRENCY, async ([key, path]) => [
+        key,
+        await this.checkAvailability(path.root, path.relativePath),
+      ]),
+    );
+    const resolveAvailability = (root: MediaRootDto | undefined, relativePath: string): boolean | null =>
+      root ? (availability.get(availabilityKey(root, relativePath)) ?? false) : null;
 
     return {
-      entries: await Promise.all(
-        records.map(async (entry) => ({
-          id: entry.id,
-          available: await check(rootMap.get(entry.rootId), entry.rootRelativePath),
-          fileRefs: await Promise.all(
-            entry.files.map(async (file) => ({
-              id: file.id,
-              available: await check(rootMap.get(file.rootId), file.rootRelativePath),
-            })),
-          ),
+      entries: records.map((entry) => ({
+        id: entry.id,
+        available: resolveAvailability(rootMap.get(entry.rootId), entry.rootRelativePath),
+        fileRefs: entry.files.map((file) => ({
+          id: file.id,
+          available: resolveAvailability(rootMap.get(file.rootId), file.rootRelativePath),
         })),
-      ),
+      })),
     };
   }
 
@@ -262,14 +272,42 @@ export class LibraryService {
     if (!root.enabled) {
       return false;
     }
+    const key = availabilityKey(root, relativePath);
+    const cached = this.availabilityCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.available;
+    }
+    let available = false;
     try {
       const stats = await stat(resolveRootRelativePath(root, relativePath));
-      return stats.isFile();
+      available = stats.isFile();
     } catch {
-      return false;
+      available = false;
     }
+    this.availabilityCache.set(key, { available, expiresAt: Date.now() + AVAILABILITY_CACHE_TTL_MS });
+    return available;
   }
 }
+
+const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>
+  `${root.hostPath}\u0000${relativePath}`;
+
+const mapWithConcurrency = async <TItem, TResult>(
+  items: readonly TItem[],
+  concurrency: number,
+  mapper: (item: TItem) => Promise<TResult>,
+): Promise<TResult[]> => {
+  const outputs = new Array<TResult>(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      outputs[index] = await mapper(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return outputs;
+};
 
 const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
   if (!value) {
