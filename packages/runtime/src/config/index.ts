@@ -204,6 +204,7 @@ export interface RuntimeConfigServiceOptions {
   onBeforeLoad?: () => Promise<void> | void;
   onAfterLoad?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
   onBeforeSave?: (configuration: Configuration) => Promise<void> | void;
+  onSaveError?: (error: unknown) => Promise<void> | void;
   onAfterSave?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
   mapValidationError?: (error: RuntimeConfigValidationError) => Error;
 }
@@ -248,6 +249,10 @@ export class RuntimeConfigService {
     return this.store.configPath;
   }
 
+  get configDirectory(): string {
+    return this.store.configDirectory;
+  }
+
   replaceStore(store: RuntimeConfigProfileStore): void {
     const previousDirectory = this.store.configDirectory;
     this.store = store;
@@ -279,11 +284,15 @@ export class RuntimeConfigService {
       directory: this.store.configDirectory,
       debounceMs: options.debounceMs,
       shouldReload: (fileName) => this.isWatchedFile(fileName),
-      reload: async () => {
+      reload: async (fileName) => {
         try {
+          const profileSwitch = fileName === RUNTIME_ACTIVE_PROFILE_META_FILE;
+          if (profileSwitch) {
+            await this.store.reloadActiveProfileName();
+          }
           const loaded = await this.store.reloadActiveProfile();
           this.configuration = await this.applyAfterLoad(loaded);
-          this.emitChange("watch");
+          this.emitChange(profileSwitch ? "switch" : "watch");
         } catch (error) {
           this.emitDiagnostic(this.classifyReloadError(error), error);
         }
@@ -328,9 +337,18 @@ export class RuntimeConfigService {
   async saveFull(configuration: Configuration): Promise<Configuration> {
     this.configuration = await this.runWithValidation(async () => {
       const parsed = parseRuntimeConfiguration(configuration);
-      await this.options.onBeforeSave?.(parsed);
-      const saved = await this.store.save(parsed);
-      return await this.applyAfterSave(saved);
+      let beforeSaveCompleted = false;
+      try {
+        await this.options.onBeforeSave?.(parsed);
+        beforeSaveCompleted = true;
+        const saved = await this.store.save(parsed);
+        return await this.applyAfterSave(saved);
+      } catch (error) {
+        if (beforeSaveCompleted) {
+          await this.options.onSaveError?.(error);
+        }
+        throw error;
+      }
     });
     this.emitChange("save");
     return this.configuration;
@@ -523,6 +541,11 @@ export class RuntimeConfigProfileStore {
 
   async reloadActiveProfile(): Promise<Configuration> {
     return await this.readConfigurationFile(this.getExistingProfilePath(this.activeProfileName));
+  }
+
+  async reloadActiveProfileName(): Promise<string> {
+    await this.loadActiveProfileName();
+    return this.activeProfileName;
   }
 
   async load(): Promise<Configuration> {

@@ -36,15 +36,15 @@ type CapabilityTypeCheck<Row extends (typeof SHARED_CAPABILITIES)[number]> =
       ? Equal<DesktopInput<Row["desktop"]>, ServerInput<Row["server"]>>
       : true
     : false;
-type CapabilityTypeChecks = [
-  CapabilityTypeCheck<(typeof SHARED_CAPABILITIES)[0]>,
-  CapabilityTypeCheck<(typeof SHARED_CAPABILITIES)[1]>,
-  CapabilityTypeCheck<(typeof SHARED_CAPABILITIES)[2]>,
-  CapabilityTypeCheck<(typeof SHARED_CAPABILITIES)[3]>,
-  CapabilityTypeCheck<(typeof SHARED_CAPABILITIES)[4]>,
-];
+type CapabilityTypeChecks = {
+  [Index in Exclude<keyof typeof SHARED_CAPABILITIES, keyof (readonly unknown[])>]: CapabilityTypeCheck<
+    (typeof SHARED_CAPABILITIES)[Index]
+  >;
+};
 
-const capabilityTypeChecks: CapabilityTypeChecks = [true, true, true, true, true];
+const capabilityTypeChecks: CapabilityTypeChecks = SHARED_CAPABILITIES.map(
+  () => true,
+) as unknown as CapabilityTypeChecks;
 
 describe("shared capability manifest", () => {
   it("has unique, executable overlap rows with behavior fixtures", () => {
@@ -54,9 +54,11 @@ describe("shared capability manifest", () => {
     for (const capability of SHARED_CAPABILITIES) {
       expect(SHARED_CAPABILITY_CONTRACTS).toHaveProperty(capability.inputContract);
       expect(SHARED_CAPABILITY_CONTRACTS).toHaveProperty(capability.outputContract);
-      expect(SHARED_CAPABILITY_BEHAVIOR_FIXTURES).toHaveProperty(capability.behaviorFixture);
+      const fixture = SHARED_CAPABILITY_BEHAVIOR_FIXTURES[capability.behaviorFixture];
+      expect(fixture.desktop).toBe(capability.desktop);
+      expect(fixture.server).toBe(capability.server);
     }
-    expect(capabilityTypeChecks.every(Boolean)).toBe(true);
+    expect(Object.values(capabilityTypeChecks).every(Boolean)).toBe(true);
   });
 
   it("keeps representative DTOs tied to both platform contracts", () => {

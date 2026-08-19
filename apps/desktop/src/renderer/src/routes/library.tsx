@@ -7,7 +7,7 @@ import {
   LibraryIndexView,
   mergeLibraryAvailability,
 } from "@mdcz/views/library";
-import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ export function LibraryPage() {
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
   const [deleteMediaFiles, setDeleteMediaFiles] = useState(false);
+  const queryClient = useQueryClient();
   const libraryQ = useInfiniteQuery({
     queryKey: ["library", "list", query],
     queryFn: ({ pageParam }) => ipc.library.list({ cursor: pageParam, query, limit: 100 }),
@@ -69,6 +70,7 @@ export function LibraryPage() {
         onQueryChange={setQuery}
         onRefresh={() => {
           void libraryQ.refetch();
+          void queryClient.invalidateQueries({ queryKey: ["library", "availability"] });
         }}
         query={query}
         total={libraryQ.data?.pages[0]?.total ?? 0}
@@ -89,6 +91,7 @@ export function LibraryPage() {
             setDeleteTarget(null);
             setDeleteMediaFiles(false);
             void libraryQ.refetch();
+            void queryClient.invalidateQueries({ queryKey: ["library", "availability"] });
           });
         }}
       />

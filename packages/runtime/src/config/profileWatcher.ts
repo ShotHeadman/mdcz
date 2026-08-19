@@ -6,7 +6,7 @@ export interface RuntimeProfileWatcherOptions {
   directory: string;
   debounceMs?: number;
   shouldReload: (fileName: string | null) => boolean;
-  reload: () => Promise<void>;
+  reload: (fileName: string | null) => Promise<void>;
   onDiagnostic?: (kind: "watch-error" | "read-error", error: unknown) => void;
 }
 
@@ -27,7 +27,7 @@ export class RuntimeProfileWatcher {
       this.watcher = watch(this.options.directory, { persistent: false }, (_eventType, fileName) => {
         const name = fileName == null ? null : String(fileName);
         if (!this.options.shouldReload(name)) return;
-        this.scheduleReload();
+        this.scheduleReload(name);
       });
       this.watcher.on("error", (error) => this.options.onDiagnostic?.("watch-error", error));
     } catch (error) {
@@ -54,14 +54,14 @@ export class RuntimeProfileWatcher {
     await this.reloadChain;
   }
 
-  private scheduleReload(): void {
+  private scheduleReload(fileName: string | null): void {
     if (this.stopped) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
       this.reloadChain = this.reloadChain
         .then(async () => {
-          if (!this.stopped) await this.options.reload();
+          if (!this.stopped) await this.options.reload(fileName);
         })
         .catch((error) => this.options.onDiagnostic?.("read-error", error));
     }, this.options.debounceMs ?? 250);

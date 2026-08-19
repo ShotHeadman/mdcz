@@ -1,8 +1,17 @@
 DELETE FROM `scan_results`
-WHERE rowid NOT IN (
-  SELECT MIN(rowid)
-  FROM `scan_results`
-  GROUP BY `task_id`, `root_id`, `relative_path`
+WHERE EXISTS (
+  SELECT 1
+  FROM `scan_results` AS newer
+  WHERE newer.`task_id` = `scan_results`.`task_id`
+    AND newer.`root_id` = `scan_results`.`root_id`
+    AND newer.`relative_path` = `scan_results`.`relative_path`
+    AND (
+      COALESCE(newer.`modified_at`, -1) > COALESCE(`scan_results`.`modified_at`, -1)
+      OR (
+        COALESCE(newer.`modified_at`, -1) = COALESCE(`scan_results`.`modified_at`, -1)
+        AND newer.rowid > `scan_results`.rowid
+      )
+    )
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `scan_results_task_root_path_idx` ON `scan_results` (`task_id`, `root_id`, `relative_path`);

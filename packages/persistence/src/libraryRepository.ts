@@ -644,34 +644,53 @@ export class LibraryRepository {
 
 const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
   const filters: SQL[] = [];
+  const activeRootExists = sql`(
+    EXISTS (
+      SELECT 1
+      FROM library_item_files AS active_root_file
+      INNER JOIN media_roots AS active_root ON active_root.id = active_root_file.root_id
+      WHERE active_root_file.item_id = ${libraryItems.id}
+        AND active_root.deleted = 0
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM library_item_files AS root_presence
+      INNER JOIN media_roots AS any_root ON any_root.id = root_presence.root_id
+      WHERE root_presence.item_id = ${libraryItems.id}
+    )
+  )`;
+  filters.push(activeRootExists);
   const rootId = input.rootId?.trim();
   if (rootId) {
     filters.push(
       sql`EXISTS (
         SELECT 1
         FROM library_item_files AS root_file
+        LEFT JOIN media_roots AS root ON root.id = root_file.root_id
         WHERE root_file.item_id = ${libraryItems.id}
           AND root_file.root_id = ${rootId}
+          AND (root.id IS NULL OR root.deleted = 0)
       )`,
     );
   }
 
   const query = input.query?.trim().toLowerCase();
   if (query) {
-    const pattern = `%${query}%`;
+    const pattern = `%${escapeLikePattern(query)}%`;
+    const escapeClause = sql`ESCAPE '\\'`;
     filters.push(
       sql`(
-        lower(coalesce(${libraryItems.title}, '')) LIKE ${pattern}
-        OR lower(coalesce(${libraryItems.number}, '')) LIKE ${pattern}
-        OR lower(coalesce(${libraryItems.mediaIdentity}, '')) LIKE ${pattern}
-        OR lower(coalesce(${libraryItems.actorsJson}, '')) LIKE ${pattern}
+        lower(coalesce(${libraryItems.title}, '')) LIKE ${pattern} ${escapeClause}
+        OR lower(coalesce(${libraryItems.number}, '')) LIKE ${pattern} ${escapeClause}
+        OR lower(coalesce(${libraryItems.mediaIdentity}, '')) LIKE ${pattern} ${escapeClause}
+        OR lower(coalesce(${libraryItems.actorsJson}, '')) LIKE ${pattern} ${escapeClause}
         OR EXISTS (
           SELECT 1
           FROM library_item_files AS search_file
           WHERE search_file.item_id = ${libraryItems.id}
             AND (
-              lower(search_file.file_name) LIKE ${pattern}
-              OR lower(search_file.root_relative_path) LIKE ${pattern}
+              lower(search_file.file_name) LIKE ${pattern} ${escapeClause}
+              OR lower(search_file.root_relative_path) LIKE ${pattern} ${escapeClause}
             )
         )
         OR EXISTS (
@@ -680,7 +699,7 @@ const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "r
           INNER JOIN media_roots AS display_root ON display_root.id = display_file.root_id
           WHERE display_file.item_id = ${libraryItems.id}
             AND display_root.deleted = 0
-            AND lower(display_root.display_name) LIKE ${pattern}
+            AND lower(display_root.display_name) LIKE ${pattern} ${escapeClause}
         )
       )`,
     );
@@ -688,6 +707,8 @@ const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "r
 
   return filters.length > 0 ? and(...filters) : undefined;
 };
+
+const escapeLikePattern = (value: string): string => value.replaceAll(/[\\%_]/gu, (character) => `\\${character}`);
 
 const groupByItem = <TRecord extends { itemId: string }>(records: TRecord[]): Map<string, TRecord[]> => {
   const grouped = new Map<string, TRecord[]>();

@@ -33,19 +33,46 @@ export class ConfigManager extends EventEmitter {
   private initializePromise: Promise<void> | null = null;
 
   private configDirectory = DEFAULT_CONFIG_DIRECTORY;
+  private saveSnapshot: {
+    configuration: Configuration;
+    configDirectory: string;
+    activeProfileName: string | undefined;
+  } | null = null;
 
   private readonly config = new RuntimeConfigService({
     store: this.createStore(),
     onBeforeSave: (configuration) => {
+      this.saveSnapshot = {
+        configuration: this.configuration,
+        configDirectory: this.configDirectory,
+        activeProfileName: this.activeProfileName,
+      };
       this.configuration = configuration;
       this.syncConfigDirectoryFromConfiguration();
       this.config.replaceStore(this.createStore());
     },
+    onSaveError: () => {
+      const snapshot = this.saveSnapshot;
+      if (!snapshot) return;
+      this.configuration = snapshot.configuration;
+      this.configDirectory = snapshot.configDirectory;
+      this.activeProfileName = snapshot.activeProfileName;
+      this.config.replaceStore(this.createStore());
+      this.computedConfig.invalidate();
+      this.saveSnapshot = null;
+    },
     onAfterSave: async (configuration) => {
       await this.persistConfigDirectory();
-      return this.applyLoadedConfiguration(configuration);
+      const applied = this.applyLoadedConfiguration(configuration);
+      await this.rebindRuntimeStoreIfNeeded();
+      this.saveSnapshot = null;
+      return applied;
     },
-    onAfterLoad: (configuration) => this.applyLoadedConfiguration(configuration),
+    onAfterLoad: async (configuration) => {
+      const applied = this.applyLoadedConfiguration(configuration);
+      await this.rebindRuntimeStoreIfNeeded();
+      return applied;
+    },
     mapValidationError: (error) => new ConfigValidationError(error.message, error.fields, error.fieldErrors),
   });
 
@@ -54,8 +81,9 @@ export class ConfigManager extends EventEmitter {
   constructor() {
     super();
     this.config.onChange((event) => {
-      if (event.source !== "watch") return;
+      if (event.source !== "watch" && event.source !== "switch") return;
       this.applyLoadedConfiguration(event.configuration);
+      void this.rebindRuntimeStoreIfNeeded();
       this.notify();
     });
     this.config.onDiagnostic((event) => {
@@ -282,6 +310,13 @@ export class ConfigManager extends EventEmitter {
     this.syncConfigDirectoryFromConfiguration();
     this.computedConfig.invalidate();
     return this.configuration;
+  }
+
+  private async rebindRuntimeStoreIfNeeded(): Promise<void> {
+    const expectedDirectory = this.getDataDirectory();
+    if (this.config.configDirectory !== expectedDirectory) {
+      this.config.replaceStore(this.createStore());
+    }
   }
 }
 

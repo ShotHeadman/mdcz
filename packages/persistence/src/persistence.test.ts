@@ -90,14 +90,14 @@ describe("MediaRootRepository", () => {
       const insert = database.sqlite.prepare(
         "INSERT INTO scan_results (task_id, root_id, relative_path, size, modified_at) VALUES (?, ?, ?, ?, ?)",
       );
-      insert.run("task-1", "root-1", "ABC-001.mp4", 10, null);
-      insert.run("task-1", "root-1", "ABC-001.mp4", 20, null);
+      insert.run("task-1", "root-1", "ABC-001.mp4", 10, 100);
+      insert.run("task-1", "root-1", "ABC-001.mp4", 20, 200);
 
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT task_id, root_id, relative_path FROM scan_results").all()).toEqual([
-        { task_id: "task-1", root_id: "root-1", relative_path: "ABC-001.mp4" },
-      ]);
+      expect(
+        database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
+      ).toEqual([{ task_id: "task-1", root_id: "root-1", relative_path: "ABC-001.mp4", size: 20, modified_at: 200 }]);
       expect(() => insert.run("task-1", "root-1", "ABC-001.mp4", 30, null)).toThrow(/UNIQUE constraint failed/u);
     } finally {
       await migrations.cleanup();
@@ -315,6 +315,42 @@ describe("LibraryRepository", () => {
     });
     await expect(repository.listEntriesPage({ limit: 10, rootId: "root-2" })).resolves.toMatchObject({
       entries: [expect.objectContaining({ id: "entry-2" })],
+      total: 1,
+    });
+  });
+
+  it("filters deleted roots before pagination and treats LIKE metacharacters literally", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    const roots = new MediaRootRepository(database);
+    const now = new Date("2026-05-01T00:00:00.000Z");
+    await roots.upsert(createMediaRoot({ id: "active-root", displayName: "Active", hostPath: "/active", now }));
+    await roots.upsert({
+      ...createMediaRoot({ id: "deleted-root", displayName: "Deleted", hostPath: "/deleted", now }),
+      deleted: true,
+    });
+    await repository.upsertEntry({
+      id: "active-entry",
+      rootId: "active-root",
+      rootRelativePath: "100%-title.mp4",
+      title: "100% title",
+      createdAt: now,
+    });
+    await repository.upsertEntry({
+      id: "deleted-entry",
+      rootId: "deleted-root",
+      rootRelativePath: "deleted.mp4",
+      title: "Deleted title",
+      createdAt: new Date(now.getTime() - 1),
+    });
+
+    await expect(repository.listEntriesPage({ limit: 1 })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "active-entry" })],
+      total: 1,
+      hasMore: false,
+    });
+    await expect(repository.listEntriesPage({ limit: 10, query: "%" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "active-entry" })],
       total: 1,
     });
   });

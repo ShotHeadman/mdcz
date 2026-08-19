@@ -7,6 +7,10 @@ const collectStaticLeafPaths = (value: unknown, prefix = ""): string[] => {
     return prefix ? [prefix] : [];
   }
 
+  if (Object.keys(value).length === 0) {
+    return prefix ? [prefix] : [];
+  }
+
   return Object.entries(value).flatMap(([key, child]) =>
     collectStaticLeafPaths(child, prefix ? `${prefix}.${key}` : key),
   );
@@ -26,6 +30,9 @@ describe("settings registry and configuration schema", () => {
     );
     expect(diff.staleExemptions, `Stale settings exemptions: ${diff.staleExemptions.join(", ")}`).toEqual([]);
     expect(SETTINGS_SCHEMA_EXEMPTIONS.every((entry) => entry.reason.length > 0)).toBe(true);
+    expect(SETTINGS_SCHEMA_EXEMPTIONS).toContainEqual(
+      expect.objectContaining({ path: "personSync.actorAliases", kind: "dynamic-record" }),
+    );
   });
 
   it("reports each drift category by exact key", () => {

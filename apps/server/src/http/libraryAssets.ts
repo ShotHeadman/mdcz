@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import {
   normalizeRootRelativePath,
@@ -33,6 +33,55 @@ const sharpFormats: Record<string, keyof sharp.FormatEnum> = {
 };
 
 const pendingVariants = new Map<string, Promise<void>>();
+const ASSET_CACHE_MAX_BYTES = 512 * 1024 * 1024;
+const ASSET_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const cacheCleanupState = new Map<string, { lastRun: number; promise: Promise<void> | null }>();
+
+const cleanupAssetCache = async (cacheDirectory: string): Promise<void> => {
+  let entries: Array<{ path: string; size: number; mtimeMs: number }> = [];
+  try {
+    entries = await Promise.all(
+      (await readdir(cacheDirectory, { withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map(async (entry) => {
+          const filePath = path.join(cacheDirectory, entry.name);
+          const file = await stat(filePath);
+          return { path: filePath, size: file.size, mtimeMs: file.mtimeMs };
+        }),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+    return;
+  }
+
+  const cutoff = Date.now() - ASSET_CACHE_TTL_MS;
+  const retained = entries
+    .filter((entry) => entry.mtimeMs >= cutoff)
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  let total = 0;
+  for (const entry of retained) {
+    if (total + entry.size > ASSET_CACHE_MAX_BYTES) {
+      await unlink(entry.path).catch(() => undefined);
+      continue;
+    }
+    total += entry.size;
+  }
+  for (const entry of entries.filter((candidate) => candidate.mtimeMs < cutoff)) {
+    await unlink(entry.path).catch(() => undefined);
+  }
+};
+
+const scheduleCacheCleanup = (cacheDirectory: string): void => {
+  const state = cacheCleanupState.get(cacheDirectory) ?? { lastRun: 0, promise: null };
+  if (Date.now() - state.lastRun < 5 * 60 * 1000 || state.promise) return;
+  state.lastRun = Date.now();
+  state.promise = cleanupAssetCache(cacheDirectory)
+    .catch(() => undefined)
+    .finally(() => {
+      state.promise = null;
+    });
+  cacheCleanupState.set(cacheDirectory, state);
+};
 
 const toStatusCode = (error: unknown): number => {
   if (error instanceof StorageError) {
@@ -155,6 +204,8 @@ const setRepresentationHeaders = (
 };
 
 export const registerLibraryAssets = (fastify: FastifyInstance, services: ServerServices): void => {
+  const cacheDirectory = path.join(services.config.runtimePaths.dataDir, "library-asset-cache");
+  scheduleCacheCleanup(cacheDirectory);
   fastify.get("/api/library/assets/:rootId/*", async (request: FastifyRequest, reply) => {
     try {
       services.auth.assertAuthenticated(getBearerToken(request));
@@ -222,6 +273,7 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
         `${key}${variant.extension}`,
       );
       await ensureVariant(sourcePath, cachePath, variant.width, variant.format);
+      scheduleCacheCleanup(cacheDirectory);
       const etag = `"${key}"`;
       const contentType = imageContentTypes[variant.extension] ?? sourceContentType;
       if (setRepresentationHeaders(request, reply, { contentType, etag, modifiedAt: source.modifiedAt })) {

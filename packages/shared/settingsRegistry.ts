@@ -541,6 +541,11 @@ export interface SettingsSchemaExemption {
 }
 
 export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
+  {
+    path: "personSync.actorAliases",
+    kind: "dynamic-record",
+    reason: "Actor aliases are user-defined keys and cannot be represented as static registry leaves.",
+  },
   { path: "ui.language", kind: "internal", reason: "Language selection is not exposed by the current settings UI." },
   { path: "ui.theme", kind: "internal", reason: "Theme is controlled by the application shell." },
   {

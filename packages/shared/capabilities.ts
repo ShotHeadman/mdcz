@@ -23,12 +23,15 @@ export const SHARED_CAPABILITY_CONTRACTS = {
 } as const;
 
 export const SHARED_CAPABILITY_BEHAVIOR_FIXTURES = {
-  "config-defaults": true,
-  "crawler-connectivity-probe": true,
-  "library-availability": true,
-  "library-list-pagination": true,
-  "network-cookie-readiness": true,
-} as const;
+  "config-defaults": { desktop: IpcChannel.Config_GetDefaults, server: "config.defaults" },
+  "crawler-connectivity-probe": {
+    desktop: IpcChannel.Crawler_ProbeSiteConnectivity,
+    server: "crawler.probeSiteConnectivity",
+  },
+  "library-availability": { desktop: IpcChannel.Library_Availability, server: "library.availability" },
+  "library-list-pagination": { desktop: IpcChannel.Library_List, server: "library.list" },
+  "network-cookie-readiness": { desktop: IpcChannel.Network_CheckCookies, server: "network.checkCookies" },
+} as const satisfies Record<string, { desktop: keyof IpcRouterContract; server: ServerCapabilityPath }>;
 
 export interface SharedCapability {
   id: string;
