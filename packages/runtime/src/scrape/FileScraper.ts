@@ -1,5 +1,5 @@
 import type { ScrapeResult } from "@mdcz/shared/types";
-import type { RuntimeActorImageService } from "./actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationService, ManualScrapeOptions } from "./aggregation";
 import type { FileOrganizer } from "./FileOrganizer";
 import type { NfoGenerator } from "./nfo";
@@ -11,7 +11,7 @@ export interface FileScraperDependencies {
   nfoGenerator: NfoGenerator;
   fileOrganizer: FileOrganizer;
   actorImageService?: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
 }
 
 export type ScrapeExecutionMode = "single" | "batch";

@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeResultRecord, TaskRecord, TaskRecordStatus } from "@mdcz/persistence";
@@ -64,7 +64,7 @@ import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
-import { ServerFileActionAdapter, ServerNfoAdapter, ServerPosterCropAdapter } from "./scrapeAdapters";
+import { ServerNfoAdapter, ServerPosterCropAdapter } from "./scrapeAdapters";
 
 const recoverableTaskStatuses = new Set<TaskRecordStatus>(["queued", "running", "paused", "stopping", "failed"]);
 const recoverableResultStatuses = new Set<ScrapeResultRecord["status"]>(["pending", "processing", "failed"]);
@@ -81,7 +81,6 @@ export class ScrapeService {
   private readonly posterCropService = new PosterCropService();
   private readonly nfoAdapter: ServerNfoAdapter;
   private readonly posterCropAdapter: ServerPosterCropAdapter;
-  private readonly fileActionAdapter: ServerFileActionAdapter;
   private readonly runtime: MountedRootScrapeRuntime;
   private readonly runner: RuntimeTaskQueueRunner<TaskRecord>;
 
@@ -94,8 +93,12 @@ export class ScrapeService {
     mappingStore?: TranslationMappingStore,
   ) {
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, this.nfoGenerator);
-    this.posterCropAdapter = new ServerPosterCropAdapter(this.mediaRoots, this.config, this.posterCropService);
-    this.fileActionAdapter = new ServerFileActionAdapter(this.mediaRoots);
+    this.posterCropAdapter = new ServerPosterCropAdapter(
+      this.mediaRoots,
+      this.config,
+      this.posterCropService,
+      (result) => this.resolveMetadataVideoPath(result),
+    );
     this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
     this.runner = new RuntimeTaskQueueRunner({
       getNextTask: async () => await (await this.persistence.getState()).repositories.tasks.nextQueued("scrape"),
@@ -536,7 +539,7 @@ export class ScrapeService {
     if (record.status !== "success" || !record.outputRelativePath) {
       throw new Error("Poster editing requires a successful scrape result with local output");
     }
-    return await this.posterCropAdapter.session(record, (result) => this.resolveMetadataVideoPath(result));
+    return await this.posterCropAdapter.session(record);
   }
 
   async posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
@@ -545,11 +548,13 @@ export class ScrapeService {
     if (record.status !== "success" || !record.outputRelativePath) {
       throw new Error("Poster editing requires a successful scrape result with local output");
     }
-    return await this.posterCropAdapter.save(record, input, (result) => this.resolveMetadataVideoPath(result));
+    return await this.posterCropAdapter.save(record, input);
   }
 
   async deleteFile(input: FileActionInput): Promise<FileActionResponse> {
-    return await this.fileActionAdapter.delete(input);
+    const root = await this.mediaRoots.getActiveRoot(input.rootId);
+    await rm(resolveRootRelativePath(root, input.relativePath), { force: true });
+    return { ok: true, rootId: input.rootId, relativePath: input.relativePath };
   }
 
   private drain(): void {

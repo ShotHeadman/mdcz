@@ -50,7 +50,7 @@ export class DesktopLibraryService {
     const state = await this.persistenceService.getState();
     const [roots, records] = await Promise.all([
       state.repositories.mediaRoots.list(),
-      state.repositories.library.getEntriesByIds(input.ids),
+      state.repositories.library.getAvailabilityEntriesByIds(input.ids),
     ]);
     const rootMap = new Map(roots.map((root) => [root.id, root]));
     const paths = new Map<string, { root: MediaRoot; relativePath: string }>();

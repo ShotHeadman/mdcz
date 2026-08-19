@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
-import { valuesEqual } from "../settings/useAutoSaveField";
+import { valuesEqual } from "../settings/autoSaveUtils";
 
 type BufferedField = ControllerRenderProps<FieldValues, string>;
 

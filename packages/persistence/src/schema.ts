@@ -1,15 +1,19 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const mediaRoots = sqliteTable("media_roots", {
-  id: text("id").primaryKey(),
-  displayName: text("display_name").notNull(),
-  hostPath: text("host_path").notNull(),
-  rootType: text("root_type").notNull(),
-  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-  deleted: integer("deleted", { mode: "boolean" }).notNull().default(false),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+export const mediaRoots = sqliteTable(
+  "media_roots",
+  {
+    id: text("id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    hostPath: text("host_path").notNull(),
+    rootType: text("root_type").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    deleted: integer("deleted", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => ({ activeLookup: index("media_roots_deleted_idx").on(table.deleted, table.enabled) }),
+);
 
 export const taskRecords = sqliteTable(
   "task_records",

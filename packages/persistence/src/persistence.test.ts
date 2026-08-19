@@ -51,6 +51,7 @@ describe("MediaRootRepository", () => {
         "library_item_files_item_idx",
         "library_item_files_root_path_idx",
         "library_items_source_task_idx",
+        "media_roots_deleted_idx",
         "scan_results_task_root_path_idx",
         "scrape_results_task_path_idx",
         "task_events_task_created_at_idx",
@@ -479,6 +480,9 @@ describe("TaskRepository", () => {
         rootId: "root-1",
         results: [duplicate, duplicate],
       }),
-    ).rejects.toThrow(/UNIQUE constraint failed/u);
+    ).rejects.toMatchObject({
+      code: persistenceErrorCodes.ConstraintViolation,
+      message: "Duplicate scan result path for task task-1: ABC-123.mp4",
+    });
   });
 });

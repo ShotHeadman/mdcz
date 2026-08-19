@@ -1,0 +1,17 @@
+name: Setup pnpm workspace
+description: Install the pinned toolchain and restore the pnpm store
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@v4
+    - name: Get pnpm store directory
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: pnpm-store-${{ runner.os }}-
+    - run: pnpm install --frozen-lockfile
+      shell: bash

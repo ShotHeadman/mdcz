@@ -1,11 +1,7 @@
 import { stat } from "node:fs/promises";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
-import {
-  createRuntimeLibraryOverview,
-  getLatestLibraryEntryTimestamp,
-  type RuntimeLibraryEntrySummaryInput,
-} from "@mdcz/runtime/library";
+import { createRecentAcquisitionsFromEntries, type RuntimeLibraryEntrySummaryInput } from "@mdcz/runtime/library";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
   CrawlerDataDto,
@@ -37,10 +33,6 @@ export class LibraryService {
     return await this.listDtos(input);
   }
 
-  async search(input: LibraryListInput = {}): Promise<LibraryListResponse> {
-    return await this.list(input);
-  }
-
   async detail(id: string): Promise<LibraryDetailResponse> {
     const state = await this.persistence.getState();
     const [entry, rootMap] = await Promise.all([state.repositories.library.getEntryById(id), this.loadRootMap()]);
@@ -67,7 +59,7 @@ export class LibraryService {
   async availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse> {
     const state = await this.persistence.getState();
     const [records, rootMap] = await Promise.all([
-      state.repositories.library.getEntriesByIds(input.ids),
+      state.repositories.library.getAvailabilityEntriesByIds(input.ids),
       this.loadRootMap(),
     ]);
     const paths = new Map<string, { root: MediaRootDto; relativePath: string }>();
@@ -129,26 +121,36 @@ export class LibraryService {
 
   async overview(): Promise<OverviewSummaryResponse> {
     const state = await this.persistence.getState();
-    const [latestOutput, roots, records] = await Promise.all([
+    const [latestOutput, roots, summary] = await Promise.all([
       state.repositories.library.latestScrapeOutput(),
       this.mediaRoots.list(),
-      state.repositories.library.listEntries(),
+      state.repositories.library.getOverviewSummary(8),
     ]);
     const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
-    const entries = records.filter((entry) => rootMap.has(entry.rootId));
+    const entries = summary.recentEntries.filter((entry) => rootMap.has(entry.rootId));
     const runtimeEntries = entries.map(toRuntimeLibraryEntrySummaryInput);
-    const latestEntryTimestamp = getLatestLibraryEntryTimestamp(runtimeEntries);
-    const overview = createRuntimeLibraryOverview({
-      entries: runtimeEntries,
-      latestOutput,
-      now: latestEntryTimestamp ?? Date.now(),
-      recentLimit: 8,
-    });
-    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
-    const outputAt = latestOutput ? overview.output.scannedAt : latestEntryTimestamp;
+    const recent = createRecentAcquisitionsFromEntries(runtimeEntries, 8);
+    const latestEntryTimestamp = summary.latestEntryTimestamp
+      ? summary.latestEntryTimestamp instanceof Date
+        ? summary.latestEntryTimestamp
+        : new Date(Number(summary.latestEntryTimestamp))
+      : null;
+    const output = latestOutput
+      ? {
+          fileCount: latestOutput.fileCount,
+          totalBytes: latestOutput.totalBytes,
+          outputAt: latestOutput.completedAt.toISOString(),
+          rootPath: latestOutput.outputDirectory,
+        }
+      : {
+          fileCount: summary.fileCount,
+          totalBytes: summary.totalBytes,
+          outputAt: latestEntryTimestamp?.toISOString() ?? null,
+          rootPath: null,
+        };
     const recentAcquisitions = await Promise.all(
-      overview.recentAcquisitions.map(async (entry) => {
-        const record = entryById.get(entry.id ?? "");
+      recent.map(async (entry) => {
+        const record = entries.find((candidate) => candidate.id === entry.id);
         const root = record ? rootMap.get(record.rootId) : undefined;
         return {
           id: entry.id ?? "",
@@ -166,10 +168,10 @@ export class LibraryService {
 
     return {
       output: {
-        fileCount: overview.output.fileCount,
-        totalBytes: overview.output.totalBytes,
-        outputAt: outputAt ? new Date(outputAt).toISOString() : null,
-        rootPath: overview.output.rootPath,
+        fileCount: output.fileCount,
+        totalBytes: output.totalBytes,
+        outputAt: output.outputAt,
+        rootPath: output.rootPath,
       },
       recentAcquisitions,
     };
@@ -320,7 +322,21 @@ const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
   }
 };
 
-const toRuntimeLibraryEntrySummaryInput = (entry: LibraryEntryRecord): RuntimeLibraryEntrySummaryInput => ({
+const toRuntimeLibraryEntrySummaryInput = (
+  entry: Pick<
+    LibraryEntryRecord,
+    | "actors"
+    | "createdAt"
+    | "fileName"
+    | "hiddenFromRecentAt"
+    | "id"
+    | "lastKnownPath"
+    | "number"
+    | "size"
+    | "thumbnailPath"
+    | "title"
+  >,
+): RuntimeLibraryEntrySummaryInput => ({
   id: entry.id,
   number: entry.number,
   fileName: entry.fileName,

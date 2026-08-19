@@ -18,6 +18,9 @@ catalogs:
     react-dom:
       specifier: ^19.2.4
       version: 19.2.5
+    zustand:
+      specifier: ^5.0.12
+      version: 5.0.12
 
 importers:
 
@@ -235,7 +238,7 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       zustand:
-        specifier: ^5.0.11
+        specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     optionalDependencies:
       '@img/sharp-darwin-arm64':
@@ -381,7 +384,7 @@ importers:
         specifier: ^3.4.0
         version: 3.5.0
       zustand:
-        specifier: ^5.0.11
+        specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     devDependencies:
       '@tailwindcss/postcss':
@@ -535,7 +538,7 @@ importers:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       zustand:
-        specifier: ^5.0.9
+        specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
 
 packages:

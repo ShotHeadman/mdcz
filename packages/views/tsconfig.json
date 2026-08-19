@@ -1,10 +1,18 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
+    "noEmit": false,
+    "outDir": "../../node_modules/.cache/typescript/views",
     "types": ["vite/client"],
-    "rootDir": "../.."
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../node_modules/.cache/typescript/views.tsbuildinfo"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "../shared/**/*.ts", "../ui/src/**/*.ts", "../ui/src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  "references": [{ "path": "../shared" }, { "path": "../ui" }]
 }

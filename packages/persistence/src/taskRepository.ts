@@ -237,6 +237,16 @@ export class TaskRepository {
   }
 
   async replaceScanResults(input: ReplaceScanResultsInput): Promise<void> {
+    const seenPaths = new Set<string>();
+    for (const result of input.results) {
+      if (seenPaths.has(result.relativePath)) {
+        throw new PersistenceError(
+          persistenceErrorCodes.ConstraintViolation,
+          `Duplicate scan result path for task ${input.taskId}: ${result.relativePath}`,
+        );
+      }
+      seenPaths.add(result.relativePath);
+    }
     const values = input.results.map((result) => ({
       taskId: input.taskId,
       rootId: input.rootId,

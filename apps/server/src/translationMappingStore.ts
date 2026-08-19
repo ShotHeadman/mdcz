@@ -11,7 +11,7 @@ export const resolveServerBundledMappingDirectory = (): string => {
   const candidates = [
     path.join(moduleDirectory, "resources", "mapping_table"),
     path.resolve(process.cwd(), "resources", "mapping_table"),
-    path.resolve(moduleDirectory, "../../desktop/resources/mapping_table"),
+    path.resolve(moduleDirectory, "../../../packages/runtime/resources/mapping_table"),
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
 };

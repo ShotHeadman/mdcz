@@ -220,7 +220,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
     search: protectedProcedure
       .input(libraryListInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.library.search(input)),
+      .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
     detail: protectedProcedure
       .input(libraryDetailInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.detail(input.id)),

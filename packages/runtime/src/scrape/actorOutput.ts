@@ -10,6 +10,21 @@ export interface RuntimeActorSourceHint {
   sourceUrl?: string;
 }
 
+export interface RuntimeActorSourceProvider {
+  lookup(
+    configuration: Configuration,
+    query: {
+      name: string;
+      aliases?: string[];
+      requiredField?: "photo_url";
+      sourceHints?: RuntimeActorSourceHint[];
+    },
+  ): Promise<{
+    profile: ActorProfile;
+    profileSources: Partial<Record<keyof ActorProfile, string>>;
+  }>;
+}
+
 export interface RuntimeActorImageService {
   prepareActorProfilesForMovie(
     configuration: Configuration,
@@ -18,7 +33,7 @@ export interface RuntimeActorImageService {
       actors: string[];
       actorProfiles?: ActorProfile[];
       actorPhotoBaseDir?: string;
-      actorSourceProvider?: unknown;
+      actorSourceProvider?: RuntimeActorSourceProvider;
       sourceHints?: RuntimeActorSourceHint[];
       signal?: AbortSignal;
     },

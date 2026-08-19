@@ -196,7 +196,20 @@ const setRepresentationHeaders = (
   reply.header("cache-control", "private, max-age=3600");
   reply.header("etag", input.etag);
   reply.header("last-modified", input.modifiedAt.toUTCString());
-  if (request.headers["if-none-match"] === input.etag) {
+  const ifNoneMatch = request.headers["if-none-match"];
+  const etagMatches =
+    typeof ifNoneMatch === "string" &&
+    ifNoneMatch
+      .split(",")
+      .map((candidate) => candidate.trim())
+      .some((candidate) => candidate === "*" || candidate.replace(/^W\//iu, "") === input.etag);
+  const ifModifiedSince = request.headers["if-modified-since"];
+  const modifiedSince = typeof ifModifiedSince === "string" ? Date.parse(ifModifiedSince) : Number.NaN;
+  const isNotModifiedSince =
+    ifNoneMatch === undefined &&
+    Number.isFinite(modifiedSince) &&
+    Math.floor(input.modifiedAt.getTime() / 1000) <= Math.floor(modifiedSince / 1000);
+  if (etagMatches || isNotModifiedSince) {
     reply.code(304).send();
     return true;
   }

@@ -5,6 +5,7 @@ import {
   mergeRuntimeActorSourceHints,
   type RuntimeActorImageService,
   type RuntimeActorSourceHint,
+  type RuntimeActorSourceProvider,
 } from "../actorOutput";
 import { throwIfAborted } from "../utils/abort";
 
@@ -62,7 +63,7 @@ export const prepareCrawlerDataForNfo = async (
   options: {
     movieDir: string;
     sourceVideoPath: string;
-    actorSourceProvider?: unknown;
+    actorSourceProvider?: RuntimeActorSourceProvider;
     sourceHints?: RuntimeActorSourceHint[];
     signal?: AbortSignal;
   },

@@ -66,6 +66,37 @@ describe("library asset HTTP representations", () => {
     expect(notModified.statusCode).toBe(304);
     expect(notModified.rawPayload).toHaveLength(0);
 
+    const weakOrMultiple = await fixture.fastify.inject({
+      method: "GET",
+      url: fixture.url,
+      headers: {
+        authorization: `Bearer ${fixture.token}`,
+        "if-none-match": `"unrelated", W/${response.headers.etag}`,
+      },
+    });
+    expect(weakOrMultiple.statusCode).toBe(304);
+
+    const notModifiedSince = await fixture.fastify.inject({
+      method: "GET",
+      url: fixture.url,
+      headers: {
+        authorization: `Bearer ${fixture.token}`,
+        "if-modified-since": response.headers["last-modified"],
+      },
+    });
+    expect(notModifiedSince.statusCode).toBe(304);
+
+    const etagTakesPrecedence = await fixture.fastify.inject({
+      method: "GET",
+      url: fixture.url,
+      headers: {
+        authorization: `Bearer ${fixture.token}`,
+        "if-modified-since": response.headers["last-modified"],
+        "if-none-match": '"unrelated"',
+      },
+    });
+    expect(etagTakesPrecedence.statusCode).toBe(200);
+
     const revised = await fixture.fastify.inject({
       method: "GET",
       url: `${fixture.url}?revision=crop-2`,

@@ -5,6 +5,15 @@ export interface ServerValidationPayload {
   fieldErrors: Record<string, string>;
 }
 
+export const valuesEqual = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -39,15 +48,6 @@ export function extractServerValidation(error: unknown): ServerValidationPayload
   }
 
   return { fields: [...mergedFields], fieldErrors };
-}
-
-export function valuesEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
-  }
 }
 
 function collectServerErrorPaths(errors: unknown, prefix = ""): string[] {

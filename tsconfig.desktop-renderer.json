@@ -11,12 +11,8 @@
     "apps/desktop/src/renderer/src/**/*.ts",
     "apps/desktop/src/renderer/src/**/*.tsx",
     "apps/desktop/src/renderer/src/**/*.d.ts",
-    "packages/runtime/src/types/vendor.d.ts",
-    "packages/shared/**/*.ts",
-    "packages/ui/src/**/*.ts",
-    "packages/ui/src/**/*.tsx",
-    "packages/views/src/**/*.ts",
-    "packages/views/src/**/*.tsx"
+    "packages/runtime/src/types/vendor.d.ts"
   ],
-  "exclude": ["packages/**/*.test.ts"]
+  "exclude": ["packages/**/*.test.ts"],
+  "references": [{ "path": "./packages/shared" }, { "path": "./packages/ui" }, { "path": "./packages/views" }]
 }

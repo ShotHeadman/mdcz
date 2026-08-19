@@ -119,6 +119,35 @@ export interface LibraryEntriesPage {
   total: number;
 }
 
+export interface LibraryAvailabilityEntryRecord {
+  id: string;
+  rootId: string;
+  rootRelativePath: string;
+  files: LibraryItemFileRecord[];
+}
+
+export interface LibraryOverviewEntryRecord {
+  id: string;
+  rootId: string;
+  rootRelativePath: string;
+  fileName: string;
+  size: number;
+  number: string | null;
+  title: string | null;
+  actors: string[];
+  thumbnailPath: string | null;
+  lastKnownPath: string | null;
+  createdAt: Date;
+  hiddenFromRecentAt: Date | null;
+}
+
+export interface LibraryOverviewSummary {
+  fileCount: number;
+  totalBytes: number;
+  latestEntryTimestamp: Date | null;
+  recentEntries: LibraryOverviewEntryRecord[];
+}
+
 export interface LibraryItemFileRecord {
   id: string;
   itemId: string;
@@ -263,6 +292,8 @@ const toScrapeResultRecord = (row: ScrapeResultRow): ScrapeResultRecord => ({
 });
 
 export class LibraryRepository {
+  private readonly listCountCache = new Map<string, { count: number; expiresAt: number }>();
+
   constructor(private readonly database: PersistenceDatabase) {}
 
   async upsertScrapeOutput(input: UpsertScrapeOutputInput): Promise<ScrapeOutputRecord> {
@@ -385,6 +416,7 @@ export class LibraryRepository {
       }
     });
     transaction();
+    this.invalidateListCounts();
     return await this.getEntryById(id);
   }
 
@@ -423,6 +455,7 @@ export class LibraryRepository {
       })
       .where(eq(libraryItemFiles.id, `${item.id}:primary`))
       .run();
+    this.invalidateListCounts();
     return await this.touchEntry(item.id, now);
   }
 
@@ -442,6 +475,7 @@ export class LibraryRepository {
       this.database.db.delete(libraryItems).where(inArray(libraryItems.id, ids)).run();
     });
     transaction();
+    this.invalidateListCounts();
   }
 
   async deleteEntry(id: string): Promise<void> {
@@ -452,6 +486,7 @@ export class LibraryRepository {
       this.database.db.delete(libraryItems).where(eq(libraryItems.id, id)).run();
     });
     transaction();
+    this.invalidateListCounts();
   }
 
   async upsertScrapeResult(input: UpsertScrapeResultInput): Promise<ScrapeResultRecord> {
@@ -555,6 +590,29 @@ export class LibraryRepository {
     });
   }
 
+  async getAvailabilityEntriesByIds(ids: string[]): Promise<LibraryAvailabilityEntryRecord[]> {
+    const normalizedIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    if (normalizedIds.length === 0) {
+      return [];
+    }
+    const rows = this.database.db
+      .select({ id: libraryItems.id })
+      .from(libraryItems)
+      .where(inArray(libraryItems.id, normalizedIds))
+      .all();
+    const filesByItem = await this.listFilesForItems(normalizedIds);
+    const rowById = new Map(rows.map((row) => [row.id, row]));
+    return normalizedIds.flatMap((id) => {
+      const row = rowById.get(id);
+      if (!row) return [];
+      const files = filesByItem.get(row.id) ?? [];
+      const primaryFile = files.find((file) => file.id === `${row.id}:primary`) ?? files[0];
+      return primaryFile
+        ? [{ id: row.id, rootId: primaryFile.rootId, rootRelativePath: primaryFile.rootRelativePath, files }]
+        : [];
+    });
+  }
+
   async listEntries(): Promise<LibraryEntryRecord[]> {
     const items = this.database.db.select().from(libraryItems).orderBy(desc(libraryItems.createdAt)).all();
     const ids = items.map((item) => item.id);
@@ -586,11 +644,6 @@ export class LibraryRepository {
     const entries = pageItems.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
-    const countRow = this.database.db
-      .select({ count: sql<number>`count(*)` })
-      .from(libraryItems)
-      .where(baseWhere)
-      .get();
     const lastItem = pageItems.at(-1);
 
     return {
@@ -603,7 +656,71 @@ export class LibraryRepository {
               id: lastItem.id,
             }
           : null,
-      total: Number(countRow?.count ?? 0),
+      total: this.getListCount(baseWhere, input),
+    };
+  }
+
+  async getOverviewSummary(recentLimit: number): Promise<LibraryOverviewSummary> {
+    const baseWhere = buildLibraryListWhere({});
+    const aggregate = this.database.db
+      .select({
+        fileCount: sql<number>`count(*)`,
+        totalBytes: sql<number>`coalesce(sum(${libraryItemFiles.size}), 0)`,
+        latestEntryTimestamp: sql<Date | null>`max(${libraryItems.createdAt})`,
+      })
+      .from(libraryItems)
+      .innerJoin(
+        libraryItemFiles,
+        and(
+          eq(libraryItemFiles.itemId, libraryItems.id),
+          sql`${libraryItemFiles.id} = ${libraryItems.id} || ':primary'`,
+        ),
+      )
+      .where(baseWhere)
+      .get();
+    const items = this.database.db
+      .select()
+      .from(libraryItems)
+      .where(and(baseWhere, sql`${libraryItems.hiddenFromRecentAt} IS NULL`))
+      .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
+      .limit(Math.max(1, Math.trunc(recentLimit)))
+      .all();
+    const itemIds = items.map((item) => item.id);
+    const [filesByItem, assetsByItem] = await Promise.all([
+      this.listFilesForItems(itemIds),
+      this.listAssetsForItems(itemIds),
+    ]);
+    return {
+      fileCount: Number(aggregate?.fileCount ?? 0),
+      totalBytes: Number(aggregate?.totalBytes ?? 0),
+      latestEntryTimestamp: aggregate?.latestEntryTimestamp ?? null,
+      recentEntries: items.flatMap((item) => {
+        const files = filesByItem.get(item.id) ?? [];
+        const primaryFile = files.find((file) => file.id === `${item.id}:primary`) ?? files[0];
+        const assets = assetsByItem.get(item.id) ?? [];
+        const thumbnail =
+          assets.find((asset) => asset.kind === "poster" && !isRemoteAssetUri(asset.uri)) ??
+          assets.find((asset) => asset.kind === "thumb" && !isRemoteAssetUri(asset.uri)) ??
+          assets.find((asset) => asset.kind === "poster" || asset.kind === "thumb");
+        return primaryFile
+          ? [
+              {
+                id: item.id,
+                rootId: primaryFile.rootId,
+                rootRelativePath: primaryFile.rootRelativePath,
+                fileName: primaryFile.fileName,
+                size: primaryFile.size,
+                number: item.number,
+                title: item.title,
+                actors: safeActors(item.actorsJson),
+                thumbnailPath: thumbnail?.uri ?? null,
+                lastKnownPath: primaryFile.lastKnownPath,
+                createdAt: item.createdAt,
+                hiddenFromRecentAt: item.hiddenFromRecentAt,
+              },
+            ]
+          : [];
+      }),
     };
   }
 
@@ -639,6 +756,23 @@ export class LibraryRepository {
             .all()
         : [];
     return groupByItem(rows.map(toLibraryItemAssetRecord));
+  }
+
+  private getListCount(baseWhere: SQL | undefined, input: Pick<ListLibraryEntriesInput, "query" | "rootId">): number {
+    const key = JSON.stringify([input.query?.trim().toLowerCase() ?? "", input.rootId?.trim() ?? ""]);
+    const cached = this.listCountCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.count;
+    }
+    const count = Number(
+      this.database.db.select({ count: sql<number>`count(*)` }).from(libraryItems).where(baseWhere).get()?.count ?? 0,
+    );
+    this.listCountCache.set(key, { count, expiresAt: Date.now() + 30_000 });
+    return count;
+  }
+
+  private invalidateListCounts(): void {
+    this.listCountCache.clear();
   }
 }
 
@@ -713,7 +847,9 @@ const escapeLikePattern = (value: string): string => value.replaceAll(/[\\%_]/gu
 const groupByItem = <TRecord extends { itemId: string }>(records: TRecord[]): Map<string, TRecord[]> => {
   const grouped = new Map<string, TRecord[]>();
   for (const record of records) {
-    grouped.set(record.itemId, [...(grouped.get(record.itemId) ?? []), record]);
+    const group = grouped.get(record.itemId) ?? [];
+    group.push(record);
+    grouped.set(record.itemId, group);
   }
   return grouped;
 };

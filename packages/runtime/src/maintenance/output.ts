@@ -1,6 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
-import type { RuntimeActorImageService } from "../scrape/actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import type { ImageAlternatives, SourceMap } from "../scrape/aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../scrape/download";
 import type { FileOrganizer, OrganizePlan } from "../scrape/FileOrganizer";
@@ -36,7 +36,7 @@ export const updateScrapeProgress = (
 
 export async function prepareOutputCrawlerData(input: {
   actorImageService: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
   config: Configuration;
   crawlerData: CrawlerData | undefined;
   enabled: boolean;

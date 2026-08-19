@@ -6,7 +6,7 @@ export default defineConfig({
     alias: [...workspaceAliases, ...unitRuntimeAliases],
   },
   test: {
-    include: ["tests/desktop-integration/**/*.test.ts"],
+    include: ["tests/desktop-integration/**/*.test.ts", "tests/unit/**/*.test.ts"],
     environment: "node",
     setupFiles: ["tests/unit/setup.ts"],
     testTimeout: 120_000,
@@ -23,10 +23,10 @@ export default defineConfig({
       reportsDirectory: "coverage/desktop-main",
       reportOnFailure: true,
       thresholds: {
-        statements: 40,
-        branches: 28,
-        functions: 44,
-        lines: 40,
+        statements: 50,
+        branches: 40,
+        functions: 55,
+        lines: 50,
       },
     },
   },

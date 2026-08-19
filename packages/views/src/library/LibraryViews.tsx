@@ -15,8 +15,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, Database, FolderOpen, LoaderCircle, RefreshCw, Search, Trash2 } from "lucide-react";
-import { type ComponentType, type ReactNode, useState } from "react";
+import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 export type LibraryAvailabilityFilter = "all" | "available" | "unavailable";
 
@@ -26,6 +27,7 @@ export interface LibraryIndexViewProps {
   errorMessage?: string | null;
   getImageSrc?: (path: string, entry: LibraryEntryDto) => string;
   isLoading?: boolean;
+  isAvailabilityLoading?: boolean;
   isLoadingMore?: boolean;
   hasMore?: boolean;
   query: string;
@@ -61,6 +63,7 @@ export function LibraryIndexView({
   errorMessage,
   getImageSrc = (path) => path,
   isLoading = false,
+  isAvailabilityLoading = false,
   isLoadingMore = false,
   hasMore = false,
   query,
@@ -74,27 +77,55 @@ export function LibraryIndexView({
   onQueryChange,
   onRefresh,
 }: LibraryIndexViewProps) {
-  const filteredEntries = entries.filter((entry) => {
-    if (availabilityFilter === "available") {
-      return entry.available === true;
+  const mainRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLElement>(null);
+  const [listOffset, setListOffset] = useState(0);
+  const { availableCount, filteredEntries, totalSize, unknownCount, unavailableCount } = useMemo(() => {
+    let availableCount = 0;
+    let unavailableCount = 0;
+    let unknownCount = 0;
+    let totalSize = 0;
+    const filteredEntries: LibraryEntryDto[] = [];
+    for (const entry of entries) {
+      if (entry.available === true) availableCount += 1;
+      else if (entry.available === false) unavailableCount += 1;
+      else unknownCount += 1;
+      const matchesAvailability =
+        availabilityFilter === "all" ||
+        (availabilityFilter === "available" && entry.available === true) ||
+        (availabilityFilter === "unavailable" && entry.available === false);
+      if (matchesAvailability) {
+        filteredEntries.push(entry);
+        totalSize += Number.isFinite(entry.size) ? entry.size : 0;
+      }
     }
-    if (availabilityFilter === "unavailable") {
-      return entry.available === false;
-    }
-    return true;
+    return { availableCount, filteredEntries, totalSize, unknownCount, unavailableCount };
+  }, [availabilityFilter, entries]);
+  useLayoutEffect(() => {
+    const updateOffset = () => setListOffset(listRef.current?.offsetTop ?? 0);
+    updateOffset();
+    const observer = new ResizeObserver(updateOffset);
+    if (mainRef.current) observer.observe(mainRef.current);
+    return () => observer.disconnect();
+  }, []);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredEntries.length,
+    estimateSize: () => 112,
+    getItemKey: (index) => filteredEntries[index]?.id ?? index,
+    getScrollElement: () => mainRef.current,
+    overscan: 6,
+    scrollMargin: listOffset,
   });
-  const availableCount = entries.filter((entry) => entry.available === true).length;
-  const unavailableCount = entries.filter((entry) => entry.available === false).length;
-  const totalSize = filteredEntries.reduce((sum, entry) => sum + (Number.isFinite(entry.size) ? entry.size : 0), 0);
 
   return (
     <TooltipProvider>
-      <main className={cn("h-full overflow-y-auto bg-surface-canvas text-foreground", className)}>
+      <main className={cn("h-full overflow-y-auto bg-surface-canvas text-foreground", className)} ref={mainRef}>
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-6 py-8 lg:px-12 lg:py-10">
           <header className="flex flex-wrap items-center justify-end gap-x-10 gap-y-4">
             <Metric label="总数" value={total} />
             <Metric label="可用" value={availableCount} />
             <Metric className="text-amber-600 dark:text-amber-400" label="不可用" value={unavailableCount} />
+            <Metric label={isAvailabilityLoading ? "检查中" : "未检查"} value={unknownCount} />
             <Metric label="大小" value={formatBytes(totalSize)} />
           </header>
 
@@ -142,21 +173,46 @@ export function LibraryIndexView({
             </div>
           </section>
 
-          <section aria-label="媒体库条目" className="flex flex-col gap-3">
-            {filteredEntries.map((entry) => (
-              <LibraryEntryRow
-                entry={entry}
-                getImageSrc={getImageSrc}
-                key={entry.id}
-                linkComponent={LinkComponent}
-                onDeleteEntry={onDeleteEntry}
-                onOpenFolder={onOpenFolder}
-              />
-            ))}
+          <section aria-label="媒体库条目" className="flex flex-col gap-3" ref={listRef}>
+            {filteredEntries.length > 0 && (
+              <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const entry = filteredEntries[virtualRow.index];
+                  return (
+                    <div
+                      className="absolute top-0 left-0 w-full pb-3"
+                      data-index={virtualRow.index}
+                      key={entry.id}
+                      ref={rowVirtualizer.measureElement}
+                      style={{ transform: `translateY(${virtualRow.start - listOffset}px)` }}
+                    >
+                      <LibraryEntryRow
+                        entry={entry}
+                        getImageSrc={getImageSrc}
+                        linkComponent={LinkComponent}
+                        onDeleteEntry={onDeleteEntry}
+                        onOpenFolder={onOpenFolder}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {filteredEntries.length === 0 && (
               <div className="flex min-h-[300px] flex-col items-center justify-center rounded-quiet-xl border border-dashed border-border/60 bg-surface-low/30 text-center text-muted-foreground">
                 <Database className="mb-4 h-10 w-10 opacity-20" />
-                <p className="text-sm font-medium">暂无匹配条目</p>
+                {isAvailabilityLoading && availabilityFilter !== "all" && unknownCount > 0 ? (
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    正在检查可用性
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium">
+                    {availabilityFilter !== "all" && unknownCount > 0
+                      ? `暂无已确认条目，另有 ${unknownCount} 条尚未检查`
+                      : "暂无匹配条目"}
+                  </p>
+                )}
               </div>
             )}
             {hasMore && (
@@ -366,6 +422,16 @@ function StatusDot({ available }: { available: boolean | null }) {
           <div className="h-2 w-2 shrink-0 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
         </TooltipTrigger>
         <TooltipContent>原路径不可用</TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (available === null) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/30" />
+        </TooltipTrigger>
+        <TooltipContent>可用性尚未检查</TooltipContent>
       </Tooltip>
     );
   }

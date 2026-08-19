@@ -5,25 +5,10 @@ import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { ActorImageFileStore, type ActorImageLookupOptions } from "./actorImage/ActorImageFileStore";
 import { ActorPhotoMaterializer } from "./actorImage/ActorPhotoMaterializer";
 import { mergeActorProfiles, normalizeActorName, toUniqueActorNames } from "./actorImage/utils";
-import type { RuntimeActorImageService, RuntimeActorSourceHint } from "./actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceHint, RuntimeActorSourceProvider } from "./actorOutput";
 import { throwIfAborted } from "./utils/abort";
 
 export { resolveActorPhotoFolderPath, usesLocalActorImageSource } from "./actorImage/actorPhotoPath";
-
-export interface RuntimeActorSourceProvider {
-  lookup(
-    configuration: Configuration,
-    query: {
-      name: string;
-      aliases?: string[];
-      requiredField?: "photo_url";
-      sourceHints?: RuntimeActorSourceHint[];
-    },
-  ): Promise<{
-    profile: ActorProfile;
-    profileSources: Partial<Record<keyof ActorProfile, string>>;
-  }>;
-}
 
 export interface ActorImageServiceDependencies {
   cacheRoot: string;
@@ -36,7 +21,7 @@ type PrepareActorProfilesInput = {
   actors: string[];
   actorProfiles?: ActorProfile[];
   actorPhotoBaseDir?: string;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
   sourceHints?: RuntimeActorSourceHint[];
   signal?: AbortSignal;
 };
@@ -54,9 +39,6 @@ type ActorImageResolutionState = {
 
 const hasActorPhoto = (profile: ActorProfile | undefined): boolean => Boolean(profile?.photo_url?.trim());
 const isRemoteUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
-const isRuntimeActorSourceProvider = (value: unknown): value is RuntimeActorSourceProvider =>
-  typeof value === "object" && value !== null && "lookup" in value && typeof value.lookup === "function";
-
 export class ActorImageService implements RuntimeActorImageService {
   private readonly logger: RuntimeLogger;
 
@@ -320,15 +302,12 @@ export class ActorImageService implements RuntimeActorImageService {
     configuration: Configuration,
     actorName: string,
     existingProfile: ActorProfile | undefined,
-    actorSourceProvider?: unknown,
+    actorSourceProvider?: RuntimeActorSourceProvider,
     sourceHints?: RuntimeActorSourceHint[],
     signal?: AbortSignal,
     options: { forceLookup?: boolean } = {},
   ): Promise<ActorProfile | undefined> {
-    if (
-      (!options.forceLookup && hasActorPhoto(existingProfile)) ||
-      !isRuntimeActorSourceProvider(actorSourceProvider)
-    ) {
+    if ((!options.forceLookup && hasActorPhoto(existingProfile)) || !actorSourceProvider) {
       return existingProfile;
     }
 
