@@ -1,5 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import { Website } from "@mdcz/shared/enums";
+import { DMM_FAMILY_SITES, FC2_ONLY_SITES, FC2_SITE_WHITELIST, Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeCrawlerFailureReason, RuntimeCrawlerOptions, RuntimeCrawlerProvider } from "../crawler/types";
@@ -417,11 +417,8 @@ interface CacheEntry {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 200;
-const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB]);
-const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
-const DMM_FAMILY_SITES = new Set<Website>([Website.DMM, Website.DMM_TV]);
 
 interface CrawlerExecutionState {
   nextIndex: number;

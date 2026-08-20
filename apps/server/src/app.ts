@@ -80,7 +80,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     serverPaths: options.services?.serverPaths ?? new ServerPathService(mediaRoots, config),
     system,
     taskEvents,
-    tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape, library),
+    tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape),
   };
   const fastify = Fastify({
     logger: false,

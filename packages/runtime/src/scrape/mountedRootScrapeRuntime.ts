@@ -6,6 +6,7 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
 import { ActorImageService } from "./ActorImageService";
+import type { RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
 import { DownloadManager, type ImageHostCooldownStore, MemoryImageHostCooldownStore } from "./download";
 import { FileOrganizer, resolveMetadataOutputDir } from "./FileOrganizer";
@@ -178,6 +179,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     private readonly localState?: NfoLocalState,
     mappingStore?: TranslationMappingStore,
     imageHostCooldownStore: ImageHostCooldownStore = new MemoryImageHostCooldownStore(),
+    private readonly actorSourceProvider?: RuntimeActorSourceProvider,
   ) {
     this.networkClient = networkClient ?? new NetworkClient();
     const runtimeLogger = toRuntimeLogger(this.logger);
@@ -257,6 +259,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
   private createStageRuntime(): FileScraperStageRuntime {
     return {
       actorImageService: this.actorImageService,
+      actorSourceProvider: this.actorSourceProvider,
       fileOrganizer: this.fileOrganizer,
       logger: this.logger,
       nfoGenerator: this.nfoGenerator,
@@ -293,6 +296,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
             enabled: true,
             movieDir: resolveMetadataOutputDir(context.requirePlan()),
             sourceVideoPath: context.fileInfo.filePath,
+            actorSourceProvider: this.actorSourceProvider,
             signal,
           },
         );
@@ -432,6 +436,7 @@ export class MountedRootScrapeRuntime {
     private readonly networkClient?: RuntimeDownloadNetworkClient,
     private readonly mappingStore?: TranslationMappingStore,
     private readonly imageHostCooldownStore?: ImageHostCooldownStore,
+    private readonly actorSourceProvider?: RuntimeActorSourceProvider,
   ) {}
 
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
@@ -455,6 +460,7 @@ export class MountedRootScrapeRuntime {
           input.localState,
           this.mappingStore,
           this.imageHostCooldownStore,
+          this.actorSourceProvider,
         ),
       );
       const absolutePath = resolveRootRelativePath(input.root, input.relativePath);

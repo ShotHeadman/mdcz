@@ -20,6 +20,7 @@ export const SHARED_CAPABILITY_CONTRACTS = {
   NetworkCheckCookiesResponse: true,
   SiteConnectivityProbeResponse: true,
   void: true,
+  NamingPreviewResponse: true,
 } as const;
 
 export const SHARED_CAPABILITY_BEHAVIOR_FIXTURES = {
@@ -31,6 +32,7 @@ export const SHARED_CAPABILITY_BEHAVIOR_FIXTURES = {
   "library-availability": { desktop: IpcChannel.Library_Availability, server: "library.availability" },
   "library-list-pagination": { desktop: IpcChannel.Library_List, server: "library.list" },
   "network-cookie-readiness": { desktop: IpcChannel.Network_CheckCookies, server: "network.checkCookies" },
+  "config-preview-naming": { desktop: IpcChannel.Config_PreviewNaming, server: "config.previewNaming" },
 } as const satisfies Record<string, { desktop: keyof IpcRouterContract; server: ServerCapabilityPath }>;
 
 export interface SharedCapability {
@@ -88,6 +90,15 @@ export const SHARED_CAPABILITIES = [
     inputContract: "LibraryAvailabilityInput",
     outputContract: "LibraryAvailabilityResponse",
     behaviorFixture: "library-availability",
+  },
+  {
+    id: "config.previewNaming",
+    desktop: IpcChannel.Config_PreviewNaming,
+    server: "config.previewNaming",
+    status: "adapted",
+    inputContract: "void",
+    outputContract: "NamingPreviewResponse",
+    behaviorFixture: "config-preview-naming",
   },
 ] as const satisfies readonly SharedCapability[];
 

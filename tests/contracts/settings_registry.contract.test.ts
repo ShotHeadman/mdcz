@@ -1,5 +1,11 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
-import { diffSettingsRegistrySchemaPaths, FIELD_KEYS, SETTINGS_SCHEMA_EXEMPTIONS } from "@mdcz/shared/settingsRegistry";
+import {
+  diffSettingsRegistrySchemaPaths,
+  FIELD_KEYS,
+  FIELD_REGISTRY,
+  SETTINGS_FIELD_REGISTRY,
+  SETTINGS_SCHEMA_EXEMPTIONS,
+} from "@mdcz/shared/settingsRegistry";
 import { describe, expect, it } from "vitest";
 
 const collectStaticLeafPaths = (value: unknown, prefix = ""): string[] => {
@@ -33,6 +39,27 @@ describe("settings registry and configuration schema", () => {
     expect(SETTINGS_SCHEMA_EXEMPTIONS).toContainEqual(
       expect.objectContaining({ path: "personSync.actorAliases", kind: "dynamic-record" }),
     );
+  });
+
+  it("locks the current settings/tool surface split", () => {
+    const toolFields = FIELD_REGISTRY.filter((entry) => entry.surface === "tools");
+    const hiddenSettings = SETTINGS_FIELD_REGISTRY.filter((entry) => entry.visibility === "hidden");
+
+    expect(toolFields.map((entry) => entry.key)).toEqual([
+      "personSync.personOverviewSources",
+      "personSync.personImageSources",
+      "jellyfin.url",
+      "jellyfin.apiKey",
+      "jellyfin.userId",
+      "jellyfin.refreshPersonAfterSync",
+      "jellyfin.lockOverviewAfterSync",
+      "emby.url",
+      "emby.apiKey",
+      "emby.userId",
+      "emby.refreshPersonAfterSync",
+    ]);
+    expect(hiddenSettings.map((entry) => entry.key)).toEqual(["scrape.r18MetadataLanguage"]);
+    expect(SETTINGS_FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden")).toHaveLength(113);
   });
 
   it("reports each drift category by exact key", () => {
