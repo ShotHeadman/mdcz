@@ -63,6 +63,38 @@ export const uniqueStrings = (values: Array<string | undefined>): string[] => {
   return Array.from(new Set(cleaned));
 };
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Reads a dot-separated path out of an unknown value, falling back when any segment is missing. */
+export function getProperty<T = unknown>(obj: unknown, path: string, defaultValue?: T): T | undefined {
+  let current: unknown = obj;
+
+  for (const key of path.split(".")) {
+    if (!isRecord(current) || !(key in current)) {
+      return defaultValue;
+    }
+    current = current[key];
+  }
+
+  return current as T;
+}
+
+/** Builds a URL from a base, a pathname, and query entries. Empty query values are dropped. */
+export function buildUrl(baseUrl: string, pathname = "/", query: Record<string, string | undefined> = {}): string {
+  const url = new URL(pathname, `${baseUrl}/`);
+
+  for (const [key, value] of Object.entries(query)) {
+    if (!value) {
+      continue;
+    }
+    url.searchParams.set(key, value);
+  }
+
+  return url.toString();
+}
+
 export const normalizeDmmNumberVariants = (raw: string): { number00: string; numberNo00: string } => {
   let normalized = raw.trim().toLowerCase();
   const match = normalized.match(/\d*[a-z]+-?(\d+)/u);

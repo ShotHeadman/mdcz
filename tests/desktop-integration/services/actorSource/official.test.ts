@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import {
   ActorSourceProvider,
   ActorSourceRegistry,
   LocalActorSource,
   OfficialActorSource,
-} from "@main/services/actorSource";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
+} from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";

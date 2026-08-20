@@ -1,4 +1,4 @@
-import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
+import { CachedAsyncResolver } from "@mdcz/runtime/shared";
 import { describe, expect, it } from "vitest";
 
 describe("CachedAsyncResolver", () => {

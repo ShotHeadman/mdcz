@@ -14,6 +14,7 @@ import type {
   MediaRootDto,
   OverviewSummaryResponse,
 } from "@mdcz/shared/serverDtos";
+import type { ActorProfile } from "@mdcz/shared/types";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 
@@ -31,6 +32,26 @@ export class LibraryService {
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     return await this.listDtos(input);
+  }
+
+  /**
+   * Every distinct actor profile in the library, keyed by case-insensitive name — first occurrence wins.
+   * Reads only the crawler payload column: the file/asset joins a full listing does are pure overhead here.
+   * Parsing lives in this layer because `@mdcz/persistence` cannot depend on the shared domain types.
+   */
+  async listActorProfiles(): Promise<ActorProfile[]> {
+    const state = await this.persistence.getState();
+    const payloads = await state.repositories.library.listCrawlerDataJson();
+    const profiles = new Map<string, ActorProfile>();
+    for (const payload of payloads) {
+      for (const profile of parseCrawlerData(payload)?.actor_profiles ?? []) {
+        const key = profile.name?.trim().toLowerCase();
+        if (key && !profiles.has(key)) {
+          profiles.set(key, profile);
+        }
+      }
+    }
+    return [...profiles.values()];
   }
 
   async detail(id: string): Promise<LibraryDetailResponse> {

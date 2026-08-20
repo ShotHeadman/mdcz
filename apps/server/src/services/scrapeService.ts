@@ -72,6 +72,7 @@ const recoverableResultStatuses = new Set<ScrapeResultRecord["status"]>(["pendin
 export class ScrapeService {
   #stopRequested = new Set<string>();
   #paused = new Set<string>();
+  #pauseGates = new Map<string, { promise: Promise<void>; release: () => void }>();
   #controllers = new Map<string, AbortController>();
   #uncensoredConfirmedTasks = new Set<string>();
   #uncensoredChoices = new Map<string, Map<string, UncensoredChoice>>();
@@ -216,12 +217,12 @@ export class ScrapeService {
   }
 
   async stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
-    const task = await (await this.persistence.getState()).repositories.tasks.get(input.taskId);
-    if (task.status === "running" || task.status === "stopping") {
+    if (this.#controllers.has(input.taskId)) {
       this.#stopRequested.add(input.taskId);
       this.#controllers.get(input.taskId)?.abort();
     }
     this.#paused.delete(input.taskId);
+    this.releasePauseGate(input.taskId);
     await this.transitionTask(input.taskId, "stop", "刮削已停止");
     await this.addEvent(input.taskId, "stopping", "Stopping scrape task");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
@@ -230,6 +231,7 @@ export class ScrapeService {
 
   async close(): Promise<void> {
     this.runner.requestStop();
+    for (const taskId of this.#pauseGates.keys()) this.releasePauseGate(taskId);
     for (const controller of this.#controllers.values()) {
       controller.abort();
     }
@@ -238,6 +240,7 @@ export class ScrapeService {
 
   async pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
     this.#paused.add(input.taskId);
+    if (this.#controllers.has(input.taskId)) this.getPauseGate(input.taskId);
     await this.transitionTask(input.taskId, "pause");
     await this.addEvent(input.taskId, "paused", "Scrape task paused");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
@@ -245,11 +248,14 @@ export class ScrapeService {
   }
 
   async resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
+    const isActive = this.#controllers.has(input.taskId);
     this.#paused.delete(input.taskId);
     await this.transitionTask(input.taskId, "resume");
-    await this.addEvent(input.taskId, "queued", "Scrape task resumed and requeued");
+    if (isActive) await this.transitionTask(input.taskId, "start");
+    this.releasePauseGate(input.taskId);
+    await this.addEvent(input.taskId, isActive ? "running" : "queued", "Scrape task resumed");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
-    this.drain();
+    if (!isActive) this.drain();
     return await this.toDto(input.taskId);
   }
 
@@ -570,12 +576,21 @@ export class ScrapeService {
     this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
 
     try {
-      const results = await state.repositories.library.listScrapeResults(taskId);
+      const allResults = await state.repositories.library.listScrapeResults(taskId);
+      // A resumed task re-enters here with its full result set. Only items that never reached a
+      // terminal status still need work — without this filter a pause/resume cycle re-scrapes
+      // everything the previous run already finished.
+      const results = allResults.filter((result) => result.status === "pending" || result.status === "processing");
+      const settledCount = allResults.length - results.length;
       const config = await this.config.get();
       applyScrapeNetworkPolicy(this.networkClient, config);
       const policy = createScrapeExecutionPolicy(config, { logger: console });
-      const counters = { successCount: 0, failedCount: 0, totalBytes: 0 };
-      let progressHighWater = 0;
+      const counters = {
+        successCount: allResults.filter((result) => result.status === "success").length,
+        failedCount: allResults.filter((result) => result.status === "failed").length,
+        totalBytes: await this.totalBytesForSuccessfulResults(allResults),
+      };
+      let progressHighWater = allResults.length > 0 ? Math.round((settledCount / allResults.length) * 100) : 0;
       await runScrapeItems(
         results,
         {
@@ -584,11 +599,7 @@ export class ScrapeService {
           control: {
             isStopRequested: () => this.#stopRequested.has(taskId),
             isPaused: () => this.#paused.has(taskId),
-            onPaused: async () => {
-              await this.transitionTask(taskId, "pause");
-              await this.addEvent(taskId, "paused", "Scrape task paused");
-              this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
-            },
+            onPaused: async () => await this.getPauseGate(taskId).promise,
           },
         },
         (result, index) => ({
@@ -599,7 +610,8 @@ export class ScrapeService {
               throw new Error("刮削已停止");
             }
             if (this.#paused.has(taskId)) {
-              return;
+              await this.getPauseGate(taskId).promise;
+              if (this.#stopRequested.has(taskId)) throw new Error("刮削已停止");
             }
             await policy.restGate?.waitBeforeStart(signal);
             const processingResult = await state.repositories.library.upsertScrapeResult({
@@ -620,7 +632,7 @@ export class ScrapeService {
                 root,
                 relativePath: result.relativePath,
                 manualScrape: this.resolveManualScrape(result.manualUrl),
-                progress: { fileIndex: index + 1, totalFiles: results.length },
+                progress: { fileIndex: settledCount + index + 1, totalFiles: allResults.length },
                 localState: this.resolveConfirmedLocalState(taskId, result),
                 signal,
                 onEvent: async (type, message) => {
@@ -661,17 +673,18 @@ export class ScrapeService {
               }
               const message = error instanceof Error ? error.message : String(error);
               await this.persistUnexpectedItemFailure(taskId, result, message, counters);
-              progressHighWater = Math.max(progressHighWater, Math.round(((index + 1) / results.length) * 100));
+              const overallIndex = settledCount + index + 1;
+              progressHighWater = Math.max(progressHighWater, Math.round((overallIndex / allResults.length) * 100));
               const createdAt = new Date().toISOString();
               this.taskEvents.publishRealtime({
-                id: `${processingResult.id}:progress:${index + 1}:${progressHighWater}:${createdAt}`,
+                id: `${processingResult.id}:progress:${overallIndex}:${progressHighWater}:${createdAt}`,
                 taskId,
                 createdAt,
                 kind: "task-progress",
                 taskKind: "scrape",
                 value: progressHighWater,
-                current: index + 1,
-                total: results.length,
+                current: overallIndex,
+                total: allResults.length,
                 message: result.relativePath,
               });
             }
@@ -681,13 +694,16 @@ export class ScrapeService {
       if (this.#stopRequested.has(taskId)) {
         throw new Error("刮削已停止");
       }
-      if (this.#paused.has(taskId)) {
+      // A pause/resume/stop can land while this run is finishing its last item. The persisted
+      // status is the authority: if it already moved off "running", the queue owns the task now
+      // and completing it here would be an illegal transition.
+      if ((await state.repositories.tasks.get(taskId)).status !== "running") {
         return;
       }
       this.#paused.delete(taskId);
       const output = await state.repositories.library.upsertScrapeOutput({
         taskId,
-        rootId: results[0]?.rootId ?? null,
+        rootId: allResults[0]?.rootId ?? null,
         outputDirectory: null,
         fileCount: counters.successCount,
         totalBytes: counters.totalBytes,
@@ -722,10 +738,14 @@ export class ScrapeService {
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.transitionTask(taskId, "fail", message);
-      await this.addEvent(taskId, "failed", message);
-      this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+      const currentTask = await state.repositories.tasks.get(taskId);
+      if (currentTask.status !== "failed" && currentTask.status !== "completed") {
+        await this.transitionTask(taskId, "fail", message);
+        await this.addEvent(taskId, "failed", message);
+        this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+      }
     } finally {
+      this.releasePauseGate(taskId);
       this.#controllers.delete(taskId);
       this.#stopRequested.delete(taskId);
       this.#uncensoredConfirmedTasks.delete(taskId);
@@ -831,6 +851,37 @@ export class ScrapeService {
       result: await this.resultToDto(stored),
     });
     await this.addEvent(taskId, "item-success", `Generated NFO: ${nfoRelativePath ?? "not generated"}`);
+  }
+
+  private async totalBytesForSuccessfulResults(results: readonly ScrapeResultRecord[]): Promise<number> {
+    const sizes = await Promise.all(
+      results.map(async (result) => {
+        if (result.status !== "success" || !result.outputRelativePath) return 0;
+        const root = await this.mediaRoots.getActiveRoot(result.rootId).catch(() => null);
+        if (!root) return 0;
+        return (await stat(resolveRootRelativePath(root, result.outputRelativePath)).catch(() => null))?.size ?? 0;
+      }),
+    );
+    return sizes.reduce((total, size) => total + size, 0);
+  }
+
+  private getPauseGate(taskId: string): { promise: Promise<void>; release: () => void } {
+    const existing = this.#pauseGates.get(taskId);
+    if (existing) return existing;
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const gate = { promise, release };
+    this.#pauseGates.set(taskId, gate);
+    return gate;
+  }
+
+  private releasePauseGate(taskId: string): void {
+    const gate = this.#pauseGates.get(taskId);
+    if (!gate) return;
+    this.#pauseGates.delete(taskId);
+    gate.release();
   }
 
   private async persistUnexpectedItemFailure(

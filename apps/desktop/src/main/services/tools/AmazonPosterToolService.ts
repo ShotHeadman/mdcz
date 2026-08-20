@@ -1,7 +1,11 @@
-import type { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { validateImage } from "@mdcz/runtime/scrape/utils/image";
-import { applyAmazonPosters, lookupAmazonPoster, scanAmazonPosters } from "@mdcz/runtime/tools";
+import {
+  type AmazonJpImageService,
+  applyAmazonPosters,
+  lookupAmazonPoster,
+  scanAmazonPosters,
+} from "@mdcz/runtime/tools";
 import type {
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,

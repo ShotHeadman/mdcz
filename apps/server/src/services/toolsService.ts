@@ -9,6 +9,7 @@ import {
 } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyAmazonPosters,
   applyBatchNfoTranslations,
@@ -204,7 +205,9 @@ export class ToolsService {
           if (!input.nfoPath || !input.title) {
             return { toolId: input.toolId, ok: false, message: "NFO 路径和标题不能为空。" };
           }
-          const result = await lookupAmazonPoster(this.networkClient, input.nfoPath, input.title);
+          const result = await lookupAmazonPoster(this.networkClient, input.nfoPath, input.title, {
+            logger: runtimeLoggerService.getLogger("AmazonJpImageService"),
+          });
           return {
             toolId: input.toolId,
             ok: Boolean(result.amazonPosterUrl),
@@ -232,20 +235,6 @@ export class ToolsService {
 
   private async collectActorProfiles(): Promise<ActorProfile[]> {
     if (!this.library) return [];
-    const profiles = new Map<string, ActorProfile>();
-    let cursor: string | undefined;
-    do {
-      const page = await this.library.list({ cursor, limit: 500 });
-      for (const entry of page.entries) {
-        for (const profile of entry.crawlerData?.actor_profiles ?? []) {
-          const key = profile.name.trim().toLowerCase();
-          if (key && !profiles.has(key)) {
-            profiles.set(key, profile);
-          }
-        }
-      }
-      cursor = page.hasMore ? (page.nextCursor ?? undefined) : undefined;
-    } while (cursor);
-    return [...profiles.values()];
+    return await this.library.listActorProfiles();
   }
 }

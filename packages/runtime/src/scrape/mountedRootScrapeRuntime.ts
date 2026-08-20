@@ -7,7 +7,7 @@ import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, ScrapeResu
 import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
 import { ActorImageService } from "./ActorImageService";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
-import { DownloadManager } from "./download";
+import { DownloadManager, type ImageHostCooldownStore, MemoryImageHostCooldownStore } from "./download";
 import { FileOrganizer, resolveMetadataOutputDir } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "./nfo";
@@ -101,44 +101,6 @@ export type MountedRootScrapeRuntimeItemResult =
   | MountedRootScrapeRuntimeItemSuccess
   | MountedRootScrapeRuntimeItemFailure;
 
-class MemoryImageHostCooldownStore {
-  private readonly entries = new Map<string, { failures: number[]; cooldownUntil?: number }>();
-
-  getActiveCooldown(key: string): { cooldownUntil: number; remainingMs: number } | null {
-    const entry = this.entries.get(key);
-    const cooldownUntil = entry?.cooldownUntil;
-    if (!cooldownUntil) {
-      return null;
-    }
-    const remainingMs = cooldownUntil - Date.now();
-    if (remainingMs <= 0) {
-      this.reset(key);
-      return null;
-    }
-    return { cooldownUntil, remainingMs };
-  }
-
-  isCoolingDown(key: string): boolean {
-    return this.getActiveCooldown(key) !== null;
-  }
-
-  recordFailure(
-    key: string,
-    policy: { threshold: number; windowMs: number; cooldownMs: number },
-  ): { cooldownUntil?: number | null; failureCount: number } | null {
-    const now = Date.now();
-    const entry = this.entries.get(key) ?? { failures: [] };
-    const failures = [...entry.failures.filter((timestamp) => now - timestamp <= policy.windowMs), now];
-    const cooldownUntil = failures.length >= policy.threshold ? now + policy.cooldownMs : entry.cooldownUntil;
-    this.entries.set(key, { failures, cooldownUntil });
-    return { cooldownUntil, failureCount: failures.length };
-  }
-
-  reset(key: string): void {
-    this.entries.delete(key);
-  }
-}
-
 class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
   private readonly pending = new Set<Promise<void>>();
 
@@ -215,13 +177,14 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     networkClient?: RuntimeDownloadNetworkClient,
     private readonly localState?: NfoLocalState,
     mappingStore?: TranslationMappingStore,
+    imageHostCooldownStore: ImageHostCooldownStore = new MemoryImageHostCooldownStore(),
   ) {
     this.networkClient = networkClient ?? new NetworkClient();
     const runtimeLogger = toRuntimeLogger(this.logger);
     this.fileOrganizer = new FileOrganizer(runtimeLogger);
     this.translateService = new TranslateService(this.networkClient, { logger: runtimeLogger, mappingStore });
     this.downloadManager = new DownloadManager(this.networkClient, {
-      imageHostCooldownStore: new MemoryImageHostCooldownStore(),
+      imageHostCooldownStore,
       logger: runtimeLogger,
     });
     this.actorImageService = new ActorImageService({
@@ -468,6 +431,7 @@ export class MountedRootScrapeRuntime {
     private readonly logger: MountedRootScrapeLogger = console,
     private readonly networkClient?: RuntimeDownloadNetworkClient,
     private readonly mappingStore?: TranslationMappingStore,
+    private readonly imageHostCooldownStore?: ImageHostCooldownStore,
   ) {}
 
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
@@ -490,6 +454,7 @@ export class MountedRootScrapeRuntime {
           this.networkClient,
           input.localState,
           this.mappingStore,
+          this.imageHostCooldownStore,
         ),
       );
       const absolutePath = resolveRootRelativePath(input.root, input.relativePath);

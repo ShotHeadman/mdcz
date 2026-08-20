@@ -1,13 +1,13 @@
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import type { JellyfinMode } from "@mdcz/runtime/mediaserver";
 import {
   type JellyfinBatchResult,
   JellyfinActorPhotoService as RuntimeJellyfinActorPhotoService,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import type { JellyfinMode } from "./auth";
 
 export interface JellyfinActorPhotoDependencies {
   signalService: SignalService;

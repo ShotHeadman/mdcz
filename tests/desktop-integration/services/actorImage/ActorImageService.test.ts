@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActorImageService, getActorImageCacheDirectory } from "@main/services/ActorImageService";
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

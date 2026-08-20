@@ -30,6 +30,7 @@ export const runScrapeItems = async <TItem, TResult>(
   const results: TResult[] = new Array(items.length);
   const control = options.control;
   const signal = options.signal ?? new AbortController().signal;
+  let pauseWait: Promise<void> | null = null;
 
   const tasks = items.map((item, index) =>
     queue.add(
@@ -38,8 +39,13 @@ export const runScrapeItems = async <TItem, TResult>(
           throw createStopRequestedError();
         }
         if (control?.isPaused?.()) {
-          await control.onPaused?.();
-          return;
+          // All queued workers share one resume gate. This keeps their positions in the current
+          // run while ensuring the host only installs one pause waiter.
+          const currentWait = pauseWait ?? Promise.resolve(control.onPaused?.());
+          pauseWait = currentWait;
+          await currentWait;
+          if (pauseWait === currentWait) pauseWait = null;
+          if (control.isStopRequested?.()) throw createStopRequestedError();
         }
 
         const executorItem = createItem(item, index);

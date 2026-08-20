@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
 import { AmazonPosterToolService } from "@main/services/tools/AmazonPosterToolService";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import type { AmazonJpImageService } from "@mdcz/runtime/tools";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

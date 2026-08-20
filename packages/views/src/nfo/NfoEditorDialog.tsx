@@ -157,7 +157,7 @@ function StringListField({
       </div>
       <div className="space-y-2">
         {visibleValues.map((value, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: NFO array rows have no persisted IDs and are edited by position.
+          // Keyed by position: NFO array rows have no persisted IDs and are edited in place.
           <div key={index} className="flex gap-2">
             <Input
               value={value}
@@ -222,8 +222,8 @@ function ActorProfilesField({
       </div>
       <div className="space-y-3">
         {visibleValues.map((profile, index) => (
+          // Keyed by position: NFO actor profile rows have no persisted IDs and are edited in place.
           <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: NFO actor profile rows have no persisted IDs and are edited by position.
             key={index}
             className="grid gap-3 rounded-quiet bg-surface-low/60 p-3 min-[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
           >

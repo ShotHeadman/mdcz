@@ -54,6 +54,45 @@ const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScra
   },
 });
 
+const createGatedAggregation = (
+  imageUrl: string,
+): {
+  aggregation: MountedRootScrapeAggregationService;
+  aggregatedNumbers: string[];
+  firstCallStarted: Promise<void>;
+  releaseFirstCall: () => void;
+} => {
+  const inner = createTestAggregation(imageUrl);
+  const aggregatedNumbers: string[] = [];
+  let resolveStarted!: () => void;
+  let releaseFirstCall!: () => void;
+  const firstCallStarted = new Promise<void>((resolve) => {
+    resolveStarted = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    releaseFirstCall = resolve;
+  });
+
+  return {
+    aggregatedNumbers,
+    firstCallStarted,
+    releaseFirstCall: () => {
+      releaseFirstCall();
+    },
+    aggregation: {
+      async aggregate(number, configuration, signal, manualScrape): Promise<AggregationResult | null> {
+        const isFirstCall = aggregatedNumbers.length === 0;
+        aggregatedNumbers.push(number);
+        if (isFirstCall) {
+          resolveStarted();
+          await gate;
+        }
+        return await inner.aggregate(number, configuration, signal, manualScrape);
+      },
+    },
+  };
+};
+
 const createAbortAwareAggregation = (): {
   aggregation: MountedRootScrapeAggregationService;
   aborted: Promise<void>;
@@ -783,5 +822,69 @@ describe("buildServer scrape integration", () => {
       status: "failed",
       error: "已放弃未完成刮削",
     });
+  });
+
+  it("does not re-scrape finished files when a paused task resumes", async () => {
+    const root = await createTempRoot("scrape-pause-resume-root");
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    await writeFile(join(root, "ABC-456.mp4"), "video");
+    const imageServer = await startTestImageServer();
+    const gated = createGatedAggregation(`${imageServer.url}/image.png`);
+    const { fastify } = await createTestServer({ scrapeAggregation: gated.aggregation });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        scrape: { threadNumber: 1 },
+        download: { downloadSceneImages: false, downloadTrailer: false },
+      },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        refs: [
+          { rootId, relativePath: "ABC-123.mp4" },
+          { rootId, relativePath: "ABC-456.mp4" },
+        ],
+      },
+    });
+    const taskId = startResponse.json().result.data.id;
+
+    // Pause while the first file is still inside its aggregation call, so the second file has
+    // not been dequeued yet and stays pending.
+    await gated.firstCallStarted;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.pause",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
+    gated.releaseFirstCall();
+    await waitForTaskStatus(fastify, token, taskId, "paused");
+    expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
+
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.resume",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
+    await waitForTaskStatus(fastify, token, taskId, "completed");
+
+    // The resumed run picks up only the file that never reached a terminal status.
+    expect(gated.aggregatedNumbers).toEqual(["ABC-123", "ABC-456"]);
+
+    const detailResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(detailResponse.json().result.data.task.videoCount).toBe(2);
   });
 });

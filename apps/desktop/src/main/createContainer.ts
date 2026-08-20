@@ -1,5 +1,18 @@
 import type { ServiceContainer } from "@main/container";
 import { ActorImageService } from "@main/services/ActorImageService";
+import { createImageHostCooldownStore, PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
+import { loggerService } from "@main/services/LoggerService";
+import { DesktopLibraryService, OutputLibraryScanner } from "@main/services/library";
+import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
+import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
+import { createElectronCookieResolver } from "@main/services/network";
+import { DesktopPersistenceService } from "@main/services/persistence";
+import type { SignalService } from "@main/services/SignalService";
+import { ScraperService } from "@main/services/scraper";
+import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
+import { AmazonPosterToolService, BatchTranslateToolService, SymlinkService } from "@main/services/tools";
+import type { WindowService } from "@main/services/WindowService";
+import { parseNfo } from "@main/utils/nfo";
 import {
   ActorSourceProvider,
   ActorSourceRegistry,
@@ -8,21 +21,10 @@ import {
   GfriendsActorSource,
   LocalActorSource,
   OfficialActorSource,
-} from "@main/services/actorSource";
-import { createImageHostCooldownStore, PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
-import { DesktopLibraryService, OutputLibraryScanner } from "@main/services/library";
-import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
-import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
-import { createElectronCookieResolver } from "@main/services/network";
-import { DesktopPersistenceService } from "@main/services/persistence";
-import type { SignalService } from "@main/services/SignalService";
-import { ScraperService } from "@main/services/scraper";
-import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
-import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
-import { AmazonPosterToolService, BatchTranslateToolService, SymlinkService } from "@main/services/tools";
-import type { WindowService } from "@main/services/WindowService";
+} from "@mdcz/runtime/actorSource";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { AmazonJpImageService } from "@mdcz/runtime/tools";
 
 export interface CreateContainerOptions {
   windowService: WindowService;
@@ -48,14 +50,16 @@ export const createContainer = ({
   const persistenceService = new DesktopPersistenceService();
   const outputLibraryScanner = new OutputLibraryScanner({ persistenceService });
   const desktopLibraryService = new DesktopLibraryService(persistenceService);
-  const amazonJpImageService = new AmazonJpImageService(networkClient);
+  const amazonJpImageService = new AmazonJpImageService(networkClient, loggerService.getLogger("AmazonJpImageService"));
   const actorImageService = new ActorImageService({ networkClient });
   const avjohoCookieResolver = createElectronCookieResolver({
     expectedCookieNames: ["wsidchk"],
   });
   const actorSourceProvider = new ActorSourceProvider({
+    logger: loggerService.getLogger("ActorSource"),
     registry: new ActorSourceRegistry([
-      new LocalActorSource(actorImageService),
+      // Desktop keeps its own NFO parser, so pass it in rather than inheriting the runtime default.
+      new LocalActorSource({ actorImageService, parseNfo }),
       new OfficialActorSource({ networkClient }),
       new GfriendsActorSource({ networkClient }),
       new AvjohoActorSource({ networkClient, cookieResolver: avjohoCookieResolver }),

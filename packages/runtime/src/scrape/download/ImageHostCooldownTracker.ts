@@ -24,6 +24,41 @@ export interface ImageHostCooldownStore {
   reset(key: string): void;
 }
 
+export class MemoryImageHostCooldownStore implements ImageHostCooldownStore {
+  private readonly entries = new Map<string, { failures: number[]; cooldownUntil?: number }>();
+
+  getActiveCooldown(key: string): ActiveCooldown | null {
+    const cooldownUntil = this.entries.get(key)?.cooldownUntil;
+    if (!cooldownUntil) return null;
+    const remainingMs = cooldownUntil - Date.now();
+    if (remainingMs <= 0) {
+      this.reset(key);
+      return null;
+    }
+    return { cooldownUntil, remainingMs };
+  }
+
+  isCoolingDown(key: string): boolean {
+    return this.getActiveCooldown(key) !== null;
+  }
+
+  recordFailure(
+    key: string,
+    policy: ImageHostCooldownFailurePolicy,
+  ): { cooldownUntil?: number | null; failureCount: number } {
+    const now = Date.now();
+    const entry = this.entries.get(key) ?? { failures: [] };
+    const failures = [...entry.failures.filter((timestamp) => now - timestamp <= policy.windowMs), now];
+    const cooldownUntil = failures.length >= policy.threshold ? now + policy.cooldownMs : entry.cooldownUntil;
+    this.entries.set(key, { failures, cooldownUntil });
+    return { cooldownUntil, failureCount: failures.length };
+  }
+
+  reset(key: string): void {
+    this.entries.delete(key);
+  }
+}
+
 const IMAGE_HOST_COOLDOWN_MS = 5 * 60 * 1000;
 const IMAGE_HOST_FAILURE_POLICY: ImageHostCooldownFailurePolicy = {
   threshold: 2,

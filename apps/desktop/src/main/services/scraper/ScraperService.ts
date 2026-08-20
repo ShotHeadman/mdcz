@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
 import {
   createImageHostCooldownStore,
@@ -13,10 +12,12 @@ import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
 import { toErrorMessage } from "@main/utils/common";
 import { toRootRelativePath } from "@mdcz/media-store";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { createDesktopOutputRoot, resolveDesktopOutputRootPath, toLibraryAssets } from "@mdcz/runtime/library";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
+  AggregationService,
   applyScrapeNetworkPolicy,
   createScrapeExecutionPolicy,
   type ScrapeRestGate,
@@ -25,7 +26,6 @@ import {
 import { ScrapeSession, type ScrapeSuccessItem } from "@mdcz/runtime/tasks";
 import type { ScraperStatus } from "@mdcz/shared/types";
 import { getDesktopUserDataPath } from "../../appIdentity";
-import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
 import { fileOrganizer } from "./fileOrganizerAdapter";

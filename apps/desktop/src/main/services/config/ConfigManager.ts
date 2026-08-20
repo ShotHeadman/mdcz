@@ -7,9 +7,9 @@ import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import { RuntimeConfigProfileStore, RuntimeConfigService, RuntimeConfigValidationError } from "@mdcz/runtime/config";
+import { type Configuration, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { toConfigValidationDomainError } from "@mdcz/shared/error";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
-import { type Configuration, type DeepPartial, defaultConfiguration } from "./models";
 
 const CONFIG_DIRECTORY_META_FILE = ".config-directory.json";
 const DEFAULT_CONFIG_DIRECTORY = "config";

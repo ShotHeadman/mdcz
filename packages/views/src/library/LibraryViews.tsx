@@ -1,4 +1,5 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
+import { formatBytes } from "@mdcz/shared/format";
 import {
   Badge,
   Button,
@@ -481,12 +482,3 @@ function MiddleEllipsisPath({ rootDisplayName, relativePath }: { rootDisplayName
 
 const formatDate = (value: string | null | undefined): string =>
   value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : "-";
-
-const formatBytes = (value: number): string => {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"] as const;
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-};

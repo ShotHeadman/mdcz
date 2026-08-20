@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { and, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import {
   type LibraryItemAssetRow,
@@ -620,6 +620,20 @@ export class LibraryRepository {
     return items.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
+  }
+
+  /**
+   * Raw crawler payloads only — no file/asset joins and no record mapping. For callers that need a
+   * single field out of every entry, this avoids the per-entry work a full listing would do.
+   */
+  async listCrawlerDataJson(): Promise<string[]> {
+    return this.database.db
+      .select({ crawlerDataJson: libraryItems.crawlerDataJson })
+      .from(libraryItems)
+      .where(isNotNull(libraryItems.crawlerDataJson))
+      .all()
+      .map((row) => row.crawlerDataJson)
+      .filter((value): value is string => value !== null);
   }
 
   async listEntriesPage(input: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {

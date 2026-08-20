@@ -9,44 +9,13 @@ import type {
   AmazonPosterScanItem,
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
-import { load } from "cheerio";
-import type { RuntimeDownloadNetworkClient, RuntimeNetworkClient } from "../network";
+import type { RuntimeDownloadNetworkClient } from "../network";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
+import type { RuntimeLogger } from "../shared";
+import { AmazonJpImageService, type AmazonJpNetworkClient } from "./AmazonJpImageService";
 
 const POSTER_FILE_NAME = "poster.jpg";
-const AMAZON_ORIGIN = "https://www.amazon.co.jp";
-const AMAZON_BLACK_CURTAIN_BASE = `${AMAZON_ORIGIN}/black-curtain/save-eligibility/black-curtain`;
-const AMAZON_IMAGE_HOST = "m.media-amazon.com";
-const AMAZON_HEADERS = {
-  "accept-language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
-  host: "www.amazon.co.jp",
-};
-
-const normalizeWhitespace = (value: string): string => value.replace(/\s+/gu, " ").trim();
-const quotePlus = (value: string): string => encodeURIComponent(value).replace(/%20/gu, "+");
-const encodeAmazonKeyword = (value: string): string => quotePlus(quotePlus(value.replace(/&/gu, " ")));
-const normalizeCompareText = (value: string): string =>
-  normalizeWhitespace(value)
-    .replace(/％/gu, "%")
-    .replace(/[\s[\]\-_/／・,，、:：]/gu, "")
-    .toLowerCase();
-
-const normalizeAmazonImageUrl = (value: string): string | null => {
-  const trimmed = value.trim();
-  if (!trimmed.includes(AMAZON_IMAGE_HOST) || !/\.(?:jpe?g|png)(?:$|[?#])/iu.test(trimmed)) return null;
-  return trimmed;
-};
-
-const normalizeAmazonDetailPath = (value: string): string | null => {
-  const match = value.trim().match(/\/dp\/([A-Z0-9]{10})/u);
-  if (match) return `/dp/${match[1]}`;
-  try {
-    return new URL(value, AMAZON_ORIGIN).pathname.match(/\/dp\/([A-Z0-9]{10})/u)?.[0] ?? null;
-  } catch {
-    return null;
-  }
-};
 
 const toErrorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -139,6 +108,7 @@ export interface AmazonPosterEnhanceResult {
 export interface AmazonPosterDependencies {
   validateImage?: (filePath: string) => Promise<ImageValidation>;
   enhanceAmazonPoster?: (data: CrawlerData) => Promise<AmazonPosterEnhanceResult>;
+  logger?: Pick<RuntimeLogger, "warn">;
 }
 
 const defaultAmazonPosterDependencies: Required<Pick<AmazonPosterDependencies, "validateImage">> = {
@@ -207,46 +177,8 @@ export const scanAmazonPosters = async (
   return items.sort((left, right) => left.nfoPath.localeCompare(right.nfoPath, "zh-CN"));
 };
 
-const buildBlackCurtainUrl = (returnUrl: string): string => {
-  const url = new URL(AMAZON_BLACK_CURTAIN_BASE);
-  url.searchParams.set("returnUrl", returnUrl);
-  return url.toString();
-};
-
-const extractImageUrlFromNode = (node: { attr(name: string): string | undefined }): string | null => {
-  const oldHires = normalizeAmazonImageUrl(node.attr("data-old-hires") ?? "");
-  if (oldHires) return oldHires;
-  const src = normalizeAmazonImageUrl(node.attr("src") ?? "");
-  if (src) return src;
-  try {
-    const parsed = JSON.parse(node.attr("data-a-dynamic-image") ?? "") as Record<string, unknown>;
-    return (
-      Object.entries(parsed)
-        .map(([url, size]) => ({
-          url: normalizeAmazonImageUrl(url),
-          area: Array.isArray(size) && size.length >= 2 ? Number(size[0]) * Number(size[1]) : 0,
-        }))
-        .filter((entry): entry is { url: string; area: number } => entry.url !== null)
-        .sort((left, right) => right.area - left.area)[0]?.url ?? null
-    );
-  } catch {
-    return null;
-  }
-};
-
-const extractDetailPosterUrl = (html: string): string | null => {
-  const $ = load(html);
-  for (const selector of ["#leftCol #imageBlock img", "#leftCol #landingImage", "#landingImage", "#imgBlkFront"]) {
-    for (const node of $(selector).toArray()) {
-      const imageUrl = extractImageUrlFromNode($(node));
-      if (imageUrl) return imageUrl;
-    }
-  }
-  return null;
-};
-
 export const lookupAmazonPoster = async (
-  networkClient: RuntimeNetworkClient,
+  networkClient: AmazonJpNetworkClient,
   nfoPath: string,
   title: string,
   dependencies: AmazonPosterDependencies = {},
@@ -254,60 +186,22 @@ export const lookupAmazonPoster = async (
   const normalizedNfoPath = resolve(nfoPath.trim());
   const startedAt = Date.now();
   try {
-    const searchTitle = normalizeWhitespace(title);
-    if (dependencies.enhanceAmazonPoster) {
-      const result = await dependencies.enhanceAmazonPoster({
-        title: searchTitle,
-        number: basename(normalizedNfoPath, extname(normalizedNfoPath)),
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.JAVDB,
-        poster_url: "lookup",
-      });
-      return {
-        nfoPath: normalizedNfoPath,
-        amazonPosterUrl: result.poster_url ?? null,
-        reason: result.reason,
-        elapsedMs: Date.now() - startedAt,
-      };
-    }
-
-    const searchHtml = await networkClient.getText(
-      buildBlackCurtainUrl(`/s?k=${encodeAmazonKeyword(searchTitle)}&ref=nb_sb_noss`),
-      { headers: AMAZON_HEADERS },
-    );
-    const expectedTitle = normalizeCompareText(searchTitle);
-    const $ = load(searchHtml);
-    const detailPaths = new Set<string>();
-    for (const card of $('div[data-component-type="s-search-result"][data-asin]').toArray()) {
-      const cardTitle = normalizeWhitespace($(card).find("h2 a span, h2 span").first().text());
-      const asin = ($(card).attr("data-asin") ?? "").trim();
-      const href =
-        $(card).find("a.s-no-outline").first().attr("href") ??
-        $(card).find("h2 a").first().attr("href") ??
-        (asin ? `/dp/${asin}` : "");
-      const detailPath = normalizeAmazonDetailPath(href);
-      if (detailPath && normalizeCompareText(cardTitle).includes(expectedTitle)) detailPaths.add(detailPath);
-    }
-    for (const detailPath of [...detailPaths].slice(0, 4)) {
-      const html = await networkClient.getText(new URL(detailPath, AMAZON_ORIGIN).toString(), {
-        headers: AMAZON_HEADERS,
-      });
-      const amazonPosterUrl = extractDetailPosterUrl(html);
-      if (!amazonPosterUrl) continue;
-      if (networkClient.head && !(await networkClient.head(amazonPosterUrl)).ok) continue;
-      return {
-        nfoPath: normalizedNfoPath,
-        amazonPosterUrl,
-        reason: "已查询到 Amazon 商品海报",
-        elapsedMs: Date.now() - startedAt,
-      };
-    }
+    const data: CrawlerData = {
+      title: title.replace(/\s+/gu, " ").trim(),
+      number: basename(normalizedNfoPath, extname(normalizedNfoPath)),
+      actors: [],
+      genres: [],
+      scene_images: [],
+      website: Website.JAVDB,
+      poster_url: "lookup",
+    };
+    const result = dependencies.enhanceAmazonPoster
+      ? await dependencies.enhanceAmazonPoster(data)
+      : await new AmazonJpImageService(networkClient, dependencies.logger).enhance(data);
     return {
       nfoPath: normalizedNfoPath,
-      amazonPosterUrl: null,
-      reason: "搜索无结果",
+      amazonPosterUrl: result.poster_url ?? null,
+      reason: result.reason,
       elapsedMs: Date.now() - startedAt,
     };
   } catch (error) {

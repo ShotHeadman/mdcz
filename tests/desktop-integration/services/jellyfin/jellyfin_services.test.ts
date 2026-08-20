@@ -1,13 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  type ActorLookupResult,
-  ActorSourceProvider,
-  ActorSourceRegistry,
-  GfriendsActorSource,
-  LocalActorSource,
-} from "@main/services/actorSource";
+import { ActorImageService } from "@main/services/ActorImageService";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
 import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
 import {
@@ -17,6 +11,14 @@ import {
   JellyfinActorPhotoService,
 } from "@main/services/mediaServer/jellyfin";
 import { SignalService } from "@main/services/SignalService";
+import { parseNfo } from "@main/utils/nfo";
+import {
+  type ActorLookupResult,
+  ActorSourceProvider,
+  ActorSourceRegistry,
+  GfriendsActorSource,
+  LocalActorSource,
+} from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -67,7 +69,9 @@ const createActorSourceProvider = (
 ) =>
   new ActorSourceProvider({
     registry: new ActorSourceRegistry([
-      new LocalActorSource(),
+      // The local source only reaches the actor photo folder through an image service, so the
+      // desktop one (rooted in the mocked user data dir) has to be supplied explicitly.
+      new LocalActorSource({ actorImageService: new ActorImageService(), parseNfo }),
       new GfriendsActorSource({
         networkClient: networkClient as unknown as NetworkClient,
         actorMapUrl,

@@ -637,6 +637,40 @@ describe("buildServer composition integration", () => {
     ]);
   });
 
+  it("collects deduplicated actor profiles from crawler payloads and tolerates unusable ones", async () => {
+    const root = await createTempRoot("actor-profile-root");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const state = await services.persistence.getState();
+
+    expect(await services.library.listActorProfiles()).toEqual([]);
+
+    for (const [id, crawlerDataJson] of [
+      ["profile-a", JSON.stringify({ actor_profiles: [{ name: "Alice", birth_place: "Tokyo" }] })],
+      // Same actor under different casing/padding, plus one the first payload never mentioned.
+      ["profile-b", JSON.stringify({ actor_profiles: [{ name: " alice ", birth_place: "Osaka" }, { name: "Bob" }] })],
+      // Neither of these may take the whole collection down.
+      ["profile-broken", "{ not json"],
+      ["profile-empty-name", JSON.stringify({ actor_profiles: [{ name: "  " }] })],
+    ] as const) {
+      await state.repositories.library.upsertEntry({
+        id,
+        rootId,
+        rootRelativePath: `${id}.mp4`,
+        number: id,
+        crawlerDataJson,
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      });
+    }
+
+    // First occurrence wins, so Alice keeps Tokyo rather than Osaka.
+    expect(await services.library.listActorProfiles()).toEqual([
+      { name: "Alice", birth_place: "Tokyo" },
+      { name: "Bob" },
+    ]);
+  });
+
   it("rejects root browser escape attempts", async () => {
     const root = await createTempRoot("browser-root");
     const { fastify } = await createTestServer();

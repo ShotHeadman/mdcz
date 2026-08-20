@@ -1,6 +1,6 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
-import { configurationSchema } from "@main/services/config/models";
 import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
+import { configurationSchema } from "@mdcz/shared/config";
 import { ProxyType, Website } from "@mdcz/shared/enums";
 import { DEFAULT_R18_METADATA_LANGUAGE } from "@mdcz/shared/r18";
 import { describe, expect, it } from "vitest";

@@ -3,6 +3,7 @@ import type { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, MountedRootScrapeRuntime } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
+import { getServerImageHostCooldownStore } from "./imageHostCooldownStore";
 import type { ServerConfigService } from "./services/configService";
 
 export const createServerScrapeRuntime = (
@@ -20,5 +21,6 @@ export const createServerScrapeRuntime = (
     logger,
     networkClient,
     mappingStore,
+    getServerImageHostCooldownStore(config),
   );
 };

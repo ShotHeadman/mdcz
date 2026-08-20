@@ -1,6 +1,7 @@
 import { ActorImageService } from "@main/services/ActorImageService";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
+import { isAbortError, throwIfAborted } from "@main/utils/abort";
 import { toErrorMessage } from "@main/utils/common";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import {
@@ -23,7 +24,6 @@ import {
   TranslateStage,
 } from "@mdcz/runtime/scrape";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
-import { isAbortError, throwIfAborted } from "../abort";
 import type {
   FileScrapeOptions,
   FileScrapeProgress,

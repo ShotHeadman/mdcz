@@ -1,5 +1,4 @@
 import type { ActorImageService } from "@main/services/ActorImageService";
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { DesktopLibraryService, OutputLibraryScanner } from "@main/services/library";
 import type { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
 import type { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
@@ -9,6 +8,7 @@ import type { ScraperService } from "@main/services/scraper";
 import type { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import type { AmazonPosterToolService, BatchTranslateToolService, SymlinkService } from "@main/services/tools";
 import type { WindowService } from "@main/services/WindowService";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { NetworkClient } from "@mdcz/runtime/network";
 

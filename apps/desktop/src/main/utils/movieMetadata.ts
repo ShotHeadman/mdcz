@@ -1,4 +1,4 @@
-import { normalizeText } from "./normalization";
+import { normalizeText } from "@mdcz/runtime/shared";
 
 const MANAGED_MOVIE_TAG_PREFIX = "mdcz:";
 

@@ -1,11 +1,12 @@
 import type { ActorImageService } from "@main/services/ActorImageService";
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { Configuration } from "@main/services/config";
 import type { SignalService } from "@main/services/SignalService";
+import { throwIfAborted } from "@main/utils/abort";
 import { toErrorMessage } from "@main/utils/common";
 import { resolvePosterBadgeDefinitions } from "@main/utils/movieTags";
 import { probeVideoMetadata } from "@main/utils/video";
-import type { FileOrganizer, OrganizePlan } from "@mdcz/runtime/scrape";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import type { FileOrganizer, ImageAlternatives, OrganizePlan, SourceMap } from "@mdcz/runtime/scrape";
 import {
   nfoIgnoreFieldsToEnabledFields,
   prepareCrawlerDataForMovieOutput,
@@ -13,8 +14,6 @@ import {
 } from "@mdcz/runtime/scrape";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import type { Logger } from "winston";
-import { throwIfAborted } from "../abort";
-import type { ImageAlternatives, SourceMap } from "../aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../DownloadManager";
 import type { NfoGenerator } from "../NfoGenerator";
 import { reconcileExistingNfoFiles } from "../NfoGenerator";
