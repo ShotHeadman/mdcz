@@ -1,6 +1,5 @@
 export * from "./actorSource";
 export * from "./assetNaming";
-export * from "./capabilities";
 export * from "./config";
 export * from "./desktopNavigation";
 export * from "./enums";

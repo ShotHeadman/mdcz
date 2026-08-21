@@ -131,20 +131,18 @@ export class ConfigManager extends EventEmitter {
     return this.computedConfig.value;
   }
 
-  async save(partial: DeepPartial<Configuration>): Promise<Configuration> {
+  async save(partial: DeepPartial<Configuration>): Promise<void> {
     await this.ensureLoaded();
 
-    const configuration = await this.config.update(partial);
+    await this.config.update(partial);
     this.notify();
-    return configuration;
   }
 
-  async reset(path?: string): Promise<Configuration> {
+  async reset(path?: string): Promise<void> {
     await this.ensureLoaded();
 
-    const configuration = await this.config.reset(path);
+    await this.config.reset(path);
     this.notify();
-    return configuration;
   }
 
   onChange(listener: (configuration: Configuration) => void): () => void {
@@ -167,29 +165,26 @@ export class ConfigManager extends EventEmitter {
     return await this.config.listProfiles();
   }
 
-  async createProfile(name: string): Promise<{ profileName: string }> {
+  async createProfile(name: string): Promise<void> {
     await this.ensureLoaded();
     const result = await this.config.createProfile(name);
     this.logger.info(`Created profile: ${result.profileName}`);
-    return result;
   }
 
-  async switchProfile(name: string): Promise<Configuration> {
+  async switchProfile(name: string): Promise<void> {
     await this.ensureLoaded();
     await this.config.switchProfile(name);
     this.syncConfigDirectoryFromConfiguration();
     this.config.replaceStore(this.createStore());
-    const configuration = await this.config.saveFull(this.configuration);
+    await this.config.saveFull(this.configuration);
     this.logger.info(`Switched to profile: ${name}`);
     this.notify();
-    return configuration;
   }
 
-  async deleteProfile(name: string): Promise<{ profileName: string }> {
+  async deleteProfile(name: string): Promise<void> {
     await this.ensureLoaded();
     const result = await this.config.deleteProfile(name);
     this.logger.info(`Deleted profile: ${result.profileName}`);
-    return result;
   }
 
   async exportProfile(name: string, destinationPath: string): Promise<void> {

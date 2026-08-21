@@ -12,11 +12,18 @@ type FlattenServerPaths<T, Prefix extends string = ""> = {
 
 export type FlattenedServerPath = FlattenServerPaths<ServerApiContract>;
 
-export interface CapabilityOverlapPair {
-  id: string;
-  desktop: keyof IpcRouterContract;
-  server: FlattenedServerPath;
-}
+export type CrossHostCapability =
+  | {
+      desktop: keyof IpcRouterContract;
+      server: FlattenedServerPath;
+      status: "aligned";
+    }
+  | {
+      desktop: keyof IpcRouterContract;
+      server: FlattenedServerPath;
+      status: "adapted" | "blocked";
+      reason: string;
+    };
 
 export interface ClassifiedChannel {
   channel: IpcChannel;
@@ -28,70 +35,208 @@ export interface ClassifiedServerProcedure {
   reason: string;
 }
 
-export const CAPABILITY_OVERLAP_PAIRS = [
+const CONFIG_TRANSFER_REASON = "Desktop uses native file dialogs; server transfers serialized configuration.";
+const MAINTENANCE_EXECUTION_REASON = "Desktop runs an in-process session; server controls a persisted task.";
+const SCRAPE_EXECUTION_REASON = "Desktop runs an in-process session; server controls persisted scrape tasks.";
+
+export const CROSS_HOST_CAPABILITIES = [
   {
-    id: "app.ensureWatermarkDirectory",
     desktop: IpcChannel.App_EnsureWatermarkDirectory,
     server: "app.ensureWatermarkDirectory",
+    status: "aligned",
   },
-  { id: "config.defaults", desktop: IpcChannel.Config_GetDefaults, server: "config.defaults" },
-  { id: "config.previewNaming", desktop: IpcChannel.Config_PreviewNaming, server: "config.previewNaming" },
-  { id: "config.profiles.create", desktop: IpcChannel.Config_CreateProfile, server: "config.profiles.create" },
-  { id: "config.profiles.delete", desktop: IpcChannel.Config_DeleteProfile, server: "config.profiles.delete" },
-  { id: "config.profiles.export", desktop: IpcChannel.Config_ExportProfile, server: "config.profiles.export" },
-  { id: "config.profiles.import", desktop: IpcChannel.Config_ImportProfile, server: "config.profiles.import" },
-  { id: "config.profiles.list", desktop: IpcChannel.Config_ListProfiles, server: "config.profiles.list" },
-  { id: "config.profiles.switch", desktop: IpcChannel.Config_SwitchProfile, server: "config.profiles.switch" },
-  { id: "config.read", desktop: IpcChannel.Config_Get, server: "config.read" },
-  { id: "config.reset", desktop: IpcChannel.Config_Reset, server: "config.reset" },
-  { id: "config.save", desktop: IpcChannel.Config_Save, server: "config.save" },
-  { id: "crawler.listSites", desktop: IpcChannel.Crawler_ListSites, server: "crawler.listSites" },
+  { desktop: IpcChannel.Config_GetDefaults, server: "config.defaults", status: "aligned" },
   {
-    id: "crawler.probeSiteConnectivity",
+    desktop: IpcChannel.Config_PreviewNaming,
+    server: "config.previewNaming",
+    status: "adapted",
+    reason: "Desktop accepts an optional wrapped config; server accepts the config directly.",
+  },
+  {
+    desktop: IpcChannel.Config_CreateProfile,
+    server: "config.profiles.create",
+    status: "adapted",
+    reason: "Desktop validates an optional name and returns an acknowledgement.",
+  },
+  {
+    desktop: IpcChannel.Config_DeleteProfile,
+    server: "config.profiles.delete",
+    status: "adapted",
+    reason: "Desktop validates an optional name and returns an acknowledgement.",
+  },
+  {
+    desktop: IpcChannel.Config_ExportProfile,
+    server: "config.profiles.export",
+    status: "blocked",
+    reason: CONFIG_TRANSFER_REASON,
+  },
+  {
+    desktop: IpcChannel.Config_ImportProfile,
+    server: "config.profiles.import",
+    status: "blocked",
+    reason: CONFIG_TRANSFER_REASON,
+  },
+  { desktop: IpcChannel.Config_ListProfiles, server: "config.profiles.list", status: "aligned" },
+  {
+    desktop: IpcChannel.Config_SwitchProfile,
+    server: "config.profiles.switch",
+    status: "adapted",
+    reason: "Desktop validates an optional name and returns an acknowledgement.",
+  },
+  {
+    desktop: IpcChannel.Config_Get,
+    server: "config.read",
+    status: "blocked",
+    reason: "Desktop multiplexes whole-config and path-value response shapes.",
+  },
+  {
+    desktop: IpcChannel.Config_Reset,
+    server: "config.reset",
+    status: "adapted",
+    reason: "Desktop returns an acknowledgement; server returns the updated configuration.",
+  },
+  {
+    desktop: IpcChannel.Config_Save,
+    server: "config.save",
+    status: "adapted",
+    reason: "Desktop wraps the update and returns an acknowledgement; server returns the updated configuration.",
+  },
+  { desktop: IpcChannel.Crawler_ListSites, server: "crawler.listSites", status: "aligned" },
+  {
     desktop: IpcChannel.Crawler_ProbeSiteConnectivity,
     server: "crawler.probeSiteConnectivity",
+    status: "adapted",
+    reason: "Desktop accepts an optional site; server requires a validated site.",
   },
-  { id: "library.availability", desktop: IpcChannel.Library_Availability, server: "library.availability" },
-  { id: "library.delete", desktop: IpcChannel.Library_Delete, server: "library.delete" },
-  { id: "library.list", desktop: IpcChannel.Library_List, server: "library.list" },
-  { id: "maintenance.apply", desktop: IpcChannel.Maintenance_Execute, server: "maintenance.apply" },
-  { id: "maintenance.pause", desktop: IpcChannel.Maintenance_Pause, server: "maintenance.pause" },
-  { id: "maintenance.preview", desktop: IpcChannel.Maintenance_Preview, server: "maintenance.preview" },
-  { id: "maintenance.resume", desktop: IpcChannel.Maintenance_Resume, server: "maintenance.resume" },
+  { desktop: IpcChannel.Library_Availability, server: "library.availability", status: "aligned" },
   {
-    id: "maintenance.scanSelectedFiles",
+    desktop: IpcChannel.Library_Delete,
+    server: "library.delete",
+    status: "adapted",
+    reason: "Desktop optionally deletes media files; server deletes only the library item.",
+  },
+  {
+    desktop: IpcChannel.Library_List,
+    server: "library.list",
+    status: "adapted",
+    reason: "Server permits an omitted list input; desktop requires the list envelope.",
+  },
+  {
+    desktop: IpcChannel.Maintenance_Execute,
+    server: "maintenance.apply",
+    status: "blocked",
+    reason: MAINTENANCE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Maintenance_Pause,
+    server: "maintenance.pause",
+    status: "blocked",
+    reason: MAINTENANCE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Maintenance_Preview,
+    server: "maintenance.preview",
+    status: "blocked",
+    reason: MAINTENANCE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Maintenance_Resume,
+    server: "maintenance.resume",
+    status: "blocked",
+    reason: MAINTENANCE_EXECUTION_REASON,
+  },
+  {
     desktop: IpcChannel.Maintenance_Scan,
     server: "maintenance.scanSelectedFiles",
+    status: "blocked",
+    reason: MAINTENANCE_EXECUTION_REASON,
   },
-  { id: "maintenance.stop", desktop: IpcChannel.Maintenance_Stop, server: "maintenance.stop" },
-  { id: "network.checkCookies", desktop: IpcChannel.Network_CheckCookies, server: "network.checkCookies" },
   {
-    id: "overview.removeRecentAcquisition",
+    desktop: IpcChannel.Maintenance_Stop,
+    server: "maintenance.stop",
+    status: "blocked",
+    reason: MAINTENANCE_EXECUTION_REASON,
+  },
+  { desktop: IpcChannel.Network_CheckCookies, server: "network.checkCookies", status: "aligned" },
+  {
     desktop: IpcChannel.Overview_RemoveRecentAcquisition,
     server: "overview.removeRecentAcquisition",
+    status: "aligned",
   },
-  { id: "scrape.confirmUncensored", desktop: IpcChannel.Scraper_ConfirmUncensored, server: "scrape.confirmUncensored" },
   {
-    id: "scrape.getRecoverableSession",
+    desktop: IpcChannel.Scraper_ConfirmUncensored,
+    server: "scrape.confirmUncensored",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
     desktop: IpcChannel.Scraper_GetRecoverableSession,
     server: "scrape.getRecoverableSession",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
   },
-  { id: "scrape.nfoRead", desktop: IpcChannel.File_NfoRead, server: "scrape.nfoRead" },
-  { id: "scrape.nfoWrite", desktop: IpcChannel.File_NfoWrite, server: "scrape.nfoWrite" },
-  { id: "scrape.pause", desktop: IpcChannel.Scraper_Pause, server: "scrape.pause" },
-  { id: "scrape.posterCropSave", desktop: IpcChannel.File_PosterCropSave, server: "scrape.posterCropSave" },
-  { id: "scrape.posterCropSession", desktop: IpcChannel.File_PosterCropSession, server: "scrape.posterCropSession" },
   {
-    id: "scrape.resolveRecoverableSession",
+    desktop: IpcChannel.File_NfoRead,
+    server: "scrape.nfoRead",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.File_NfoWrite,
+    server: "scrape.nfoWrite",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Scraper_Pause,
+    server: "scrape.pause",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.File_PosterCropSave,
+    server: "scrape.posterCropSave",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.File_PosterCropSession,
+    server: "scrape.posterCropSession",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
     desktop: IpcChannel.Scraper_ResolveRecoverableSession,
     server: "scrape.resolveRecoverableSession",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
   },
-  { id: "scrape.resume", desktop: IpcChannel.Scraper_Resume, server: "scrape.resume" },
-  { id: "scrape.retry", desktop: IpcChannel.Scraper_RetryFailed, server: "scrape.retry" },
-  { id: "scrape.start", desktop: IpcChannel.Scraper_Start, server: "scrape.start" },
-  { id: "scrape.stop", desktop: IpcChannel.Scraper_Stop, server: "scrape.stop" },
-  { id: "translate.testLlm", desktop: IpcChannel.Translate_TestLlm, server: "translate.testLlm" },
-] as const satisfies readonly CapabilityOverlapPair[];
+  {
+    desktop: IpcChannel.Scraper_Resume,
+    server: "scrape.resume",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Scraper_RetryFailed,
+    server: "scrape.retry",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Scraper_Start,
+    server: "scrape.start",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Scraper_Stop,
+    server: "scrape.stop",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  { desktop: IpcChannel.Translate_TestLlm, server: "translate.testLlm", status: "aligned" },
+] as const satisfies readonly CrossHostCapability[];
 
 export const DESKTOP_ONLY_CHANNELS = [
   {
@@ -257,13 +402,13 @@ export const SERVER_ONLY_PROCEDURES = [
 ] as const satisfies readonly ClassifiedServerProcedure[];
 
 type ClassifiedDesktopChannel =
-  | (typeof CAPABILITY_OVERLAP_PAIRS)[number]["desktop"]
+  | (typeof CROSS_HOST_CAPABILITIES)[number]["desktop"]
   | (typeof DESKTOP_ONLY_CHANNELS)[number]["channel"];
 type UnclassifiedDesktopChannel = Exclude<IpcChannel, ClassifiedDesktopChannel>;
 type ExtraDesktopChannel = Exclude<ClassifiedDesktopChannel, IpcChannel>;
 
 type ClassifiedServerPath =
-  | (typeof CAPABILITY_OVERLAP_PAIRS)[number]["server"]
+  | (typeof CROSS_HOST_CAPABILITIES)[number]["server"]
   | (typeof SERVER_ONLY_PROCEDURES)[number]["path"];
 type UnclassifiedServerPath = Exclude<FlattenedServerPath, ClassifiedServerPath>;
 type ExtraServerPath = Exclude<ClassifiedServerPath, FlattenedServerPath>;

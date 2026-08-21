@@ -30,7 +30,6 @@ export {
   replaceLastToken,
   type SettingsSuggestion,
 } from "./settingsFilter";
-export * from "./settingsFormFields";
 export * from "./settingsRegistry";
 export * from "./sitePriorityOptions";
 export * from "./TocContext";

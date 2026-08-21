@@ -61,7 +61,8 @@ export const createConfigHandlers = (
     }),
     [IpcChannel.Config_Save]: t.procedure.input<{ config?: DeepPartial<Configuration> }>().action(async ({ input }) => {
       try {
-        return await configManager.save(input?.config ?? {});
+        await configManager.save(input?.config ?? {});
+        return { success: true as const };
       } catch (error) {
         if (error instanceof ConfigValidationError) {
           throw asSerializableIpcError(
@@ -84,7 +85,8 @@ export const createConfigHandlers = (
     }),
     [IpcChannel.Config_Reset]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
       try {
-        return await configManager.reset(input?.path);
+        await configManager.reset(input?.path);
+        return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(createIpcError(IpcErrorCode.CONFIG_SAVE_ERROR, toErrorMessage(error)));
       }
@@ -115,7 +117,8 @@ export const createConfigHandlers = (
         if (!name) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
         }
-        return await configManager.createProfile(name);
+        await configManager.createProfile(name);
+        return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
       }
@@ -126,7 +129,8 @@ export const createConfigHandlers = (
         if (!name) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
         }
-        return await configManager.switchProfile(name);
+        await configManager.switchProfile(name);
+        return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
       }
@@ -137,7 +141,8 @@ export const createConfigHandlers = (
         if (!name) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
         }
-        return await configManager.deleteProfile(name);
+        await configManager.deleteProfile(name);
+        return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
       }

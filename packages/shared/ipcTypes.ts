@@ -7,6 +7,12 @@ export interface IpcProcedure<TInput = unknown, TOutput = unknown> {
   action(options: { context: IpcActionContext; input: TInput }): Promise<TOutput>;
 }
 
+export type IpcProcedureInput<Procedure extends IpcProcedure> =
+  Procedure extends IpcProcedure<infer Input, infer _Output> ? Input : never;
+
+export type IpcProcedureOutput<Procedure extends IpcProcedure> =
+  Procedure extends IpcProcedure<infer _Input, infer Output> ? Output : never;
+
 export type AppInfo = {
   version: string;
   arch: string;

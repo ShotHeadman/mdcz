@@ -1,3 +1,5 @@
+import { defaultConfiguration } from "@mdcz/shared/config";
+import { SETTINGS_FIELD_REGISTRY } from "@mdcz/shared/settingsRegistry";
 import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form";
 import {
   AdvancedSettingsFooterContent,
@@ -10,6 +12,7 @@ import {
   PathsSection,
   ProfileCapsule,
   SectionAnchor,
+  SettingsEditor,
   SettingsEditorAutosaveProvider,
   SettingsSectionModeProvider,
   type SettingsServices,
@@ -73,6 +76,84 @@ function FormHarness({
     </SettingsServicesProvider>
   );
 }
+
+function SettingsSurfaceHarness() {
+  const configuration = useMemo(
+    () => ({
+      ...defaultConfiguration,
+      download: {
+        ...defaultConfiguration.download,
+        downloadPoster: true,
+        generateNfo: true,
+        tagBadges: true,
+      },
+      titleRepair: {
+        ...defaultConfiguration.titleRepair,
+        enabled: true,
+      },
+    }),
+    [],
+  );
+
+  return (
+    <SettingsServicesProvider notifier={settingsNotifier} services={baseSettingsServices}>
+      <SettingsEditor
+        data={configuration}
+        defaultConfig={configuration}
+        defaultConfigReady
+        profiles={["default"]}
+        activeProfile="default"
+        onSwitchProfile={noop}
+        onCreateProfile={noop}
+        onDeleteProfile={noop}
+        onResetConfig={noop}
+        onExportProfile={noop}
+        onImportProfile={noop}
+      />
+    </SettingsServicesProvider>
+  );
+}
+
+test("settings editor renders every visible registry field", async () => {
+  class ImmediateIntersectionObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "";
+    readonly thresholds = [0];
+
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+
+    disconnect() {}
+    observe(target: Element) {
+      this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this);
+    }
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    unobserve() {}
+  }
+
+  const nativeIntersectionObserver = window.IntersectionObserver;
+  vi.stubGlobal("IntersectionObserver", ImmediateIntersectionObserver);
+
+  try {
+    const screen = await render(<SettingsSurfaceHarness />);
+    await screen.getByRole("button", { name: "显示高级设置" }).click();
+
+    const expectedFields = SETTINGS_FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map(
+      (entry) => entry.key,
+    );
+    await expect.poll(() => screen.container.querySelectorAll("[data-field-name]").length).toBe(expectedFields.length);
+
+    const renderedFields = Array.from(
+      screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),
+      (element) => element.dataset.fieldName,
+    ).filter((key): key is string => Boolean(key));
+
+    expect(new Set(renderedFields)).toEqual(new Set(expectedFields));
+  } finally {
+    vi.stubGlobal("IntersectionObserver", nativeIntersectionObserver);
+  }
+});
 
 test("ordered site field exposes grouped priority semantics", async () => {
   const screen = await render(
