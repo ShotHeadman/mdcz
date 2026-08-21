@@ -7,7 +7,6 @@ import {
   JellyfinSection,
   mergeConfigWithFlatPayload,
   PersonSyncSharedSection,
-  type SettingsCrawlerSiteInfo,
   SettingsEditorAutosaveProvider,
   type SettingsNotifier,
   type SettingsServices,
@@ -60,10 +59,8 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
         getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
         incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
         listCrawlerSites: async () => {
-          const result = (await ipc.crawler.listSites()) as {
-            sites?: SettingsCrawlerSiteInfo[];
-          };
-          return { sites: result.sites ?? [] };
+          const result = await ipc.crawler.listSites();
+          return { sites: result.sites };
         },
         openWatermarkDirectory: async () => {
           await ipc.app.openWatermarkDirectory();

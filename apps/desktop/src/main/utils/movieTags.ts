@@ -1,5 +1,4 @@
-import { buildManagedMovieTags } from "@main/utils/movieMetadata";
-import { normalizeNfoLocalState, uncensoredChoiceToTag } from "@main/utils/nfoLocalState";
+import { buildManagedMovieTags, normalizeNfoLocalState, uncensoredChoiceToTag } from "@mdcz/runtime/maintenance";
 import { classifyMovie } from "@mdcz/runtime/scrape/utils/movieClassification";
 import { resolveFileInfoSubtitleTag } from "@mdcz/runtime/scrape/utils/subtitles";
 import { POSTER_TAG_BADGE_TYPE_OPTIONS, type PosterTagBadgeType } from "@mdcz/shared/posterBadges";

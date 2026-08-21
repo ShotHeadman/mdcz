@@ -215,6 +215,29 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/persistence/src/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@mdcz/shared": "Persistence returns raw rows; domain parsing belongs in the service layer."
+                },
+                "patterns": [
+                  {
+                    "group": ["@mdcz/shared/*"],
+                    "message": "Persistence returns raw rows; domain parsing belongs in the service layer."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

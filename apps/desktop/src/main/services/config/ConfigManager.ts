@@ -131,24 +131,20 @@ export class ConfigManager extends EventEmitter {
     return this.computedConfig.value;
   }
 
-  async save(partial: DeepPartial<Configuration>): Promise<void> {
+  async save(partial: DeepPartial<Configuration>): Promise<Configuration> {
     await this.ensureLoaded();
 
-    await this.config.update(partial);
+    const configuration = await this.config.update(partial);
     this.notify();
+    return configuration;
   }
 
-  async reset(path?: string): Promise<void> {
+  async reset(path?: string): Promise<Configuration> {
     await this.ensureLoaded();
 
-    if (!path) {
-      await this.config.reset();
-      this.notify();
-      return;
-    }
-
-    await this.config.reset(path);
+    const configuration = await this.config.reset(path);
     this.notify();
+    return configuration;
   }
 
   onChange(listener: (configuration: Configuration) => void): () => void {
@@ -171,26 +167,29 @@ export class ConfigManager extends EventEmitter {
     return await this.config.listProfiles();
   }
 
-  async createProfile(name: string): Promise<void> {
+  async createProfile(name: string): Promise<{ profileName: string }> {
     await this.ensureLoaded();
     const result = await this.config.createProfile(name);
     this.logger.info(`Created profile: ${result.profileName}`);
+    return result;
   }
 
-  async switchProfile(name: string): Promise<void> {
+  async switchProfile(name: string): Promise<Configuration> {
     await this.ensureLoaded();
     await this.config.switchProfile(name);
     this.syncConfigDirectoryFromConfiguration();
     this.config.replaceStore(this.createStore());
-    await this.config.saveFull(this.configuration);
+    const configuration = await this.config.saveFull(this.configuration);
     this.logger.info(`Switched to profile: ${name}`);
     this.notify();
+    return configuration;
   }
 
-  async deleteProfile(name: string): Promise<void> {
+  async deleteProfile(name: string): Promise<{ profileName: string }> {
     await this.ensureLoaded();
     const result = await this.config.deleteProfile(name);
     this.logger.info(`Deleted profile: ${result.profileName}`);
+    return result;
   }
 
   async exportProfile(name: string, destinationPath: string): Promise<void> {

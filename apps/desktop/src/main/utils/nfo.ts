@@ -1,6 +1,10 @@
 import { toArray } from "@main/utils/common";
-import { isManagedMovieTag, parseManagedMovieTags } from "@main/utils/movieMetadata";
-import { normalizeNfoLocalState, tagToUncensoredChoice } from "@main/utils/nfoLocalState";
+import {
+  isManagedMovieTag,
+  normalizeNfoLocalState,
+  parseManagedMovieTags,
+  tagToUncensoredChoice,
+} from "@mdcz/runtime/maintenance";
 import { Website } from "@mdcz/shared/enums";
 import type { ActorProfile, CrawlerData, NfoLocalState } from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";

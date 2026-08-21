@@ -6,7 +6,6 @@ import { useState } from "react";
 import { ipc } from "@/client/ipc";
 import { useToast } from "@/contexts/ToastProvider";
 
-type CrawlerSiteOption = NonNullable<CrawlerTesterDetailProps["siteOptions"]>[number];
 type CrawlerTestResult = NonNullable<CrawlerTesterDetailProps["result"]>;
 
 export function CrawlerTester() {
@@ -14,7 +13,7 @@ export function CrawlerTester() {
   const sitesQ = useQuery({
     queryKey: ["crawler", "sites"],
     queryFn: async () => {
-      const result = (await ipc.crawler.listSites()) as { sites: CrawlerSiteOption[] };
+      const result = await ipc.crawler.listSites();
       return result.sites;
     },
   });

@@ -47,11 +47,12 @@ describe("ConfigManager configDirectory", () => {
     const { ConfigManager } = await import("@main/services/config/ConfigManager");
 
     const manager = new ConfigManager();
-    await manager.save({
+    const saved = await manager.save({
       paths: {
         configDirectory: "custom-config",
       },
     });
+    expect(saved.paths.configDirectory).toBe("custom-config");
 
     const expectedConfigPath = join(mockUserDataPath, "custom-config", "default.toml");
     const expectedMetaPath = join(mockUserDataPath, ".config-directory.json");
@@ -63,31 +64,37 @@ describe("ConfigManager configDirectory", () => {
     const configuration = await reloaded.getValidated();
     expect(configuration.paths.configDirectory).toBe("custom-config");
     expect(reloaded.list().dataDir).toBe(join(mockUserDataPath, "custom-config"));
+
+    const reset = await reloaded.reset("network.timeout");
+    expect(reset).toEqual(await reloaded.getValidated());
   });
 
   it("creates, switches, and deletes profiles in the active config directory", async () => {
     const { ConfigManager } = await import("@main/services/config/ConfigManager");
 
     const manager = new ConfigManager();
-    await manager.createProfile("windows-dev");
+    const created = await manager.createProfile("windows-dev");
 
     expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.toml"))).toBe(true);
+    expect(created).toEqual({ profileName: "windows-dev" });
 
     const createdProfiles = await manager.listProfiles();
     expect(createdProfiles.profiles).toEqual(expect.arrayContaining(["default", "windows-dev"]));
     expect(createdProfiles.active).toBe("default");
 
-    await manager.switchProfile("windows-dev");
+    const switched = await manager.switchProfile("windows-dev");
 
     const switchedProfiles = await manager.listProfiles();
     expect(switchedProfiles.active).toBe("windows-dev");
     expect(manager.list().configPath).toBe(join(mockUserDataPath, "config", "windows-dev.toml"));
+    expect(switched).toEqual(await manager.getValidated());
 
     await expect(manager.deleteProfile("windows-dev")).rejects.toThrow("Cannot delete the active profile");
 
     await manager.switchProfile("default");
-    await manager.deleteProfile("windows-dev");
+    const deleted = await manager.deleteProfile("windows-dev");
 
+    expect(deleted).toEqual({ profileName: "windows-dev" });
     const deletedProfiles = await manager.listProfiles();
     expect(deletedProfiles.profiles).toEqual(["default"]);
     expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.toml"))).toBe(false);

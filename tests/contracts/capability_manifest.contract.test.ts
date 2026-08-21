@@ -16,12 +16,20 @@ type DesktopInput<Channel extends keyof IpcRouterContract> = Parameters<
   IpcRouterContract[Channel]["action"]
 >[0]["input"];
 type DesktopOutput<Channel extends keyof IpcRouterContract> = Awaited<ReturnType<IpcRouterContract[Channel]["action"]>>;
-type ServerMethod<Path extends ServerCapabilityPath> = Path extends `${infer Namespace}.${infer Operation}`
-  ? Namespace extends keyof ServerApiContract
-    ? Operation extends keyof ServerApiContract[Namespace]
-      ? ServerApiContract[Namespace][Operation]
+type ServerMethod<Path extends ServerCapabilityPath> = Path extends `${infer Namespace}.${infer Rest}`
+  ? Rest extends `${infer Operation}.${infer Nested}`
+    ? Namespace extends keyof ServerApiContract
+      ? Operation extends keyof ServerApiContract[Namespace]
+        ? Nested extends keyof ServerApiContract[Namespace][Operation]
+          ? ServerApiContract[Namespace][Operation][Nested]
+          : never
+        : never
       : never
-    : never
+    : Namespace extends keyof ServerApiContract
+      ? Rest extends keyof ServerApiContract[Namespace]
+        ? ServerApiContract[Namespace][Rest]
+        : never
+      : never
   : never;
 type ServerInput<Path extends ServerCapabilityPath> =
   // biome-ignore lint/suspicious/noConfusingVoidType: IPC no-input contracts use void as their input type.
@@ -36,15 +44,15 @@ type CapabilityTypeCheck<Row extends (typeof SHARED_CAPABILITIES)[number]> =
       ? Equal<DesktopInput<Row["desktop"]>, ServerInput<Row["server"]>>
       : true
     : false;
-type CapabilityTypeChecks = {
+type FailingCapabilityIds = {
   [Index in Exclude<keyof typeof SHARED_CAPABILITIES, keyof (readonly unknown[])>]: CapabilityTypeCheck<
     (typeof SHARED_CAPABILITIES)[Index]
-  >;
-};
+  > extends true
+    ? never
+    : (typeof SHARED_CAPABILITIES)[Index]["id"];
+}[Exclude<keyof typeof SHARED_CAPABILITIES, keyof (readonly unknown[])>];
 
-const capabilityTypeChecks: CapabilityTypeChecks = SHARED_CAPABILITIES.map(
-  () => true,
-) as unknown as CapabilityTypeChecks;
+const failingCapabilityIds: Record<FailingCapabilityIds, never> = {};
 
 describe("shared capability manifest", () => {
   it("has unique, executable overlap rows with behavior fixtures", () => {
@@ -58,7 +66,7 @@ describe("shared capability manifest", () => {
       expect(fixture.desktop).toBe(capability.desktop);
       expect(fixture.server).toBe(capability.server);
     }
-    expect(Object.values(capabilityTypeChecks).every(Boolean)).toBe(true);
+    expect(failingCapabilityIds).toEqual({});
   });
 
   it("keeps representative DTOs tied to both platform contracts", () => {

@@ -116,7 +116,7 @@ export interface ServerApiContract {
     profiles: {
       list(): Promise<ConfigProfileListResponse>;
       create(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
-      switch(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
+      switch(input: ConfigProfileNameInput): Promise<Configuration>;
       delete(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
       export(input: ConfigProfileNameInput): Promise<ConfigProfileExportResponse>;
       import(input: ConfigProfileImportInput): Promise<ConfigProfileImportResponse>;
@@ -150,11 +150,11 @@ export interface ServerApiContract {
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
-    delete(input: LibraryDetailInput): Promise<{ ok: true }>;
+    delete(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;
-    removeRecentAcquisition(input: LibraryDetailInput): Promise<{ ok: true }>;
+    removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   mediaRoots: {
     list(): Promise<MediaRootListResponse>;

@@ -12,6 +12,7 @@ import { fileOrganizer } from "@main/services/scraper/fileOrganizerAdapter";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
+import type { ConfigPathInput } from "@mdcz/shared/serverDtos";
 import { dialog } from "electron";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
@@ -36,7 +37,7 @@ export const createConfigHandlers = (
   const { windowService } = context;
 
   return {
-    [IpcChannel.Config_Get]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_Get]: t.procedure.input<ConfigPathInput>().action(async ({ input }) => {
       try {
         if (!input?.path) {
           return await configManager.getValidated();
@@ -60,8 +61,7 @@ export const createConfigHandlers = (
     }),
     [IpcChannel.Config_Save]: t.procedure.input<{ config?: DeepPartial<Configuration> }>().action(async ({ input }) => {
       try {
-        await configManager.save(input?.config ?? {});
-        return { success: true as const };
+        return await configManager.save(input?.config ?? {});
       } catch (error) {
         if (error instanceof ConfigValidationError) {
           throw asSerializableIpcError(
@@ -84,8 +84,7 @@ export const createConfigHandlers = (
     }),
     [IpcChannel.Config_Reset]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
       try {
-        await configManager.reset(input?.path);
-        return { success: true as const };
+        return await configManager.reset(input?.path);
       } catch (error) {
         throw asSerializableIpcError(createIpcError(IpcErrorCode.CONFIG_SAVE_ERROR, toErrorMessage(error)));
       }
@@ -116,8 +115,7 @@ export const createConfigHandlers = (
         if (!name) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
         }
-        await configManager.createProfile(name);
-        return { success: true as const };
+        return await configManager.createProfile(name);
       } catch (error) {
         throw asSerializableIpcError(error);
       }
@@ -128,8 +126,7 @@ export const createConfigHandlers = (
         if (!name) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
         }
-        await configManager.switchProfile(name);
-        return { success: true as const };
+        return await configManager.switchProfile(name);
       } catch (error) {
         throw asSerializableIpcError(error);
       }
@@ -140,8 +137,7 @@ export const createConfigHandlers = (
         if (!name) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
         }
-        await configManager.deleteProfile(name);
-        return { success: true as const };
+        return await configManager.deleteProfile(name);
       } catch (error) {
         throw asSerializableIpcError(error);
       }

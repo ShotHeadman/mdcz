@@ -1,5 +1,6 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
+import type { LibraryDetailInput } from "../serverDtos";
 
 export interface OverviewRecentAcquisitionItem {
   id: string;
@@ -20,6 +21,6 @@ export interface OverviewOutputSummary {
 
 export type OverviewIpcContract = {
   [IpcChannel.Overview_GetRecentAcquisitions]: IpcProcedure<void, { items: OverviewRecentAcquisitionItem[] }>;
-  [IpcChannel.Overview_RemoveRecentAcquisition]: IpcProcedure<{ id?: string }, { success: true }>;
+  [IpcChannel.Overview_RemoveRecentAcquisition]: IpcProcedure<LibraryDetailInput, { success: true }>;
   [IpcChannel.Overview_GetOutputSummary]: IpcProcedure<void, OverviewOutputSummary>;
 };
