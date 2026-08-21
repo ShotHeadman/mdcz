@@ -33,8 +33,6 @@ export const createServerActorSourceProvider = (
   return new ActorSourceProvider({
     logger,
     registry: new ActorSourceRegistry([
-      // Server has no desktop NFO parser. LocalActorSource therefore keeps the runtime
-      // nfoSnapshot default, which is looser than desktop (MDCX provider tags, website optional).
       new LocalActorSource({ actorImageService: imageService }),
       new OfficialActorSource({ networkClient }),
       new GfriendsActorSource({ networkClient }),

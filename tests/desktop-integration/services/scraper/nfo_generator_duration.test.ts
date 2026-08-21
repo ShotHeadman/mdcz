@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findExistingNfoPath, NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { parseNfo } from "@main/utils/nfo";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { getNfoReadCandidates, resolveFilenameNfoPath } from "@mdcz/runtime/scrape";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
@@ -207,7 +207,7 @@ describe("NfoGenerator", () => {
         release_date: "2024-01-02",
       }),
     );
-    const releaseParsed = parseNfo(releaseXml);
+    const releaseParsed = parseNfoSnapshot(releaseXml).crawlerData;
     expect(releaseParsed.series).toBe("Collection");
     expect(releaseParsed.release_date).toBe("2024-01-02");
     expect(releaseXml).toContain("<year>2024</year>");
@@ -233,7 +233,7 @@ describe("NfoGenerator", () => {
       },
     );
 
-    const parsed = parseNfo(xml);
+    const parsed = parseNfoSnapshot(xml).crawlerData;
 
     expect(parsed.poster_url).toBe("poster.jpg");
     expect(parsed.thumb_url).toBe("thumb.jpg");
@@ -299,7 +299,7 @@ describe("NfoGenerator", () => {
         scene_images: ["https://remote.example.com/scene-001.jpg", "https://remote.example.com/scene-002.jpg"],
       }),
     );
-    const parsed = parseNfo(xml);
+    const parsed = parseNfoSnapshot(xml).crawlerData;
 
     expect(xml).toContain("<fanart>");
     expect(xml).toContain("<mdcz>");

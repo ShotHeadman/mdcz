@@ -11,7 +11,6 @@ import {
   JellyfinActorPhotoService,
 } from "@main/services/mediaServer/jellyfin";
 import { SignalService } from "@main/services/SignalService";
-import { parseNfo } from "@main/utils/nfo";
 import {
   type ActorLookupResult,
   ActorSourceProvider,
@@ -69,9 +68,8 @@ const createActorSourceProvider = (
 ) =>
   new ActorSourceProvider({
     registry: new ActorSourceRegistry([
-      // The local source only reaches the actor photo folder through an image service, so the
-      // desktop one (rooted in the mocked user data dir) has to be supplied explicitly.
-      new LocalActorSource({ actorImageService: new ActorImageService(), parseNfo }),
+      // Local image resolution is rooted in the mocked desktop user data directory.
+      new LocalActorSource({ actorImageService: new ActorImageService() }),
       new GfriendsActorSource({
         networkClient: networkClient as unknown as NetworkClient,
         actorMapUrl,

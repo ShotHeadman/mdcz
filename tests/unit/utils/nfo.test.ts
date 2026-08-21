@@ -1,5 +1,5 @@
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -30,7 +30,7 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const result = parseNfo(xml);
+    const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.title).toBe("Original Title");
     expect(result.title_zh).toBe("中文标题");
@@ -49,7 +49,7 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const result = parseNfo(xml);
+    const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.thumb_url).toBe("https://example.com/thumb.jpg");
     expect(result.poster_url).toBeUndefined();
@@ -79,7 +79,7 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const result = parseNfo(xml);
+    const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.thumb_url).toBe("thumb.jpg");
     expect(result.poster_url).toBe("poster.jpg");
@@ -121,7 +121,7 @@ describe("parseNfo", () => {
       },
     );
 
-    const parsed = parseNfo(xml);
+    const parsed = parseNfoSnapshot(xml).crawlerData;
     expect(parsed.actor_profiles?.[0]).toMatchObject({
       name: "Actor A",
       photo_url: "actor-a.jpg",
@@ -141,7 +141,7 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const result = parseNfo(xml);
+    const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.publisher).toBe("Native Publisher");
   });
@@ -155,7 +155,7 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const result = parseNfo(xml);
+    const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.plot).toBe("概要内容");
     expect(result.plot_zh).toBe("概要内容");
@@ -179,8 +179,8 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const withReleaseDate = parseNfo(withReleaseDateXml);
-    const yearOnly = parseNfo(yearOnlyXml);
+    const withReleaseDate = parseNfoSnapshot(withReleaseDateXml).crawlerData;
+    const yearOnly = parseNfoSnapshot(yearOnlyXml).crawlerData;
 
     expect(withReleaseDate.release_date).toBe("2024-01-02");
     expect(withReleaseDate).not.toHaveProperty("release_year");
@@ -201,7 +201,7 @@ describe("parseNfo", () => {
       </movie>
     `;
 
-    const result = parseNfo(xml);
+    const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.fanart_url).toBe("fanart.jpg");
     expect(result.scene_images).toEqual([]);

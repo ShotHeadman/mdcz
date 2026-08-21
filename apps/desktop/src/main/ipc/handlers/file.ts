@@ -6,7 +6,7 @@ import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
-import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   findExistingNfoPath,
   getNfoReadCandidates,
@@ -262,7 +262,7 @@ export const createFileHandlers = (
           for (const candidate of candidates) {
             if (!(await pathExists(candidate))) continue;
             const content = await readFile(candidate, "utf8");
-            return { data: parseNfo(content), nfoPath: candidate };
+            return { data: parseNfoSnapshot(content).crawlerData, nfoPath: candidate };
           }
           throw Object.assign(new Error(`NFO not found: ${nfoPath}`), { code: "ENOENT" });
         } catch (error) {

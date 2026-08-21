@@ -6,7 +6,7 @@ import { CachedAsyncResolver, toErrorMessage } from "@mdcz/runtime/shared";
 import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
-import { parseNfo as parseNfoSnapshot } from "../../maintenance/nfoSnapshot";
+import { parseNfo } from "../../maintenance/nfoSnapshot";
 import { mergeActorSourceHints } from "../sourceHints";
 import type { ActorLookupQuery, ActorSourceHint, ActorSourceResult, BaseActorSource } from "../types";
 
@@ -17,11 +17,6 @@ export interface LocalActorImageResolver {
 
 export interface LocalActorSourceDependencies {
   actorImageService?: LocalActorImageResolver;
-  /**
-   * Reads a movie NFO. Hosts that still carry their own parser inject it so their indexing behaviour
-   * does not shift with this module; the runtime snapshot parser is the default.
-   */
-  parseNfo?: (xml: string) => CrawlerData;
 }
 
 const INDEX_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -117,10 +112,7 @@ const resolveActorPhotoUrl = async (
   return absolutePath;
 };
 
-const buildLocalActorRecordIndex = async (
-  configuration: Configuration,
-  parseNfo: (xml: string) => CrawlerData,
-): Promise<Map<string, IndexedActorRecord>> => {
+const buildLocalActorRecordIndex = async (configuration: Configuration): Promise<Map<string, IndexedActorRecord>> => {
   const mediaPath = configuration.paths.mediaPath.trim();
   if (!mediaPath) {
     return new Map<string, IndexedActorRecord>();
@@ -190,11 +182,8 @@ const buildLocalActorRecordIndex = async (
   return index;
 };
 
-export const buildLocalActorIndex = async (
-  configuration: Configuration,
-  parseNfo: (xml: string) => CrawlerData = parseNfoSnapshot,
-): Promise<Map<string, IndexedActorProfile>> => {
-  const recordIndex = await buildLocalActorRecordIndex(configuration, parseNfo);
+export const buildLocalActorIndex = async (configuration: Configuration): Promise<Map<string, IndexedActorProfile>> => {
+  const recordIndex = await buildLocalActorRecordIndex(configuration);
   return new Map(Array.from(recordIndex.entries(), ([key, value]) => [key, value.profile]));
 };
 
@@ -205,13 +194,10 @@ export class LocalActorSource implements BaseActorSource {
 
   private readonly actorImageService?: LocalActorImageResolver;
 
-  private readonly parseNfo: (xml: string) => CrawlerData;
-
   private indexBucket = "";
 
   constructor(deps: LocalActorSourceDependencies = {}) {
     this.actorImageService = deps.actorImageService;
-    this.parseNfo = deps.parseNfo ?? parseNfoSnapshot;
   }
 
   async lookup(configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult> {
@@ -258,6 +244,6 @@ export class LocalActorSource implements BaseActorSource {
       actorPhotoFolder: configuration.paths.actorPhotoFolder.trim(),
     });
 
-    return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(configuration, this.parseNfo));
+    return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(configuration));
   }
 }

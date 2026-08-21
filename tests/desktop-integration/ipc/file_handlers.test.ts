@@ -220,6 +220,42 @@ describe("createFileHandlers", () => {
     expect(xml).toContain("trailer_source_url");
   });
 
+  it.each([
+    {
+      label: "two typed uniqueid nodes",
+      identifiers: '<uniqueid type="dmm">ABC-123</uniqueid><uniqueid type="javdb">ABC-123</uniqueid>',
+      website: Website.DMM,
+    },
+    {
+      label: "a typed uniqueid alongside an untyped one",
+      identifiers: '<uniqueid type="dmm">ABC-123</uniqueid><uniqueid>external-id</uniqueid>',
+      website: Website.DMM,
+    },
+    {
+      label: "an MDCx num plus provider tag",
+      identifiers: "<num>ABC-123</num><javdbid>external-id</javdbid>",
+      website: Website.JAVDB,
+    },
+    {
+      label: "an MDCx num with no recognizable source",
+      identifiers: "<num>ABC-123</num>",
+      website: undefined,
+    },
+  ])("reads an NFO carrying $label", async ({ identifiers, website }) => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "movie.nfo");
+    await writeFile(
+      nfoPath,
+      `<?xml version="1.0"?><movie><title>Example</title>${identifiers}<actor><name>Actor A</name></actor></movie>`,
+    );
+
+    const handlers = createFileHandlers(createContext());
+    const readResult = await handlers[IpcChannel.File_NfoRead].action(actionArgs({ nfoPath }));
+
+    expect(readResult.data).toMatchObject({ number: "ABC-123", title: "Example", actors: ["Actor A"] });
+    expect(readResult.data.website).toBe(website);
+  });
+
   it("resolves filename NFO mode and preserves unmanaged XML while saving", async () => {
     const root = await createTempDir();
     const videoPath = join(root, "ABC-123.mp4");

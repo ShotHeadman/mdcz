@@ -12,7 +12,6 @@ import { ScraperService } from "@main/services/scraper";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { AmazonPosterToolService, BatchTranslateToolService, SymlinkService } from "@main/services/tools";
 import type { WindowService } from "@main/services/WindowService";
-import { parseNfo } from "@main/utils/nfo";
 import {
   ActorSourceProvider,
   ActorSourceRegistry,
@@ -58,8 +57,7 @@ export const createContainer = ({
   const actorSourceProvider = new ActorSourceProvider({
     logger: loggerService.getLogger("ActorSource"),
     registry: new ActorSourceRegistry([
-      // Desktop keeps its own NFO parser, so pass it in rather than inheriting the runtime default.
-      new LocalActorSource({ actorImageService, parseNfo }),
+      new LocalActorSource({ actorImageService }),
       new OfficialActorSource({ networkClient }),
       new GfriendsActorSource({ networkClient }),
       new AvjohoActorSource({ networkClient, cookieResolver: avjohoCookieResolver }),
