@@ -27,9 +27,6 @@ const desktopDistributionAssets = (): Plugin => ({
     await cp(workspaceResolve("packages/persistence/drizzle"), target, {
       recursive: true,
     });
-    await cp(workspaceResolve("packages/runtime/resources/mapping_table"), appResolve("resources/mapping_table"), {
-      recursive: true,
-    });
   },
 });
 

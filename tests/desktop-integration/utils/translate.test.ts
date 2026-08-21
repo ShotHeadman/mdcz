@@ -1,10 +1,20 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockAppPath = "";
 let mockUserDataPath = "";
+const originalResourcesPathDescriptor = Object.getOwnPropertyDescriptor(process, "resourcesPath");
+
+afterAll(() => {
+  if (originalResourcesPathDescriptor) {
+    Object.defineProperty(process, "resourcesPath", originalResourcesPathDescriptor);
+    return;
+  }
+
+  Reflect.deleteProperty(process, "resourcesPath");
+});
 
 vi.mock("electron", () => {
   return {
@@ -50,13 +60,17 @@ describe("translate mapping auto promotion", () => {
 
   beforeEach(async () => {
     workspaceDir = await mkdtemp(join(tmpdir(), "translate-mapping-"));
-    bundledDir = join(workspaceDir, "resources", "mapping_table");
+    bundledDir = join(workspaceDir, "mapping_table");
     userDataDir = join(workspaceDir, "userData");
 
     await mkdir(bundledDir, { recursive: true });
     await mkdir(userDataDir, { recursive: true });
 
     mockAppPath = workspaceDir;
+    Object.defineProperty(process, "resourcesPath", {
+      configurable: true,
+      value: workspaceDir,
+    });
     mockUserDataPath = userDataDir;
 
     vi.resetModules();

@@ -6,7 +6,7 @@ import { getDesktopUserDataPath } from "../../appIdentity";
 
 const resolveBundledDirectory = (): string =>
   app.isPackaged
-    ? join(app.getAppPath(), "resources", "mapping_table")
+    ? join(process.resourcesPath, "mapping_table")
     : join(app.getAppPath(), "../../packages/runtime/resources/mapping_table");
 
 const resolveWritableDirectory = (): string => {
