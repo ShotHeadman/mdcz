@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { useRecentAcquisitions } from "@/hooks/useOverview";
 import { getImageSrc } from "@/utils/image";
-import { getDirFromPath } from "@/utils/path";
 
 export function RecentAcquisitionsGrid() {
   const recentQ = useRecentAcquisitions();
@@ -73,10 +72,9 @@ async function openRecentAcquisition(item: OverviewRecentAcquisitionItem) {
     return;
   }
 
-  if (!window.electron?.openPath) {
+  try {
+    await ipc.app.showItemInFolder(item.lastKnownPath);
+  } catch {
     toast.error("无法打开系统文件管理器");
-    return;
   }
-
-  void window.electron.openPath(getDirFromPath(item.lastKnownPath));
 }

@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { ActorImageService } from "@main/services/ActorImageService";
 import { type Configuration, configManager } from "@main/services/config";
 import {
@@ -354,12 +355,26 @@ export class ScraperService {
       if (outputRoot) {
         await state.repositories.mediaRoots.upsert(outputRoot);
       }
+      const preparedItems = await Promise.all(
+        items.map(async (item) => {
+          const videoPath = item.lastKnownPath?.trim();
+          if (!videoPath) {
+            return { item, videoPath: null, size: 0 };
+          }
+          const metadata = await stat(videoPath).catch(() => null);
+          return {
+            item,
+            videoPath,
+            size: metadata?.isFile() ? metadata.size : 0,
+          };
+        }),
+      );
       const output = await state.repositories.library.upsertScrapeOutput({
         taskId,
         rootId: outputRoot?.id ?? null,
         outputDirectory: resolveDesktopOutputRootPath(configuration),
         fileCount: items.length,
-        totalBytes: 0,
+        totalBytes: preparedItems.reduce((total, prepared) => total + prepared.size, 0),
         completedAt,
       });
       if (!outputRoot) {
@@ -367,8 +382,8 @@ export class ScraperService {
         return;
       }
 
-      for (const item of items) {
-        const videoPath = item.lastKnownPath?.trim();
+      for (const prepared of preparedItems) {
+        const { item, videoPath } = prepared;
         if (!videoPath) {
           continue;
         }
@@ -380,6 +395,7 @@ export class ScraperService {
           rootRelativePath,
           sourceTaskId: taskId,
           scrapeOutputId: output.id,
+          size: prepared.size,
           title: item.crawlerData?.title ?? item.title,
           number: item.crawlerData?.number ?? item.number,
           actors: item.crawlerData?.actors ?? item.actors,
