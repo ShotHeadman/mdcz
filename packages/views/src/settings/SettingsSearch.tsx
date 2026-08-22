@@ -1,6 +1,6 @@
 import { cn } from "@mdcz/ui";
 import { Search, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 
 interface SettingsSearchProps {
@@ -12,19 +12,36 @@ interface SettingsSearchProps {
 export function SettingsSearch({ disabled = false, placeholder = "搜索设置", className }: SettingsSearchProps) {
   const search = useOptionalSettingsSearch();
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (disabled) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [disabled]);
 
   if (!search) {
     return (
-      <div className={cn("relative w-full max-w-[420px]", className)}>
-        <Search className="pointer-events-none absolute left-3 top-[18px] h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className={cn("relative w-full max-w-[320px] md:max-w-[380px]", className)}>
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <input
+          ref={inputRef}
           type="text"
           disabled={disabled}
           placeholder={placeholder}
           className={cn(
-            "h-9 w-full rounded-[var(--radius-quiet)] bg-surface-low pl-10 pr-9 text-sm text-foreground",
-            "placeholder:text-muted-foreground outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-            "focus-visible:ring-2 focus-visible:ring-ring/40",
+            "h-9 w-full rounded-[var(--radius-quiet)] border border-border/40 bg-surface-low/80 pl-9 pr-9 text-sm text-foreground",
+            "placeholder:text-muted-foreground outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60",
+            "hover:bg-surface-low focus:border-border focus:bg-surface focus-visible:ring-2 focus-visible:ring-ring/30",
           )}
         />
       </div>
@@ -36,9 +53,10 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
   const activeSuggestion = suggestions[resolvedActiveSuggestionIndex] ?? null;
 
   return (
-    <div className={cn("relative w-full max-w-[420px]", className)}>
-      <Search className="pointer-events-none absolute left-3 top-[18px] h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <div className={cn("relative w-full max-w-[320px] md:max-w-[380px]", className)}>
+      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
       <input
+        ref={inputRef}
         type="text"
         role="combobox"
         aria-expanded={suggestions.length > 0}
@@ -55,10 +73,14 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
             return;
           }
 
-          if (event.key === "Escape" && search.query) {
+          if (event.key === "Escape") {
             event.preventDefault();
-            search.setQuery("");
-            setActiveSuggestionIndex(0);
+            if (search.query) {
+              search.setQuery("");
+              setActiveSuggestionIndex(0);
+            } else {
+              inputRef.current?.blur();
+            }
             return;
           }
 
@@ -86,25 +108,30 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
         }}
         placeholder={placeholder}
         className={cn(
-          "h-9 w-full rounded-[var(--radius-quiet)] bg-surface-low pl-10 pr-9 text-sm text-foreground",
-          "placeholder:text-muted-foreground outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-          "focus-visible:ring-2 focus-visible:ring-ring/40",
+          "h-9 w-full rounded-[var(--radius-quiet)] border border-border/40 bg-surface-low/80 pl-9 pr-14 text-sm text-foreground",
+          "placeholder:text-muted-foreground outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60",
+          "hover:bg-surface-low focus:border-border focus:bg-surface focus-visible:ring-2 focus-visible:ring-ring/30",
         )}
       />
 
-      {Boolean(search.query) && !disabled && (
+      {search.query && !disabled ? (
         <button
           type="button"
           aria-label="清空搜索"
           onClick={() => {
             search.setQuery("");
             setActiveSuggestionIndex(0);
+            inputRef.current?.focus();
           }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-surface-low hover:text-foreground transition-colors"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-surface-low hover:text-foreground transition-colors"
         >
           <X className="h-3.5 w-3.5" />
         </button>
-      )}
+      ) : !disabled ? (
+        <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 hidden select-none rounded border border-border/60 bg-surface/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground/80 shadow-2xs sm:inline-block">
+          Ctrl K
+        </kbd>
+      ) : null}
 
       {suggestions.length > 0 && !disabled && (
         <div

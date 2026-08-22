@@ -53,11 +53,11 @@ export function SettingRow({
       ref={fieldName ? registerFieldNode : undefined}
       data-field-name={fieldName}
       className={cn(
-        "group/setting-row flex py-3 transition-[opacity,background-color] duration-200",
+        "group/setting-row flex py-3.5 transition-colors duration-150",
         isVerticalLayout
           ? "flex-col gap-2.5"
           : "flex-col gap-2.5 md:flex-row md:items-start md:justify-between md:gap-6",
-        highlighted && "rounded-[var(--radius-quiet-sm)] -mx-2 px-2 bg-primary/5",
+        highlighted && "border-l-2 border-l-primary/80 pl-3 -ml-3",
         className,
       )}
     >
@@ -72,7 +72,9 @@ export function SettingRow({
           {labelAddon ? <div className="flex h-6 shrink-0 items-center">{labelAddon}</div> : null}
           {headerAction ? <div className="flex h-6 shrink-0 items-center">{headerAction}</div> : null}
         </div>
-        {description && <p className="mt-1 max-w-prose text-xs text-muted-foreground">{description}</p>}
+        {description && (
+          <p className="mt-0.5 max-w-prose text-xs leading-relaxed text-muted-foreground">{description}</p>
+        )}
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </div>
       {isVerticalLayout ? (
