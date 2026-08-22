@@ -148,14 +148,12 @@ export class DesktopScrapeExecutionStore implements ScrapeSessionExecutionStore 
 
   async resume(execution: SessionExecution): Promise<SessionExecution | null> {
     const tasks = (await this.persistence.getState()).repositories.tasks;
-    const queued = await tasks.patch(
+    const resumed = await tasks.patch(
       execution.taskId,
-      { status: "queued", startedAt: null, completedAt: null, error: null },
+      { status: "running" },
       { status: "paused", executionVersion: execution.executionVersion },
     );
-    if (!queued) return null;
-    const claimed = await tasks.claim(queued.id, queued.executionVersion);
-    return claimed ? { taskId: claimed.id, executionVersion: claimed.executionVersion } : null;
+    return resumed ? { taskId: resumed.id, executionVersion: resumed.executionVersion } : null;
   }
 
   async stop(execution: SessionExecution): Promise<boolean> {

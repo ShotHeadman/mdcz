@@ -89,15 +89,9 @@ export class ScrapeSession {
 
   async onIdle(): Promise<void> {
     if (!this.execution) return;
-    if (!this.runPromise) {
-      const run = this.drain();
-      this.runPromise = run;
-      const clear = () => {
-        if (this.runPromise === run) this.runPromise = null;
-      };
-      void run.then(clear, clear);
-    }
-    await this.runPromise;
+    do {
+      await (this.runPromise ?? this.startDrain());
+    } while (this.execution && !this.stopRequested && this.getState() === "running" && this.pendingTasks.length > 0);
   }
 
   async stop(): Promise<{ pendingCount: number }> {
@@ -119,11 +113,11 @@ export class ScrapeSession {
 
   async resume(): Promise<void> {
     if (!this.execution || this.getState() !== "paused") return;
-    await this.executor?.waitForIdle();
     const resumed = await this.executionStore.resume(this.execution);
     if (!resumed) return;
     this.execution = resumed;
     this.progress.transitionTo("running");
+    this.executor?.resume();
   }
 
   async finish(): Promise<void> {
@@ -183,6 +177,15 @@ export class ScrapeSession {
         return;
       }
     }
+  }
+
+  private startDrain(): Promise<void> {
+    const run = this.drain();
+    const tracked = run.finally(() => {
+      if (this.runPromise === tracked) this.runPromise = null;
+    });
+    this.runPromise = tracked;
+    return tracked;
   }
 
   private requireExecution(): SessionExecution {

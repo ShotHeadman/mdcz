@@ -59,6 +59,10 @@ export class TaskExecutor<TItem, TResult> {
     if (this.activeRun) this.pauseRequested = true;
   }
 
+  resume(): void {
+    if (this.activeRun && !this.stopRequested) this.pauseRequested = false;
+  }
+
   stop(): void {
     if (!this.activeRun || this.stopRequested) return;
     this.stopRequested = true;

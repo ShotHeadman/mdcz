@@ -71,6 +71,41 @@ describe("ScrapeSession", () => {
     expect(started).toEqual(["one", "two", "three"]);
   });
 
+  it("resumes immediately while an in-flight item is still running", async () => {
+    const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
+    const first = deferred<ScrapeResult>();
+    const firstStarted = deferred<void>();
+    const secondStarted = deferred<void>();
+    await session.begin(["one", "two"], 1);
+    await session.addTask({
+      sourcePath: "one",
+      isRetry: false,
+      taskFn: async () => {
+        firstStarted.resolve();
+        return first.promise;
+      },
+    });
+    await session.addTask({
+      sourcePath: "two",
+      isRetry: false,
+      taskFn: async () => {
+        secondStarted.resolve();
+        return result("two");
+      },
+    });
+
+    const idle = session.onIdle();
+    await firstStarted.promise;
+    await session.pause();
+    await session.resume();
+    first.resolve(result("one"));
+    await secondStarted.promise;
+    await idle;
+
+    expect(session.getState()).toBe("running");
+    expect(session.getStatus().completedFiles).toBe(2);
+  });
+
   it("stops pending work without allowing a cleared worker to start it", async () => {
     const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
     const running = deferred<ScrapeResult>();

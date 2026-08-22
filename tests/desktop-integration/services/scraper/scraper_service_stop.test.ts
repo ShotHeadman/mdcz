@@ -263,9 +263,9 @@ describe("ScraperService stop flow", () => {
     expect(service.getStatus().state).toBe("running");
     await service.pause();
     expect(service.getStatus().state).toBe("paused");
-    runningTask.resolve(successResult(mediaFilePath, "ABP-456", config.scrape.sites[0]));
     await service.resume();
     expect(service.getStatus().state).toBe("running");
+    runningTask.resolve(successResult(mediaFilePath, "ABP-456", config.scrape.sites[0]));
     await service.waitForIdle();
     expect(service.getStatus().state).toBe("idle");
     expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });

@@ -96,7 +96,6 @@ export class InMemoryScrapeSessionExecutionStore implements ScrapeSessionExecuti
   async resume(execution: SessionExecution): Promise<SessionExecution | null> {
     if (!this.owns(execution, ["paused"])) return null;
     const current = this.requireExecution(execution.taskId);
-    current.executionVersion += 1;
     current.state = "running";
     return this.snapshotExecution();
   }

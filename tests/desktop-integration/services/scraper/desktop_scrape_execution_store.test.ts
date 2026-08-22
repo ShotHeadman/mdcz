@@ -24,6 +24,12 @@ describe("DesktopScrapeExecutionStore", () => {
     const first = new DesktopPersistenceService(persistencePath, null);
     const store = new DesktopScrapeExecutionStore(first, async () => mediaRoot);
     const execution = await store.create([filePath]);
+    expect(await store.pause(execution)).toBe(true);
+    await expect(store.resume(execution)).resolves.toEqual(execution);
+    await expect((await first.getState()).repositories.tasks.get(execution.taskId)).resolves.toMatchObject({
+      status: "running",
+      executionVersion: execution.executionVersion,
+    });
     expect(await store.markProcessing(execution, filePath)).toBe(true);
     await first.close();
 
