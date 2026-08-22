@@ -1,3 +1,4 @@
+import { buildFileId, normalizePathForIdentity } from "@mdcz/shared/mediaIdentity";
 import type { AmbiguousUncensoredItemDto, ScanTaskDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
 import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
@@ -120,6 +121,27 @@ export const activateNewScrapeTask = (): void => {
   scrapeStore.setScraping(true);
   scrapeStore.setScrapeStatus("running");
   useUIStore.getState().setSelectedResultId(null);
+};
+
+/**
+ * Activates a retry that the backend runs as its own task, without discarding the results
+ * already in the queue. Only the retried entries are reset to `processing`.
+ */
+export const activateRetryScrapeTask = (filePaths: string[]): void => {
+  const scrapeStore = useScrapeStore.getState();
+  const uiStore = useUIStore.getState();
+  const selectedResult = scrapeStore.results.find((result) => result.fileId === uiStore.selectedResultId);
+  const retryPaths = new Set(filePaths.map(normalizePathForIdentity));
+
+  scrapeStore.markResultsRetrying(filePaths);
+
+  if (selectedResult && retryPaths.has(normalizePathForIdentity(selectedResult.fileInfo.filePath))) {
+    uiStore.setSelectedResultId(buildFileId(selectedResult.fileInfo.filePath));
+  }
+
+  scrapeStore.updateProgress(0, 0);
+  scrapeStore.setScraping(true);
+  scrapeStore.setScrapeStatus("running");
 };
 
 export const applyScrapeTaskStatus = (status: ScanTaskDto["status"]): void => {

@@ -89,12 +89,6 @@ describe("NetworkClient retry policy", () => {
         },
         expectedError: "HTTP 429",
       },
-      {
-        setup: () => {
-          fetchMock.mockRejectedValueOnce(new Error("socket hang up"));
-        },
-        expectedError: "socket hang up",
-      },
     ];
 
     for (const { setup, expectedError } of cases) {
@@ -108,6 +102,58 @@ describe("NetworkClient retry policy", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(sleepMock).not.toHaveBeenCalled();
     }
+  });
+
+  it("retries transport failures through the configured retry count", async () => {
+    fetchMock.mockRejectedValue(new Error("socket hang up"));
+    const client = new NetworkClient({ getRetryCount: () => 2 });
+
+    await expect(client.getText("https://example.com/transport-failure")).rejects.toThrow("socket hang up");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sleepMock).toHaveBeenNthCalledWith(1, 1000);
+    expect(sleepMock).toHaveBeenNthCalledWith(2, 2000);
+  });
+
+  it("does not retry abort errors", async () => {
+    const abortError = new Error("Operation aborted");
+    abortError.name = "AbortError";
+    fetchMock.mockRejectedValue(abortError);
+    const client = new NetworkClient({ getRetryCount: () => 3 });
+
+    await expect(client.getText("https://example.com/aborted")).rejects.toBe(abortError);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sleepMock).not.toHaveBeenCalled();
+  });
+
+  it("retries postJsonDetailed when reading the response body fails", async () => {
+    const json = vi.fn().mockRejectedValue(new Error("Error reading response stream: kind: Body"));
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        url: "https://example.com/responses",
+        headers: new Headers({ "content-type": "application/json" }),
+        json,
+      })
+      .mockResolvedValueOnce(
+        new Response('{"output":"ok"}', {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    const client = new NetworkClient({ getRetryCount: () => 1 });
+
+    await expect(client.postJsonDetailed("https://example.com/responses", {})).resolves.toMatchObject({
+      ok: true,
+      data: { output: "ok" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(json).toHaveBeenCalledTimes(1);
+    expect(sleepMock).toHaveBeenCalledWith(1000);
   });
 
   it("retries supported throttling and transient server failures", async () => {

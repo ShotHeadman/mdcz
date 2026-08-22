@@ -1036,7 +1036,7 @@ export function TranslateSection() {
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
       llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
       llmTemperature: Number(form.getValues("translate.llmTemperature") ?? 0),
-      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 10),
+      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 60),
     };
 
     setTesting(true);

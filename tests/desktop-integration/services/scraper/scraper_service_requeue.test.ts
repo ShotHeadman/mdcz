@@ -6,6 +6,7 @@ import type { FileScraperDependencies } from "@main/services/scraper/FileScraper
 import * as FileScraperModule from "@main/services/scraper/FileScraper";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
@@ -53,7 +54,7 @@ const createTempDir = async (): Promise<string> => {
   return directory.path;
 };
 
-const createService = (): ScraperService => {
+const createService = (imageHostCooldownStore?: PersistentCooldownStore): ScraperService => {
   const networkClient = new NetworkClient();
   return new ScraperService(
     new SignalService(null),
@@ -61,7 +62,7 @@ const createService = (): ScraperService => {
     new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
     undefined,
     undefined,
-    undefined,
+    imageHostCooldownStore,
     undefined,
     undefined,
     new InMemoryScrapeSessionExecutionStore(),
@@ -103,9 +104,14 @@ describe("ScraperService requeue flow", () => {
   });
 
   it("rejects duplicate retry queue entries for the same failed file", async () => {
-    const service = createService();
     const config = mockConfig();
     const dirPath = await createTempDir();
+    const imageHostCooldownStore = new PersistentCooldownStore({
+      filePath: join(dirPath, "image-host-cooldowns.json"),
+      persistDelayMs: 0,
+    });
+    const clearCooldowns = vi.spyOn(imageHostCooldownStore, "clear");
+    const service = createService(imageHostCooldownStore);
     const secondFileTask = deferred<ScrapeResult>();
     const firstFilePath = join(dirPath, "ABP-111.mp4");
     const secondFilePath = join(dirPath, "ABP-222.mp4");
@@ -134,6 +140,7 @@ describe("ScraperService requeue flow", () => {
 
     await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 1 });
     await expect(service.requeue([firstFilePath])).resolves.toEqual({ requeuedCount: 0 });
+    expect(clearCooldowns).toHaveBeenCalledTimes(3);
 
     secondFileTask.resolve(scrapeResult(secondFilePath, config.scrape.sites[0]));
 

@@ -1,7 +1,7 @@
 import { configurationSchema } from "@main/services/config";
 import { NetworkClient } from "@mdcz/runtime/network";
-import type { LlmApiClient } from "@mdcz/runtime/scrape";
-import { TranslateService } from "@mdcz/runtime/scrape";
+import { type LlmApiClient, LlmTransportError, TranslateService } from "@mdcz/runtime/scrape";
+import type { RuntimeLogger } from "@mdcz/runtime/shared";
 import { TranslateEngine, Website } from "@mdcz/shared/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,15 +38,23 @@ const createLlmApiClient = (generateText = vi.fn()) => {
   } as unknown as LlmApiClient;
 };
 
-const createTranslateService = (networkClient: NetworkClient, llmApiClient: LlmApiClient) =>
+const createTranslateService = (networkClient: NetworkClient, llmApiClient: LlmApiClient, logger?: RuntimeLogger) =>
   new TranslateService(networkClient, {
     llmApiClient,
+    logger,
     mappingStore: {
       appendMappingCandidate,
       findMappedActorName,
       findMappedGenreName,
     },
   });
+
+const createLogger = () => ({
+  debug: vi.fn<(message: string) => void>(),
+  info: vi.fn<(message: string) => void>(),
+  warn: vi.fn<(message: string) => void>(),
+  error: vi.fn<(message: string) => void>(),
+});
 
 describe("TranslateService term consistency", () => {
   beforeEach(() => {
@@ -198,7 +206,7 @@ describe("TranslateService term consistency", () => {
 
   it("retries llm request after a timeout", async () => {
     const timeoutError = new Error(
-      "LLM request failed for https://generativelanguage.googleapis.com/v1beta/openai/chat/completions: Request timeout (10000 ms) exceeded.",
+      "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: reqwest::Error { kind: Decode, source: reqwest::Error { kind: Body, source: TimedOut } }",
     );
     const generateText = vi.fn().mockRejectedValueOnce(timeoutError).mockResolvedValueOnce("超时重试成功");
     const llmApiClient = createLlmApiClient(generateText);
@@ -210,6 +218,52 @@ describe("TranslateService term consistency", () => {
 
     expect(generateText).toHaveBeenCalledTimes(2);
     expect(sleepMock).toHaveBeenCalledWith(1000, undefined, undefined);
+  });
+
+  it("retries typed transport errors until llmMaxRetries is exhausted", async () => {
+    const transportError = new LlmTransportError(
+      "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
+      new Error("body timed out"),
+    );
+    const generateText = vi.fn().mockRejectedValue(transportError);
+    const logger = createLogger();
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
+    const config = createBaseConfig();
+    config.translate.llmMaxRetries = 3;
+
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
+
+    expect(generateText).toHaveBeenCalledTimes(4);
+    expect(sleepMock).toHaveBeenCalledTimes(3);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("transport error (1/3)"));
+  });
+
+  it("logs the translated field and media number when falling back to source text", async () => {
+    const generateText = vi.fn().mockRejectedValue(new Error("provider failed"));
+    const logger = createLogger();
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
+    const config = createBaseConfig();
+    config.translate.llmMaxRetries = 0;
+
+    await service.translateCrawlerData(
+      {
+        title: "English title",
+        plot: "English plot",
+        number: "HMN-869",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Translation engine failed for title (HMN-869), returning original text: engine returned no translation",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Translation engine failed for plot (HMN-869), returning original text: engine returned no translation",
+    );
   });
 
   it("does not retry llm request when the provider returns an empty successful response", async () => {

@@ -1,3 +1,4 @@
+import { buildFileId, normalizePathForIdentity } from "@mdcz/shared/mediaIdentity";
 import type { ScrapeResult as SharedScrapeResult, UncensoredConfirmResultItem } from "@mdcz/shared/types";
 import { deriveGroupingDirectoryFromPath } from "@mdcz/shared/viewModels/multipartDisplay";
 import type { StateCreator } from "zustand";
@@ -20,6 +21,7 @@ interface ScrapeState {
   updateProgress: (current: number, total: number) => void;
   upsertResult: (result: ScrapeResult) => void;
   addResult: (result: ScrapeResult) => void;
+  markResultsRetrying: (filePaths: string[]) => void;
   clearResults: () => void;
   setFailedCount: (count: number) => void;
   resolveUncensoredResults: (updates: UncensoredConfirmResultItem[]) => void;
@@ -74,6 +76,30 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
     set({
       results: [],
       failedCount: 0,
+    }),
+  markResultsRetrying: (filePaths) =>
+    set((state) => {
+      const retryPaths = new Set(filePaths.map((filePath) => normalizePathForIdentity(filePath)));
+      if (retryPaths.size === 0) {
+        return {};
+      }
+
+      return {
+        results: state.results.map((result) => {
+          if (!retryPaths.has(normalizePathForIdentity(result.fileInfo.filePath))) {
+            return result;
+          }
+
+          // Re-key to the path the retry is issued with: an organized result carries the output
+          // path in fileInfo.filePath while its fileId still derives from the original source path.
+          return {
+            ...result,
+            fileId: buildFileId(result.fileInfo.filePath),
+            status: "processing" as const,
+            error: undefined,
+          };
+        }),
+      };
     }),
   setFailedCount: (count) => set({ failedCount: Math.max(0, count) }),
   resolveUncensoredResults: (updates) =>

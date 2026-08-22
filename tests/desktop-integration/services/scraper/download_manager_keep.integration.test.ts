@@ -907,7 +907,7 @@ describe("DownloadManager keep flags", () => {
     await expect(access(scenePath(root, 3))).rejects.toThrow();
   });
 
-  it("cools down a failing image host and skips remaining scene downloads for that host across runs", async () => {
+  it("persists image host failures and opens cooldown on the third retryable HTTP failure", async () => {
     const storeRoot = await createTempDir();
     const storePath = join(storeRoot, "image-host-cooldowns.json");
     const hostStore = new PersistentCooldownStore({
@@ -917,7 +917,7 @@ describe("DownloadManager keep flags", () => {
     const { root, manager, networkClient } = await createSubject({}, { imageHostCooldownStore: hostStore });
     mockValid();
     networkClient.download.mockImplementation(async (url, outputPath) => {
-      if (url.includes("blocked.example.com")) throw new Error("Request timeout");
+      if (url.includes("blocked.example.com")) throw new Error("HTTP 503 Service Unavailable");
       return writeDownloadedFile(outputPath, url);
     });
     const config = sequentialSceneSet(1);
@@ -952,6 +952,10 @@ describe("DownloadManager keep flags", () => {
       { scene_images: [["https://cdn.example.com/scene-006.jpg"]] },
     );
     expect(secondAssets.sceneImages).toEqual([scenePath(secondRoot, 1)]);
-    expect(networkClient.download).toHaveBeenCalledTimes(before + 1);
+    expect(networkClient.download).toHaveBeenCalledTimes(before + 2);
+    expect(networkClient.download.mock.calls.slice(before).map(([url]) => url)).toEqual([
+      "https://blocked.example.com/scene-005.jpg",
+      "https://cdn.example.com/scene-006.jpg",
+    ]);
   });
 });

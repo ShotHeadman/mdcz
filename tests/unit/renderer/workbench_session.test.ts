@@ -1,14 +1,22 @@
+import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import type { MaintenanceActionPort } from "@mdcz/views/adapters";
-import { getWorkbenchSessionSnapshot, resolveWorkbenchMode, startMaintenanceFlow } from "@mdcz/views/adapters";
+import {
+  activateRetryScrapeTask,
+  getWorkbenchSessionSnapshot,
+  resolveWorkbenchMode,
+  startMaintenanceFlow,
+} from "@mdcz/views/adapters";
 import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const resetStores = () => {
   useScrapeStore.getState().reset();
+  useUIStore.getState().setSelectedResultId(null);
   useMaintenanceEntryStore.getState().reset();
   useMaintenanceExecutionStore.getState().reset();
   useMaintenancePreviewStore.getState().reset();
@@ -62,6 +70,40 @@ describe("workbench session shared controller", () => {
 
     useMaintenanceEntryStore.getState().setEntries([createEntry()], "/media");
     expect(getWorkbenchSessionSnapshot("maintenance").showSetup).toBe(false);
+  });
+
+  it("activates retry without clearing results and preserves the selected item under its new key", () => {
+    const retryPath = "/library/ABC-001/ABC-001.mp4";
+    useScrapeStore.setState({
+      results: [
+        {
+          status: "success",
+          fileId: "old-source-key",
+          fileInfo: { ...createEntry().fileInfo, filePath: retryPath },
+        },
+        {
+          status: "failed",
+          fileId: "untouched",
+          error: "keep me",
+          fileInfo: { ...createEntry().fileInfo, filePath: "/library/KEEP-002.mp4" },
+        },
+      ],
+    });
+    useUIStore.getState().setSelectedResultId("old-source-key");
+
+    activateRetryScrapeTask([retryPath]);
+
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: true,
+      scrapeStatus: "running",
+      current: 0,
+      total: 0,
+      results: [
+        { fileId: buildFileId(retryPath), status: "processing" },
+        { fileId: "untouched", status: "failed", error: "keep me" },
+      ],
+    });
+    expect(useUIStore.getState().selectedResultId).toBe(buildFileId(retryPath));
   });
 
   it("starts maintenance through real port scan and shared store updates", async () => {

@@ -22,6 +22,7 @@ export interface ImageHostCooldownStore {
     policy: ImageHostCooldownFailurePolicy,
   ): { cooldownUntil?: number | null; failureCount: number } | null;
   reset(key: string): void;
+  clear?(): void;
 }
 
 export class MemoryImageHostCooldownStore implements ImageHostCooldownStore {
@@ -57,11 +58,15 @@ export class MemoryImageHostCooldownStore implements ImageHostCooldownStore {
   reset(key: string): void {
     this.entries.delete(key);
   }
+
+  clear(): void {
+    this.entries.clear();
+  }
 }
 
 const IMAGE_HOST_COOLDOWN_MS = 5 * 60 * 1000;
 const IMAGE_HOST_FAILURE_POLICY: ImageHostCooldownFailurePolicy = {
-  threshold: 2,
+  threshold: 3,
   windowMs: IMAGE_HOST_COOLDOWN_MS,
   cooldownMs: IMAGE_HOST_COOLDOWN_MS,
 };
@@ -83,7 +88,7 @@ const parseHttpStatus = (message?: string): number | null => {
 const shouldRecordImageHostFailure = (status?: number, reason?: string): boolean => {
   const resolvedStatus = typeof status === "number" && status > 0 ? status : parseHttpStatus(reason);
   if (resolvedStatus === null) {
-    return true;
+    return false;
   }
 
   return IMAGE_HOST_COOLDOWN_STATUS_CODES.has(resolvedStatus) || resolvedStatus >= 500;
@@ -150,6 +155,11 @@ export class ImageHostCooldownTracker {
     this.store.reset(host);
   }
 
+  resetAll(): void {
+    this.store.clear?.();
+    this.loggedCooldownUntilByImageHost.clear();
+  }
+
   recordFailure(url: string, reason?: string, status?: number): void {
     const host = getUrlHost(url);
     if (!host || this.store.isCoolingDown(host) || !shouldRecordImageHostFailure(status, reason)) {
@@ -183,7 +193,7 @@ export class ImageHostCooldownTracker {
     }
 
     this.loggedCooldownUntilByImageHost.set(host, activeCooldown.cooldownUntil);
-    this.logger.info(
+    this.logger.warn(
       `Skipping ${url}: image host cooldown active for ${host} (${formatCooldownDetails(
         activeCooldown.cooldownUntil,
         activeCooldown.remainingMs,

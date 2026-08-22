@@ -32,7 +32,9 @@ export interface LlmTextRequest {
 interface ResponsesApiResponse {
   output_text?: string | null;
   output?: Array<{
+    type?: string;
     content?: Array<{
+      type?: string;
       text?: string;
     }>;
   }>;
@@ -66,6 +68,13 @@ export class LlmApiError extends Error {
     readonly data: unknown,
   ) {
     super(message);
+  }
+}
+
+export class LlmTransportError extends Error {
+  constructor(message: string, cause: unknown) {
+    super(message, { cause });
+    this.name = "LlmTransportError";
   }
 }
 
@@ -239,7 +248,7 @@ export class LlmApiClient {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
     } catch (error) {
-      throw new Error(`LLM request failed for ${url}: ${toErrorMessage(error)}`);
+      throw new LlmTransportError(`LLM request failed for ${url}: ${toErrorMessage(error)}`, error);
     }
   }
 
@@ -312,13 +321,19 @@ export class LlmApiClient {
     const texts: string[] = [];
     if (Array.isArray(data.output)) {
       for (const item of data.output) {
-        if (!this.isRecord(item) || !Array.isArray(item.content)) {
+        if (!this.isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
           continue;
         }
+
         for (const contentPart of item.content) {
-          if (!this.isRecord(contentPart) || typeof contentPart.text !== "string") {
+          if (
+            !this.isRecord(contentPart) ||
+            contentPart.type !== "output_text" ||
+            typeof contentPart.text !== "string"
+          ) {
             continue;
           }
+
           const trimmed = contentPart.text.trim();
           if (trimmed) {
             texts.push(trimmed);

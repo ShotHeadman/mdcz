@@ -163,7 +163,7 @@ describe("settings parity runtime helpers", () => {
         model: "gpt-test",
         prompt: expect.stringContaining("简体中文:ある日の暮方の事である。"),
         temperature: 0,
-        timeout: 10_000,
+        timeout: 60_000,
       }),
       undefined,
     );

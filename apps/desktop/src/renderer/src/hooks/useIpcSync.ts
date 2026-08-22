@@ -186,7 +186,7 @@ export const useIpcSync = (queryClient: QueryClient) => {
               return;
             }
 
-            useScrapeStore.getState().addResult(payload);
+            useScrapeStore.getState().upsertResult(payload);
             safeSync("scrape result", "scrape");
           }),
         );

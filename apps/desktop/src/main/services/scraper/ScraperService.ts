@@ -226,6 +226,8 @@ export class ScraperService {
       throw new ScraperServiceError("NOT_RUNNING", "Scraper is not running");
     }
 
+    this.clearImageHostCooldownsForRetry();
+
     // Supports both single-item and batch manual retry from frontend.
     const pending = uniquePaths(filePaths);
     const totalFiles = Math.max(1, this.session.getStatus().totalFiles);
@@ -280,7 +282,13 @@ export class ScraperService {
     }
 
     const configuration = await configManager.getValidated();
+    this.clearImageHostCooldownsForRetry();
     return await this.startBatchExecution(pending, configuration, manualScrape);
+  }
+
+  private clearImageHostCooldownsForRetry(): void {
+    this.imageHostCooldownStore.clear();
+    this.logger.info("Cleared image host cooldowns for user-initiated retry");
   }
 
   private async finish(taskId: string): Promise<void> {

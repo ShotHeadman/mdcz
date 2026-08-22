@@ -1,4 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
+import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { FileInfo, ScrapeResult } from "@mdcz/shared/types";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { afterEach, describe, expect, it } from "vitest";
@@ -57,6 +58,60 @@ const createScrapeResult = (input: {
   outputPath: input.outputPath,
   nfoPath: input.nfoPath,
   uncensoredAmbiguous: input.uncensoredAmbiguous,
+});
+
+describe("useScrapeStore retry lifecycle", () => {
+  it("keeps unmatched results and re-keys matched output paths as processing", () => {
+    const retryPath = "D:\\library\\ABC-123\\ABC-123.mp4";
+    const retried = createScrapeResult({
+      fileId: "source-path-key",
+      number: "ABC-123",
+      filePath: retryPath,
+      status: "failed",
+      error: "old failure",
+    });
+    const untouched = createScrapeResult({
+      fileId: "keep-key",
+      number: "KEEP-001",
+      filePath: "D:\\library\\KEEP-001.mp4",
+    });
+    useScrapeStore.setState({ results: [retried, untouched] });
+
+    useScrapeStore.getState().markResultsRetrying(["d:/library/ABC-123/ABC-123.mp4"]);
+
+    expect(useScrapeStore.getState().results).toEqual([
+      { ...retried, fileId: buildFileId(retryPath), status: "processing", error: undefined },
+      untouched,
+    ]);
+  });
+
+  it("upserts a completed retry over the re-keyed organized result", () => {
+    const outputPath = "/library/ABC-123/ABC-123.mp4";
+    useScrapeStore.setState({
+      results: [
+        createScrapeResult({
+          fileId: buildFileId("/incoming/ABC-123.mp4"),
+          number: "ABC-123",
+          filePath: outputPath,
+        }),
+      ],
+    });
+    useScrapeStore.getState().markResultsRetrying([outputPath]);
+
+    useScrapeStore.getState().upsertResult(
+      createScrapeResult({
+        fileId: buildFileId(outputPath),
+        number: "ABC-123",
+        filePath: outputPath,
+      }),
+    );
+
+    expect(useScrapeStore.getState().results).toHaveLength(1);
+    expect(useScrapeStore.getState().results[0]).toMatchObject({
+      fileId: buildFileId(outputPath),
+      status: "success",
+    });
+  });
 });
 
 describe("useScrapeStore.resolveUncensoredResults", () => {

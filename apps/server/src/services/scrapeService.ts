@@ -54,6 +54,7 @@ import type {
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
 import type { UncensoredChoice } from "@mdcz/shared/types";
+import { getServerImageHostCooldownStore } from "../imageHostCooldownStore";
 import { toRootRelativeAssetPath, toScrapeResultDto } from "../scrapeDtos";
 import { createServerScrapeRuntime } from "../scrapeRuntimeFactory";
 import { toScanTaskDto, toTaskEventDto } from "../taskDto";
@@ -273,6 +274,8 @@ export class ScrapeService {
     if (task.status === "running" || task.status === "queued") {
       throw new Error("Only completed, failed, paused, or stopped scrape tasks can be retried");
     }
+    getServerImageHostCooldownStore(this.config).clear();
+    runtimeLoggerService.getLogger("ScrapeService").info("Cleared image host cooldowns for user-initiated retry");
     const results = await state.repositories.library.listScrapeResults(input.taskId);
     const activeExecutor = this.#executors.get(input.taskId);
     activeExecutor?.stop();

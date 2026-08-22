@@ -56,7 +56,7 @@ describe("SceneImageDownloader", () => {
       filterUrls: vi.fn((urls: string[]) => urls),
       shouldSkipUrl: vi.fn(() => false),
     };
-    const logger = { info: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
     const downloader = new SceneImageDownloader(
       { downloadValidatedImageCandidate } as never,
       hostCooldown as never,
@@ -108,7 +108,7 @@ describe("SceneImageDownloader", () => {
         filterUrls: vi.fn((urls: string[]) => urls),
         shouldSkipUrl: vi.fn(() => false),
       } as never,
-      { info: vi.fn() },
+      { info: vi.fn(), warn: vi.fn() },
     );
 
     const result = await downloader.downloadSceneImageSets({
@@ -127,5 +127,30 @@ describe("SceneImageDownloader", () => {
     expect(result.map((item) => item.url)).toEqual(["https://img.example.com/unique.jpg"]);
     await expect(readFile(result[0]?.path ?? "", "utf8")).resolves.toBe("unique-image");
     await expect(access(join(root, "extrafanart", ".scene-set-01-candidate-001.jpg"))).rejects.toThrow();
+  });
+
+  it("warns when every scene image host is cooling down", async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const downloader = new SceneImageDownloader(
+      { downloadValidatedImageCandidate: vi.fn() } as never,
+      {
+        filterUrls: vi.fn(() => []),
+        shouldSkipUrl: vi.fn(() => true),
+      } as never,
+      logger,
+    );
+
+    await expect(
+      downloader.downloadSceneImageSets({
+        outputDir: await createTempDir(),
+        sceneFolder: "extrafanart",
+        sceneImageSets: [{ urls: ["https://img.example.com/1.jpg"] }],
+        targetSceneCount: 1,
+        maxConcurrent: 1,
+        dedupeAgainstPaths: [],
+      }),
+    ).resolves.toEqual([]);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("all image hosts are cooling down"));
   });
 });

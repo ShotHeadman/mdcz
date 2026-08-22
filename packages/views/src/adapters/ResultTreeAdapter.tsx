@@ -13,20 +13,12 @@ import { toast } from "sonner";
 import type { MediaBrowserFilter } from "../common";
 import { getScrapeResultTitle, type ResultTreeManualUrlTarget, ResultTreeView } from "../detail";
 import type { ActionAvailability, ScrapeActionPort } from "./ports";
+import { activateRetryScrapeTask } from "./workbenchSession";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
-
-const activateNewScrapeTask = () => {
-  const scrapeStore = useScrapeStore.getState();
-  scrapeStore.clearResults();
-  scrapeStore.updateProgress(0, 0);
-  scrapeStore.setScraping(true);
-  scrapeStore.setScrapeStatus("running");
-  useUIStore.getState().setSelectedResultId(null);
-};
 
 const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
 
@@ -67,7 +59,7 @@ function buildMenuContent(
         canRequeueCurrentRun: group.status === "failed",
       });
       if (response.strategy === "new-task") {
-        activateNewScrapeTask();
+        activateRetryScrapeTask(groupedTargets.map((target) => target.filePath));
       }
       toast.success(response.message);
     } catch (error) {
@@ -257,7 +249,7 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
             manualUrl,
           });
           if (response.strategy === "new-task") {
-            activateNewScrapeTask();
+            activateRetryScrapeTask(target.targets.map((item) => item.filePath));
           }
           toast.success(response.message);
         } catch (error) {

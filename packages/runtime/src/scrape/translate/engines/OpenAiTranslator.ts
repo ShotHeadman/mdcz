@@ -5,7 +5,7 @@ import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../.
 import { isAbortError, throwIfAborted } from "../../utils/abort";
 import { getTargetLanguageLabel } from "../shared";
 import type { LanguageTarget } from "../types";
-import { isMissingRequiredLlmApiKey, type LlmApiClient } from "./LlmApiClient";
+import { isMissingRequiredLlmApiKey, type LlmApiClient, LlmTransportError } from "./LlmApiClient";
 
 interface TranslationLogger {
   warn(message: string): void;
@@ -14,7 +14,8 @@ interface TranslationLogger {
 const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
 const QUOTE_PATTERN = /^['\u0022\u201C\u201D]+|['\u0022\u201C\u201D]+$/gu;
-const REQUEST_TIMEOUT_PATTERN = /request timeout|timed out|timeout \(\d+ ms\)/iu;
+const REQUEST_TIMEOUT_PATTERN =
+  /request timeout|timed ?out|timeout \(\d+ ms\)|error reading response stream|kind: *body|econnreset|etimedout/iu;
 const COMPLETE_LEADING_THINK_PATTERN = /^<think>[\s\S]*?<\/think>\s*/iu;
 const TRANSLATION_ONLY_INSTRUCTION = "只输出最终译文，不要输出思考过程、解释、提示词或原文。";
 
@@ -148,7 +149,7 @@ export class OpenAiTranslator {
   private getTimeoutMs(config: Configuration): number {
     const configured = Number(config.translate.llmTimeout);
     if (!Number.isFinite(configured)) {
-      return 10_000;
+      return 60_000;
     }
 
     return Math.max(1, Math.trunc(configured)) * 1000;
@@ -211,6 +212,10 @@ export class OpenAiTranslator {
   }
 
   private getRetryDecision(error: unknown, attempt: number): RetryDecision | null {
+    if (error instanceof LlmTransportError) {
+      return { delayMs: this.getExponentialDelayMs(attempt), reason: "transport error" };
+    }
+
     if (!error || typeof error !== "object") {
       return null;
     }
