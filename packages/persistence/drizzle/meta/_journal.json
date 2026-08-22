@@ -12,22 +12,8 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1786710000000,
-      "tag": "0001_separate_metadata_root",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1786963785777,
-      "tag": "0002_library_query_indexes",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1787112000000,
-      "tag": "0003_media_root_active_index",
+      "when": 1787424000000,
+      "tag": "0001_task_execution_and_media_root_identity",
       "breakpoints": true
     }
   ]

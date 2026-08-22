@@ -13,6 +13,7 @@ import {
   type ScrapeResultRow,
   scrapeOutputs,
   scrapeResults,
+  taskRecords,
 } from "./schema";
 
 export type ScrapeResultRecordStatus = "pending" | "processing" | "success" | "failed" | "skipped";
@@ -189,6 +190,17 @@ export interface UpsertScrapeResultInput {
   updatedAt?: Date;
 }
 
+export interface TaskExecutionRef {
+  taskId: string;
+  executionVersion: number;
+}
+
+export interface CommitOwnedScrapeSuccessInput {
+  execution: TaskExecutionRef;
+  result: UpsertScrapeResultInput;
+  entry: UpsertLibraryEntryInput;
+}
+
 const safeActors = (value: string): string[] => {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -291,6 +303,138 @@ const toScrapeResultRecord = (row: ScrapeResultRow): ScrapeResultRecord => ({
   updatedAt: row.updatedAt,
 });
 
+const isCurrentExecution = (database: PersistenceDatabase, execution: TaskExecutionRef): boolean =>
+  Boolean(
+    database.db
+      .select({ id: taskRecords.id })
+      .from(taskRecords)
+      .where(
+        and(
+          eq(taskRecords.id, execution.taskId),
+          eq(taskRecords.executionVersion, execution.executionVersion),
+          inArray(taskRecords.status, ["running", "paused", "stopping"]),
+        ),
+      )
+      .limit(1)
+      .get(),
+  );
+
+const writeScrapeResult = (database: PersistenceDatabase, input: UpsertScrapeResultInput): string => {
+  const id = input.id ?? randomUUID();
+  const now = new Date();
+  const createdAt = input.createdAt ?? now;
+  const updatedAt = input.updatedAt ?? now;
+  database.db
+    .insert(scrapeResults)
+    .values({
+      id,
+      taskId: input.taskId,
+      rootId: input.rootId,
+      relativePath: input.relativePath,
+      status: input.status,
+      errorMessage: input.error ?? null,
+      crawlerDataJson: input.crawlerDataJson ?? null,
+      nfoRootId: input.nfoRootId ?? null,
+      nfoRelativePath: input.nfoRelativePath ?? null,
+      outputRelativePath: input.outputRelativePath ?? null,
+      manualUrl: input.manualUrl ?? null,
+      uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
+      createdAt,
+      updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: scrapeResults.id,
+      set: {
+        status: input.status,
+        errorMessage: input.error ?? null,
+        crawlerDataJson: input.crawlerDataJson ?? null,
+        nfoRootId: input.nfoRootId ?? null,
+        nfoRelativePath: input.nfoRelativePath ?? null,
+        outputRelativePath: input.outputRelativePath ?? null,
+        manualUrl: input.manualUrl ?? null,
+        uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
+        updatedAt,
+      },
+    })
+    .run();
+  return id;
+};
+
+const writeLibraryEntry = (database: PersistenceDatabase, input: UpsertLibraryEntryInput): string => {
+  const id = input.id ?? `${input.rootId}:${input.rootRelativePath}`;
+  const directory = path.posix.dirname(input.rootRelativePath);
+  const createdAt = input.createdAt ?? new Date();
+  const now = new Date();
+  const actorsJson = JSON.stringify(input.actors ?? []);
+  const mediaIdentity = input.mediaIdentity ?? input.number ?? id;
+  const assets = deriveAssets(input.crawlerDataJson, input.thumbnailPath, input.assets);
+
+  database.db
+    .insert(libraryItems)
+    .values({
+      id,
+      mediaIdentity,
+      crawlerDataJson: input.crawlerDataJson ?? null,
+      sourceTaskId: input.sourceTaskId ?? null,
+      scrapeOutputId: input.scrapeOutputId ?? null,
+      title: input.title ?? null,
+      number: input.number ?? null,
+      actorsJson,
+      createdAt,
+      lastRefreshedAt: input.lastRefreshedAt ?? null,
+      hiddenFromRecentAt: null,
+    })
+    .onConflictDoUpdate({
+      target: libraryItems.id,
+      set: {
+        mediaIdentity,
+        crawlerDataJson: input.crawlerDataJson ?? null,
+        sourceTaskId: input.sourceTaskId ?? null,
+        scrapeOutputId: input.scrapeOutputId ?? null,
+        title: input.title ?? null,
+        number: input.number ?? null,
+        actorsJson,
+        lastRefreshedAt: input.lastRefreshedAt ?? null,
+      },
+    })
+    .run();
+  database.db
+    .insert(libraryItemFiles)
+    .values({
+      id: `${id}:primary`,
+      itemId: id,
+      rootId: input.rootId,
+      rootRelativePath: input.rootRelativePath,
+      fileName: path.posix.basename(input.rootRelativePath),
+      directory: directory === "." ? "" : directory,
+      size: input.size ?? 0,
+      modifiedAt: input.modifiedAt ?? null,
+      lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [libraryItemFiles.itemId, libraryItemFiles.rootId, libraryItemFiles.rootRelativePath],
+      set: {
+        fileName: path.posix.basename(input.rootRelativePath),
+        directory: directory === "." ? "" : directory,
+        size: input.size ?? 0,
+        modifiedAt: input.modifiedAt ?? null,
+        lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
+        updatedAt: now,
+      },
+    })
+    .run();
+  database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
+  if (assets.length > 0) {
+    database.db
+      .insert(libraryItemAssets)
+      .values(assets.map((asset) => ({ ...asset, itemId: id })))
+      .run();
+  }
+  return id;
+};
+
 export class LibraryRepository {
   private readonly listCountCache = new Map<string, { count: number; expiresAt: number }>();
 
@@ -340,82 +484,8 @@ export class LibraryRepository {
   }
 
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
-    const id = input.id ?? `${input.rootId}:${input.rootRelativePath}`;
-    const directory = path.posix.dirname(input.rootRelativePath);
-    const createdAt = input.createdAt ?? new Date();
-    const now = new Date();
-    const actorsJson = JSON.stringify(input.actors ?? []);
-    const mediaIdentity = input.mediaIdentity ?? input.number ?? id;
-    const assets = deriveAssets(input.crawlerDataJson, input.thumbnailPath, input.assets);
-
-    const transaction = this.database.sqlite.transaction(() => {
-      this.database.db
-        .insert(libraryItems)
-        .values({
-          id,
-          mediaIdentity,
-          crawlerDataJson: input.crawlerDataJson ?? null,
-          sourceTaskId: input.sourceTaskId ?? null,
-          scrapeOutputId: input.scrapeOutputId ?? null,
-          title: input.title ?? null,
-          number: input.number ?? null,
-          actorsJson,
-          createdAt,
-          lastRefreshedAt: input.lastRefreshedAt ?? null,
-          hiddenFromRecentAt: null,
-        })
-        .onConflictDoUpdate({
-          target: libraryItems.id,
-          set: {
-            mediaIdentity,
-            crawlerDataJson: input.crawlerDataJson ?? null,
-            sourceTaskId: input.sourceTaskId ?? null,
-            scrapeOutputId: input.scrapeOutputId ?? null,
-            title: input.title ?? null,
-            number: input.number ?? null,
-            actorsJson,
-            lastRefreshedAt: input.lastRefreshedAt ?? null,
-          },
-        })
-        .run();
-
-      this.database.db
-        .insert(libraryItemFiles)
-        .values({
-          id: `${id}:primary`,
-          itemId: id,
-          rootId: input.rootId,
-          rootRelativePath: input.rootRelativePath,
-          fileName: path.posix.basename(input.rootRelativePath),
-          directory: directory === "." ? "" : directory,
-          size: input.size ?? 0,
-          modifiedAt: input.modifiedAt ?? null,
-          lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [libraryItemFiles.itemId, libraryItemFiles.rootId, libraryItemFiles.rootRelativePath],
-          set: {
-            fileName: path.posix.basename(input.rootRelativePath),
-            directory: directory === "." ? "" : directory,
-            size: input.size ?? 0,
-            modifiedAt: input.modifiedAt ?? null,
-            lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
-            updatedAt: now,
-          },
-        })
-        .run();
-
-      this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
-      if (assets.length > 0) {
-        this.database.db
-          .insert(libraryItemAssets)
-          .values(assets.map((asset) => ({ ...asset, itemId: id })))
-          .run();
-      }
-    });
-    transaction();
+    const transaction = this.database.sqlite.transaction(() => writeLibraryEntry(this.database, input));
+    const id = transaction();
     this.invalidateListCounts();
     return await this.getEntryById(id);
   }
@@ -490,44 +560,38 @@ export class LibraryRepository {
   }
 
   async upsertScrapeResult(input: UpsertScrapeResultInput): Promise<ScrapeResultRecord> {
-    const id = input.id ?? randomUUID();
-    const now = new Date();
-    const createdAt = input.createdAt ?? now;
-    const updatedAt = input.updatedAt ?? now;
-    this.database.db
-      .insert(scrapeResults)
-      .values({
-        id,
-        taskId: input.taskId,
-        rootId: input.rootId,
-        relativePath: input.relativePath,
-        status: input.status,
-        errorMessage: input.error ?? null,
-        crawlerDataJson: input.crawlerDataJson ?? null,
-        nfoRootId: input.nfoRootId ?? null,
-        nfoRelativePath: input.nfoRelativePath ?? null,
-        outputRelativePath: input.outputRelativePath ?? null,
-        manualUrl: input.manualUrl ?? null,
-        uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
-        createdAt,
-        updatedAt,
-      })
-      .onConflictDoUpdate({
-        target: scrapeResults.id,
-        set: {
-          status: input.status,
-          errorMessage: input.error ?? null,
-          crawlerDataJson: input.crawlerDataJson ?? null,
-          nfoRootId: input.nfoRootId ?? null,
-          nfoRelativePath: input.nfoRelativePath ?? null,
-          outputRelativePath: input.outputRelativePath ?? null,
-          manualUrl: input.manualUrl ?? null,
-          uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
-          updatedAt,
-        },
-      })
-      .run();
+    const id = writeScrapeResult(this.database, input);
     return await this.getScrapeResult(id);
+  }
+
+  async upsertOwnedScrapeResult(
+    execution: TaskExecutionRef,
+    input: UpsertScrapeResultInput,
+  ): Promise<ScrapeResultRecord | null> {
+    const transaction = this.database.sqlite.transaction(() => {
+      if (!isCurrentExecution(this.database, execution)) return null;
+      return writeScrapeResult(this.database, input);
+    });
+    const id = transaction();
+    return id ? await this.getScrapeResult(id) : null;
+  }
+
+  async commitOwnedScrapeSuccess(
+    input: CommitOwnedScrapeSuccessInput,
+  ): Promise<{ result: ScrapeResultRecord; entry: LibraryEntryRecord } | null> {
+    const transaction = this.database.sqlite.transaction(() => {
+      if (!isCurrentExecution(this.database, input.execution)) return null;
+      const resultId = writeScrapeResult(this.database, input.result);
+      const entryId = writeLibraryEntry(this.database, input.entry);
+      return { resultId, entryId };
+    });
+    const ids = transaction();
+    if (!ids) return null;
+    this.invalidateListCounts();
+    return {
+      result: await this.getScrapeResult(ids.resultId),
+      entry: await this.getEntryById(ids.entryId),
+    };
   }
 
   async listScrapeResults(taskId?: string): Promise<ScrapeResultRecord[]> {

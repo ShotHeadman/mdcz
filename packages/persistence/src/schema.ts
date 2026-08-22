@@ -12,7 +12,7 @@ export const mediaRoots = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ activeLookup: index("media_roots_deleted_idx").on(table.deleted, table.enabled) }),
+  (table) => [index("media_roots_state_idx").on(table.deleted, table.enabled)],
 );
 
 export const taskRecords = sqliteTable(
@@ -22,6 +22,7 @@ export const taskRecords = sqliteTable(
     kind: text("kind").notNull(),
     rootId: text("root_id").notNull(),
     status: text("status").notNull(),
+    executionVersion: integer("execution_version").notNull().default(0),
     summary: text("summary"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -31,10 +32,10 @@ export const taskRecords = sqliteTable(
     videoCount: integer("video_count").notNull().default(0),
     directoryCount: integer("directory_count").notNull().default(0),
   },
-  (table) => ({
-    queueLookup: index("task_records_queue_idx").on(table.kind, table.status, table.createdAt),
-    kindCreatedAt: index("task_records_kind_created_at_idx").on(table.kind, table.createdAt),
-  }),
+  (table) => [
+    index("task_records_queue_idx").on(table.kind, table.status, table.createdAt),
+    index("task_records_kind_created_at_idx").on(table.kind, table.createdAt),
+  ],
 );
 
 export const taskEvents = sqliteTable(
@@ -46,7 +47,7 @@ export const taskEvents = sqliteTable(
     message: text("message").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ taskCreatedAt: index("task_events_task_created_at_idx").on(table.taskId, table.createdAt) }),
+  (table) => [index("task_events_task_created_at_idx").on(table.taskId, table.createdAt)],
 );
 
 export const scanResults = sqliteTable(
@@ -58,9 +59,7 @@ export const scanResults = sqliteTable(
     size: integer("size").notNull(),
     modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
   },
-  (table) => ({
-    taskRootPath: uniqueIndex("scan_results_task_root_path_idx").on(table.taskId, table.rootId, table.relativePath),
-  }),
+  (table) => [uniqueIndex("scan_results_task_root_path_idx").on(table.taskId, table.rootId, table.relativePath)],
 );
 
 export const scrapeOutputs = sqliteTable(
@@ -75,7 +74,7 @@ export const scrapeOutputs = sqliteTable(
     completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ completedAt: index("scrape_outputs_completed_at_idx").on(table.completedAt) }),
+  (table) => [index("scrape_outputs_completed_at_idx").on(table.completedAt)],
 );
 
 export const scrapeResults = sqliteTable(
@@ -96,7 +95,7 @@ export const scrapeResults = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ taskPath: index("scrape_results_task_path_idx").on(table.taskId, table.relativePath) }),
+  (table) => [index("scrape_results_task_path_idx").on(table.taskId, table.relativePath)],
 );
 
 export const maintenancePreviews = sqliteTable(
@@ -116,7 +115,7 @@ export const maintenancePreviews = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ taskPath: index("maintenance_previews_task_path_idx").on(table.taskId, table.relativePath) }),
+  (table) => [index("maintenance_previews_task_path_idx").on(table.taskId, table.relativePath)],
 );
 
 export const maintenanceApplyLog = sqliteTable(
@@ -132,7 +131,7 @@ export const maintenanceApplyLog = sqliteTable(
     errorMessage: text("error_message"),
     appliedAt: integer("applied_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ taskAppliedAt: index("maintenance_apply_log_task_applied_at_idx").on(table.taskId, table.appliedAt) }),
+  (table) => [index("maintenance_apply_log_task_applied_at_idx").on(table.taskId, table.appliedAt)],
 );
 
 export const libraryEntries = sqliteTable(
@@ -154,7 +153,7 @@ export const libraryEntries = sqliteTable(
     lastKnownPath: text("last_known_path"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ rootPathKey: uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath) }),
+  (table) => [uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath)],
 );
 
 export const libraryItems = sqliteTable(
@@ -172,10 +171,10 @@ export const libraryItems = sqliteTable(
     lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
     hiddenFromRecentAt: integer("hidden_from_recent_at", { mode: "timestamp_ms" }),
   },
-  (table) => ({
-    sourceTask: index("library_items_source_task_idx").on(table.sourceTaskId),
-    createdAt: index("library_items_created_at_idx").on(table.createdAt, table.id),
-  }),
+  (table) => [
+    index("library_items_source_task_idx").on(table.sourceTaskId),
+    index("library_items_created_at_idx").on(table.createdAt, table.id),
+  ],
 );
 
 export const libraryItemFiles = sqliteTable(
@@ -193,11 +192,11 @@ export const libraryItemFiles = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({
-    itemFileKey: uniqueIndex("library_item_files_item_path_idx").on(table.itemId, table.rootId, table.rootRelativePath),
-    rootPath: index("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
-    item: index("library_item_files_item_idx").on(table.itemId),
-  }),
+  (table) => [
+    uniqueIndex("library_item_files_item_path_idx").on(table.itemId, table.rootId, table.rootRelativePath),
+    index("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
+    index("library_item_files_item_idx").on(table.itemId),
+  ],
 );
 
 export const libraryItemAssets = sqliteTable(
@@ -211,7 +210,7 @@ export const libraryItemAssets = sqliteTable(
     relativePath: text("relative_path"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => ({ item: index("library_item_assets_item_idx").on(table.itemId) }),
+  (table) => [index("library_item_assets_item_idx").on(table.itemId)],
 );
 
 export const schema = {

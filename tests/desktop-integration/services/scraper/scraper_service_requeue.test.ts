@@ -9,6 +9,7 @@ import { ScraperService } from "@main/services/scraper/ScraperService";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
+import { InMemoryScrapeSessionExecutionStore } from "@mdcz/runtime/tasks";
 import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +59,12 @@ const createService = (): ScraperService => {
     new SignalService(null),
     networkClient,
     new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new InMemoryScrapeSessionExecutionStore(),
   );
 };
 

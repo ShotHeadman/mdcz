@@ -11,6 +11,7 @@ import { createAbortError } from "@main/utils/abort";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
+import { InMemoryScrapeSessionExecutionStore } from "@mdcz/runtime/tasks";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +51,17 @@ const createService = (signalService = new CaptureSignalService(null)) => {
   const crawlerProvider = new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) });
   return {
     signalService,
-    service: new ScraperService(signalService, networkClient, crawlerProvider),
+    service: new ScraperService(
+      signalService,
+      networkClient,
+      crawlerProvider,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      new InMemoryScrapeSessionExecutionStore(),
+    ),
   };
 };
 
@@ -117,9 +128,9 @@ describe("ScraperService stop flow", () => {
     vi.spyOn(FileScraper.prototype, "scrapeFile").mockImplementation(() => runningTask.promise);
 
     await service.startSingle([mediaFilePath]);
-    const stopResult = service.stop();
+    const stopResult = await service.stop();
 
-    expect(stopResult.pendingCount).toBe(0);
+    expect(stopResult.pendingCount).toBe(1);
     expect(service.getStatus().running).toBe(true);
     expect(signalService.buttonStatusEvents).toEqual([
       { startEnabled: false, stopEnabled: true },
@@ -169,6 +180,7 @@ describe("ScraperService stop flow", () => {
       undefined,
       outputLibraryScanner,
       persistenceService,
+      new InMemoryScrapeSessionExecutionStore(),
     );
     const outputRoot = join(tmpdir(), "mdcz-output");
     const config = mockConfig(
@@ -249,12 +261,11 @@ describe("ScraperService stop flow", () => {
 
     await service.startSingle([mediaFilePath]);
     expect(service.getStatus().state).toBe("running");
-    service.pause();
+    await service.pause();
     expect(service.getStatus().state).toBe("paused");
-    service.resume();
-    expect(service.getStatus().state).toBe("running");
-
     runningTask.resolve(successResult(mediaFilePath, "ABP-456", config.scrape.sites[0]));
+    await service.resume();
+    expect(service.getStatus().state).toBe("running");
     await service.waitForIdle();
     expect(service.getStatus().state).toBe("idle");
     expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });
@@ -283,7 +294,7 @@ describe("ScraperService stop flow", () => {
 
     const retryPromise = service.retryFiles(filePaths);
     await firstStarted.promise;
-    service.stop();
+    await service.stop();
     firstTask.resolve(successResult(firstPath, "ABP-777", config.scrape.sites[0]));
     await retryPromise;
     await service.waitForIdle();

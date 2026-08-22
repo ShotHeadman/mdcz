@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { RuntimeInfoActorSourceProvider } from "@mdcz/runtime/mediaserver/infoSync";
 import type { RuntimePhotoActorSourceProvider } from "@mdcz/runtime/mediaserver/photoSync";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
@@ -5,12 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createServerActorSourceProvider, serverActorImageCacheRoot } from "./actorSourceFactory";
 import type { ServerConfigService } from "./services/configService";
 
+const runtimeRoot = join(tmpdir(), "mdcz-actor-source");
 const fakeConfig = {
   runtimePaths: {
-    configDir: "/tmp/mdcz-actor-source/config",
-    dataDir: "/tmp/mdcz-actor-source/data",
-    configPath: "/tmp/mdcz-actor-source/config/default.toml",
-    databasePath: "/tmp/mdcz-actor-source/data/mdcz.sqlite",
+    configDir: join(runtimeRoot, "config"),
+    dataDir: join(runtimeRoot, "data"),
+    configPath: join(runtimeRoot, "config", "default.toml"),
+    databasePath: join(runtimeRoot, "data", "mdcz.sqlite"),
   },
 } as ServerConfigService;
 
@@ -29,7 +32,7 @@ class FakeNetworkClient {
 
 describe("createServerActorSourceProvider", () => {
   it("roots the actor image cache under runtimePaths.dataDir", () => {
-    expect(serverActorImageCacheRoot(fakeConfig)).toBe("/tmp/mdcz-actor-source/data/actor-image-cache");
+    expect(serverActorImageCacheRoot(fakeConfig)).toBe(join(fakeConfig.runtimePaths.dataDir, "actor-image-cache"));
   });
 
   it("satisfies the photo and info sync ports and looks up without throwing", async () => {

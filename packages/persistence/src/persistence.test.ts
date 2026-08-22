@@ -20,7 +20,7 @@ afterEach(() => {
   database = undefined;
 });
 
-describe("MediaRootRepository", () => {
+describe("Persistence migrations", () => {
   it("migrates isolated test databases with the package migration facade", () => {
     database = createTestPersistenceDatabase();
 
@@ -51,7 +51,7 @@ describe("MediaRootRepository", () => {
         "library_item_files_item_idx",
         "library_item_files_root_path_idx",
         "library_items_source_task_idx",
-        "media_roots_deleted_idx",
+        "media_roots_state_idx",
         "scan_results_task_root_path_idx",
         "scrape_results_task_path_idx",
         "task_events_task_created_at_idx",
@@ -67,44 +67,65 @@ describe("MediaRootRepository", () => {
     expect(database.sqlite.pragma("synchronous", { simple: true })).toBe(1);
   });
 
-  it("upgrades a pre-index database by deduplicating legacy scan results", async () => {
-    const migrations = await createTempDirectory("persistence-old-migrations");
+  it("upgrades the v0.11 schema through the consolidated migration", async () => {
+    const migrations = await createTempDirectory("persistence-v011-migrations");
     try {
       await mkdir(join(migrations.path, "meta"), { recursive: true });
-      await Promise.all(
-        ["0000_initial.sql", "0001_separate_metadata_root.sql"].map(
-          async (fileName) => await cp(join(defaultMigrationsFolder, fileName), join(migrations.path, fileName)),
-        ),
-      );
+      await cp(join(defaultMigrationsFolder, "0000_initial.sql"), join(migrations.path, "0000_initial.sql"));
       const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
         entries: Array<{ idx: number }>;
-        version: string;
-        dialect: string;
       };
       await writeFile(
         join(migrations.path, "meta", "_journal.json"),
-        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx < 2) }),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx === 0) }),
       );
 
       database = createPersistenceDatabase({ path: ":memory:" });
       runMigrations(database, { migrationsFolder: migrations.path });
-      const insert = database.sqlite.prepare(
+      const insertScanResult = database.sqlite.prepare(
         "INSERT INTO scan_results (task_id, root_id, relative_path, size, modified_at) VALUES (?, ?, ?, ?, ?)",
       );
-      insert.run("task-1", "root-1", "ABC-001.mp4", 10, 100);
-      insert.run("task-1", "root-1", "ABC-001.mp4", 20, 200);
+      insertScanResult.run("task-1", "root-1", "ABC-001.mp4", 10, 100);
+      insertScanResult.run("task-1", "root-1", "ABC-001.mp4", 20, 200);
+      const insertRoot = database.sqlite.prepare(
+        "INSERT INTO media_roots (id, display_name, host_path, root_type, enabled, deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      insertRoot.run("123e4567-e89b-12d3-a456-426614174000", "Legacy", "/legacy", "mounted-filesystem", 1, 0, 1, 1);
+      insertRoot.run("path-deterministic", "Current", "/current", "mounted-filesystem", 1, 0, 1, 1);
+      insertRoot.run("mdcz-metadata-output", "Metadata", "/metadata", "mounted-filesystem", 1, 0, 1, 1);
+      database.sqlite
+        .prepare(
+          "INSERT INTO task_records (id, kind, root_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("task-1", "scan", "root-1", "queued", 1, 1);
 
       runMigrations(database);
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
       ).toEqual([{ task_id: "task-1", root_id: "root-1", relative_path: "ABC-001.mp4", size: 20, modified_at: 200 }]);
-      expect(() => insert.run("task-1", "root-1", "ABC-001.mp4", 30, null)).toThrow(/UNIQUE constraint failed/u);
+      expect(() => insertScanResult.run("task-1", "root-1", "ABC-001.mp4", 30, null)).toThrow(
+        /UNIQUE constraint failed/u,
+      );
+      expect(database.sqlite.prepare("SELECT execution_version FROM task_records WHERE id = ?").get("task-1")).toEqual({
+        execution_version: 0,
+      });
+      expect(database.sqlite.prepare("SELECT id, enabled, deleted FROM media_roots ORDER BY id").all()).toEqual([
+        { id: "123e4567-e89b-12d3-a456-426614174000", enabled: 0, deleted: 1 },
+        { id: "mdcz-metadata-output", enabled: 1, deleted: 0 },
+        { id: "path-deterministic", enabled: 1, deleted: 0 },
+      ]);
+      const scrapeResultColumns = database.sqlite.prepare("PRAGMA table_info(scrape_results)").all() as Array<{
+        name: string;
+      }>;
+      expect(scrapeResultColumns.some((column) => column.name === "nfo_root_id")).toBe(true);
     } finally {
       await migrations.cleanup();
     }
   });
+});
 
+describe("MediaRootRepository", () => {
   it("persists and reads media roots through the facade", async () => {
     database = createTestPersistenceDatabase();
     const repository = new MediaRootRepository(database);
@@ -121,6 +142,51 @@ describe("MediaRootRepository", () => {
 
     await expect(repository.get("root-1")).resolves.toEqual(persistedRoot);
     await expect(repository.list()).resolves.toEqual([persistedRoot]);
+  });
+
+  it("always disables a soft-deleted media root", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new MediaRootRepository(database);
+    const root = createMediaRoot({
+      id: "root-deleted",
+      displayName: "Deleted",
+      hostPath: "/deleted",
+      enabled: true,
+      now: new Date("2026-08-22T00:00:00.000Z"),
+    });
+
+    await expect(repository.upsert({ ...root, deleted: true })).resolves.toMatchObject({
+      enabled: false,
+      deleted: true,
+    });
+    await expect(repository.get(root.id, { includeDeleted: true })).resolves.toMatchObject({
+      enabled: false,
+      deleted: true,
+    });
+  });
+
+  it("switches the enabled media root atomically while preserving reserved roots", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new MediaRootRepository(database);
+    const now = new Date("2026-08-22T00:00:00.000Z");
+    const metadataRoot = createMediaRoot({
+      id: "mdcz-metadata-output",
+      displayName: "Metadata",
+      hostPath: "/metadata",
+      now,
+    });
+    const firstRoot = createMediaRoot({ id: "path-first", displayName: "First", hostPath: "/first", now });
+    const secondRoot = createMediaRoot({ id: "path-second", displayName: "Second", hostPath: "/second", now });
+    await repository.upsert(metadataRoot);
+
+    await Promise.all([
+      repository.activateExclusive(firstRoot, { exemptRootIds: [metadataRoot.id] }),
+      repository.activateExclusive(secondRoot, { exemptRootIds: [metadataRoot.id] }),
+    ]);
+
+    const roots = await repository.list();
+    expect(roots.filter((root) => root.id !== metadataRoot.id && root.enabled)).toHaveLength(1);
+    expect(roots.find((root) => root.id === metadataRoot.id)?.enabled).toBe(true);
   });
 
   it("uses stable not-found errors", async () => {
@@ -469,6 +535,130 @@ describe("LibraryRepository", () => {
 });
 
 describe("TaskRepository", () => {
+  it("claims a queued task atomically and assigns a new execution version", async () => {
+    database = createTestPersistenceDatabase();
+    const first = new TaskRepository(database);
+    const second = new TaskRepository(database);
+    await first.createTask({ id: "task-1", kind: "scan", rootId: "root-1" });
+
+    const claims = await Promise.all([first.claimNext("scan"), second.claimNext("scan")]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.find(Boolean)).toMatchObject({ id: "task-1", status: "running", executionVersion: 1 });
+    await expect(first.claimNext("scan")).resolves.toBeNull();
+  });
+
+  it("uses status and execution version as the conditional update guard", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "scrape", rootId: "root-1" });
+    const claimed = await repository.claimNext("scrape");
+    expect(claimed).not.toBeNull();
+
+    await expect(
+      repository.patch("task-1", { status: "completed" }, { status: "running", executionVersion: 0 }),
+    ).resolves.toBeNull();
+    await expect(
+      repository.patch("task-1", { status: "completed" }, { status: "running", executionVersion: 1 }),
+    ).resolves.toMatchObject({ status: "completed", executionVersion: 1 });
+  });
+
+  it("invalidates an old worker execution version while requeueing interrupted work", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "maintenance", rootId: "root-1" });
+    await repository.claimNext("maintenance");
+
+    await repository.requeueRunning("maintenance");
+
+    await expect(repository.get("task-1")).resolves.toMatchObject({ status: "queued", executionVersion: 2 });
+    await expect(
+      repository.patch("task-1", { status: "completed" }, { status: "running", executionVersion: 1 }),
+    ).resolves.toBeNull();
+  });
+
+  it("commits scan results and terminal summary only for the current execution version", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "scan", rootId: "root-1" });
+    await repository.claimNext("scan");
+    await repository.requeueRunning("scan");
+
+    await expect(
+      repository.completeScanTask({
+        taskId: "task-1",
+        rootId: "root-1",
+        executionVersion: 1,
+        directoryCount: 1,
+        results: [{ relativePath: "stale.mp4", size: 1, modifiedAt: null }],
+      }),
+    ).resolves.toBeNull();
+    await expect(repository.listScanResults("task-1")).resolves.toEqual([]);
+    await expect(repository.get("task-1")).resolves.toMatchObject({
+      status: "queued",
+      executionVersion: 2,
+      videoCount: 0,
+    });
+  });
+
+  it("rejects stale scrape item and library writes as one atomic operation", async () => {
+    database = createTestPersistenceDatabase();
+    const tasks = new TaskRepository(database);
+    const library = new LibraryRepository(database);
+    await tasks.createTask({ id: "task-1", kind: "scrape", rootId: "root-1" });
+    await library.upsertScrapeResult({
+      id: "result-1",
+      taskId: "task-1",
+      rootId: "root-1",
+      relativePath: "ABC-001.mp4",
+      status: "pending",
+    });
+    await tasks.claimNext("scrape");
+    await tasks.requeueRunning("scrape");
+
+    await expect(
+      library.commitOwnedScrapeSuccess({
+        execution: { taskId: "task-1", executionVersion: 1 },
+        result: {
+          id: "result-1",
+          taskId: "task-1",
+          rootId: "root-1",
+          relativePath: "ABC-001.mp4",
+          status: "success",
+          outputRelativePath: "ABC-001/ABC-001.mp4",
+        },
+        entry: {
+          rootId: "root-1",
+          rootRelativePath: "ABC-001/ABC-001.mp4",
+          sourceTaskId: "task-1",
+        },
+      }),
+    ).resolves.toBeNull();
+    await expect(library.getScrapeResult("result-1")).resolves.toMatchObject({ status: "pending" });
+    await expect(library.listEntries()).resolves.toEqual([]);
+  });
+
+  it("commits scrape output and terminal summary only for the current execution version", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "scrape", rootId: "root-1" });
+    await repository.claimNext("scrape");
+    await repository.requeueRunning("scrape");
+
+    await expect(
+      repository.completeScrapeTask({
+        taskId: "task-1",
+        executionVersion: 1,
+        rootId: "root-1",
+        fileCount: 1,
+        failedCount: 0,
+        totalBytes: 10,
+      }),
+    ).resolves.toBeNull();
+    await expect(repository.get("task-1")).resolves.toMatchObject({ status: "queued", videoCount: 0 });
+    await expect(new LibraryRepository(database).latestScrapeOutput()).resolves.toBeNull();
+  });
+
   it("rejects duplicate scan paths within one task and root", async () => {
     database = createTestPersistenceDatabase();
     const repository = new TaskRepository(database);

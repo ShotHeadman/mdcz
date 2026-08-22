@@ -134,19 +134,19 @@ export const createScraperHandlers = (
       withIpcErrorHandling("stop scraper", async () => {
         return {
           success: true as const,
-          pendingCount: scraperService.stop().pendingCount,
+          pendingCount: (await scraperService.stop()).pendingCount,
         };
       }),
     ),
     [IpcChannel.Scraper_Pause]: t.procedure.action(() =>
       withIpcErrorHandling("pause scraper", async () => {
-        scraperService.pause();
+        await scraperService.pause();
         return { success: true as const };
       }),
     ),
     [IpcChannel.Scraper_Resume]: t.procedure.action(() =>
       withIpcErrorHandling("resume scraper", async () => {
-        scraperService.resume();
+        await scraperService.resume();
         return { success: true as const };
       }),
     ),

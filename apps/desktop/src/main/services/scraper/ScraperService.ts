@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import { type Configuration, configManager } from "@main/services/config";
 import {
@@ -23,9 +22,9 @@ import {
   type ScrapeRestGate,
   TranslateService,
 } from "@mdcz/runtime/scrape";
-import { ScrapeSession, type ScrapeSuccessItem } from "@mdcz/runtime/tasks";
+import { ScrapeSession, type ScrapeSessionExecutionStore, type ScrapeSuccessItem } from "@mdcz/runtime/tasks";
 import type { ScraperStatus } from "@mdcz/shared/types";
-import { getDesktopUserDataPath } from "../../appIdentity";
+import { DesktopScrapeExecutionStore } from "./DesktopScrapeExecutionStore";
 import { DownloadManager } from "./DownloadManager";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
 import { fileOrganizer } from "./fileOrganizerAdapter";
@@ -55,10 +54,7 @@ const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 export class ScraperService {
   private readonly logger = loggerService.getLogger("ScraperService");
 
-  private readonly session = new ScrapeSession({
-    logger: loggerService.getLogger("ScrapeSession"),
-    statePath: join(getDesktopUserDataPath(), "session-state.json"),
-  });
+  private readonly session: ScrapeSession;
 
   private restGate: ScrapeRestGate | null = null;
 
@@ -74,6 +70,8 @@ export class ScraperService {
 
   private currentRunPromise: Promise<void> | null = null;
 
+  private pauseRequested = false;
+
   constructor(
     private readonly signalService: SignalService,
     networkClient: NetworkClient,
@@ -83,12 +81,20 @@ export class ScraperService {
     imageHostCooldownStore?: PersistentCooldownStore,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
+    executionStore?: ScrapeSessionExecutionStore,
   ) {
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
     this.sharedNetworkClient = networkClient;
     this.aggregationService = new AggregationService(crawlerProvider, { logger: this.logger });
     this.imageHostCooldownStore = imageHostCooldownStore ?? createImageHostCooldownStore();
+    this.session = new ScrapeSession({
+      executionStore:
+        executionStore ??
+        new DesktopScrapeExecutionStore(this.persistenceService, async () => {
+          return (await configManager.getValidated()).paths.mediaPath;
+        }),
+    });
   }
 
   getStatus(): ScraperStatus {
@@ -123,7 +129,9 @@ export class ScraperService {
       throw new ScraperServiceError("NO_FILES", "No files found in recoverable session");
     }
 
-    return this.retryFiles(files);
+    const configuration = await configManager.getValidated();
+    this.configureRuntimeSettings(configuration);
+    return await this.beginSession(files, configuration, "batch", undefined, {}, snapshot.taskId);
   }
 
   async discardRecoverableSession(): Promise<void> {
@@ -147,7 +155,7 @@ export class ScraperService {
     }
 
     this.configureRuntimeSettings(configuration);
-    return this.beginSession(filePaths, configuration, "single", undefined, { concurrency: 1 });
+    return await this.beginSession(filePaths, configuration, "single", undefined, { concurrency: 1 });
   }
 
   async startSelectedFiles(paths: string[]): Promise<StartScrapeResult> {
@@ -165,13 +173,14 @@ export class ScraperService {
     return this.startBatchExecution(filePaths, configuration);
   }
 
-  stop(): { pendingCount: number } {
+  async stop(): Promise<{ pendingCount: number }> {
     if (!this.session.getStatus().running) {
       return { pendingCount: 0 };
     }
 
     this.signalService.setButtonStatus(false, false);
-    return this.session.stop();
+    this.pauseRequested = false;
+    return await this.session.stop();
   }
 
   async waitForIdle(): Promise<void> {
@@ -182,7 +191,7 @@ export class ScraperService {
     const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
     if (this.session.getStatus().running) {
       this.logger.info("Shutting down scraper service");
-      this.stop();
+      await this.stop();
       const timedOut = this.currentRunPromise ? await didPromiseTimeout(this.currentRunPromise, timeoutMs) : false;
       if (timedOut) {
         this.logger.warn(`Timed out waiting ${timeoutMs}ms for scraper service shutdown`);
@@ -192,12 +201,24 @@ export class ScraperService {
     await this.imageHostCooldownStore.flush();
   }
 
-  pause(): void {
-    this.session.pause();
+  async pause(): Promise<void> {
+    this.pauseRequested = true;
+    await this.session.pause();
   }
 
-  resume(): void {
-    this.session.resume();
+  async resume(): Promise<void> {
+    await this.session.resume();
+    this.pauseRequested = false;
+    const taskId = this.session.getTaskId();
+    if (!taskId || this.session.getState() !== "running") return;
+    const runPromise = this.session.onIdle().then(async () => {
+      this.restGate = null;
+      if (!this.pauseRequested && this.session.getState() !== "paused") await this.finish(taskId);
+    });
+    const trackedRunPromise = runPromise.finally(() => {
+      if (this.currentRunPromise === trackedRunPromise) this.currentRunPromise = null;
+    });
+    this.currentRunPromise = trackedRunPromise;
   }
 
   async requeue(filePaths: string[], manualScrape?: ManualScrapeOptions): Promise<{ requeuedCount: number }> {
@@ -222,7 +243,7 @@ export class ScraperService {
       const fileIndex = cursor;
 
       if (
-        !this.session.addTask({
+        !(await this.session.addTask({
           sourcePath: filePath,
           isRetry: true,
           taskFn: async (signal) => {
@@ -231,7 +252,7 @@ export class ScraperService {
               ? fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal, { manualScrape })
               : fileScraper.scrapeFile(filePath, { fileIndex, totalFiles }, signal);
           },
-        })
+        }))
       ) {
         continue;
       }
@@ -259,7 +280,7 @@ export class ScraperService {
     }
 
     const configuration = await configManager.getValidated();
-    return this.startBatchExecution(pending, configuration, manualScrape);
+    return await this.startBatchExecution(pending, configuration, manualScrape);
   }
 
   private async finish(taskId: string): Promise<void> {
@@ -289,13 +310,13 @@ export class ScraperService {
     return await resolveSelectedFilePathsForScrape(paths);
   }
 
-  private startBatchExecution(
+  private async startBatchExecution(
     filePaths: string[],
     configuration: Configuration,
     manualScrape?: ManualScrapeOptions,
-  ): StartScrapeResult {
+  ): Promise<StartScrapeResult> {
     this.configureRuntimeSettings(configuration);
-    return this.beginSession(filePaths, configuration, "batch", manualScrape);
+    return await this.beginSession(filePaths, configuration, "batch", manualScrape);
   }
 
   private createFileScraperDependencies() {
@@ -391,15 +412,17 @@ export class ScraperService {
     applyScrapeNetworkPolicy(this.sharedNetworkClient, configuration);
   }
 
-  private beginSession(
+  private async beginSession(
     filePaths: string[],
     configuration: Configuration,
     mode: ScrapeExecutionMode,
     manualScrape?: ManualScrapeOptions,
     overrides: { concurrency?: number } = {},
-  ): StartScrapeResult {
+    recoverTaskId?: string,
+  ): Promise<StartScrapeResult> {
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
-    const taskId = this.session.begin(filePaths, overrides.concurrency ?? policy.concurrency);
+    const taskId = await this.session.begin(filePaths, overrides.concurrency ?? policy.concurrency, recoverTaskId);
+    this.pauseRequested = false;
     this.restGate = policy.restGate;
 
     this.signalService.setButtonStatus(false, true);
@@ -409,7 +432,7 @@ export class ScraperService {
 
     for (const [index, filePath] of filePaths.entries()) {
       const fileIndex = index + 1;
-      this.session.addTask({
+      await this.session.addTask({
         sourcePath: filePath,
         isRetry: false,
         taskFn: async (signal) => {
@@ -424,7 +447,7 @@ export class ScraperService {
 
     const runPromise = this.session.onIdle().then(async () => {
       this.restGate = null;
-      await this.finish(taskId);
+      if (!this.pauseRequested && this.session.getState() !== "paused") await this.finish(taskId);
     });
     const trackedRunPromise = runPromise.finally(() => {
       if (this.currentRunPromise === trackedRunPromise) {

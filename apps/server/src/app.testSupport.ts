@@ -23,6 +23,7 @@ import { createTaskEventBus } from "./taskEvents";
 
 export interface TestServerOptions {
   environmentPassword?: string;
+  webStaticDir?: string | false;
   automationWebhook?: {
     secret?: string;
     url?: string;
@@ -67,7 +68,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
     serviceOptions: {
       automationWebhook: options.automationWebhook,
     },
-    webStaticDir: false,
+    webStaticDir: options.webStaticDir ?? false,
     services: {
       auth:
         options.environmentPassword === undefined

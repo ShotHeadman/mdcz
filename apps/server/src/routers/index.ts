@@ -51,7 +51,7 @@ const syncMediaRootFromConfig = async (
   if (!mediaPath) {
     return;
   }
-  await services.mediaRoots.syncSingleEnabledRoot({
+  await services.mediaRoots.setPrimaryMediaRoot({
     displayName: options.displayName?.trim() || pathDisplayName(mediaPath),
     hostPath: mediaPath,
     enabled: true,

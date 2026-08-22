@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { deterministicMediaRootId } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
@@ -400,8 +401,28 @@ describe("buildServer composition integration", () => {
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
     expect(roots.filter((root: { enabled: boolean }) => root.enabled)).toEqual([
-      expect.objectContaining({ hostPath: secondRoot }),
+      expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
     ]);
+    expect(roots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot, enabled: false }),
+      ]),
+    );
+  });
+
+  it("coalesces concurrent media root synchronization by deterministic id", async () => {
+    const mediaPath = await createTempRoot("config-media-root-concurrent");
+    const { services } = await createTestServer();
+
+    const roots = await Promise.all([
+      services.mediaRoots.setPrimaryMediaRoot({ displayName: "First", hostPath: mediaPath, enabled: true }),
+      services.mediaRoots.setPrimaryMediaRoot({ displayName: "Second", hostPath: mediaPath, enabled: true }),
+    ]);
+
+    expect(new Set(roots.map((root) => root.id))).toEqual(new Set([deterministicMediaRootId(mediaPath)]));
+    await expect(services.mediaRoots.list()).resolves.toMatchObject({
+      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath, enabled: true })],
+    });
   });
 
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {

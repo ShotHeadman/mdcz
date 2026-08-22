@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { listRegisteredCrawlerSites } from "@mdcz/runtime/crawler/registry";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
@@ -134,24 +134,28 @@ describe("E2E runner target isolation", () => {
     expect(resolvePlaywrightTarget(["--project=web-chromium"])).toBe("web-chromium");
     expect(resolvePlaywrightTarget(["--project", "desktop-electron"])).toBe("desktop-electron");
 
-    const web = resolveE2ERunnerLayout("/repo", "web-chromium");
-    const desktop = resolveE2ERunnerLayout("/repo", "desktop-electron");
+    const workspaceRoot = resolve("repo");
+    const resultDir = join(workspaceRoot, "test-results");
+    const webRuntimeRoot = join(workspaceRoot, ".tmp", "e2e-web");
+    const desktopRuntimeRoot = join(workspaceRoot, ".tmp", "e2e-desktop");
+    const web = resolveE2ERunnerLayout(workspaceRoot, "web-chromium");
+    const desktop = resolveE2ERunnerLayout(workspaceRoot, "desktop-electron");
 
     expect(web).toMatchObject({
-      cleanupRuntimeRoots: ["/repo/.tmp/e2e-web"],
-      serverRuntimeRoot: "/repo/.tmp/e2e-web/server",
-      mediaDir: "/repo/.tmp/e2e-web/media",
-      serverLogPath: "/repo/test-results/web-e2e-server.log",
-      reportDir: "/repo/playwright-report-web",
-      outputDir: "/repo/test-results/playwright-web",
+      cleanupRuntimeRoots: [webRuntimeRoot],
+      serverRuntimeRoot: join(webRuntimeRoot, "server"),
+      mediaDir: join(webRuntimeRoot, "media"),
+      serverLogPath: join(resultDir, "web-e2e-server.log"),
+      reportDir: join(workspaceRoot, "playwright-report-web"),
+      outputDir: join(resultDir, "playwright-web"),
     });
     expect(desktop).toMatchObject({
-      cleanupRuntimeRoots: ["/repo/.tmp/e2e-desktop"],
-      serverRuntimeRoot: "/repo/.tmp/e2e-desktop/server",
-      mediaDir: "/repo/.tmp/e2e-desktop/media",
-      serverLogPath: "/repo/test-results/desktop-e2e-server.log",
-      reportDir: "/repo/playwright-report-desktop",
-      outputDir: "/repo/test-results/playwright-desktop",
+      cleanupRuntimeRoots: [desktopRuntimeRoot],
+      serverRuntimeRoot: join(desktopRuntimeRoot, "server"),
+      mediaDir: join(desktopRuntimeRoot, "media"),
+      serverLogPath: join(resultDir, "desktop-e2e-server.log"),
+      reportDir: join(workspaceRoot, "playwright-report-desktop"),
+      outputDir: join(resultDir, "playwright-desktop"),
     });
     expect(desktop.serverRuntimeRoot).not.toBe(web.serverRuntimeRoot);
     expect(desktop.serverLogPath).not.toBe(web.serverLogPath);

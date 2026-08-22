@@ -1,5 +1,5 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname } from "node:path";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
@@ -428,9 +428,14 @@ export interface NfoNamingPaths {
   stalePaths: string[];
 }
 
+const siblingPath = (filePath: string, fileName: string): string => {
+  const separatorIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return `${filePath.slice(0, separatorIndex + 1)}${fileName}`;
+};
+
 export const getNfoWritePaths = (nfoPath: string, nfoNaming: NfoNamingMode = "both"): NfoNamingPaths => {
   const primaryPath = nfoPath;
-  const moviePath = join(dirname(nfoPath), JELLYFIN_MOVIE_NFO_NAME);
+  const moviePath = siblingPath(nfoPath, JELLYFIN_MOVIE_NFO_NAME);
   if (nfoNaming === "movie") {
     return {
       primaryPath,

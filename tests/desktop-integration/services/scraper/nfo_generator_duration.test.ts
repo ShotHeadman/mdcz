@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { findExistingNfoPath, NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { getNfoReadCandidates, resolveFilenameNfoPath } from "@mdcz/runtime/scrape";
@@ -339,16 +339,17 @@ describe("NfoGenerator", () => {
 
     await expect(findExistingNfoPath(nfoPath, "movie")).resolves.toBe(movieNfoPath);
   });
-  it("orders read candidates according to naming mode and video basename", () => {
-    expect(resolveFilenameNfoPath("/media/movie.nfo", "/media/ABC-123.mp4")).toBe("/media/ABC-123.nfo");
-    expect(getNfoReadCandidates("/media/movie.nfo", "filename", "/media/ABC-123.mp4")).toEqual([
-      "/media/ABC-123.nfo",
-      "/media/movie.nfo",
-    ]);
-    expect(getNfoReadCandidates("/media/ABC-123.nfo", "movie", "/media/ABC-123.mp4")).toEqual([
-      "/media/movie.nfo",
-      "/media/ABC-123.nfo",
-    ]);
+  it.each([
+    ["POSIX", posix, "/media"],
+    ["Windows", win32, "C:\\media"],
+  ] as const)("orders %s read candidates according to naming mode and video basename", (_label, pathApi, root) => {
+    const movieNfoPath = pathApi.join(root, "movie.nfo");
+    const filenameNfoPath = pathApi.join(root, "ABC-123.nfo");
+    const videoPath = pathApi.join(root, "ABC-123.mp4");
+
+    expect(resolveFilenameNfoPath(movieNfoPath, videoPath)).toBe(filenameNfoPath);
+    expect(getNfoReadCandidates(movieNfoPath, "filename", videoPath)).toEqual([filenameNfoPath, movieNfoPath]);
+    expect(getNfoReadCandidates(filenameNfoPath, "movie", videoPath)).toEqual([movieNfoPath, filenameNfoPath]);
   });
   it("merges editable fields without dropping unmanaged nodes or attributes", () => {
     const existingXml = `<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="dmm" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><fileinfo><streamdetails><video><width>1920</width></video></streamdetails></fileinfo><providerid source="local">keep-me</providerid><mdcz><custom keep="yes">value</custom></mdcz></movie>`;

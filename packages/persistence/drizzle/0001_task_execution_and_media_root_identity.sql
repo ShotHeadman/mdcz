@@ -1,3 +1,5 @@
+ALTER TABLE `scrape_results` ADD `nfo_root_id` text;
+--> statement-breakpoint
 DELETE FROM `scan_results`
 WHERE EXISTS (
   SELECT 1
@@ -39,3 +41,15 @@ CREATE INDEX `library_item_files_root_path_idx` ON `library_item_files` (`root_i
 CREATE INDEX `library_item_files_item_idx` ON `library_item_files` (`item_id`);
 --> statement-breakpoint
 CREATE INDEX `library_item_assets_item_idx` ON `library_item_assets` (`item_id`);
+--> statement-breakpoint
+CREATE INDEX `media_roots_state_idx` ON `media_roots` (`deleted`, `enabled`);
+--> statement-breakpoint
+ALTER TABLE `task_records` ADD `execution_version` integer DEFAULT 0 NOT NULL;
+--> statement-breakpoint
+UPDATE `media_roots`
+SET
+  `enabled` = 0,
+  `deleted` = 1,
+  `updated_at` = unixepoch() * 1000
+WHERE `id` <> 'mdcz-metadata-output'
+  AND `id` NOT LIKE 'path-%';

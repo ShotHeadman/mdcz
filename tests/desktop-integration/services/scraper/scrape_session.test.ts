@@ -1,99 +1,103 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { ScrapeSession } from "@mdcz/runtime/tasks";
-import { afterEach, describe, expect, it } from "vitest";
+import { InMemoryScrapeSessionExecutionStore, ScrapeSession } from "@mdcz/runtime/tasks";
+import { Website } from "@mdcz/shared/enums";
+import type { ScrapeResult } from "@mdcz/shared/types";
+import { describe, expect, it } from "vitest";
 
-const tempDirs: string[] = [];
+const result = (sourcePath: string, status: ScrapeResult["status"] = "success"): ScrapeResult => ({
+  status,
+  fileId: sourcePath,
+  fileInfo: { filePath: sourcePath, fileName: sourcePath, extension: ".mp4", number: "TEST-001", isSubtitled: false },
+  ...(status === "success"
+    ? {
+        crawlerData: {
+          title: "Test",
+          number: "TEST-001",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.JAVDB,
+        },
+      }
+    : {}),
+});
 
-const createTempDir = async (): Promise<string> => {
-  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-scrape-session-"));
-  tempDirs.push(dirPath);
-  return dirPath;
-};
-
-const waitFor = async (predicate: () => Promise<boolean>, timeoutMs = 1000): Promise<void> => {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    if (await predicate()) {
-      return;
-    }
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
-  }
-
-  throw new Error("Timed out waiting for session state");
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 };
 
 describe("ScrapeSession", () => {
-  afterEach(async () => {
-    await Promise.all(
-      tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
-    );
-  });
-
-  it("persists a recoverable snapshot as soon as the session starts", async () => {
-    const dirPath = await createTempDir();
-    const statePath = join(dirPath, "session-state.json");
-    const session = new ScrapeSession({ statePath, persistIntervalMs: 50 });
-
-    session.begin(["/tmp/ABP-123.mp4"], 1);
-
-    await waitFor(async () => await session.hasRecoverableSession());
-
-    await expect(readFile(statePath, "utf8")).resolves.toContain("ABP-123.mp4");
-    await expect(session.getRecoverableSnapshot()).resolves.toMatchObject({
-      pendingFiles: ["/tmp/ABP-123.mp4"],
-      failedFiles: [],
-      status: {
-        state: "running",
-        running: true,
+  it("pauses after the in-flight item settles and resumes only pending work", async () => {
+    const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
+    const first = deferred<ScrapeResult>();
+    const started: string[] = [];
+    await session.begin(["one", "two", "three"], 1);
+    await session.addTask({
+      sourcePath: "one",
+      isRetry: false,
+      taskFn: async () => {
+        started.push("one");
+        return first.promise;
       },
     });
-
-    await session.finish();
-    await waitFor(async () => {
-      try {
-        await readFile(statePath, "utf8");
-        return false;
-      } catch {
-        return true;
-      }
+    await session.addTask({
+      sourcePath: "two",
+      isRetry: false,
+      taskFn: async () => {
+        started.push("two");
+        return result("two");
+      },
     });
+    await session.addTask({
+      sourcePath: "three",
+      isRetry: false,
+      taskFn: async () => {
+        started.push("three");
+        return result("three");
+      },
+    });
+    const idle = session.onIdle();
+    while (started.length !== 1) await new Promise((resolve) => setTimeout(resolve, 1));
+    await session.pause();
+    first.resolve(result("one"));
+    await idle;
+    expect(session.getState()).toBe("paused");
+    expect(started).toEqual(["one"]);
+    await session.resume();
+    await session.onIdle();
+    expect(started).toEqual(["one", "two", "three"]);
   });
 
-  it("can discard a persisted recoverable snapshot before resuming", async () => {
-    const dirPath = await createTempDir();
-    const statePath = join(dirPath, "session-state.json");
-    await writeFile(
-      statePath,
-      JSON.stringify(
-        {
-          taskId: "task-1",
-          status: {
-            state: "running",
-            running: true,
-            totalFiles: 1,
-            completedFiles: 0,
-            successCount: 0,
-            failedCount: 0,
-            skippedCount: 0,
-          },
-          failedFiles: [],
-          pendingFiles: ["/tmp/ABP-123.mp4"],
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
-
-    const restored = new ScrapeSession({ statePath, persistIntervalMs: 50 });
-    await restored.discardRecoverableSession();
-
-    await expect(restored.hasRecoverableSession()).resolves.toBe(false);
-    await expect(readFile(statePath, "utf8")).rejects.toThrow();
+  it("stops pending work without allowing a cleared worker to start it", async () => {
+    const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
+    const running = deferred<ScrapeResult>();
+    const started: string[] = [];
+    await session.begin(["one", "two"], 1);
+    await session.addTask({
+      sourcePath: "one",
+      isRetry: false,
+      taskFn: async () => {
+        started.push("one");
+        return running.promise;
+      },
+    });
+    await session.addTask({
+      sourcePath: "two",
+      isRetry: false,
+      taskFn: async () => {
+        started.push("two");
+        return result("two");
+      },
+    });
+    const idle = session.onIdle();
+    while (started.length !== 1) await new Promise((resolve) => setTimeout(resolve, 1));
+    await session.stop();
+    running.resolve(result("one"));
+    await idle;
+    expect(started).toEqual(["one"]);
+    expect(session.getStatus().skippedCount).toBe(1);
   });
 });

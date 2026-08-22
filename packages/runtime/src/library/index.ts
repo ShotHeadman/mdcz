@@ -2,6 +2,7 @@ import type { MediaRoot } from "@mdcz/media-store";
 import { toRootRelativePath } from "@mdcz/media-store";
 import type { DownloadedAssets } from "@mdcz/shared/types";
 
+export * from "./desktopInputRoot";
 export * from "./desktopOutputRoot";
 
 export interface RuntimeLibraryAsset {

@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import {
   type ScanResultRow,
   scanResults,
+  scrapeOutputs,
   type TaskEventRow,
   type TaskRecordRow,
   taskEvents,
@@ -19,6 +20,7 @@ export interface TaskRecord {
   kind: TaskRecordKind;
   rootId: string;
   status: TaskRecordStatus;
+  executionVersion: number;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -67,6 +69,26 @@ export interface PatchTaskInput {
   updatedAt?: Date;
 }
 
+export interface TaskUpdateGuard {
+  status: TaskRecordStatus | readonly TaskRecordStatus[];
+  executionVersion: number;
+}
+
+export interface CompleteScrapeTaskInput {
+  taskId: string;
+  executionVersion: number;
+  rootId: string | null;
+  fileCount: number;
+  failedCount: number;
+  totalBytes: number;
+  completedAt?: Date;
+}
+
+export interface CompleteScrapeTaskResult {
+  task: TaskRecord;
+  outputId: string;
+}
+
 export interface AddTaskEventInput {
   id?: string;
   taskId: string;
@@ -81,11 +103,18 @@ export interface ReplaceScanResultsInput {
   results: Array<{ relativePath: string; size: number; modifiedAt: Date | null }>;
 }
 
+export interface CompleteScanTaskInput extends ReplaceScanResultsInput {
+  executionVersion: number;
+  directoryCount: number;
+  completedAt?: Date;
+}
+
 const toTaskRecord = (row: TaskRecordRow): TaskRecord => ({
   id: row.id,
   kind: row.kind as TaskRecordKind,
   rootId: row.rootId,
   status: row.status as TaskRecordStatus,
+  executionVersion: row.executionVersion,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   startedAt: row.startedAt,
@@ -125,6 +154,7 @@ export class TaskRepository {
       kind: input.kind,
       rootId: input.rootId,
       status: "queued",
+      executionVersion: 0,
       createdAt: now,
       updatedAt: now,
       startedAt: null,
@@ -141,6 +171,7 @@ export class TaskRepository {
         kind: task.kind,
         rootId: task.rootId,
         status: task.status,
+        executionVersion: task.executionVersion,
         summary: null,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
@@ -155,23 +186,38 @@ export class TaskRepository {
     return task;
   }
 
-  async patch(id: string, patch: PatchTaskInput): Promise<TaskRecord> {
-    const existing = await this.get(id);
+  async patch(id: string, patch: PatchTaskInput): Promise<TaskRecord>;
+  async patch(id: string, patch: PatchTaskInput, guard: TaskUpdateGuard): Promise<TaskRecord | null>;
+  async patch(id: string, patch: PatchTaskInput, guard?: TaskUpdateGuard): Promise<TaskRecord | null> {
     const updatedAt = patch.updatedAt ?? new Date();
-    this.database.db
+    const result = this.database.db
       .update(taskRecords)
       .set({
-        status: patch.status ?? existing.status,
+        status: patch.status,
         updatedAt,
-        startedAt: patch.startedAt !== undefined ? patch.startedAt : existing.startedAt,
-        completedAt: patch.completedAt !== undefined ? patch.completedAt : existing.completedAt,
-        errorMessage: patch.error !== undefined ? patch.error : existing.error,
-        videoCount: patch.videoCount ?? existing.videoCount,
-        directoryCount: patch.directoryCount ?? existing.directoryCount,
+        startedAt: patch.startedAt,
+        completedAt: patch.completedAt,
+        errorMessage: patch.error,
+        videoCount: patch.videoCount,
+        directoryCount: patch.directoryCount,
       })
-      .where(eq(taskRecords.id, id))
+      .where(
+        guard
+          ? and(
+              eq(taskRecords.id, id),
+              Array.isArray(guard.status)
+                ? inArray(taskRecords.status, [...guard.status])
+                : eq(taskRecords.status, guard.status as TaskRecordStatus),
+              eq(taskRecords.executionVersion, guard.executionVersion),
+            )
+          : eq(taskRecords.id, id),
+      )
       .run();
 
+    if (result.changes === 0) {
+      if (guard) return null;
+      await this.get(id);
+    }
     return await this.get(id);
   }
 
@@ -195,21 +241,86 @@ export class TaskRepository {
     return toTaskRecord(row);
   }
 
-  async nextQueued(kind: TaskRecordKind): Promise<TaskRecord | null> {
-    const row = this.database.db
-      .select()
-      .from(taskRecords)
-      .where(and(eq(taskRecords.kind, kind), eq(taskRecords.status, "queued")))
-      .orderBy(taskRecords.createdAt)
-      .limit(1)
-      .get();
-    return row ? toTaskRecord(row) : null;
+  async claimNext(kind: TaskRecordKind, now = new Date()): Promise<TaskRecord | null> {
+    return this.database.db.transaction((tx) => {
+      const queued = tx
+        .select()
+        .from(taskRecords)
+        .where(and(eq(taskRecords.kind, kind), eq(taskRecords.status, "queued")))
+        .orderBy(taskRecords.createdAt)
+        .limit(1)
+        .get();
+      if (!queued) return null;
+
+      const claimed = tx
+        .update(taskRecords)
+        .set({
+          status: "running",
+          executionVersion: sql`${taskRecords.executionVersion} + 1`,
+          startedAt: now,
+          completedAt: null,
+          errorMessage: null,
+          updatedAt: now,
+        })
+        .where(and(eq(taskRecords.id, queued.id), eq(taskRecords.status, "queued")))
+        .run();
+      if (claimed.changes === 0) return null;
+
+      const row = tx.select().from(taskRecords).where(eq(taskRecords.id, queued.id)).limit(1).get();
+      return row ? toTaskRecord(row) : null;
+    });
+  }
+
+  async claim(id: string, expectedExecutionVersion: number, now = new Date()): Promise<TaskRecord | null> {
+    const claimed = this.database.db
+      .update(taskRecords)
+      .set({
+        status: "running",
+        executionVersion: sql`${taskRecords.executionVersion} + 1`,
+        startedAt: now,
+        completedAt: null,
+        errorMessage: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(taskRecords.id, id),
+          eq(taskRecords.status, "queued"),
+          eq(taskRecords.executionVersion, expectedExecutionVersion),
+        ),
+      )
+      .run();
+    return claimed.changes === 1 ? await this.get(id) : null;
+  }
+
+  async requeue(id: string, guard: TaskUpdateGuard, now = new Date()): Promise<TaskRecord | null> {
+    const statusCondition = Array.isArray(guard.status)
+      ? inArray(taskRecords.status, [...guard.status])
+      : eq(taskRecords.status, guard.status as TaskRecordStatus);
+    const requeued = this.database.db
+      .update(taskRecords)
+      .set({
+        status: "queued",
+        executionVersion: sql`${taskRecords.executionVersion} + 1`,
+        startedAt: null,
+        completedAt: null,
+        errorMessage: null,
+        updatedAt: now,
+      })
+      .where(and(eq(taskRecords.id, id), statusCondition, eq(taskRecords.executionVersion, guard.executionVersion)))
+      .run();
+    return requeued.changes === 1 ? await this.get(id) : null;
   }
 
   async requeueRunning(kind: TaskRecordKind): Promise<void> {
     this.database.db
       .update(taskRecords)
-      .set({ status: "queued", startedAt: null, updatedAt: new Date() })
+      .set({
+        status: "queued",
+        executionVersion: sql`${taskRecords.executionVersion} + 1`,
+        startedAt: null,
+        updatedAt: new Date(),
+      })
       .where(and(eq(taskRecords.kind, kind), inArray(taskRecords.status, ["running", "stopping"])))
       .run();
   }
@@ -237,23 +348,7 @@ export class TaskRepository {
   }
 
   async replaceScanResults(input: ReplaceScanResultsInput): Promise<void> {
-    const seenPaths = new Set<string>();
-    for (const result of input.results) {
-      if (seenPaths.has(result.relativePath)) {
-        throw new PersistenceError(
-          persistenceErrorCodes.ConstraintViolation,
-          `Duplicate scan result path for task ${input.taskId}: ${result.relativePath}`,
-        );
-      }
-      seenPaths.add(result.relativePath);
-    }
-    const values = input.results.map((result) => ({
-      taskId: input.taskId,
-      rootId: input.rootId,
-      relativePath: result.relativePath,
-      size: result.size,
-      modifiedAt: result.modifiedAt,
-    }));
+    const values = this.toScanResultValues(input);
 
     const transaction = this.database.sqlite.transaction(() => {
       this.database.db.delete(scanResults).where(eq(scanResults.taskId, input.taskId)).run();
@@ -262,6 +357,94 @@ export class TaskRepository {
       }
     });
     transaction();
+  }
+
+  async completeScanTask(input: CompleteScanTaskInput): Promise<TaskRecord | null> {
+    const values = this.toScanResultValues(input);
+    const completedAt = input.completedAt ?? new Date();
+    const transaction = this.database.sqlite.transaction(() => {
+      const owned = this.database.db
+        .select({ id: taskRecords.id })
+        .from(taskRecords)
+        .where(
+          and(
+            eq(taskRecords.id, input.taskId),
+            eq(taskRecords.status, "running"),
+            eq(taskRecords.executionVersion, input.executionVersion),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (!owned) return false;
+
+      this.database.db.delete(scanResults).where(eq(scanResults.taskId, input.taskId)).run();
+      if (values.length > 0) this.database.db.insert(scanResults).values(values).run();
+      const committed = this.database.db
+        .update(taskRecords)
+        .set({
+          status: "completed",
+          completedAt,
+          updatedAt: completedAt,
+          videoCount: values.length,
+          directoryCount: input.directoryCount,
+          errorMessage: null,
+        })
+        .where(
+          and(
+            eq(taskRecords.id, input.taskId),
+            eq(taskRecords.status, "running"),
+            eq(taskRecords.executionVersion, input.executionVersion),
+          ),
+        )
+        .run();
+      return committed.changes === 1;
+    });
+    if (!transaction()) return null;
+    return await this.get(input.taskId);
+  }
+
+  async completeScrapeTask(input: CompleteScrapeTaskInput): Promise<CompleteScrapeTaskResult | null> {
+    const completedAt = input.completedAt ?? new Date();
+    const outputId = randomUUID();
+    const allFilesFailed = input.failedCount > 0 && input.fileCount === 0;
+    const transaction = this.database.sqlite.transaction(() => {
+      const committed = this.database.db
+        .update(taskRecords)
+        .set({
+          status: allFilesFailed ? "failed" : "completed",
+          completedAt,
+          updatedAt: completedAt,
+          videoCount: input.fileCount,
+          directoryCount: 0,
+          errorMessage: allFilesFailed ? "All files failed to scrape" : null,
+        })
+        .where(
+          and(
+            eq(taskRecords.id, input.taskId),
+            eq(taskRecords.status, "running"),
+            eq(taskRecords.executionVersion, input.executionVersion),
+          ),
+        )
+        .run();
+      if (committed.changes !== 1) return false;
+
+      this.database.db
+        .insert(scrapeOutputs)
+        .values({
+          id: outputId,
+          taskId: input.taskId,
+          rootId: input.rootId,
+          outputDirectory: null,
+          fileCount: input.fileCount,
+          totalBytes: input.totalBytes,
+          completedAt,
+          createdAt: completedAt,
+        })
+        .run();
+      return true;
+    });
+    if (!transaction()) return null;
+    return { task: await this.get(input.taskId), outputId };
   }
 
   async listScanResults(taskId: string): Promise<ScanResultRecord[]> {
@@ -277,5 +460,25 @@ export class TaskRepository {
   async listAllScanResults(): Promise<ScanResultRecord[]> {
     const rows = this.database.db.select().from(scanResults).orderBy(scanResults.relativePath).all();
     return rows.map(toScanResultRecord);
+  }
+
+  private toScanResultValues(input: ReplaceScanResultsInput) {
+    const seenPaths = new Set<string>();
+    for (const result of input.results) {
+      if (seenPaths.has(result.relativePath)) {
+        throw new PersistenceError(
+          persistenceErrorCodes.ConstraintViolation,
+          `Duplicate scan result path for task ${input.taskId}: ${result.relativePath}`,
+        );
+      }
+      seenPaths.add(result.relativePath);
+    }
+    return input.results.map((result) => ({
+      taskId: input.taskId,
+      rootId: input.rootId,
+      relativePath: result.relativePath,
+      size: result.size,
+      modifiedAt: result.modifiedAt,
+    }));
   }
 }

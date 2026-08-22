@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
+import { deterministicMediaRootId } from "@mdcz/runtime/library";
 import {
   type MediaRootAvailabilityDto,
   type MediaRootCreateInput,
@@ -38,43 +39,22 @@ export class MediaRootService {
     return { roots: roots.map(toMediaRootDto) };
   }
 
-  async syncSingleEnabledRoot(input: MediaRootCreateInput): Promise<MediaRootDto> {
+  async setPrimaryMediaRoot(input: MediaRootCreateInput): Promise<MediaRootDto> {
     const parsed = mediaRootCreateInputSchema.parse(input);
     const normalizedPath = await this.validateMountedFilesystemPath(parsed.hostPath);
     const state = await this.persistence.getState();
-    const roots = await state.repositories.mediaRoots.list();
-    const existing = roots.find((root) => root.hostPath === normalizedPath);
     const now = new Date();
-    const activeRoot =
-      existing ??
-      createMediaRoot({
-        displayName: parsed.displayName,
-        hostPath: normalizedPath,
-        enabled: true,
-        now,
-      });
-
-    for (const root of roots) {
-      if (root.id === activeRoot.id || root.id === METADATA_OUTPUT_ROOT_ID) {
-        continue;
-      }
-      if (root.enabled) {
-        await state.repositories.mediaRoots.upsert({
-          ...root,
-          enabled: false,
-          updatedAt: now,
-        });
-      }
-    }
+    const activeRoot = createMediaRoot({
+      id: deterministicMediaRootId(normalizedPath),
+      displayName: parsed.displayName,
+      hostPath: normalizedPath,
+      enabled: true,
+      now,
+    });
 
     return toMediaRootDto(
-      await state.repositories.mediaRoots.upsert({
-        ...activeRoot,
-        displayName: parsed.displayName,
-        hostPath: normalizedPath,
-        enabled: true,
-        deleted: false,
-        updatedAt: now,
+      await state.repositories.mediaRoots.activateExclusive(activeRoot, {
+        exemptRootIds: [METADATA_OUTPUT_ROOT_ID],
       }),
     );
   }
