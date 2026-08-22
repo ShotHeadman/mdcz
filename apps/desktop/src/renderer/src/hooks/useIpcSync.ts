@@ -53,11 +53,13 @@ const getSyncTarget = (): SyncTarget => {
   return "all";
 };
 
-const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
+export const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   const scrapeStore = useScrapeStore.getState();
   const activeState = status.state ?? (status.running ? "running" : "idle");
   const active = activeState !== "idle";
-  const shouldSyncProgressFromStatus = activeState === "idle" || activeState === "paused";
+  const shouldSyncProgressFromStatus =
+    activeState === "idle" ||
+    (activeState === "paused" && (scrapeStore.total !== status.totalFiles || scrapeStore.progress <= 0));
 
   scrapeStore.setScraping(active);
   scrapeStore.setScrapeStatus(activeState);
