@@ -69,7 +69,7 @@ export class ScraperService {
 
   private readonly imageHostCooldownStore: PersistentCooldownStore;
 
-  private finishingScrapeSessionId: string | null = null;
+  private finishingRun: { scrapeSessionId: string; promise: Promise<void> } | null = null;
   private currentRunPromise: Promise<void> | null = null;
 
   private pauseRequested = false;
@@ -297,33 +297,42 @@ export class ScraperService {
   }
 
   private async finish(scrapeSessionId: string): Promise<void> {
-    if (
-      this.session.getTaskId() !== scrapeSessionId ||
-      !this.session.getStatus().running ||
-      this.finishingScrapeSessionId === scrapeSessionId
-    ) {
+    // A session can be awaited by more than one run promise (e.g. after resume);
+    // late callers must await the in-flight finish instead of returning early,
+    // otherwise waitForIdle can resolve before the completion signals are emitted.
+    if (this.finishingRun?.scrapeSessionId === scrapeSessionId) {
+      await this.finishingRun.promise;
       return;
     }
 
-    this.finishingScrapeSessionId = scrapeSessionId;
+    if (this.session.getTaskId() !== scrapeSessionId || !this.session.getStatus().running) {
+      return;
+    }
+
+    const promise = this.runFinish(scrapeSessionId);
+    this.finishingRun = { scrapeSessionId, promise };
     try {
-      const successItems = this.session.getSuccessItemsSnapshot();
-      await this.session.finish();
-
-      if (successItems.length > 0) {
-        await this.recordLibraryEntries(successItems, scrapeSessionId);
-      }
-      this.outputLibraryScanner.invalidate();
-
-      this.aggregationService.clearCache();
-
-      this.signalService.setButtonStatus(true, false);
-      this.logger.info(`Scrape session finished: ${scrapeSessionId}`);
+      await promise;
     } finally {
-      if (this.finishingScrapeSessionId === scrapeSessionId) {
-        this.finishingScrapeSessionId = null;
+      if (this.finishingRun?.scrapeSessionId === scrapeSessionId) {
+        this.finishingRun = null;
       }
     }
+  }
+
+  private async runFinish(scrapeSessionId: string): Promise<void> {
+    const successItems = this.session.getSuccessItemsSnapshot();
+    await this.session.finish();
+
+    if (successItems.length > 0) {
+      await this.recordLibraryEntries(successItems, scrapeSessionId);
+    }
+    this.outputLibraryScanner.invalidate();
+
+    this.aggregationService.clearCache();
+
+    this.signalService.setButtonStatus(true, false);
+    this.logger.info(`Scrape session finished: ${scrapeSessionId}`);
   }
 
   private async resolveSingleFilePaths(paths: string[]): Promise<string[]> {
