@@ -488,6 +488,16 @@ export const maintenanceTaskInputSchema = z.object({
 
 export type MaintenanceTaskInput = z.infer<typeof maintenanceTaskInputSchema>;
 
+export const maintenanceUpdateDraftInputSchema = maintenanceTaskInputSchema.extend({
+  previewId: z.string().min(1),
+  fieldSelections: z.record(z.string(), z.enum(["old", "new"])).optional(),
+  imageSelections: z.record(z.string(), z.string()).optional(),
+});
+export type MaintenanceUpdateDraftInput = z.infer<typeof maintenanceUpdateDraftInputSchema>;
+
+export const maintenanceDiscardSessionInputSchema = z.object({ taskId: z.string().min(1).optional() }).optional();
+export type MaintenanceDiscardSessionInput = z.infer<typeof maintenanceDiscardSessionInputSchema>;
+
 export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
   confirmationToken: z.string().trim().min(1).optional(),
   previewIds: z.array(z.string().trim().min(1)).optional(),
@@ -514,6 +524,7 @@ export type MaintenancePreviewResponse = z.infer<typeof maintenancePreviewRespon
 export const maintenanceApplyLogSchema = z.object({
   id: z.string(),
   taskId: z.string(),
+  batchId: z.string(),
   previewId: z.string(),
   rootId: z.string(),
   relativePath: z.string(),
@@ -621,6 +632,7 @@ export const libraryEntrySchema = z.object({
   actors: z.array(z.string()),
   crawlerData: crawlerDataSchema.nullable(),
   thumbnailPath: z.string().nullable(),
+  thumbnailRootId: z.string().nullable().optional(),
   lastKnownPath: z.string().nullable(),
   createdAt: z.string(),
   lastRefreshedAt: z.string().nullable(),
@@ -722,6 +734,7 @@ export const overviewRecentAcquisitionSchema = z.object({
   title: z.string().nullable(),
   actors: z.array(z.string()),
   thumbnailPath: z.string().nullable(),
+  thumbnailRootId: z.string().nullable().optional(),
   lastKnownPath: z.string().nullable(),
   completedAt: z.string(),
   available: z.boolean().nullable(),

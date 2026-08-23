@@ -1,9 +1,19 @@
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
-import { applyScrapeStatusSnapshot, createOverviewInvalidationTracker } from "@renderer/hooks/useIpcSync";
+import {
+  applyMaintenanceRuntimeSnapshot,
+  applyScrapeStatusSnapshot,
+  createOverviewInvalidationTracker,
+} from "@renderer/hooks/useIpcSync";
 import { afterEach, describe, expect, it } from "vitest";
 
 afterEach(() => {
   useScrapeStore.getState().reset();
+  useMaintenanceEntryStore.getState().reset();
+  useMaintenanceExecutionStore.getState().reset();
+  useMaintenancePreviewStore.getState().reset();
 });
 
 describe("overview UI contract", () => {
@@ -81,5 +91,45 @@ describe("overview UI contract", () => {
       status: "failed",
       error: "已停止或未完成",
     });
+  });
+
+  it("does not clear local maintenance scan entries before a backend session exists", () => {
+    useMaintenanceEntryStore.getState().setEntries(
+      [
+        {
+          fileId: "entry-1",
+          fileInfo: {
+            filePath: "/media/ABC-123.mp4",
+            fileName: "ABC-123.mp4",
+            extension: ".mp4",
+            number: "ABC-123",
+            isSubtitled: false,
+          },
+          assets: { sceneImages: [], actorPhotos: [] },
+          currentDir: "/media",
+        },
+      ],
+      "/media",
+    );
+
+    applyMaintenanceRuntimeSnapshot(null, {
+      state: "scanning",
+      totalEntries: 1,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
+    });
+
+    expect(useMaintenanceEntryStore.getState().entries).toHaveLength(1);
+    expect(useMaintenanceExecutionStore.getState().executionStatus).toBe("scanning");
+
+    applyMaintenanceRuntimeSnapshot(null, {
+      state: "idle",
+      totalEntries: 0,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
+    });
+    expect(useMaintenanceEntryStore.getState().entries).toHaveLength(1);
   });
 });

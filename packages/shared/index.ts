@@ -18,6 +18,7 @@ export * from "./llm";
 export * from "./logFormatting";
 export * from "./maintenanceCommit";
 export * from "./maintenancePresets";
+export * from "./maintenanceTasks";
 export * from "./manualScrapeUrl";
 export * from "./mediaCandidate";
 export * from "./mediaExtensions";

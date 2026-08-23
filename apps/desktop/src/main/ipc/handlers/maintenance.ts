@@ -2,7 +2,7 @@ import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
+import type { LocalScanEntry, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:maintenance");
@@ -18,8 +18,12 @@ export const createMaintenanceHandlers = (
   | typeof IpcChannel.Maintenance_Pause
   | typeof IpcChannel.Maintenance_Resume
   | typeof IpcChannel.Maintenance_GetStatus
+  | typeof IpcChannel.Maintenance_GetActiveSession
+  | typeof IpcChannel.Maintenance_UpdateDraft
+  | typeof IpcChannel.Maintenance_DiscardSession
 > => {
   const { maintenanceService } = context;
+  let activeTaskId: string | null = null;
 
   return {
     [IpcChannel.Maintenance_Scan]: t.procedure
@@ -57,7 +61,10 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          return await maintenanceService.preview(entries, presetId);
+          const handle = await maintenanceService.startPreview(entries, presetId);
+          activeTaskId = handle.task.id;
+          const batch = await handle.completion;
+          return maintenanceService.toPreviewResult(batch);
         } catch (error) {
           logger.error("Maintenance preview failed");
           throw asSerializableIpcError(error);
@@ -65,7 +72,7 @@ export const createMaintenanceHandlers = (
       }),
 
     [IpcChannel.Maintenance_Execute]: t.procedure
-      .input<{ items?: MaintenanceCommitItem[]; presetId?: MaintenancePresetId }>()
+      .input<{ items?: MaintenanceApplyCommit[]; presetId?: MaintenancePresetId }>()
       .action(async ({ input }) => {
         try {
           const items = input?.items;
@@ -77,7 +84,10 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          await maintenanceService.execute(items, presetId);
+          const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+          if (!taskId) throw new Error("没有活动的维护预览任务");
+          activeTaskId = taskId;
+          await maintenanceService.execute(taskId, items, presetId);
 
           return { success: true as const };
         } catch (error) {
@@ -88,7 +98,8 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Stop]: t.procedure.action(async () => {
       try {
-        maintenanceService.stop();
+        const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+        await maintenanceService.stop(taskId ?? undefined);
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
@@ -97,7 +108,8 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Pause]: t.procedure.action(async () => {
       try {
-        maintenanceService.pause();
+        const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+        await maintenanceService.pause(taskId ?? undefined);
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
@@ -106,7 +118,8 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Resume]: t.procedure.action(async () => {
       try {
-        maintenanceService.resume();
+        const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+        await maintenanceService.resume(taskId ?? undefined);
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
@@ -114,7 +127,39 @@ export const createMaintenanceHandlers = (
     }),
 
     [IpcChannel.Maintenance_GetStatus]: t.procedure.action(async () => {
-      return maintenanceService.getStatus();
+      const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+      return await maintenanceService.getStatus(taskId ?? undefined);
+    }),
+
+    [IpcChannel.Maintenance_GetActiveSession]: t.procedure.action(async () => {
+      const session = await maintenanceService.getActiveSession();
+      activeTaskId = session?.taskId ?? null;
+      return session;
+    }),
+
+    [IpcChannel.Maintenance_UpdateDraft]: t.procedure
+      .input<{
+        previewId: string;
+        fieldSelections?: Record<string, "old" | "new">;
+        imageSelections?: Record<string, string>;
+      }>()
+      .action(async ({ input }) => {
+        try {
+          await maintenanceService.updateDraft(input);
+          return { success: true as const };
+        } catch (error) {
+          throw asSerializableIpcError(error);
+        }
+      }),
+
+    [IpcChannel.Maintenance_DiscardSession]: t.procedure.action(async () => {
+      try {
+        await maintenanceService.discardSession();
+        activeTaskId = null;
+        return { success: true as const };
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
     }),
   };
 };

@@ -2,7 +2,7 @@ import type { LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types"
 import { describe, expect, it } from "vitest";
 import {
   buildCommittedCrawlerData,
-  buildMaintenanceCommitItem,
+  buildMaintenanceApplyCommit,
   resolveMaintenanceDiffImageOption,
   resolveMaintenanceDiffImageSrc,
 } from "@/lib/maintenance";
@@ -65,7 +65,7 @@ describe("buildCommittedCrawlerData", () => {
   });
 });
 
-describe("buildMaintenanceCommitItem", () => {
+describe("buildMaintenanceApplyCommit", () => {
   it("keeps only selected preview image alternatives and derives asset decisions from the chosen side", () => {
     const entry = createMaintenanceEntry(
       createMaintenanceCrawlerData({
@@ -120,7 +120,7 @@ describe("buildMaintenanceCommitItem", () => {
       ],
     };
 
-    const item = buildMaintenanceCommitItem(entry, preview, {
+    const item = buildMaintenanceApplyCommit(entry, preview, {
       poster_url: "old",
       thumb_url: "new",
     });
@@ -166,7 +166,7 @@ describe("buildMaintenanceCommitItem", () => {
       ],
     };
 
-    const sceneItem = buildMaintenanceCommitItem(sceneEntry, scenePreview, {
+    const sceneItem = buildMaintenanceApplyCommit(sceneEntry, scenePreview, {
       scene_images: "old",
     });
 
@@ -199,7 +199,7 @@ describe("buildMaintenanceCommitItem", () => {
       ],
     };
 
-    const replacedTrailer = buildMaintenanceCommitItem(remoteEntry, remotePreview, {
+    const replacedTrailer = buildMaintenanceApplyCommit(remoteEntry, remotePreview, {
       trailer_url: "new",
     });
 
@@ -231,7 +231,7 @@ describe("buildMaintenanceCommitItem", () => {
       ],
     };
 
-    const preservedTrailer = buildMaintenanceCommitItem(localEntry, localPreview, {
+    const preservedTrailer = buildMaintenanceApplyCommit(localEntry, localPreview, {
       trailer_url: "old",
     });
 
@@ -291,7 +291,7 @@ describe("buildMaintenanceCommitItem", () => {
       ],
     };
 
-    const item = buildMaintenanceCommitItem(entry, preview, {
+    const item = buildMaintenanceApplyCommit(entry, preview, {
       poster_url: "old",
       thumb_url: "old",
     });

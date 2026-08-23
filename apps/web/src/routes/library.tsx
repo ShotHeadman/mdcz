@@ -50,7 +50,9 @@ export function LibraryPage() {
         availabilityFilter={availabilityFilter}
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
-        getImageSrc={(path, entry) => getLibraryAssetSrc({ format: "webp", path, rootId: entry.rootId, width: 160 })}
+        getImageSrc={(path, entry) =>
+          getLibraryAssetSrc({ format: "webp", path, rootId: entry.thumbnailRootId ?? entry.rootId, width: 160 })
+        }
         hasMore={libraryQ.hasNextPage}
         isAvailabilityLoading={availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
         isLoading={libraryQ.isLoading}

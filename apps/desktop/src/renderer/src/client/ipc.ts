@@ -17,7 +17,7 @@ import type { LibraryListInput } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
   LocalScanEntry,
-  MaintenanceCommitItem,
+  MaintenanceApplyCommit,
   MaintenanceItemResult,
   MaintenancePresetId,
   MediaCandidate,
@@ -143,12 +143,19 @@ export const ipc = {
     scanFiles: (filePaths: string[]) => client[IpcChannel.Maintenance_Scan]({ filePaths }),
     preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
       client[IpcChannel.Maintenance_Preview]({ entries, presetId }),
-    execute: (items: MaintenanceCommitItem[], presetId: MaintenancePresetId) =>
+    execute: (items: MaintenanceApplyCommit[], presetId: MaintenancePresetId) =>
       client[IpcChannel.Maintenance_Execute]({ items, presetId }),
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
     pause: () => client[IpcChannel.Maintenance_Pause](undefined),
     resume: () => client[IpcChannel.Maintenance_Resume](undefined),
     getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined),
+    getActiveSession: () => client[IpcChannel.Maintenance_GetActiveSession](undefined),
+    updateDraft: (input: {
+      previewId: string;
+      fieldSelections?: Record<string, "old" | "new">;
+      imageSelections?: Record<string, string>;
+    }) => client[IpcChannel.Maintenance_UpdateDraft](input),
+    discardSession: () => client[IpcChannel.Maintenance_DiscardSession](undefined),
   },
   on: {
     log: (callback: (payload: LogPayload) => void): Unsubscribe => window.api.on(IpcChannel.Event_Log, callback),

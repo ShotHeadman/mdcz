@@ -1,4 +1,4 @@
-import type { CrawlerData, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
+import type { CrawlerData, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
@@ -125,8 +125,15 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
   scanFiles: (filePaths) => ipc.maintenance.scanFiles(filePaths),
+  getActiveSession: () => ipc.maintenance.getActiveSession(),
+  updateDraft: async (previewId, draft) => {
+    await ipc.maintenance.updateDraft({ previewId, ...draft });
+  },
+  discardSession: async () => {
+    await ipc.maintenance.discardSession();
+  },
   preview: (entries, presetId) => ipc.maintenance.preview(entries, presetId),
-  execute: async (commitItems: MaintenanceCommitItem[], presetId: MaintenancePresetId) => {
+  execute: async (commitItems: MaintenanceApplyCommit[], presetId: MaintenancePresetId) => {
     await ipc.maintenance.execute(commitItems, presetId);
   },
   pause: async () => {

@@ -1,6 +1,7 @@
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import { buildCommittedCrawlerData, type MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceCommit";
 import type {
   CrawlerData,
   FieldDiff,
@@ -11,7 +12,6 @@ import type {
 } from "@mdcz/shared/types";
 import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
-import { buildCommittedCrawlerData, type MaintenanceFieldSelectionSide } from "./commit";
 import { LocalScanService } from "./LocalScanService";
 import { MaintenanceFileScraper, type MaintenanceFileScraperDependencies } from "./MaintenanceFileScraper";
 import type { MaintenanceSignalService } from "./output";
@@ -258,8 +258,6 @@ export class MaintenanceRuntime {
         : buildCommittedCrawlerData(
             entry,
             {
-              fileId: entry.fileId,
-              status: "ready",
               fieldDiffs: input.committed?.fieldDiffs ?? [],
               proposedCrawlerData: input.committed?.crawlerData,
               imageAlternatives: input.committed?.imageAlternatives,

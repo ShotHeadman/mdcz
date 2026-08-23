@@ -1,3 +1,4 @@
+import { applyMaintenanceClientSession } from "@mdcz/views/state/maintenanceSession";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect } from "react";
 import { api, subscribeTaskRealtime } from "../client";
@@ -23,12 +24,19 @@ export const hydrateActiveScrapeTaskResults = async (taskId: string): Promise<vo
     .setHydrationState(hydrateWorkbenchScrapeResults(response, { ...previous, activeScrapeTaskId: taskId }));
 };
 
+export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
+  const session = await api.maintenance.getActiveSession();
+  applyMaintenanceClientSession(session);
+  useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(session?.taskId ?? "");
+};
+
 export const useWebTaskSync = (): void => {
   const activeScrapeTaskId = useWorkbenchTaskStore((state) => state.hydrationState.activeScrapeTaskId);
   const setHydrationState = useWorkbenchTaskStore((state) => state.setHydrationState);
 
   useEffect(() => {
     void applyWebTaskSnapshot().catch(() => {});
+    void hydrateActiveMaintenanceSession().catch(() => {});
 
     const unsubscribe = subscribeTaskRealtime({
       onEvent: (payload) => {

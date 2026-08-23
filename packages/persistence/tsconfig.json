@@ -12,5 +12,5 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../media-store" }]
+  "references": [{ "path": "../media-store" }, { "path": "../shared" }]
 }

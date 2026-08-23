@@ -1,5 +1,6 @@
 import type {
   LocalScanEntry,
+  MaintenanceClientSession,
   MaintenanceItemResult,
   MaintenancePresetId,
   MaintenancePreviewItem,
@@ -101,10 +102,58 @@ export const resetMaintenanceSession = (): void => {
 };
 
 export const applyMaintenanceExecutionItemResult = (payload: MaintenanceItemResult): void => {
+  const executionStore = useMaintenanceExecutionStore.getState();
+  if (payload.batchId && executionStore.activeBatchId && payload.batchId !== executionStore.activeBatchId) return;
   useMaintenanceEntryStore.getState().applyExecutionResult(payload);
-  useMaintenanceExecutionStore.getState().applyItemResult(payload);
+  if (payload.status === "success" || payload.status === "failed" || payload.status === "skipped") {
+    useMaintenancePreviewStore.getState().removePreviewItem(payload.fileId);
+  }
+  executionStore.applyItemResult(payload);
 };
 
 export const applyMaintenanceStatusSnapshot = (status: MaintenanceStatus): void => {
   useMaintenanceExecutionStore.getState().applyStatusSnapshot(status);
+};
+
+export const applyMaintenanceClientSession = (session: MaintenanceClientSession | null): void => {
+  if (!session) {
+    resetMaintenanceSession();
+    return;
+  }
+  const entries = session.entries;
+  const activeFileIds = new Set(session.currentResults.map((result) => result.fileId));
+  const hasActiveBatch =
+    session.status.state === "executing" || session.status.state === "paused" || session.status.state === "stopping";
+  useMaintenanceEntryStore.setState((state) => ({
+    entries,
+    selectedIds: hasActiveBatch
+      ? entries.filter((entry) => activeFileIds.has(entry.fileId)).map((entry) => entry.fileId)
+      : entries.map((entry) => entry.fileId),
+    activeId:
+      state.activeId && entries.some((entry) => entry.fileId === state.activeId)
+        ? state.activeId
+        : (entries[0]?.fileId ?? null),
+    presetId: session.presetId,
+    currentPath: entries[0]?.fileInfo.filePath ?? state.currentPath,
+  }));
+  useMaintenancePreviewStore.setState({
+    previewPending: session.status.state === "previewing",
+    previewResults: Object.fromEntries(session.preview.items.map((item) => [item.fileId, item])),
+    fieldSelections: session.fieldSelections,
+    imageSelections: session.imageSelections,
+    executeDialogOpen: false,
+  });
+  useMaintenanceExecutionStore.setState({
+    executionStatus: session.status.state,
+    progressValue:
+      session.status.totalEntries > 0
+        ? Math.round((session.status.completedEntries / session.status.totalEntries) * 100)
+        : 0,
+    progressCurrent: session.status.completedEntries,
+    progressTotal: session.status.totalEntries,
+    itemResults: Object.fromEntries(
+      [...session.recentResults, ...session.currentResults].map((result) => [result.fileId, result]),
+    ),
+    activeBatchId: session.batchId,
+  });
 };

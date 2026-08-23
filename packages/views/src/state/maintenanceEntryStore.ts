@@ -1,10 +1,7 @@
 import type { LocalScanEntry, MaintenanceItemResult, MaintenancePresetId } from "@mdcz/shared/types";
 import { create, type StateCreator } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
 export type MaintenanceFilter = "all" | "success" | "failed";
-
-const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 const toggleIdsInSelection = (selectedIds: string[], ids: string[]): string[] => {
   if (ids.length === 0) {
@@ -25,49 +22,6 @@ const createInitialState = () => ({
   currentPath: "",
   lastScannedDir: "",
 });
-
-type PersistedMaintenanceEntryState = Pick<
-  MaintenanceEntryState,
-  "entries" | "selectedIds" | "activeId" | "presetId" | "filter" | "currentPath" | "lastScannedDir"
->;
-
-const noopStorage = {
-  getItem: () => null,
-  setItem: () => undefined,
-  removeItem: () => undefined,
-};
-
-const maintenanceEntryStoreStorage = createJSONStorage<PersistedMaintenanceEntryState>(() =>
-  typeof sessionStorage !== "undefined" ? sessionStorage : noopStorage,
-);
-
-const partializeMaintenanceEntryState = (state: MaintenanceEntryState): PersistedMaintenanceEntryState => ({
-  entries: state.entries,
-  selectedIds: state.selectedIds,
-  activeId: state.activeId,
-  presetId: state.presetId,
-  filter: state.filter,
-  currentPath: state.currentPath,
-  lastScannedDir: state.lastScannedDir,
-});
-
-const mergePersistedMaintenanceEntryState = (
-  persisted: unknown,
-  current: MaintenanceEntryState,
-): MaintenanceEntryState => {
-  const persistedState = (persisted ?? {}) as Partial<PersistedMaintenanceEntryState>;
-  const entries = persistedState.entries ?? current.entries;
-  const activeId =
-    persistedState.activeId && entries.some((entry) => entry.fileId === persistedState.activeId)
-      ? persistedState.activeId
-      : (entries[0]?.fileId ?? null);
-
-  return {
-    ...current,
-    ...persistedState,
-    activeId,
-  };
-};
 
 export interface MaintenanceEntryState {
   entries: LocalScanEntry[];
@@ -124,18 +78,24 @@ const createMaintenanceEntryState: StateCreator<MaintenanceEntryState> = (set) =
   applyExecutionResult: (payload) =>
     set((state) => {
       const targetEntry = state.entries.find((entry) => entry.fileId === payload.fileId);
-      const updatedEntry = payload.status === "success" ? payload.updatedEntry : undefined;
-      const nextEntries = updatedEntry
-        ? state.entries.map((entry) => (entry.fileId === payload.fileId ? updatedEntry : entry))
-        : state.entries;
-      const currentEntry = updatedEntry ?? targetEntry;
-
+      if (payload.status === "success" || payload.status === "failed" || payload.status === "skipped") {
+        const nextEntries = state.entries.filter((entry) => entry.fileId !== payload.fileId);
+        const nextActiveId =
+          state.activeId === payload.fileId
+            ? (nextEntries[0]?.fileId ?? null)
+            : state.activeId && nextEntries.some((entry) => entry.fileId === state.activeId)
+              ? state.activeId
+              : (nextEntries[0]?.fileId ?? null);
+        return {
+          entries: nextEntries,
+          selectedIds: state.selectedIds.filter((id) => id !== payload.fileId),
+          activeId: nextActiveId,
+          currentPath: targetEntry?.fileInfo.filePath ?? state.currentPath,
+        };
+      }
       return {
-        entries: nextEntries,
-        currentPath:
-          payload.status === "success"
-            ? (currentEntry?.fileInfo.filePath ?? state.currentPath)
-            : (targetEntry?.fileInfo.filePath ?? state.currentPath),
+        entries: state.entries,
+        currentPath: targetEntry?.fileInfo.filePath ?? state.currentPath,
         activeId: state.activeId ?? payload.fileId,
       };
     }),
@@ -146,13 +106,4 @@ const createMaintenanceEntryState: StateCreator<MaintenanceEntryState> = (set) =
     }),
 });
 
-export const useMaintenanceEntryStore = isDev
-  ? create<MaintenanceEntryState>()(
-      persist(createMaintenanceEntryState, {
-        name: "maintenance-entry-store",
-        storage: maintenanceEntryStoreStorage,
-        partialize: partializeMaintenanceEntryState,
-        merge: mergePersistedMaintenanceEntryState,
-      }),
-    )
-  : create<MaintenanceEntryState>()(createMaintenanceEntryState);
+export const useMaintenanceEntryStore = create<MaintenanceEntryState>()(createMaintenanceEntryState);

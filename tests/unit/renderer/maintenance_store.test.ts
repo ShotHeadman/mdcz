@@ -3,6 +3,7 @@ import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStor
 import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
+  applyMaintenanceClientSession,
   applyMaintenanceExecutionItemResult,
   applyMaintenancePreviewResult,
   cancelMaintenancePreviewFlow,
@@ -26,6 +27,95 @@ afterEach(() => {
 });
 
 describe("maintenance execution stores", () => {
+  it("hydrates an active snapshot and removes terminal events idempotently without touching unselected items", () => {
+    const first = createMaintenanceEntry();
+    const second: LocalScanEntry = {
+      ...createMaintenanceEntry(),
+      fileId: "entry-2",
+      fileInfo: {
+        ...createMaintenanceEntry().fileInfo,
+        filePath: "/media/ABC-124.mp4",
+        fileName: "ABC-124.mp4",
+        number: "ABC-124",
+      },
+    };
+    applyMaintenanceClientSession({
+      taskId: "task-1",
+      batchId: "batch-1",
+      presetId: "refresh_data",
+      entries: [first, second],
+      preview: {
+        items: [
+          { fileId: first.fileId, previewId: "preview-1", taskId: "task-1", status: "ready" },
+          { fileId: second.fileId, previewId: "preview-2", taskId: "task-1", status: "ready" },
+        ],
+      },
+      fieldSelections: { "entry-1": { title: "old" }, "entry-2": { title: "new" } },
+      imageSelections: { "entry-1": { poster: "old.jpg" }, "entry-2": { poster: "new.jpg" } },
+      status: {
+        state: "idle",
+        totalEntries: 1,
+        completedEntries: 1,
+        successCount: 0,
+        failedCount: 1,
+      },
+      currentResults: [],
+      recentResults: [],
+    });
+    const result = { fileId: "entry-1", batchId: "batch-1", status: "failed" as const, error: "boom" };
+    applyMaintenanceExecutionItemResult(result);
+    applyMaintenanceExecutionItemResult(result);
+    expect(useMaintenanceEntryStore.getState()).toMatchObject({
+      entries: [second],
+      selectedIds: ["entry-2"],
+      activeId: "entry-2",
+    });
+    expect(useMaintenancePreviewStore.getState()).toMatchObject({
+      previewResults: { "entry-2": expect.objectContaining({ previewId: "preview-2" }) },
+      fieldSelections: { "entry-2": { title: "new" } },
+      imageSelections: { "entry-2": { poster: "new.jpg" } },
+    });
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({ "entry-1": result });
+  });
+
+  it("restores only the current batch selection and its pending state", () => {
+    const first = createMaintenanceEntry();
+    const second: LocalScanEntry = {
+      ...createMaintenanceEntry(),
+      fileId: "entry-2",
+      fileInfo: { ...createMaintenanceEntry().fileInfo, filePath: "/media/ABC-124.mp4" },
+    };
+    applyMaintenanceClientSession({
+      taskId: "task-1",
+      batchId: "batch-1",
+      presetId: "refresh_data",
+      entries: [first, second],
+      preview: {
+        items: [
+          { fileId: first.fileId, previewId: "preview-1", taskId: "task-1", status: "ready" },
+          { fileId: second.fileId, previewId: "preview-2", taskId: "task-1", status: "ready" },
+        ],
+      },
+      fieldSelections: {},
+      imageSelections: {},
+      status: {
+        state: "paused",
+        totalEntries: 1,
+        completedEntries: 0,
+        successCount: 0,
+        failedCount: 0,
+      },
+      currentResults: [{ fileId: first.fileId, batchId: "batch-1", status: "pending" }],
+      recentResults: [],
+    });
+
+    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual([first.fileId]);
+    expect(useMaintenanceExecutionStore.getState()).toMatchObject({
+      activeBatchId: "batch-1",
+      itemResults: { [first.fileId]: { fileId: first.fileId, batchId: "batch-1", status: "pending" } },
+    });
+  });
+
   it("preserves preview diffs during optimistic execution and can roll back execution state", () => {
     const fieldDiff = createMaintenanceValueDiff({
       field: "title" as const,

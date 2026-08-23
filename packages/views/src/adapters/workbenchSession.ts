@@ -242,6 +242,12 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     }
 
     if (options.presetId === "read_local") {
+      executionStore.setExecutionStatus("previewing");
+      beginMaintenancePreviewRequest();
+      executionStore.setProgress(0, 0, scan.entries.length);
+      const preview = await options.port.preview(scan.entries, options.presetId);
+      applyMaintenancePreviewResult(preview);
+      executionStore.setExecutionStatus("idle");
       options.toast.success(`本地读取完成，共 ${countMaintenanceDisplayItems(scan.entries)} 项`);
       await options.onRefreshConfig?.();
       return;

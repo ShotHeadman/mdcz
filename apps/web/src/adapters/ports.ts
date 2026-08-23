@@ -1,5 +1,5 @@
 import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
-import type { CrawlerData, LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
+import type { CrawlerData, LocalScanEntry, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
@@ -241,6 +241,15 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       }
       return await api.maintenance.scanSelectedFiles({ filePaths, scanDir: context.scanDir });
     },
+    getActiveSession: async () => await api.maintenance.getActiveSession(),
+    updateDraft: async (previewId, draft) => {
+      await api.maintenance.updateDraft({ taskId: requireTaskId(), previewId, ...draft });
+    },
+    discardSession: async () => {
+      const taskId = useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId || undefined;
+      await api.maintenance.discardSession(taskId ? { taskId } : undefined);
+      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId("");
+    },
     preview: async (entries: LocalScanEntry[], presetId: MaintenancePresetId) => {
       const refs = entries.map((entry) => ({
         rootId: entry.rootRef?.rootId ?? entry.fileId.split(":")[0] ?? "",
@@ -254,7 +263,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
         items: preview.items.map(maintenancePreviewDtoToPreviewItem),
       };
     },
-    execute: async (commitItems: MaintenanceCommitItem[], _presetId: MaintenancePresetId, context) => {
+    execute: async (commitItems: MaintenanceApplyCommit[], _presetId: MaintenancePresetId, context) => {
       const selectedFileIds = new Set(commitItems.map((item) => item.entry.fileId));
       const previews = Object.values(context?.previewResults ?? {}).filter((preview) =>
         selectedFileIds.has(preview.fileId),

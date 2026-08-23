@@ -3,7 +3,6 @@ import { dirname } from "node:path";
 import {
   createPersistenceDatabase,
   LibraryRepository,
-  MaintenanceRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   runMigrations,
@@ -14,7 +13,6 @@ import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
   library: LibraryRepository;
-  maintenance: MaintenanceRepository;
   mediaRoots: MediaRootRepository;
   tasks: TaskRepository;
 }
@@ -55,7 +53,6 @@ export class ServerPersistenceService {
         database,
         repositories: {
           library: new LibraryRepository(database),
-          maintenance: new MaintenanceRepository(database),
           mediaRoots: new MediaRootRepository(database),
           tasks: new TaskRepository(database),
         },

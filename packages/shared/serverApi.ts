@@ -29,11 +29,13 @@ import type {
   LogListResponse,
   MaintenanceApplyInput,
   MaintenanceApplyResponse,
+  MaintenanceDiscardSessionInput,
   MaintenancePreviewResponse,
   MaintenanceScanSelectedFilesInput,
   MaintenanceScanSelectedFilesResponse,
   MaintenanceStartInput,
   MaintenanceTaskInput,
+  MaintenanceUpdateDraftInput,
   MediaRootListResponse,
   NetworkCheckCookiesResponse,
   NfoReadInput,
@@ -76,7 +78,7 @@ import type {
   TranslateTestLlmInputDto,
   TranslateTestLlmResponse,
 } from "./serverDtos";
-import type { NamingPreviewItem } from "./types";
+import type { MaintenanceClientSession, NamingPreviewItem } from "./types";
 
 export interface ServerApiContract {
   auth: {
@@ -137,7 +139,9 @@ export interface ServerApiContract {
     apply(input: MaintenanceApplyInput): Promise<MaintenanceApplyResponse>;
     pause(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
     preview(input: MaintenanceTaskInput): Promise<MaintenancePreviewResponse>;
-    recover(): Promise<ScanTaskListResponse>;
+    getActiveSession(): Promise<MaintenanceClientSession | null>;
+    updateDraft(input: MaintenanceUpdateDraftInput): Promise<{ success: true }>;
+    discardSession(input?: MaintenanceDiscardSessionInput): Promise<{ success: true }>;
     resume(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
     start(input: MaintenanceStartInput): Promise<ScanTaskDto>;
     stop(input: MaintenanceTaskInput): Promise<ScanTaskDto>;

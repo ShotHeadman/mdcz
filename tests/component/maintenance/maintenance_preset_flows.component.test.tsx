@@ -25,6 +25,7 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
   previewPending: false,
   progressValue: 0,
   readyCount: 1,
+  recentResults: [],
   selectedCount: 1,
   stopping: false,
   supportsExecution: false,

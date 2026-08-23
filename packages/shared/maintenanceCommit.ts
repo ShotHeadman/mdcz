@@ -2,13 +2,19 @@ import type {
   CrawlerData,
   FieldDiff,
   LocalScanEntry,
+  MaintenanceApplyCommit,
   MaintenanceAssetDecisions,
-  MaintenanceCommitItem,
   MaintenanceImageAlternatives,
   MaintenancePreviewItem,
 } from "./types";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
+
+export interface MaintenanceCommitPreview {
+  fieldDiffs?: MaintenancePreviewItem["fieldDiffs"];
+  proposedCrawlerData?: MaintenancePreviewItem["proposedCrawlerData"] | null;
+  imageAlternatives?: MaintenancePreviewItem["imageAlternatives"];
+}
 
 const IMAGE_SOURCE_FIELD_MAP = {
   thumb_url: "thumb_source_url",
@@ -121,6 +127,27 @@ export const hasMaintenanceDiffSideValue = (diff: FieldDiff, side: MaintenanceFi
   return hasMaintenanceFieldValue(side === "old" ? diff.oldValue : diff.newValue);
 };
 
+export const resolveMaintenanceDiffImageSrc = (diff: FieldDiff, side: MaintenanceFieldSelectionSide): string => {
+  if (diff.kind !== "image") return "";
+  return side === "old" ? diff.oldPreview.src : diff.newPreview.src;
+};
+
+export const resolveMaintenanceDiffImageOption = (
+  diff: FieldDiff,
+  side: MaintenanceFieldSelectionSide,
+): { src: string; fallbackSrcs: string[] } => {
+  if (diff.kind !== "image") return { src: "", fallbackSrcs: [] };
+  return side === "old" ? diff.oldPreview : diff.newPreview;
+};
+
+export const resolveMaintenanceDiffImageCollection = (
+  diff: FieldDiff,
+  side: MaintenanceFieldSelectionSide,
+): string[] => {
+  if (diff.kind !== "imageCollection") return [];
+  return side === "old" ? diff.oldPreview.items : diff.newPreview.items;
+};
+
 export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): MaintenanceFieldSelectionSide => {
   const hasOldValue = hasMaintenanceDiffSideValue(diff, "old");
   const hasNewValue = hasMaintenanceDiffSideValue(diff, "new");
@@ -194,7 +221,7 @@ const applyOldImageSelection = (
 
 export const buildCommittedCrawlerData = (
   entry: LocalScanEntry,
-  preview: MaintenancePreviewItem | undefined,
+  preview: MaintenanceCommitPreview | undefined,
   fieldSelections: Record<string, MaintenanceFieldSelectionSide> | undefined,
 ): CrawlerData | undefined => {
   const proposedCrawlerData = preview?.proposedCrawlerData;
@@ -282,11 +309,11 @@ const buildAssetDecisions = (
   return Object.keys(assetDecisions).length > 0 ? assetDecisions : undefined;
 };
 
-export const buildMaintenanceCommitItem = (
+export const buildMaintenanceApplyCommit = (
   entry: LocalScanEntry,
-  preview: MaintenancePreviewItem | undefined,
+  preview: MaintenanceCommitPreview | undefined,
   fieldSelections: Record<string, MaintenanceFieldSelectionSide> | undefined,
-): MaintenanceCommitItem => {
+): MaintenanceApplyCommit => {
   const crawlerData = buildCommittedCrawlerData(entry, preview, fieldSelections);
   const proposedCrawlerData = preview?.proposedCrawlerData;
   const imageAlternatives = preview?.imageAlternatives;

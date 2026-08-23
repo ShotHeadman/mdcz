@@ -75,14 +75,15 @@ export const createContainer = ({
     outputLibraryScanner,
     persistenceService,
   );
-  const maintenanceService = new MaintenanceService(
+  const maintenanceService = new MaintenanceService({
     signalService,
     networkClient,
     crawlerProvider,
+    persistenceService,
     actorImageService,
     actorSourceProvider,
     imageHostCooldownStore,
-  );
+  });
 
   return {
     signalService,
@@ -121,12 +122,8 @@ export const createContainer = ({
     amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
     batchTranslateToolService: new BatchTranslateToolService(networkClient),
     shutdown: async () => {
-      await Promise.allSettled([
-        scraperService.shutdown(),
-        maintenanceService.shutdown(),
-        crawlerProvider.shutdown(),
-        persistenceService.close(),
-      ]);
+      await Promise.allSettled([scraperService.shutdown(), maintenanceService.shutdown(), crawlerProvider.shutdown()]);
+      await persistenceService.close();
     },
   };
 };

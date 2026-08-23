@@ -1,8 +1,10 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { MaintenanceStatus, ScraperStatus } from "@mdcz/shared/types";
+import type { MaintenanceClientSession, MaintenanceStatus, ScraperStatus } from "@mdcz/shared/types";
 import { createRuntimeLog, useLogStore } from "@mdcz/views/state/logStore";
 import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
+  applyMaintenanceClientSession,
   applyMaintenanceExecutionItemResult,
   applyMaintenanceStatusSnapshot,
 } from "@mdcz/views/state/maintenanceSession";
@@ -85,6 +87,26 @@ export const createOverviewInvalidationTracker = () => {
   };
 };
 
+export const applyMaintenanceRuntimeSnapshot = (
+  session: MaintenanceClientSession | null,
+  status: MaintenanceStatus,
+): void => {
+  const execution = useMaintenanceExecutionStore.getState();
+  const hasBackendOwnedRendererState =
+    Boolean(execution.activeBatchId) ||
+    Object.values(useMaintenancePreviewStore.getState().previewResults).some(
+      (preview) => Boolean(preview.previewId) || Boolean(preview.taskId),
+    ) ||
+    execution.executionStatus === "previewing" ||
+    execution.executionStatus === "executing" ||
+    execution.executionStatus === "paused" ||
+    execution.executionStatus === "stopping";
+  if (session || (status.state === "idle" && hasBackendOwnedRendererState)) {
+    applyMaintenanceClientSession(session);
+  }
+  applyMaintenanceStatusSnapshot(status);
+};
+
 export const useIpcSync = (queryClient: QueryClient) => {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -138,16 +160,21 @@ export const useIpcSync = (queryClient: QueryClient) => {
         }
 
         if (target === "maintenance") {
-          applyMaintenanceStatusSnapshot(await ipc.maintenance.getStatus());
+          const [session, status] = await Promise.all([
+            ipc.maintenance.getActiveSession(),
+            ipc.maintenance.getStatus(),
+          ]);
+          applyMaintenanceRuntimeSnapshot(session, status);
           return;
         }
 
-        const [scrapeStatus, maintenanceStatus] = await Promise.all([
+        const [scrapeStatus, maintenanceStatus, maintenanceSession] = await Promise.all([
           ipc.scraper.getStatus(),
           ipc.maintenance.getStatus(),
+          ipc.maintenance.getActiveSession(),
         ]);
         applyScrapeStatusSnapshot(scrapeStatus);
-        applyMaintenanceStatusSnapshot(maintenanceStatus);
+        applyMaintenanceRuntimeSnapshot(maintenanceSession, maintenanceStatus);
       })()
         .catch((error) => {
           reportAsyncError(`Failed to sync runtime status during ${context}`, error);

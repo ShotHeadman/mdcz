@@ -3,7 +3,6 @@ import { dirname, join } from "node:path";
 import {
   createPersistenceDatabase,
   LibraryRepository,
-  MaintenanceRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   runMigrations,
@@ -25,7 +24,6 @@ const resolveNativeBinding = (): string =>
 
 export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
-  maintenance: MaintenanceRepository;
   mediaRoots: MediaRootRepository;
   tasks: TaskRepository;
 }
@@ -68,7 +66,6 @@ export class DesktopPersistenceService {
         database,
         repositories: {
           library: new LibraryRepository(database),
-          maintenance: new MaintenanceRepository(database),
           mediaRoots: new MediaRootRepository(database),
           tasks: new TaskRepository(database),
         },

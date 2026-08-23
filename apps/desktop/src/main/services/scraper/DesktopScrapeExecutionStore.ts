@@ -1,7 +1,7 @@
 import path from "node:path";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeResultRecord, TaskRecord } from "@mdcz/persistence";
-import { createDesktopInputRoot } from "@mdcz/runtime/library";
+import { createDesktopInputRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import type { RecoverableSessionSnapshot, ScrapeSessionExecutionStore, SessionExecution } from "@mdcz/runtime/tasks";
 import type { ScrapeResult, ScraperStatus } from "@mdcz/shared/types";
 import type { DesktopPersistenceService } from "../persistence";
@@ -198,26 +198,7 @@ export class DesktopScrapeExecutionStore implements ScrapeSessionExecutionStore 
 
   private async resolveRootPath(files: readonly string[]): Promise<string> {
     const configured = (await this.getConfiguredMediaPath()).trim();
-    if (configured) {
-      const root = createDesktopInputRoot(configured);
-      if (files.every((file) => this.isWithin(root.hostPath, file))) return root.hostPath;
-    }
-    if (files.length === 0) throw new Error("Cannot create a scrape root without files");
-    let common = path.dirname(path.resolve(files[0]));
-    for (const file of files.slice(1)) {
-      const resolved = path.resolve(file);
-      while (!this.isWithin(common, resolved)) {
-        const parent = path.dirname(common);
-        if (parent === common) throw new Error("Selected files do not share a filesystem root");
-        common = parent;
-      }
-    }
-    return common;
-  }
-
-  private isWithin(rootPath: string, candidatePath: string): boolean {
-    const relative = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
-    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+    return resolveDesktopInputRootPath(files, configured || undefined);
   }
 
   private toScraperStatus(task: TaskRecord, results: ScrapeResultRecord[]): ScraperStatus {

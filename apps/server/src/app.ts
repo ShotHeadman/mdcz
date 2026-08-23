@@ -92,12 +92,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     await services.persistence.initialize();
     await services.scans.resumeQueued();
     await services.scrape.resumeQueued();
-    await services.maintenance.resumeQueued();
   });
 
   fastify.addHook("onClose", async () => {
     await services.config.stopWatching();
     await services.scrape.close();
+    await services.maintenance.close();
     await services.persistence.close();
   });
 

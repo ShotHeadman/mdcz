@@ -7,7 +7,6 @@ import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 import { createPersistenceDatabase, type PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { LibraryRepository } from "./libraryRepository";
-import { MaintenanceRepository } from "./maintenanceRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
 import { defaultMigrationsFolder, runMigrations } from "./migrate";
 import { TaskRepository } from "./taskRepository";
@@ -33,8 +32,10 @@ describe("Persistence migrations", () => {
     expect(tables).toContain("task_records");
     expect(tables).toContain("scrape_outputs");
     expect(tables).toContain("scrape_results");
-    expect(tables).toContain("maintenance_previews");
-    expect(tables).toContain("maintenance_apply_log");
+    expect(tables).not.toContain("maintenance_previews");
+    expect(tables).not.toContain("maintenance_apply_log");
+    expect(tables).not.toContain("maintenance_apply_items");
+    expect(tables).not.toContain("maintenance_executions");
     expect(tables).toContain("library_entries");
     expect(tables).toContain("library_items");
     expect(tables).toContain("library_item_files");
@@ -199,40 +200,6 @@ describe("MediaRootRepository", () => {
         name: PersistenceError.name,
       }),
     );
-  });
-});
-
-describe("MaintenanceRepository", () => {
-  it("persists maintenance previews and apply logs", async () => {
-    database = createTestPersistenceDatabase();
-    const repository = new MaintenanceRepository(database);
-    const createdAt = new Date("2026-05-01T00:00:00.000Z");
-
-    const preview = await repository.upsertPreview({
-      id: "preview-1",
-      taskId: "task-1",
-      rootId: "root-1",
-      relativePath: "ABC-123.mp4",
-      presetId: "read_local",
-      status: "ready",
-      fieldDiffsJson: "[]",
-      unchangedFieldDiffsJson: "[]",
-      createdAt,
-      updatedAt: createdAt,
-    });
-    const log = await repository.addApplyLog({
-      id: "apply-1",
-      taskId: "task-1",
-      previewId: preview.id,
-      rootId: preview.rootId,
-      relativePath: preview.relativePath,
-      presetId: preview.presetId,
-      status: "success",
-      appliedAt: createdAt,
-    });
-
-    await expect(repository.listPreviews("task-1")).resolves.toEqual([preview]);
-    await expect(repository.listApplyLogs("task-1")).resolves.toEqual([log]);
   });
 });
 

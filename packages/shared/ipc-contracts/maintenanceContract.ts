@@ -2,7 +2,8 @@ import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
 import type {
   LocalScanEntry,
-  MaintenanceCommitItem,
+  MaintenanceApplyCommit,
+  MaintenanceClientSession,
   MaintenancePresetId,
   MaintenancePreviewResult,
   MaintenanceStatus,
@@ -18,11 +19,21 @@ export type MaintenanceIpcContract = {
     MaintenancePreviewResult
   >;
   [IpcChannel.Maintenance_Execute]: IpcProcedure<
-    { items?: MaintenanceCommitItem[]; presetId?: MaintenancePresetId },
+    { items?: MaintenanceApplyCommit[]; presetId?: MaintenancePresetId },
     { success: true }
   >;
   [IpcChannel.Maintenance_Stop]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Maintenance_Pause]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Maintenance_Resume]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Maintenance_GetStatus]: IpcProcedure<void, MaintenanceStatus>;
+  [IpcChannel.Maintenance_GetActiveSession]: IpcProcedure<void, MaintenanceClientSession | null>;
+  [IpcChannel.Maintenance_UpdateDraft]: IpcProcedure<
+    {
+      previewId: string;
+      fieldSelections?: Record<string, "old" | "new">;
+      imageSelections?: Record<string, string>;
+    },
+    { success: true }
+  >;
+  [IpcChannel.Maintenance_DiscardSession]: IpcProcedure<void, { success: true }>;
 };

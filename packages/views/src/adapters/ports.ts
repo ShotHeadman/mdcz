@@ -4,7 +4,8 @@ import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
   LocalScanEntry,
-  MaintenanceCommitItem,
+  MaintenanceApplyCommit,
+  MaintenanceClientSession,
   MaintenancePresetId,
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
@@ -69,9 +70,18 @@ export interface MaintenanceActionPort {
   play(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
   scanFiles(filePaths: string[], context?: { scanDir?: string }): Promise<{ entries: LocalScanEntry[] }>;
+  getActiveSession(): Promise<MaintenanceClientSession | null>;
+  updateDraft(
+    previewId: string,
+    draft: {
+      fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
+      imageSelections?: Record<string, string>;
+    },
+  ): Promise<void>;
+  discardSession(): Promise<void>;
   preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<{ items: MaintenancePreviewItem[] }>;
   execute(
-    commitItems: MaintenanceCommitItem[],
+    commitItems: MaintenanceApplyCommit[],
     presetId: MaintenancePresetId,
     context?: {
       previewResults: Record<string, MaintenancePreviewItem>;

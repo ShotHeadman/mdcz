@@ -28,15 +28,11 @@ CREATE INDEX `scrape_outputs_completed_at_idx` ON `scrape_outputs` (`completed_a
 --> statement-breakpoint
 CREATE INDEX `scrape_results_task_path_idx` ON `scrape_results` (`task_id`, `relative_path`);
 --> statement-breakpoint
-CREATE INDEX `maintenance_previews_task_path_idx` ON `maintenance_previews` (`task_id`, `relative_path`);
---> statement-breakpoint
-CREATE INDEX `maintenance_apply_log_task_applied_at_idx` ON `maintenance_apply_log` (`task_id`, `applied_at`);
---> statement-breakpoint
 CREATE INDEX `library_items_source_task_idx` ON `library_items` (`source_task_id`);
 --> statement-breakpoint
 CREATE INDEX `library_items_created_at_idx` ON `library_items` (`created_at`, `id`);
 --> statement-breakpoint
-CREATE INDEX `library_item_files_root_path_idx` ON `library_item_files` (`root_id`, `root_relative_path`);
+CREATE UNIQUE INDEX `library_item_files_root_path_idx` ON `library_item_files` (`root_id`, `root_relative_path`);
 --> statement-breakpoint
 CREATE INDEX `library_item_files_item_idx` ON `library_item_files` (`item_id`);
 --> statement-breakpoint

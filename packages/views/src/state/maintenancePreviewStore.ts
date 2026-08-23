@@ -1,15 +1,13 @@
 import type { FieldDiff, MaintenancePreviewItem, MaintenancePreviewResult } from "@mdcz/shared/types";
 import { create, type StateCreator } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
-
-const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 const createInitialState = () => ({
   previewPending: false,
   previewResults: {} as Record<string, MaintenancePreviewItem>,
   fieldSelections: {} as Record<string, Record<string, MaintenanceFieldSelectionSide>>,
+  imageSelections: {} as Record<string, Record<string, string>>,
   executeDialogOpen: false,
 });
 
@@ -17,6 +15,7 @@ export interface MaintenancePreviewState {
   previewPending: boolean;
   previewResults: Record<string, MaintenancePreviewItem>;
   fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
+  imageSelections: Record<string, Record<string, string>>;
   executeDialogOpen: boolean;
 
   beginPreviewRequest: () => void;
@@ -24,41 +23,12 @@ export interface MaintenancePreviewState {
   setPreviewPending: (pending: boolean) => void;
   setExecuteDialogOpen: (open: boolean) => void;
   setFieldSelection: (fileId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
+  setImageSelection: (fileId: string, field: string, value: string) => void;
   upsertPreviewItem: (item: MaintenancePreviewItem) => void;
   applyPreviewResult: (result: MaintenancePreviewResult) => void;
+  removePreviewItem: (fileId: string) => void;
   reset: () => void;
 }
-
-type PersistedMaintenancePreviewState = Pick<MaintenancePreviewState, "previewResults" | "fieldSelections">;
-
-const noopStorage = {
-  getItem: () => null,
-  setItem: () => undefined,
-  removeItem: () => undefined,
-};
-
-const maintenancePreviewStoreStorage = createJSONStorage<PersistedMaintenancePreviewState>(() =>
-  typeof sessionStorage !== "undefined" ? sessionStorage : noopStorage,
-);
-
-const partializeMaintenancePreviewState = (state: MaintenancePreviewState): PersistedMaintenancePreviewState => ({
-  previewResults: state.previewResults,
-  fieldSelections: state.fieldSelections,
-});
-
-const mergePersistedMaintenancePreviewState = (
-  persisted: unknown,
-  current: MaintenancePreviewState,
-): MaintenancePreviewState => {
-  const persistedState = (persisted ?? {}) as Partial<PersistedMaintenancePreviewState>;
-
-  return {
-    ...current,
-    ...persistedState,
-    previewPending: false,
-    executeDialogOpen: false,
-  };
-};
 
 const createMaintenancePreviewState: StateCreator<MaintenancePreviewState> = (set) => ({
   ...createInitialState(),
@@ -87,6 +57,17 @@ const createMaintenancePreviewState: StateCreator<MaintenancePreviewState> = (se
       },
     })),
 
+  setImageSelection: (fileId, field, value) =>
+    set((state) => ({
+      imageSelections: {
+        ...state.imageSelections,
+        [fileId]: {
+          ...state.imageSelections[fileId],
+          [field]: value,
+        },
+      },
+    })),
+
   upsertPreviewItem: (item) =>
     set((state) => ({
       previewPending: false,
@@ -101,19 +82,24 @@ const createMaintenancePreviewState: StateCreator<MaintenancePreviewState> = (se
       previewPending: false,
       previewResults: Object.fromEntries(result.items.map((item) => [item.fileId, item])),
       fieldSelections: {},
+      imageSelections: {},
       executeDialogOpen: false,
+    }),
+
+  removePreviewItem: (fileId) =>
+    set((state) => {
+      if (!state.previewResults[fileId] && !state.fieldSelections[fileId] && !state.imageSelections[fileId])
+        return state;
+      const previewResults = { ...state.previewResults };
+      const fieldSelections = { ...state.fieldSelections };
+      const imageSelections = { ...state.imageSelections };
+      delete previewResults[fileId];
+      delete fieldSelections[fileId];
+      delete imageSelections[fileId];
+      return { previewResults, fieldSelections, imageSelections };
     }),
 
   reset: () => set(createInitialState()),
 });
 
-export const useMaintenancePreviewStore = isDev
-  ? create<MaintenancePreviewState>()(
-      persist(createMaintenancePreviewState, {
-        name: "maintenance-preview-store",
-        storage: maintenancePreviewStoreStorage,
-        partialize: partializeMaintenancePreviewState,
-        merge: mergePersistedMaintenancePreviewState,
-      }),
-    )
-  : create<MaintenancePreviewState>()(createMaintenancePreviewState);
+export const useMaintenancePreviewStore = create<MaintenancePreviewState>()(createMaintenancePreviewState);

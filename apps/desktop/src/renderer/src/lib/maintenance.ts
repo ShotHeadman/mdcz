@@ -1,11 +1,11 @@
-export type { MaintenanceFieldSelectionSide } from "@mdcz/runtime/maintenance/commit";
+export type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceCommit";
 export {
   buildCommittedCrawlerData,
-  buildMaintenanceCommitItem,
+  buildMaintenanceApplyCommit,
   getDefaultMaintenanceFieldSelection,
   hasMaintenanceDiffSideValue,
   hasMaintenanceFieldValue,
   resolveMaintenanceDiffImageCollection,
   resolveMaintenanceDiffImageOption,
   resolveMaintenanceDiffImageSrc,
-} from "@mdcz/runtime/maintenance/commit";
+} from "@mdcz/shared/maintenanceCommit";

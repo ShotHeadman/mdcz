@@ -111,7 +111,8 @@ export const hydrateMaintenancePreview = (response: MaintenancePreviewResponse):
 
 const maintenanceApplyLogDtoToItemResult = (item: MaintenanceApplyLogDto) => ({
   fileId: `${item.rootId}:${item.relativePath}`,
-  status: item.status === "success" ? ("success" as const) : ("failed" as const),
+  batchId: item.batchId,
+  status: item.status,
   ...(item.error || item.status === "skipped" ? { error: item.error ?? "已跳过" } : {}),
 });
 

@@ -15,9 +15,11 @@ import {
   libraryRelinkInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
+  maintenanceDiscardSessionInputSchema,
   maintenanceScanSelectedFilesInputSchema,
   maintenanceStartInputSchema,
   maintenanceTaskInputSchema,
+  maintenanceUpdateDraftInputSchema,
   nfoReadInputSchema,
   nfoWriteInputSchema,
   posterCropSaveInputSchema,
@@ -266,7 +268,13 @@ export const appRouter = t.router({
     preview: protectedProcedure
       .input(maintenanceTaskInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.maintenance.preview(input)),
-    recover: protectedProcedure.query(async ({ ctx }) => await ctx.services.maintenance.list()),
+    getActiveSession: protectedProcedure.query(async ({ ctx }) => await ctx.services.maintenance.getActiveSession()),
+    updateDraft: protectedProcedure
+      .input(maintenanceUpdateDraftInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.updateDraft(input)),
+    discardSession: protectedProcedure
+      .input(maintenanceDiscardSessionInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.discardSession(input)),
     resume: protectedProcedure
       .input(maintenanceTaskInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.resume(input)),

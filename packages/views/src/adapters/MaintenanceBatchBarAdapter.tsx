@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { buildMaintenanceCommitItem } from "@mdcz/shared/maintenanceCommit";
+import { buildMaintenanceApplyCommit } from "@mdcz/shared/maintenanceCommit";
 import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePreviewItem } from "@mdcz/shared/types";
 import { buildMaintenanceEntryViewModel } from "@mdcz/shared/viewModels/maintenanceGrouping";
@@ -7,6 +7,7 @@ import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStor
 import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
+  applyMaintenanceClientSession,
   applyMaintenancePreviewResult,
   beginMaintenanceExecution,
   beginMaintenancePreviewRequest,
@@ -204,7 +205,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     });
     const executableEntries = executionViewModel.executableEntries;
     const commitItems = executableEntries.map((entry) =>
-      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.fileId], fieldSelections[entry.fileId]),
+      buildMaintenanceApplyCommit(entry, effectivePreviewResults[entry.fileId], fieldSelections[entry.fileId]),
     );
 
     if (commitItems.length === 0) {
@@ -218,6 +219,11 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
     try {
       await port.execute(commitItems, presetId, { previewResults: effectivePreviewResults, fieldSelections });
+      try {
+        applyMaintenanceClientSession(await port.getActiveSession());
+      } catch {
+        // Realtime events or the next host snapshot will converge the renderer state.
+      }
       toast.success(`维护任务已启动，共 ${displayCount} 项`);
     } catch (error) {
       rollbackExecutionStart();
@@ -257,9 +263,14 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     }
   };
 
-  const handleReturnToSetup = () => {
-    setExecuteDialogOpen(false);
-    resetMaintenanceSession();
+  const handleReturnToSetup = async () => {
+    try {
+      await port.discardSession();
+      setExecuteDialogOpen(false);
+      resetMaintenanceSession();
+    } catch (error) {
+      toast.error(`丢弃维护会话失败: ${toErrorMessage(error)}`);
+    }
   };
 
   return (
@@ -277,13 +288,14 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       onExecuteDialogOpenChange={setExecuteDialogOpen}
       onPauseToggle={() => void handlePauseToggle()}
       onPreview={handlePreview}
-      onReturnToSetup={handleReturnToSetup}
+      onReturnToSetup={() => void handleReturnToSetup()}
       onStop={() => void handleStop()}
       paused={paused}
       presetLabel={presetMeta.label}
       previewPending={previewPending}
       progressValue={progressValue}
       readyCount={previewSummary.readyCount}
+      recentResults={Object.values(itemResults)}
       selectedCount={selectedCount}
       stopping={stopping}
       supportsExecution={supportsExecution}

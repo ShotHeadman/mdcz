@@ -341,8 +341,8 @@ function LibraryEntryRow({
           <span className="text-foreground/80">{formatBytes(entry.size)}</span>
         </div>
         <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">修改时间</span>
-          <span className="text-foreground/80">{formatDate(entry.modifiedAt || entry.createdAt)}</span>
+          <span className="text-[10px] font-bold uppercase opacity-50">更新时间</span>
+          <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
         </div>
       </div>
       <div className="flex items-center gap-4 pl-4 lg:gap-6">
@@ -482,3 +482,8 @@ function MiddleEllipsisPath({ rootDisplayName, relativePath }: { rootDisplayName
 
 const formatDate = (value: string | null | undefined): string =>
   value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : "-";
+
+const latestEntryUpdate = (entry: Pick<LibraryEntryDto, "createdAt" | "lastRefreshedAt" | "modifiedAt">): string =>
+  [entry.createdAt, entry.lastRefreshedAt, entry.modifiedAt]
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? entry.createdAt;

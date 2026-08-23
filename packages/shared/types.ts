@@ -281,18 +281,19 @@ export interface MaintenanceAssetDecisions {
   trailer?: "preserve" | "replace";
 }
 
-export interface MaintenanceCommitItem {
+export interface MaintenanceApplyCommit {
   entry: LocalScanEntry;
   crawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
   assetDecisions?: MaintenanceAssetDecisions;
 }
 
-export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed";
+export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 
 /** Per-item execution result pushed via IPC events. */
 export interface MaintenanceItemResult {
   fileId: FileId;
+  batchId?: string;
   status: MaintenanceItemStatus;
   error?: string;
   crawlerData?: CrawlerData;
@@ -309,4 +310,17 @@ export interface MaintenanceStatus {
   completedEntries: number;
   successCount: number;
   failedCount: number;
+}
+
+export interface MaintenanceClientSession {
+  taskId: string;
+  batchId: string | null;
+  presetId: MaintenancePresetId;
+  entries: LocalScanEntry[];
+  preview: MaintenancePreviewResult;
+  fieldSelections: Record<string, Record<string, "old" | "new">>;
+  imageSelections: Record<string, Record<string, string>>;
+  status: MaintenanceStatus;
+  currentResults: MaintenanceItemResult[];
+  recentResults: MaintenanceItemResult[];
 }

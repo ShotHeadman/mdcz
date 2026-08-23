@@ -1,9 +1,7 @@
 import type { MaintenanceItemResult, MaintenanceStatus } from "@mdcz/shared/types";
 import { create, type StateCreator } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
 type MaintenanceExecutionStatus = MaintenanceStatus["state"];
-const isDev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 const createInitialState = () => ({
   executionStatus: "idle" as MaintenanceExecutionStatus,
@@ -11,6 +9,7 @@ const createInitialState = () => ({
   progressCurrent: 0,
   progressTotal: 0,
   itemResults: {} as Record<string, MaintenanceItemResult>,
+  activeBatchId: null as string | null,
 });
 
 export interface MaintenanceExecutionState {
@@ -19,6 +18,7 @@ export interface MaintenanceExecutionState {
   progressCurrent: number;
   progressTotal: number;
   itemResults: Record<string, MaintenanceItemResult>;
+  activeBatchId: string | null;
 
   setExecutionStatus: (status: MaintenanceExecutionStatus) => void;
   setProgress: (value: number, current: number, total: number) => void;
@@ -29,38 +29,6 @@ export interface MaintenanceExecutionState {
   resetDerivedData: () => void;
   reset: () => void;
 }
-
-type PersistedMaintenanceExecutionState = Pick<MaintenanceExecutionState, "itemResults">;
-
-const noopStorage = {
-  getItem: () => null,
-  setItem: () => undefined,
-  removeItem: () => undefined,
-};
-
-const maintenanceExecutionStoreStorage = createJSONStorage<PersistedMaintenanceExecutionState>(() =>
-  typeof sessionStorage !== "undefined" ? sessionStorage : noopStorage,
-);
-
-const partializeMaintenanceExecutionState = (state: MaintenanceExecutionState): PersistedMaintenanceExecutionState => ({
-  itemResults: state.itemResults,
-});
-
-const mergePersistedMaintenanceExecutionState = (
-  persisted: unknown,
-  current: MaintenanceExecutionState,
-): MaintenanceExecutionState => {
-  const persistedState = (persisted ?? {}) as Partial<PersistedMaintenanceExecutionState>;
-
-  return {
-    ...current,
-    ...persistedState,
-    executionStatus: "idle",
-    progressValue: 0,
-    progressCurrent: 0,
-    progressTotal: 0,
-  };
-};
 
 const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> = (set) => ({
   ...createInitialState(),
@@ -75,12 +43,11 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
     }),
 
   beginExecution: ({ fileIds }) =>
-    set((state) => {
-      const nextResults = { ...state.itemResults };
+    set(() => {
+      const nextResults: Record<string, MaintenanceItemResult> = {};
 
       for (const fileId of fileIds) {
         nextResults[fileId] = {
-          ...nextResults[fileId],
           fileId,
           status: "pending",
         };
@@ -92,6 +59,7 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
         progressCurrent: 0,
         progressTotal: fileIds.length,
         itemResults: nextResults,
+        activeBatchId: null,
       };
     }),
 
@@ -102,6 +70,7 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
       progressCurrent: 0,
       progressTotal: 0,
       itemResults: {},
+      activeBatchId: null,
     }),
 
   applyStatusSnapshot: (status) =>
@@ -126,6 +95,7 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
 
   applyItemResult: (payload) =>
     set((state) => {
+      if (payload.batchId && state.activeBatchId && payload.batchId !== state.activeBatchId) return state;
       const previousResult = state.itemResults[payload.fileId];
 
       return {
@@ -136,6 +106,7 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
             ...payload,
           },
         },
+        activeBatchId: payload.batchId ?? state.activeBatchId,
       };
     }),
 
@@ -146,6 +117,7 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
       progressCurrent: 0,
       progressTotal: 0,
       itemResults: {},
+      activeBatchId: null,
     }),
 
   reset: () =>
@@ -154,13 +126,4 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
     }),
 });
 
-export const useMaintenanceExecutionStore = isDev
-  ? create<MaintenanceExecutionState>()(
-      persist(createMaintenanceExecutionState, {
-        name: "maintenance-execution-store",
-        storage: maintenanceExecutionStoreStorage,
-        partialize: partializeMaintenanceExecutionState,
-        merge: mergePersistedMaintenanceExecutionState,
-      }),
-    )
-  : create<MaintenanceExecutionState>()(createMaintenanceExecutionState);
+export const useMaintenanceExecutionStore = create<MaintenanceExecutionState>()(createMaintenanceExecutionState);

@@ -118,6 +118,111 @@ beforeEach(() => {
 });
 
 describe("buildServer maintenance integration", () => {
+  it("creates exactly one preview per selected ref", async () => {
+    const root = await createTempRoot("maintenance-two-selected-root");
+    await writeMaintenanceInput(root, "ABC-201", "Local Title ABC-201");
+    await writeMaintenanceInput(root, "ABC-202", "Local Title ABC-202");
+    await writeMaintenanceInput(root, "ABC-203", "Local Title ABC-203");
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        rootId,
+        presetId: "organize_files",
+        refs: ["ABC-201.mp4", "ABC-203.mp4"].map((relativePath) => ({ rootId, relativePath })),
+      },
+    });
+    const taskId = startResponse.json().result.data.id as string;
+    const previewResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/maintenance.preview?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    expect(previewResponse.json().result.data.items.map((item: { relativePath: string }) => item.relativePath)).toEqual(
+      ["ABC-201.mp4", "ABC-203.mp4"],
+    );
+  });
+
+  it("pauses an in-flight preview and resumes only the pending selected ref", async () => {
+    const root = await createTempRoot("maintenance-pause-resume-root");
+    await writeMaintenanceInput(root, "ABC-211", "Local Title ABC-211");
+    await writeMaintenanceInput(root, "ABC-212", "Local Title ABC-212");
+    let firstCallStarted!: () => void;
+    let releaseFirstCall!: () => void;
+    const started = new Promise<void>((resolve) => {
+      firstCallStarted = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releaseFirstCall = resolve;
+    });
+    const previewedPaths: string[] = [];
+    const { fastify } = await createTestServer({
+      createMaintenanceRuntime: (config) => {
+        const runtime = createMaintenanceRuntime(
+          config,
+          createTestAggregation("https://example.com/maintenance.png") as AggregationService,
+        );
+        const previewEntries = runtime.previewEntries.bind(runtime);
+        runtime.previewEntries = async (input) => {
+          previewedPaths.push(input.entries[0]?.rootRef?.relativePath ?? input.entries[0]?.fileInfo.fileName ?? "");
+          if (previewedPaths.length === 1) {
+            firstCallStarted();
+            await blocked;
+          }
+          return await previewEntries(input);
+        };
+        return runtime;
+      },
+    });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        rootId,
+        presetId: "organize_files",
+        refs: ["ABC-211.mp4", "ABC-212.mp4"].map((relativePath) => ({ rootId, relativePath })),
+      },
+    });
+    const taskId = startResponse.json().result.data.id as string;
+    await started;
+    const pauseResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.pause",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
+    expect(pauseResponse.statusCode).toBe(200);
+    releaseFirstCall();
+    await waitForTaskStatus(fastify, token, taskId, "paused");
+    expect(previewedPaths).toEqual(["ABC-211"]);
+
+    const resumeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.resume",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
+    expect(resumeResponse.statusCode).toBe(200);
+    await waitForTaskStatus(fastify, token, taskId, "completed");
+    const previewResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/maintenance.preview?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const items = previewResponse.json().result.data.items as Array<{ id: string; relativePath: string }>;
+    expect(items.map((item) => item.relativePath)).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
+    expect(new Set(items.map((item) => item.id)).size).toBe(2);
+    expect(previewedPaths).toEqual(["ABC-211", "ABC-212"]);
+  });
+
   it("scans selected maintenance files through read_local semantics without preview or execute", async () => {
     const root = await createTempRoot("maintenance-selected-root");
     await writeMaintenanceInput(root, "ABC-225", "Local Title ABC-225");

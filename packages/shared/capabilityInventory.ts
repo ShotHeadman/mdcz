@@ -36,7 +36,6 @@ export interface ClassifiedServerProcedure {
 }
 
 const CONFIG_TRANSFER_REASON = "Desktop uses native file dialogs; server transfers serialized configuration.";
-const MAINTENANCE_EXECUTION_REASON = "Desktop runs an in-process session; server controls a persisted task.";
 const SCRAPE_EXECUTION_REASON = "Desktop runs an in-process session; server controls persisted scrape tasks.";
 
 export const CROSS_HOST_CAPABILITIES = [
@@ -124,38 +123,57 @@ export const CROSS_HOST_CAPABILITIES = [
   {
     desktop: IpcChannel.Maintenance_Execute,
     server: "maintenance.apply",
-    status: "blocked",
-    reason: MAINTENANCE_EXECUTION_REASON,
+    status: "adapted",
+    reason:
+      "Hosts share maintenance orchestration; desktop adapts committed items and an acknowledgement to server task apply.",
+  },
+  {
+    desktop: IpcChannel.Maintenance_GetActiveSession,
+    server: "maintenance.getActiveSession",
+    status: "aligned",
+  },
+  {
+    desktop: IpcChannel.Maintenance_UpdateDraft,
+    server: "maintenance.updateDraft",
+    status: "adapted",
+    reason: "Desktop resolves the active task in-process; server draft updates carry an explicit task ID.",
+  },
+  {
+    desktop: IpcChannel.Maintenance_DiscardSession,
+    server: "maintenance.discardSession",
+    status: "adapted",
+    reason: "Desktop discards its sole active session; server accepts an optional task identity guard.",
   },
   {
     desktop: IpcChannel.Maintenance_Pause,
     server: "maintenance.pause",
-    status: "blocked",
-    reason: MAINTENANCE_EXECUTION_REASON,
+    status: "adapted",
+    reason: "Hosts share task pause semantics; desktop resolves the active task because IPC carries no task ID.",
   },
   {
     desktop: IpcChannel.Maintenance_Preview,
     server: "maintenance.preview",
-    status: "blocked",
-    reason: MAINTENANCE_EXECUTION_REASON,
+    status: "adapted",
+    reason: "Hosts share preview orchestration; desktop starts from local entries while server reads by task ID.",
   },
   {
     desktop: IpcChannel.Maintenance_Resume,
     server: "maintenance.resume",
-    status: "blocked",
-    reason: MAINTENANCE_EXECUTION_REASON,
+    status: "adapted",
+    reason: "Hosts share task resume semantics; desktop resolves the active task because IPC carries no task ID.",
   },
   {
     desktop: IpcChannel.Maintenance_Scan,
     server: "maintenance.scanSelectedFiles",
-    status: "blocked",
-    reason: MAINTENANCE_EXECUTION_REASON,
+    status: "adapted",
+    reason:
+      "Desktop accepts a directory or selected paths; server requires selected paths plus a registered scan root.",
   },
   {
     desktop: IpcChannel.Maintenance_Stop,
     server: "maintenance.stop",
-    status: "blocked",
-    reason: MAINTENANCE_EXECUTION_REASON,
+    status: "adapted",
+    reason: "Hosts share task stop semantics; desktop resolves the active task because IPC carries no task ID.",
   },
   { desktop: IpcChannel.Network_CheckCookies, server: "network.checkCookies", status: "aligned" },
   {
@@ -281,7 +299,7 @@ export const DESKTOP_ONLY_CHANNELS = [
   },
   {
     channel: IpcChannel.Maintenance_GetStatus,
-    reason: "Desktop in-process maintenance session status; server uses task DTOs.",
+    reason: "Desktop projects the shared task snapshot into the legacy MaintenanceStatus channel.",
   },
   { channel: IpcChannel.Overview_GetOutputSummary, reason: "Desktop-only split of overview.summary." },
   { channel: IpcChannel.Overview_GetRecentAcquisitions, reason: "Desktop-only split of overview.summary." },
@@ -365,8 +383,7 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "library.search", reason: "Server alias of library.list; desktop has a single Library_List channel." },
   { path: "logs.clearRuntime", reason: "Server log store." },
   { path: "logs.list", reason: "Server log store." },
-  { path: "maintenance.recover", reason: "Server task recovery; desktop has no matching channel." },
-  { path: "maintenance.start", reason: "Server starts a persisted maintenance task; desktop scan is in-process." },
+  { path: "maintenance.start", reason: "Server starts from media-root refs; desktop starts from scanned entries." },
   { path: "mediaRoots.list", reason: "Server media-root catalog." },
   {
     path: "overview.summary",

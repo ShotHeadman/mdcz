@@ -377,6 +377,7 @@ describe("web workbench route contracts", () => {
         item: {
           id: "apply-1",
           taskId: "maintenance-task",
+          batchId: "batch-1",
           previewId: "preview-1",
           rootId: "root-1",
           relativePath: "ABC-001.mp4",
