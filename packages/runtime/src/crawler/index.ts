@@ -7,7 +7,6 @@ export * from "./registry";
 export * from "./siteConnectivity";
 export type {
   RuntimeCrawlerInput,
-  RuntimeCrawlerOptions,
   RuntimeCrawlerProvider,
   RuntimeCrawlerResponse,
 } from "./types";

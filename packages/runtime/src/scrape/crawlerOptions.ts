@@ -22,7 +22,10 @@ export const buildCrawlerOptions = ({ site, configuration, signal }: BuildCrawle
   if (site === Website.JAVBUS && javbusCookie) {
     options.cookies = javbusCookie;
   }
-
+  const fantiaCookie = configuration.network.fantiaCookie.trim();
+  if (site === Website.FANTIA && fantiaCookie) {
+    options.cookies = fantiaCookie;
+  }
   if (site === Website.R18_DEV) {
     options.r18MetadataLanguage = configuration.scrape.r18MetadataLanguage;
   }

@@ -1,6 +1,6 @@
 import type { Website } from "@mdcz/shared/enums";
-import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { CrawlerData } from "@mdcz/shared/types";
+import type { CrawlerOptions } from "./base/types";
 
 export type RuntimeCrawlerFailureReason =
   | "not_found"
@@ -10,21 +10,10 @@ export type RuntimeCrawlerFailureReason =
   | "parse_error"
   | "unknown";
 
-export interface RuntimeCrawlerOptions {
-  timeoutMs?: number;
-  cookies?: string;
-  referer?: string;
-  userAgent?: string;
-  apiToken?: string;
-  detailUrl?: string;
-  r18MetadataLanguage?: R18MetadataLanguage;
-  signal?: AbortSignal;
-}
-
 export interface RuntimeCrawlerInput {
   number: string;
   site: Website;
-  options?: RuntimeCrawlerOptions;
+  options?: CrawlerOptions;
 }
 
 export type RuntimeCrawlerResult =

@@ -2,8 +2,9 @@ import type { Configuration } from "@mdcz/shared/config";
 import { DMM_FAMILY_SITES, FC2_ONLY_SITES, FC2_SITE_WHITELIST, Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData } from "@mdcz/shared/types";
-import type { RuntimeCrawlerFailureReason, RuntimeCrawlerOptions, RuntimeCrawlerProvider } from "../crawler/types";
+import type { RuntimeCrawlerFailureReason, RuntimeCrawlerProvider } from "../crawler/types";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
+import { buildCrawlerOptions } from "./crawlerOptions";
 import { applyTitleRepair } from "./titleRepair";
 
 export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
@@ -439,45 +440,6 @@ interface CrawlerExecutionContext {
   inFlightSites: Set<Website>;
   state: CrawlerExecutionState;
 }
-
-const buildCrawlerOptions = ({
-  site,
-  configuration,
-  signal,
-}: {
-  site: Website;
-  configuration: Configuration;
-  signal?: AbortSignal;
-}): RuntimeCrawlerOptions => {
-  const options: RuntimeCrawlerOptions = {
-    timeoutMs: Math.max(1, Math.trunc(configuration.network.timeout * 1000)),
-  };
-
-  const javdbCookie = configuration.network.javdbCookie.trim();
-  if (site === Website.JAVDB && javdbCookie) {
-    options.cookies = javdbCookie;
-  }
-
-  const javbusCookie = configuration.network.javbusCookie.trim();
-  if (site === Website.JAVBUS && javbusCookie) {
-    options.cookies = javbusCookie;
-  }
-
-  const fantiaCookie = configuration.network.fantiaCookie.trim();
-  if (site === Website.FANTIA && fantiaCookie) {
-    options.cookies = fantiaCookie;
-  }
-
-  if (site === Website.R18_DEV) {
-    options.r18MetadataLanguage = configuration.scrape.r18MetadataLanguage;
-  }
-
-  if (signal) {
-    options.signal = signal;
-  }
-
-  return options;
-};
 
 export class AggregationService {
   private readonly cache = new Map<string, CacheEntry>();

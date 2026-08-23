@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
-import { buildSiteConnectivityHeaders } from "./crawler/siteConnectivity";
+import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
+import { buildCrawlerOptions } from "./scrape/crawlerOptions";
 import { ensureWatermarkDirectory } from "./scrape/watermarkDirectory";
 import { JAVBUS_REQUEST_HEADERS } from "./shared";
 import type { LlmApiClient } from "./translate";
@@ -17,10 +18,45 @@ describe("settings parity runtime helpers", () => {
   it("builds site connectivity cookies and age gates from shared crawler options", () => {
     const config = cloneConfig();
     config.network.javdbCookie = "javdb_session=ok";
+    config.network.fantiaCookie = "fantia_session=ok";
 
     expect(buildSiteConnectivityHeaders(Website.JAVDB, config)).toEqual({ cookie: "javdb_session=ok" });
+    expect(buildSiteConnectivityHeaders(Website.FANTIA, config)).toEqual({ cookie: "fantia_session=ok" });
+    expect(buildSiteConnectivityHeaders(Website.JAVBUS, config)).toEqual({});
     expect(buildSiteConnectivityHeaders(Website.MGSTAGE, config)).toEqual({ cookie: "adc=1" });
     expect(buildSiteConnectivityHeaders(Website.SOKMIL, config)).toEqual({ cookie: "AGEAUTH=ok" });
+  });
+
+  it("sends the configured Fantia cookie during connectivity probing", async () => {
+    const config = cloneConfig();
+    config.network.fantiaCookie = "fantia_session=ok";
+    const probe = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      resolvedUrl: "https://fantia.jp",
+    }));
+
+    await expect(probeSiteConnectivity(Website.FANTIA, config, { probe })).resolves.toMatchObject({ ok: true });
+    expect(probe).toHaveBeenCalledWith("https://fantia.jp", {
+      headers: { cookie: "fantia_session=ok" },
+      timeout: 10000,
+    });
+  });
+
+  it.each([
+    [Website.JAVDB, "javdbCookie", "javdb_session=ok"],
+    [Website.JAVBUS, "javbusCookie", "javbus_session=ok"],
+    [Website.FANTIA, "fantiaCookie", "fantia_session=ok"],
+  ] as const)("builds only the %s cookie for its matching site", (site, cookieKey, cookie) => {
+    const config = cloneConfig();
+    config.network[cookieKey] = cookie;
+
+    expect(buildCrawlerOptions({ site, configuration: config }).cookies).toBe(cookie);
+
+    const otherSites = [Website.JAVDB, Website.JAVBUS, Website.FANTIA].filter((otherSite) => otherSite !== site);
+    for (const otherSite of otherSites) {
+      expect(buildCrawlerOptions({ site: otherSite, configuration: config }).cookies).toBeUndefined();
+    }
   });
 
   it("reports when JavBus is anonymously accessible while JavDB and Fantia remains unconfigured", async () => {
