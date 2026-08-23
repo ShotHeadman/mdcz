@@ -29,7 +29,8 @@ export interface FileScraperDependencies {
 
 export interface CreateFileScraperOptions {
   mode?: ScrapeExecutionMode;
+  scrapeSessionId?: string;
 }
 
 export const createFileScraper = (deps: FileScraperDependencies, options: CreateFileScraperOptions = {}): FileScraper =>
-  new FileScraper(new DefaultFileScraperPipeline(deps, options.mode));
+  new FileScraper(new DefaultFileScraperPipeline(deps, options.mode, options.scrapeSessionId));

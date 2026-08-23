@@ -21,9 +21,10 @@ export interface FileScrapeProgress {
   totalFiles: number;
 }
 
-export interface FileScrapeOptions {
+export type FileScrapeOptions = {
   manualScrape?: ManualScrapeOptions;
-}
+  scrapeSessionId?: string;
+};
 
 export interface CreateFileScraperOptions {
   mode?: ScrapeExecutionMode;

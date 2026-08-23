@@ -58,6 +58,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
   constructor(
     private readonly deps: FileScraperDependencies,
     private readonly scrapeMode: ScrapeExecutionMode = "batch",
+    private readonly scrapeSessionId?: string,
   ) {
     this.actorImageService = deps.actorImageService ?? new ActorImageService();
     this.localScanService = deps.localScanService ?? new LocalScanService();
@@ -72,7 +73,14 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     options: FileScrapeOptions = {},
   ): Promise<ScrapeContext> {
     const configuration = await configManager.getValidated();
-    return new ScrapeContext(filePath, progress, this.scrapeMode, options.manualScrape, configuration);
+    return new ScrapeContext(
+      filePath,
+      progress,
+      this.scrapeMode,
+      options.manualScrape,
+      configuration,
+      options.scrapeSessionId ?? this.scrapeSessionId,
+    );
   }
   notifyProcessing(context: ScrapeContext): void {
     this.deps.signalService.showScrapeResult({

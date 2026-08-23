@@ -18,7 +18,9 @@ import { type FileInfoWithSubtitles, resolveFileInfoWithSubtitles, type Subtitle
 import { parseFileInfo } from "../utils/number";
 
 export class ScrapeContext {
-  readonly taskId = randomUUID();
+  readonly fileTaskId = randomUUID();
+
+  readonly scrapeSessionId?: string;
 
   readonly parsedFileInfo: FileInfo;
 
@@ -60,7 +62,9 @@ export class ScrapeContext {
     readonly mode: ScrapeExecutionMode = "batch",
     readonly manualScrape?: ManualScrapeOptions,
     configuration?: Configuration,
+    scrapeSessionId?: string,
   ) {
+    this.scrapeSessionId = scrapeSessionId;
     this.configuration = configuration;
     this.parsedFileInfo = parseFileInfo(filePath, configuration?.scrape.filenameIgnoreTokens);
     this.fileId = buildFileId(this.parsedFileInfo.filePath);

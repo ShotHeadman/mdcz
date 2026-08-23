@@ -10,7 +10,7 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
-import { InMemoryScrapeSessionExecutionStore } from "@mdcz/runtime/tasks";
+import { InMemoryScrapeSessionExecutionStore, ScrapeSession } from "@mdcz/runtime/tasks";
 import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -274,6 +274,30 @@ describe("ScraperService requeue flow", () => {
     expect(createdDependencies).toHaveLength(2);
     expect(createdDependencies[0]?.aggregationService).toBe(createdDependencies[1]?.aggregationService);
     expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+  });
+  it("finishes a scrape session only once when completion is entered concurrently", async () => {
+    const service = createService();
+    const config = mockConfig();
+    const dirPath = await createTempDir();
+    const filePath = join(dirPath, "ABP-933.mp4");
+    const pendingFileTask = deferred<ScrapeResult>();
+    const finishSpy = vi.spyOn(ScrapeSession.prototype, "finish");
+
+    await writeFile(filePath, "video", "utf8");
+    vi.spyOn(FileScraper.prototype, "scrapeFile").mockReturnValue(pendingFileTask.promise);
+
+    const { taskId: scrapeSessionId } = await service.startSingle([filePath]);
+    const finishCandidate: unknown = Reflect.get(service, "finish");
+    if (typeof finishCandidate !== "function") {
+      throw new Error("ScraperService.finish is unavailable");
+    }
+    const finish = finishCandidate.bind(service) as (id: string) => Promise<void>;
+    await Promise.all([finish(scrapeSessionId), finish(scrapeSessionId)]);
+
+    expect(finishSpy).toHaveBeenCalledTimes(1);
+
+    pendingFileTask.resolve(scrapeResult(filePath, config.scrape.sites[0]));
+    await service.waitForIdle();
   });
 
   it("passes manual scrape options to retry file tasks", async () => {

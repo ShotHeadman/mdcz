@@ -73,6 +73,7 @@ export interface MountedRootScrapeAggregationService {
 export interface MountedRootScrapeRuntimeItemInput {
   root: MediaRoot;
   relativePath: string;
+  scrapeSessionId?: string;
   manualScrape?: NonNullable<Parameters<FileScraper["scrapeFile"]>[3]>["manualScrape"];
   localState?: NfoLocalState;
   progress: { fileIndex: number; totalFiles: number };
@@ -204,7 +205,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
     options: Parameters<FileScraperPipeline["createContext"]>[2] = {},
   ): Promise<ScrapeContext> {
     const configuration = await this.getConfiguration();
-    return new ScrapeContext(filePath, progress, "batch", options.manualScrape, configuration);
+    return new ScrapeContext(filePath, progress, "batch", options.manualScrape, configuration, options.scrapeSessionId);
   }
 
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void {
@@ -466,6 +467,7 @@ export class MountedRootScrapeRuntime {
       const absolutePath = resolveRootRelativePath(input.root, input.relativePath);
       const result = await scraper.scrapeFile(absolutePath, input.progress, input.signal, {
         manualScrape: input.manualScrape,
+        scrapeSessionId: input.scrapeSessionId,
       });
 
       if (result.status !== "success" || !result.crawlerData) {

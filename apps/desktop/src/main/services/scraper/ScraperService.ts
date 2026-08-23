@@ -69,6 +69,7 @@ export class ScraperService {
 
   private readonly imageHostCooldownStore: PersistentCooldownStore;
 
+  private finishingScrapeSessionId: string | null = null;
   private currentRunPromise: Promise<void> | null = null;
 
   private pauseRequested = false;
@@ -210,11 +211,11 @@ export class ScraperService {
   async resume(): Promise<void> {
     await this.session.resume();
     this.pauseRequested = false;
-    const taskId = this.session.getTaskId();
-    if (!taskId || this.session.getState() !== "running") return;
+    const scrapeSessionId = this.session.getTaskId();
+    if (!scrapeSessionId || this.session.getState() !== "running") return;
     const runPromise = this.session.onIdle().then(async () => {
       this.restGate = null;
-      if (!this.pauseRequested && this.session.getState() !== "paused") await this.finish(taskId);
+      if (!this.pauseRequested && this.session.getState() !== "paused") await this.finish(scrapeSessionId);
     });
     const trackedRunPromise = runPromise.finally(() => {
       if (this.currentRunPromise === trackedRunPromise) this.currentRunPromise = null;
@@ -232,7 +233,10 @@ export class ScraperService {
     // Supports both single-item and batch manual retry from frontend.
     const pending = uniquePaths(filePaths);
     const totalFiles = Math.max(1, this.session.getStatus().totalFiles);
-    const fileScraper = createFileScraper(this.createFileScraperDependencies(), { mode: "batch" });
+    const fileScraper = createFileScraper(this.createFileScraperDependencies(), {
+      mode: "batch",
+      scrapeSessionId: this.session.getTaskId() ?? undefined,
+    });
     const failedFiles = new Set(this.session.getFailedFiles());
 
     let requeuedCount = 0;
@@ -292,23 +296,34 @@ export class ScraperService {
     this.logger.info("Cleared image host cooldowns for user-initiated retry");
   }
 
-  private async finish(taskId: string): Promise<void> {
-    if (this.session.getTaskId() !== taskId || !this.session.getStatus().running) {
+  private async finish(scrapeSessionId: string): Promise<void> {
+    if (
+      this.session.getTaskId() !== scrapeSessionId ||
+      !this.session.getStatus().running ||
+      this.finishingScrapeSessionId === scrapeSessionId
+    ) {
       return;
     }
 
-    const successItems = this.session.getSuccessItemsSnapshot();
-    await this.session.finish();
+    this.finishingScrapeSessionId = scrapeSessionId;
+    try {
+      const successItems = this.session.getSuccessItemsSnapshot();
+      await this.session.finish();
 
-    if (successItems.length > 0) {
-      await this.recordLibraryEntries(successItems, taskId);
+      if (successItems.length > 0) {
+        await this.recordLibraryEntries(successItems, scrapeSessionId);
+      }
+      this.outputLibraryScanner.invalidate();
+
+      this.aggregationService.clearCache();
+
+      this.signalService.setButtonStatus(true, false);
+      this.logger.info(`Scrape session finished: ${scrapeSessionId}`);
+    } finally {
+      if (this.finishingScrapeSessionId === scrapeSessionId) {
+        this.finishingScrapeSessionId = null;
+      }
     }
-    this.outputLibraryScanner.invalidate();
-
-    this.aggregationService.clearCache();
-
-    this.signalService.setButtonStatus(true, false);
-    this.logger.info(`Scrape task finished: ${taskId}`);
   }
 
   private async resolveSingleFilePaths(paths: string[]): Promise<string[]> {
@@ -346,7 +361,7 @@ export class ScraperService {
     };
   }
 
-  private async recordLibraryEntries(items: ScrapeSuccessItem[], taskId: string): Promise<void> {
+  private async recordLibraryEntries(items: ScrapeSuccessItem[], scrapeSessionId: string): Promise<void> {
     try {
       const state = await this.persistenceService.getState();
       const completedAt = new Date();
@@ -370,7 +385,7 @@ export class ScraperService {
         }),
       );
       const output = await state.repositories.library.upsertScrapeOutput({
-        taskId,
+        taskId: scrapeSessionId,
         rootId: outputRoot?.id ?? null,
         outputDirectory: resolveDesktopOutputRootPath(configuration),
         fileCount: items.length,
@@ -393,7 +408,7 @@ export class ScraperService {
           mediaIdentity: item.crawlerData?.number ?? item.number,
           rootId: outputRoot.id,
           rootRelativePath,
-          sourceTaskId: taskId,
+          sourceTaskId: scrapeSessionId,
           scrapeOutputId: output.id,
           size: prepared.size,
           title: item.crawlerData?.title ?? item.title,
@@ -442,17 +457,23 @@ export class ScraperService {
     mode: ScrapeExecutionMode,
     manualScrape?: ManualScrapeOptions,
     overrides: { concurrency?: number } = {},
-    recoverTaskId?: string,
+    recoverScrapeSessionId?: string,
   ): Promise<StartScrapeResult> {
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
-    const taskId = await this.session.begin(filePaths, overrides.concurrency ?? policy.concurrency, recoverTaskId);
-    this.pauseRequested = false;
+    const scrapeSessionId = await this.session.begin(
+      filePaths,
+      overrides.concurrency ?? policy.concurrency,
+      recoverScrapeSessionId,
+    );
     this.restGate = policy.restGate;
 
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();
 
-    const fileScraper = createFileScraper(this.createFileScraperDependencies(), { mode });
+    const fileScraper = createFileScraper(this.createFileScraperDependencies(), {
+      mode,
+      scrapeSessionId,
+    });
 
     for (const [index, filePath] of filePaths.entries()) {
       const fileIndex = index + 1;
@@ -471,7 +492,7 @@ export class ScraperService {
 
     const runPromise = this.session.onIdle().then(async () => {
       this.restGate = null;
-      if (!this.pauseRequested && this.session.getState() !== "paused") await this.finish(taskId);
+      if (!this.pauseRequested && this.session.getState() !== "paused") await this.finish(scrapeSessionId);
     });
     const trackedRunPromise = runPromise.finally(() => {
       if (this.currentRunPromise === trackedRunPromise) {
@@ -481,7 +502,7 @@ export class ScraperService {
     this.currentRunPromise = trackedRunPromise;
 
     return {
-      taskId,
+      taskId: scrapeSessionId,
       totalFiles: filePaths.length,
     };
   }

@@ -607,6 +607,7 @@ export class ScrapeService {
           const runtimeResult = await this.runtime.scrape({
             root,
             relativePath: result.relativePath,
+            scrapeSessionId: taskId,
             manualScrape: this.resolveManualScrape(result.manualUrl),
             progress: { fileIndex: settledCount + results.indexOf(result) + 1, totalFiles: allResults.length },
             localState: this.resolveConfirmedLocalState(taskId, result),

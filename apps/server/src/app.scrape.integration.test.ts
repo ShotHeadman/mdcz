@@ -316,7 +316,9 @@ describe("buildServer scrape integration", () => {
     });
     const logMessages = logsResponse.json().result.data.logs.map((log: { message: string }) => log.message);
     expect(logMessages).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^Starting scrape task .+ for ABC-123$/u)]),
+      expect.arrayContaining([
+        expect.stringMatching(/^Starting file scrape task .+ for ABC-123 \(scrapeSessionId: .+\)$/u),
+      ]),
     );
     expect(logMessages.some((message: string) => message.includes("刮削进度"))).toBe(false);
     expect(taskEvents).toEqual(
