@@ -172,10 +172,10 @@ export const createTestPngBytes = (): Buffer => {
   return Buffer.concat([png, Buffer.alloc(9000)]);
 };
 
-export const startTestImageServer = async (): Promise<LocalHttpServer> =>
+export const startTestImageServer = async (imageBytes: Buffer = createTestPngBytes()): Promise<LocalHttpServer> =>
   await startLocalHttpServer((_request, response) => {
     response.writeHead(200, { "content-type": "image/png" });
-    response.end(createTestPngBytes());
+    response.end(imageBytes);
   });
 
 export const createTestAggregation = (

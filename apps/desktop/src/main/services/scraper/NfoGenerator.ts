@@ -1,5 +1,5 @@
 import { pathExists } from "@main/utils/file";
-import { buildMovieTags } from "@main/utils/movieTags";
+import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import {
   type NfoOptions,
   NfoGenerator as RuntimeNfoGenerator,

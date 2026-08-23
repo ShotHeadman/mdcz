@@ -1,8 +1,7 @@
-import { buildManagedMovieTags, normalizeNfoLocalState, uncensoredChoiceToTag } from "@mdcz/runtime/maintenance";
-import { classifyMovie } from "@mdcz/runtime/scrape/utils/movieClassification";
-import { resolveFileInfoSubtitleTag } from "@mdcz/runtime/scrape/utils/subtitles";
 import { POSTER_TAG_BADGE_TYPE_OPTIONS, type PosterTagBadgeType } from "@mdcz/shared/posterBadges";
 import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
+import { buildMovieTags, normalizeNfoLocalState } from "../maintenance/movieTags";
+import { classifyMovie, type MovieClassification } from "./utils/movieClassification";
 
 export interface PosterBadgeDefinition {
   id: PosterTagBadgeType;
@@ -13,14 +12,10 @@ export interface PosterBadgeDefinition {
 }
 
 interface PosterBadgeMatchContext {
-  classification: ReturnType<typeof classifyMovie> | undefined;
+  classification: MovieClassification | undefined;
   fileInfo: FileInfo | undefined;
   tags: ReadonlySet<string>;
 }
-
-const hasAnyTag = (tags: ReadonlySet<string>, candidates: readonly string[]): boolean =>
-  candidates.some((candidate) => tags.has(candidate));
-
 const matchesResolution = (fileInfo: FileInfo | undefined, candidates: readonly string[]): boolean => {
   const resolution = fileInfo?.resolution?.trim().toUpperCase();
   if (!resolution) {
@@ -39,7 +34,7 @@ const POSTER_BADGE_DEFINITIONS: Array<
     colorStart: "#F04A3A",
     colorEnd: "#B91C1C",
     accentColor: "#FFD5D0",
-    matches: ({ tags }) => hasAnyTag(tags, ["中文字幕", "字幕", "中字"]),
+    matches: ({ tags }) => ["中文字幕", "字幕", "中字"].some((candidate) => tags.has(candidate)),
   },
   {
     id: "censored",
@@ -103,47 +98,6 @@ const POSTER_BADGE_DEFINITIONS: Array<
     matches: ({ fileInfo }) => matchesResolution(fileInfo, ["8K"]),
   },
 ];
-
-export const buildMovieTags = (
-  data: CrawlerData,
-  fileInfo: FileInfo | undefined,
-  localState: NfoLocalState | undefined,
-): string[] => {
-  const classificationTags: string[] = [];
-  const normalizedLocalState = normalizeNfoLocalState(localState);
-  const localChoiceTag = uncensoredChoiceToTag(normalizedLocalState?.uncensoredChoice);
-  if (localChoiceTag) {
-    classificationTags.push(localChoiceTag);
-  }
-
-  if (fileInfo) {
-    if (!localChoiceTag) {
-      const classification = classifyMovie(fileInfo, data, normalizedLocalState);
-      if (classification.umr) {
-        classificationTags.push("破解");
-      } else if (classification.leak) {
-        classificationTags.push("流出");
-      } else if (classification.uncensored) {
-        classificationTags.push("无码");
-      }
-    }
-
-    const subtitleTag = resolveFileInfoSubtitleTag(fileInfo);
-    if (subtitleTag) {
-      classificationTags.push(subtitleTag);
-    }
-  }
-
-  return Array.from(
-    new Set([
-      ...classificationTags,
-      ...(normalizedLocalState?.tags ?? []),
-      ...buildManagedMovieTags({
-        contentType: data.content_type,
-      }),
-    ]),
-  );
-};
 
 export const resolvePosterBadgeDefinitions = (
   data: CrawlerData,

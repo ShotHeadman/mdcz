@@ -1,7 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AggregationResult, MountedRootScrapeAggregationService } from "@mdcz/runtime/scrape";
+import {
+  type AggregationResult,
+  type MountedRootScrapeAggregationService,
+  PosterWatermarkService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   closeTestServers,
@@ -346,6 +351,78 @@ describe("buildServer scrape integration", () => {
       ),
     ).toBe(false);
     unsubscribeTaskEvents();
+  });
+
+  it("applies configured poster tag badges with the same runtime rendering used by desktop", async () => {
+    const root = await createTempRoot("scrape-runtime-watermark");
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    const sourcePoster = Buffer.concat([
+      await sharp({
+        create: {
+          width: 400,
+          height: 600,
+          channels: 3,
+          background: { r: 240, g: 240, b: 240 },
+        },
+      })
+        .png()
+        .toBuffer(),
+      Buffer.alloc(9000),
+    ]);
+    const imageServer = await startTestImageServer(sourcePoster);
+    const { fastify } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        download: {
+          downloadSceneImages: false,
+          downloadTrailer: false,
+          tagBadges: true,
+          tagBadgeTypes: ["censored"],
+          tagBadgePosition: "bottomRight",
+        },
+      },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+    });
+    await waitForTaskStatus(fastify, token, startResponse.json().result.data.id, "completed");
+
+    const expectedPosterPath = join(root, "expected-poster.png");
+    await writeFile(expectedPosterPath, sourcePoster);
+    await new PosterWatermarkService({ dataDir: root }).applyTagBadges(
+      expectedPosterPath,
+      [
+        {
+          id: "censored",
+          label: "有码",
+          colorStart: "#0F766E",
+          colorEnd: "#115E59",
+          accentColor: "#CCFBF1",
+        },
+      ],
+      "bottomRight",
+    );
+
+    const serverPoster = await readFile(join(root, "JAV_output/Actor A/ABC-123/poster.png"));
+    const expectedPoster = await readFile(expectedPosterPath);
+    const [serverPixels, expectedPixels, sourcePixels] = await Promise.all([
+      sharp(serverPoster).raw().toBuffer(),
+      sharp(expectedPoster).raw().toBuffer(),
+      sharp(sourcePoster).raw().toBuffer(),
+    ]);
+    expect(serverPixels.equals(sourcePixels)).toBe(false);
+    expect(serverPixels).toEqual(expectedPixels);
   });
 
   it("keeps organized video on the media root while serving metadata from a local mirror root", async () => {

@@ -12,8 +12,10 @@ import { DownloadManager, type ImageHostCooldownStore, MemoryImageHostCooldownSt
 import { FileOrganizer, resolveMetadataOutputDir } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "./nfo";
+import { applyPosterTagBadgesIfNeeded } from "./output/applyPosterTagBadges";
 import { prepareCrawlerDataForMovieOutput } from "./output/prepareCrawlerDataForMovieOutput";
 import { prepareImageAlternativesForDownload } from "./output/prepareImageAlternativesForDownload";
+import { PosterWatermarkService } from "./PosterWatermarkService";
 import {
   AggregateStage,
   AggregationCoordinator,
@@ -165,6 +167,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
   private readonly translateService: TranslateService;
   private readonly downloadManager: DownloadManager;
   private readonly actorImageService: ActorImageService;
+  private readonly posterWatermarkService: PosterWatermarkService;
   private readonly aggregationCoordinator: AggregationCoordinator;
   private readonly numberExecutionGate = new NumberExecutionGate();
 
@@ -195,6 +198,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       logger: runtimeLogger,
       networkClient: this.networkClient,
     });
+    this.posterWatermarkService = new PosterWatermarkService({ dataDir: this.config.runtimePaths.dataDir });
     this.aggregationCoordinator = new AggregationCoordinator(this.aggregationService);
     this.stages = this.createStages();
   }
@@ -374,7 +378,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       aggregationResult.sources,
     );
     let resolvedSceneImageUrls: string[] | undefined;
-    const assets = await this.downloadManager.downloadAll(
+    const downloadedAssets = await this.downloadManager.downloadAll(
       resolveMetadataOutputDir(context.requirePlan()),
       crawlerData,
       context.requireConfiguration(),
@@ -393,11 +397,22 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       },
     );
 
-    return {
-      assets,
-      crawlerData:
-        resolvedSceneImageUrls === undefined ? crawlerData : { ...crawlerData, scene_images: resolvedSceneImageUrls },
-    };
+    const resolvedCrawlerData =
+      resolvedSceneImageUrls === undefined ? crawlerData : { ...crawlerData, scene_images: resolvedSceneImageUrls };
+    const assets = await applyPosterTagBadgesIfNeeded({
+      assets: downloadedAssets,
+      config: context.requireConfiguration(),
+      crawlerData: resolvedCrawlerData,
+      dataDir: this.config.runtimePaths.dataDir,
+      fileInfo: context.fileInfo,
+      localState: context.existingNfoLocalState,
+      logger: this.logger,
+      signal,
+      signalService: this.signalService,
+      watermarkService: this.posterWatermarkService,
+    });
+
+    return { assets, crawlerData: resolvedCrawlerData };
   }
 
   private async writePreparedNfo(context: ScrapeContext): Promise<string | undefined> {
