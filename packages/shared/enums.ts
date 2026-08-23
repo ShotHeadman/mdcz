@@ -21,9 +21,6 @@ export enum Website {
   AVBASE = "avbase",
   AVWIKIDB = "avwikidb",
 }
-export const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB]);
-export const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK]);
-export const DMM_FAMILY_SITES = new Set<Website>([Website.DMM, Website.DMM_TV]);
 
 export enum ProxyType {
   NONE = "none",

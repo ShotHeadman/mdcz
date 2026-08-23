@@ -54,6 +54,7 @@ const createAggregationResult = (data: CrawlerData) => ({
     failedCount: 0,
     skippedCount: 0,
     siteResults: [],
+    rejectedSites: [],
     totalElapsedMs: 1,
   },
 });

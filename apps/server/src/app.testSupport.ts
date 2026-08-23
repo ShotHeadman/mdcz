@@ -220,6 +220,7 @@ export const createTestAggregation = (
         failedCount: 0,
         skippedCount: 0,
         siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
+        rejectedSites: [],
         totalElapsedMs: 1,
       },
     };

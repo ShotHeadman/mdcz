@@ -53,6 +53,7 @@ const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScra
         failedCount: 0,
         skippedCount: 0,
         siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
+        rejectedSites: [],
         totalElapsedMs: 1,
       },
     };

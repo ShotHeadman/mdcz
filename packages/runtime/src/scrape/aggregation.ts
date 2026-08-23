@@ -1,11 +1,16 @@
 import type { Configuration } from "@mdcz/shared/config";
-import { DMM_FAMILY_SITES, FC2_ONLY_SITES, FC2_SITE_WHITELIST, Website } from "@mdcz/shared/enums";
+import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeCrawlerFailureReason, RuntimeCrawlerProvider } from "../crawler/types";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { buildCrawlerOptions } from "./crawlerOptions";
+import { FieldAggregator, summarizeFailedSiteResults } from "./fieldAggregation";
+import { type AdmissionReject, resolveSiteAdmission } from "./siteAdmission";
 import { applyTitleRepair } from "./titleRepair";
+
+export type { AggregationStrategy } from "./fieldAggregation";
+export { FIELD_STRATEGIES, FieldAggregator } from "./fieldAggregation";
 
 export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
 
@@ -39,371 +44,8 @@ export interface AggregationStats {
   failedCount: number;
   skippedCount: number;
   siteResults: SiteCrawlResult[];
+  rejectedSites: AdmissionReject[];
   totalElapsedMs: number;
-}
-
-export type AggregationStrategy = "first_non_null" | "first_non_empty" | "longest" | "union" | "highest_quality";
-
-export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStrategy>> = {
-  title: "first_non_null",
-  title_zh: "first_non_null",
-  number: "first_non_null",
-  studio: "first_non_null",
-  director: "first_non_null",
-  publisher: "first_non_null",
-  series: "first_non_null",
-  release_date: "first_non_null",
-  durationSeconds: "first_non_null",
-  rating: "first_non_null",
-  thumb_url: "highest_quality",
-  poster_url: "highest_quality",
-  fanart_url: "first_non_null",
-  trailer_url: "first_non_null",
-  website: "first_non_null",
-  content_type: "first_non_null",
-  plot: "longest",
-  plot_zh: "longest",
-  actors: "first_non_empty",
-  genres: "first_non_empty",
-  scene_images: "first_non_empty",
-};
-
-const SCRIPT_PATTERN =
-  /(?:<script|<\/script|<style|function\s*\(|=>\s*\{|window\.|document\.\w+\(|var\s+\w+\s*=|const\s+\w+\s*=|let\s+\w+\s*=)/i;
-
-interface AggregationBehavior {
-  preferLongerPlot: boolean;
-  maxSceneImages: number;
-  maxActors: number;
-  maxGenres: number;
-}
-
-const DEFAULT_BEHAVIOR: AggregationBehavior = {
-  preferLongerPlot: true,
-  maxSceneImages: 30,
-  maxActors: 50,
-  maxGenres: 30,
-};
-
-type SourceEntry = { site: Website; data: CrawlerData };
-type ResolvedField = {
-  value: unknown;
-  source?: Website;
-  alternatives?: string[];
-  sceneImageAlternatives?: string[][];
-  sceneImageAlternativeSources?: Website[];
-};
-
-const EMPTY_IMAGE_ALTERNATIVES: ImageAlternatives = {
-  thumb_url: [],
-  poster_url: [],
-  scene_images: [],
-  scene_image_sources: [],
-};
-
-type PrimaryImageAlternativeField = "thumb_url" | "poster_url";
-
-const looksLikeCode = (text: string): boolean => SCRIPT_PATTERN.test(text);
-const isPrimaryImageField = (field: keyof CrawlerData): field is PrimaryImageAlternativeField =>
-  field === "thumb_url" || field === "poster_url";
-
-const summarizeFailedSiteResults = (number: string, siteResults: SiteCrawlResult[]): string => {
-  const failures = siteResults
-    .filter((result) => !result.success)
-    .map((result) => `${result.site}: ${result.error ?? result.failureReason ?? "unknown error"}`);
-
-  if (failures.length === 0) {
-    return `No crawler returned metadata for ${number}`;
-  }
-
-  return `No crawler returned metadata for ${number}. ${failures.join("; ")}`;
-};
-
-export class FieldAggregator {
-  private readonly behavior: AggregationBehavior;
-
-  constructor(
-    private readonly priorities: Partial<Record<string, Website[]>>,
-    behavior?: Partial<AggregationBehavior>,
-  ) {
-    this.behavior = { ...DEFAULT_BEHAVIOR, ...behavior };
-  }
-
-  aggregate(results: Map<Website, CrawlerData>): {
-    data: CrawlerData;
-    sources: SourceMap;
-    imageAlternatives: ImageAlternatives;
-  } {
-    const sources: SourceMap = {};
-    const imageAlternatives: ImageAlternatives = { ...EMPTY_IMAGE_ALTERNATIVES };
-    const entries: SourceEntry[] = Array.from(results.entries()).map(([site, data]) => ({ site, data }));
-    if (entries.length === 0) {
-      throw new Error("No results to aggregate");
-    }
-
-    const firstEntry = entries[0];
-    const resolve = <K extends keyof CrawlerData>(field: K): CrawlerData[K] => {
-      const strategy = FIELD_STRATEGIES[field] ?? "first_non_null";
-      const priority = (this.priorities[field] ?? []) as Website[];
-      const ordered = this.orderByPriority(entries, priority);
-      const result = this.applyStrategy(field, strategy, ordered);
-      if (isPrimaryImageField(field)) {
-        imageAlternatives[field] = result.alternatives ?? [];
-      } else if (field === "scene_images") {
-        imageAlternatives.scene_images = result.sceneImageAlternatives ?? [];
-        imageAlternatives.scene_images_source = result.source;
-        imageAlternatives.scene_image_sources = result.sceneImageAlternativeSources ?? [];
-      }
-      if (result.value !== undefined && result.value !== null) {
-        sources[field] = result.source;
-      }
-      return result.value as CrawlerData[K];
-    };
-
-    const data: CrawlerData = {
-      title: resolve("title") || firstEntry.data.title,
-      title_zh: resolve("title_zh"),
-      number: resolve("number") || firstEntry.data.number,
-      actors: resolve("actors") ?? [],
-      genres: resolve("genres") ?? [],
-      content_type: resolve("content_type"),
-      studio: resolve("studio"),
-      director: resolve("director"),
-      publisher: resolve("publisher"),
-      series: resolve("series"),
-      plot: resolve("plot"),
-      plot_zh: resolve("plot_zh"),
-      release_date: resolve("release_date"),
-      durationSeconds: resolve("durationSeconds"),
-      rating: resolve("rating"),
-      thumb_url: resolve("thumb_url"),
-      poster_url: resolve("poster_url"),
-      fanart_url: resolve("fanart_url"),
-      scene_images: resolve("scene_images") ?? [],
-      trailer_url: resolve("trailer_url"),
-      website: resolve("website") ?? firstEntry.data.website,
-    };
-
-    return { data, sources, imageAlternatives };
-  }
-
-  private orderByPriority(entries: SourceEntry[], priority: Website[]): SourceEntry[] {
-    if (priority.length === 0) {
-      return entries;
-    }
-
-    const ordered: SourceEntry[] = [];
-    const remaining = new Set(entries.map((entry) => entry.site));
-    for (const site of priority) {
-      const entry = entries.find((item) => item.site === site);
-      if (entry) {
-        ordered.push(entry);
-        remaining.delete(site);
-      }
-    }
-    for (const entry of entries) {
-      if (remaining.has(entry.site)) {
-        ordered.push(entry);
-      }
-    }
-    return ordered;
-  }
-
-  private applyStrategy(
-    field: keyof CrawlerData,
-    strategy: AggregationStrategy,
-    entries: SourceEntry[],
-  ): ResolvedField {
-    switch (strategy) {
-      case "first_non_null":
-        return this.firstNonNull(field, entries);
-      case "first_non_empty":
-        return this.firstNonEmpty(field, entries);
-      case "longest":
-        return this.longest(field, entries);
-      case "union":
-        return this.union(field, entries);
-      case "highest_quality":
-        return this.highestQuality(field, entries);
-      default:
-        return this.firstNonNull(field, entries);
-    }
-  }
-
-  private firstNonNull(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    for (const entry of entries) {
-      const value = entry.data[field];
-      if (value !== undefined && value !== null && value !== "") {
-        return { value, source: entry.site };
-      }
-    }
-    return { value: undefined };
-  }
-
-  private firstNonEmpty(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    if (field === "scene_images") {
-      return this.firstNonEmptySceneImages(entries);
-    }
-
-    for (const entry of entries) {
-      const value = entry.data[field];
-      if (Array.isArray(value) && value.length > 0) {
-        return { value: field === "actors" ? value.slice(0, this.behavior.maxActors) : value, source: entry.site };
-      }
-      if (typeof value === "string" && value.length > 0) {
-        return { value, source: entry.site };
-      }
-    }
-    return { value: undefined };
-  }
-
-  private firstNonEmptySceneImages(entries: SourceEntry[]): ResolvedField {
-    const alternatives: string[][] = [];
-    const alternativeSources: Website[] = [];
-    const seenSets = new Set<string>();
-    let winner: string[] | undefined;
-    let source: Website | undefined;
-
-    for (const entry of entries) {
-      const urls = this.normalizeSceneImageSet(entry.data.scene_images);
-      if (urls.length === 0) {
-        continue;
-      }
-      const signature = JSON.stringify(urls);
-      if (!winner) {
-        winner = urls;
-        source = entry.site;
-        seenSets.add(signature);
-        continue;
-      }
-      if (seenSets.has(signature)) {
-        continue;
-      }
-      seenSets.add(signature);
-      alternatives.push(urls);
-      alternativeSources.push(entry.site);
-    }
-
-    return {
-      value: winner,
-      source,
-      sceneImageAlternatives: alternatives,
-      sceneImageAlternativeSources: alternativeSources,
-    };
-  }
-
-  private longest(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    let best: { value: string; source: Website } | null = null;
-    for (const entry of entries) {
-      const value = entry.data[field];
-      if (typeof value === "string" && value.length > 0) {
-        if (looksLikeCode(value)) continue;
-        if (!best || value.length > best.value.length) {
-          best = { value, source: entry.site };
-        }
-      }
-    }
-    return best ? { value: best.value, source: best.source } : { value: undefined };
-  }
-
-  private union(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    if (field === "actors") {
-      return this.unionActors(entries);
-    }
-    if (field === "genres") {
-      return this.unionGenres(entries);
-    }
-
-    const seen = new Set<string>();
-    const merged: unknown[] = [];
-    let source: Website | undefined;
-    for (const entry of entries) {
-      const value = entry.data[field];
-      if (!Array.isArray(value)) continue;
-      for (const item of value) {
-        const key = typeof item === "string" ? item : JSON.stringify(item);
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(item);
-          source ??= entry.site;
-        }
-      }
-    }
-    return { value: merged.length > 0 ? merged : undefined, source };
-  }
-
-  private unionActors(entries: SourceEntry[]): { value: string[]; source?: Website } {
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    let source: Website | undefined;
-    for (const entry of entries) {
-      for (const actor of entry.data.actors) {
-        const normalized = actor.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          merged.push(actor);
-          source ??= entry.site;
-        }
-      }
-    }
-    return { value: merged.slice(0, this.behavior.maxActors), source };
-  }
-
-  private unionGenres(entries: SourceEntry[]): { value: string[]; source?: Website } {
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    let source: Website | undefined;
-    for (const entry of entries) {
-      for (const genre of entry.data.genres) {
-        const normalized = genre.normalize("NFKC").toLowerCase().trim();
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          merged.push(genre);
-          source ??= entry.site;
-        }
-      }
-    }
-    return { value: merged.slice(0, this.behavior.maxGenres), source };
-  }
-
-  private normalizeSceneImageSet(values: string[]): string[] {
-    const seen = new Set<string>();
-    const urls: string[] = [];
-    for (const value of values) {
-      const normalized = value.trim();
-      if (!normalized || seen.has(normalized)) {
-        continue;
-      }
-      seen.add(normalized);
-      urls.push(normalized);
-      if (urls.length >= this.behavior.maxSceneImages) {
-        break;
-      }
-    }
-    return urls;
-  }
-
-  private highestQuality(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    const candidates = entries.flatMap((entry) => {
-      const value = entry.data[field];
-      return typeof value === "string" && value.length > 0 ? [{ value, source: entry.site }] : [];
-    });
-    if (candidates.length === 0) {
-      return { value: undefined, alternatives: [] };
-    }
-
-    const winner = candidates.find((candidate) => candidate.value.includes("awsimgsrc.dmm.co.jp")) ?? candidates[0];
-    const seen = new Set<string>([winner.value]);
-    const alternatives: string[] = [];
-    for (const candidate of candidates) {
-      if (seen.has(candidate.value)) {
-        continue;
-      }
-      seen.add(candidate.value);
-      alternatives.push(candidate.value);
-    }
-    return { value: winner.value, source: winner.source, alternatives };
-  }
 }
 
 export interface ManualScrapeOptions {
@@ -418,7 +60,6 @@ interface CacheEntry {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 200;
-const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
 interface CrawlerExecutionState {
@@ -467,7 +108,14 @@ export class AggregationService {
       return cached;
     }
 
-    const enabledSites = this.resolveActiveSites(number, config, manualScrape);
+    const { admitted: enabledSites, rejected: rejectedSites } = this.resolveActiveSites(number, config, manualScrape);
+    if (rejectedSites.length > 0) {
+      this.logger.info(
+        `${number} admitted ${enabledSites.length} sites; skipped: ${rejectedSites
+          .map(({ site, reason, detail }) => `${site}(${reason}${detail ? ` ${detail}` : ""})`)
+          .join(", ")}`,
+      );
+    }
     if (enabledSites.length === 0) {
       const message = `No active sites for ${number}`;
       this.recordFailureSummary(number, message);
@@ -521,6 +169,7 @@ export class AggregationService {
       failedCount,
       skippedCount,
       siteResults,
+      rejectedSites,
       totalElapsedMs,
     };
     const {
@@ -528,9 +177,8 @@ export class AggregationService {
       sources: aggregatedSources,
       imageAlternatives,
     } = fieldAggregator.aggregate(successes);
-    const coherentData = this.cohereDmmFamilyIdentity(aggregatedData, aggregatedSources, successes, config);
-    const data = applyTitleRepair(coherentData.data, config.titleRepair);
-    const sources = coherentData.sources;
+    const data = applyTitleRepair(aggregatedData, config.titleRepair);
+    const sources = aggregatedSources;
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
         `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
@@ -565,32 +213,26 @@ export class AggregationService {
     this.cache.clear();
   }
 
-  private resolveActiveSites(number: string, config: Configuration, manualScrape?: ManualScrapeOptions): Website[] {
-    if (manualScrape) {
-      return this.filterSitesByCooldown([manualScrape.site]);
-    }
-
-    const ordered = [...new Set(config.scrape.sites)];
-    const isFc2 = FC2_NUMBER_PATTERN.test(number.trim().toUpperCase());
-    const candidates = ordered.filter((site) => (isFc2 ? FC2_SITE_WHITELIST.has(site) : !FC2_ONLY_SITES.has(site)));
-    if (isFc2) {
-      this.logger.info(`FC2 number detected for ${number}; limiting sites to: ${candidates.join(", ") || "(none)"}`);
-    }
-    return this.filterSitesByCooldown(candidates);
-  }
-
-  private filterSitesByCooldown(sites: Website[]): Website[] {
-    return sites.filter((site) => {
-      const activeCooldown = this.crawlerProvider.getSiteCooldown(site);
-      if (activeCooldown) {
-        this.logger.info(
-          `Skipping ${site}: site cooldown active (${activeCooldown.remainingMs}ms remaining until ${new Date(
-            activeCooldown.cooldownUntil,
-          ).toISOString()})`,
-        );
-        return false;
+  private resolveActiveSites(
+    number: string,
+    config: Configuration,
+    manualScrape?: ManualScrapeOptions,
+  ): ReturnType<typeof resolveSiteAdmission> {
+    const configuredSites = manualScrape ? [manualScrape.site] : [...new Set(config.scrape.sites)];
+    const cooldowns = new Map<Website, { remainingMs: number; cooldownUntil: number }>();
+    for (const site of configuredSites) {
+      const cooldown = this.crawlerProvider.getSiteCooldown(site);
+      if (cooldown) {
+        cooldowns.set(site, cooldown);
       }
-      return true;
+    }
+
+    return resolveSiteAdmission({
+      number,
+      configuredSites,
+      credentials: { fantiaCookie: config.network.fantiaCookie },
+      cooldowns,
+      manualScrape,
     });
   }
 
@@ -831,46 +473,6 @@ export class AggregationService {
 
   private createFieldAggregator(config: Configuration): FieldAggregator {
     return new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
-  }
-
-  private cohereDmmFamilyIdentity(
-    data: CrawlerData,
-    sources: Partial<Record<keyof CrawlerData, Website>>,
-    successes: Map<Website, CrawlerData>,
-    config: Configuration,
-  ): { data: CrawlerData; sources: Partial<Record<keyof CrawlerData, Website>> } {
-    const titleSource = sources.title;
-    if (!titleSource || !DMM_FAMILY_SITES.has(titleSource)) {
-      return { data, sources };
-    }
-
-    const counterpart = titleSource === Website.DMM ? Website.DMM_TV : Website.DMM;
-    if (!successes.has(counterpart)) {
-      return { data, sources };
-    }
-
-    const preferred = successes.get(titleSource);
-    if (!preferred) {
-      return { data, sources };
-    }
-
-    const nextData: CrawlerData = { ...data };
-    const nextSources: Partial<Record<keyof CrawlerData, Website>> = { ...sources };
-    const preferredGenres = preferred.genres.slice(0, config.aggregation.behavior.maxGenres);
-    if (preferredGenres.length > 0) {
-      nextData.genres = preferredGenres;
-      nextSources.genres = titleSource;
-    }
-
-    for (const field of ["number", "studio", "director", "publisher", "series", "release_date"] as const) {
-      const value = preferred[field];
-      if (!value) {
-        continue;
-      }
-      Object.assign(nextData, { [field]: value });
-      nextSources[field] = titleSource;
-    }
-    return { data: nextData, sources: nextSources };
   }
 
   private getFromCache(key: string): AggregationResult | null {
