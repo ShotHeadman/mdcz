@@ -172,6 +172,7 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
+            screenshotDirectory: ".tmp/vitest-screenshots",
             provider: playwright({
               launchOptions: browserExecutablePath ? { executablePath: browserExecutablePath } : undefined,
             }),

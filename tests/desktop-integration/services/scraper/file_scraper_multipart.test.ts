@@ -70,6 +70,7 @@ const createScraper = (
     ensureOutputReady?: ReturnType<typeof vi.fn>;
     organizeVideo?: ReturnType<typeof vi.fn>;
     moveToFailedFolder?: ReturnType<typeof vi.fn>;
+    signalService?: SignalService;
   } = {},
 ) => {
   mockConfigManager(config);
@@ -83,6 +84,7 @@ const createScraper = (
   const organizeVideo =
     overrides.organizeVideo ?? vi.fn(async (_fileInfo: FileInfo, plan: OrganizePlan) => plan.targetVideoPath);
   const moveToFailedFolder = overrides.moveToFailedFolder ?? vi.fn(async (fileInfo: FileInfo) => fileInfo.filePath);
+  const signalService = overrides.signalService ?? new SignalService(null);
 
   const scraper = createFileScraper({
     aggregationService: {
@@ -103,7 +105,7 @@ const createScraper = (
       organizeVideo,
       moveToFailedFolder,
     } as unknown as FileOrganizer,
-    signalService: new SignalService(null),
+    signalService,
   });
 
   return {
@@ -112,6 +114,7 @@ const createScraper = (
       downloadAll,
       ensureOutputReady,
       organizeVideo,
+      signalService,
       moveToFailedFolder,
     },
   };
@@ -237,7 +240,21 @@ describe("FileScraper multipart aggregation cache", () => {
     expect(second.status).toBe("success");
     expect(mocks.ensureOutputReady).toHaveBeenCalledTimes(2);
   });
+  it("emits a processing result before the terminal result", async () => {
+    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "ABC-123" })));
+    const signalService = new SignalService(null);
+    const results: string[] = [];
+    vi.spyOn(signalService, "showScrapeResult").mockImplementation((result) => {
+      results.push(result.status);
+    });
+    const { scraper } = createScraper(aggregate, { signalService });
 
+    const terminal = await scraper.scrapeFile("/tmp/ABC-123.mp4");
+
+    expect(terminal.status).toBe("success");
+    expect(results[0]).toBe("processing");
+    expect(results.at(-1)).toBe("success");
+  });
   it("reports failed results at the failed-folder path after moving the source video", async () => {
     const root = await createTempDir();
     const sourcePath = join(root, "FC2-123456.mp4");

@@ -9,6 +9,7 @@ import {
   activateNewScrapeTask,
   applyScrapeTaskStatus,
   MaintenanceWorkbenchAdapter,
+  resetScrapeWorkbenchToSetup,
   ScrapeWorkbenchAdapter,
   startMaintenanceFlow,
   useWorkbenchSessionSnapshot,
@@ -112,7 +113,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
 
     try {
-      activateNewScrapeTask();
+      activateNewScrapeTask(filePaths);
       const response = await startSelectedScrape(filePaths);
       await refreshCurrentConfig();
       toast.success(response.data.message);
@@ -123,6 +124,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
         return;
       }
 
+      resetScrapeWorkbenchToSetup();
       if (errorMessage.includes("NO_FILES")) {
         toast.info("当前目录中没有需要刮削的媒体文件");
         return;

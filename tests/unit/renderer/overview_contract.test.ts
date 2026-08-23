@@ -61,4 +61,25 @@ describe("overview UI contract", () => {
     expect(useScrapeStore.getState()).toMatchObject({ total: 3, current: 1 });
     expect(useScrapeStore.getState().progress).toBeCloseTo(100 / 3);
   });
+
+  it("fails unfinished results when a running snapshot returns to idle", () => {
+    useScrapeStore.getState().seedProcessingResults(["/media/ABC-123.mp4"]);
+    useScrapeStore.getState().setScrapeStatus("running");
+    useScrapeStore.getState().setScraping(true);
+
+    applyScrapeStatusSnapshot({
+      state: "idle",
+      running: false,
+      totalFiles: 1,
+      completedFiles: 0,
+      successCount: 0,
+      failedCount: 1,
+      skippedCount: 0,
+    });
+
+    expect(useScrapeStore.getState().results[0]).toMatchObject({
+      status: "failed",
+      error: "已停止或未完成",
+    });
+  });
 });

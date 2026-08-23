@@ -135,7 +135,7 @@ function WorkbenchPage() {
   const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
     setScrapeStartPending(true);
     try {
-      activateNewScrapeTask();
+      activateNewScrapeTask(filePaths);
       const task = await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
       setActiveScrapeTaskId(task.id);
       applyScrapeTaskStatus(task.status);

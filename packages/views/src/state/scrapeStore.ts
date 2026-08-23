@@ -21,6 +21,8 @@ interface ScrapeState {
   updateProgress: (current: number, total: number) => void;
   upsertResult: (result: ScrapeResult) => void;
   addResult: (result: ScrapeResult) => void;
+  seedProcessingResults: (filePaths: string[]) => void;
+  failUnfinishedResults: (reason: string) => void;
   markResultsRetrying: (filePaths: string[]) => void;
   clearResults: () => void;
   setFailedCount: (count: number) => void;
@@ -39,6 +41,10 @@ const noopStorage = {
 const getFileNameFromPath = (filePath: string): string => {
   const slashIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   return slashIndex >= 0 ? filePath.slice(slashIndex + 1) : filePath;
+};
+const getExtensionFromFileName = (fileName: string): string => {
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex > 0 ? fileName.slice(dotIndex) : "";
 };
 
 const storeCreator: StateCreator<ScrapeState> = (set) => ({
@@ -71,6 +77,36 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
       const nextResults = [...state.results];
       nextResults[existingIndex] = result;
       return { results: nextResults };
+    }),
+  seedProcessingResults: (filePaths) =>
+    set({
+      results: filePaths.map((filePath) => {
+        const fileName = getFileNameFromPath(filePath);
+        return {
+          fileId: buildFileId(filePath),
+          fileInfo: {
+            filePath,
+            fileName,
+            extension: getExtensionFromFileName(fileName),
+            number: "",
+            isSubtitled: false,
+          },
+          status: "processing",
+        };
+      }),
+      failedCount: 0,
+    }),
+  failUnfinishedResults: (reason) =>
+    set((state) => {
+      const results = state.results.map((result) =>
+        result.status === "processing" || result.status === "pending"
+          ? { ...result, status: "failed" as const, error: reason }
+          : result,
+      );
+      return {
+        results,
+        failedCount: results.filter((result) => result.status === "failed").length,
+      };
     }),
   clearResults: () =>
     set({

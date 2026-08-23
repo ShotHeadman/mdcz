@@ -39,6 +39,7 @@ export class FileScraper {
     options: FileScrapeOptions = {},
   ): Promise<ScrapeResult> {
     const context = await this.pipeline.createContext(filePath, progress, options);
+    this.pipeline.notifyProcessing?.(context);
     this.pipeline.setProgress(progress, 0);
 
     try {

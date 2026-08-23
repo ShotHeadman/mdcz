@@ -114,9 +114,12 @@ export const useWorkbenchSessionSnapshot = (
   };
 };
 
-export const activateNewScrapeTask = (): void => {
+export const activateNewScrapeTask = (filePaths?: string[]): void => {
   const scrapeStore = useScrapeStore.getState();
   scrapeStore.clearResults();
+  if (filePaths) {
+    scrapeStore.seedProcessingResults(filePaths);
+  }
   scrapeStore.updateProgress(0, 0);
   scrapeStore.setScraping(true);
   scrapeStore.setScrapeStatus("running");
@@ -146,6 +149,7 @@ export const activateRetryScrapeTask = (filePaths: string[]): void => {
 
 export const applyScrapeTaskStatus = (status: ScanTaskDto["status"]): void => {
   const scrapeStore = useScrapeStore.getState();
+  const previousStatus = scrapeStore.scrapeStatus;
   if (status === "running" || status === "queued") {
     scrapeStore.setScrapeStatus("running");
     scrapeStore.setScraping(true);
@@ -160,6 +164,9 @@ export const applyScrapeTaskStatus = (status: ScanTaskDto["status"]): void => {
     scrapeStore.setScrapeStatus("stopping");
     scrapeStore.setScraping(true);
     return;
+  }
+  if (previousStatus !== "idle") {
+    scrapeStore.failUnfinishedResults("已停止或未完成");
   }
   scrapeStore.setScrapeStatus("idle");
   scrapeStore.setScraping(false);

@@ -2,7 +2,9 @@ import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import type { MaintenanceActionPort } from "@mdcz/views/adapters";
 import {
+  activateNewScrapeTask,
   activateRetryScrapeTask,
+  applyScrapeTaskStatus,
   getWorkbenchSessionSnapshot,
   resolveWorkbenchMode,
   startMaintenanceFlow,
@@ -104,6 +106,34 @@ describe("workbench session shared controller", () => {
       ],
     });
     expect(useUIStore.getState().selectedResultId).toBe(buildFileId(retryPath));
+  });
+
+  it("seeds selected files when activating a new scrape task", () => {
+    const filePaths = ["/incoming/ABC-001.mp4", "/incoming/XYZ-002.mkv"];
+
+    activateNewScrapeTask(filePaths);
+
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: true,
+      scrapeStatus: "running",
+      results: [
+        { fileId: buildFileId(filePaths[0]), status: "processing" },
+        { fileId: buildFileId(filePaths[1]), status: "processing" },
+      ],
+    });
+  });
+
+  it("keeps unfinished results during pause and fails them on idle", () => {
+    activateNewScrapeTask(["/incoming/ABC-001.mp4"]);
+
+    applyScrapeTaskStatus("paused");
+    expect(useScrapeStore.getState().results[0].status).toBe("processing");
+
+    applyScrapeTaskStatus("completed");
+    expect(useScrapeStore.getState().results[0]).toMatchObject({
+      status: "failed",
+      error: "已停止或未完成",
+    });
   });
 
   it("starts maintenance through real port scan and shared store updates", async () => {

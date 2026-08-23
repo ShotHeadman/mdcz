@@ -28,6 +28,7 @@ export interface FileScraperPipeline {
   ): Promise<ScrapeContext>;
 
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void;
+  notifyProcessing?(context: ScrapeContext): void;
 
   runExclusiveByNumber<T>(number: string, operation: () => Promise<T>): Promise<T>;
 

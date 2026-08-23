@@ -55,12 +55,16 @@ const getSyncTarget = (): SyncTarget => {
 
 export const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   const scrapeStore = useScrapeStore.getState();
+  const previousState = scrapeStore.scrapeStatus;
   const activeState = status.state ?? (status.running ? "running" : "idle");
   const active = activeState !== "idle";
   const shouldSyncProgressFromStatus =
     activeState === "idle" ||
     (activeState === "paused" && (scrapeStore.total !== status.totalFiles || scrapeStore.progress <= 0));
 
+  if (activeState === "idle" && previousState !== "idle") {
+    scrapeStore.failUnfinishedResults("已停止或未完成");
+  }
   scrapeStore.setScraping(active);
   scrapeStore.setScrapeStatus(activeState);
 
@@ -184,10 +188,6 @@ export const useIpcSync = (queryClient: QueryClient) => {
 
         unsubscribers.push(
           ipc.on.scrapeResult((payload) => {
-            if (payload.status === "processing" || payload.status === "pending" || payload.status === "skipped") {
-              return;
-            }
-
             useScrapeStore.getState().upsertResult(payload);
             safeSync("scrape result", "scrape");
           }),
@@ -219,11 +219,15 @@ export const useIpcSync = (queryClient: QueryClient) => {
         unsubscribers.push(
           ipc.on.buttonStatus((payload) => {
             const scrapeStore = useScrapeStore.getState();
+            const previousStatus = scrapeStore.scrapeStatus;
             const isRunning = !payload.startEnabled && payload.stopEnabled;
             const isStopping = !payload.startEnabled && !payload.stopEnabled;
             const active = isRunning || isStopping;
             const nextStatus = isRunning ? "running" : isStopping ? "stopping" : "idle";
 
+            if (nextStatus === "idle" && previousStatus !== "idle") {
+              scrapeStore.failUnfinishedResults("已停止或未完成");
+            }
             scrapeStore.setScraping(active);
             scrapeStore.setScrapeStatus(nextStatus);
             if (shouldInvalidateOverview(active)) {

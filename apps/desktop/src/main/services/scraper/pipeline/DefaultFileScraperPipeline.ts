@@ -74,6 +74,13 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     const configuration = await configManager.getValidated();
     return new ScrapeContext(filePath, progress, this.scrapeMode, options.manualScrape, configuration);
   }
+  notifyProcessing(context: ScrapeContext): void {
+    this.deps.signalService.showScrapeResult({
+      fileId: context.fileId,
+      fileInfo: context.fileInfo,
+      status: "processing",
+    });
+  }
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {
     this.failureHandler.setProgress(progress, stepPercent);
