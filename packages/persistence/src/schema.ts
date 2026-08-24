@@ -1,4 +1,5 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable(
   "media_roots",
@@ -98,6 +99,105 @@ export const scrapeResults = sqliteTable(
   (table) => [index("scrape_results_task_path_idx").on(table.taskId, table.relativePath)],
 );
 
+export const scrapeRuns = sqliteTable(
+  "scrape_runs",
+  {
+    id: text("id").primaryKey(),
+    rootId: text("root_id").notNull(),
+    outputRootId: text("output_root_id"),
+    executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    check("scrape_runs_execution_mode_check", sql`${table.executionMode} in ('single', 'batch')`),
+    index("scrape_runs_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const scrapeRunItems = sqliteTable(
+  "scrape_run_items",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => scrapeRuns.id),
+    ordinal: integer("ordinal").notNull(),
+    rootId: text("root_id").notNull(),
+    relativePath: text("relative_path").notNull(),
+    manualUrl: text("manual_url"),
+    uncensoredChoice: text("uncensored_choice").$type<"umr" | "leak" | "uncensored">(),
+  },
+  (table) => [
+    check("scrape_run_items_ordinal_check", sql`${table.ordinal} >= 0`),
+    check(
+      "scrape_run_items_uncensored_choice_check",
+      sql`${table.uncensoredChoice} is null or ${table.uncensoredChoice} in ('umr', 'leak', 'uncensored')`,
+    ),
+    uniqueIndex("scrape_run_items_run_ordinal_idx").on(table.runId, table.ordinal),
+    uniqueIndex("scrape_run_items_run_root_path_idx").on(table.runId, table.rootId, table.relativePath),
+  ],
+);
+
+export const scrapeItemOutcomes = sqliteTable(
+  "scrape_item_outcomes",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => scrapeRuns.id),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => scrapeRunItems.id),
+    attempt: integer("attempt").notNull(),
+    outcome: text("outcome").$type<"success" | "failed" | "skipped">().notNull(),
+    errorMessage: text("error_message"),
+    crawlerDataJson: text("crawler_data_json"),
+    nfoRootId: text("nfo_root_id"),
+    nfoRelativePath: text("nfo_relative_path"),
+    outputRootId: text("output_root_id"),
+    outputRelativePath: text("output_relative_path"),
+    uncensoredAmbiguous: integer("uncensored_ambiguous", { mode: "boolean" }).notNull().default(false),
+    size: integer("size").notNull().default(0),
+    modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    check("scrape_item_outcomes_attempt_check", sql`${table.attempt} > 0`),
+    check("scrape_item_outcomes_outcome_check", sql`${table.outcome} in ('success', 'failed', 'skipped')`),
+    check("scrape_item_outcomes_size_check", sql`${table.size} >= 0`),
+    uniqueIndex("scrape_item_outcomes_item_attempt_idx").on(table.itemId, table.attempt),
+    index("scrape_item_outcomes_run_item_idx").on(table.runId, table.itemId, table.attempt),
+  ],
+);
+
+export const scrapeRunSummaries = sqliteTable(
+  "scrape_run_summaries",
+  {
+    runId: text("run_id")
+      .primaryKey()
+      .references(() => scrapeRuns.id),
+    disposition: text("disposition").$type<"completed" | "failed" | "stopped">().notNull(),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
+    successCount: integer("success_count").notNull(),
+    failedCount: integer("failed_count").notNull(),
+    skippedCount: integer("skipped_count").notNull(),
+    totalBytes: integer("total_bytes").notNull(),
+    outputRootId: text("output_root_id"),
+    outputDirectory: text("output_directory"),
+    errorMessage: text("error_message"),
+  },
+  (table) => [
+    check("scrape_run_summaries_disposition_check", sql`${table.disposition} in ('completed', 'failed', 'stopped')`),
+    check(
+      "scrape_run_summaries_counts_check",
+      sql`${table.successCount} >= 0 and ${table.failedCount} >= 0 and ${table.skippedCount} >= 0`,
+    ),
+    check("scrape_run_summaries_total_bytes_check", sql`${table.totalBytes} >= 0`),
+    index("scrape_run_summaries_completed_at_idx").on(table.completedAt),
+  ],
+);
+
 export const libraryEntries = sqliteTable(
   "library_entries",
   {
@@ -183,6 +283,10 @@ export const schema = {
   scanResults,
   scrapeOutputs,
   scrapeResults,
+  scrapeRuns,
+  scrapeRunItems,
+  scrapeItemOutcomes,
+  scrapeRunSummaries,
   libraryEntries,
   libraryItems,
   libraryItemFiles,
@@ -201,6 +305,14 @@ export type ScrapeOutputRow = typeof scrapeOutputs.$inferSelect;
 export type InsertScrapeOutputRow = typeof scrapeOutputs.$inferInsert;
 export type ScrapeResultRow = typeof scrapeResults.$inferSelect;
 export type InsertScrapeResultRow = typeof scrapeResults.$inferInsert;
+export type ScrapeRunRow = typeof scrapeRuns.$inferSelect;
+export type InsertScrapeRunRow = typeof scrapeRuns.$inferInsert;
+export type ScrapeRunItemRow = typeof scrapeRunItems.$inferSelect;
+export type InsertScrapeRunItemRow = typeof scrapeRunItems.$inferInsert;
+export type ScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferSelect;
+export type InsertScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferInsert;
+export type ScrapeRunSummaryRow = typeof scrapeRunSummaries.$inferSelect;
+export type InsertScrapeRunSummaryRow = typeof scrapeRunSummaries.$inferInsert;
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type InsertLibraryEntryRow = typeof libraryEntries.$inferInsert;
 export type LibraryItemRow = typeof libraryItems.$inferSelect;

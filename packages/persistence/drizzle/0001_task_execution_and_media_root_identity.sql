@@ -49,3 +49,69 @@ SET
   `updated_at` = unixepoch() * 1000
 WHERE `id` <> 'mdcz-metadata-output'
   AND `id` NOT LIKE 'path-%';
+--> statement-breakpoint
+DROP TABLE `maintenance_previews`;
+--> statement-breakpoint
+DROP TABLE `maintenance_apply_log`;
+--> statement-breakpoint
+CREATE TABLE `scrape_runs` (
+  `id` text PRIMARY KEY NOT NULL,
+  `root_id` text NOT NULL,
+  `output_root_id` text,
+  `execution_mode` text NOT NULL CHECK (`execution_mode` IN ('single', 'batch')),
+  `created_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `scrape_runs_created_at_idx` ON `scrape_runs` (`created_at`);
+--> statement-breakpoint
+CREATE TABLE `scrape_run_items` (
+  `id` text PRIMARY KEY NOT NULL,
+  `run_id` text NOT NULL REFERENCES `scrape_runs`(`id`),
+  `ordinal` integer NOT NULL CHECK (`ordinal` >= 0),
+  `root_id` text NOT NULL,
+  `relative_path` text NOT NULL,
+  `manual_url` text,
+  `uncensored_choice` text CHECK (`uncensored_choice` IS NULL OR `uncensored_choice` IN ('umr', 'leak', 'uncensored'))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `scrape_run_items_run_ordinal_idx` ON `scrape_run_items` (`run_id`, `ordinal`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `scrape_run_items_run_root_path_idx` ON `scrape_run_items` (`run_id`, `root_id`, `relative_path`);
+--> statement-breakpoint
+CREATE TABLE `scrape_item_outcomes` (
+  `id` text PRIMARY KEY NOT NULL,
+  `run_id` text NOT NULL REFERENCES `scrape_runs`(`id`),
+  `item_id` text NOT NULL REFERENCES `scrape_run_items`(`id`),
+  `attempt` integer NOT NULL CHECK (`attempt` > 0),
+  `outcome` text NOT NULL CHECK (`outcome` IN ('success', 'failed', 'skipped')),
+  `error_message` text,
+  `crawler_data_json` text,
+  `nfo_root_id` text,
+  `nfo_relative_path` text,
+  `output_root_id` text,
+  `output_relative_path` text,
+  `uncensored_ambiguous` integer NOT NULL DEFAULT 0,
+  `size` integer NOT NULL DEFAULT 0 CHECK (`size` >= 0),
+  `modified_at` integer,
+  `completed_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `scrape_item_outcomes_item_attempt_idx` ON `scrape_item_outcomes` (`item_id`, `attempt`);
+--> statement-breakpoint
+CREATE INDEX `scrape_item_outcomes_run_item_idx` ON `scrape_item_outcomes` (`run_id`, `item_id`, `attempt`);
+--> statement-breakpoint
+CREATE TABLE `scrape_run_summaries` (
+  `run_id` text PRIMARY KEY NOT NULL REFERENCES `scrape_runs`(`id`),
+  `disposition` text NOT NULL CHECK (`disposition` IN ('completed', 'failed', 'stopped')),
+  `started_at` integer,
+  `completed_at` integer NOT NULL,
+  `success_count` integer NOT NULL CHECK (`success_count` >= 0),
+  `failed_count` integer NOT NULL CHECK (`failed_count` >= 0),
+  `skipped_count` integer NOT NULL CHECK (`skipped_count` >= 0),
+  `total_bytes` integer NOT NULL CHECK (`total_bytes` >= 0),
+  `output_root_id` text,
+  `output_directory` text,
+  `error_message` text
+);
+--> statement-breakpoint
+CREATE INDEX `scrape_run_summaries_completed_at_idx` ON `scrape_run_summaries` (`completed_at`);
