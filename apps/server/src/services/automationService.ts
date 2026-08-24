@@ -12,6 +12,11 @@ import type { MaintenanceService } from "./maintenanceService";
 import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
 
+const MAX_TRACKED_WEBHOOK_TASKS = 1_000;
+const WEBHOOK_DELIVERY_TIMEOUT_MS = 10_000;
+const WEBHOOK_PHASE_STARTED = 1;
+const WEBHOOK_PHASE_TERMINAL = 2;
+
 export interface AutomationWebhookOptions {
   secret?: string;
   url?: string;
@@ -20,6 +25,8 @@ export interface AutomationWebhookOptions {
 export class AutomationService {
   readonly #webhook?: AutomationWebhookOptions;
   #deliveryStatus: AutomationWebhookDeliveryStatusDto;
+  #deliveryChain: Promise<void> = Promise.resolve();
+  readonly #taskDeliveryPhases = new Map<string, number>();
 
   constructor(
     private readonly scans: ScanQueueService,
@@ -41,9 +48,11 @@ export class AutomationService {
       lastError: null,
     };
     taskEvents.subscribe((event) => {
-      if (event.data.kind === "task") {
-        void this.deliverWebhook(this.toWebhookEvent(event.data.task));
+      if (event.data.kind !== "task") {
+        return;
       }
+
+      this.enqueueWebhook(event.data.task);
     });
   }
 
@@ -109,6 +118,45 @@ export class AutomationService {
     return `维护 ${target}: ${task.status}`;
   }
 
+  private enqueueWebhook(task: ScanTaskDto): void {
+    if (!this.#webhook?.url) {
+      return;
+    }
+
+    const phase =
+      task.status === "running"
+        ? WEBHOOK_PHASE_STARTED
+        : task.status === "completed" || task.status === "failed"
+          ? WEBHOOK_PHASE_TERMINAL
+          : 0;
+    if (phase === 0) {
+      return;
+    }
+
+    const deliveredPhases = this.#taskDeliveryPhases.get(task.id) ?? 0;
+    if ((deliveredPhases & phase) !== 0) {
+      return;
+    }
+
+    if (!this.#taskDeliveryPhases.has(task.id) && this.#taskDeliveryPhases.size >= MAX_TRACKED_WEBHOOK_TASKS) {
+      let evictionCandidate: string | undefined;
+      for (const [taskId, taskPhases] of this.#taskDeliveryPhases) {
+        evictionCandidate ??= taskId;
+        if ((taskPhases & WEBHOOK_PHASE_TERMINAL) !== 0) {
+          evictionCandidate = taskId;
+          break;
+        }
+      }
+      if (evictionCandidate) {
+        this.#taskDeliveryPhases.delete(evictionCandidate);
+      }
+    }
+    this.#taskDeliveryPhases.set(task.id, deliveredPhases | phase);
+
+    const payload = this.toWebhookEvent(task);
+    this.#deliveryChain = this.#deliveryChain.then(() => this.deliverWebhook(payload));
+  }
+
   private async deliverWebhook(payload: AutomationWebhookEventDto): Promise<void> {
     if (!this.#webhook?.url) {
       return;
@@ -123,6 +171,7 @@ export class AutomationService {
           ...(this.#webhook.secret ? { "x-mdcz-webhook-secret": this.#webhook.secret } : {}),
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(WEBHOOK_DELIVERY_TIMEOUT_MS),
       });
       if (!response.ok) {
         throw new Error(`Webhook delivery failed: ${response.status}`);

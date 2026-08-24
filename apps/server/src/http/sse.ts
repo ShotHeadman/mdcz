@@ -19,7 +19,7 @@ export async function writeTaskEventsStream(
   raw.write(": connected\n\n");
 
   const heartbeatInterval = setInterval(() => {
-    raw.write(": heartbeat\n\n");
+    raw.write("event: heartbeat\ndata: {}\n\n");
   }, 30_000);
   const unsubscribe = services.taskEvents.subscribe((event) => {
     raw.write(formatSseEvent(event));

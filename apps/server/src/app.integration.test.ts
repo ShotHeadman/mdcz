@@ -828,7 +828,7 @@ describe("buildServer composition integration", () => {
     expect(webhook.deliveries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          body: expect.objectContaining({ taskId, kind: "scan", status: "queued" }),
+          body: expect.objectContaining({ taskId, kind: "scan", status: "running" }),
           secret: "test-secret",
         }),
         expect.objectContaining({
@@ -842,7 +842,7 @@ describe("buildServer composition integration", () => {
       configured: true,
       failed: 0,
     });
-    expect(statusResponse.json().webhook.delivered).toBeGreaterThanOrEqual(2);
+    expect(statusResponse.json().webhook.delivered).toBe(2);
 
     await webhook.close();
   });
