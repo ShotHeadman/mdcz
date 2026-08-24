@@ -5,23 +5,18 @@ import { isAbortError, throwIfAborted } from "@main/utils/abort";
 import { toErrorMessage } from "@main/utils/common";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import {
-  AggregateStage,
   AggregationCoordinator,
-  CanonicalizeActorAliasesStage,
-  DownloadStage,
+  createDefaultScrapeStages,
+  downloadCrawlerAssets,
   type FileScraperPipeline,
   type FileScraperStageRuntime,
-  NfoStage,
   NumberExecutionGate,
-  OrganizeStage,
-  ParseStage,
-  PlanStage,
-  PrepareOutputStage,
-  ProbeStage,
+  organizePreparedVideo,
+  prepareOutputCrawlerData,
   resolveMetadataOutputDir,
   ScrapeContext,
   type ScrapeStage,
-  TranslateStage,
+  writePreparedNfo,
 } from "@mdcz/runtime/scrape";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import type {
@@ -30,14 +25,7 @@ import type {
   FileScraperDependencies,
   ScrapeExecutionMode,
 } from "../FileScraper";
-import {
-  applyResolvedSceneImageMetadata,
-  downloadCrawlerAssets,
-  organizePreparedVideo,
-  prepareOutputCrawlerData,
-  probeVideoMetadataOrWarn,
-  writePreparedNfo,
-} from "../output";
+import { applyDesktopPosterTagBadges, probeVideoMetadataOrWarn } from "../output";
 import { ScrapeFailureHandler } from "./ScrapeFailureHandler";
 
 export class DefaultFileScraperPipeline implements FileScraperPipeline {
@@ -158,33 +146,32 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
         const aggregationResult = context.requireAggregationResult();
         const crawlerData = context.requireCrawlerData();
         const plan = context.requirePlan();
-        let resolvedSceneImageUrls: string[] | undefined;
-        const assets = await downloadCrawlerAssets({
+        return await downloadCrawlerAssets({
           config: context.requireConfiguration(),
           crawlerData,
           downloadManager: this.deps.downloadManager,
           fileInfo: context.fileInfo,
           imageAlternatives: aggregationResult.imageAlternatives,
-          localState: context.existingNfoLocalState,
-          logger: this.logger,
           movieBaseName: plan.nfoPath
             .split(/[\\/]/u)
             .pop()
             ?.replace(/\.nfo$/iu, ""),
           outputDir: resolveMetadataOutputDir(plan),
-          signalService: this.deps.signalService,
           sources: aggregationResult.sources,
-          callbacks: {
-            onResolvedSceneImageUrls: (urls) => {
-              resolvedSceneImageUrls = urls;
-            },
-            signal,
-          },
+          callbacks: { signal },
+          onLog: (message) => this.deps.signalService.showLogText(message),
+          postProcessAssets: async (assets, resolvedCrawlerData) =>
+            await applyDesktopPosterTagBadges({
+              assets,
+              config: context.requireConfiguration(),
+              crawlerData: resolvedCrawlerData,
+              fileInfo: context.fileInfo,
+              localState: context.existingNfoLocalState,
+              logger: this.logger,
+              signal,
+              signalService: this.deps.signalService,
+            }),
         });
-        return {
-          assets,
-          crawlerData: applyResolvedSceneImageMetadata(crawlerData, resolvedSceneImageUrls),
-        };
       },
       writePreparedNfo: async (context) =>
         await writePreparedNfo({
@@ -198,12 +185,17 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
           fileInfo: context.fileInfo,
           keepExisting: context.requireConfiguration().download.keepNfo,
           localState: context.existingNfoLocalState,
-          logger: this.logger,
           nfoGenerator: this.deps.nfoGenerator,
           nfoPath: context.requirePlan().nfoPath,
           sourceVideoPath: context.fileInfo.filePath,
           sources: context.requireAggregationResult().sources,
           videoMeta: context.videoMeta,
+          probeVideoMetadata: async (sourcePath) =>
+            await probeVideoMetadataOrWarn({
+              logger: this.logger,
+              sourceVideoPath: sourcePath,
+              warningPrefix: `Video probe failed for ${sourcePath}`,
+            }),
         }),
       organizePreparedVideo: async (context) =>
         await organizePreparedVideo({
@@ -217,19 +209,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
   }
 
   private createStages(): readonly ScrapeStage[] {
-    const runtime = this.createStageRuntime();
-    return [
-      new ParseStage(),
-      new ProbeStage(runtime),
-      new AggregateStage(runtime),
-      new TranslateStage(runtime),
-      new CanonicalizeActorAliasesStage(),
-      new PlanStage(runtime),
-      new PrepareOutputStage(runtime),
-      new DownloadStage(runtime),
-      new NfoStage(runtime),
-      new OrganizeStage(runtime),
-    ];
+    return createDefaultScrapeStages(this.createStageRuntime());
   }
 
   private async translateCrawlerDataOrFallback(

@@ -16,6 +16,7 @@ export * from "./organize/NamingEngine";
 export * from "./organize/PathPlanner";
 export * from "./organize/SidecarResolver";
 export * from "./output/applyPosterTagBadges";
+export * from "./output/executeOutputSteps";
 export * from "./output/prepareCrawlerDataForMovieOutput";
 export * from "./output/prepareCrawlerDataForNfo";
 export * from "./output/prepareImageAlternativesForDownload";

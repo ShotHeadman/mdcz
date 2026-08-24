@@ -1,10 +1,10 @@
 import path from "node:path";
 import {
-  InMemoryMaintenanceTaskStore,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceTaskCoordinator,
 } from "@mdcz/runtime/maintenance";
+import { toMaintenanceClientSession } from "@mdcz/runtime/maintenance/clientSession";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type {
   MaintenanceApplySelection,
@@ -27,7 +27,7 @@ import type {
   ScanTaskListResponse,
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
-import type { MaintenanceClientSession, MaintenanceItemResult, MaintenanceStatus } from "@mdcz/shared/types";
+import type { LocalScanEntry, MaintenanceClientSession } from "@mdcz/shared/types";
 import { createServerMaintenanceRuntime } from "../maintenanceRuntimeFactory";
 import { toScanTaskDto, toTaskEventDto } from "../taskDto";
 import type { TaskEventBus } from "../taskEvents";
@@ -37,10 +37,20 @@ import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
 
 const confirmationTokenFor = (taskId: string): string => `maintenance:${taskId}`;
+const serverMaintenanceSessionHost = {
+  fileId: (preview: MaintenanceTaskPreview): string => `${preview.rootId}:${preview.relativePath}`,
+  toEntry: (preview: MaintenanceTaskPreview, fileId: string): LocalScanEntry | null =>
+    preview.entry
+      ? {
+          ...preview.entry,
+          fileId,
+          rootRef: { rootId: preview.rootId, relativePath: preview.relativePath },
+        }
+      : null,
+};
 
 export class MaintenanceService {
   private readonly runtime: MaintenanceRuntime;
-  private readonly store = new InMemoryMaintenanceTaskStore();
   private readonly coordinator: MaintenanceTaskCoordinator;
 
   constructor(
@@ -53,7 +63,6 @@ export class MaintenanceService {
   ) {
     this.runtime = runtime ?? createServerMaintenanceRuntime(config, mappingStore);
     this.coordinator = new MaintenanceTaskCoordinator({
-      store: this.store,
       roots: { getActiveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId) },
       runtime: this.runtime,
       library: {
@@ -198,69 +207,7 @@ export class MaintenanceService {
   }
 
   async getActiveSession(): Promise<MaintenanceClientSession | null> {
-    const session = await this.store.getActiveSession();
-    if (!session) return null;
-    const fileIdByPreviewId = new Map<string, string>();
-    const entries = session.previews.flatMap((preview) => {
-      if (!preview.entry) return [];
-      const fileId = `${preview.rootId}:${preview.relativePath}`;
-      fileIdByPreviewId.set(preview.id, fileId);
-      return [
-        {
-          ...preview.entry,
-          fileId,
-          rootRef: { rootId: preview.rootId, relativePath: preview.relativePath },
-        },
-      ];
-    });
-    const previewItems = session.previews.map((preview) => ({
-      fileId: fileIdByPreviewId.get(preview.id) ?? `${preview.rootId}:${preview.relativePath}`,
-      previewId: preview.id,
-      taskId: preview.taskId,
-      status: preview.status === "ready" ? ("ready" as const) : ("blocked" as const),
-      ...(preview.error ? { error: preview.error } : {}),
-      fieldDiffs: preview.fieldDiffs,
-      unchangedFieldDiffs: preview.unchangedFieldDiffs,
-      ...(preview.pathDiff ? { pathDiff: preview.pathDiff } : {}),
-      ...(preview.proposedCrawlerData ? { proposedCrawlerData: preview.proposedCrawlerData } : {}),
-      ...(preview.imageAlternatives ? { imageAlternatives: preview.imageAlternatives } : {}),
-    }));
-    const fieldSelections = Object.fromEntries(
-      Object.entries(session.draft.fieldSelections).flatMap(([previewId, selections]) => {
-        const fileId = fileIdByPreviewId.get(previewId);
-        return fileId ? [[fileId, selections]] : [];
-      }),
-    );
-    const imageSelections = Object.fromEntries(
-      Object.entries(session.draft.imageSelections).flatMap(([previewId, selections]) => {
-        const fileId = fileIdByPreviewId.get(previewId);
-        return fileId ? [[fileId, selections]] : [];
-      }),
-    );
-    const currentResults: MaintenanceItemResult[] = session.applyItems.flatMap((item) => {
-      if (item.status !== "pending" && item.status !== "processing") return [];
-      const fileId = fileIdByPreviewId.get(item.previewId);
-      return fileId ? [{ fileId, batchId: item.batchId, status: item.status }] : [];
-    });
-    const recentResults: MaintenanceItemResult[] =
-      session.recentBatch?.items.map(({ log, result }) => ({
-        fileId: `${log.rootId}:${log.relativePath}`,
-        batchId: log.batchId,
-        status: result.status,
-        ...(result.error ? { error: result.error } : {}),
-      })) ?? [];
-    return {
-      taskId: session.task.id,
-      batchId: session.execution.batchId,
-      presetId: session.execution.presetId,
-      entries,
-      preview: { items: previewItems },
-      fieldSelections,
-      imageSelections,
-      status: this.toStatus(session.task.status, session.execution.phase, session.execution),
-      currentResults,
-      recentResults,
-    };
+    return toMaintenanceClientSession(await this.coordinator.getActiveSession(), serverMaintenanceSessionHost);
   }
 
   async updateDraft(input: {
@@ -269,12 +216,12 @@ export class MaintenanceService {
     fieldSelections?: Record<string, "old" | "new">;
     imageSelections?: Record<string, string>;
   }): Promise<{ success: true }> {
-    await this.store.updateDraft(input);
+    await this.coordinator.updateDraft(input);
     return { success: true };
   }
 
   async discardSession(input?: { taskId?: string }): Promise<{ success: true }> {
-    await this.store.discardSession(input?.taskId);
+    await this.coordinator.discardSession(input?.taskId);
     return { success: true };
   }
 
@@ -285,7 +232,9 @@ export class MaintenanceService {
   private async toDto(taskId: string): Promise<ScanTaskDto> {
     const task = await this.coordinator.getTask(taskId);
     const state = await this.persistence.getState();
-    const execution = await this.store.readExecution(taskId);
+    const session = await this.coordinator.getActiveSession();
+    if (!session || session.task.id !== taskId) throw new Error(`Maintenance task not found: ${taskId}`);
+    const execution = session.execution;
     const previews = await this.coordinator.readPreview(taskId).then((batch) => batch.items);
     const root = await state.repositories.mediaRoots.get(task.rootId, { includeDeleted: true }).catch(() => null);
     const videos =
@@ -301,29 +250,6 @@ export class MaintenanceService {
       },
       { rootDisplayName: root?.displayName ?? "未知媒体目录", videoCount: videos.length, videos },
     );
-  }
-
-  private toStatus(
-    taskStatus: import("@mdcz/shared/maintenanceTasks").MaintenanceTaskStatus,
-    phase: "preview" | "apply",
-    progress: import("@mdcz/shared/maintenanceTasks").MaintenanceTaskProgress,
-  ): MaintenanceStatus {
-    return {
-      state:
-        taskStatus === "paused"
-          ? "paused"
-          : taskStatus === "stopping"
-            ? "stopping"
-            : taskStatus === "queued" || taskStatus === "running"
-              ? phase === "preview"
-                ? "previewing"
-                : "executing"
-              : "idle",
-      totalEntries: progress.totalEntries,
-      completedEntries: progress.completedEntries,
-      successCount: progress.successCount,
-      failedCount: progress.failedCount,
-    };
   }
 
   private async previewToDto(preview: MaintenanceTaskPreview): Promise<MaintenancePreviewItemDto> {

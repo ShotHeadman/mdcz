@@ -1,5 +1,5 @@
-import { copyFile, mkdir, rename, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import { unlink } from "node:fs/promises";
+import { atomicCopyFile } from "@mdcz/media-store";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "../../network";
 import { toErrorMessage } from "../../shared";
 import { isAbortError, throwIfAborted } from "../utils/abort";
@@ -114,8 +114,7 @@ export class ImageDownloadService {
 
   async copyDerivedImage(sourcePath: string, targetPath: string, targetLabel: string): Promise<string | null> {
     try {
-      await mkdir(dirname(targetPath), { recursive: true });
-      await copyFile(sourcePath, targetPath);
+      await atomicCopyFile(sourcePath, targetPath);
       return targetPath;
     } catch (error) {
       const message = toErrorMessage(error);
@@ -201,12 +200,12 @@ export class ImageDownloadService {
 
       throwIfAborted(signal);
       const finalPath = this.resolveImageOutputPath(outputPath, bestCandidate.format);
-      await unlink(outputPath).catch(() => undefined);
-      if (finalPath !== outputPath) {
-        await unlink(finalPath).catch(() => undefined);
-      }
-      await rename(bestCandidate.path, finalPath);
+      await atomicCopyFile(bestCandidate.path, finalPath);
+      await this.removePublishedSource(bestCandidate.path);
       tempPaths.delete(bestCandidate.path);
+      if (finalPath !== outputPath) {
+        await this.removePublishedSource(outputPath);
+      }
       return finalPath;
     } finally {
       for (const tempPath of tempPaths) {
@@ -229,9 +228,18 @@ export class ImageDownloadService {
       return filePath;
     }
 
-    await unlink(normalizedPath).catch(() => undefined);
-    await rename(filePath, normalizedPath);
+    await atomicCopyFile(filePath, normalizedPath);
+    await this.removePublishedSource(filePath);
     return normalizedPath;
+  }
+  private async removePublishedSource(filePath: string): Promise<void> {
+    try {
+      await unlink(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.logger.warn(`Published image but failed to remove stale source ${filePath}: ${toErrorMessage(error)}`);
+      }
+    }
   }
 
   private isHigherResolutionCandidate(

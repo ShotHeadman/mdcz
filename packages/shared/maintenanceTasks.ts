@@ -15,11 +15,6 @@ export interface MaintenanceTaskRef {
   relativePath: string;
 }
 
-export interface MaintenanceExecutionOwner {
-  taskId: string;
-  executionVersion: number;
-}
-
 export interface MaintenanceTaskProgress {
   totalEntries: number;
   completedEntries: number;
@@ -27,25 +22,10 @@ export interface MaintenanceTaskProgress {
   failedCount: number;
 }
 
-export interface MaintenanceTaskEventInput {
-  type: string;
-  message: string;
-}
-
-export interface MaintenanceTaskPatch {
-  status?: MaintenanceTaskStatus;
-  startedAt?: Date | null;
-  completedAt?: Date | null;
-  error?: string | null;
-  progress?: MaintenanceTaskProgress;
-  event?: MaintenanceTaskEventInput;
-}
-
 export interface MaintenanceTaskSnapshot extends MaintenanceTaskProgress {
   id: string;
   rootId: string;
   status: MaintenanceTaskStatus;
-  executionVersion: number;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -61,13 +41,6 @@ export interface MaintenanceExecutionState extends MaintenanceTaskProgress {
   refs: MaintenanceTaskRef[];
   createdAt: Date;
   updatedAt: Date;
-}
-
-export interface MaintenanceTaskClaim {
-  id: string;
-  task: MaintenanceTaskSnapshot;
-  phase: MaintenanceTaskPhase;
-  execution: MaintenanceExecutionState;
 }
 
 export type MaintenanceTaskPreviewStatus = "ready" | "blocked" | "applied" | "failed";

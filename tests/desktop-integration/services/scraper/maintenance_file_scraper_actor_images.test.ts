@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
@@ -68,7 +68,13 @@ const createScraperHarness = (root: string, downloadAll: ReturnType<typeof vi.fn
       translateService: {
         translateCrawlerData: vi.fn(async (data: CrawlerData) => data),
       } as unknown as TranslateService,
-      nfoGenerator: { writeNfo: vi.fn().mockResolvedValue(plan.nfoPath) } as unknown as NfoGenerator,
+      nfoGenerator: {
+        writeNfo: vi.fn(async () => {
+          await mkdir(outputDir, { recursive: true });
+          await writeFile(plan.nfoPath, "nfo");
+          return plan.nfoPath;
+        }),
+      } as unknown as NfoGenerator,
       downloadManager: { downloadAll } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),

@@ -3,13 +3,17 @@ import { stat } from "node:fs/promises";
 import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { buildMaintenanceApplyCommit } from "@mdcz/shared/maintenanceCommit";
 import type {
+  MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
   MaintenanceApplyItemResult,
   MaintenanceApplySelection,
-  MaintenanceExecutionOwner,
+  MaintenanceExecutionState,
   MaintenancePreviewBatch,
+  MaintenanceSessionDraft,
+  MaintenanceTaskApplyItemStatus,
+  MaintenanceTaskApplyLog,
   MaintenanceTaskApplyQueueItem,
-  MaintenanceTaskPatch,
+  MaintenanceTaskEvent,
   MaintenanceTaskPreview,
   MaintenanceTaskProgress,
   MaintenanceTaskRef,
@@ -18,14 +22,13 @@ import type {
 } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { isAbortError } from "../scrape/utils/abort";
-import { TaskExecutor, TaskScheduler, transitionTask } from "../tasks";
+import { TaskExecutor } from "../tasks";
 import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceCoordinatorEventSink,
   type MaintenanceLibraryPort,
   type MaintenanceRootPort,
   type MaintenanceRunHandle,
-  type MaintenanceTaskStore,
   noopMaintenanceCoordinatorEventSink,
 } from "./coordinatorContracts";
 import type { MaintenanceRuntime, MaintenanceRuntimePreviewItem } from "./MaintenanceRuntime";
@@ -34,16 +37,69 @@ const PREVIEW_ALL_FAILED = "维护预览全部失败";
 const APPLY_FAILED = "维护应用失败";
 const STOPPED = "维护已停止";
 const STOPPED_ITEM = "维护已停止，项目未执行";
-const INTERRUPTED_APPLY = "维护应用因服务关闭而中断，请重新预览后执行";
+const INTERRUPTED = "维护因服务关闭而中断，请重新预览后执行";
+const OWNERSHIP_CHANGED = "Maintenance execution ownership changed";
+
+const ACTIVE_STATUSES: readonly MaintenanceTaskStatus[] = ["queued", "running", "paused", "stopping"];
+const TERMINAL_ITEM_STATUSES = new Set<MaintenanceTaskApplyItemStatus>(["success", "failed", "skipped"]);
+
+type MaintenanceSessionTimestamps = {
+  createdAt: Date;
+  updatedAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+};
+
+type MaintenanceCurrentBatchItem = {
+  id: string;
+  selection: MaintenanceApplySelection;
+  status: MaintenanceTaskApplyItemStatus;
+  error: string | null;
+  result?: MaintenanceApplyItemResult;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type MaintenanceCurrentBatch = {
+  id: string;
+  items: Map<string, MaintenanceCurrentBatchItem>;
+};
+type MaintenanceApplyExecutionResult = {
+  result: MaintenanceApplyItemResult;
+  libraryCommit?: Parameters<MaintenanceLibraryPort["commitRefresh"]>[0];
+};
+
+type MaintenanceSessionState = {
+  id: string;
+  rootId: string;
+  presetId: MaintenancePresetId;
+  phase: "preview" | "apply";
+  status: MaintenanceTaskStatus;
+  generation: number;
+  refs: MaintenanceTaskRef[];
+  progress: MaintenanceTaskProgress;
+  timestamps: MaintenanceSessionTimestamps;
+  error: string | null;
+  previews: Map<string, MaintenanceTaskPreview>;
+  currentBatch: MaintenanceCurrentBatch | null;
+  draft: MaintenanceSessionDraft;
+  events: MaintenanceTaskEvent[];
+};
+
+type ExecutorControl = {
+  pause(): void;
+  stop(): void;
+  waitForIdle(): Promise<void>;
+};
 
 type ActiveExecution = {
-  owner: MaintenanceExecutionOwner;
+  sessionId: string;
+  generation: number;
   phase: "preview" | "apply";
-  executor: { pause(): void; stop(): void; waitForIdle(): Promise<void> };
+  executor: ExecutorControl;
 };
 
 interface MaintenanceTaskCoordinatorDependencies {
-  store: MaintenanceTaskStore;
   roots: MaintenanceRootPort;
   runtime: MaintenanceRuntime;
   library: MaintenanceLibraryPort;
@@ -53,51 +109,28 @@ interface MaintenanceTaskCoordinatorDependencies {
 
 const toErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const taskPatchFor = (
-  task: MaintenanceTaskSnapshot,
-  action: "pause" | "resume" | "stop" | "complete" | "fail" | "retry",
-  options: {
-    error?: string | null;
-    progress?: MaintenanceTaskProgress;
-    event?: { type: string; message: string };
-  } = {},
-): MaintenanceTaskPatch => {
-  const next = transitionTask(task, { action, error: options.error });
-  return {
-    status: next.status as MaintenanceTaskStatus,
-    startedAt: next.startedAt,
-    completedAt: next.completedAt,
-    error: next.error,
-    progress: options.progress,
-    event: options.event,
-  };
-};
+const copySelection = (selection: MaintenanceApplySelection): MaintenanceApplySelection => ({
+  previewId: selection.previewId,
+  ...(selection.fieldSelections ? { fieldSelections: { ...selection.fieldSelections } } : {}),
+});
 
 export class MaintenanceTaskCoordinator {
-  private readonly store: MaintenanceTaskStore;
   private readonly roots: MaintenanceRootPort;
   private readonly runtime: MaintenanceRuntime;
   private readonly library: MaintenanceLibraryPort;
   private readonly events: MaintenanceCoordinatorEventSink;
-  private readonly scheduler: TaskScheduler<import("@mdcz/shared/maintenanceTasks").MaintenanceTaskClaim>;
-  private readonly active = new Map<string, ActiveExecution>();
+  private session: MaintenanceSessionState | null = null;
+  private active: ActiveExecution | null = null;
+  private executionPromise: Promise<void> | null = null;
   private readonly changeWaiters = new Map<string, Set<() => void>>();
   private closing = false;
 
   constructor(deps: MaintenanceTaskCoordinatorDependencies) {
     if (deps.concurrency !== 1) throw new Error("Maintenance coordinator concurrency must be 1");
-    this.store = deps.store;
     this.roots = deps.roots;
     this.runtime = deps.runtime;
     this.library = deps.library;
     this.events = deps.events ?? noopMaintenanceCoordinatorEventSink;
-    this.scheduler = new TaskScheduler({
-      claimNext: async () => await this.store.claimNext(),
-      runExecution: async (claim) => {
-        if (claim.phase === "preview") await this.runPreview(claim.task, claim.execution.refs);
-        else await this.runApply(claim.task);
-      },
-    });
   }
 
   async startPreview(input: {
@@ -106,16 +139,46 @@ export class MaintenanceTaskCoordinator {
     refs?: readonly MaintenanceTaskRef[];
   }): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     this.assertOpen();
-    if (input.refs) this.assertUniqueRefs(input.refs);
+    const refs = [...(input.refs ?? [])];
+    this.assertUniqueRefs(refs);
     await this.roots.getActiveRoot(input.rootId);
-    const task = await this.store.createPreviewExecution(input);
-    await this.publish({ kind: "task-changed", task });
-    this.scheduler.drain();
-    return { task, completion: this.waitForPreview(task.id) };
+    if (this.session && ACTIVE_STATUSES.includes(this.session.status)) {
+      throw new Error("已有活动的维护会话，请先完成或停止当前会话");
+    }
+
+    const now = new Date();
+    const generation = (this.session?.generation ?? 0) + 1;
+    if (this.session) this.session.generation = generation;
+    const progress = this.emptyProgress(refs.length);
+    this.session = {
+      id: randomUUID(),
+      rootId: input.rootId,
+      presetId: input.presetId,
+      phase: "preview",
+      status: "queued",
+      generation,
+      refs,
+      progress,
+      timestamps: { createdAt: now, updatedAt: now, startedAt: null, completedAt: null },
+      error: null,
+      previews: new Map(),
+      currentBatch: null,
+      draft: { fieldSelections: {}, imageSelections: {} },
+      events: [],
+    };
+    const sessionId = this.session.id;
+    await this.publishTaskEvent(this.session, "queued", `Maintenance task queued. Preset: ${input.presetId}`);
+    await this.publishLog(this.session, "preset", `Maintenance preset: ${input.presetId}`);
+    await this.startCurrentPhase(sessionId, generation);
+    return {
+      task: this.snapshotTask(this.requireSession(sessionId)),
+      completion: this.waitForPreview(sessionId),
+    };
   }
 
   async readPreview(taskId: string): Promise<MaintenancePreviewBatch> {
-    return { task: await this.store.readTask(taskId), items: await this.store.listPreviews(taskId) };
+    const session = this.requireSession(taskId);
+    return { task: this.snapshotTask(session), items: this.listEditablePreviews(session) };
   }
 
   async waitForPreview(taskId: string): Promise<MaintenancePreviewBatch> {
@@ -136,141 +199,215 @@ export class MaintenanceTaskCoordinator {
   }): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     this.assertOpen();
     if (input.selections.length === 0) throw new Error("请选择要应用的维护预览");
-    const ids = input.selections.map((selection) => selection.previewId);
-    if (new Set(ids).size !== ids.length) throw new Error("维护预览 ID 重复");
-    const current = await this.store.readTask(input.taskId);
-    if (current.status !== "completed" && current.status !== "failed") {
+    const previewIds = input.selections.map((selection) => selection.previewId);
+    if (new Set(previewIds).size !== previewIds.length) throw new Error("维护预览 ID 重复");
+
+    const session = this.requireSession(input.taskId);
+    if (session.status !== "completed" && session.status !== "failed") {
       throw new Error("维护预览生成完成后才能应用");
     }
-    const progress: MaintenanceTaskProgress = {
-      totalEntries: input.selections.length,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
+    for (const previewId of previewIds) {
+      const preview = session.previews.get(previewId);
+      if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
+        throw new Error("部分维护预览不存在、已提交或不属于当前会话");
+      }
+    }
+
+    const now = new Date();
+    session.generation += 1;
+    const generation = session.generation;
+    const batchId = randomUUID();
+    const items = new Map<string, MaintenanceCurrentBatchItem>();
+    for (const original of input.selections) {
+      const selection = copySelection(original);
+      items.set(selection.previewId, {
+        id: randomUUID(),
+        selection,
+        status: "pending",
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (selection.fieldSelections) {
+        session.draft.fieldSelections[selection.previewId] = { ...selection.fieldSelections };
+      }
+    }
+    session.phase = "apply";
+    session.status = "queued";
+    session.currentBatch = { id: batchId, items };
+    session.progress = this.emptyProgress(items.size);
+    session.error = null;
+    session.timestamps = {
+      ...session.timestamps,
+      updatedAt: now,
+      startedAt: null,
+      completedAt: null,
     };
-    const task = await this.store.queueApply({
-      taskId: input.taskId,
-      expectedExecutionVersion: current.executionVersion,
-      selections: input.selections,
-      patch: taskPatchFor(current, "retry", {
-        progress,
-        event: { type: "queued", message: `Maintenance apply queued. Items: ${input.selections.length}` },
-      }),
-    });
-    if (!task) throw new Error("维护任务状态已变化，请重试");
-    await this.publishTask(task);
-    this.scheduler.drain();
-    const selectedIds = new Set(ids);
-    const execution = await this.store.readExecution(input.taskId);
-    if (!execution.batchId) throw new Error("维护批次未创建");
+    await this.publishTaskEvent(session, "queued", `Maintenance apply queued. Items: ${items.size}`);
+    await this.startCurrentPhase(session.id, generation);
+    const selectedIds = new Set(previewIds);
     return {
-      task,
-      completion: this.waitForApply(input.taskId, execution.batchId, selectedIds),
+      task: this.snapshotTask(session),
+      completion: this.waitForApply(session.id, batchId, selectedIds),
     };
   }
 
   async pause(taskId: string): Promise<MaintenanceTaskSnapshot> {
-    const current = await this.store.readTask(taskId);
-    if (current.status !== "queued" && current.status !== "running") return current;
-    const owner = { taskId, executionVersion: current.executionVersion };
-    const paused = await this.store.transition({
-      owner,
-      expectedStatus: current.status,
-      patch: taskPatchFor(current, "pause", {
-        event: { type: "paused", message: "Maintenance task paused" },
-      }),
-    });
-    if (!paused) return await this.store.readTask(taskId);
-    if (current.status === "running") this.active.get(taskId)?.executor.pause();
-    await this.publishTask(paused);
-    return paused;
+    const session = this.requireSession(taskId);
+    if (session.status !== "queued" && session.status !== "running") return this.snapshotTask(session);
+    session.status = "paused";
+    session.error = null;
+    this.touch(session);
+    await this.publishTaskEvent(session, "paused", "Maintenance task paused");
+    const active = this.activeFor(session.id, session.generation);
+    active?.executor.pause();
+    await this.awaitCurrentExecution();
+    return this.snapshotTask(this.requireSession(taskId));
   }
 
   async resume(taskId: string): Promise<MaintenanceTaskSnapshot> {
-    let current = await this.store.readTask(taskId);
-    if (current.status !== "paused") return current;
-    const active = this.active.get(taskId);
-    if (active?.owner.executionVersion === current.executionVersion) {
-      await active.executor.waitForIdle();
-      current = await this.store.readTask(taskId);
-      if (current.status !== "paused") return current;
-    }
-    const resumed = await this.store.transition({
-      owner: { taskId, executionVersion: current.executionVersion },
-      expectedStatus: "paused",
-      patch: taskPatchFor(current, "resume", {
-        event: { type: "queued", message: "Maintenance task resumed and requeued" },
-      }),
-    });
-    if (!resumed) return await this.store.readTask(taskId);
-    await this.publishTask(resumed);
-    this.scheduler.drain();
-    return resumed;
+    const session = this.requireSession(taskId);
+    if (session.status !== "paused") return this.snapshotTask(session);
+    await this.awaitCurrentExecution();
+    const current = this.requireSession(taskId);
+    if (current.status !== "paused") return this.snapshotTask(current);
+    await this.startCurrentPhase(current.id, current.generation, "Maintenance task resumed");
+    return this.snapshotTask(current);
   }
 
   async stop(taskId: string): Promise<MaintenanceTaskSnapshot> {
-    let current = await this.store.readTask(taskId);
-    if (["completed", "failed"].includes(current.status)) return current;
-    let owner = { taskId, executionVersion: current.executionVersion };
-    if (current.status === "paused") {
-      const active = this.active.get(taskId);
-      if (active?.owner.executionVersion === current.executionVersion) {
-        active.executor.stop();
-        await active.executor.waitForIdle();
-        current = await this.store.readTask(taskId);
-        owner = { taskId, executionVersion: current.executionVersion };
-        if (["completed", "failed"].includes(current.status)) return current;
-      }
-    }
-    const execution = await this.store.readExecution(taskId);
-    if (execution.phase === "apply" && (current.status === "queued" || current.status === "paused")) {
-      await this.skipPendingApplyItems(owner, STOPPED_ITEM);
-    }
-    const stopped = await this.store.transition({
-      owner,
-      expectedStatus: current.status,
-      patch: taskPatchFor(current, "stop", {
-        error: STOPPED,
-        event: {
-          type: current.status === "running" ? "stopping" : "failed",
-          message: current.status === "running" ? "Stopping maintenance task" : STOPPED,
-        },
-      }),
-    });
-    if (!stopped) return await this.store.readTask(taskId);
-    if (current.status === "running") this.active.get(taskId)?.executor.stop();
-    await this.publishTask(stopped);
-    if (stopped.status === "failed") await this.publish({ kind: "task-failed", taskId, error: STOPPED });
-    return stopped;
+    const session = this.requireSession(taskId);
+    if (session.status === "completed" || session.status === "failed") return this.snapshotTask(session);
+
+    session.generation += 1;
+    const generation = session.generation;
+    session.status = "stopping";
+    session.error = STOPPED;
+    this.touch(session);
+    await this.publishTaskEvent(session, "stopping", "Stopping maintenance task");
+    this.active?.executor.stop();
+    await this.awaitCurrentExecution();
+
+    const current = this.requireSession(taskId);
+    if (current.generation !== generation) return this.snapshotTask(current);
+    if (current.phase === "apply") await this.skipOutstandingApplyItems(current, generation, STOPPED_ITEM);
+    await this.finishSession(current, generation, "failed", STOPPED);
+    return this.snapshotTask(current);
   }
 
   async getTask(taskId: string): Promise<MaintenanceTaskSnapshot> {
-    return await this.store.readTask(taskId);
+    return this.snapshotTask(this.requireSession(taskId));
   }
 
   async listTasks(): Promise<MaintenanceTaskSnapshot[]> {
-    return await this.store.listTasks();
+    return this.session ? [this.snapshotTask(this.session)] : [];
   }
 
-  async listEvents(taskId: string) {
-    return await this.store.listEvents(taskId);
+  async listEvents(taskId: string): Promise<MaintenanceTaskEvent[]> {
+    return [...this.requireSession(taskId).events];
   }
 
-  async listApplyLogs(taskId: string) {
-    return await this.store.listApplyLogs(taskId);
+  async listApplyLogs(taskId: string): Promise<MaintenanceTaskApplyLog[]> {
+    return this.deriveApplyLogs(this.requireSession(taskId));
+  }
+
+  async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
+    const session = this.session;
+    if (!session) return null;
+    const applyItems = this.deriveApplyItems(session);
+    const recentItems = this.deriveRecentBatchItems(session);
+    return {
+      task: this.snapshotTask(session),
+      execution: this.snapshotExecution(session),
+      previews: this.listEditablePreviews(session),
+      applyItems,
+      draft: {
+        fieldSelections: Object.fromEntries(
+          Object.entries(session.draft.fieldSelections).map(([id, value]) => [id, { ...value }]),
+        ),
+        imageSelections: Object.fromEntries(
+          Object.entries(session.draft.imageSelections).map(([id, value]) => [id, { ...value }]),
+        ),
+      },
+      recentBatch: session.currentBatch ? { batchId: session.currentBatch.id, items: recentItems } : null,
+    };
+  }
+
+  async updateDraft(input: {
+    taskId: string;
+    previewId: string;
+    fieldSelections?: Record<string, "old" | "new">;
+    imageSelections?: Record<string, string>;
+  }): Promise<MaintenanceActiveSessionSnapshot> {
+    const session = this.requireSession(input.taskId);
+    const preview = session.previews.get(input.previewId);
+    if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
+      throw new Error("维护预览不存在或已提交");
+    }
+    if (input.fieldSelections) session.draft.fieldSelections[input.previewId] = { ...input.fieldSelections };
+    if (input.imageSelections) session.draft.imageSelections[input.previewId] = { ...input.imageSelections };
+    this.touch(session);
+    return (await this.getActiveSession()) as MaintenanceActiveSessionSnapshot;
+  }
+
+  async discardSession(taskId?: string): Promise<void> {
+    if (!this.session) return;
+    if (taskId && this.session.id !== taskId) throw new Error("维护会话已变化");
+    if (ACTIVE_STATUSES.includes(this.session.status)) throw new Error("维护会话仍在运行，请先停止后再返回设置");
+    const discardedId = this.session.id;
+    this.session.generation += 1;
+    this.session = null;
+    this.notify(discardedId);
   }
 
   async waitForIdle(): Promise<void> {
-    await this.scheduler.waitForIdle();
-    await Promise.all([...this.active.values()].map((execution) => execution.executor.waitForIdle()));
+    await this.awaitCurrentExecution();
   }
 
   async close(): Promise<void> {
     if (this.closing) return;
     this.closing = true;
-    this.scheduler.requestStop();
-    for (const execution of this.active.values()) execution.executor.stop();
-    await this.waitForIdle();
+    const session = this.session;
+    if (!session || !ACTIVE_STATUSES.includes(session.status)) {
+      if (session) session.generation += 1;
+      return;
+    }
+
+    session.generation += 1;
+    const generation = session.generation;
+    session.status = "stopping";
+    session.error = INTERRUPTED;
+    this.touch(session);
+    this.active?.executor.stop();
+    await this.awaitCurrentExecution();
+    if (!this.isCurrent(session.id, generation)) return;
+    if (session.phase === "apply") await this.skipOutstandingApplyItems(session, generation, INTERRUPTED);
+    await this.finishSession(session, generation, "failed", INTERRUPTED);
+  }
+
+  private async startCurrentPhase(sessionId: string, generation: number, message?: string): Promise<void> {
+    const session = this.assertCurrent(sessionId, generation, ["queued", "paused"]);
+    if (this.executionPromise) throw new Error("Maintenance coordinator already has an active executor");
+    const now = new Date();
+    session.status = "running";
+    session.error = null;
+    session.timestamps = {
+      ...session.timestamps,
+      startedAt: session.timestamps.startedAt ?? now,
+      completedAt: null,
+      updatedAt: now,
+    };
+    await this.publishTaskEvent(session, "running", message ?? `Starting maintenance ${session.phase}`);
+
+    const run =
+      session.phase === "preview" ? this.runPreview(sessionId, generation) : this.runApply(sessionId, generation);
+    let tracked: Promise<void>;
+    tracked = run.finally(() => {
+      if (this.executionPromise === tracked) this.executionPromise = null;
+      this.notify(sessionId);
+    });
+    this.executionPromise = tracked;
+    void tracked.catch(() => undefined);
   }
 
   private async waitForApply(
@@ -279,57 +416,60 @@ export class MaintenanceTaskCoordinator {
     selectedIds: ReadonlySet<string>,
   ): Promise<MaintenanceApplyBatch> {
     for (;;) {
-      const task = await this.store.readTask(taskId);
-      if (task.status === "completed" || task.status === "failed") {
-        const logs = await this.store.listApplyLogs(taskId);
+      const session = this.requireSession(taskId);
+      if (session.status === "completed" || session.status === "failed") {
+        if (session.currentBatch?.id !== batchId) throw new Error("维护批次已变化");
         return {
-          task,
+          task: this.snapshotTask(session),
           batchId,
-          items: await this.store.listPreviews(taskId),
-          applied: logs.filter((log) => log.batchId === batchId && selectedIds.has(log.previewId)),
+          items: this.listEditablePreviews(session),
+          applied: this.deriveApplyLogs(session).filter((log) => selectedIds.has(log.previewId)),
         };
       }
       await this.waitForChange(taskId);
     }
   }
 
-  private async runPreview(task: MaintenanceTaskSnapshot, persistedRefs: readonly MaintenanceTaskRef[]): Promise<void> {
-    const owner = { taskId: task.id, executionVersion: task.executionVersion };
+  private async runPreview(sessionId: string, generation: number): Promise<void> {
     const scanController = new AbortController();
+    this.active = {
+      sessionId,
+      generation,
+      phase: "preview",
+      executor: {
+        pause: () => undefined,
+        stop: () => scanController.abort(),
+        waitForIdle: async () => undefined,
+      },
+    };
     try {
-      this.active.set(task.id, {
-        owner,
-        phase: "preview",
-        executor: {
-          pause: () => undefined,
-          stop: () => scanController.abort(),
-          waitForIdle: async () => undefined,
-        },
-      });
-      const execution = await this.store.readExecution(task.id);
-      const root = await this.roots.getActiveRoot(task.rootId);
-      const refs = [...persistedRefs];
+      const initial = this.assertCurrent(sessionId, generation, ["running"]);
+      const root = await this.roots.getActiveRoot(initial.rootId);
+      const persistedRefs = [...initial.refs];
       const entries =
-        refs.length > 0
-          ? await this.scanExactRefs(root, refs, scanController.signal)
-          : await this.runtime.scan({ root, signal: scanController.signal }).then(async (discovered) => {
-              const sorted = [...discovered].sort((left, right) =>
-                this.relativePath(root, left).localeCompare(this.relativePath(root, right), "zh-CN"),
+        persistedRefs.length > 0
+          ? await this.scanExactRefs(root, persistedRefs, scanController.signal)
+          : await this.runtime
+              .scan({ root, signal: scanController.signal })
+              .then((discovered) =>
+                [...discovered].sort((left, right) =>
+                  this.relativePath(root, left).localeCompare(this.relativePath(root, right), "zh-CN"),
+                ),
               );
-              const discoveredRefs = sorted.map((entry) => ({ relativePath: this.relativePath(root, entry) }));
-              const persisted = await this.store.persistDiscoveredRefs(owner, discoveredRefs);
-              if (!persisted) throw new Error("Maintenance execution ownership changed");
-              return sorted;
-            });
-      const afterScan = await this.store.readTask(task.id);
-      if (afterScan.executionVersion !== owner.executionVersion || afterScan.status === "paused") return;
-      if (afterScan.status === "stopping") {
-        if (!this.closing) await this.finishStopped(task.id, owner);
-        return;
+
+      const afterScan = this.assertCurrent(sessionId, generation, ["running", "paused"]);
+      if (persistedRefs.length === 0) {
+        const refs = entries.map((entry) => ({ relativePath: this.relativePath(root, entry) }));
+        this.assertUniqueRefs(refs);
+        afterScan.refs = refs;
+        afterScan.progress = this.emptyProgress(refs.length);
+        this.touch(afterScan);
       }
-      const alreadyCommitted = new Set((await this.store.listPreviews(task.id)).map((preview) => preview.relativePath));
-      const pending = entries.filter((entry) => !alreadyCommitted.has(this.relativePath(root, entry)));
-      const taskExecutor = new TaskExecutor<
+      if (afterScan.status === "paused") return;
+
+      const committedPaths = new Set([...afterScan.previews.values()].map((preview) => preview.relativePath));
+      const pending = entries.filter((entry) => !committedPaths.has(this.relativePath(root, entry)));
+      const executor = new TaskExecutor<
         LocalScanEntry,
         {
           entry: LocalScanEntry;
@@ -339,19 +479,24 @@ export class MaintenanceTaskCoordinator {
       >({
         concurrency: 1,
         gate: {
-          beforeItem: async () => await this.assertOwned(owner, ["running"]),
-          beforeResult: async () => await this.assertOwned(owner, ["running", "paused"]),
+          beforeItem: async () => {
+            this.assertCurrent(sessionId, generation, ["running"]);
+          },
+          beforeResult: async () => {
+            this.assertCurrent(sessionId, generation, ["running", "paused"]);
+          },
         },
         runItem: async (entry, context) => {
           try {
+            const current = this.assertCurrent(sessionId, generation, ["running"]);
             const [item] = await this.runtime.previewEntries({
               root,
-              presetId: execution.presetId,
+              presetId: current.presetId,
               entries: [entry],
               signal: context.signal,
             });
             if (!item) throw new Error("维护预览未返回结果");
-            const librarySource = this.library ? await this.library.resolveSource(entry.fileInfo.filePath) : null;
+            const librarySource = await this.library.resolveSource(entry.fileInfo.filePath);
             return { entry, item, librarySource };
           } catch (error) {
             if (isAbortError(error) || context.signal.aborted) throw error;
@@ -373,94 +518,92 @@ export class MaintenanceTaskCoordinator {
           }
         },
         applyResult: async (_entry, result) => {
-          const current = await this.store.readExecution(task.id);
-          const preview = this.toPreview(task.id, execution.presetId, result.item, result.librarySource);
-          const progress: MaintenanceTaskProgress = {
-            totalEntries: current.totalEntries,
-            completedEntries: current.completedEntries + 1,
-            successCount: current.successCount + (preview.status === "ready" ? 1 : 0),
-            failedCount: current.failedCount + (preview.status === "blocked" ? 1 : 0),
+          const current = this.assertCurrent(sessionId, generation, ["running", "paused"]);
+          const preview = this.toPreview(current, result.item, result.librarySource);
+          const duplicate = [...current.previews.values()].find(
+            (existing) => existing.relativePath === preview.relativePath && existing.id !== preview.id,
+          );
+          if (duplicate) throw new Error(`维护预览路径重复：${preview.relativePath}`);
+          current.previews.set(preview.id, preview);
+          current.progress = {
+            totalEntries: current.progress.totalEntries,
+            completedEntries: current.progress.completedEntries + 1,
+            successCount: current.progress.successCount + (preview.status === "ready" ? 1 : 0),
+            failedCount: current.progress.failedCount + (preview.status === "blocked" ? 1 : 0),
           };
-          const committed = await this.store.commitPreviewItem(owner, { preview, progress });
-          if (!committed) return;
-          await this.publish({ kind: "preview-item", taskId: task.id, preview: committed, entry: result.entry });
+          this.touch(current);
+          await this.publish({ kind: "preview-item", taskId: sessionId, preview, entry: result.entry });
           await this.publish({
             kind: "progress",
-            taskId: task.id,
+            taskId: sessionId,
             phase: "preview",
-            progress,
-            message: committed.relativePath,
+            progress: { ...current.progress },
+            message: preview.relativePath,
           });
         },
       });
-      this.active.set(task.id, { owner, phase: "preview", executor: taskExecutor });
-      const summary = await taskExecutor.execute(pending, owner.executionVersion);
-      if (summary.outcome === "paused") return;
-      if (summary.outcome === "stopped") {
-        if (!this.closing) await this.finishStopped(task.id, owner);
-        return;
-      }
-      const currentTask = await this.store.readTask(task.id);
-      if (currentTask.status !== "running" || currentTask.executionVersion !== owner.executionVersion) return;
-      const current = await this.store.readExecution(task.id);
+      this.active = { sessionId, generation, phase: "preview", executor };
+      const summary = await executor.execute(pending, generation);
+      if (summary.outcome === "paused" || summary.outcome === "stopped") return;
+      const current = this.assertCurrent(sessionId, generation, ["running"]);
       const allBlocked =
-        current.totalEntries > 0 && current.successCount === 0 && current.failedCount >= current.totalEntries;
-      const completed = await this.store.transition({
-        owner,
-        expectedStatus: "running",
-        patch: taskPatchFor(currentTask, allBlocked ? "fail" : "complete", {
-          error: allBlocked ? PREVIEW_ALL_FAILED : null,
-          progress: current,
-          event: {
-            type: allBlocked ? "failed" : "completed",
-            message: `Maintenance preview completed. Ready: ${current.successCount}, Blocked: ${current.failedCount}`,
-          },
-        }),
-      });
-      if (completed) {
-        await this.publishTask(completed);
-        if (allBlocked) await this.publish({ kind: "task-failed", taskId: task.id, error: PREVIEW_ALL_FAILED });
-      }
+        current.progress.totalEntries > 0 &&
+        current.progress.successCount === 0 &&
+        current.progress.failedCount >= current.progress.totalEntries;
+      await this.finishSession(
+        current,
+        generation,
+        allBlocked ? "failed" : "completed",
+        allBlocked ? PREVIEW_ALL_FAILED : null,
+      );
     } catch (error) {
-      if (this.closing) return;
-      const current = await this.store.readTask(task.id).catch(() => null);
-      if (!current || current.executionVersion !== owner.executionVersion || current.status === "paused") return;
-      if (current.status === "stopping" || isAbortError(error)) {
-        await this.finishStopped(task.id, owner);
-        return;
-      }
-      await this.failTask(owner, toErrorMessage(error));
+      if (!this.isCurrent(sessionId, generation) || this.closing) return;
+      const current = this.requireSession(sessionId);
+      if (current.status === "paused") return;
+      if (isAbortError(error) || current.status === "stopping" || toErrorMessage(error) === OWNERSHIP_CHANGED) return;
+      await this.failSession(current, generation, toErrorMessage(error));
     } finally {
-      if (this.active.get(task.id)?.owner.executionVersion === owner.executionVersion) this.active.delete(task.id);
-      this.notify(task.id);
+      if (this.active?.sessionId === sessionId && this.active.generation === generation) this.active = null;
+      this.notify(sessionId);
     }
   }
 
-  private async runApply(task: MaintenanceTaskSnapshot): Promise<void> {
-    const owner = { taskId: task.id, executionVersion: task.executionVersion };
+  private async runApply(sessionId: string, generation: number): Promise<void> {
     try {
-      const execution = await this.store.readExecution(task.id);
-      const root = await this.roots.getActiveRoot(task.rootId);
-      const previews = new Map((await this.store.listPreviews(task.id)).map((preview) => [preview.id, preview]));
-      const pending = await this.store.listPendingApplyItems(task.id);
-      const taskExecutor = new TaskExecutor<MaintenanceTaskApplyQueueItem, MaintenanceApplyItemResult>({
+      const initial = this.assertCurrent(sessionId, generation, ["running"]);
+      const root = await this.roots.getActiveRoot(initial.rootId);
+      const pending = this.pendingBatchItems(initial);
+      const executor = new TaskExecutor<MaintenanceCurrentBatchItem, MaintenanceApplyExecutionResult>({
         concurrency: 1,
         gate: {
-          beforeItem: async () => await this.assertOwned(owner, ["running"]),
-          beforeResult: async () => await this.assertOwned(owner, ["running", "paused", "stopping"]),
+          beforeItem: async () => {
+            this.assertCurrent(sessionId, generation, ["running"]);
+          },
+          beforeResult: async () => {
+            this.assertCurrent(sessionId, generation, ["running", "paused"]);
+          },
         },
         runItem: async (item, context) => {
-          const marked = await this.store.markApplyItemProcessing(owner, item.id);
-          if (!marked) throw new Error("Maintenance execution ownership changed");
-          const preview = previews.get(item.previewId);
-          if (!preview) return { status: "failed", error: "维护预览不存在" };
+          const current = this.assertCurrent(sessionId, generation, ["running"]);
+          const batchItem = current.currentBatch?.items.get(item.selection.previewId);
+          if (!batchItem || batchItem.id !== item.id || batchItem.status !== "pending") {
+            throw new Error(OWNERSHIP_CHANGED);
+          }
+          batchItem.status = "processing";
+          batchItem.error = null;
+          batchItem.updatedAt = new Date();
+          this.touch(current);
+          const preview = current.previews.get(item.selection.previewId);
+          if (!preview) return { result: { status: "failed", error: "维护预览不存在" } };
           if (preview.status === "blocked") {
-            return { status: "skipped", error: preview.error ?? "维护预览不可应用" };
+            return { result: { status: "skipped", error: preview.error ?? "维护预览不可应用" } };
           }
           try {
             const [entry] = await this.scanExactRefs(root, [{ relativePath: preview.relativePath }], context.signal);
-            if (!entry) return { status: "failed", error: `维护文件不存在：${preview.relativePath}` };
-            const committed = buildMaintenanceApplyCommit(entry, preview, item.fieldSelections);
+            if (!entry) {
+              return { result: { status: "failed", error: `维护文件不存在：${preview.relativePath}` } };
+            }
+            const committed = buildMaintenanceApplyCommit(entry, preview, item.selection.fieldSelections);
             const sourceAbsolutePath = preview.entry?.fileInfo.filePath ?? entry.fileInfo.filePath;
             const targetAbsolutePath = preview.pathDiff?.targetVideoPath ?? sourceAbsolutePath;
             await this.library.preflightRefresh({
@@ -468,118 +611,186 @@ export class MaintenanceTaskCoordinator {
               sourceAbsolutePath,
               targetAbsolutePath,
             });
+            const latest = this.assertCurrent(sessionId, generation, ["running", "paused"]);
             const applied = await this.runtime.applyEntry({
               root,
-              presetId: execution.presetId,
+              presetId: latest.presetId,
               entry,
               committed,
               progress: {
-                fileIndex: Math.min(execution.totalEntries, execution.completedEntries + 1),
-                totalFiles: execution.totalEntries,
+                fileIndex: Math.min(latest.progress.totalEntries, latest.progress.completedEntries + 1),
+                totalFiles: latest.progress.totalEntries,
               },
               signal: context.signal,
             });
-            if (applied.status === "failed") return { status: "failed", error: applied.error };
+            if (applied.status === "failed") return { result: { status: "failed", error: applied.error } };
             const outputRelativePath = applied.outputRelativePath || preview.relativePath;
             let file: Awaited<ReturnType<typeof stat>>;
             try {
               file = await stat(applied.entry.fileInfo.filePath);
-              await this.library.commitRefresh({
+            } catch (error) {
+              return {
+                result: {
+                  status: "failed",
+                  error: `文件操作已完成，但媒体库提交失败：${toErrorMessage(error)}。请重新扫描并预览，以磁盘实际状态重新协调。`,
+                },
+              };
+            }
+            const crawlerData = applied.crawlerData ?? applied.entry.crawlerData ?? committed.crawlerData;
+            return {
+              result: {
+                status: "success",
+                entry: applied.entry,
+                crawlerData: applied.crawlerData ?? committed.crawlerData,
+                fieldDiffs: applied.fieldDiffs,
+                unchangedFieldDiffs: applied.unchangedFieldDiffs,
+                pathDiff: applied.pathDiff,
+                outputRelativePath,
+                outputSize: file.size,
+                outputModifiedAt: file.mtime,
+              },
+              libraryCommit: {
                 librarySource: preview.librarySource,
                 sourceAbsolutePath,
                 targetAbsolutePath: applied.entry.fileInfo.filePath,
                 size: file.size,
                 modifiedAt: file.mtime,
-                crawlerData: applied.crawlerData ?? applied.entry.crawlerData ?? committed.crawlerData,
+                crawlerData,
                 fallbackNumber: applied.entry.fileInfo.number,
                 assets: applied.entry.assets,
                 refreshedAt: new Date(),
-              });
+              },
+            };
+          } catch (error) {
+            return {
+              result: {
+                status: isAbortError(error) || context.signal.aborted ? "skipped" : "failed",
+                error: isAbortError(error) || context.signal.aborted ? STOPPED_ITEM : toErrorMessage(error),
+              },
+            };
+          }
+        },
+        applyResult: async (item, executionResult) => {
+          let result = executionResult.result;
+          if (executionResult.libraryCommit) {
+            try {
+              this.assertCurrent(sessionId, generation, ["running", "paused"]);
+              await this.library.commitRefresh(executionResult.libraryCommit);
             } catch (error) {
-              return {
+              if (!this.isCurrent(sessionId, generation)) throw error;
+              result = {
                 status: "failed",
                 error: `文件操作已完成，但媒体库提交失败：${toErrorMessage(error)}。请重新扫描并预览，以磁盘实际状态重新协调。`,
               };
             }
-            return {
-              status: "success",
-              entry: applied.entry,
-              crawlerData: applied.crawlerData ?? committed.crawlerData,
-              fieldDiffs: applied.fieldDiffs,
-              unchangedFieldDiffs: applied.unchangedFieldDiffs,
-              pathDiff: applied.pathDiff,
-              outputRelativePath,
-              outputSize: file.size,
-              outputModifiedAt: file.mtime,
-            };
-          } catch (error) {
-            return {
-              status: isAbortError(error) || context.signal.aborted ? "skipped" : "failed",
-              error: isAbortError(error) || context.signal.aborted ? STOPPED_ITEM : toErrorMessage(error),
-            };
           }
-        },
-        applyResult: async (item, result) => {
-          const log = await this.store.commitApplyItem(owner, item.id, result);
-          if (!log) return;
-          await this.publish({ kind: "apply-item", taskId: task.id, log, result });
-          const progress = await this.store.readExecution(task.id);
-          await this.publish({
-            kind: "progress",
-            taskId: task.id,
-            phase: "apply",
-            progress,
-            message: log.relativePath,
-          });
+          await this.commitApplyItem(sessionId, generation, item, result);
         },
       });
-      this.active.set(task.id, { owner, phase: "apply", executor: taskExecutor });
-      const summary = await taskExecutor.execute(pending, owner.executionVersion);
-      if (summary.outcome === "paused") return;
-      if (summary.outcome === "stopped") {
-        if (this.closing) {
-          const failed = await this.store.failInterruptedApply(owner, INTERRUPTED_APPLY);
-          if (failed) {
-            await this.publishTask(failed);
-            await this.publish({ kind: "task-failed", taskId: task.id, error: INTERRUPTED_APPLY });
-          }
-        } else {
-          await this.skipPendingApplyItems(owner, STOPPED_ITEM);
-          await this.finishStopped(task.id, owner);
-        }
-        return;
-      }
-      const currentTask = await this.store.readTask(task.id);
-      if (currentTask.status !== "running" || currentTask.executionVersion !== owner.executionVersion) return;
-      const progress = await this.store.readExecution(task.id);
-      const failedAll = progress.successCount === 0 && progress.failedCount >= progress.totalEntries;
-      const completed = await this.store.transition({
-        owner,
-        expectedStatus: "running",
-        patch: taskPatchFor(currentTask, failedAll ? "fail" : "complete", {
-          error: failedAll ? APPLY_FAILED : null,
-          progress,
-          event: {
-            type: failedAll ? "failed" : "completed",
-            message: `Maintenance completed. Succeeded: ${progress.successCount}, Failed: ${progress.failedCount}`,
-          },
-        }),
-      });
-      if (completed) {
-        await this.publishTask(completed);
-        if (failedAll) await this.publish({ kind: "task-failed", taskId: task.id, error: APPLY_FAILED });
-      }
+      this.active = { sessionId, generation, phase: "apply", executor };
+      const summary = await executor.execute(pending, generation);
+      if (summary.outcome === "paused" || summary.outcome === "stopped") return;
+      const current = this.assertCurrent(sessionId, generation, ["running"]);
+      const failedAll =
+        current.progress.totalEntries > 0 &&
+        current.progress.successCount === 0 &&
+        current.progress.failedCount >= current.progress.totalEntries;
+      await this.finishSession(
+        current,
+        generation,
+        failedAll ? "failed" : "completed",
+        failedAll ? APPLY_FAILED : null,
+      );
     } catch (error) {
-      if (this.closing) {
-        const failed = await this.store.failInterruptedApply(owner, INTERRUPTED_APPLY);
-        if (failed) await this.publishTask(failed);
-      } else {
-        await this.failTask(owner, toErrorMessage(error));
-      }
+      if (!this.isCurrent(sessionId, generation) || this.closing) return;
+      const current = this.requireSession(sessionId);
+      if (current.status === "paused") return;
+      if (isAbortError(error) || current.status === "stopping" || toErrorMessage(error) === OWNERSHIP_CHANGED) return;
+      const message = toErrorMessage(error);
+      await this.skipOutstandingApplyItems(current, generation, message);
+      await this.failSession(current, generation, message);
     } finally {
-      if (this.active.get(task.id)?.owner.executionVersion === owner.executionVersion) this.active.delete(task.id);
-      this.notify(task.id);
+      if (this.active?.sessionId === sessionId && this.active.generation === generation) this.active = null;
+      this.notify(sessionId);
     }
+  }
+
+  private async commitApplyItem(
+    sessionId: string,
+    generation: number,
+    item: MaintenanceCurrentBatchItem,
+    result: MaintenanceApplyItemResult,
+  ): Promise<MaintenanceTaskApplyLog | null> {
+    const session = this.assertCurrent(sessionId, generation, ["running", "paused", "stopping"]);
+    const current = session.currentBatch?.items.get(item.selection.previewId);
+    if (!current || current.id !== item.id || TERMINAL_ITEM_STATUSES.has(current.status)) return null;
+    const preview = session.previews.get(item.selection.previewId);
+    if (!preview) return null;
+    const now = new Date();
+    current.status = result.status;
+    current.error = result.error ?? null;
+    current.result = result;
+    current.updatedAt = now;
+    preview.status = result.status === "success" ? "applied" : "failed";
+    preview.error = result.error ?? null;
+    preview.updatedAt = now;
+    delete session.draft.fieldSelections[preview.id];
+    delete session.draft.imageSelections[preview.id];
+    session.progress = {
+      totalEntries: session.progress.totalEntries,
+      completedEntries: session.progress.completedEntries + 1,
+      successCount: session.progress.successCount + (result.status === "success" ? 1 : 0),
+      failedCount: session.progress.failedCount + (result.status === "success" ? 0 : 1),
+    };
+    this.touch(session, now);
+    const log = this.toApplyLog(session, current, preview);
+    await this.publish({ kind: "apply-item", taskId: sessionId, log, result });
+    await this.publish({
+      kind: "progress",
+      taskId: sessionId,
+      phase: "apply",
+      progress: { ...session.progress },
+      message: log.relativePath,
+    });
+    return log;
+  }
+
+  private async skipOutstandingApplyItems(
+    session: MaintenanceSessionState,
+    generation: number,
+    error: string,
+  ): Promise<void> {
+    for (const item of this.pendingOrProcessingBatchItems(session)) {
+      await this.commitApplyItem(session.id, generation, item, { status: "skipped", error });
+    }
+  }
+
+  private async finishSession(
+    session: MaintenanceSessionState,
+    generation: number,
+    status: "completed" | "failed",
+    error: string | null,
+  ): Promise<void> {
+    this.assertCurrent(session.id, generation, ["running", "stopping"]);
+    const now = new Date();
+    session.status = status;
+    session.error = error;
+    session.timestamps = { ...session.timestamps, completedAt: now, updatedAt: now };
+    const message =
+      session.phase === "preview"
+        ? status === "failed"
+          ? (error ?? "维护预览失败")
+          : `Maintenance preview completed. Ready: ${session.progress.successCount}, Blocked: ${session.progress.failedCount}`
+        : status === "failed"
+          ? (error ?? APPLY_FAILED)
+          : `Maintenance completed. Succeeded: ${session.progress.successCount}, Failed: ${session.progress.failedCount}`;
+    await this.publishTaskEvent(session, status, message);
+    if (status === "failed" && error) await this.publish({ kind: "task-failed", taskId: session.id, error });
+  }
+
+  private async failSession(session: MaintenanceSessionState, generation: number, error: string): Promise<void> {
+    if (!this.isCurrent(session.id, generation) || !ACTIVE_STATUSES.includes(session.status)) return;
+    await this.finishSession(session, generation, "failed", error);
   }
 
   private async scanExactRefs(
@@ -607,18 +818,17 @@ export class MaintenanceTaskCoordinator {
   }
 
   private toPreview(
-    taskId: string,
-    presetId: MaintenancePresetId,
+    session: MaintenanceSessionState,
     item: MaintenanceRuntimePreviewItem,
     librarySource: Awaited<ReturnType<MaintenanceLibraryPort["resolveSource"]>>,
   ): MaintenanceTaskPreview {
     const now = new Date();
     return {
       id: randomUUID(),
-      taskId,
+      taskId: session.id,
       rootId: item.rootId,
       relativePath: item.relativePath,
-      presetId,
+      presetId: session.presetId,
       status: item.status,
       error: item.error,
       fieldDiffs: item.fieldDiffs,
@@ -633,50 +843,150 @@ export class MaintenanceTaskCoordinator {
     };
   }
 
-  private async skipPendingApplyItems(owner: MaintenanceExecutionOwner, error: string): Promise<void> {
-    for (const item of await this.store.listPendingApplyItems(owner.taskId)) {
-      const result: MaintenanceApplyItemResult = { status: "skipped", error };
-      const log = await this.store.commitApplyItem(owner, item.id, result);
-      if (log) await this.publish({ kind: "apply-item", taskId: owner.taskId, log, result });
-    }
+  private snapshotTask(session: MaintenanceSessionState): MaintenanceTaskSnapshot {
+    return {
+      id: session.id,
+      rootId: session.rootId,
+      status: session.status,
+      ...session.progress,
+      createdAt: session.timestamps.createdAt,
+      updatedAt: session.timestamps.updatedAt,
+      startedAt: session.timestamps.startedAt,
+      completedAt: session.timestamps.completedAt,
+      error: session.error,
+    };
   }
 
-  private async finishStopped(taskId: string, owner: MaintenanceExecutionOwner): Promise<void> {
-    const current = await this.store.readTask(taskId);
-    if (current.status !== "stopping" || current.executionVersion !== owner.executionVersion) return;
-    const failed = await this.store.transition({
-      owner,
-      expectedStatus: "stopping",
-      patch: taskPatchFor(current, "fail", {
-        error: STOPPED,
-        event: { type: "failed", message: STOPPED },
-      }),
-    });
-    if (failed) {
-      await this.publishTask(failed);
-      await this.publish({ kind: "task-failed", taskId, error: STOPPED });
-    }
+  private snapshotExecution(session: MaintenanceSessionState): MaintenanceExecutionState {
+    return {
+      taskId: session.id,
+      presetId: session.presetId,
+      phase: session.phase,
+      batchId: session.currentBatch?.id ?? null,
+      refs: session.refs.map((ref) => ({ ...ref })),
+      ...session.progress,
+      createdAt: session.timestamps.createdAt,
+      updatedAt: session.timestamps.updatedAt,
+    };
   }
 
-  private async failTask(owner: MaintenanceExecutionOwner, error: string): Promise<void> {
-    const current = await this.store.readTask(owner.taskId);
-    if (current.executionVersion !== owner.executionVersion || ["completed", "failed"].includes(current.status)) return;
-    const failed = await this.store.transition({
-      owner,
-      expectedStatus: current.status,
-      patch: taskPatchFor(current, "fail", { error, event: { type: "failed", message: error } }),
-    });
-    if (failed) {
-      await this.publishTask(failed);
-      await this.publish({ kind: "task-failed", taskId: owner.taskId, error });
-    }
+  private listEditablePreviews(session: MaintenanceSessionState): MaintenanceTaskPreview[] {
+    return [...session.previews.values()]
+      .filter((preview) => preview.status === "ready" || preview.status === "blocked")
+      .sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
   }
 
-  private async assertOwned(owner: MaintenanceExecutionOwner, statuses: readonly MaintenanceTaskStatus[]) {
-    const task = await this.store.readTask(owner.taskId);
-    if (task.executionVersion !== owner.executionVersion || !statuses.includes(task.status)) {
-      throw new Error("Maintenance execution ownership changed");
+  private deriveApplyItems(session: MaintenanceSessionState): MaintenanceTaskApplyQueueItem[] {
+    if (!session.currentBatch) return [];
+    return [...session.currentBatch.items.values()]
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .map((item) => ({
+        id: item.id,
+        taskId: session.id,
+        batchId: session.currentBatch?.id as string,
+        previewId: item.selection.previewId,
+        status: item.status,
+        ...(item.selection.fieldSelections ? { fieldSelections: { ...item.selection.fieldSelections } } : {}),
+        error: item.error,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }));
+  }
+
+  private deriveApplyLogs(session: MaintenanceSessionState): MaintenanceTaskApplyLog[] {
+    if (!session.currentBatch) return [];
+    return [...session.currentBatch.items.values()]
+      .filter((item) => TERMINAL_ITEM_STATUSES.has(item.status))
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .flatMap((item) => {
+        const preview = session.previews.get(item.selection.previewId);
+        return preview ? [this.toApplyLog(session, item, preview)] : [];
+      });
+  }
+
+  private deriveRecentBatchItems(
+    session: MaintenanceSessionState,
+  ): Array<{ log: MaintenanceTaskApplyLog; result: MaintenanceApplyItemResult }> {
+    if (!session.currentBatch) return [];
+    return [...session.currentBatch.items.values()]
+      .filter((item): item is MaintenanceCurrentBatchItem & { result: MaintenanceApplyItemResult } =>
+        Boolean(item.result),
+      )
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .flatMap((item) => {
+        const preview = session.previews.get(item.selection.previewId);
+        return preview ? [{ log: this.toApplyLog(session, item, preview), result: item.result }] : [];
+      });
+  }
+
+  private toApplyLog(
+    session: MaintenanceSessionState,
+    item: MaintenanceCurrentBatchItem,
+    preview: MaintenanceTaskPreview,
+  ): MaintenanceTaskApplyLog {
+    if (!session.currentBatch || !TERMINAL_ITEM_STATUSES.has(item.status)) {
+      throw new Error("Maintenance apply item is not terminal");
     }
+    return {
+      id: item.id,
+      taskId: session.id,
+      batchId: session.currentBatch.id,
+      previewId: preview.id,
+      rootId: preview.rootId,
+      relativePath: preview.relativePath,
+      presetId: preview.presetId,
+      status: item.status as "success" | "failed" | "skipped",
+      error: item.error,
+      appliedAt: item.updatedAt,
+    };
+  }
+
+  private pendingBatchItems(session: MaintenanceSessionState): MaintenanceCurrentBatchItem[] {
+    return session.currentBatch
+      ? [...session.currentBatch.items.values()]
+          .filter((item) => item.status === "pending")
+          .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      : [];
+  }
+
+  private pendingOrProcessingBatchItems(session: MaintenanceSessionState): MaintenanceCurrentBatchItem[] {
+    return session.currentBatch
+      ? [...session.currentBatch.items.values()].filter(
+          (item) => item.status === "pending" || item.status === "processing",
+        )
+      : [];
+  }
+
+  private emptyProgress(totalEntries: number): MaintenanceTaskProgress {
+    return { totalEntries, completedEntries: 0, successCount: 0, failedCount: 0 };
+  }
+
+  private touch(session: MaintenanceSessionState, now = new Date()): void {
+    session.timestamps.updatedAt = now;
+  }
+
+  private activeFor(sessionId: string, generation: number): ActiveExecution | null {
+    return this.active?.sessionId === sessionId && this.active.generation === generation ? this.active : null;
+  }
+
+  private isCurrent(sessionId: string, generation: number): boolean {
+    return Boolean(this.session && this.session.id === sessionId && this.session.generation === generation);
+  }
+
+  private assertCurrent(
+    sessionId: string,
+    generation: number,
+    statuses?: readonly MaintenanceTaskStatus[],
+  ): MaintenanceSessionState {
+    const session = this.session;
+    if (!session || session.id !== sessionId || session.generation !== generation) throw new Error(OWNERSHIP_CHANGED);
+    if (statuses && !statuses.includes(session.status)) throw new Error(OWNERSHIP_CHANGED);
+    return session;
+  }
+
+  private requireSession(taskId: string): MaintenanceSessionState {
+    if (!this.session || this.session.id !== taskId) throw new Error(`Maintenance task not found: ${taskId}`);
+    return this.session;
   }
 
   private assertUniqueRefs(refs: readonly MaintenanceTaskRef[]): void {
@@ -688,11 +998,21 @@ export class MaintenanceTaskCoordinator {
     }
   }
 
-  private async publishTask(task: MaintenanceTaskSnapshot): Promise<void> {
-    await this.publish({ kind: "task-changed", task });
-    const events = await this.store.listEvents(task.id);
-    const event = events.at(-1);
-    if (event) await this.publish({ kind: "log", taskId: task.id, event });
+  private async publishTaskEvent(session: MaintenanceSessionState, type: string, message: string): Promise<void> {
+    const event = this.addEvent(session, type, message);
+    await this.publish({ kind: "task-changed", task: this.snapshotTask(session) });
+    await this.publish({ kind: "log", taskId: session.id, event });
+  }
+
+  private async publishLog(session: MaintenanceSessionState, type: string, message: string): Promise<void> {
+    const event = this.addEvent(session, type, message);
+    await this.publish({ kind: "log", taskId: session.id, event });
+  }
+
+  private addEvent(session: MaintenanceSessionState, type: string, message: string): MaintenanceTaskEvent {
+    const event = { id: randomUUID(), taskId: session.id, type, message, createdAt: new Date() };
+    session.events.push(event);
+    return event;
   }
 
   private async publish(event: MaintenanceCoordinatorEvent): Promise<void> {
@@ -720,6 +1040,15 @@ export class MaintenanceTaskCoordinator {
       this.changeWaiters.set(taskId, waiters);
       timer = setTimeout(done, 50);
     });
+  }
+
+  private async awaitCurrentExecution(): Promise<void> {
+    for (;;) {
+      const current = this.executionPromise;
+      if (!current) return;
+      await current.catch(() => undefined);
+      if (this.executionPromise === current) return;
+    }
   }
 
   private assertOpen(): void {

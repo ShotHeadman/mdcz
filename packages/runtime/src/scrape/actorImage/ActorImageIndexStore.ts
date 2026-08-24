@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { atomicWriteFile } from "@mdcz/media-store";
 import PQueue from "p-queue";
 import { normalizeActorName, toUniqueActorNames } from "./utils";
 
@@ -135,8 +135,7 @@ export class ActorImageIndexStore {
   }
 
   private async writeJson(filePath: string, value: unknown): Promise<void> {
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await atomicWriteFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
   }
 
   private async writeEntryIfChanged(

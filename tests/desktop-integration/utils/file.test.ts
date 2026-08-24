@@ -142,8 +142,13 @@ describe("moveFileSafely", () => {
     await expect(access(sourcePath)).rejects.toThrow();
   });
 
-  it("keeps the source and cleans the target when EXDEV fallback fails", async () => {
-    const failures: Array<{ message: string; overrides: FileSystemOverrides; publishFails?: boolean }> = [
+  it("cleans failed parts but preserves a published copy when source deletion fails", async () => {
+    const failures: Array<{
+      message: string;
+      overrides: FileSystemOverrides;
+      publishFails?: boolean;
+      preservesPublishedTarget?: boolean;
+    }> = [
       {
         message: "copy failed",
         overrides: {
@@ -168,6 +173,7 @@ describe("moveFileSafely", () => {
             throw createNodeError("EACCES", "source deletion failed");
           },
         },
+        preservesPublishedTarget: true,
       },
     ];
 
@@ -190,7 +196,11 @@ describe("moveFileSafely", () => {
 
       await expect(moveFileSafely(sourcePath, targetPath)).rejects.toThrow(failure.message);
       await expect(readFile(sourcePath, "utf8")).resolves.toBe("video");
-      await expect(access(targetPath)).rejects.toThrow();
+      if (failure.preservesPublishedTarget) {
+        await expect(readFile(targetPath, "utf8")).resolves.toBe("video");
+      } else {
+        await expect(access(targetPath)).rejects.toThrow();
+      }
       await expectNoPartialFiles(targetPath);
     }
   });

@@ -10,7 +10,18 @@ import type {
   MaintenanceItemResult,
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
-import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
+import {
+  type AggregationService,
+  type DownloadManager,
+  downloadCrawlerAssets,
+  type FileOrganizer,
+  type NfoGenerator,
+  organizePreparedVideo,
+  prepareOutputCrawlerData,
+  type TranslateService,
+  updateBatchProgress,
+  writePreparedNfo,
+} from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
@@ -20,16 +31,18 @@ import {
   MaintenancePreparationService,
   type PreparedMaintenanceFile,
 } from "./MaintenancePreparationService";
-import {
-  downloadCrawlerAssets,
-  type MaintenanceSignalService,
-  organizePreparedVideo,
-  prepareOutputCrawlerData,
-  type ScrapeProgressState,
-  updateScrapeProgress,
-  writePreparedNfo,
-} from "./output";
+import { buildMovieTags } from "./movieTags";
 import type { MaintenancePreset } from "./presets";
+
+export interface MaintenanceSignalService {
+  setProgress(value: number, current: number, total: number): void;
+  showLogText(message: string): void;
+}
+
+type MaintenanceProgressState = {
+  fileIndex: number;
+  totalFiles: number;
+};
 
 export interface MaintenanceFileScraperDependencies {
   actorImageService?: RuntimeActorImageService;
@@ -72,7 +85,7 @@ export class MaintenanceFileScraper {
   async processFile(
     entry: LocalScanEntry,
     config: Configuration,
-    progress: ScrapeProgressState = { fileIndex: 1, totalFiles: 1 },
+    progress: MaintenanceProgressState = { fileIndex: 1, totalFiles: 1 },
     signal?: AbortSignal,
     committed?: CommittedMaintenanceFile,
   ): Promise<MaintenanceItemResult> {
@@ -106,9 +119,9 @@ export class MaintenanceFileScraper {
         signal,
       });
       throwIfAborted(signal);
-      const preparedCrawlerData = preparedOutputData.data;
+      let preparedCrawlerData = preparedOutputData.data;
       const preparedActorPhotoPaths = preparedOutputData.actorPhotoPaths;
-      const assets = await this.downloadPreparedAssets(
+      const downloaded = await this.downloadPreparedAssets(
         entry,
         config,
         plan?.outputDir,
@@ -118,6 +131,8 @@ export class MaintenanceFileScraper {
         committed,
         signal,
       );
+      const assets = downloaded.assets;
+      preparedCrawlerData = downloaded.crawlerData;
 
       throwIfAborted(signal);
       this.setProgress(progress, 75);
@@ -129,9 +144,10 @@ export class MaintenanceFileScraper {
         enabled: Boolean(this.preset.steps.generateNfo && plan),
         fileInfo,
         localState: entry.nfoLocalState,
+        buildTags: buildMovieTags,
         nfoGenerator: this.deps.nfoGenerator,
         nfoPath: plan?.nfoPath,
-        signalService: this.deps.signalService,
+        onLog: (message) => this.deps.signalService.showLogText(message),
         sourceVideoPath: fileInfo.filePath,
         sources: aggregationSources,
         startLogLabel: `[${fileInfo.number}] Generating NFO...`,
@@ -146,7 +162,7 @@ export class MaintenanceFileScraper {
         fileInfo,
         fileOrganizer: this.deps.fileOrganizer,
         plan,
-        signalService: this.deps.signalService,
+        onLog: (message) => this.deps.signalService.showLogText(message),
         startLogLabel: `[${fileInfo.number}] Organizing files...`,
       });
 
@@ -254,8 +270,8 @@ export class MaintenanceFileScraper {
     };
   }
 
-  private setProgress(progress: ScrapeProgressState, stepPercent: number): void {
-    updateScrapeProgress(this.deps.signalService, progress, stepPercent);
+  private setProgress(progress: MaintenanceProgressState, stepPercent: number): void {
+    updateBatchProgress(this.deps.signalService, progress, stepPercent);
   }
 
   private async downloadPreparedAssets(
@@ -267,7 +283,7 @@ export class MaintenanceFileScraper {
     aggregationSources: PreparedMaintenanceFile["aggregationSources"],
     committed: CommittedMaintenanceFile | undefined,
     signal?: AbortSignal,
-  ): Promise<DownloadedAssets> {
+  ): Promise<{ assets: DownloadedAssets; crawlerData?: CrawlerData }> {
     const assets: DownloadedAssets = {
       thumb: entry.assets.thumb,
       poster: entry.assets.poster,
@@ -278,7 +294,7 @@ export class MaintenanceFileScraper {
     };
 
     if (!(this.preset.steps.download && outputDir && preparedCrawlerData)) {
-      return assets;
+      return { assets, crawlerData: preparedCrawlerData };
     }
 
     const { fileInfo } = entry;
@@ -295,7 +311,7 @@ export class MaintenanceFileScraper {
       fileInfo,
       imageAlternatives,
       outputDir,
-      signalService: this.deps.signalService,
+      onLog: (message) => this.deps.signalService.showLogText(message),
       sources: aggregationSources,
     });
   }

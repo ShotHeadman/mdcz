@@ -13,8 +13,11 @@ import type {
 import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import { LocalScanService } from "./LocalScanService";
-import { MaintenanceFileScraper, type MaintenanceFileScraperDependencies } from "./MaintenanceFileScraper";
-import type { MaintenanceSignalService } from "./output";
+import {
+  MaintenanceFileScraper,
+  type MaintenanceFileScraperDependencies,
+  type MaintenanceSignalService,
+} from "./MaintenanceFileScraper";
 import { getMaintenancePreset, supportsMaintenanceExecution } from "./presets";
 
 export interface MaintenanceRuntimeConfigProvider {

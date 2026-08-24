@@ -2,12 +2,16 @@ import type { Configuration } from "@main/services/config";
 import { configManager } from "@main/services/config";
 import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
-import type { FileOrganizer, FileScraperStageRuntime, ScrapeContext } from "@mdcz/runtime/scrape";
+import {
+  type FileOrganizer,
+  type FileScraperStageRuntime,
+  type ScrapeContext,
+  updateBatchProgress,
+} from "@mdcz/runtime/scrape";
 import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import type { FileInfo, ScrapeResult } from "@mdcz/shared/types";
 import type { Logger } from "winston";
 import type { FileScrapeProgress, ScrapeExecutionMode } from "../FileScraper";
-import { updateScrapeProgress } from "../output";
 
 export class ScrapeFailureHandler {
   constructor(
@@ -17,7 +21,7 @@ export class ScrapeFailureHandler {
   ) {}
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {
-    updateScrapeProgress(this.signalService, progress, stepPercent);
+    updateBatchProgress(this.signalService, progress, stepPercent);
   }
 
   async handleAbort(context: ScrapeContext): Promise<ScrapeResult> {

@@ -3,8 +3,19 @@ import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { MaintenanceTaskCoordinator } from "./coordinator";
-import { InMemoryMaintenanceTaskStore } from "./InMemoryMaintenanceTaskStore";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
+
+type PromiseResolvers<T> = {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+  reject(reason?: unknown): void;
+};
+
+// Node provides Promise.withResolvers; the repository's TypeScript lib target predates its declaration.
+const promiseConstructor = Promise as unknown as {
+  withResolvers<TResult>(): PromiseResolvers<TResult>;
+};
+const promiseWithResolvers = <T>(): PromiseResolvers<T> => promiseConstructor.withResolvers<T>();
 
 const root = createMediaRoot({ id: "root-1", displayName: "Media", hostPath: process.cwd() });
 
@@ -41,7 +52,6 @@ const toRuntimePreview = (entry: LocalScanEntry) => ({
 });
 
 const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) => {
-  const store = new InMemoryMaintenanceTaskStore();
   const runtime = {
     scan: vi.fn(async () => []),
     scanRefs: vi.fn(async ({ refs }: { refs: Array<{ relativePath: string }> }) =>
@@ -58,7 +68,6 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
     commitRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
   };
   const coordinator = new MaintenanceTaskCoordinator({
-    store,
     roots: { getActiveRoot: async () => root },
     runtime,
     library,
@@ -69,10 +78,17 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
     },
     concurrency: 1,
   });
-  return { coordinator, events, library, runtime, store };
+  return { coordinator, events, library, runtime };
 };
 
 describe("MaintenanceTaskCoordinator", () => {
+  it("starts with no process-local session", async () => {
+    const first = createCoordinator();
+    expect(await first.coordinator.getActiveSession()).toBeNull();
+    expect(await createCoordinator().coordinator.getActiveSession()).toBeNull();
+    await first.coordinator.close();
+  });
+
   it("preflights before file work and does not report success when the final library transaction fails", async () => {
     const order: string[] = [];
     const outputPath = fileURLToPath(import.meta.url);
@@ -115,15 +131,9 @@ describe("MaintenanceTaskCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it("persists the in-flight preview once, pauses admission, and resumes only pending refs", async () => {
-    let releaseFirst!: () => void;
-    let firstStarted!: () => void;
-    const blocked = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    const started = new Promise<void>((resolve) => {
-      firstStarted = resolve;
-    });
+  it("commits the active preview once while paused and resumes only pending refs", async () => {
+    const { promise: blocked, resolve: releaseFirst } = promiseWithResolvers<void>();
+    const { promise: started, resolve: firstStarted } = promiseWithResolvers<void>();
     const fixture = createCoordinator();
     vi.mocked(fixture.runtime.previewEntries).mockImplementation(async ({ entries }) => {
       firstStarted();
@@ -136,12 +146,13 @@ describe("MaintenanceTaskCoordinator", () => {
       refs: ["one.mp4", "two.mp4", "three.mp4"].map((relativePath) => ({ relativePath })),
     });
     await started;
-    await expect(fixture.coordinator.pause(handle.task.id)).resolves.toMatchObject({ status: "paused" });
+    const pausing = fixture.coordinator.pause(handle.task.id);
     releaseFirst();
-    await vi.waitFor(async () => expect(await fixture.store.listPreviews(handle.task.id)).toHaveLength(1));
+    await expect(pausing).resolves.toMatchObject({ status: "paused" });
+    expect((await fixture.coordinator.readPreview(handle.task.id)).items).toHaveLength(1);
     expect(vi.mocked(fixture.runtime.previewEntries)).toHaveBeenCalledTimes(1);
 
-    await expect(fixture.coordinator.resume(handle.task.id)).resolves.toMatchObject({ status: "queued" });
+    await expect(fixture.coordinator.resume(handle.task.id)).resolves.toMatchObject({ status: "running" });
     const batch = await handle.completion;
     expect(batch.task.status).toBe("completed");
     expect(batch.items.map((item) => item.relativePath)).toEqual(["one.mp4", "three.mp4", "two.mp4"]);
@@ -150,27 +161,23 @@ describe("MaintenanceTaskCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it("stops active apply work and records every selected item exactly once", async () => {
-    let applyStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      applyStarted = resolve;
-    });
+  it("stops active apply work and derives one skipped result for every selected preview", async () => {
+    const { promise: started, resolve: applyStarted } = promiseWithResolvers<void>();
     const fixture = createCoordinator();
-    vi.mocked(fixture.runtime.applyEntry).mockImplementation(
-      async ({ signal }) =>
-        await new Promise((_resolve, reject) => {
-          applyStarted();
-          signal?.addEventListener(
-            "abort",
-            () => {
-              const error = new Error("Operation aborted");
-              error.name = "AbortError";
-              reject(error);
-            },
-            { once: true },
-          );
-        }),
-    );
+    vi.mocked(fixture.runtime.applyEntry).mockImplementation(async ({ signal }) => {
+      const { promise, reject } = promiseWithResolvers<never>();
+      applyStarted();
+      signal?.addEventListener(
+        "abort",
+        () => {
+          const error = new Error("Operation aborted");
+          error.name = "AbortError";
+          reject(error);
+        },
+        { once: true },
+      );
+      return await promise;
+    });
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
@@ -184,24 +191,22 @@ describe("MaintenanceTaskCoordinator", () => {
     await started;
     await fixture.coordinator.stop(preview.task.id);
     const batch = await apply.completion;
+    const snapshot = await fixture.coordinator.getActiveSession();
+
     expect(batch.task).toMatchObject({ status: "failed", error: "维护已停止" });
     expect(batch.applied).toHaveLength(3);
     expect(new Set(batch.applied.map((item) => item.previewId)).size).toBe(3);
     expect(batch.applied.every((item) => item.status === "skipped")).toBe(true);
     expect(batch.items).toEqual([]);
+    expect(snapshot?.recentBatch?.items).toHaveLength(3);
+    expect(snapshot?.applyItems.every((item) => item.status === "skipped")).toBe(true);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledTimes(1);
     await fixture.coordinator.close();
   });
 
-  it("pauses between apply items and resumes pending work without replaying a terminal item", async () => {
-    let releaseFirst!: () => void;
-    let firstStarted!: () => void;
-    const blocked = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    const started = new Promise<void>((resolve) => {
-      firstStarted = resolve;
-    });
+  it("pauses after the active apply commit and resumes pending work without replay", async () => {
+    const { promise: blocked, resolve: releaseFirst } = promiseWithResolvers<void>();
+    const { promise: started, resolve: firstStarted } = promiseWithResolvers<void>();
     const fixture = createCoordinator();
     vi.mocked(fixture.runtime.applyEntry).mockImplementation(async ({ entry }) => {
       if (entry.fileId === "one.mp4") {
@@ -221,10 +226,15 @@ describe("MaintenanceTaskCoordinator", () => {
       selections: previewBatch.items.map((item) => ({ previewId: item.id })),
     });
     await started;
-    await fixture.coordinator.pause(previewHandle.task.id);
+    const pausing = fixture.coordinator.pause(previewHandle.task.id);
     releaseFirst();
-    await vi.waitFor(async () => expect(await fixture.store.listApplyLogs(previewHandle.task.id)).toHaveLength(1));
-    expect(await fixture.store.listPendingApplyItems(previewHandle.task.id)).toHaveLength(1);
+    await pausing;
+
+    const paused = await fixture.coordinator.getActiveSession();
+    expect(paused?.recentBatch?.items).toHaveLength(1);
+    expect(paused?.applyItems.map((item) => item.status).sort()).toEqual(["failed", "pending"]);
+    expect(await fixture.coordinator.listApplyLogs(previewHandle.task.id)).toHaveLength(1);
+
     await fixture.coordinator.resume(previewHandle.task.id);
     const applied = await applyHandle.completion;
     expect(applied.applied).toHaveLength(2);
@@ -232,6 +242,79 @@ describe("MaintenanceTaskCoordinator", () => {
       "one.mp4",
       "two.mp4",
     ]);
+    await fixture.coordinator.close();
+  });
+
+  it("keeps unselected drafts and derives the latest batch log and result from currentBatch", async () => {
+    const fixture = createCoordinator({
+      applyEntry: vi.fn(async ({ entry }) => ({ status: "failed" as const, error: entry.fileId })),
+    });
+    const previewHandle = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "organize_files",
+      refs: [{ relativePath: "one.mp4" }, { relativePath: "two.mp4" }],
+    });
+    const previewBatch = await previewHandle.completion;
+    const [first, second] = previewBatch.items;
+    await fixture.coordinator.updateDraft({
+      taskId: previewHandle.task.id,
+      previewId: first?.id ?? "",
+      fieldSelections: { title: "new" },
+    });
+    await fixture.coordinator.updateDraft({
+      taskId: previewHandle.task.id,
+      previewId: second?.id ?? "",
+      fieldSelections: { title: "old" },
+    });
+
+    const apply = await fixture.coordinator.beginApply({
+      taskId: previewHandle.task.id,
+      selections: [{ previewId: first?.id ?? "", fieldSelections: { title: "new" } }],
+    });
+    await apply.completion;
+    const snapshot = await fixture.coordinator.getActiveSession();
+    const logs = await fixture.coordinator.listApplyLogs(previewHandle.task.id);
+
+    expect(snapshot?.previews.map((item) => item.id)).toEqual([second?.id]);
+    expect(snapshot?.draft.fieldSelections).toEqual({ [second?.id ?? ""]: { title: "old" } });
+    expect(snapshot?.recentBatch?.items.map((item) => item.log)).toEqual(logs);
+    expect(snapshot?.recentBatch?.items[0]?.result).toMatchObject({ status: "failed", error: "one.mp4" });
+    await fixture.coordinator.close();
+  });
+
+  it("drops a result from an old generation before the library transaction", async () => {
+    const { promise: blocked, resolve: releaseApply } = promiseWithResolvers<void>();
+    const { promise: started, resolve: applyStarted } = promiseWithResolvers<void>();
+    const outputPath = fileURLToPath(import.meta.url);
+    const fixture = createCoordinator({
+      applyEntry: vi.fn(async ({ entry }) => {
+        applyStarted();
+        await blocked;
+        return {
+          status: "success" as const,
+          entry: { ...entry, fileInfo: { ...entry.fileInfo, filePath: outputPath } },
+          outputRelativePath: "one.mp4",
+        };
+      }),
+    });
+    const preview = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "organize_files",
+      refs: [{ relativePath: "one.mp4" }],
+    });
+    const previewBatch = await preview.completion;
+    const apply = await fixture.coordinator.beginApply({
+      taskId: preview.task.id,
+      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
+    });
+    await started;
+    const stopping = fixture.coordinator.stop(preview.task.id);
+    releaseApply();
+    await stopping;
+    const batch = await apply.completion;
+
+    expect(fixture.library.commitRefresh).not.toHaveBeenCalled();
+    expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
     await fixture.coordinator.close();
   });
 });

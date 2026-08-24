@@ -13,19 +13,17 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { createDesktopInputRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import {
-  InMemoryMaintenanceTaskStore,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
   MaintenanceTaskCoordinator,
-  type MaintenanceTaskStore,
 } from "@mdcz/runtime/maintenance";
+import { toMaintenanceClientSession } from "@mdcz/runtime/maintenance/clientSession";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type {
   MaintenanceApplyBatch,
   MaintenanceApplySelection,
   MaintenancePreviewBatch,
-  MaintenanceTaskPreview,
   MaintenanceTaskSnapshot,
 } from "@mdcz/shared/maintenanceTasks";
 import type {
@@ -34,7 +32,6 @@ import type {
   MaintenanceClientSession,
   MaintenanceItemResult,
   MaintenancePresetId,
-  MaintenancePreviewItem,
   MaintenancePreviewResult,
   MaintenanceStatus,
 } from "@mdcz/shared/types";
@@ -50,7 +47,6 @@ export interface MaintenanceServiceDependencies {
   imageHostCooldownStore?: PersistentCooldownStore;
   runtime?: MaintenanceRuntime;
   coordinator?: MaintenanceTaskCoordinator;
-  store?: MaintenanceTaskStore;
 }
 
 const idleStatus = (): MaintenanceStatus => ({
@@ -60,6 +56,16 @@ const idleStatus = (): MaintenanceStatus => ({
   successCount: 0,
   failedCount: 0,
 });
+const desktopMaintenanceSessionHost = {
+  fileId: (
+    preview: import("@mdcz/shared/maintenanceTasks").MaintenanceTaskPreview,
+    entry: LocalScanEntry | null,
+  ): string => entry?.fileId ?? preview.relativePath,
+  toEntry: (
+    preview: import("@mdcz/shared/maintenanceTasks").MaintenanceTaskPreview,
+    fileId: string,
+  ): LocalScanEntry | null => (preview.entry ? { ...preview.entry, fileId } : null),
+};
 
 const sameValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
@@ -69,9 +75,7 @@ export class MaintenanceService {
   private readonly persistenceService: DesktopPersistenceService;
   private readonly imageHostCooldownStore: PersistentCooldownStore;
   private readonly runtime: MaintenanceRuntime;
-  private readonly store: MaintenanceTaskStore;
   private readonly coordinator: MaintenanceTaskCoordinator;
-  private readonly previewFileIds = new Map<string, string>();
   private scanningStatus: MaintenanceStatus | null = null;
   private scanController: AbortController | null = null;
   private scanPromise: Promise<unknown> | null = null;
@@ -91,11 +95,9 @@ export class MaintenanceService {
         networkClient: deps.networkClient,
         signalService: deps.signalService,
       });
-    this.store = deps.store ?? new InMemoryMaintenanceTaskStore();
     this.coordinator =
       deps.coordinator ??
       new MaintenanceTaskCoordinator({
-        store: this.store,
         roots: {
           getActiveRoot: async (rootId) => {
             const root = await (await deps.persistenceService.getState()).repositories.mediaRoots.get(rootId);
@@ -121,23 +123,9 @@ export class MaintenanceService {
 
   async getStatus(taskId?: string): Promise<MaintenanceStatus> {
     if (this.scanningStatus) return { ...this.scanningStatus };
-    const task = await this.resolveTask(taskId);
-    if (!task || task.status === "completed" || task.status === "failed") return idleStatus();
-    const execution = await this.store.readExecution(task.id);
-    return {
-      state:
-        task.status === "paused"
-          ? "paused"
-          : task.status === "stopping"
-            ? "stopping"
-            : execution.phase === "preview"
-              ? "previewing"
-              : "executing",
-      totalEntries: task.totalEntries,
-      completedEntries: task.completedEntries,
-      successCount: task.successCount,
-      failedCount: task.failedCount,
-    };
+    const snapshot = await this.coordinator.getActiveSession();
+    if (!snapshot || (taskId && snapshot.task.id !== taskId)) return idleStatus();
+    return toMaintenanceClientSession(snapshot, desktopMaintenanceSessionHost)?.status ?? idleStatus();
   }
 
   async scan(dirPath: string): Promise<LocalScanEntry[]> {
@@ -172,28 +160,16 @@ export class MaintenanceService {
     const root = createDesktopInputRoot(rootPath);
     await (await this.persistenceService.getState()).repositories.mediaRoots.upsert(root);
     const refs = entries.map((entry) => ({ relativePath: toRootRelativePath(root, entry.fileInfo.filePath) }));
-    const fileIdByPath = new Map<string, string>(
-      refs.map((ref, index) => [ref.relativePath, entries[index]?.fileId ?? ref.relativePath]),
-    );
     this.signalService.resetProgress();
-    const handle = await this.coordinator.startPreview({ rootId: root.id, presetId, refs });
-    const completion = handle.completion.then((batch) => {
-      for (const preview of batch.items) {
-        this.previewFileIds.set(preview.id, fileIdByPath.get(preview.relativePath) ?? preview.relativePath);
-      }
-      return batch;
-    });
-    return { task: handle.task, completion };
+    return await this.coordinator.startPreview({ rootId: root.id, presetId, refs });
   }
 
   async preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<MaintenancePreviewResult> {
     const handle = await this.startPreview(entries, presetId);
-    const batch = await handle.completion;
-    return this.toPreviewResult(batch);
-  }
-
-  toPreviewResult(batch: MaintenancePreviewBatch): MaintenancePreviewResult {
-    return { items: batch.items.map((item) => this.toLegacyPreview(item)) };
+    await handle.completion;
+    const session = await this.getActiveSession();
+    if (!session || session.taskId !== handle.task.id) throw new Error("维护会话已变化");
+    return session.preview;
   }
 
   async execute(
@@ -203,12 +179,12 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     if (items.length === 0) throw new Error("No entries to process");
     const state = await this.persistenceService.getState();
-    const execution = await this.store.readExecution(taskId);
-    if (execution.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
+    const session = await this.coordinator.getActiveSession();
+    if (!session || session.task.id !== taskId) throw new Error("维护任务不存在");
+    if (session.execution.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
     if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
-    const task = await this.coordinator.getTask(taskId);
-    const root = await state.repositories.mediaRoots.get(task.rootId);
-    const previews = await this.store.listPreviews(taskId);
+    const root = await state.repositories.mediaRoots.get(session.task.rootId);
+    const previews = (await this.coordinator.readPreview(taskId)).items;
     const byPath = new Map(previews.map((preview) => [preview.relativePath, preview]));
     const selected = new Set<string>();
     const selections: MaintenanceApplySelection[] = items.map((item) => {
@@ -223,7 +199,6 @@ export class MaintenanceService {
           item.crawlerData && sameValue(item.crawlerData[diff.field], diff.oldValue) ? "old" : "new",
         ]),
       ) as Record<string, "old" | "new">;
-      this.previewFileIds.set(preview.id, item.entry.fileId);
       return { previewId: preview.id, fieldSelections };
     });
     this.signalService.resetProgress();
@@ -262,64 +237,7 @@ export class MaintenanceService {
   }
 
   async getActiveSession(): Promise<MaintenanceClientSession | null> {
-    const session = await this.store.getActiveSession();
-    if (!session) return null;
-    const fileIdByPreviewId = new Map<string, string>();
-    const entries = session.previews.flatMap((preview) => {
-      if (!preview.entry) return [];
-      const fileId = this.previewFileIds.get(preview.id) ?? preview.entry.fileId;
-      fileIdByPreviewId.set(preview.id, fileId);
-      return [{ ...preview.entry, fileId }];
-    });
-    const previewItems = session.previews.map((preview) => {
-      const item = this.toLegacyPreview(preview);
-      const fileId = fileIdByPreviewId.get(preview.id) ?? item.fileId;
-      fileIdByPreviewId.set(preview.id, fileId);
-      return { ...item, fileId };
-    });
-    const fieldSelections = Object.fromEntries(
-      Object.entries(session.draft.fieldSelections).flatMap(([previewId, selections]) => {
-        const fileId = fileIdByPreviewId.get(previewId);
-        return fileId ? [[fileId, selections]] : [];
-      }),
-    );
-    const imageSelections = Object.fromEntries(
-      Object.entries(session.draft.imageSelections).flatMap(([previewId, selections]) => {
-        const fileId = fileIdByPreviewId.get(previewId);
-        return fileId ? [[fileId, selections]] : [];
-      }),
-    );
-    const currentResults: MaintenanceItemResult[] = session.applyItems.flatMap((item) => {
-      if (item.status !== "pending" && item.status !== "processing") return [];
-      const fileId = this.previewFileIds.get(item.previewId) ?? fileIdByPreviewId.get(item.previewId);
-      return fileId ? [{ fileId, batchId: item.batchId, status: item.status }] : [];
-    });
-    return {
-      taskId: session.task.id,
-      batchId: session.execution.batchId,
-      presetId: session.execution.presetId,
-      entries,
-      preview: { items: previewItems },
-      fieldSelections,
-      imageSelections,
-      status: this.statusFromSession(session.task.status, session.execution.phase, session.execution),
-      currentResults,
-      recentResults:
-        session.recentBatch?.items.map(({ log, result }) => {
-          const fileId = result.entry?.fileId ?? this.previewFileIds.get(log.previewId) ?? log.relativePath;
-          return {
-            fileId,
-            batchId: log.batchId,
-            status: result.status,
-            ...(result.error ? { error: result.error } : {}),
-            ...(result.crawlerData ? { crawlerData: result.crawlerData } : {}),
-            ...(result.entry ? { updatedEntry: result.entry } : {}),
-            ...(result.fieldDiffs ? { fieldDiffs: result.fieldDiffs } : {}),
-            ...(result.unchangedFieldDiffs ? { unchangedFieldDiffs: result.unchangedFieldDiffs } : {}),
-            ...(result.pathDiff ? { pathDiff: result.pathDiff } : {}),
-          };
-        }) ?? [],
-    };
+    return toMaintenanceClientSession(await this.coordinator.getActiveSession(), desktopMaintenanceSessionHost);
   }
 
   async updateDraft(input: {
@@ -329,13 +247,12 @@ export class MaintenanceService {
   }): Promise<void> {
     const taskId = await this.resolveActiveTaskId();
     if (!taskId) throw new Error("没有活动的维护会话");
-    await this.store.updateDraft({ taskId, ...input });
+    await this.coordinator.updateDraft({ taskId, ...input });
   }
 
   async discardSession(): Promise<void> {
     const taskId = await this.resolveActiveTaskId();
-    await this.store.discardSession(taskId ?? undefined);
-    this.previewFileIds.clear();
+    await this.coordinator.discardSession(taskId ?? undefined);
   }
 
   async waitForIdle(): Promise<void> {
@@ -398,45 +315,6 @@ export class MaintenanceService {
     );
   }
 
-  private statusFromSession(
-    taskStatus: MaintenanceTaskSnapshot["status"],
-    phase: "preview" | "apply",
-    progress: Pick<MaintenanceTaskSnapshot, "totalEntries" | "completedEntries" | "successCount" | "failedCount">,
-  ): MaintenanceStatus {
-    return {
-      state:
-        taskStatus === "paused"
-          ? "paused"
-          : taskStatus === "stopping"
-            ? "stopping"
-            : taskStatus === "queued" || taskStatus === "running"
-              ? phase === "preview"
-                ? "previewing"
-                : "executing"
-              : "idle",
-      totalEntries: progress.totalEntries,
-      completedEntries: progress.completedEntries,
-      successCount: progress.successCount,
-      failedCount: progress.failedCount,
-    };
-  }
-
-  private toLegacyPreview(preview: MaintenanceTaskPreview): MaintenancePreviewItem {
-    const item: MaintenancePreviewItem = {
-      fileId: this.previewFileIds.get(preview.id) ?? preview.relativePath,
-      previewId: preview.id,
-      taskId: preview.taskId,
-      status: preview.status === "ready" ? "ready" : "blocked",
-    };
-    if (preview.error) item.error = preview.error;
-    if (preview.fieldDiffs.length > 0) item.fieldDiffs = preview.fieldDiffs;
-    if (preview.unchangedFieldDiffs.length > 0) item.unchangedFieldDiffs = preview.unchangedFieldDiffs;
-    if (preview.pathDiff) item.pathDiff = preview.pathDiff;
-    if (preview.proposedCrawlerData) item.proposedCrawlerData = preview.proposedCrawlerData;
-    if (preview.imageAlternatives) item.imageAlternatives = preview.imageAlternatives;
-    return item;
-  }
-
   private async publishCoordinatorEvent(event: MaintenanceCoordinatorEvent): Promise<void> {
     switch (event.kind) {
       case "log":
@@ -452,11 +330,9 @@ export class MaintenanceService {
         return;
       }
       case "preview-item":
-        this.previewFileIds.set(event.preview.id, event.entry.fileId);
         return;
       case "apply-item": {
-        const fileId =
-          event.result.entry?.fileId ?? this.previewFileIds.get(event.log.previewId) ?? event.log.relativePath;
+        const fileId = event.result.entry?.fileId ?? event.log.relativePath;
         const payload: MaintenanceItemResult = {
           fileId,
           batchId: event.log.batchId,

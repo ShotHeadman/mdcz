@@ -1,6 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { atomicWriteFile } from "@mdcz/media-store";
 import { type Browser, Impit, type RequestInit as ImpitRequestInit } from "impit";
 import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
@@ -219,8 +218,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   async download(url: string, outputPath: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<string> {
     const bytes = await this.getContent(url, init);
 
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, Buffer.from(bytes));
+    await atomicWriteFile(outputPath, bytes);
 
     return outputPath;
   }

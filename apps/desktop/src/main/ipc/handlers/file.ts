@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config/ConfigManager";
@@ -6,6 +6,7 @@ import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
+import { atomicWriteFile } from "@mdcz/media-store";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   findExistingNfoPath,
@@ -44,17 +45,6 @@ export const createFileHandlers = (
 > => {
   const { windowService } = context;
   const posterCropService = new PosterCropService();
-  const atomicWriteFile = async (filePath: string, content: string): Promise<void> => {
-    const tempPath = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
-    await mkdir(dirname(filePath), { recursive: true });
-    try {
-      await writeFile(tempPath, content, "utf8");
-      await rename(tempPath, filePath);
-    } catch (error) {
-      await rm(tempPath, { force: true }).catch(() => undefined);
-      throw error;
-    }
-  };
   const assertDirectory = async (dirPath: string): Promise<void> => {
     try {
       const stats = await stat(dirPath);

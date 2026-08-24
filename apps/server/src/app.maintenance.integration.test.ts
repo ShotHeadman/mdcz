@@ -193,15 +193,16 @@ describe("buildServer maintenance integration", () => {
     });
     const taskId = startResponse.json().result.data.id as string;
     await started;
-    const pauseResponse = await fastify.inject({
+    const pauseResponsePromise = fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.pause",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
-    expect(pauseResponse.statusCode).toBe(200);
-    releaseFirstCall();
     await waitForTaskStatus(fastify, token, taskId, "paused");
+    releaseFirstCall();
+    const pauseResponse = await pauseResponsePromise;
+    expect(pauseResponse.statusCode).toBe(200);
     expect(previewedPaths).toEqual(["ABC-211"]);
 
     const resumeResponse = await fastify.inject({

@@ -1,5 +1,6 @@
-import { mkdir, rename, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { atomicCopyFile } from "@mdcz/media-store";
 
 import { throwIfAborted } from "../../utils/abort";
 import {
@@ -19,7 +20,7 @@ export class SceneImageAssetDownloader implements AssetDownloader {
   }
 
   async download(context: DownloadExecutionContext): Promise<void> {
-    const { assets, plan, sceneImageDownloader } = context;
+    const { assets, logger, plan, sceneImageDownloader } = context;
 
     throwIfAborted(plan.signal);
 
@@ -71,10 +72,13 @@ export class SceneImageAssetDownloader implements AssetDownloader {
         buildSceneImageFileName(plan.config.paths.sceneImagesFolder, index, sceneImage.path),
       );
 
-      await mkdir(dirname(finalPath), { recursive: true });
-      await unlink(finalPath).catch(() => undefined);
       if (sceneImage.path !== finalPath) {
-        await rename(sceneImage.path, finalPath);
+        await atomicCopyFile(sceneImage.path, finalPath);
+        await unlink(sceneImage.path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") {
+            logger.warn(`Published scene image but failed to remove temporary source ${sceneImage.path}`);
+          }
+        });
       }
       assets.sceneImages.push(finalPath);
       assets.downloaded.push(finalPath);

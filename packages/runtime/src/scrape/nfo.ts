@@ -1,5 +1,6 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import { atomicCopyFile, atomicWriteFile } from "@mdcz/media-store";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
@@ -257,9 +258,7 @@ export class NfoGenerator {
   }
 
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {
-    const write =
-      options?.writeFile ??
-      ((filePath, content) => import("node:fs/promises").then((fs) => fs.writeFile(filePath, content, "utf8")));
+    const write = options?.writeFile ?? atomicWriteFile;
     const xml = this.buildXml(data, options);
     const nfoNaming = options?.nfoNaming ?? "both";
     const { primaryPath, moviePath, canonicalPath, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
@@ -414,7 +413,7 @@ export const reconcileExistingNfoFiles = async (
   await mkdir(dirname(primaryPath), { recursive: true });
   for (const requiredPath of requiredPaths) {
     if (requiredPath === sourcePath || (await pathExists(requiredPath))) continue;
-    await copyFile(sourcePath, requiredPath);
+    await atomicCopyFile(sourcePath, requiredPath);
   }
   for (const stalePath of stalePaths) await tryRemoveStaleNfo(stalePath, pathExists);
   return canonicalPath;
@@ -476,8 +475,8 @@ async function tryRemoveStaleNfo(stalePath: string, pathExists?: PathExists): Pr
     if (!pathExists || (await pathExists(stalePath))) {
       await rm(stalePath);
     }
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
 

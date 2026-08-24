@@ -37,7 +37,6 @@ const task = {
   id: "task-1",
   rootId: "root-1",
   status: "completed" as const,
-  executionVersion: 1,
   createdAt: new Date(),
   updatedAt: new Date(),
   startedAt: new Date(),
@@ -83,8 +82,11 @@ describe("maintenance IPC task adapter", () => {
         task: { ...task, status: "queued" as const },
         completion: previewCompletion,
       })),
-      toPreviewResult: vi.fn(() => ({
-        items: [{ fileId: entry.fileId, previewId: "preview-1", taskId: task.id, status: "ready" as const }],
+      getActiveSession: vi.fn(async () => ({
+        taskId: task.id,
+        preview: {
+          items: [{ fileId: entry.fileId, previewId: "preview-1", taskId: task.id, status: "ready" as const }],
+        },
       })),
       resolveActiveTaskId: vi.fn(async (preferred?: string) => preferred ?? task.id),
       execute: vi.fn(async () => ({ task, completion: Promise.resolve({ ...batch, applied: [] }) })),

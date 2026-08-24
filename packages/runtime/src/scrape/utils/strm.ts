@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
+import { atomicWriteFile } from "@mdcz/media-store";
 
 const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
 const STRM_PROPERTY_PATTERN = /^#KODIPROP:/iu;
@@ -137,8 +138,7 @@ export const writeStrmTarget = async (filePath: string, nextTarget: string): Pro
     lines[targetLineIndex] = `${leading}${nextTarget}${trailing}`;
   }
 
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${hasBom ? "\uFEFF" : ""}${lines.join(eol)}`, "utf8");
+  await atomicWriteFile(filePath, `${hasBom ? "\uFEFF" : ""}${lines.join(eol)}`);
 };
 
 export const resolvePlayableMediaTarget = async (

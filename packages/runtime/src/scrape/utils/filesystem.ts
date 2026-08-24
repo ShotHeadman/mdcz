@@ -205,7 +205,11 @@ export const moveFileSafely = async (sourcePath: string, targetPath: string): Pr
     try {
       await unlink(sourcePath);
     } catch (unlinkError) {
-      await cleanupFailedCrossDeviceTarget(sourcePath, resolved, "remove the source file", unlinkError);
+      const message = unlinkError instanceof Error ? unlinkError.message : String(unlinkError);
+      throw new Error(
+        `Published copied file at ${resolved}, but failed to remove source ${sourcePath}; both complete copies were preserved: ${message}`,
+        { cause: unlinkError },
+      );
     }
   }
 

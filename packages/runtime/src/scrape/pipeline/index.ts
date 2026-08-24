@@ -1,7 +1,17 @@
 import type { ScrapeResult } from "@mdcz/shared/types";
 import type { ManualScrapeOptions } from "../aggregation";
+import { AggregateStage } from "./AggregateStage";
+import { CanonicalizeActorAliasesStage } from "./CanonicalizeActorAliasesStage";
+import { DownloadStage } from "./DownloadStage";
+import { NfoStage } from "./NfoStage";
+import { OrganizeStage } from "./OrganizeStage";
+import { ParseStage } from "./ParseStage";
+import { PlanStage } from "./PlanStage";
+import { PrepareOutputStage } from "./PrepareOutputStage";
+import { ProbeStage } from "./ProbeStage";
 import type { ScrapeContext } from "./ScrapeContext";
-import type { ScrapeStage } from "./types";
+import { TranslateStage } from "./TranslateStage";
+import type { FileScraperStageRuntime, ScrapeStage } from "./types";
 
 export { AggregateStage } from "./AggregateStage";
 export { AggregationCoordinator } from "./AggregationCoordinator";
@@ -17,6 +27,19 @@ export { ProbeStage } from "./ProbeStage";
 export { ScrapeContext } from "./ScrapeContext";
 export { TranslateStage } from "./TranslateStage";
 export type { FileScraperStageRuntime, RuntimeScrapeSignalService, ScrapeStage } from "./types";
+
+export const createDefaultScrapeStages = (runtime: FileScraperStageRuntime): readonly ScrapeStage[] => [
+  new ParseStage(),
+  new ProbeStage(runtime),
+  new AggregateStage(runtime),
+  new TranslateStage(runtime),
+  new CanonicalizeActorAliasesStage(),
+  new PlanStage(runtime),
+  new PrepareOutputStage(runtime),
+  new DownloadStage(runtime),
+  new NfoStage(runtime),
+  new OrganizeStage(runtime),
+];
 
 export interface FileScraperPipeline {
   readonly stages: readonly ScrapeStage[];

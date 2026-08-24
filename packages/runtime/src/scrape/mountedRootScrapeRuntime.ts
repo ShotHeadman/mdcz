@@ -3,7 +3,7 @@ import path from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
-import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
 import { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
@@ -11,29 +11,25 @@ import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
 import { DownloadManager, type ImageHostCooldownStore, MemoryImageHostCooldownStore } from "./download";
 import { FileOrganizer, resolveMetadataOutputDir } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
-import { NfoGenerator, nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "./nfo";
+import { NfoGenerator } from "./nfo";
 import { applyPosterTagBadgesIfNeeded } from "./output/applyPosterTagBadges";
-import { prepareCrawlerDataForMovieOutput } from "./output/prepareCrawlerDataForMovieOutput";
-import { prepareImageAlternativesForDownload } from "./output/prepareImageAlternativesForDownload";
+import {
+  downloadCrawlerAssets,
+  organizePreparedVideo,
+  prepareOutputCrawlerData,
+  updateBatchProgress,
+  writePreparedNfo,
+} from "./output/executeOutputSteps";
 import { PosterWatermarkService } from "./PosterWatermarkService";
 import {
-  AggregateStage,
   AggregationCoordinator,
-  CanonicalizeActorAliasesStage,
-  DownloadStage,
+  createDefaultScrapeStages,
   type FileScraperPipeline,
   type FileScraperStageRuntime,
-  NfoStage,
   NumberExecutionGate,
-  OrganizeStage,
-  ParseStage,
-  PlanStage,
-  PrepareOutputStage,
-  ProbeStage,
   type RuntimeScrapeSignalService,
   ScrapeContext,
   type ScrapeStage,
-  TranslateStage,
 } from "./pipeline";
 import { TranslateService } from "./TranslateService";
 import type { TranslationMappingStore } from "./translate/types";
@@ -213,12 +209,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
   }
 
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void {
-    const normalizedPercent = Math.max(0, Math.min(100, stepPercent));
-    const fileIndex = Math.max(1, progress.fileIndex);
-    const totalFiles = Math.max(1, progress.totalFiles);
-    const globalValue = (fileIndex - 1 + normalizedPercent / 100) / totalFiles;
-    const value = Math.max(0, Math.min(100, Math.round(globalValue * 100)));
-    this.signalService.setProgress(value, fileIndex, totalFiles);
+    updateBatchProgress(this.signalService, progress, stepPercent);
   }
 
   async runExclusiveByNumber<T>(number: string, operation: () => Promise<T>): Promise<T> {
@@ -293,44 +284,78 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       },
       probeVideoMetadata: async () => undefined,
       prepareOutputCrawlerData: async (context, signal) => {
-        const prepared = await prepareCrawlerDataForMovieOutput(
-          this.actorImageService,
-          context.requireConfiguration(),
-          context.requireCrawlerData(),
-          {
-            enabled: true,
-            movieDir: resolveMetadataOutputDir(context.requirePlan()),
-            sourceVideoPath: context.fileInfo.filePath,
-            actorSourceProvider: this.actorSourceProvider,
-            signal,
-          },
-        );
+        const prepared = await prepareOutputCrawlerData({
+          actorImageService: this.actorImageService,
+          actorSourceProvider: this.actorSourceProvider,
+          config: context.requireConfiguration(),
+          crawlerData: context.requireCrawlerData(),
+          enabled: true,
+          movieDir: resolveMetadataOutputDir(context.requirePlan()),
+          sourceVideoPath: context.fileInfo.filePath,
+          signal,
+        });
         return {
-          data: prepared.data,
+          data: prepared.data ?? context.requireCrawlerData(),
           actorPhotoPaths: prepared.actorPhotoPaths,
         };
       },
-      downloadCrawlerAssets: async (context, signal) => await this.downloadCrawlerAssets(context, signal),
-      writePreparedNfo: async (context) => await this.writePreparedNfo(context),
+      downloadCrawlerAssets: async (context, signal) => {
+        const aggregationResult = context.requireAggregationResult();
+        const plan = context.requirePlan();
+        return await downloadCrawlerAssets({
+          config: context.requireConfiguration(),
+          crawlerData: context.requireCrawlerData(),
+          downloadManager: this.downloadManager,
+          fileInfo: context.fileInfo,
+          imageAlternatives: aggregationResult.imageAlternatives,
+          movieBaseName: path.basename(plan.nfoPath, ".nfo"),
+          outputDir: resolveMetadataOutputDir(plan),
+          sources: aggregationResult.sources,
+          callbacks: { signal },
+          onLog: (message) => this.signalService.showLogText(message),
+          postProcessAssets: async (assets, crawlerData) =>
+            await applyPosterTagBadgesIfNeeded({
+              assets,
+              config: context.requireConfiguration(),
+              crawlerData,
+              dataDir: this.config.runtimePaths.dataDir,
+              fileInfo: context.fileInfo,
+              localState: context.existingNfoLocalState,
+              logger: this.logger,
+              signal,
+              signalService: this.signalService,
+              watermarkService: this.posterWatermarkService,
+            }),
+        });
+      },
+      writePreparedNfo: async (context) =>
+        await writePreparedNfo({
+          assets: context.assets ?? { downloaded: [], sceneImages: [] },
+          config: context.requireConfiguration(),
+          crawlerData: context.requireCrawlerData(),
+          enabled: context.requireConfiguration().download.generateNfo,
+          fileInfo: context.fileInfo,
+          keepExisting: context.requireConfiguration().download.keepNfo,
+          localState: context.existingNfoLocalState,
+          nfoGenerator: this.nfoGenerator,
+          nfoPath: context.requirePlan().nfoPath,
+          sourceVideoPath: context.fileInfo.filePath,
+          sources: context.requireAggregationResult().sources,
+          videoMeta: context.videoMeta,
+        }),
       organizePreparedVideo: async (context) =>
-        await this.fileOrganizer.organizeVideo(context.fileInfo, context.requirePlan(), context.requireConfiguration()),
+        await organizePreparedVideo({
+          config: context.requireConfiguration(),
+          enabled: true,
+          fileInfo: context.fileInfo,
+          fileOrganizer: this.fileOrganizer,
+          plan: context.requirePlan(),
+        }),
     };
   }
 
   private createStages(): readonly ScrapeStage[] {
-    const runtime = this.createStageRuntime();
-    return [
-      new ParseStage(),
-      new ProbeStage(runtime),
-      new AggregateStage(runtime),
-      new TranslateStage(runtime),
-      new CanonicalizeActorAliasesStage(),
-      new PlanStage(runtime),
-      new PrepareOutputStage(runtime),
-      new DownloadStage(runtime),
-      new NfoStage(runtime),
-      new OrganizeStage(runtime),
-    ];
+    return createDefaultScrapeStages(this.createStageRuntime());
   }
 
   private async getConfiguration(): Promise<Configuration> {
@@ -363,84 +388,6 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       this.logger.warn(`Failed to move file to failed folder: ${message}`);
       return fileInfo;
     }
-  }
-
-  private async downloadCrawlerAssets(
-    context: ScrapeContext,
-    signal?: AbortSignal,
-  ): Promise<{ assets: DownloadedAssets; crawlerData?: CrawlerData }> {
-    this.signalService.showLogText(`[${context.fileInfo.number}] Downloading resources...`);
-    const aggregationResult = context.requireAggregationResult();
-    const crawlerData = context.requireCrawlerData();
-    const preparedImageAlternatives = prepareImageAlternativesForDownload(
-      crawlerData,
-      aggregationResult.imageAlternatives,
-      aggregationResult.sources,
-    );
-    let resolvedSceneImageUrls: string[] | undefined;
-    const downloadedAssets = await this.downloadManager.downloadAll(
-      resolveMetadataOutputDir(context.requirePlan()),
-      crawlerData,
-      context.requireConfiguration(),
-      preparedImageAlternatives,
-      {
-        onResolvedSceneImageUrls: (urls) => {
-          resolvedSceneImageUrls = urls;
-        },
-        onSceneProgress: (downloaded, total) => {
-          this.signalService.showLogText(`[${context.fileInfo.number}] Scene images: ${downloaded}/${total}`);
-        },
-        signal,
-      },
-      {
-        movieBaseName: path.basename(context.requirePlan().nfoPath, ".nfo"),
-      },
-    );
-
-    const resolvedCrawlerData =
-      resolvedSceneImageUrls === undefined ? crawlerData : { ...crawlerData, scene_images: resolvedSceneImageUrls };
-    const assets = await applyPosterTagBadgesIfNeeded({
-      assets: downloadedAssets,
-      config: context.requireConfiguration(),
-      crawlerData: resolvedCrawlerData,
-      dataDir: this.config.runtimePaths.dataDir,
-      fileInfo: context.fileInfo,
-      localState: context.existingNfoLocalState,
-      logger: this.logger,
-      signal,
-      signalService: this.signalService,
-      watermarkService: this.posterWatermarkService,
-    });
-
-    return { assets, crawlerData: resolvedCrawlerData };
-  }
-
-  private async writePreparedNfo(context: ScrapeContext): Promise<string | undefined> {
-    const configuration = context.requireConfiguration();
-    if (!(configuration.download.generateNfo && context.plan)) {
-      return undefined;
-    }
-    const assets = context.assets ?? { downloaded: [], sceneImages: [] };
-    if (configuration.download.keepNfo) {
-      const existingNfoPath = await reconcileExistingNfoFiles(
-        context.plan.nfoPath,
-        configuration.download.nfoNaming,
-        pathExists,
-      );
-      if (existingNfoPath) {
-        return existingNfoPath;
-      }
-    }
-    return await this.nfoGenerator.writeNfo(context.plan.nfoPath, context.requireCrawlerData(), {
-      assets,
-      fileInfo: context.fileInfo,
-      localState: context.existingNfoLocalState,
-      nfoNaming: configuration.download.nfoNaming,
-      enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
-      nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
-      sources: context.requireAggregationResult().sources,
-      videoMeta: context.videoMeta,
-    });
   }
 }
 

@@ -63,8 +63,10 @@ export const createMaintenanceHandlers = (
 
           const handle = await maintenanceService.startPreview(entries, presetId);
           activeTaskId = handle.task.id;
-          const batch = await handle.completion;
-          return maintenanceService.toPreviewResult(batch);
+          await handle.completion;
+          const session = await maintenanceService.getActiveSession();
+          if (!session || session.taskId !== handle.task.id) throw new Error("维护会话已变化");
+          return session.preview;
         } catch (error) {
           logger.error("Maintenance preview failed");
           throw asSerializableIpcError(error);

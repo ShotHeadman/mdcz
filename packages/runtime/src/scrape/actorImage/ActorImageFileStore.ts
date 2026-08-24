@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import { atomicCopyFile } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { RuntimeNetworkClient } from "../../network";
 import { CachedAsyncResolver, toErrorMessage } from "../../shared";
@@ -267,8 +268,7 @@ export class ActorImageFileStore {
     tempPath: string;
   }): Promise<string> {
     if (!(await pathExists(input.blobPath))) {
-      await mkdir(dirname(input.blobPath), { recursive: true });
-      await copyFile(input.tempPath, input.blobPath);
+      await atomicCopyFile(input.tempPath, input.blobPath);
     }
 
     await this.indexStore.updateEntry(input.layout.indexPath, input.actorNames, (currentEntry) => {
