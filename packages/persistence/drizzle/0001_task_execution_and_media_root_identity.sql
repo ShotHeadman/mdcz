@@ -28,7 +28,16 @@ CREATE INDEX `scrape_outputs_completed_at_idx` ON `scrape_outputs` (`completed_a
 --> statement-breakpoint
 CREATE INDEX `scrape_results_task_path_idx` ON `scrape_results` (`task_id`, `relative_path`);
 --> statement-breakpoint
-CREATE INDEX `library_items_source_task_idx` ON `library_items` (`source_task_id`);
+ALTER TABLE `library_items` RENAME COLUMN `source_task_id` TO `source_run_id`;
+--> statement-breakpoint
+ALTER TABLE `library_items` RENAME COLUMN `scrape_output_id` TO `source_outcome_id`;
+--> statement-breakpoint
+UPDATE `library_items`
+SET
+  `source_run_id` = NULL,
+  `source_outcome_id` = NULL;
+--> statement-breakpoint
+CREATE INDEX `library_items_source_run_idx` ON `library_items` (`source_run_id`);
 --> statement-breakpoint
 CREATE INDEX `library_items_created_at_idx` ON `library_items` (`created_at`, `id`);
 --> statement-breakpoint

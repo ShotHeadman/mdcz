@@ -613,6 +613,8 @@ describe("buildServer composition integration", () => {
         rootRelativePath: relativePath,
         number: id,
         createdAt: new Date(createdAt),
+        sourceRunId: `${id}-run`,
+        sourceOutcomeId: `${id}-outcome`,
       });
     }
 
@@ -639,12 +641,19 @@ describe("buildServer composition integration", () => {
 
     expect(firstPage).toMatchObject({
       entries: [
-        expect.objectContaining({ id: "entry-c", available: null }),
+        expect.objectContaining({
+          id: "entry-c",
+          available: null,
+          runId: "entry-c-run",
+          scrapeOutcomeId: "entry-c-outcome",
+        }),
         expect.objectContaining({ id: "entry-b", available: null }),
       ],
       hasMore: true,
       total: 3,
     });
+    expect(firstPage.entries[0]).not.toHaveProperty("taskId");
+    expect(firstPage.entries[0]).not.toHaveProperty("scrapeOutputId");
     expect(firstPage.nextCursor).toEqual(expect.any(String));
     expect(secondPage).toMatchObject({
       entries: [expect.objectContaining({ id: "entry-a", available: null })],

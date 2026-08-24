@@ -226,8 +226,8 @@ export const libraryItems = sqliteTable(
     id: text("id").primaryKey(),
     mediaIdentity: text("media_identity"),
     crawlerDataJson: text("crawler_data_json"),
-    sourceTaskId: text("source_task_id"),
-    scrapeOutputId: text("scrape_output_id"),
+    sourceRunId: text("source_run_id"),
+    sourceOutcomeId: text("source_outcome_id"),
     title: text("title"),
     number: text("number"),
     actorsJson: text("actors_json").notNull().default("[]"),
@@ -236,7 +236,7 @@ export const libraryItems = sqliteTable(
     hiddenFromRecentAt: integer("hidden_from_recent_at", { mode: "timestamp_ms" }),
   },
   (table) => [
-    index("library_items_source_task_idx").on(table.sourceTaskId),
+    index("library_items_source_run_idx").on(table.sourceRunId),
     index("library_items_created_at_idx").on(table.createdAt, table.id),
   ],
 );

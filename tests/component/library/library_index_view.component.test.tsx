@@ -22,9 +22,9 @@ const createEntry = (id: string, available: boolean | null): LibraryEntryDto => 
   relativePath: `movies/${id}.mp4`,
   rootDisplayName: "Media",
   rootId: "root-1",
-  scrapeOutputId: null,
+  scrapeOutcomeId: null,
   size: 10,
-  taskId: null,
+  runId: null,
   thumbnailPath: null,
   title: `${id} title`,
 });

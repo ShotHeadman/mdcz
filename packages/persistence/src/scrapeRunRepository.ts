@@ -300,8 +300,8 @@ export class ScrapeRunRepository {
         .run();
       const entryId = writeLibraryEntry(this.database, {
         ...input.libraryEntry,
-        sourceTaskId: input.runId,
-        scrapeOutputId: outcomeId,
+        sourceRunId: input.runId,
+        sourceOutcomeId: outcomeId,
       });
       return entryId;
     });
@@ -343,8 +343,8 @@ export class ScrapeRunRepository {
         .run();
       const entryId = writeLibraryEntry(this.database, {
         ...input.libraryEntry,
-        sourceTaskId: existing.runId,
-        scrapeOutputId: existing.id,
+        sourceRunId: existing.runId,
+        sourceOutcomeId: existing.id,
       });
       return entryId;
     });

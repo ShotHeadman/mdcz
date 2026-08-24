@@ -223,8 +223,8 @@ describe("ScrapeRunRepository", () => {
     });
     expect(committed.entry).toMatchObject({
       id: "library-abc",
-      sourceTaskId: "run-1",
-      scrapeOutputId: "success-1",
+      sourceRunId: "run-1",
+      sourceOutcomeId: "success-1",
       rootRelativePath: "ABC-001/ABC-001.mp4",
     });
   });
@@ -330,8 +330,8 @@ describe("ScrapeRunRepository", () => {
     });
     expect(revised.entry).toMatchObject({
       id: "library-success",
-      sourceTaskId: "run-1",
-      scrapeOutputId: "success-outcome",
+      sourceRunId: "run-1",
+      sourceOutcomeId: "success-outcome",
       rootRelativePath: "confirmed.mp4",
     });
   });

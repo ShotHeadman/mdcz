@@ -107,14 +107,14 @@ function LibraryEntryLink({
 }: {
   children: ReactNode;
   className?: string;
-  entry: { scrapeOutputId: string | null };
+  entry: { scrapeOutcomeId: string | null };
 }) {
-  if (!entry.scrapeOutputId) {
+  if (!entry.scrapeOutcomeId) {
     return null;
   }
 
   return (
-    <AppLink className={className} to={`/scrape/${encodeURIComponent(entry.scrapeOutputId)}`}>
+    <AppLink className={className} to={`/scrape/${encodeURIComponent(entry.scrapeOutcomeId)}`}>
       {children}
     </AppLink>
   );

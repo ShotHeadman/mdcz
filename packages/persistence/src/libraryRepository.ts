@@ -40,8 +40,8 @@ export interface LibraryEntryRecord {
   directory: string;
   size: number;
   modifiedAt: Date | null;
-  sourceTaskId: string | null;
-  scrapeOutputId: string | null;
+  sourceRunId: string | null;
+  sourceOutcomeId: string | null;
   title: string | null;
   number: string | null;
   actors: string[];
@@ -91,8 +91,8 @@ export interface UpsertLibraryEntryInput {
   rootRelativePath: string;
   size?: number;
   modifiedAt?: Date | null;
-  sourceTaskId?: string | null;
-  scrapeOutputId?: string | null;
+  sourceRunId?: string | null;
+  sourceOutcomeId?: string | null;
   title?: string | null;
   number?: string | null;
   actors?: string[];
@@ -328,8 +328,8 @@ const toLibraryEntryRecord = (
     directory: primaryFile.directory,
     size: primaryFile.size,
     modifiedAt: primaryFile.modifiedAt,
-    sourceTaskId: item.sourceTaskId,
-    scrapeOutputId: item.scrapeOutputId,
+    sourceRunId: item.sourceRunId,
+    sourceOutcomeId: item.sourceOutcomeId,
     title: item.title,
     number: item.number,
     actors: safeActors(item.actorsJson),
@@ -447,8 +447,8 @@ export const writeLibraryEntry = (database: PersistenceDatabase, input: UpsertLi
       id,
       mediaIdentity,
       crawlerDataJson: input.crawlerDataJson ?? null,
-      sourceTaskId: input.sourceTaskId ?? null,
-      scrapeOutputId: input.scrapeOutputId ?? null,
+      sourceRunId: input.sourceRunId ?? null,
+      sourceOutcomeId: input.sourceOutcomeId ?? null,
       title: input.title ?? null,
       number: input.number ?? null,
       actorsJson,
@@ -461,8 +461,8 @@ export const writeLibraryEntry = (database: PersistenceDatabase, input: UpsertLi
       set: {
         mediaIdentity,
         crawlerDataJson: input.crawlerDataJson ?? null,
-        sourceTaskId: input.sourceTaskId ?? null,
-        scrapeOutputId: input.scrapeOutputId ?? null,
+        sourceRunId: input.sourceRunId ?? null,
+        sourceOutcomeId: input.sourceOutcomeId ?? null,
         title: input.title ?? null,
         number: input.number ?? null,
         actorsJson,
@@ -673,8 +673,8 @@ export class LibraryRepository {
             id: itemId,
             mediaIdentity,
             crawlerDataJson,
-            sourceTaskId: null,
-            scrapeOutputId: null,
+            sourceRunId: null,
+            sourceOutcomeId: null,
             title,
             number,
             actorsJson,
@@ -766,7 +766,7 @@ export class LibraryRepository {
     const rows = this.database.db
       .select({ id: libraryItems.id })
       .from(libraryItems)
-      .where(eq(libraryItems.sourceTaskId, taskId))
+      .where(eq(libraryItems.sourceRunId, taskId))
       .all();
     const ids = rows.map((row) => row.id);
     if (ids.length === 0) {

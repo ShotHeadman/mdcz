@@ -67,8 +67,8 @@ describe("LibraryRepository maintenance refresh", () => {
       id: "stable-library-id",
       rootId: root.id,
       rootRelativePath: "old.mp4",
-      sourceTaskId: "scrape-task",
-      scrapeOutputId: "scrape-output",
+      sourceRunId: "scrape-task",
+      sourceOutcomeId: "scrape-output",
       createdAt,
       crawlerDataJson: JSON.stringify(crawlerData("OLD-001")),
     });
@@ -109,8 +109,8 @@ describe("LibraryRepository maintenance refresh", () => {
     expect(updated).toMatchObject({
       id: "stable-library-id",
       createdAt,
-      sourceTaskId: "scrape-task",
-      scrapeOutputId: "scrape-output",
+      sourceRunId: "scrape-task",
+      sourceOutcomeId: "scrape-output",
       number: "NEW-001",
       rootRelativePath: "renamed.mp4",
       lastRefreshedAt: refreshedAt,
@@ -214,8 +214,8 @@ describe("LibraryRepository maintenance refresh", () => {
     });
     expect(await library.getEntryById(created.libraryItemId)).toMatchObject({
       createdAt: refreshedAt,
-      sourceTaskId: null,
-      scrapeOutputId: null,
+      sourceRunId: null,
+      sourceOutcomeId: null,
       number: "NEW-002",
     });
   });

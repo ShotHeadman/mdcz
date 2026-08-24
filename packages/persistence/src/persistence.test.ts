@@ -51,7 +51,7 @@ describe("Persistence migrations", () => {
         "library_item_assets_item_idx",
         "library_item_files_item_idx",
         "library_item_files_root_path_idx",
-        "library_items_source_task_idx",
+        "library_items_source_run_idx",
         "media_roots_state_idx",
         "scan_results_task_root_path_idx",
         "scrape_results_task_path_idx",
@@ -99,6 +99,45 @@ describe("Persistence migrations", () => {
           "INSERT INTO task_records (id, kind, root_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .run("task-1", "scan", "root-1", "queued", 1, 1);
+      database.sqlite
+        .prepare(
+          "INSERT INTO library_items (id, media_identity, crawler_data_json, source_task_id, scrape_output_id, title, number, actors_json, created_at, last_refreshed_at, hidden_from_recent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "library-1",
+          "ABC-001",
+          '{"number":"ABC-001"}',
+          "legacy-scrape-task",
+          "legacy-scrape-output",
+          "Legacy title",
+          "ABC-001",
+          '["Actor"]',
+          10,
+          11,
+          null,
+        );
+      database.sqlite
+        .prepare(
+          "INSERT INTO library_item_files (id, item_id, root_id, root_relative_path, file_name, directory, size, modified_at, last_known_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          "library-1:primary",
+          "library-1",
+          "path-deterministic",
+          "ABC-001/ABC-001.mp4",
+          "ABC-001.mp4",
+          "ABC-001",
+          123,
+          12,
+          "ABC-001/ABC-001.mp4",
+          10,
+          11,
+        );
+      database.sqlite
+        .prepare(
+          "INSERT INTO library_item_assets (id, item_id, kind, uri, root_id, relative_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run("asset-1", "library-1", "poster", "ABC-001/poster.jpg", "path-deterministic", "ABC-001/poster.jpg", 10);
 
       runMigrations(database);
 
@@ -115,6 +154,60 @@ describe("Persistence migrations", () => {
         { id: "123e4567-e89b-12d3-a456-426614174000", enabled: 0, deleted: 1 },
         { id: "mdcz-metadata-output", enabled: 1, deleted: 0 },
         { id: "path-deterministic", enabled: 1, deleted: 0 },
+      ]);
+      const libraryItemColumns = database.sqlite.prepare("PRAGMA table_info(library_items)").all() as Array<{
+        name: string;
+      }>;
+      const libraryItemColumnNames = libraryItemColumns.map((column) => column.name);
+      expect(libraryItemColumnNames).toEqual(expect.arrayContaining(["source_run_id", "source_outcome_id"]));
+      expect(libraryItemColumnNames).not.toContain("source_task_id");
+      expect(libraryItemColumnNames).not.toContain("scrape_output_id");
+      expect(
+        database.sqlite
+          .prepare(
+            "SELECT id, media_identity, crawler_data_json, source_run_id, source_outcome_id, title, number, actors_json, created_at, last_refreshed_at, hidden_from_recent_at FROM library_items",
+          )
+          .all(),
+      ).toEqual([
+        {
+          id: "library-1",
+          media_identity: "ABC-001",
+          crawler_data_json: '{"number":"ABC-001"}',
+          source_run_id: null,
+          source_outcome_id: null,
+          title: "Legacy title",
+          number: "ABC-001",
+          actors_json: '["Actor"]',
+          created_at: 10,
+          last_refreshed_at: 11,
+          hidden_from_recent_at: null,
+        },
+      ]);
+      expect(database.sqlite.prepare("SELECT * FROM library_item_files").all()).toEqual([
+        {
+          id: "library-1:primary",
+          item_id: "library-1",
+          root_id: "path-deterministic",
+          root_relative_path: "ABC-001/ABC-001.mp4",
+          file_name: "ABC-001.mp4",
+          directory: "ABC-001",
+          size: 123,
+          modified_at: 12,
+          last_known_path: "ABC-001/ABC-001.mp4",
+          created_at: 10,
+          updated_at: 11,
+        },
+      ]);
+      expect(database.sqlite.prepare("SELECT * FROM library_item_assets").all()).toEqual([
+        {
+          id: "asset-1",
+          item_id: "library-1",
+          kind: "poster",
+          uri: "ABC-001/poster.jpg",
+          root_id: "path-deterministic",
+          relative_path: "ABC-001/poster.jpg",
+          created_at: 10,
+        },
       ]);
       const scrapeResultColumns = database.sqlite.prepare("PRAGMA table_info(scrape_results)").all() as Array<{
         name: string;
@@ -250,8 +343,8 @@ describe("LibraryRepository", () => {
       rootId: "root-1",
       rootRelativePath: "ABC-123/ABC-123.mp4",
       size: 10,
-      sourceTaskId: "task-1",
-      scrapeOutputId: output.id,
+      sourceRunId: "task-1",
+      sourceOutcomeId: output.id,
       title: "Title",
       number: "ABC-123",
       actors: ["Actor"],
@@ -597,7 +690,7 @@ describe("TaskRepository", () => {
         entry: {
           rootId: "root-1",
           rootRelativePath: "ABC-001/ABC-001.mp4",
-          sourceTaskId: "task-1",
+          sourceRunId: "task-1",
         },
       }),
     ).resolves.toBeNull();
