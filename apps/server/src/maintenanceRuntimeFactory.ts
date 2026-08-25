@@ -39,6 +39,7 @@ export const createServerMaintenanceRuntime = (
       logger,
     }),
     fileOrganizer: new FileOrganizer(logger),
+    networkPolicyClient: networkClient,
     nfoGenerator: new NfoGenerator(),
     signalService: {
       setProgress: () => undefined,

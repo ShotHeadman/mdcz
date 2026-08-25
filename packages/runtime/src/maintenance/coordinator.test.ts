@@ -89,6 +89,60 @@ describe("MaintenanceTaskCoordinator", () => {
     await first.coordinator.close();
   });
 
+  it("discards a completed session before starting a new one", async () => {
+    const fixture = createCoordinator();
+    const first = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "refresh_data",
+      refs: [{ relativePath: "one.mp4" }],
+    });
+    await first.completion;
+
+    await fixture.coordinator.discardSession(first.task.id);
+    expect(await fixture.coordinator.getActiveSession()).toBeNull();
+
+    const second = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "refresh_data",
+      refs: [{ relativePath: "two.mp4" }],
+    });
+    expect(second.task.id).not.toBe(first.task.id);
+    await second.completion;
+    await fixture.coordinator.close();
+  });
+
+  it("refreshes the network policy before each preview and apply phase", async () => {
+    let policyVersion = 0;
+    const fixture = createCoordinator({
+      applyNetworkPolicy: vi.fn(async () => {
+        policyVersion += 1;
+      }),
+      previewEntries: vi.fn(async ({ entries }: { entries: LocalScanEntry[] }) => {
+        expect(policyVersion).toBe(1);
+        return entries.map(toRuntimePreview);
+      }),
+      applyEntry: vi.fn(async ({ entry }) => {
+        expect(policyVersion).toBe(2);
+        return { status: "failed" as const, error: entry.fileId };
+      }),
+    });
+
+    const preview = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "organize_files",
+      refs: [{ relativePath: "one.mp4" }],
+    });
+    const previewBatch = await preview.completion;
+    const apply = await fixture.coordinator.beginApply({
+      taskId: preview.task.id,
+      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
+    });
+    await apply.completion;
+
+    expect(vi.mocked(fixture.runtime.applyNetworkPolicy)).toHaveBeenCalledTimes(2);
+    await fixture.coordinator.close();
+  });
+
   it("preflights before file work and does not report success when the final library transaction fails", async () => {
     const order: string[] = [];
     const outputPath = fileURLToPath(import.meta.url);

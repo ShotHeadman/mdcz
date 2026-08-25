@@ -27,7 +27,7 @@ import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   type ScrapeRunItem,
   type ScrapeRunItemSnapshot,
-  ScrapeRunSession,
+  ScrapeRunLifecycle,
   type ScrapeRunSnapshot,
 } from "@mdcz/runtime/tasks";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
@@ -176,26 +176,22 @@ export class ScrapeService {
     const configuration = await this.config.get();
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
-    const state = await this.persistence.getState();
-    const manifest = await state.repositories.scrapeRuns.createRun({
-      rootId: input.refs[0]?.rootId ?? "",
-      outputRootId: input.outputRootId ?? null,
-      executionMode: input.refs.length === 1 ? "single" : "batch",
-      items: input.refs.map((ref, ordinal) => ({
-        ordinal,
-        rootId: ref.rootId,
-        relativePath: ref.relativePath,
-        manualUrl: input.manualUrl ?? null,
-        uncensoredChoice: input.uncensoredConfirmed ? (choices.get(`${ref.rootId}:${ref.relativePath}`) ?? null) : null,
-      })),
-    });
-
-    for (const [rootId, root] of roots) this.rootDisplayNames.set(rootId, root.displayName);
-    this.liveManifests.set(manifest.id, manifest);
-    this.snapshotUpdatedAt.set(manifest.id, manifest.createdAt);
-    const session = new ScrapeRunSession<ServerManualScrape>({
-      runId: manifest.id,
-      items: manifest.items.map((item) => {
+    const lifecycle = await ScrapeRunLifecycle.create(async () => {
+      const manifest = await (await this.persistence.getState()).repositories.scrapeRuns.createRun({
+        rootId: input.refs[0]?.rootId ?? "",
+        outputRootId: input.outputRootId ?? null,
+        executionMode: input.refs.length === 1 ? "single" : "batch",
+        items: input.refs.map((ref, ordinal) => ({
+          ordinal,
+          rootId: ref.rootId,
+          relativePath: ref.relativePath,
+          manualUrl: input.manualUrl ?? null,
+          uncensoredChoice: input.uncensoredConfirmed
+            ? (choices.get(`${ref.rootId}:${ref.relativePath}`) ?? null)
+            : null,
+        })),
+      });
+      const items = manifest.items.map((item) => {
         const root = roots.get(item.rootId);
         if (!root) throw new Error(`Scrape root disappeared before session creation: ${item.rootId}`);
         return {
@@ -206,24 +202,52 @@ export class ScrapeService {
           attempt: 1,
           manualScrape: { manualUrl: item.manualUrl, uncensoredChoice: item.uncensoredChoice },
         };
-      }),
-      concurrency: policy.concurrency,
-      executeItem: async (item, signal) => await this.executeItem(manifest, item, signal, policy.restGate ?? undefined),
-      commitItem: async (item, result) => await this.commitItem(manifest, item, result),
-      onSnapshot: (snapshot) => this.handleSessionSnapshot(manifest, snapshot),
+      });
+      return {
+        manifest,
+        items,
+        concurrency: policy.concurrency,
+        executeItem: async (item, signal) =>
+          await this.executeItem(manifest, item, signal, policy.restGate ?? undefined),
+        commitItem: async (item, result) => await this.commitItem(manifest, item, result),
+        onSnapshot: (snapshot) => this.handleSessionSnapshot(manifest, snapshot),
+        finalize: async (snapshot, finalizeOptions) =>
+          await this.settleRun(manifest, snapshot, finalizeOptions.startedAt ?? null),
+      };
     });
+    const manifest = lifecycle.manifest;
+    const session = lifecycle.session;
+    for (const [rootId, root] of roots) this.rootDisplayNames.set(rootId, root.displayName);
+    this.liveManifests.set(manifest.id, manifest);
+    this.snapshotUpdatedAt.set(manifest.id, manifest.createdAt);
     this.snapshots.set(manifest.id, session.snapshot());
     try {
       this.queue.submit({
         runId: manifest.id,
         session,
         createdAt: manifest.createdAt,
-        settle: async (snapshot, startedAt) => await this.settleRun(manifest, snapshot, startedAt),
+        settle: async (snapshot, startedAt) => await lifecycle.finalize(snapshot, { startedAt }),
       });
     } catch (error) {
+      let cleanupError: unknown = null;
+      try {
+        await (await this.persistence.getState()).repositories.scrapeRuns.discardUnstartedRun(manifest.id);
+      } catch (discardError) {
+        cleanupError = discardError;
+      }
       this.liveManifests.delete(manifest.id);
       this.snapshots.delete(manifest.id);
       this.snapshotUpdatedAt.delete(manifest.id);
+      const logger = runtimeLoggerService.getLogger(`scrape:${manifest.id}`);
+      if (cleanupError) {
+        logger.error(
+          `Scrape task was never submitted: queue admission failed (${errorMessage(error)}) and unstarted manifest cleanup failed (${errorMessage(cleanupError)})`,
+        );
+        throw new Error(`Scrape task was not submitted and cleanup failed: ${errorMessage(cleanupError)}`, {
+          cause: error,
+        });
+      }
+      logger.warn(`Scrape task was never submitted and its unstarted manifest was discarded: ${errorMessage(error)}`);
       throw error;
     }
     return await this.toDto(manifest.id);

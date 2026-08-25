@@ -2,7 +2,6 @@ import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
 import type {
   MaintenanceApplyLogDto,
   MaintenancePreviewResponse,
-  ScanTaskDto,
   ScrapeLiveItemDto,
   ScrapeLiveRunSnapshotDto,
   ScrapePendingUncensoredConfirmationResponse,
@@ -21,18 +20,6 @@ import { useUIStore } from "@mdcz/views/state/uiStore";
 import type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
 export type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
-
-const taskStatusToMaintenanceStatus = (
-  status: ScanTaskDto["status"],
-): ReturnType<typeof useMaintenanceExecutionStore.getState>["executionStatus"] => {
-  if (status === "running" || status === "queued") return "previewing";
-  if (status === "paused") return "paused";
-  if (status === "stopping") return "stopping";
-  return "idle";
-};
-
-const isActiveTaskStatus = (status: ScanTaskDto["status"]): boolean =>
-  status === "queued" || status === "running" || status === "paused" || status === "stopping";
 
 const liveTaskStatusToScrapeStatus = (
   status: ScrapeLiveRunSnapshotDto["task"]["status"],
@@ -156,10 +143,6 @@ export const applyPendingUncensoredConfirmation = (
   };
 };
 
-const applyMaintenanceTaskSnapshot = (task: ScanTaskDto): void => {
-  useMaintenanceExecutionStore.getState().setExecutionStatus(taskStatusToMaintenanceStatus(task.status));
-};
-
 export const hydrateMaintenancePreview = (response: MaintenancePreviewResponse): MaintenancePreviewItem[] => {
   const items = response.items.map(maintenancePreviewDtoToPreviewItem);
   applyMaintenancePreviewResult({ items });
@@ -173,38 +156,15 @@ const maintenanceApplyLogDtoToItemResult = (item: MaintenanceApplyLogDto) => ({
   ...(item.error || item.status === "skipped" ? { error: item.error ?? "已跳过" } : {}),
 });
 
-/** Applies only generic task and Maintenance state.  Scrape state comes from liveRuns(). */
-export const applyWebTaskUpdate = (payload: WebTaskUpdateDto, previous: TaskHydrationState): TaskHydrationState => {
-  const next = { ...previous, shouldOpenUncensoredDialog: false };
-
-  if (payload.kind === "scrape-invalidated") return next;
-
-  if (payload.kind === "snapshot") {
-    const previousMaintenanceTask = payload.tasks.find(
-      (task) => task.kind === "maintenance" && task.id === previous.activeMaintenanceTaskId,
-    );
-    const activeMaintenanceTask =
-      previousMaintenanceTask ??
-      payload.tasks.find((task) => task.kind === "maintenance" && isActiveTaskStatus(task.status));
-
-    if (activeMaintenanceTask) {
-      next.activeMaintenanceTaskId = activeMaintenanceTask.id;
-      applyMaintenanceTaskSnapshot(activeMaintenanceTask);
-    }
-
-    return next;
-  }
-
-  if (payload.kind === "task") {
-    if (payload.task.kind === "maintenance") {
-      next.activeMaintenanceTaskId = payload.task.id;
-      applyMaintenanceTaskSnapshot(payload.task);
-    }
-    return next;
-  }
-
-  return next;
-};
+/**
+ * Generic task snapshots never write Maintenance UI state. The complete
+ * maintenance-session endpoint is its sole authority, preventing a delayed
+ * task-list response from overwriting a newer session read.
+ */
+export const applyWebTaskUpdate = (_payload: WebTaskUpdateDto, previous: TaskHydrationState): TaskHydrationState => ({
+  ...previous,
+  shouldOpenUncensoredDialog: false,
+});
 
 /**
  * Realtime task events continue to feed generic logs and Maintenance UI.  A

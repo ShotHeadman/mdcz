@@ -10,7 +10,15 @@ import type {
   MaintenancePresetId,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
+import {
+  type AggregationService,
+  applyScrapeNetworkPolicy,
+  type DownloadManager,
+  type FileOrganizer,
+  type NfoGenerator,
+  type ScrapeNetworkPolicyClient,
+  type TranslateService,
+} from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import { LocalScanService } from "./LocalScanService";
 import {
@@ -31,6 +39,11 @@ export interface MaintenanceRuntimeDependencies {
   config: MaintenanceRuntimeConfigProvider;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
+  /**
+   * All HTTP-owning maintenance dependencies must share this client. It is
+   * configured from the current scrape policy before preview or apply work.
+   */
+  networkPolicyClient?: ScrapeNetworkPolicyClient;
   nfoGenerator: NfoGenerator;
   signalService: MaintenanceSignalService;
   translateService: TranslateService;
@@ -141,6 +154,12 @@ export class MaintenanceRuntime {
   private readonly localScanService = new LocalScanService();
 
   constructor(private readonly deps: MaintenanceRuntimeDependencies) {}
+
+  /** Applies the current per-site scrape policy to maintenance HTTP work. */
+  async applyNetworkPolicy(): Promise<void> {
+    if (!this.deps.networkPolicyClient) return;
+    applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
+  }
 
   async scan(input: { root: MediaRoot; signal?: AbortSignal }): Promise<LocalScanEntry[]> {
     const config = await this.getPresetConfig("read_local", input.root);

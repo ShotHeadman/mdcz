@@ -76,6 +76,29 @@ describe("ScrapeRunRepository", () => {
     expect(await repository.latestSummary()).toBeNull();
   });
 
+  it("discards only a manifest with no terminal outcome or summary", async () => {
+    const repository = createRepository();
+    await createTwoItemRun(repository, "unstarted");
+
+    await repository.discardUnstartedRun("unstarted");
+
+    await expect(repository.getRun("unstarted")).rejects.toThrow("Scrape run not found");
+    await expect(repository.listRuns()).resolves.toEqual([]);
+
+    await createTwoItemRun(repository, "started");
+    await repository.commitFailure({
+      runId: "started",
+      itemId: "started:item-1",
+      attempt: 1,
+      error: "network failed",
+    });
+
+    await expect(repository.discardUnstartedRun("started")).rejects.toThrow(
+      "Cannot discard started or finalized scrape run",
+    );
+    await expect(repository.getRun("started")).resolves.toMatchObject({ id: "started" });
+  });
+
   it("rejects empty and duplicate manifests without leaving partial rows", async () => {
     const repository = createRepository();
     const base = {

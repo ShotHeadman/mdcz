@@ -5,6 +5,7 @@ import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape"
 import {
   MAX_LIVE_SCRAPE_LOGS,
   type RuntimeTaskSnapshot,
+  ScrapeRunLifecycle,
   ScrapeRunSession,
   TaskExecutor,
   transitionTask,
@@ -359,6 +360,49 @@ describe("scrape run session", () => {
       status: "stopped",
       progress: { completedItems: 0, totalItems: 2, percent: 0 },
     });
+  });
+});
+
+describe("scrape run lifecycle", () => {
+  it("creates the shared session, commits outcomes, and finalizes a durable run once", async () => {
+    const events: string[] = [];
+    const startedAt = new Date("2026-08-25T00:00:00.000Z");
+    const lifecycle = await ScrapeRunLifecycle.create(async () => {
+      events.push("create");
+      return {
+        manifest: { id: "run-lifecycle" },
+        items: [runItem("one")],
+        concurrency: 1,
+        executeItem: async (item) => {
+          events.push(`execute:${item.id}`);
+          return terminalResult(item, "success");
+        },
+        commitItem: async (item, result) => {
+          events.push(`commit:${item.id}:${result.status}`);
+          return { ...result, resultId: "outcome-1" };
+        },
+        finalize: async (snapshot, options) => {
+          events.push(`finalize:${snapshot.runId}:${snapshot.status}:${options.startedAt?.toISOString()}`);
+        },
+      };
+    });
+
+    await lifecycle.session.start();
+    await lifecycle.session.waitForIdle();
+    const snapshot = lifecycle.session.snapshot();
+    await Promise.all([lifecycle.finalize(snapshot, { startedAt }), lifecycle.finalize(snapshot, { startedAt })]);
+
+    expect(snapshot).toMatchObject({
+      runId: "run-lifecycle",
+      status: "completed",
+      items: [{ id: "one", status: "success", result: { resultId: "outcome-1" } }],
+    });
+    expect(events).toEqual([
+      "create",
+      "execute:one",
+      "commit:one:success",
+      "finalize:run-lifecycle:completed:2026-08-25T00:00:00.000Z",
+    ]);
   });
 });
 

@@ -35,6 +35,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
       imageHostCooldownStore: options.imageHostCooldownStore,
     }),
     fileOrganizer,
+    networkPolicyClient: options.networkClient,
     nfoGenerator: new NfoGenerator(),
     signalService: options.signalService,
     translateService: new TranslateService(options.networkClient, {

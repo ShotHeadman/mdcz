@@ -405,6 +405,33 @@ export class ScrapeRunRepository {
     return summary;
   }
 
+  /**
+   * Removes a manifest that never reached the executor. Outcomes and summaries
+   * are terminal facts, so their presence means this is no longer safe.
+   */
+  async discardUnstartedRun(runId: string): Promise<void> {
+    const transaction = this.database.sqlite.transaction(() => {
+      this.assertRunExists(runId);
+      const outcome = this.database.db
+        .select({ id: scrapeItemOutcomes.id })
+        .from(scrapeItemOutcomes)
+        .where(eq(scrapeItemOutcomes.runId, runId))
+        .limit(1)
+        .get();
+      const summary = this.database.db
+        .select({ runId: scrapeRunSummaries.runId })
+        .from(scrapeRunSummaries)
+        .where(eq(scrapeRunSummaries.runId, runId))
+        .limit(1)
+        .get();
+      if (outcome || summary) throw constraint(`Cannot discard started or finalized scrape run: ${runId}`);
+
+      this.database.db.delete(scrapeRunItems).where(eq(scrapeRunItems.runId, runId)).run();
+      this.database.db.delete(scrapeRuns).where(eq(scrapeRuns.id, runId)).run();
+    });
+    transaction();
+  }
+
   async getRun(runId: string): Promise<ScrapeRunManifest> {
     const row = this.database.db.select().from(scrapeRuns).where(eq(scrapeRuns.id, runId)).limit(1).get();
     if (!row) throw new PersistenceError(persistenceErrorCodes.NotFound, `Scrape run not found: ${runId}`);

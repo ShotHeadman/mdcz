@@ -1,4 +1,5 @@
 import type { ScrapeLiveRunsResponse } from "@mdcz/shared/serverDtos";
+import type { MaintenanceClientSession } from "@mdcz/shared/types";
 import { applyMaintenanceClientSession } from "@mdcz/views/state/maintenanceSession";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect } from "react";
@@ -16,6 +17,12 @@ const LIVENESS_CHECK_INTERVAL_MS = 2_000;
 
 export interface ScrapeLiveRunsRefreshCoordinator {
   dispose(): void;
+  request(): Promise<void>;
+}
+
+export interface MaintenanceSessionRefreshCoordinator {
+  dispose(): void;
+  notifyLiveUpdate(): void;
   request(): Promise<void>;
 }
 
@@ -71,6 +78,66 @@ export const createScrapeLiveRunsRefreshCoordinator = (input: {
   };
 };
 
+/**
+ * Serializes authoritative maintenance-session reads. A live maintenance
+ * event invalidates an in-flight response, so an older full response cannot
+ * replace the state that event just advanced.
+ */
+export const createMaintenanceSessionRefreshCoordinator = (input: {
+  apply(session: MaintenanceClientSession | null): void;
+  read(): Promise<MaintenanceClientSession | null>;
+}): MaintenanceSessionRefreshCoordinator => {
+  let disposed = false;
+  let dirty = false;
+  let inFlight = false;
+  let liveUpdateVersion = 0;
+  let activeRequest: Promise<void> | null = null;
+
+  const drain = async (): Promise<void> => {
+    try {
+      while (dirty && !disposed) {
+        dirty = false;
+        const requestLiveUpdateVersion = liveUpdateVersion;
+        try {
+          const session = await input.read();
+          if (disposed) return;
+          if (liveUpdateVersion !== requestLiveUpdateVersion) {
+            dirty = true;
+            continue;
+          }
+          input.apply(session);
+        } catch {
+          // Keep the request dirty, but wait for the next heartbeat, polling
+          // tick, or reconnect to retry.
+          dirty = true;
+          return;
+        }
+      }
+    } finally {
+      inFlight = false;
+      activeRequest = null;
+    }
+  };
+
+  return {
+    request: async () => {
+      dirty = true;
+      if (!inFlight) {
+        inFlight = true;
+        activeRequest = drain();
+      }
+      await activeRequest;
+    },
+    notifyLiveUpdate: () => {
+      liveUpdateVersion += 1;
+      if (inFlight) dirty = true;
+    },
+    dispose: () => {
+      disposed = true;
+    },
+  };
+};
+
 let requestLiveRunsFromUi: (() => void) | null = null;
 let requestPendingUncensoredFromUi: (() => void) | null = null;
 
@@ -101,10 +168,13 @@ export const hydratePendingUncensoredConfirmation = async (): Promise<void> => {
   store.setHydrationState(applyPendingUncensoredConfirmation(response, store.hydrationState));
 };
 
-export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
-  const session = await api.maintenance.getActiveSession();
+const applyActiveMaintenanceSession = (session: MaintenanceClientSession | null): void => {
   applyMaintenanceClientSession(session);
   useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(session?.taskId ?? "");
+};
+
+export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
+  applyActiveMaintenanceSession(await api.maintenance.getActiveSession());
 };
 
 export const useWebTaskSync = (): void => {
@@ -133,16 +203,30 @@ export const useWebTaskSync = (): void => {
         if (connectionOpen) stopFastPolling();
       },
     });
+    const maintenanceCoordinator = createMaintenanceSessionRefreshCoordinator({
+      read: async () => await api.maintenance.getActiveSession(),
+      apply: (session) => {
+        if (closed) return;
+        applyActiveMaintenanceSession(session);
+      },
+    });
     const refreshLiveRuns = (): void => {
       void coordinator.request();
+    };
+    const refreshMaintenanceSession = (): void => {
+      void maintenanceCoordinator.request();
     };
     const refreshPendingUncensored = (): void => {
       void hydratePendingUncensoredConfirmation().catch(() => {});
     };
     const startFastPolling = (): void => {
-      if (fastPollingTimer) return;
       refreshLiveRuns();
-      fastPollingTimer = setInterval(refreshLiveRuns, FAST_POLL_INTERVAL_MS);
+      refreshMaintenanceSession();
+      if (fastPollingTimer) return;
+      fastPollingTimer = setInterval(() => {
+        refreshLiveRuns();
+        refreshMaintenanceSession();
+      }, FAST_POLL_INTERVAL_MS);
     };
     const recordDispatch = (): void => {
       lastDispatchAt = Date.now();
@@ -157,13 +241,14 @@ export const useWebTaskSync = (): void => {
     void applyWebTaskSnapshot().catch(() => {});
     refreshLiveRuns();
     refreshPendingUncensored();
-    void hydrateActiveMaintenanceSession().catch(() => {});
+    refreshMaintenanceSession();
 
     const unsubscribe = subscribeTaskRealtime({
       onOpen: () => {
         connectionOpen = true;
         recordDispatch();
         refreshLiveRuns();
+        refreshMaintenanceSession();
       },
       onError: () => {
         connectionOpen = false;
@@ -172,14 +257,30 @@ export const useWebTaskSync = (): void => {
       onHeartbeat: () => {
         recordDispatch();
         refreshLiveRuns();
+        refreshMaintenanceSession();
       },
       onEvent: (payload) => {
         recordDispatch();
+        if (
+          payload.kind === "maintenance-preview-item" ||
+          payload.kind === "maintenance-apply-item" ||
+          (payload.kind === "task-progress" && payload.taskKind === "maintenance") ||
+          payload.kind === "task-failed"
+        ) {
+          maintenanceCoordinator.notifyLiveUpdate();
+        }
         const nextState = applyTaskRealtimeEvent(payload, useWorkbenchTaskStore.getState().hydrationState);
         setHydrationState(nextState);
       },
       onUpdate: (payload) => {
         recordDispatch();
+        if (
+          (payload.kind === "task" && payload.task.kind === "maintenance") ||
+          (payload.kind === "snapshot" && payload.tasks.some((task) => task.kind === "maintenance"))
+        ) {
+          maintenanceCoordinator.notifyLiveUpdate();
+          refreshMaintenanceSession();
+        }
         const nextState = applyWebTaskUpdate(payload, useWorkbenchTaskStore.getState().hydrationState);
         setHydrationState(nextState);
 
@@ -199,6 +300,7 @@ export const useWebTaskSync = (): void => {
     return () => {
       closed = true;
       coordinator.dispose();
+      maintenanceCoordinator.dispose();
       if (requestLiveRunsFromUi === refreshLiveRuns) requestLiveRunsFromUi = null;
       if (requestPendingUncensoredFromUi === refreshPendingUncensored) requestPendingUncensoredFromUi = null;
       clearInterval(livenessTimer);
