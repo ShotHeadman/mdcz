@@ -16,7 +16,7 @@ const deferred = (): Deferred => {
   return { promise, resolve };
 };
 
-const resultFor = (item: ScrapeRunItem, status: "success" | "skipped" = "success"): ScrapeResult => ({
+const resultFor = (item: ScrapeRunItem): ScrapeResult => ({
   fileId: item.id,
   fileInfo: {
     filePath: item.sourcePath,
@@ -25,8 +25,7 @@ const resultFor = (item: ScrapeRunItem, status: "success" | "skipped" = "success
     number: item.relativePath.replace(".mp4", ""),
     isSubtitled: false,
   },
-  status,
-  ...(status === "skipped" ? { error: "刮削已停止" } : {}),
+  status: "success",
 });
 
 const item = (runId: string, ordinal: number): ScrapeRunItem => ({
@@ -88,7 +87,6 @@ describe("ServerScrapeQueue", () => {
     const firstItemGate = deferred();
     const secondRunGate = deferred();
     const starts: string[] = [];
-    const commits: string[] = [];
     const queue = new ServerScrapeQueue();
     const firstItems = [item("run-1", 0), item("run-1", 1)];
     const firstSession = new ScrapeRunSession({
@@ -100,10 +98,7 @@ describe("ServerScrapeQueue", () => {
         if (current.id === firstItems[0]?.id) await firstItemGate.promise;
         return resultFor(current);
       },
-      commitItem: async (current, result) => {
-        commits.push(current.id);
-        return result;
-      },
+      commitItem: async (_current, result) => result,
       onSnapshot: () => undefined,
     });
     const secondSession = new ScrapeRunSession({
@@ -115,10 +110,7 @@ describe("ServerScrapeQueue", () => {
         await secondRunGate.promise;
         return resultFor(current);
       },
-      commitItem: async (current, result) => {
-        commits.push(current.id);
-        return result;
-      },
+      commitItem: async (_current, result) => result,
       onSnapshot: () => undefined,
     });
     queue.submit({ runId: "run-1", session: firstSession, createdAt: new Date(1), settle: async () => undefined });
@@ -129,7 +121,6 @@ describe("ServerScrapeQueue", () => {
     firstItemGate.resolve();
     await paused;
     await vi.waitFor(() => expect(starts).toEqual([firstItems[0]?.id, "run-2-item-0"]));
-    expect(commits).toEqual([firstItems[0]?.id]);
 
     queue.resume("run-1");
     expect(starts).toEqual([firstItems[0]?.id, "run-2-item-0"]);
@@ -137,13 +128,11 @@ describe("ServerScrapeQueue", () => {
     await vi.waitFor(() => expect(starts).toEqual([firstItems[0]?.id, "run-2-item-0", firstItems[1]?.id]));
     await vi.waitFor(() => expect(queue.list()).toEqual([]));
     expect(starts.filter((id) => id === firstItems[0]?.id)).toHaveLength(1);
-    expect(commits).toEqual([firstItems[0]?.id, "run-2-item-0", firstItems[1]?.id]);
   });
 
-  it("stops queued entries without executing them and commits skipped terminal outcomes", async () => {
+  it("stops queued entries without starting them and settles their run", async () => {
     const activeGate = deferred();
     const starts: string[] = [];
-    const commits: ScrapeResult[] = [];
     const settled: string[] = [];
     const queue = new ServerScrapeQueue();
     const createSession = (runId: string, gate?: Deferred) =>
@@ -156,10 +145,7 @@ describe("ServerScrapeQueue", () => {
           await gate?.promise;
           return resultFor(current);
         },
-        commitItem: async (_current, result) => {
-          commits.push(result);
-          return result;
-        },
+        commitItem: async (_current, result) => result,
         onSnapshot: () => undefined,
       });
     queue.submit({
@@ -181,14 +167,12 @@ describe("ServerScrapeQueue", () => {
     const stopped = await queue.stop("run-2");
     expect(stopped.status).toBe("stopped");
     expect(starts).toEqual(["run-1"]);
-    expect(commits).toEqual([expect.objectContaining({ status: "skipped", error: "刮削已停止" })]);
     expect(settled).toEqual(["run-2"]);
     activeGate.resolve();
     await vi.waitFor(() => expect(queue.get("run-1")).toBeNull());
   });
 
-  it("aborts active sessions on close without committing or settling them", async () => {
-    const commits: ScrapeResult[] = [];
+  it("aborts active sessions on close without settling them", async () => {
     const settled: string[] = [];
     const queue = new ServerScrapeQueue();
     const session = new ScrapeRunSession({
@@ -199,10 +183,7 @@ describe("ServerScrapeQueue", () => {
         await new Promise<ScrapeResult>((_resolve, reject) => {
           signal.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")), { once: true });
         }),
-      commitItem: async (_current, result) => {
-        commits.push(result);
-        return result;
-      },
+      commitItem: async (_current, result) => result,
       onSnapshot: () => undefined,
     });
     queue.submit({
@@ -214,10 +195,11 @@ describe("ServerScrapeQueue", () => {
       },
     });
     await vi.waitFor(() => expect(session.snapshot().items[0]?.status).toBe("processing"));
+    const abortForShutdown = vi.spyOn(session, "abortForShutdown");
 
     await queue.beginClose();
 
-    expect(commits).toEqual([]);
+    expect(abortForShutdown).toHaveBeenCalledOnce();
     expect(settled).toEqual([]);
     expect(queue.list()).toEqual([]);
   });

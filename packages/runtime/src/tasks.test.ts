@@ -2,7 +2,13 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
-import { type RuntimeTaskSnapshot, ScrapeRunSession, TaskExecutor, transitionTask } from "./tasks";
+import {
+  MAX_LIVE_SCRAPE_LOGS,
+  type RuntimeTaskSnapshot,
+  ScrapeRunSession,
+  TaskExecutor,
+  transitionTask,
+} from "./tasks";
 
 describe("task executor", () => {
   it("pauses queue admission while allowing in-flight items to settle", async () => {
@@ -135,11 +141,12 @@ const terminalResult = (
 });
 
 describe("scrape run session", () => {
-  it("pauses after the active item commits once and resumes only pending items", async () => {
+  it("keeps stable live snapshots while pausing after one committed item", async () => {
     const first = deferred<ScrapeResult>();
     const started = deferred<void>();
     const executed: string[] = [];
     const committed: string[] = [];
+    const observedStatuses: string[] = [];
     const items = [runItem("one"), runItem("two")];
     const session = new ScrapeRunSession({
       runId: "run-1",
@@ -155,9 +162,24 @@ describe("scrape run session", () => {
       },
       commitItem: async (item, result) => {
         committed.push(`${item.id}:${item.attempt}`);
-        return result;
+        return { ...result, resultId: `${item.id}:attempt-${item.attempt}` };
       },
-      onSnapshot: () => undefined,
+      onSnapshot: (snapshot) => {
+        observedStatuses.push(snapshot.status);
+      },
+    });
+
+    session.recordStage({ stage: "Download", message: "Downloading", itemId: items[0]?.id });
+    for (let index = 0; index <= MAX_LIVE_SCRAPE_LOGS; index += 1) {
+      session.recordLog({ level: "info", message: `log-${index}`, itemId: items[0]?.id });
+    }
+    expect(session.snapshot()).toMatchObject({
+      latestStage: { stage: "Download", message: "Downloading", itemId: "one", relativePath: "one.mp4" },
+      logs: [
+        { message: "log-1", itemId: "one", relativePath: "one.mp4" },
+        ...Array.from({ length: MAX_LIVE_SCRAPE_LOGS - 2 }, () => expect.any(Object)),
+        { message: `log-${MAX_LIVE_SCRAPE_LOGS}`, itemId: "one", relativePath: "one.mp4" },
+      ],
     });
 
     await session.start();
@@ -178,11 +200,20 @@ describe("scrape run session", () => {
     await session.resume();
     await session.waitForIdle();
     expect(session.snapshot()).toMatchObject({
+      runId: "run-1",
+      generation: 0,
       status: "completed",
       progress: { completedItems: 2, totalItems: 2, percent: 100 },
+      items: [
+        { id: "one", attempt: 1, status: "success", result: { resultId: "one:attempt-1" } },
+        { id: "two", attempt: 1, status: "success", result: { resultId: "two:attempt-1" } },
+      ],
     });
     expect(executed).toEqual(["one", "two"]);
     expect(committed).toEqual(["one:1", "two:1"]);
+    expect(observedStatuses[0]).toBe("queued");
+    expect(observedStatuses).toContain("running");
+    expect(observedStatuses.at(-1)).toBe("completed");
   });
 
   it("requeues a failed item as the next attempt without replaying settled work", async () => {
