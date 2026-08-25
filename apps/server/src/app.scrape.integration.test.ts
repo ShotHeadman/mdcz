@@ -191,8 +191,8 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
     });
-    const taskId = startResponse.json().result.data.id;
-    expect(startResponse.json().result.data.videoCount).toBe(0);
+    const taskId = startResponse.json().result.data.runId;
+    expect(startResponse.json().result.data).toEqual({ runId: taskId });
 
     await waitForTaskStatus(fastify, token, taskId, "completed");
 
@@ -397,7 +397,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
     });
-    await waitForTaskStatus(fastify, token, startResponse.json().result.data.id, "completed");
+    await waitForTaskStatus(fastify, token, startResponse.json().result.data.runId, "completed");
 
     const expectedPosterPath = join(root, "expected-poster.png");
     await writeFile(expectedPosterPath, sourcePoster);
@@ -452,7 +452,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
     await waitForTaskStatus(fastify, token, taskId, "completed");
 
     const resultsResponse = await fastify.inject({
@@ -532,21 +532,17 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(startResponse.statusCode).toBe(200);
-    expect(startResponse.json().result.data).toMatchObject({
-      kind: "scrape",
-      rootId,
-      status: expect.stringMatching(/queued|running|completed/),
-    });
-    const taskId = startResponse.json().result.data.id;
+    expect(startResponse.json().result.data).toEqual({ runId: expect.any(String) });
+    const taskId = startResponse.json().result.data.runId;
 
-    const resultsResponse = await fastify.inject({
+    const liveRunsResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: "/trpc/scrape.liveRuns",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(resultsResponse.json().result.data.results[0]).toMatchObject({
-      rootId,
-      relativePath: "ABC-128.mp4",
+    expect(liveRunsResponse.json().result.data.runs[0]).toMatchObject({
+      task: { id: taskId, kind: "scrape" },
+      items: [expect.objectContaining({ rootId, relativePath: "ABC-128.mp4" })],
     });
     await waitForTaskStatus(fastify, token, taskId, "completed");
   });
@@ -580,7 +576,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABP-999-U.mp4" }] },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
 
     await waitForTaskStatus(fastify, token, taskId, "completed");
     const initialResults = await services.persistence
@@ -603,6 +599,15 @@ describe("buildServer scrape integration", () => {
         number: "ABP-999",
         nfoRelativePath: initialResult?.nfoRelativePath,
       }),
+    ]);
+
+    const pendingConfirmationResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/scrape.pendingUncensoredConfirmation",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(pendingConfirmationResponse.json().result.data.items).toEqual([
+      expect.objectContaining({ taskId, ref: { rootId, relativePath: "ABP-999-U.mp4" } }),
     ]);
 
     const confirmResponse = await fastify.inject({
@@ -738,7 +743,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABC-001.mp4" }] },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
     await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.stop",
@@ -841,7 +846,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABC-124.mp4" }] },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
     await control.started;
 
     const stopResponse = await fastify.inject({
@@ -918,21 +923,14 @@ describe("buildServer scrape integration", () => {
       url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(resultsResponse.json().result.data.results).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "interrupted-item:backend-interrupted",
-          persistenceState: "interrupted",
-          status: "failed",
-        }),
-        expect.objectContaining({
-          id: "failed-outcome",
-          persistenceState: "terminal",
-          status: "failed",
-          error: "boom",
-        }),
-      ]),
-    );
+    expect(resultsResponse.json().result.data.results).toEqual([
+      expect.objectContaining({
+        id: "failed-outcome",
+        persistenceState: "terminal",
+        status: "failed",
+        error: "boom",
+      }),
+    ]);
 
     const repeatedDetailResponse = await fastify.inject({
       method: "GET",
@@ -993,7 +991,7 @@ describe("buildServer scrape integration", () => {
         ],
       },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
 
     // Pause while the first file is still inside its aggregation call, so the second file has
     // not been dequeued yet and stays pending.
@@ -1006,9 +1004,27 @@ describe("buildServer scrape integration", () => {
     });
     await Promise.resolve();
     gated.releaseFirstCall();
-    expect((await pauseResponse).statusCode).toBe(200);
+    const pausedResponse = await pauseResponse;
+    expect(pausedResponse.statusCode).toBe(200);
+    expect(pausedResponse.json().result.data).toEqual({ runId: taskId });
     await waitForTaskStatus(fastify, token, taskId, "paused");
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
+
+    const liveRunsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/scrape.liveRuns",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(liveRunsResponse.json().result.data.runs).toEqual([
+      expect.objectContaining({
+        task: expect.objectContaining({ id: taskId, status: "paused", continuity: "live" }),
+        progress: { percent: 50, completedItems: 1, totalItems: 2 },
+        items: expect.arrayContaining([
+          expect.objectContaining({ status: "success" }),
+          expect.objectContaining({ status: "pending" }),
+        ]),
+      }),
+    ]);
 
     await fastify.inject({
       method: "POST",

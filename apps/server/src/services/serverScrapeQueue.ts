@@ -66,8 +66,17 @@ export class ServerScrapeQueue<TManualScrape = unknown> {
   }
 
   list(): ServerScrapeQueueEntry<TManualScrape>[] {
-    return [...this.entries.values()]
+    const orderedRunIds = [this.activeRunId, ...this.readyRunIds].filter((runId): runId is string =>
+      Boolean(runId && this.entries.has(runId)),
+    );
+    const seen = new Set(orderedRunIds);
+    const pausedOrStopping = [...this.entries.values()]
+      .filter((entry) => !seen.has(entry.runId))
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .map((entry) => entry.runId);
+    return [...orderedRunIds, ...pausedOrStopping]
+      .map((runId) => this.entries.get(runId))
+      .filter((entry): entry is MutableServerScrapeQueueEntry<TManualScrape> => Boolean(entry))
       .map((entry) => this.copyEntry(entry));
   }
 

@@ -37,6 +37,7 @@ import {
   crawlerDataSchema,
   type FileActionInput,
   type FileActionResponse,
+  type LogEntryDto,
   type LogListResponse,
   type NfoReadInput,
   type NfoReadResponse,
@@ -48,6 +49,10 @@ import {
   type ScanTaskDto,
   type ScanTaskListResponse,
   type ScrapeConfirmUncensoredInput,
+  type ScrapeLiveItemDto,
+  type ScrapeLiveRunSnapshotDto,
+  type ScrapeLiveRunsResponse,
+  type ScrapePendingUncensoredConfirmationResponse,
   type ScrapeResultDetailResponse,
   type ScrapeResultDto,
   type ScrapeResultListResponse,
@@ -134,6 +139,7 @@ export class ScrapeService {
   private readonly posterCropAdapter: ServerPosterCropAdapter;
   private readonly runtime: MountedRootScrapeRuntime;
   private readonly queue: ServerScrapeQueue<ServerManualScrape>;
+  private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
@@ -258,6 +264,42 @@ export class ScrapeService {
     return { tasks: await Promise.all(manifests.map(async (manifest) => await this.toDto(manifest.id))) };
   }
 
+  /**
+   * The only live scrape read model.  It intentionally reads only the
+   * currently running process queue; durable manifests and outcomes remain
+   * available through the history endpoints instead.
+   */
+  async liveRuns(): Promise<ScrapeLiveRunsResponse> {
+    const entries = this.queue.list();
+    const runs: ScrapeLiveRunSnapshotDto[] = [];
+    for (const entry of entries) {
+      // Settlement removes the manifest before the queue entry is finally
+      // unlinked.  Treat that narrow hand-off as already non-live instead of
+      // turning an otherwise valid authority read into a 500 response.
+      const manifest = this.liveManifests.get(entry.runId);
+      if (!manifest) continue;
+      runs.push(await this.liveRunSnapshotDto(manifest, entry, entry.session.snapshot()));
+    }
+    return { runs };
+  }
+
+  /**
+   * Uncensored confirmation is durable post-processing, not live-session
+   * recovery.  Terminal outcomes remain queryable after a backend restart.
+   */
+  async pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse> {
+    const repository = (await this.persistence.getState()).repositories.scrapeRuns;
+    const manifests = await repository.listRuns();
+    const items = (
+      await Promise.all(
+        manifests.map(async (manifest) =>
+          (await this.buildAmbiguousUncensoredItems(manifest.id)).map((item) => ({ ...item, taskId: manifest.id })),
+        ),
+      )
+    ).flat();
+    return { items };
+  }
+
   async detail(taskId: string): Promise<ScanTaskDetailResponse> {
     return { task: await this.toDto(taskId), events: (await this.events(taskId)).events };
   }
@@ -320,22 +362,11 @@ export class ScrapeService {
     const results: ScrapeResultDto[] = [];
     for (const manifest of manifests) {
       const latest = await state.repositories.scrapeRuns.listLatestOutcomes(manifest.id);
-      const latestByItem = new Map(latest.map((outcome) => [outcome.itemId, outcome]));
-      const live = this.queue.get(manifest.id);
-      const liveItems = new Map(live?.session.snapshot().items.map((item) => [item.id, item]) ?? []);
-      const summary = await state.repositories.scrapeRuns.getSummary(manifest.id);
-      for (const item of manifest.items) {
-        const outcome = latestByItem.get(item.id);
-        if (outcome) {
-          results.push(await this.outcomeToDto({ manifest, item, outcome }));
-          continue;
-        }
-        const liveItem = liveItems.get(item.id);
-        if (liveItem) {
-          results.push(await this.liveItemToDto(manifest, liveItem));
-          continue;
-        }
-        if (!summary) results.push(await this.interruptedItemToDto(manifest, item));
+      const itemById = new Map(manifest.items.map((item) => [item.id, item]));
+      for (const outcome of latest) {
+        const item = itemById.get(outcome.itemId);
+        if (!item) throw new Error(`Scrape outcome item is missing from manifest: ${outcome.itemId}`);
+        results.push(await this.outcomeToDto({ manifest, item, outcome }));
       }
     }
     return { results };
@@ -521,6 +552,7 @@ export class ScrapeService {
       });
     }
     this.taskEvents.publish({ kind: "task", task: await this.toDto(manifest.id) });
+    this.scheduleScrapeInvalidation();
     return await this.toDto(manifest.id);
   }
 
@@ -555,7 +587,15 @@ export class ScrapeService {
   }
 
   async close(): Promise<void> {
+    if (this.scrapeInvalidationTimer) {
+      clearTimeout(this.scrapeInvalidationTimer);
+      this.scrapeInvalidationTimer = null;
+    }
     await this.queue.beginClose();
+    if (this.scrapeInvalidationTimer) {
+      clearTimeout(this.scrapeInvalidationTimer);
+      this.scrapeInvalidationTimer = null;
+    }
     this.liveManifests.clear();
   }
 
@@ -772,10 +812,12 @@ export class ScrapeService {
   private handleSessionSnapshot(manifest: ScrapeRunManifest, snapshot: ScrapeRunSnapshot<ServerManualScrape>): void {
     this.snapshots.set(manifest.id, snapshot);
     this.snapshotUpdatedAt.set(manifest.id, new Date());
+    this.scheduleScrapeInvalidation();
     if (!isTerminalSnapshot(snapshot)) this.publishLiveTask(manifest, snapshot);
   }
 
   private handleQueueChange(runId: string | null): void {
+    this.scheduleScrapeInvalidation();
     if (!runId) return;
     const manifest = this.liveManifests.get(runId);
     const entry = this.queue.get(runId);
@@ -940,54 +982,83 @@ export class ScrapeService {
     });
   }
 
-  private async liveItemToDto(
+  private async liveRunSnapshotDto(
+    manifest: ScrapeRunManifest,
+    entry: LiveQueueEntry,
+    snapshot: ScrapeRunSnapshot<ServerManualScrape>,
+  ): Promise<ScrapeLiveRunSnapshotDto> {
+    return {
+      task: this.liveTaskDto(manifest, entry, snapshot),
+      progress: { ...snapshot.progress },
+      items: snapshot.items.map((item) => this.liveItemToDto(manifest, item)),
+      latestStage: snapshot.latestStage
+        ? {
+            stage: snapshot.latestStage.stage,
+            message: snapshot.latestStage.message,
+            relativePath: snapshot.latestStage.relativePath,
+          }
+        : null,
+      logs: snapshot.logs.map((log, index) => this.liveLogToDto(manifest.id, log, index)),
+      ambiguousUncensoredItems: this.liveAmbiguousUncensoredItems(snapshot),
+    };
+  }
+
+  private liveItemToDto(
     manifest: ScrapeRunManifest,
     item: ScrapeRunItemSnapshot<ServerManualScrape>,
-  ): Promise<ScrapeResultDto> {
+  ): ScrapeLiveItemDto {
     const manifestItem = manifest.items.find((candidate) => candidate.id === item.id);
     if (!manifestItem) throw new Error(`Scrape item not found in manifest: ${item.id}`);
     return {
-      id: item.result?.resultId ?? item.id,
-      taskId: manifest.id,
+      id: item.id,
+      resultId: item.result?.resultId ?? null,
       rootId: item.rootId,
-      rootDisplayName: await this.getRootDisplayName(item.rootId),
-      outputRootId: null,
       relativePath: item.relativePath,
       fileName: path.posix.basename(item.relativePath),
       status: item.status,
       error: item.error,
       crawlerData: item.result?.crawlerData ?? null,
       nfoRootId: item.result?.nfoRootId ?? null,
-      nfoRelativePath: null,
-      outputRelativePath: null,
+      nfoRelativePath: item.result?.nfoPath ?? null,
+      outputRootId: null,
+      outputRelativePath: item.result?.outputPath ?? null,
       manualUrl: manifestItem.manualUrl,
-      uncensoredAmbiguous: item.result?.uncensoredAmbiguous ?? false,
-      createdAt: manifest.createdAt.toISOString(),
-      updatedAt: (this.snapshotUpdatedAt.get(manifest.id) ?? manifest.createdAt).toISOString(),
+      uncensoredAmbiguous: item.result?.uncensoredAmbiguous === true,
+      attempt: item.attempt,
     };
   }
 
-  private async interruptedItemToDto(manifest: ScrapeRunManifest, item: ScrapeRunItemRecord): Promise<ScrapeResultDto> {
+  private liveLogToDto(
+    runId: string,
+    log: ScrapeRunSnapshot<ServerManualScrape>["logs"][number],
+    index: number,
+  ): LogEntryDto {
+    const createdAt = log.timestamp.toISOString();
     return {
-      id: `${item.id}:backend-interrupted`,
-      taskId: manifest.id,
-      rootId: item.rootId,
-      rootDisplayName: await this.getRootDisplayName(item.rootId),
-      outputRootId: null,
-      relativePath: item.relativePath,
-      fileName: path.posix.basename(item.relativePath),
-      status: "failed",
-      error: SCRAPE_BACKEND_INTERRUPTED_MESSAGE,
-      crawlerData: null,
-      nfoRootId: null,
-      nfoRelativePath: null,
-      outputRelativePath: null,
-      manualUrl: item.manualUrl,
-      uncensoredAmbiguous: false,
-      persistenceState: "interrupted",
-      createdAt: manifest.createdAt.toISOString(),
-      updatedAt: manifest.createdAt.toISOString(),
+      id: `${runId}:live-log:${createdAt}:${index}`,
+      taskId: runId,
+      type: "live-log",
+      message: log.message,
+      createdAt,
+      source: "task",
+      level: log.level === "error" ? "ERR" : log.level === "warn" ? "WARN" : log.level === "debug" ? "INFO" : "INFO",
     };
+  }
+
+  private liveAmbiguousUncensoredItems(snapshot: ScrapeRunSnapshot<ServerManualScrape>): AmbiguousUncensoredItemDto[] {
+    return snapshot.items
+      .filter((item) => item.status === "success" && item.result?.uncensoredAmbiguous === true)
+      .map((item) => ({
+        id: item.result?.resultId ?? item.id,
+        ref: { rootId: item.rootId, relativePath: item.relativePath },
+        fileId: item.id,
+        fileName: path.posix.basename(item.relativePath),
+        number:
+          item.result?.crawlerData?.number ??
+          path.posix.basename(item.relativePath, path.posix.extname(item.relativePath)),
+        title: item.result?.crawlerData?.title_zh ?? item.result?.crawlerData?.title ?? null,
+        nfoRelativePath: item.result?.nfoPath ?? null,
+      }));
   }
 
   private async loadOutcomeContext(outcomeId: string): Promise<OutcomeContext> {
@@ -1088,6 +1159,14 @@ export class ScrapeService {
       case "failed":
         return "Scrape task failed";
     }
+  }
+
+  private scheduleScrapeInvalidation(): void {
+    if (this.scrapeInvalidationTimer) return;
+    this.scrapeInvalidationTimer = setTimeout(() => {
+      this.scrapeInvalidationTimer = null;
+      this.taskEvents.publish({ kind: "scrape-invalidated" });
+    }, 250);
   }
 
   private retainTerminalSnapshots(): void {

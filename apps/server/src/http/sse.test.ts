@@ -7,9 +7,10 @@ import { writeTaskEventsStream } from "./sse";
 
 class TestServerResponse extends EventEmitter {
   readonly chunks: string[] = [];
+  readonly writeResults: boolean[] = [];
   readonly write = vi.fn((chunk: string): boolean => {
     this.chunks.push(chunk);
-    return true;
+    return this.writeResults.shift() ?? true;
   });
   readonly writeHead = vi.fn(() => this);
 }
@@ -56,5 +57,25 @@ describe("writeTaskEventsStream", () => {
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(raw.chunks.filter((chunk) => chunk.startsWith("event: heartbeat")).length).toBe(1);
+  });
+
+  it("forwards a stateless scrape invalidation and coalesces it while the socket is backpressured", async () => {
+    const taskEvents = new TaskEventBus();
+    const raw = new TestServerResponse();
+    await writeTaskEventsStream(createServices(taskEvents), raw as unknown as ServerResponse);
+
+    raw.writeResults.push(false);
+    taskEvents.publish({ kind: "scrape-invalidated" });
+    taskEvents.publish({ kind: "scrape-invalidated" });
+    taskEvents.publish({ kind: "scrape-invalidated" });
+
+    const isInvalidation = (chunk: string): boolean =>
+      chunk.includes("event: task-update") && chunk.includes('data: {"kind":"scrape-invalidated"}');
+    expect(raw.chunks.filter(isInvalidation)).toHaveLength(1);
+
+    raw.emit("drain");
+    expect(raw.chunks.filter(isInvalidation)).toHaveLength(2);
+
+    raw.emit("close");
   });
 });

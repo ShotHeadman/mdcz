@@ -21,6 +21,7 @@ interface ScrapeState {
   updateProgress: (current: number, total: number) => void;
   upsertResult: (result: ScrapeResult) => void;
   addResult: (result: ScrapeResult) => void;
+  replaceResults: (results: ScrapeResult[]) => void;
   seedProcessingResults: (filePaths: string[]) => void;
   failUnfinishedResults: (reason: string) => void;
   markResultsRetrying: (filePaths: string[]) => void;
@@ -77,6 +78,11 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
       const nextResults = [...state.results];
       nextResults[existingIndex] = result;
       return { results: nextResults };
+    }),
+  replaceResults: (results) =>
+    set({
+      results: [...results],
+      failedCount: results.filter((result) => result.status === "failed").length,
     }),
   seedProcessingResults: (filePaths) =>
     set({

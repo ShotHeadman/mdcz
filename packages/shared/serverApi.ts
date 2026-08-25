@@ -56,6 +56,9 @@ import type {
   ScanTaskIdInput,
   ScanTaskListResponse,
   ScrapeConfirmUncensoredInput,
+  ScrapeLiveRunsResponse,
+  ScrapeMutationAckDto,
+  ScrapePendingUncensoredConfirmationResponse,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeResultListResponse,
@@ -176,20 +179,22 @@ export interface ServerApiContract {
     start(input: ScanStartInput): Promise<ScanTaskDto>;
   };
   scrape: {
-    startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto>;
+    liveRuns(): Promise<ScrapeLiveRunsResponse>;
+    pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
+    startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScrapeMutationAckDto>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
     listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
     posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
     posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
-    pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    pause(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
-    resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
-    retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    resume(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
+    retry(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto>;
-    start(input: ScrapeStartInput): Promise<ScanTaskDto>;
-    stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    start(input: ScrapeStartInput): Promise<ScrapeMutationAckDto>;
+    stop(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
   };
   tasks: {
     detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;

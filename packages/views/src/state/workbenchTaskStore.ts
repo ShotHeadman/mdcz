@@ -1,8 +1,9 @@
-import type { AmbiguousUncensoredItemDto } from "@mdcz/shared/serverDtos";
+import type { AmbiguousUncensoredItemDto, ScrapeLiveRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { create } from "zustand";
 
 export interface TaskHydrationState {
   activeScrapeTaskId: string;
+  liveScrapeRunsById: Record<string, ScrapeLiveRunSnapshotDto>;
   activeMaintenanceTaskId: string;
   latestScrapeStage: { taskId: string; stage: string; message: string; relativePath?: string } | null;
   latestTaskFailure: { taskId: string; message: string; error?: string | null } | null;
@@ -13,6 +14,7 @@ export interface TaskHydrationState {
 
 export const createTaskHydrationState = (): TaskHydrationState => ({
   activeScrapeTaskId: "",
+  liveScrapeRunsById: {},
   activeMaintenanceTaskId: "",
   latestScrapeStage: null,
   latestTaskFailure: null,
@@ -29,6 +31,7 @@ interface WorkbenchTaskState {
   setActiveScrapeTaskId: (taskId: string) => void;
   setActiveMaintenanceTaskId: (taskId: string) => void;
   resolveUncensoredTask: (taskId: string) => void;
+  clearUncensoredConfirmation: () => void;
   setScrapeStartPending: (pending: boolean) => void;
   reset: () => void;
 }
@@ -52,6 +55,15 @@ export const useWorkbenchTaskStore = create<WorkbenchTaskState>((set) => ({
         ...state.hydrationState,
         activeScrapeTaskId: taskId,
         ambiguousUncensoredItems: [],
+        uncensoredTaskId: "",
+      },
+    })),
+  clearUncensoredConfirmation: () =>
+    set((state) => ({
+      hydrationState: {
+        ...state.hydrationState,
+        ambiguousUncensoredItems: [],
+        shouldOpenUncensoredDialog: false,
         uncensoredTaskId: "",
       },
     })),

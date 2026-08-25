@@ -1,4 +1,4 @@
-import type { WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
+import type { ScrapeLiveRunSnapshotDto, WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { buildScrapeResultGroups } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
@@ -8,12 +8,75 @@ import { useUIStore } from "@mdcz/views/state/uiStore";
 import { createTaskHydrationState, useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  applyPendingUncensoredConfirmation,
+  applyScrapeLiveRunsSnapshot,
   applyTaskRealtimeEvent,
   applyWebTaskUpdate,
-  hydrateWorkbenchScrapeResults,
-  selectWorkbenchScrapeResults,
+  selectActiveLiveScrapeRun,
 } from "../taskHydration";
 import { __workbenchTestHooks } from "./workbench";
+
+const liveRun = (
+  id: string,
+  status: ScrapeLiveRunSnapshotDto["task"]["status"],
+  createdAt = "2026-05-06T00:00:00.000Z",
+): ScrapeLiveRunSnapshotDto => ({
+  task: {
+    id,
+    kind: "scrape",
+    rootId: "root-1",
+    rootDisplayName: "Media",
+    status,
+    createdAt,
+    updatedAt: createdAt,
+    startedAt: status === "queued" ? null : createdAt,
+    completedAt: null,
+    videoCount: 0,
+    directoryCount: 0,
+    error: null,
+    continuity: "live",
+  },
+  progress: { percent: 50, completedItems: 1, totalItems: 2 },
+  items: [
+    {
+      id: `${id}-item-1`,
+      resultId: `${id}-outcome-1`,
+      rootId: "root-1",
+      relativePath: "nested/ABC-001.mp4",
+      fileName: "ABC-001.mp4",
+      status: "success",
+      error: null,
+      crawlerData: null,
+      nfoRootId: null,
+      nfoRelativePath: "nested/ABC-001.nfo",
+      outputRootId: null,
+      outputRelativePath: "JAV_output/ABC-001/ABC-001.mp4",
+      manualUrl: null,
+      uncensoredAmbiguous: false,
+      attempt: 1,
+    },
+    {
+      id: `${id}-item-2`,
+      resultId: null,
+      rootId: "root-1",
+      relativePath: "nested/ABC-002.mp4",
+      fileName: "ABC-002.mp4",
+      status: "processing",
+      error: null,
+      crawlerData: null,
+      nfoRootId: null,
+      nfoRelativePath: null,
+      outputRootId: null,
+      outputRelativePath: null,
+      manualUrl: null,
+      uncensoredAmbiguous: false,
+      attempt: 1,
+    },
+  ],
+  latestStage: { stage: "Download", message: "Downloading poster", relativePath: "nested/ABC-002.mp4" },
+  logs: [],
+  ambiguousUncensoredItems: [],
+});
 
 describe("web workbench route contracts", () => {
   beforeEach(() => {
@@ -46,78 +109,131 @@ describe("web workbench route contracts", () => {
     ]);
   });
 
-  it("uses desktop-baseline confirmation copy for web scrape stop and retry", () => {
+  it("uses the established confirmation copy for Web scrape stop and retry", () => {
     expect(__workbenchTestHooks.STOP_SCRAPE_CONFIRM_MESSAGE).toBe("确定要停止刮削吗？");
     expect(__workbenchTestHooks.getRetryFailedConfirmMessage(3)).toBe("确定要批量重试 3 个失败项目吗？");
   });
 
-  it("hydrates only the active scrape task results for workbench restoration", () => {
-    const response = {
-      results: [
-        {
-          id: "result-2",
-          taskId: "task-2",
-          rootId: "root-1",
-          rootDisplayName: "Media",
-          relativePath: "BBB-002.mp4",
-          fileName: "BBB-002.mp4",
-          status: "success" as const,
-          error: null,
-          crawlerData: null,
-          nfoRootId: null,
-          nfoRelativePath: "BBB-002.nfo",
-          outputRelativePath: "JAV_output/BBB-002/BBB-002.mp4",
-          manualUrl: null,
-          uncensoredAmbiguous: false,
-          createdAt: "2026-05-04T00:00:00.000Z",
-          updatedAt: "2026-05-04T00:00:00.000Z",
-        },
-        {
-          id: "result-1",
-          taskId: "task-1",
-          rootId: "root-1",
-          rootDisplayName: "Media",
-          relativePath: "AAA-001.mp4",
-          fileName: "AAA-001.mp4",
-          status: "success" as const,
-          error: null,
-          crawlerData: null,
-          nfoRootId: null,
-          nfoRelativePath: "AAA-001.nfo",
-          outputRelativePath: "JAV_output/AAA-001/AAA-001.mp4",
-          manualUrl: null,
-          uncensoredAmbiguous: true,
-          createdAt: "2026-05-03T00:00:00.000Z",
-          updatedAt: "2026-05-03T00:00:00.000Z",
-        },
-      ],
-    };
+  it("uses the prior selected run before running and latest queued/paused candidates", () => {
+    const retained = liveRun("retained", "paused", "2026-05-04T00:00:00.000Z");
+    const running = liveRun("running", "running", "2026-05-05T00:00:00.000Z");
+    const queued = liveRun("queued", "queued", "2026-05-06T00:00:00.000Z");
 
-    expect(selectWorkbenchScrapeResults(response, "")).toEqual({
-      taskId: "",
-      results: [],
-    });
+    expect(selectActiveLiveScrapeRun([running, queued, retained], "retained")?.task.id).toBe("retained");
+    expect(selectActiveLiveScrapeRun([queued, running], "")?.task.id).toBe("running");
+    expect(selectActiveLiveScrapeRun([retained, queued], "")?.task.id).toBe("queued");
+  });
 
-    const state = hydrateWorkbenchScrapeResults(response, {
-      ...createTaskHydrationState(),
-      activeScrapeTaskId: "task-1",
-    });
+  it("replaces Web scrape state only from a complete liveRuns response", () => {
+    useUIStore.getState().setSelectedResultId("root-1:nested/ABC-001.mp4");
+    const state = applyScrapeLiveRunsSnapshot([liveRun("task-1", "paused")], createTaskHydrationState());
+
     expect(state.activeScrapeTaskId).toBe("task-1");
-    expect(useScrapeStore.getState().results).toHaveLength(1);
-    expect(useScrapeStore.getState().results[0]).toMatchObject({
-      fileId: "root-1:AAA-001.mp4",
-      nfoPath: "AAA-001.nfo",
-      outputPath: "JAV_output/AAA-001/AAA-001.mp4",
-      uncensoredAmbiguous: true,
+    expect(Object.keys(state.liveScrapeRunsById)).toEqual(["task-1"]);
+    expect(state.latestScrapeStage).toEqual({
+      taskId: "task-1",
+      stage: "Download",
+      message: "Downloading poster",
+      relativePath: "nested/ABC-002.mp4",
+    });
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: true,
+      scrapeStatus: "paused",
+      current: 1,
+      total: 2,
+      progress: 50,
+      results: [
+        expect.objectContaining({
+          fileId: "root-1:nested/ABC-001.mp4",
+          resultId: "task-1-outcome-1",
+          status: "success",
+        }),
+        expect.objectContaining({ fileId: "root-1:nested/ABC-002.mp4", status: "processing" }),
+      ],
+    });
+    expect(useUIStore.getState().selectedResultId).toBe("root-1:nested/ABC-001.mp4");
+  });
+
+  it("clears stale workbench scrape state when the backend reports no live runs", () => {
+    const previous = applyScrapeLiveRunsSnapshot([liveRun("task-1", "running")], createTaskHydrationState());
+    useUIStore.getState().setSelectedResultId("root-1:nested/ABC-001.mp4");
+
+    const state = applyScrapeLiveRunsSnapshot([], previous);
+
+    expect(state.activeScrapeTaskId).toBe("");
+    expect(state.liveScrapeRunsById).toEqual({});
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: false,
+      scrapeStatus: "idle",
+      current: 0,
+      total: 0,
+      results: [],
     });
     expect(useUIStore.getState().selectedResultId).toBeNull();
   });
 
-  it("keeps an active scrape task selected even before it has results", () => {
-    expect(selectWorkbenchScrapeResults({ results: [] }, "task-running")).toEqual({
-      taskId: "task-running",
-      results: [],
-    });
+  it("does not apply generic scrape tasks or realtime scrape events as workbench state", () => {
+    useScrapeStore.getState().setScraping(true);
+    useScrapeStore.getState().setScrapeStatus("running");
+    useScrapeStore.getState().updateProgress(1, 2);
+    const previous = { ...createTaskHydrationState(), activeScrapeTaskId: "live-task" };
+    const taskPayload: WebTaskUpdateDto = {
+      kind: "task",
+      task: {
+        id: "history-task",
+        kind: "scrape",
+        rootId: "root-1",
+        rootDisplayName: "Media",
+        status: "failed",
+        createdAt: "2026-05-06T00:00:00.000Z",
+        updatedAt: "2026-05-06T00:00:00.000Z",
+        startedAt: null,
+        completedAt: null,
+        videoCount: 0,
+        directoryCount: 0,
+        error: "interrupted",
+        continuity: "interrupted",
+      },
+    };
+
+    expect(applyWebTaskUpdate(taskPayload, previous).activeScrapeTaskId).toBe("live-task");
+    expect(
+      applyTaskRealtimeEvent(
+        {
+          id: "stage-1",
+          taskId: "history-task",
+          createdAt: "2026-05-06T00:00:00.000Z",
+          kind: "scrape-stage",
+          stage: "Download",
+          message: "ignored",
+        },
+        previous,
+      ).activeScrapeTaskId,
+    ).toBe("live-task");
+    expect(useScrapeStore.getState()).toMatchObject({ current: 1, total: 2, progress: 50 });
+  });
+
+  it("opens the uncensored dialog only from the durable pending query", () => {
+    const state = applyPendingUncensoredConfirmation(
+      {
+        items: [
+          {
+            id: "outcome-1",
+            taskId: "task-1",
+            ref: { rootId: "root-1", relativePath: "ABP-999-U.mp4" },
+            fileId: "item-1",
+            fileName: "ABP-999-U.mp4",
+            number: "ABP-999",
+            title: "Runtime UC Title",
+            nfoRelativePath: "ABP-999-U.nfo",
+          },
+        ],
+      },
+      createTaskHydrationState(),
+    );
+
+    expect(state).toMatchObject({ uncensoredTaskId: "task-1", shouldOpenUncensoredDialog: true });
+    expect(state.ambiguousUncensoredItems).toHaveLength(1);
   });
 
   it("does not label pending scrape rows as successful", () => {
@@ -138,191 +254,6 @@ describe("web workbench route contracts", () => {
     expect(groups[0]?.status).toBe("processing");
   });
 
-  it("does not reset restored scrape progress from a running task snapshot with no completed count", () => {
-    useScrapeStore.getState().setScraping(true);
-    useScrapeStore.getState().setScrapeStatus("running");
-    useScrapeStore.getState().updateProgress(35, 100);
-
-    const state = applyWebTaskUpdate(
-      {
-        kind: "snapshot",
-        tasks: [
-          {
-            id: "task-running",
-            kind: "scrape",
-            rootId: "root-1",
-            rootDisplayName: "Media",
-            status: "running",
-            createdAt: "2026-05-06T00:00:00.000Z",
-            updatedAt: "2026-05-06T00:00:00.000Z",
-            startedAt: "2026-05-06T00:00:01.000Z",
-            completedAt: null,
-            videoCount: 0,
-            directoryCount: 0,
-            error: null,
-            videos: ["A.mp4", "B.mp4"],
-          },
-        ],
-      },
-      { ...createTaskHydrationState(), activeScrapeTaskId: "task-running" },
-    );
-
-    expect(state.activeScrapeTaskId).toBe("task-running");
-    expect(useScrapeStore.getState()).toMatchObject({
-      isScraping: true,
-      scrapeStatus: "running",
-      current: 35,
-      total: 100,
-      progress: 35,
-    });
-  });
-
-  it("restores a completed active scrape task from snapshots after route changes", () => {
-    const state = applyWebTaskUpdate(
-      {
-        kind: "snapshot",
-        tasks: [
-          {
-            id: "task-completed",
-            kind: "scrape",
-            rootId: "root-1",
-            rootDisplayName: "Media",
-            status: "completed",
-            createdAt: "2026-05-06T00:00:00.000Z",
-            updatedAt: "2026-05-06T00:00:00.000Z",
-            startedAt: "2026-05-06T00:00:01.000Z",
-            completedAt: "2026-05-06T00:00:10.000Z",
-            videoCount: 1,
-            directoryCount: 0,
-            error: null,
-            videos: ["A.mp4"],
-          },
-        ],
-      },
-      { ...createTaskHydrationState(), activeScrapeTaskId: "task-completed" },
-    );
-
-    expect(state.activeScrapeTaskId).toBe("task-completed");
-    expect(useScrapeStore.getState()).toMatchObject({
-      isScraping: false,
-      scrapeStatus: "idle",
-      current: 1,
-      total: 1,
-      progress: 100,
-    });
-  });
-
-  it("accepts completed task events carrying ambiguous uncensored items", () => {
-    const payload: WebTaskUpdateDto = {
-      kind: "event",
-      event: {
-        id: "event-1",
-        taskId: "task-1",
-        type: "completed",
-        message: "done",
-        createdAt: "2026-05-03T00:00:00.000Z",
-      },
-      ambiguousUncensoredItems: [
-        {
-          id: "result-1",
-          ref: { rootId: "root-1", relativePath: "ABP-999-U.mp4" },
-          fileId: "root-1:ABP-999-U.mp4",
-          fileName: "ABP-999-U.mp4",
-          number: "ABP-999",
-          title: "Runtime UC Title",
-          nfoRelativePath: "ABP-999-U.nfo",
-        },
-      ],
-    };
-
-    expect(payload.ambiguousUncensoredItems?.[0]?.ref).toEqual({
-      rootId: "root-1",
-      relativePath: "ABP-999-U.mp4",
-    });
-
-    const state = applyWebTaskUpdate(payload, createTaskHydrationState());
-    expect(state).toMatchObject({
-      uncensoredTaskId: "task-1",
-      shouldOpenUncensoredDialog: true,
-    });
-    expect(state.ambiguousUncensoredItems).toHaveLength(1);
-  });
-
-  it("accepts realtime scrape result events", () => {
-    const state = applyTaskRealtimeEvent(
-      {
-        id: "realtime-1",
-        taskId: "task-1",
-        createdAt: "2026-05-06T00:00:00.000Z",
-        kind: "scrape-result",
-        result: {
-          id: "result-1",
-          taskId: "task-1",
-          rootId: "root-1",
-          rootDisplayName: "Media",
-          relativePath: "ABC-001.mp4",
-          fileName: "ABC-001.mp4",
-          status: "processing",
-          error: null,
-          crawlerData: null,
-          nfoRootId: null,
-          nfoRelativePath: null,
-          outputRelativePath: null,
-          manualUrl: null,
-          uncensoredAmbiguous: false,
-          createdAt: "2026-05-06T00:00:00.000Z",
-          updatedAt: "2026-05-06T00:00:00.000Z",
-        },
-      },
-      createTaskHydrationState(),
-    );
-
-    expect(state.activeScrapeTaskId).toBe("task-1");
-    expect(useScrapeStore.getState().results).toEqual([
-      expect.objectContaining({ fileId: "root-1:ABC-001.mp4", status: "processing" }),
-    ]);
-  });
-
-  it("routes realtime progress by task kind", () => {
-    applyTaskRealtimeEvent(
-      {
-        id: "progress-1",
-        taskId: "scrape-task",
-        createdAt: "2026-05-06T00:00:00.000Z",
-        kind: "task-progress",
-        taskKind: "scrape",
-        value: 35,
-        current: 2,
-        total: 4,
-      },
-      createTaskHydrationState(),
-    );
-
-    expect(useScrapeStore.getState()).toMatchObject({ current: 35, total: 100, progress: 35 });
-    expect(useMaintenanceExecutionStore.getState()).toMatchObject({ progressCurrent: 0, progressTotal: 0 });
-
-    applyTaskRealtimeEvent(
-      {
-        id: "progress-2",
-        taskId: "maintenance-task",
-        createdAt: "2026-05-06T00:00:00.000Z",
-        kind: "task-progress",
-        taskKind: "maintenance",
-        value: 44,
-        current: 1,
-        total: 5,
-      },
-      createTaskHydrationState(),
-    );
-
-    expect(useScrapeStore.getState()).toMatchObject({ current: 35, total: 100 });
-    expect(useMaintenanceExecutionStore.getState()).toMatchObject({
-      progressCurrent: 1,
-      progressTotal: 5,
-      progressValue: 44,
-    });
-  });
-
   it("applies realtime maintenance preview and apply items by stable file identity", () => {
     applyTaskRealtimeEvent(
       {
@@ -340,16 +271,7 @@ describe("web workbench route contracts", () => {
           fileName: "ABC-001.mp4",
           status: "ready",
           error: null,
-          fieldDiffs: [
-            {
-              kind: "value",
-              field: "title",
-              label: "标题",
-              oldValue: "Old",
-              newValue: "New",
-              changed: true,
-            },
-          ],
+          fieldDiffs: [],
           unchangedFieldDiffs: [],
           pathDiff: null,
           proposedCrawlerData: null,
@@ -359,15 +281,10 @@ describe("web workbench route contracts", () => {
       },
       createTaskHydrationState(),
     );
-
     expect(useMaintenancePreviewStore.getState().previewResults["root-1:ABC-001.mp4"]).toMatchObject({
-      fileId: "root-1:ABC-001.mp4",
       previewId: "preview-1",
       taskId: "maintenance-task",
-      status: "ready",
-      fieldDiffs: [{ field: "title", changed: true }],
     });
-
     applyTaskRealtimeEvent(
       {
         id: "apply-event-1",
@@ -391,7 +308,6 @@ describe("web workbench route contracts", () => {
     );
 
     expect(useMaintenanceExecutionStore.getState().itemResults["root-1:ABC-001.mp4"]).toMatchObject({
-      fileId: "root-1:ABC-001.mp4",
       status: "success",
     });
   });

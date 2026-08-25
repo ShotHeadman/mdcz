@@ -2,11 +2,8 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
 import {
-  activateNewScrapeTask,
-  applyScrapeTaskStatus,
   buildUncensoredConfirmationItems,
   MaintenanceWorkbenchAdapter,
-  resetScrapeWorkbenchToSetup,
   ScrapeWorkbenchAdapter,
   type SharedWorkbenchPorts,
   startMaintenanceFlow,
@@ -25,6 +22,7 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
+import { requestPendingUncensoredConfirmationRefresh, requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 
 export const Route = createFileRoute("/workbench")({
@@ -91,11 +89,10 @@ function WorkbenchPage() {
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const { hydrationState, resolveUncensoredTask, setActiveScrapeTaskId, setScrapeStartPending } = useWorkbenchTaskStore(
+  const { hydrationState, clearUncensoredConfirmation, setScrapeStartPending } = useWorkbenchTaskStore(
     useShallow((state) => ({
       hydrationState: state.hydrationState,
-      resolveUncensoredTask: state.resolveUncensoredTask,
-      setActiveScrapeTaskId: state.setActiveScrapeTaskId,
+      clearUncensoredConfirmation: state.clearUncensoredConfirmation,
       setScrapeStartPending: state.setScrapeStartPending,
     })),
   );
@@ -135,13 +132,10 @@ function WorkbenchPage() {
   const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
     setScrapeStartPending(true);
     try {
-      activateNewScrapeTask(filePaths);
-      const task = await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
-      setActiveScrapeTaskId(task.id);
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
+      requestScrapeLiveRunsRefresh();
       toast.success("已启动选中文件刮削");
     } catch (error) {
-      resetScrapeWorkbenchToSetup();
       toast.error(`启动失败: ${toErrorMessage(error)}`);
     } finally {
       setScrapeStartPending(false);
@@ -181,8 +175,8 @@ function WorkbenchPage() {
     const taskId = requireActiveScrapeTaskId();
     if (!taskId) return;
     try {
-      const task = await api.scrape.pause({ taskId });
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.pause({ taskId });
+      requestScrapeLiveRunsRefresh();
       toast.info("任务已暂停");
     } catch (error) {
       toast.error(`暂停失败: ${toErrorMessage(error)}`);
@@ -193,8 +187,8 @@ function WorkbenchPage() {
     const taskId = requireActiveScrapeTaskId();
     if (!taskId) return;
     try {
-      const task = await api.scrape.resume({ taskId });
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.resume({ taskId });
+      requestScrapeLiveRunsRefresh();
       toast.success("任务已恢复");
     } catch (error) {
       toast.error(`恢复失败: ${toErrorMessage(error)}`);
@@ -206,8 +200,8 @@ function WorkbenchPage() {
     if (!taskId) return;
     if (!window.confirm(STOP_SCRAPE_CONFIRM_MESSAGE)) return;
     try {
-      const task = await api.scrape.stop({ taskId });
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.stop({ taskId });
+      requestScrapeLiveRunsRefresh();
       toast.info("正在停止...");
     } catch (error) {
       toast.error(`停止失败: ${toErrorMessage(error)}`);
@@ -225,9 +219,6 @@ function WorkbenchPage() {
     }
     try {
       const result = await ports.scrape.retrySelection(targets, { scrapeStatus });
-      if (result.strategy === "new-task") {
-        applyScrapeTaskStatus("running");
-      }
       toast.success(result.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);
@@ -238,12 +229,13 @@ function WorkbenchPage() {
     if (!hydrationState.uncensoredTaskId) {
       throw new Error("缺少刮削任务 ID");
     }
-    const task = await api.scrape.confirmUncensored({
+    await api.scrape.confirmUncensored({
       taskId: hydrationState.uncensoredTaskId,
       items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
     });
-    resolveUncensoredTask(task.id);
-    applyScrapeTaskStatus(task.status);
+    clearUncensoredConfirmation();
+    requestScrapeLiveRunsRefresh();
+    requestPendingUncensoredConfirmationRefresh();
     toast.success("已提交无码确认重刮任务");
   };
 

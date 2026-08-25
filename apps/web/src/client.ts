@@ -242,6 +242,8 @@ export const api: ServerApiContract = {
     start: (input) => trpcMutation("scans.start", input),
   },
   scrape: {
+    liveRuns: () => trpcQuery("scrape.liveRuns"),
+    pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
     startSelectedFiles: (input) => trpcMutation("scrape.startSelectedFiles", input),
     deleteFile: (input) => trpcMutation("scrape.deleteFile", input),
     listResults: (input) => trpcQuery("scrape.listResults", input),
@@ -283,9 +285,21 @@ const taskEventsUrl = (): string => {
 
 const subscribeTaskEventSource = (handlers: {
   onEvent?: (payload: TaskRealtimeEventDto) => void;
+  onError?: () => void;
+  onHeartbeat?: () => void;
+  onOpen?: () => void;
   onUpdate?: (payload: WebTaskUpdateDto) => void;
 }): (() => void) => {
   const eventSource = new EventSource(taskEventsUrl());
+  eventSource.addEventListener("open", () => {
+    handlers.onOpen?.();
+  });
+  eventSource.addEventListener("error", () => {
+    handlers.onError?.();
+  });
+  eventSource.addEventListener("heartbeat", () => {
+    handlers.onHeartbeat?.();
+  });
   eventSource.addEventListener("task-update", (event) => {
     handlers.onUpdate?.(JSON.parse(event.data) as WebTaskUpdateDto);
   });
@@ -305,6 +319,9 @@ export const subscribeTaskEvents = (onEvent: (payload: TaskRealtimeEventDto) => 
 
 export const subscribeTaskRealtime = (handlers: {
   onEvent?: (payload: TaskRealtimeEventDto) => void;
+  onError?: () => void;
+  onHeartbeat?: () => void;
+  onOpen?: () => void;
   onUpdate?: (payload: WebTaskUpdateDto) => void;
 }): (() => void) => {
   return subscribeTaskEventSource(handlers);

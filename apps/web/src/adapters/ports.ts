@@ -9,6 +9,7 @@ import type {
 import type { DetailViewItem } from "@mdcz/views/detail";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { api, getLibraryAssetSrc } from "../client";
+import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 
 const dedupeValues = (values: string[]): string[] =>
   values
@@ -186,12 +187,12 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     if (refs.some((ref) => !ref)) {
       throw new Error("Web 重试需要媒体目录引用，请从工作台重新扫描后启动。");
     }
-    const task = await api.scrape.start({
+    await api.scrape.start({
       refs: refs as NonNullable<(typeof refs)[number]>[],
       manualUrl: options.manualUrl,
     });
-    useWorkbenchTaskStore.getState().setActiveScrapeTaskId(task.id);
-    return { message: `重试任务已启动，共 ${refs.length} 个文件`, strategy: "new-task" };
+    requestScrapeLiveRunsRefresh();
+    return { message: `重试任务已启动，共 ${refs.length} 个文件`, strategy: "live-runs" };
   },
   getDeleteFileAvailability: (targets) =>
     targets.length > 0 && targets.every((target) => target.ref) ? "enabled" : "hidden",

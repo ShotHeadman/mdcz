@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http";
 import type { ServerServices } from "../services";
-import { formatSseEvent } from "../taskEvents";
+import { formatSseEvent, type TaskEventEnvelope } from "../taskEvents";
 import { buildCorsHeaders } from "./cors";
 
 export async function writeTaskEventsStream(
@@ -16,20 +16,47 @@ export async function writeTaskEventsStream(
     "content-type": "text/event-stream; charset=utf-8",
     "x-accel-buffering": "no",
   });
-  raw.write(": connected\n\n");
+  let streamBlocked = false;
+  let pendingScrapeInvalidation: TaskEventEnvelope | null = null;
+
+  const write = (chunk: string): boolean => {
+    const accepted = raw.write(chunk);
+    if (!accepted) streamBlocked = true;
+    return accepted;
+  };
+
+  const writeTaskEvent = (event: TaskEventEnvelope): void => {
+    if (event.data.kind === "scrape-invalidated" && streamBlocked) {
+      // Progress can produce many invalidations while a slow client is backed
+      // up.  The query is authoritative, so one later notification is enough.
+      pendingScrapeInvalidation = event;
+      return;
+    }
+    write(formatSseEvent(event));
+  };
+
+  const flushPendingScrapeInvalidation = (): void => {
+    streamBlocked = false;
+    const pending = pendingScrapeInvalidation;
+    pendingScrapeInvalidation = null;
+    if (pending) writeTaskEvent(pending);
+  };
+
+  raw.on("drain", flushPendingScrapeInvalidation);
+  write(": connected\n\n");
 
   const heartbeatInterval = setInterval(() => {
-    raw.write("event: heartbeat\ndata: {}\n\n");
+    write("event: heartbeat\ndata: {}\n\n");
   }, 30_000);
   const unsubscribe = services.taskEvents.subscribe((event) => {
-    raw.write(formatSseEvent(event));
+    writeTaskEvent(event);
   });
   const [scanSnapshot, scrapeSnapshot, maintenanceSnapshot] = await Promise.all([
     services.scans.list(),
     services.scrape.list(),
     services.maintenance.list(),
   ]);
-  raw.write(
+  write(
     formatSseEvent({
       id: "snapshot",
       event: "task-update",
@@ -43,5 +70,6 @@ export async function writeTaskEventsStream(
   raw.on("close", () => {
     clearInterval(heartbeatInterval);
     unsubscribe();
+    raw.removeListener("drain", flushPendingScrapeInvalidation);
   });
 }

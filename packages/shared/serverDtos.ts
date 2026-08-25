@@ -355,6 +355,32 @@ export const scrapeResultSchema = z.object({
 
 export type ScrapeResultDto = z.infer<typeof scrapeResultSchema>;
 
+/**
+ * A live item belongs to an in-process scrape run.  Unlike ScrapeResultDto it
+ * is not persisted history: its `id` is the stable manifest item id and it
+ * can therefore describe pending and processing work as well as a committed
+ * terminal attempt.
+ */
+export const scrapeLiveItemSchema = z.object({
+  id: z.string(),
+  resultId: z.string().nullable(),
+  rootId: z.string(),
+  relativePath: z.string(),
+  fileName: z.string(),
+  status: z.enum(["pending", "processing", "success", "failed", "skipped"]),
+  error: z.string().nullable(),
+  crawlerData: crawlerDataSchema.nullable(),
+  nfoRootId: z.string().nullable(),
+  nfoRelativePath: z.string().nullable(),
+  outputRootId: z.string().nullable(),
+  outputRelativePath: z.string().nullable(),
+  manualUrl: z.string().nullable(),
+  uncensoredAmbiguous: z.boolean(),
+  attempt: z.number().int().positive(),
+});
+
+export type ScrapeLiveItemDto = z.infer<typeof scrapeLiveItemSchema>;
+
 export const scrapeResultListResponseSchema = z.object({
   results: z.array(scrapeResultSchema),
 });
@@ -546,6 +572,53 @@ export const logListResponseSchema = z.object({
 });
 
 export type LogListResponse = z.infer<typeof logListResponseSchema>;
+
+export const scrapeLiveRunSnapshotSchema = z.object({
+  task: scanTaskSchema,
+  progress: z.object({
+    percent: z.number().min(0).max(100),
+    completedItems: z.number().int().nonnegative(),
+    totalItems: z.number().int().nonnegative(),
+  }),
+  items: z.array(scrapeLiveItemSchema),
+  latestStage: z
+    .object({
+      stage: z.string(),
+      message: z.string(),
+      relativePath: z.string().nullable(),
+    })
+    .nullable(),
+  logs: z.array(logEntrySchema),
+  ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema),
+});
+
+export type ScrapeLiveRunSnapshotDto = z.infer<typeof scrapeLiveRunSnapshotSchema>;
+
+export const scrapeLiveRunsResponseSchema = z.object({
+  runs: z.array(scrapeLiveRunSnapshotSchema),
+});
+
+export type ScrapeLiveRunsResponse = z.infer<typeof scrapeLiveRunsResponseSchema>;
+
+export const scrapeMutationAckSchema = z.object({
+  runId: z.string(),
+});
+
+export type ScrapeMutationAckDto = z.infer<typeof scrapeMutationAckSchema>;
+
+export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema.extend({
+  taskId: z.string(),
+});
+
+export type ScrapePendingUncensoredConfirmationItemDto = z.infer<typeof scrapePendingUncensoredConfirmationItemSchema>;
+
+export const scrapePendingUncensoredConfirmationResponseSchema = z.object({
+  items: z.array(scrapePendingUncensoredConfirmationItemSchema),
+});
+
+export type ScrapePendingUncensoredConfirmationResponse = z.infer<
+  typeof scrapePendingUncensoredConfirmationResponseSchema
+>;
 
 const taskRealtimeEventBaseSchema = z.object({
   id: z.string(),
@@ -744,6 +817,7 @@ export const webTaskUpdateSchema = z.discriminatedUnion("kind", [
     ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema).optional(),
   }),
   z.object({ kind: z.literal("snapshot"), tasks: z.array(scanTaskSchema) }),
+  z.object({ kind: z.literal("scrape-invalidated") }),
 ]);
 
 export type WebTaskUpdateDto = z.infer<typeof webTaskUpdateSchema>;

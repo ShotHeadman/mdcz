@@ -390,7 +390,12 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "scrape.deleteFile", reason: "Root-relative delete; desktop File_Delete uses absolute paths." },
   {
     path: "scrape.listResults",
-    reason: "Server persisted scrape results; desktop uses Event_ScrapeResult / GetFailedFiles.",
+    reason: "Server terminal scrape history; desktop uses Event_ScrapeResult / GetFailedFiles.",
+  },
+  { path: "scrape.liveRuns", reason: "Web-only authoritative in-process scrape snapshot read." },
+  {
+    path: "scrape.pendingUncensoredConfirmation",
+    reason: "Web-only durable post-processing query for terminal scrape outcomes.",
   },
   { path: "scrape.result", reason: "Server persisted scrape result detail." },
   { path: "scrape.startSelectedFiles", reason: "Server split of desktop Scraper_Start selection mode." },

@@ -315,6 +315,10 @@ export const appRouter = t.router({
     listResults: protectedProcedure
       .input(scrapeTaskControlInputSchema.optional())
       .query(async ({ ctx, input }) => await ctx.services.scrape.listResults(input)),
+    liveRuns: protectedProcedure.query(async ({ ctx }) => await ctx.services.scrape.liveRuns()),
+    pendingUncensoredConfirmation: protectedProcedure.query(
+      async ({ ctx }) => await ctx.services.scrape.pendingUncensoredConfirmation(),
+    ),
     nfoRead: protectedProcedure
       .input(nfoReadInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.nfoRead(input)),
@@ -329,16 +333,16 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.posterCropSave(input)),
     pause: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.pause(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.pause(input)).id })),
     result: protectedProcedure
       .input(scrapeResultIdInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.result(input.id)),
     resume: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.resume(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.resume(input)).id })),
     retry: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.retry(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.retry(input)).id })),
     confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
       try {
         return await ctx.services.scrape.confirmUncensored(input);
@@ -352,13 +356,13 @@ export const appRouter = t.router({
     }),
     start: protectedProcedure
       .input(scrapeStartInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.start(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.start(input)).id })),
     startSelectedFiles: protectedProcedure
       .input(scrapeStartSelectedFilesInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.startSelectedFiles(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.startSelectedFiles(input)).id })),
     stop: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.stop(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.stop(input)).id })),
   }),
   tasks: t.router({
     detail: protectedProcedure.input(scanTaskIdInputSchema).query(async ({ ctx, input }) => {
