@@ -5,7 +5,6 @@ import { ScraperServiceError } from "@main/services/scraper";
 import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
 import type { ManualScrapeOptions } from "@main/services/scraper/manualScrape";
 import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
-import { resolveRecoverableSession as resolveRuntimeRecoverableSession } from "@mdcz/runtime/tasks";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
@@ -26,7 +25,6 @@ const defaultScraperStatus = (): ScraperStatus => ({
 });
 
 const withLaunchMessage = (result: StartScrapeResult, message: string) => ({ ...result, message });
-const withSuccessMessage = (message: string) => ({ success: true as const, message });
 const resolveManualScrapeOptions = (manualUrl?: string): ManualScrapeOptions | undefined => {
   const value = manualUrl?.trim();
   if (!value) {
@@ -57,8 +55,6 @@ export const createScraperHandlers = (
   IpcRouterContract,
   | typeof IpcChannel.Scraper_GetStatus
   | typeof IpcChannel.Scraper_GetFailedFiles
-  | typeof IpcChannel.Scraper_GetRecoverableSession
-  | typeof IpcChannel.Scraper_ResolveRecoverableSession
   | typeof IpcChannel.Scraper_Start
   | typeof IpcChannel.Scraper_Stop
   | typeof IpcChannel.Scraper_Pause
@@ -78,41 +74,6 @@ export const createScraperHandlers = (
         return { filePaths: scraperService.getFailedFiles() };
       }),
     ),
-    [IpcChannel.Scraper_GetRecoverableSession]: t.procedure.action(() =>
-      withIpcErrorHandling("get recoverable scrape session", async () => {
-        return await scraperService.getRecoverableSession();
-      }),
-    ),
-    [IpcChannel.Scraper_ResolveRecoverableSession]: t.procedure
-      .input<{ action?: "recover" | "discard" }>()
-      .action(({ input }) =>
-        withIpcErrorHandling(
-          "resolve recoverable scrape session",
-          async () => {
-            const resolved = await resolveRuntimeRecoverableSession(
-              {
-                summarize: async () => await scraperService.getRecoverableSession(),
-                recover: async () => await scraperService.recoverSession(),
-                discard: async () => {
-                  await scraperService.discardRecoverableSession();
-                },
-              },
-              {
-                action: input?.action,
-                discardMessage: "已放弃上次未完成的刮削任务",
-                recoverMessage: "恢复任务已启动",
-              },
-            );
-            return resolved.task
-              ? {
-                  success: true as const,
-                  ...withLaunchMessage(resolved.task, resolved.message),
-                }
-              : withSuccessMessage(resolved.message);
-          },
-          { mapError: toScraperServiceIpcError },
-        ),
-      ),
     [IpcChannel.Scraper_Start]: t.procedure
       .input<{ mode?: "single" | "selection"; paths?: string[] }>()
       .action(({ input }) =>

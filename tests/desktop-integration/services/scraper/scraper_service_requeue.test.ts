@@ -10,11 +10,11 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
-import { InMemoryScrapeSessionExecutionStore, ScrapeSession } from "@mdcz/runtime/tasks";
 import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../harness/tempDirectory";
+import { MemoryDesktopScrapeExecutionAdapter } from "./MemoryDesktopScrapeExecutionAdapter";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -54,7 +54,10 @@ const createTempDir = async (): Promise<string> => {
   return directory.path;
 };
 
-const createService = (imageHostCooldownStore?: PersistentCooldownStore): ScraperService => {
+const createService = (
+  imageHostCooldownStore?: PersistentCooldownStore,
+  executionStore = new MemoryDesktopScrapeExecutionAdapter(),
+): ScraperService => {
   const networkClient = new NetworkClient();
   return new ScraperService(
     new SignalService(null),
@@ -65,7 +68,7 @@ const createService = (imageHostCooldownStore?: PersistentCooldownStore): Scrape
     imageHostCooldownStore,
     undefined,
     undefined,
-    new InMemoryScrapeSessionExecutionStore(),
+    executionStore,
   );
 };
 
@@ -157,7 +160,7 @@ describe("ScraperService requeue flow", () => {
     });
   });
 
-  it("does not advance retry progress numbering when an earlier file is already retrying", async () => {
+  it("uses each stable item index across overlapping requeue requests", async () => {
     const service = createService();
     const config = mockConfig();
     const dirPath = await createTempDir();
@@ -226,10 +229,10 @@ describe("ScraperService requeue flow", () => {
 
     await waitForIdle(service);
 
-    expect(retryProgress.get(secondFilePath)).toEqual([3]);
+    expect(retryProgress.get(secondFilePath)).toEqual([2]);
   });
 
-  it("reuses the same aggregation service for requeues and clears its cache when the session ends", async () => {
+  it("reuses the same file scraper and aggregation service for requeues", async () => {
     const service = createService();
     const config = mockConfig();
     const secondFileTask = deferred<ScrapeResult>();
@@ -271,33 +274,26 @@ describe("ScraperService requeue flow", () => {
 
     await waitForIdle(service);
 
-    expect(createdDependencies).toHaveLength(2);
-    expect(createdDependencies[0]?.aggregationService).toBe(createdDependencies[1]?.aggregationService);
+    expect(createdDependencies).toHaveLength(1);
     expect(clearCacheSpy).toHaveBeenCalledTimes(1);
   });
-  it("finishes a scrape session only once when completion is entered concurrently", async () => {
-    const service = createService();
+  it("finalizes a scrape run once when multiple callers wait for completion", async () => {
+    const executionStore = new MemoryDesktopScrapeExecutionAdapter();
+    const service = createService(undefined, executionStore);
     const config = mockConfig();
     const dirPath = await createTempDir();
     const filePath = join(dirPath, "ABP-933.mp4");
     const pendingFileTask = deferred<ScrapeResult>();
-    const finishSpy = vi.spyOn(ScrapeSession.prototype, "finish");
 
     await writeFile(filePath, "video", "utf8");
     vi.spyOn(FileScraper.prototype, "scrapeFile").mockReturnValue(pendingFileTask.promise);
 
-    const { taskId: scrapeSessionId } = await service.startSingle([filePath]);
-    const finishCandidate: unknown = Reflect.get(service, "finish");
-    if (typeof finishCandidate !== "function") {
-      throw new Error("ScraperService.finish is unavailable");
-    }
-    const finish = finishCandidate.bind(service) as (id: string) => Promise<void>;
-    await Promise.all([finish(scrapeSessionId), finish(scrapeSessionId)]);
-
-    expect(finishSpy).toHaveBeenCalledTimes(1);
-
+    await service.startSingle([filePath]);
+    const waiters = [service.waitForIdle(), service.waitForIdle()];
     pendingFileTask.resolve(scrapeResult(filePath, config.scrape.sites[0]));
-    await service.waitForIdle();
+    await Promise.all(waiters);
+
+    expect(executionStore.finalized).toHaveLength(1);
   });
 
   it("passes manual scrape options to retry file tasks", async () => {

@@ -28,7 +28,6 @@ import {
   scanStartInputSchema,
   scanTaskIdInputSchema,
   scrapeConfirmUncensoredInputSchema,
-  scrapeRecoverableSessionResolveInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
   scrapeStartSelectedFilesInputSchema,
@@ -316,9 +315,6 @@ export const appRouter = t.router({
     listResults: protectedProcedure
       .input(scrapeTaskControlInputSchema.optional())
       .query(async ({ ctx, input }) => await ctx.services.scrape.listResults(input)),
-    getRecoverableSession: protectedProcedure.query(
-      async ({ ctx }) => await ctx.services.scrape.getRecoverableSession(),
-    ),
     nfoRead: protectedProcedure
       .input(nfoReadInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.nfoRead(input)),
@@ -354,9 +350,6 @@ export const appRouter = t.router({
         });
       }
     }),
-    resolveRecoverableSession: protectedProcedure
-      .input(scrapeRecoverableSessionResolveInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.resolveRecoverableSession(input)),
     start: protectedProcedure
       .input(scrapeStartInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.start(input)),

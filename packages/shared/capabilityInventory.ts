@@ -188,12 +188,6 @@ export const CROSS_HOST_CAPABILITIES = [
     reason: SCRAPE_EXECUTION_REASON,
   },
   {
-    desktop: IpcChannel.Scraper_GetRecoverableSession,
-    server: "scrape.getRecoverableSession",
-    status: "blocked",
-    reason: SCRAPE_EXECUTION_REASON,
-  },
-  {
     desktop: IpcChannel.File_NfoRead,
     server: "scrape.nfoRead",
     status: "blocked",
@@ -220,12 +214,6 @@ export const CROSS_HOST_CAPABILITIES = [
   {
     desktop: IpcChannel.File_PosterCropSession,
     server: "scrape.posterCropSession",
-    status: "blocked",
-    reason: SCRAPE_EXECUTION_REASON,
-  },
-  {
-    desktop: IpcChannel.Scraper_ResolveRecoverableSession,
-    server: "scrape.resolveRecoverableSession",
     status: "blocked",
     reason: SCRAPE_EXECUTION_REASON,
   },

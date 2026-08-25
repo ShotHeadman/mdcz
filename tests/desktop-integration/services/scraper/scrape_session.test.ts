@@ -1,138 +1,105 @@
-import { InMemoryScrapeSessionExecutionStore, ScrapeSession } from "@mdcz/runtime/tasks";
+import { MAX_LIVE_SCRAPE_LOGS, type ScrapeRunItem, ScrapeRunSession } from "@mdcz/runtime/tasks";
 import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
-const result = (sourcePath: string, status: ScrapeResult["status"] = "success"): ScrapeResult => ({
+const item = (id: string): ScrapeRunItem => ({
+  id,
+  rootId: "root-1",
+  relativePath: `${id}.mp4`,
+  sourcePath: `/media/${id}.mp4`,
+  attempt: 1,
+});
+
+const result = (current: ScrapeRunItem, status: "success" | "failed" | "skipped" = "success"): ScrapeResult => ({
   status,
-  fileId: sourcePath,
-  fileInfo: { filePath: sourcePath, fileName: sourcePath, extension: ".mp4", number: "TEST-001", isSubtitled: false },
+  fileId: current.id,
+  fileInfo: {
+    filePath: current.sourcePath,
+    fileName: `${current.id}.mp4`,
+    extension: ".mp4",
+    number: current.id,
+    isSubtitled: false,
+  },
   ...(status === "success"
     ? {
         crawlerData: {
-          title: "Test",
-          number: "TEST-001",
+          title: current.id,
+          number: current.id,
           actors: [],
           genres: [],
           scene_images: [],
           website: Website.JAVDB,
         },
       }
-    : {}),
+    : status === "failed"
+      ? { error: "failed" }
+      : {}),
 });
 
-const deferred = <T>() => {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-};
+describe("ScrapeRunSession desktop contract", () => {
+  it("keeps stable run and item IDs while exposing committed terminal results", async () => {
+    const items = [item("one"), item("two")];
+    const observedStatuses: string[] = [];
+    const session = new ScrapeRunSession({
+      runId: "run-1",
+      items,
+      concurrency: 2,
+      executeItem: async (current) => result(current, current.id === "one" ? "success" : "failed"),
+      commitItem: async (current, terminal) => ({
+        ...terminal,
+        resultId: `${current.id}:attempt-${current.attempt}`,
+      }),
+      onSnapshot: (snapshot) => {
+        observedStatuses.push(snapshot.status);
+      },
+    });
 
-describe("ScrapeSession", () => {
-  it("pauses after the in-flight item settles and resumes only pending work", async () => {
-    const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
-    const first = deferred<ScrapeResult>();
-    const started: string[] = [];
-    await session.begin(["one", "two", "three"], 1);
-    await session.addTask({
-      sourcePath: "one",
-      isRetry: false,
-      taskFn: async () => {
-        started.push("one");
-        return first.promise;
-      },
+    await session.start();
+    await session.waitForIdle();
+
+    expect(session.snapshot()).toMatchObject({
+      runId: "run-1",
+      generation: 0,
+      status: "completed",
+      progress: { percent: 100, completedItems: 2, totalItems: 2 },
+      items: [
+        { id: "one", attempt: 1, status: "success", result: { resultId: "one:attempt-1" } },
+        { id: "two", attempt: 1, status: "failed", result: { resultId: "two:attempt-1" } },
+      ],
     });
-    await session.addTask({
-      sourcePath: "two",
-      isRetry: false,
-      taskFn: async () => {
-        started.push("two");
-        return result("two");
-      },
-    });
-    await session.addTask({
-      sourcePath: "three",
-      isRetry: false,
-      taskFn: async () => {
-        started.push("three");
-        return result("three");
-      },
-    });
-    const idle = session.onIdle();
-    while (started.length !== 1) await new Promise((resolve) => setTimeout(resolve, 1));
-    await session.pause();
-    first.resolve(result("one"));
-    await idle;
-    expect(session.getState()).toBe("paused");
-    expect(started).toEqual(["one"]);
-    await session.resume();
-    await session.onIdle();
-    expect(started).toEqual(["one", "two", "three"]);
+    expect(observedStatuses[0]).toBe("running");
+    expect(observedStatuses.at(-1)).toBe("completed");
   });
 
-  it("resumes immediately while an in-flight item is still running", async () => {
-    const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
-    const first = deferred<ScrapeResult>();
-    const firstStarted = deferred<void>();
-    const secondStarted = deferred<void>();
-    await session.begin(["one", "two"], 1);
-    await session.addTask({
-      sourcePath: "one",
-      isRetry: false,
-      taskFn: async () => {
-        firstStarted.resolve();
-        return first.promise;
-      },
-    });
-    await session.addTask({
-      sourcePath: "two",
-      isRetry: false,
-      taskFn: async () => {
-        secondStarted.resolve();
-        return result("two");
-      },
+  it("retains only the latest bounded live logs and associates stages with stable items", () => {
+    const current = item("one");
+    const session = new ScrapeRunSession({
+      runId: "run-1",
+      items: [current],
+      concurrency: 1,
+      executeItem: async () => result(current),
+      commitItem: async (_item, terminal) => terminal,
+      onSnapshot: () => undefined,
     });
 
-    const idle = session.onIdle();
-    await firstStarted.promise;
-    await session.pause();
-    await session.resume();
-    first.resolve(result("one"));
-    await secondStarted.promise;
-    await idle;
+    session.recordStage({ stage: "Download", message: "Downloading", itemId: current.id });
+    for (let index = 0; index <= MAX_LIVE_SCRAPE_LOGS; index += 1) {
+      session.recordLog({ level: "info", message: `log-${index}`, itemId: current.id });
+    }
 
-    expect(session.getState()).toBe("running");
-    expect(session.getStatus().completedFiles).toBe(2);
-  });
-
-  it("stops pending work without allowing a cleared worker to start it", async () => {
-    const session = new ScrapeSession({ executionStore: new InMemoryScrapeSessionExecutionStore() });
-    const running = deferred<ScrapeResult>();
-    const started: string[] = [];
-    await session.begin(["one", "two"], 1);
-    await session.addTask({
-      sourcePath: "one",
-      isRetry: false,
-      taskFn: async () => {
-        started.push("one");
-        return running.promise;
+    expect(session.snapshot()).toMatchObject({
+      latestStage: {
+        stage: "Download",
+        message: "Downloading",
+        itemId: "one",
+        relativePath: "one.mp4",
       },
+      logs: [
+        { message: "log-1", itemId: "one", relativePath: "one.mp4" },
+        ...Array.from({ length: MAX_LIVE_SCRAPE_LOGS - 2 }, () => expect.any(Object)),
+        { message: `log-${MAX_LIVE_SCRAPE_LOGS}`, itemId: "one", relativePath: "one.mp4" },
+      ],
     });
-    await session.addTask({
-      sourcePath: "two",
-      isRetry: false,
-      taskFn: async () => {
-        started.push("two");
-        return result("two");
-      },
-    });
-    const idle = session.onIdle();
-    while (started.length !== 1) await new Promise((resolve) => setTimeout(resolve, 1));
-    await session.stop();
-    running.resolve(result("one"));
-    await idle;
-    expect(started).toEqual(["one"]);
-    expect(session.getStatus().skippedCount).toBe(1);
   });
 });

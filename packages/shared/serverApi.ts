@@ -56,9 +56,6 @@ import type {
   ScanTaskIdInput,
   ScanTaskListResponse,
   ScrapeConfirmUncensoredInput,
-  ScrapeRecoverableSessionResolveInput,
-  ScrapeRecoverableSessionResolveResponse,
-  ScrapeRecoverableSessionResponse,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeResultListResponse,
@@ -182,7 +179,6 @@ export interface ServerApiContract {
     startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
     listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse>;
-    getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
     posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
@@ -192,9 +188,6 @@ export interface ServerApiContract {
     resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto>;
-    resolveRecoverableSession(
-      input?: ScrapeRecoverableSessionResolveInput,
-    ): Promise<ScrapeRecoverableSessionResolveResponse>;
     start(input: ScrapeStartInput): Promise<ScanTaskDto>;
     stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
   };

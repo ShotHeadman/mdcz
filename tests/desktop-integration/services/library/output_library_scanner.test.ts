@@ -1,29 +1,83 @@
 import { OutputLibraryScanner } from "@main/services/library/OutputLibraryScanner";
 import { createMediaRoot } from "@mdcz/media-store";
-import { LibraryRepository, MediaRootRepository } from "@mdcz/persistence";
+import {
+  LibraryRepository,
+  MediaRootRepository,
+  type PersistenceDatabase,
+  ScrapeRunRepository,
+} from "@mdcz/persistence";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
 
-const databases: ReturnType<typeof createTestPersistenceDatabase>[] = [];
+const databases: PersistenceDatabase[] = [];
 
 const createPersistenceService = () => {
   const database = createTestPersistenceDatabase();
   databases.push(database);
   const library = new LibraryRepository(database);
   const mediaRoots = new MediaRootRepository(database);
+  const scrapeRuns = new ScrapeRunRepository(database);
   return {
     library,
     mediaRoots,
+    scrapeRuns,
     service: {
       getState: vi.fn(async () => ({
         database,
         repositories: {
           library,
           mediaRoots,
+          scrapeRuns,
         },
       })),
     },
   };
+};
+
+const createCompletedRun = async (
+  scrapeRuns: ScrapeRunRepository,
+  input: {
+    id: string;
+    completedAt: Date;
+    outputDirectory: string;
+    outputRelativePath: string;
+    size: number;
+  },
+) => {
+  const manifest = await scrapeRuns.createRun({
+    id: input.id,
+    rootId: "root-1",
+    outputRootId: "root-1",
+    executionMode: "single",
+    items: [{ id: `${input.id}:item`, ordinal: 0, rootId: "root-1", relativePath: input.outputRelativePath }],
+  });
+  await scrapeRuns.commitSuccess({
+    runId: manifest.id,
+    itemId: manifest.items[0].id,
+    attempt: 1,
+    crawlerDataJson: JSON.stringify({ number: input.id }),
+    outputRootId: "root-1",
+    outputRelativePath: input.outputRelativePath,
+    size: input.size,
+    completedAt: input.completedAt,
+    libraryEntry: {
+      mediaIdentity: input.id,
+      rootId: "root-1",
+      rootRelativePath: input.outputRelativePath,
+      size: input.size,
+      number: input.id,
+      crawlerDataJson: JSON.stringify({ number: input.id }),
+      lastKnownPath: input.outputRelativePath,
+      createdAt: input.completedAt,
+    },
+  });
+  await scrapeRuns.finalizeRun({
+    runId: manifest.id,
+    disposition: "completed",
+    outputRootId: "root-1",
+    outputDirectory: input.outputDirectory,
+    completedAt: input.completedAt,
+  });
 };
 
 describe("OutputLibraryScanner", () => {
@@ -49,14 +103,14 @@ describe("OutputLibraryScanner", () => {
     });
   });
 
-  it("uses the latest persisted scrape output and caches until invalidated", async () => {
-    const { library, service } = createPersistenceService();
-    await library.upsertScrapeOutput({
-      taskId: "task-1",
-      rootId: "root-1",
+  it("uses the latest persisted scrape run summary and caches until invalidated", async () => {
+    const { mediaRoots, scrapeRuns, service } = createPersistenceService();
+    await mediaRoots.upsert(createMediaRoot({ id: "root-1", displayName: "Output", hostPath: "/media/output" }));
+    await createCompletedRun(scrapeRuns, {
+      id: "run-1",
       outputDirectory: "output-root",
-      fileCount: 2,
-      totalBytes: 10,
+      outputRelativePath: "A.mp4",
+      size: 10,
       completedAt: new Date(1_700_000_000_000),
     });
     const scanner = new OutputLibraryScanner({
@@ -68,25 +122,24 @@ describe("OutputLibraryScanner", () => {
 
     const first = await scanner.getSummary();
     expect(first).toEqual({
-      fileCount: 2,
+      fileCount: 1,
       totalBytes: 10,
       scannedAt: 1_700_000_000_000,
       rootPath: "output-root",
     });
 
-    await library.upsertScrapeOutput({
-      taskId: "task-2",
-      rootId: "root-1",
+    await createCompletedRun(scrapeRuns, {
+      id: "run-2",
       outputDirectory: "next-output",
-      fileCount: 3,
-      totalBytes: 18,
+      outputRelativePath: "B.mp4",
+      size: 18,
       completedAt: new Date(1_700_000_000_100),
     });
     await expect(scanner.getSummary()).resolves.toEqual(first);
 
     scanner.invalidate();
     await expect(scanner.getSummary()).resolves.toEqual({
-      fileCount: 3,
+      fileCount: 1,
       totalBytes: 18,
       scannedAt: 1_700_000_000_100,
       rootPath: "next-output",

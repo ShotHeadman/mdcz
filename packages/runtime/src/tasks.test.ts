@@ -1,13 +1,8 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
-import {
-  type RecoverableSessionPort,
-  type RuntimeTaskSnapshot,
-  resolveRecoverableSession,
-  TaskExecutor,
-  transitionTask,
-} from "./tasks";
+import { type RuntimeTaskSnapshot, ScrapeRunSession, TaskExecutor, transitionTask } from "./tasks";
 
 describe("task executor", () => {
   it("pauses queue admission while allowing in-flight items to settle", async () => {
@@ -107,6 +102,235 @@ describe("task executor", () => {
   });
 });
 
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
+const runItem = (id: string) => ({
+  id,
+  rootId: "root-1",
+  relativePath: `${id}.mp4`,
+  sourcePath: `/media/${id}.mp4`,
+  attempt: 1,
+});
+
+const terminalResult = (
+  item: { id: string; sourcePath: string },
+  status: "success" | "failed" | "skipped",
+): ScrapeResult => ({
+  fileId: item.id,
+  fileInfo: {
+    filePath: item.sourcePath,
+    fileName: `${item.id}.mp4`,
+    extension: ".mp4",
+    number: item.id,
+    isSubtitled: false,
+  },
+  status,
+  ...(status === "failed" ? { error: "failed" } : {}),
+});
+
+describe("scrape run session", () => {
+  it("pauses after the active item commits once and resumes only pending items", async () => {
+    const first = deferred<ScrapeResult>();
+    const started = deferred<void>();
+    const executed: string[] = [];
+    const committed: string[] = [];
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession({
+      runId: "run-1",
+      items,
+      concurrency: 1,
+      executeItem: async (item) => {
+        executed.push(item.id);
+        if (item.id === "one") {
+          started.resolve();
+          return await first.promise;
+        }
+        return terminalResult(item, "success");
+      },
+      commitItem: async (item, result) => {
+        committed.push(`${item.id}:${item.attempt}`);
+        return result;
+      },
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await started.promise;
+    const paused = session.pause();
+    first.resolve(terminalResult(items[0], "success"));
+    await expect(paused).resolves.toMatchObject({
+      status: "paused",
+      progress: { completedItems: 1, totalItems: 2, percent: 50 },
+      items: [
+        { id: "one", status: "success" },
+        { id: "two", status: "pending" },
+      ],
+    });
+    expect(executed).toEqual(["one"]);
+    expect(committed).toEqual(["one:1"]);
+
+    await session.resume();
+    await session.waitForIdle();
+    expect(session.snapshot()).toMatchObject({
+      status: "completed",
+      progress: { completedItems: 2, totalItems: 2, percent: 100 },
+    });
+    expect(executed).toEqual(["one", "two"]);
+    expect(committed).toEqual(["one:1", "two:1"]);
+  });
+
+  it("requeues a failed item as the next attempt without replaying settled work", async () => {
+    const second = deferred<ScrapeResult>();
+    const failureCommitted = deferred<void>();
+    const secondStarted = deferred<void>();
+    const executed: string[] = [];
+    const committed: string[] = [];
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession<{ detailUrl: string }>({
+      runId: "run-1",
+      items,
+      concurrency: 2,
+      executeItem: async (item) => {
+        executed.push(`${item.id}:${item.attempt}`);
+        if (item.id === "two") {
+          secondStarted.resolve();
+          return await second.promise;
+        }
+        return terminalResult(item, item.attempt === 1 ? "failed" : "success");
+      },
+      commitItem: async (item, result) => {
+        committed.push(`${item.id}:${item.attempt}:${result.status}`);
+        if (item.id === "one" && item.attempt === 1) failureCommitted.resolve();
+        return result;
+      },
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await Promise.all([failureCommitted.promise, secondStarted.promise]);
+    expect(session.requeue("one", { detailUrl: "https://example.test/one" })).toBe(true);
+    second.resolve(terminalResult(items[1], "success"));
+    await session.waitForIdle();
+
+    expect(executed).toEqual(["one:1", "two:1", "one:2"]);
+    expect(committed).toEqual(["one:1:failed", "two:1:success", "one:2:success"]);
+    expect(session.snapshot().items[0]).toMatchObject({
+      id: "one",
+      attempt: 2,
+      status: "success",
+      manualScrape: { detailUrl: "https://example.test/one" },
+    });
+  });
+
+  it("stops with skipped outcomes while fencing the aborted execution result", async () => {
+    const started = deferred<void>();
+    const executed: string[] = [];
+    const committed: string[] = [];
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession({
+      runId: "run-1",
+      items,
+      concurrency: 1,
+      executeItem: async (item, signal) => {
+        executed.push(item.id);
+        started.resolve();
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        return terminalResult(item, "success");
+      },
+      commitItem: async (item, result) => {
+        committed.push(`${item.id}:${result.status}`);
+        return result;
+      },
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await started.promise;
+    await expect(session.stop()).resolves.toMatchObject({
+      generation: 1,
+      status: "stopped",
+      progress: { completedItems: 2, totalItems: 2, percent: 100 },
+    });
+    expect(executed).toEqual(["one"]);
+    expect(committed).toEqual(["one:skipped", "two:skipped"]);
+  });
+
+  it("lets an admitted terminal transaction finish before skipping remaining items on stop", async () => {
+    const commitStarted = deferred<void>();
+    const releaseCommit = deferred<void>();
+    const committed: string[] = [];
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession({
+      runId: "run-1",
+      items,
+      concurrency: 1,
+      executeItem: async (item) => terminalResult(item, "success"),
+      commitItem: async (item, result) => {
+        committed.push(`${item.id}:${result.status}`);
+        if (item.id === "one") {
+          commitStarted.resolve();
+          await releaseCommit.promise;
+        }
+        return result;
+      },
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await commitStarted.promise;
+    const stopped = session.stop();
+    releaseCommit.resolve();
+    await stopped;
+
+    expect(committed).toEqual(["one:success", "two:skipped"]);
+    expect(session.snapshot()).toMatchObject({
+      generation: 1,
+      status: "stopped",
+      items: [
+        { id: "one", status: "success" },
+        { id: "two", status: "skipped" },
+      ],
+    });
+  });
+
+  it("aborts for shutdown without committing outcomes", async () => {
+    const started = deferred<void>();
+    const committed: string[] = [];
+    const session = new ScrapeRunSession({
+      runId: "run-1",
+      items: [runItem("one"), runItem("two")],
+      concurrency: 1,
+      executeItem: async (item, signal) => {
+        started.resolve();
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        return terminalResult(item, "success");
+      },
+      commitItem: async (item, result) => {
+        committed.push(item.id);
+        return result;
+      },
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await started.promise;
+    await session.abortForShutdown();
+
+    expect(committed).toEqual([]);
+    expect(session.snapshot()).toMatchObject({
+      generation: 1,
+      status: "stopped",
+      progress: { completedItems: 0, totalItems: 2, percent: 0 },
+    });
+  });
+});
+
 const configurationWithScrape = (scrape: Partial<typeof defaultConfiguration.scrape>) => ({
   ...defaultConfiguration,
   scrape: {
@@ -161,36 +385,6 @@ const baseTask = (status: RuntimeTaskSnapshot["status"]): RuntimeTaskSnapshot =>
   id: "task-1",
   startedAt: null,
   status,
-});
-
-describe("recoverable session port", () => {
-  it("routes recover and discard through one runtime policy", async () => {
-    const calls: string[] = [];
-    const port: RecoverableSessionPort<{ recoverable: boolean; pendingCount: number; failedCount: number }, string> = {
-      summarize: async () => ({ recoverable: true, pendingCount: 1, failedCount: 0 }),
-      recover: async () => {
-        calls.push("recover");
-        return "task-1";
-      },
-      discard: async () => {
-        calls.push("discard");
-      },
-    };
-
-    await expect(
-      resolveRecoverableSession(port, {
-        action: "recover",
-        recoverMessage: "恢复任务已启动",
-      }),
-    ).resolves.toEqual({ success: true, message: "恢复任务已启动", task: "task-1" });
-    await expect(
-      resolveRecoverableSession(port, {
-        action: "discard",
-        discardMessage: "已放弃上次未完成的刮削任务",
-      }),
-    ).resolves.toEqual({ success: true, message: "已放弃上次未完成的刮削任务", task: null });
-    expect(calls).toEqual(["recover", "discard"]);
-  });
 });
 
 describe("runtime task FSM", () => {

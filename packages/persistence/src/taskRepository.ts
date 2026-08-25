@@ -5,14 +5,13 @@ import { PersistenceError, persistenceErrorCodes } from "./errors";
 import {
   type ScanResultRow,
   scanResults,
-  scrapeOutputs,
   type TaskEventRow,
   type TaskRecordRow,
   taskEvents,
   taskRecords,
 } from "./schema";
 
-export type TaskRecordKind = "scan" | "scrape" | "maintenance";
+export type TaskRecordKind = "scan";
 export type TaskRecordStatus = "queued" | "running" | "completed" | "failed" | "paused" | "stopping";
 
 export interface TaskRecord {
@@ -52,13 +51,6 @@ export interface CreateScanTaskInput {
   now?: Date;
 }
 
-export interface CreateTaskInput {
-  id?: string;
-  kind: TaskRecordKind;
-  rootId: string;
-  now?: Date;
-}
-
 export interface PatchTaskInput {
   status?: TaskRecordStatus;
   startedAt?: Date | null;
@@ -72,21 +64,6 @@ export interface PatchTaskInput {
 export interface TaskUpdateGuard {
   status: TaskRecordStatus | readonly TaskRecordStatus[];
   executionVersion: number;
-}
-
-export interface CompleteScrapeTaskInput {
-  taskId: string;
-  executionVersion: number;
-  rootId: string | null;
-  fileCount: number;
-  failedCount: number;
-  totalBytes: number;
-  completedAt?: Date;
-}
-
-export interface CompleteScrapeTaskResult {
-  task: TaskRecord;
-  outputId: string;
 }
 
 export interface AddTaskEventInput {
@@ -111,7 +88,7 @@ export interface CompleteScanTaskInput extends ReplaceScanResultsInput {
 
 const toTaskRecord = (row: TaskRecordRow): TaskRecord => ({
   id: row.id,
-  kind: row.kind as TaskRecordKind,
+  kind: row.kind,
   rootId: row.rootId,
   status: row.status as TaskRecordStatus,
   executionVersion: row.executionVersion,
@@ -144,14 +121,10 @@ export class TaskRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
   async createScanTask(input: CreateScanTaskInput): Promise<TaskRecord> {
-    return await this.createTask({ ...input, kind: "scan" });
-  }
-
-  async createTask(input: CreateTaskInput): Promise<TaskRecord> {
     const now = input.now ?? new Date();
     const task: TaskRecord = {
       id: input.id ?? randomUUID(),
-      kind: input.kind,
+      kind: "scan",
       rootId: input.rootId,
       status: "queued",
       executionVersion: 0,
@@ -205,12 +178,13 @@ export class TaskRepository {
         guard
           ? and(
               eq(taskRecords.id, id),
+              eq(taskRecords.kind, "scan"),
               Array.isArray(guard.status)
                 ? inArray(taskRecords.status, [...guard.status])
                 : eq(taskRecords.status, guard.status as TaskRecordStatus),
               eq(taskRecords.executionVersion, guard.executionVersion),
             )
-          : eq(taskRecords.id, id),
+          : and(eq(taskRecords.id, id), eq(taskRecords.kind, "scan")),
       )
       .run();
 
@@ -221,32 +195,35 @@ export class TaskRepository {
     return await this.get(id);
   }
 
-  async list(kind?: TaskRecordKind): Promise<TaskRecord[]> {
-    const rows = kind
-      ? this.database.db
-          .select()
-          .from(taskRecords)
-          .where(eq(taskRecords.kind, kind))
-          .orderBy(desc(taskRecords.createdAt))
-          .all()
-      : this.database.db.select().from(taskRecords).orderBy(desc(taskRecords.createdAt)).all();
+  async list(): Promise<TaskRecord[]> {
+    const rows = this.database.db
+      .select()
+      .from(taskRecords)
+      .where(eq(taskRecords.kind, "scan"))
+      .orderBy(desc(taskRecords.createdAt))
+      .all();
     return rows.map(toTaskRecord);
   }
 
   async get(id: string): Promise<TaskRecord> {
-    const row = this.database.db.select().from(taskRecords).where(eq(taskRecords.id, id)).limit(1).get();
+    const row = this.database.db
+      .select()
+      .from(taskRecords)
+      .where(and(eq(taskRecords.id, id), eq(taskRecords.kind, "scan")))
+      .limit(1)
+      .get();
     if (!row) {
       throw new PersistenceError(persistenceErrorCodes.NotFound, `Task not found: ${id}`);
     }
     return toTaskRecord(row);
   }
 
-  async claimNext(kind: TaskRecordKind, now = new Date()): Promise<TaskRecord | null> {
+  async claimNext(now = new Date()): Promise<TaskRecord | null> {
     return this.database.db.transaction((tx) => {
       const queued = tx
         .select()
         .from(taskRecords)
-        .where(and(eq(taskRecords.kind, kind), eq(taskRecords.status, "queued")))
+        .where(and(eq(taskRecords.kind, "scan"), eq(taskRecords.status, "queued")))
         .orderBy(taskRecords.createdAt)
         .limit(1)
         .get();
@@ -285,6 +262,7 @@ export class TaskRepository {
       .where(
         and(
           eq(taskRecords.id, id),
+          eq(taskRecords.kind, "scan"),
           eq(taskRecords.status, "queued"),
           eq(taskRecords.executionVersion, expectedExecutionVersion),
         ),
@@ -307,12 +285,19 @@ export class TaskRepository {
         errorMessage: null,
         updatedAt: now,
       })
-      .where(and(eq(taskRecords.id, id), statusCondition, eq(taskRecords.executionVersion, guard.executionVersion)))
+      .where(
+        and(
+          eq(taskRecords.id, id),
+          eq(taskRecords.kind, "scan"),
+          statusCondition,
+          eq(taskRecords.executionVersion, guard.executionVersion),
+        ),
+      )
       .run();
     return requeued.changes === 1 ? await this.get(id) : null;
   }
 
-  async requeueRunning(kind: TaskRecordKind): Promise<void> {
+  async requeueRunning(): Promise<void> {
     this.database.db
       .update(taskRecords)
       .set({
@@ -321,11 +306,12 @@ export class TaskRepository {
         startedAt: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(taskRecords.kind, kind), inArray(taskRecords.status, ["running", "stopping"])))
+      .where(and(eq(taskRecords.kind, "scan"), inArray(taskRecords.status, ["running", "stopping"])))
       .run();
   }
 
   async addEvent(input: AddTaskEventInput): Promise<TaskEventRecord> {
+    await this.get(input.taskId);
     const event: TaskEventRecord = {
       id: input.id ?? randomUUID(),
       taskId: input.taskId,
@@ -338,6 +324,7 @@ export class TaskRepository {
   }
 
   async listEvents(taskId: string): Promise<TaskEventRecord[]> {
+    await this.get(taskId);
     const rows = this.database.db
       .select()
       .from(taskEvents)
@@ -349,6 +336,7 @@ export class TaskRepository {
 
   async replaceScanResults(input: ReplaceScanResultsInput): Promise<void> {
     const values = this.toScanResultValues(input);
+    await this.get(input.taskId);
 
     const transaction = this.database.sqlite.transaction(() => {
       this.database.db.delete(scanResults).where(eq(scanResults.taskId, input.taskId)).run();
@@ -369,6 +357,7 @@ export class TaskRepository {
         .where(
           and(
             eq(taskRecords.id, input.taskId),
+            eq(taskRecords.kind, "scan"),
             eq(taskRecords.status, "running"),
             eq(taskRecords.executionVersion, input.executionVersion),
           ),
@@ -392,6 +381,7 @@ export class TaskRepository {
         .where(
           and(
             eq(taskRecords.id, input.taskId),
+            eq(taskRecords.kind, "scan"),
             eq(taskRecords.status, "running"),
             eq(taskRecords.executionVersion, input.executionVersion),
           ),
@@ -403,51 +393,8 @@ export class TaskRepository {
     return await this.get(input.taskId);
   }
 
-  async completeScrapeTask(input: CompleteScrapeTaskInput): Promise<CompleteScrapeTaskResult | null> {
-    const completedAt = input.completedAt ?? new Date();
-    const outputId = randomUUID();
-    const allFilesFailed = input.failedCount > 0 && input.fileCount === 0;
-    const transaction = this.database.sqlite.transaction(() => {
-      const committed = this.database.db
-        .update(taskRecords)
-        .set({
-          status: allFilesFailed ? "failed" : "completed",
-          completedAt,
-          updatedAt: completedAt,
-          videoCount: input.fileCount,
-          directoryCount: 0,
-          errorMessage: allFilesFailed ? "All files failed to scrape" : null,
-        })
-        .where(
-          and(
-            eq(taskRecords.id, input.taskId),
-            eq(taskRecords.status, "running"),
-            eq(taskRecords.executionVersion, input.executionVersion),
-          ),
-        )
-        .run();
-      if (committed.changes !== 1) return false;
-
-      this.database.db
-        .insert(scrapeOutputs)
-        .values({
-          id: outputId,
-          taskId: input.taskId,
-          rootId: input.rootId,
-          outputDirectory: null,
-          fileCount: input.fileCount,
-          totalBytes: input.totalBytes,
-          completedAt,
-          createdAt: completedAt,
-        })
-        .run();
-      return true;
-    });
-    if (!transaction()) return null;
-    return { task: await this.get(input.taskId), outputId };
-  }
-
   async listScanResults(taskId: string): Promise<ScanResultRecord[]> {
+    await this.get(taskId);
     const rows = this.database.db
       .select()
       .from(scanResults)
@@ -458,8 +405,18 @@ export class TaskRepository {
   }
 
   async listAllScanResults(): Promise<ScanResultRecord[]> {
-    const rows = this.database.db.select().from(scanResults).orderBy(scanResults.relativePath).all();
-    return rows.map(toScanResultRecord);
+    return this.database.db
+      .select({
+        taskId: scanResults.taskId,
+        rootId: scanResults.rootId,
+        relativePath: scanResults.relativePath,
+        size: scanResults.size,
+        modifiedAt: scanResults.modifiedAt,
+      })
+      .from(scanResults)
+      .innerJoin(taskRecords, and(eq(taskRecords.id, scanResults.taskId), eq(taskRecords.kind, "scan")))
+      .orderBy(scanResults.relativePath)
+      .all();
   }
 
   private toScanResultValues(input: ReplaceScanResultsInput) {

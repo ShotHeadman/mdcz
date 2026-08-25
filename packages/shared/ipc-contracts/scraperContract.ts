@@ -17,13 +17,5 @@ export type ScraperIpcContract = {
     { filePaths?: string[]; manualUrl?: string },
     { taskId: string; totalFiles: number; message: string }
   >;
-  [IpcChannel.Scraper_GetRecoverableSession]: IpcProcedure<
-    void,
-    { recoverable: boolean; pendingCount: number; failedCount: number }
-  >;
-  [IpcChannel.Scraper_ResolveRecoverableSession]: IpcProcedure<
-    { action?: "recover" | "discard" },
-    { success: true; message: string; taskId?: string; totalFiles?: number }
-  >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<{ items?: UncensoredConfirmItem[] }, UncensoredConfirmResponse>;
 };

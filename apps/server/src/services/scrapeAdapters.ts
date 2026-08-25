@@ -8,7 +8,6 @@ import {
   storageErrorCodes,
   toRootRelativePath,
 } from "@mdcz/media-store";
-import type { ScrapeResultRecord } from "@mdcz/persistence";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   getNfoReadCandidates,
@@ -28,6 +27,14 @@ import type {
 } from "@mdcz/shared/serverDtos";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
+
+export interface ServerScrapeArtifactRecord {
+  rootId: string;
+  relativePath: string;
+  nfoRootId: string | null;
+  outputRootId: string | null;
+  outputRelativePath: string | null;
+}
 
 const readExistingNfo = async (
   root: MediaRoot,
@@ -114,12 +121,12 @@ export class ServerPosterCropAdapter {
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly posterCropService: PosterCropService,
-    private readonly resolveMetadataVideoPath: (result: ScrapeResultRecord) => string,
+    private readonly resolveMetadataVideoPath: (result: ServerScrapeArtifactRecord) => string,
   ) {}
 
-  async session(record: ScrapeResultRecord) {
+  async session(record: ServerScrapeArtifactRecord) {
     const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
+      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
     const session = await this.posterCropService.prepare(
@@ -135,9 +142,9 @@ export class ServerPosterCropAdapter {
     } satisfies PosterCropSessionResponse;
   }
 
-  async save(record: ScrapeResultRecord, input: PosterCropSaveInput) {
+  async save(record: ServerScrapeArtifactRecord, input: PosterCropSaveInput) {
     const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
+      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
     const result = await this.posterCropService.save(

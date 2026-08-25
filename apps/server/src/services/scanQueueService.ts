@@ -43,7 +43,7 @@ export class ScanQueueService {
     private readonly taskEvents: TaskEventBus,
   ) {
     this.scheduler = new TaskScheduler({
-      claimNext: async () => await (await this.persistence.getState()).repositories.tasks.claimNext("scan"),
+      claimNext: async () => await (await this.persistence.getState()).repositories.tasks.claimNext(),
       runExecution: async (task) => await this.runTask(task),
     });
   }
@@ -61,7 +61,7 @@ export class ScanQueueService {
 
   async list(): Promise<ScanTaskListResponse> {
     const state = await this.persistence.getState();
-    const tasks = await state.repositories.tasks.list("scan");
+    const tasks = await state.repositories.tasks.list();
     return { tasks: await Promise.all(tasks.map((task) => this.toDto(task.id))) };
   }
 
@@ -80,7 +80,7 @@ export class ScanQueueService {
 
   async logs(): Promise<LogListResponse> {
     const state = await this.persistence.getState();
-    const tasks = await state.repositories.tasks.list("scan");
+    const tasks = await state.repositories.tasks.list();
     const events = await Promise.all(tasks.map((task) => state.repositories.tasks.listEvents(task.id)));
     const logs = events
       .flat()
@@ -171,7 +171,7 @@ export class ScanQueueService {
 
   async resumeQueued(): Promise<void> {
     const state = await this.persistence.getState();
-    await state.repositories.tasks.requeueRunning("scan");
+    await state.repositories.tasks.requeueRunning();
     this.scheduler.drain();
   }
 

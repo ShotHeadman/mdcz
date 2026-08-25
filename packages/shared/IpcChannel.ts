@@ -20,8 +20,6 @@ export enum IpcChannel {
   Scraper_Requeue = "scraper:requeue",
   Scraper_RetryFailed = "scraper:retry-failed",
   Scraper_GetFailedFiles = "scraper:get-failed-files",
-  Scraper_GetRecoverableSession = "scraper:get-recoverable-session",
-  Scraper_ResolveRecoverableSession = "scraper:resolve-recoverable-session",
   Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",

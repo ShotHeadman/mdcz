@@ -585,7 +585,7 @@ describe("buildServer scrape integration", () => {
     await waitForTaskStatus(fastify, token, taskId, "completed");
     const initialResults = await services.persistence
       .getState()
-      .then((state) => state.repositories.library.listScrapeResults(taskId));
+      .then((state) => state.repositories.scrapeRuns.listLatestOutcomes(taskId));
     const initialResult = initialResults[0];
     expect(initialResult?.outputRelativePath).not.toBe("ABP-999-U.mp4");
     await expect(readFile(join(root, "ABP-999-U.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -647,29 +647,72 @@ describe("buildServer scrape integration", () => {
     expect(aggregateCount).toBe(1);
   });
 
-  it("rejects confirmation items without successful persisted outputs", async () => {
+  it("keeps terminal outcomes unchanged when uncensored output files are missing", async () => {
     const root = await createTempRoot("uncensored-choice-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
-    const task = await state.repositories.tasks.createTask({ kind: "scrape", rootId });
-    for (const relativePath of ["UMR-001.mp4", "LEAK-001.mp4", "UNC-001.mp4"]) {
-      await state.repositories.library.upsertScrapeResult({
-        taskId: task.id,
+    const manifest = await state.repositories.scrapeRuns.createRun({
+      rootId,
+      executionMode: "batch",
+      items: ["UMR-001.mp4", "LEAK-001.mp4", "UNC-001.mp4"].map((relativePath, ordinal) => ({
+        ordinal,
         rootId,
         relativePath,
-        status: "success",
+      })),
+    });
+    for (const item of manifest.items) {
+      await state.repositories.scrapeRuns.commitSuccess({
+        runId: manifest.id,
+        itemId: item.id,
+        attempt: 1,
+        crawlerDataJson: JSON.stringify({
+          title: item.relativePath,
+          number: item.relativePath.replace(".mp4", ""),
+          actors: [],
+          genres: [],
+          scene_images: [],
+        }),
+        outputRootId: rootId,
+        outputRelativePath: item.relativePath,
         uncensoredAmbiguous: true,
+        size: 1,
+        libraryEntry: {
+          rootId,
+          rootRelativePath: item.relativePath,
+        },
       });
     }
+    await state.repositories.scrapeRuns.finalizeRun({ runId: manifest.id, disposition: "completed" });
+
+    const terminalEventsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/tasks.events?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(terminalEventsResponse.json().result.data.events).toEqual([
+      expect.objectContaining({
+        id: `${manifest.id}:terminal`,
+        taskId: manifest.id,
+        type: "completed",
+      }),
+    ]);
+    const terminalLogsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/logs.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(terminalLogsResponse.json().result.data.logs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: `${manifest.id}:terminal`, taskId: manifest.id })]),
+    );
 
     const confirmResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        taskId: task.id,
+        taskId: manifest.id,
         items: [
           { ref: { rootId, relativePath: "UMR-001.mp4" }, choice: "umr" },
           { ref: { rootId, relativePath: "LEAK-001.mp4" }, choice: "leak" },
@@ -679,8 +722,8 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(confirmResponse.statusCode).toBe(200);
-    expect(confirmResponse.json().result.data.id).toBe(task.id);
-    const results = await state.repositories.library.listScrapeResults(task.id);
+    expect(confirmResponse.json().result.data.id).toBe(manifest.id);
+    const results = await state.repositories.scrapeRuns.listLatestOutcomes(manifest.id);
     expect(results.every((result) => result.uncensoredAmbiguous)).toBe(true);
   });
 
@@ -695,12 +738,19 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { refs: [{ rootId, relativePath: "ABC-001.mp4" }] },
     });
+    const taskId = startResponse.json().result.data.id;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.stop",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
 
     const confirmResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
-      payload: { taskId: startResponse.json().result.data.id, refs: [{ rootId, relativePath: "NOPE-001.mp4" }] },
+      payload: { taskId, refs: [{ rootId, relativePath: "NOPE-001.mp4" }] },
     });
 
     expect(confirmResponse.statusCode).toBe(400);
@@ -724,7 +774,7 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(confirmResponse.statusCode).toBe(400);
-    expect(confirmResponse.json().error.message).toContain("Task not found");
+    expect(confirmResponse.json().error.message).toContain("Scrape run not found");
   });
 
   it("rejects selected scrape files outside the requested scan directory", async () => {
@@ -816,92 +866,101 @@ describe("buildServer scrape integration", () => {
     });
   });
 
-  it("recovers and discards persisted recoverable scrape sessions", async () => {
-    const root = await createTempRoot("scrape-recover-root");
-    await writeFile(join(root, "ABC-126.mp4"), "video");
-    await writeFile(join(root, "ABC-127.mp4"), "video");
+  it("projects manifest-only runs as interrupted and removes recovery routes", async () => {
+    const root = await createTempRoot("scrape-interrupted-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
-    const recoverTask = await state.repositories.tasks.createTask({
-      kind: "scrape",
+    const manifest = await state.repositories.scrapeRuns.createRun({
+      id: "interrupted-run",
       rootId,
-      now: new Date(1_700_000_000_000),
+      executionMode: "batch",
+      createdAt: new Date(1_700_000_000_000),
+      items: [
+        { id: "interrupted-item", ordinal: 0, rootId, relativePath: "ABC-126.mp4" },
+        { id: "failed-item", ordinal: 1, rootId, relativePath: "ABC-127.mp4" },
+      ],
     });
-    await state.repositories.library.upsertScrapeResult({
-      taskId: recoverTask.id,
-      rootId,
-      relativePath: "ABC-126.mp4",
-      status: "processing",
-    });
-    await state.repositories.library.upsertScrapeResult({
-      taskId: recoverTask.id,
-      rootId,
-      relativePath: "ABC-127.mp4",
-      status: "failed",
+    await state.repositories.scrapeRuns.commitFailure({
+      id: "failed-outcome",
+      runId: manifest.id,
+      itemId: "failed-item",
+      attempt: 1,
       error: "boom",
+      completedAt: new Date(1_700_000_001_000),
     });
-    await state.repositories.tasks.patch(recoverTask.id, { status: "failed", error: "interrupted" });
+
+    const readTotalChanges = (): number => {
+      const row = state.database.sqlite.prepare("SELECT total_changes() AS count").get();
+      if (!row || typeof row !== "object" || !("count" in row) || typeof row.count !== "number") {
+        throw new Error("SQLite total_changes() returned an invalid row");
+      }
+      return row.count;
+    };
+    const changesBeforeProjectionReads = readTotalChanges();
+
+    const detailResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(detailResponse.statusCode).toBe(200);
+    expect(detailResponse.json().result.data.task).toMatchObject({
+      id: manifest.id,
+      status: "failed",
+      continuity: "interrupted",
+      completedAt: null,
+    });
+
+    const resultsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(resultsResponse.json().result.data.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "interrupted-item:backend-interrupted",
+          persistenceState: "interrupted",
+          status: "failed",
+        }),
+        expect.objectContaining({
+          id: "failed-outcome",
+          persistenceState: "terminal",
+          status: "failed",
+          error: "boom",
+        }),
+      ]),
+    );
+
+    const repeatedDetailResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const repeatedResultsResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(repeatedDetailResponse.json().result.data).toEqual(detailResponse.json().result.data);
+    expect(repeatedResultsResponse.json().result.data).toEqual(resultsResponse.json().result.data);
+    expect(readTotalChanges()).toBe(changesBeforeProjectionReads);
 
     const recoverableResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/scrape.getRecoverableSession",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(recoverableResponse.statusCode).toBe(200);
-    expect(recoverableResponse.json().result.data).toMatchObject({
-      recoverable: true,
-      taskId: recoverTask.id,
-      pendingCount: 1,
-      failedCount: 1,
-    });
-
     const resolveResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.resolveRecoverableSession",
       headers: { authorization: `Bearer ${token}` },
       payload: { action: "recover" },
     });
-    expect(resolveResponse.statusCode).toBe(200);
-    expect(resolveResponse.json().result.data.task.id).toBe(recoverTask.id);
-    await expect(state.repositories.tasks.listEvents(recoverTask.id)).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "queued", message: "恢复未完成刮削并重新排队" })]),
-    );
-
-    const discardTask = await state.repositories.tasks.createTask({
-      kind: "scrape",
-      rootId,
-      now: new Date(1_700_000_001_000),
-    });
-    await state.repositories.library.upsertScrapeResult({
-      taskId: discardTask.id,
-      rootId,
-      relativePath: "ABC-126.mp4",
-      status: "processing",
-    });
-    await state.repositories.tasks.patch(discardTask.id, { status: "running" });
-    const discardResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/scrape.resolveRecoverableSession",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { action: "discard" },
-    });
-    expect(discardResponse.statusCode).toBe(200);
-    expect(discardResponse.json().result.data).toMatchObject({
-      success: true,
-      task: null,
-    });
-    await expect(state.repositories.library.listScrapeResults(discardTask.id)).resolves.toEqual([
-      expect.objectContaining({
-        status: "skipped",
-        error: "已放弃未完成刮削",
-      }),
-    ]);
-    await expect(state.repositories.tasks.get(discardTask.id)).resolves.toMatchObject({
-      status: "failed",
-      error: "已放弃未完成刮削",
-    });
+    expect(recoverableResponse.statusCode).toBe(404);
+    expect(resolveResponse.statusCode).toBe(404);
   });
 
   it("does not re-scrape finished files when a paused task resumes", async () => {
@@ -939,13 +998,15 @@ describe("buildServer scrape integration", () => {
     // Pause while the first file is still inside its aggregation call, so the second file has
     // not been dequeued yet and stays pending.
     await gated.firstCallStarted;
-    await fastify.inject({
+    const pauseResponse = fastify.inject({
       method: "POST",
       url: "/trpc/scrape.pause",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
+    await Promise.resolve();
     gated.releaseFirstCall();
+    expect((await pauseResponse).statusCode).toBe(200);
     await waitForTaskStatus(fastify, token, taskId, "paused");
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
 

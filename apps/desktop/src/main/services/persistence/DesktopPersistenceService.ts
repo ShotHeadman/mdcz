@@ -6,6 +6,7 @@ import {
   MediaRootRepository,
   type PersistenceDatabase,
   runMigrations,
+  ScrapeRunRepository,
   TaskRepository,
 } from "@mdcz/persistence";
 import { app } from "electron";
@@ -25,6 +26,7 @@ const resolveNativeBinding = (): string =>
 export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
   mediaRoots: MediaRootRepository;
+  scrapeRuns: ScrapeRunRepository;
   tasks: TaskRepository;
 }
 
@@ -67,6 +69,7 @@ export class DesktopPersistenceService {
         repositories: {
           library: new LibraryRepository(database),
           mediaRoots: new MediaRootRepository(database),
+          scrapeRuns: new ScrapeRunRepository(database),
           tasks: new TaskRepository(database),
         },
       };

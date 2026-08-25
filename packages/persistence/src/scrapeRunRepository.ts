@@ -3,12 +3,8 @@ import { asc, count, desc, eq } from "drizzle-orm";
 
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
-import {
-  type LibraryEntryRecord,
-  LibraryRepository,
-  type UpsertLibraryEntryInput,
-  writeLibraryEntry,
-} from "./libraryRepository";
+import { type LibraryEntryRecord, LibraryRepository, type UpsertLibraryEntryInput } from "./libraryRepository";
+import { writeLibraryEntry } from "./libraryWrite";
 import {
   type ScrapeItemOutcomeRow,
   type ScrapeRunItemRow,

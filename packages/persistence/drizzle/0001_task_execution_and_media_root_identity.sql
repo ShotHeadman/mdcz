@@ -1,4 +1,25 @@
-ALTER TABLE `scrape_results` ADD `nfo_root_id` text;
+DELETE FROM `task_events`
+WHERE `task_id` IN (
+  SELECT `id`
+  FROM `task_records`
+  WHERE `kind` <> 'scan'
+);
+--> statement-breakpoint
+DELETE FROM `scan_results`
+WHERE `task_id` IN (
+  SELECT `id`
+  FROM `task_records`
+  WHERE `kind` <> 'scan'
+);
+--> statement-breakpoint
+DELETE FROM `task_records`
+WHERE `kind` <> 'scan';
+--> statement-breakpoint
+DROP TABLE `scrape_results`;
+--> statement-breakpoint
+DROP TABLE `scrape_outputs`;
+--> statement-breakpoint
+DROP TABLE `library_entries`;
 --> statement-breakpoint
 DELETE FROM `scan_results`
 WHERE EXISTS (
@@ -24,10 +45,6 @@ CREATE INDEX `task_records_kind_created_at_idx` ON `task_records` (`kind`, `crea
 --> statement-breakpoint
 CREATE INDEX `task_events_task_created_at_idx` ON `task_events` (`task_id`, `created_at`);
 --> statement-breakpoint
-CREATE INDEX `scrape_outputs_completed_at_idx` ON `scrape_outputs` (`completed_at`);
---> statement-breakpoint
-CREATE INDEX `scrape_results_task_path_idx` ON `scrape_results` (`task_id`, `relative_path`);
---> statement-breakpoint
 ALTER TABLE `library_items` RENAME COLUMN `source_task_id` TO `source_run_id`;
 --> statement-breakpoint
 ALTER TABLE `library_items` RENAME COLUMN `scrape_output_id` TO `source_outcome_id`;
@@ -50,14 +67,6 @@ CREATE INDEX `library_item_assets_item_idx` ON `library_item_assets` (`item_id`)
 CREATE INDEX `media_roots_state_idx` ON `media_roots` (`deleted`, `enabled`);
 --> statement-breakpoint
 ALTER TABLE `task_records` ADD `execution_version` integer DEFAULT 0 NOT NULL;
---> statement-breakpoint
-UPDATE `media_roots`
-SET
-  `enabled` = 0,
-  `deleted` = 1,
-  `updated_at` = unixepoch() * 1000
-WHERE `id` <> 'mdcz-metadata-output'
-  AND `id` NOT LIKE 'path-%';
 --> statement-breakpoint
 DROP TABLE `maintenance_previews`;
 --> statement-breakpoint

@@ -29,4 +29,5 @@ export * from "./TranslateService";
 export * from "./translate/engines/LlmApiClient";
 export * from "./translate/shared";
 export * from "./translate/types";
+export * from "./utils/diskCommitFailure";
 export * from "./watermarkDirectory";

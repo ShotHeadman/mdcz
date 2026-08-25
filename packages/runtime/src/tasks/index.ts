@@ -87,8 +87,4 @@ export const toServerTaskStatus = (status: RuntimeTaskStatus): RuntimeServerTask
 
 export * from "./executor";
 export * from "./scheduler";
-export * from "./session/InMemoryScrapeSessionExecutionStore";
-export * from "./session/ScrapeSession";
-export * from "./session/SessionProgressTracker";
-export * from "./session/SessionRecovery";
-export * from "./session/types";
+export * from "./session/ScrapeRunSession";

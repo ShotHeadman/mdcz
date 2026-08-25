@@ -1,28 +1,31 @@
 import path from "node:path";
 import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
-import type { ScrapeResultRecord } from "@mdcz/persistence";
-import type { CrawlerDataDto, ScrapeResultDto } from "@mdcz/shared/serverDtos";
+import type { ScrapeItemOutcomeRecord, ScrapeRunItemRecord } from "@mdcz/persistence";
+import { crawlerDataSchema, type ScrapeResultDto } from "@mdcz/shared/serverDtos";
 
 export const toScrapeResultDto = (
-  record: ScrapeResultRecord,
-  options: { rootDisplayName: string },
+  outcome: ScrapeItemOutcomeRecord,
+  item: ScrapeRunItemRecord,
+  options: { rootDisplayName: string; runCreatedAt: Date },
 ): ScrapeResultDto => ({
-  id: record.id,
-  taskId: record.taskId,
-  rootId: record.rootId,
+  id: outcome.id,
+  taskId: outcome.runId,
+  rootId: item.rootId,
   rootDisplayName: options.rootDisplayName,
-  relativePath: record.relativePath,
-  fileName: path.posix.basename(record.relativePath),
-  status: record.status,
-  error: record.error,
-  crawlerData: record.crawlerDataJson ? (JSON.parse(record.crawlerDataJson) as CrawlerDataDto) : null,
-  nfoRootId: record.nfoRootId,
-  nfoRelativePath: record.nfoRelativePath,
-  outputRelativePath: record.outputRelativePath,
-  manualUrl: record.manualUrl,
-  uncensoredAmbiguous: record.uncensoredAmbiguous,
-  createdAt: record.createdAt.toISOString(),
-  updatedAt: record.updatedAt.toISOString(),
+  outputRootId: outcome.outputRootId,
+  relativePath: item.relativePath,
+  fileName: path.posix.basename(item.relativePath),
+  status: outcome.outcome,
+  error: outcome.error,
+  crawlerData: outcome.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(outcome.crawlerDataJson)) : null,
+  nfoRootId: outcome.nfoRootId,
+  nfoRelativePath: outcome.nfoRelativePath,
+  outputRelativePath: outcome.outputRelativePath,
+  manualUrl: item.manualUrl,
+  uncensoredAmbiguous: outcome.uncensoredAmbiguous,
+  persistenceState: "terminal",
+  createdAt: options.runCreatedAt.toISOString(),
+  updatedAt: outcome.completedAt.toISOString(),
 });
 
 export const toRootRelativeAssetPath = (root: MediaRoot, assetPath: string | undefined): string | null => {

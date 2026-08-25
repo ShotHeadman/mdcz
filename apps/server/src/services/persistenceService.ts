@@ -6,6 +6,7 @@ import {
   MediaRootRepository,
   type PersistenceDatabase,
   runMigrations,
+  ScrapeRunRepository,
   TaskRepository,
 } from "@mdcz/persistence";
 
@@ -14,6 +15,7 @@ import type { ServerRuntimePaths } from "./configService";
 export interface ServerPersistenceRepositories {
   library: LibraryRepository;
   mediaRoots: MediaRootRepository;
+  scrapeRuns: ScrapeRunRepository;
   tasks: TaskRepository;
 }
 
@@ -54,6 +56,7 @@ export class ServerPersistenceService {
         repositories: {
           library: new LibraryRepository(database),
           mediaRoots: new MediaRootRepository(database),
+          scrapeRuns: new ScrapeRunRepository(database),
           tasks: new TaskRepository(database),
         },
       };

@@ -176,6 +176,7 @@ export const scanTaskSchema = z.object({
   directoryCount: z.number(),
   error: z.string().nullable(),
   videos: z.array(z.string()).optional(),
+  continuity: z.enum(["live", "final", "interrupted"]).optional(),
 });
 
 export type ScanTaskDto = z.infer<typeof scanTaskSchema>;
@@ -271,31 +272,6 @@ export const scrapeConfirmUncensoredInputSchema = z.object({
 
 export type ScrapeConfirmUncensoredInput = z.infer<typeof scrapeConfirmUncensoredInputSchema>;
 
-export const scrapeRecoverableSessionResponseSchema = z.object({
-  recoverable: z.boolean(),
-  pendingCount: z.number(),
-  failedCount: z.number(),
-  taskId: z.string().nullable(),
-});
-
-export type ScrapeRecoverableSessionResponse = z.infer<typeof scrapeRecoverableSessionResponseSchema>;
-
-export const scrapeRecoverableSessionResolveInputSchema = z
-  .object({
-    action: z.enum(["recover", "discard"]).optional().default("recover"),
-  })
-  .optional();
-
-export type ScrapeRecoverableSessionResolveInput = z.infer<typeof scrapeRecoverableSessionResolveInputSchema>;
-
-export const scrapeRecoverableSessionResolveResponseSchema = z.object({
-  success: z.literal(true),
-  message: z.string(),
-  task: scanTaskSchema.nullable(),
-});
-
-export type ScrapeRecoverableSessionResolveResponse = z.infer<typeof scrapeRecoverableSessionResolveResponseSchema>;
-
 export const scrapeResultIdInputSchema = z.object({
   id: z.string().trim().min(1),
 });
@@ -361,6 +337,7 @@ export const scrapeResultSchema = z.object({
   taskId: z.string(),
   rootId: z.string(),
   rootDisplayName: z.string(),
+  outputRootId: z.string().nullable().optional(),
   relativePath: z.string(),
   fileName: z.string(),
   status: z.enum(["pending", "processing", "success", "failed", "skipped"]),
@@ -371,6 +348,7 @@ export const scrapeResultSchema = z.object({
   outputRelativePath: z.string().nullable(),
   manualUrl: z.string().nullable(),
   uncensoredAmbiguous: z.boolean().optional(),
+  persistenceState: z.enum(["terminal", "interrupted"]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

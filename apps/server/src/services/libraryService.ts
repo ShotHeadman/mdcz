@@ -143,7 +143,7 @@ export class LibraryService {
   async overview(): Promise<OverviewSummaryResponse> {
     const state = await this.persistence.getState();
     const [latestOutput, roots, summary] = await Promise.all([
-      state.repositories.library.latestScrapeOutput(),
+      state.repositories.scrapeRuns.latestSummary(),
       this.mediaRoots.list(),
       state.repositories.library.getOverviewSummary(8),
     ]);
@@ -158,7 +158,7 @@ export class LibraryService {
       : null;
     const output = latestOutput
       ? {
-          fileCount: latestOutput.fileCount,
+          fileCount: latestOutput.successCount,
           totalBytes: latestOutput.totalBytes,
           outputAt: latestOutput.completedAt.toISOString(),
           rootPath: latestOutput.outputDirectory,
