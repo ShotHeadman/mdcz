@@ -1,9 +1,8 @@
 import { rm, stat } from "node:fs/promises";
-import path from "node:path";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { mapWithConcurrency } from "@main/utils/async";
 import type { MediaRoot } from "@mdcz/media-store";
-import { assertInsideRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
@@ -108,18 +107,20 @@ export class DesktopLibraryService {
     const state = await this.persistenceService.getState();
     if (options.deleteMediaFiles) {
       const [roots, entry] = await Promise.all([
-        state.repositories.mediaRoots.list(),
+        state.repositories.mediaRoots.list({ includeDeleted: true }),
         state.repositories.library.getEntryById(normalizedId),
       ]);
       const rootMap = new Map(roots.map((root) => [root.id, root]));
       const filePaths = new Set(
-        entry.files
-          .map((file) => resolveAssetDeletionPath(rootMap, file.rootId, file.lastKnownPath ?? file.rootRelativePath))
-          .filter((filePath): filePath is string => typeof filePath === "string" && !isRemotePath(filePath)),
+        entry.files.map((file) => {
+          const root = rootMap.get(file.rootId);
+          if (!root) {
+            throw new Error(`Media root not found: ${file.rootId}`);
+          }
+          return resolveRootRelativePath(root, file.rootRelativePath);
+        }),
       );
-      for (const filePath of filePaths) {
-        await rm(filePath, { force: true });
-      }
+      await Promise.all([...filePaths].map(async (filePath) => await rm(filePath, { force: true })));
     }
     await state.repositories.library.deleteEntry(normalizedId);
     return { success: true };
@@ -240,25 +241,6 @@ const resolveAssetDisplayPath = (
 
   const root = rootMap.get(rootId);
   return root ? resolveRootRelativePath(root, trimmed) : trimmed;
-};
-
-const resolveAssetDeletionPath = (
-  rootMap: ReadonlyMap<string, MediaRoot>,
-  rootId: string,
-  value: string | null | undefined,
-): string | null => {
-  const trimmed = value?.trim();
-  const root = rootMap.get(rootId);
-  if (!trimmed || !root || isRemotePath(trimmed)) {
-    return null;
-  }
-  try {
-    const candidate = isAbsoluteLocalPath(trimmed) ? path.resolve(trimmed) : resolveRootRelativePath(root, trimmed);
-    assertInsideRoot(root, candidate);
-    return candidate;
-  } catch {
-    return null;
-  }
 };
 
 const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>
