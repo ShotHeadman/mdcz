@@ -4,6 +4,24 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@types/react':
+      specifier: ^19.2.14
+      version: 19.2.14
+    '@types/react-dom':
+      specifier: ^19.2.3
+      version: 19.2.3
+    react:
+      specifier: ^19.2.4
+      version: 19.2.5
+    react-dom:
+      specifier: ^19.2.4
+      version: 19.2.5
+    zustand:
+      specifier: ^5.0.12
+      version: 5.0.12
+
 importers:
 
   .:
@@ -18,10 +36,10 @@ importers:
         specifier: ^24.3.1
         version: 24.12.2
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.14
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
       '@vitest/browser-playwright':
         specifier: 4.1.5
@@ -54,10 +72,10 @@ importers:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.5)
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.5
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.5(react@19.2.5)
       react-hook-form:
         specifier: ^7.71.1
@@ -125,9 +143,6 @@ importers:
       mediainfo.js:
         specifier: ^0.3.7
         version: 0.3.7
-      openai:
-        specifier: ^6.25.0
-        version: 6.35.0(ws@8.21.0)(zod@4.4.1)
       opencc-js:
         specifier: ^1.0.5
         version: 1.3.0
@@ -166,10 +181,10 @@ importers:
         specifier: ^3.13.12
         version: 3.13.24(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@types/react':
-        specifier: ^19.2.13
+        specifier: 'catalog:'
         version: 19.2.14
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
       class-variance-authority:
         specifier: ^0.7.1
@@ -199,10 +214,10 @@ importers:
         specifier: ^8.5.6
         version: 8.5.12
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.5
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.5(react@19.2.5)
       react-hook-form:
         specifier: ^7.71.1
@@ -223,7 +238,7 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       zustand:
-        specifier: ^5.0.11
+        specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     optionalDependencies:
       '@img/sharp-darwin-arm64':
@@ -354,10 +369,10 @@ importers:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.5
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.5(react@19.2.5)
       react-hook-form:
         specifier: ^7.71.1
@@ -369,7 +384,7 @@ importers:
         specifier: ^3.4.0
         version: 3.5.0
       zustand:
-        specifier: ^5.0.11
+        specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     devDependencies:
       '@tailwindcss/postcss':
@@ -379,10 +394,10 @@ importers:
         specifier: ^24.3.1
         version: 24.12.2
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.14
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
       postcss:
         specifier: ^8.5.6
@@ -462,9 +477,6 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.4.1
-      zustand:
-        specifier: ^5.0.9
-        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
 
   packages/ui:
     dependencies:
@@ -484,10 +496,10 @@ importers:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
-        specifier: ^19.1.1
+        specifier: 'catalog:'
         version: 19.2.5
       react-dom:
-        specifier: ^19.1.1
+        specifier: 'catalog:'
         version: 19.2.5(react@19.2.5)
       react-hook-form:
         specifier: ^7.71.1
@@ -517,16 +529,16 @@ importers:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.5)
       react:
-        specifier: ^19.1.1
+        specifier: 'catalog:'
         version: 19.2.5
       react-dom:
-        specifier: ^19.1.1
+        specifier: 'catalog:'
         version: 19.2.5(react@19.2.5)
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       zustand:
-        specifier: ^5.0.9
+        specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
 
 packages:
@@ -3983,18 +3995,6 @@ packages:
   onetime@7.0.0:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
-
-  openai@6.35.0:
-    resolution: {integrity: sha512-L/skwIGnt5xQZHb0UfTu9uAUKbis3ehKypOuJKi20QvG7UStV6C8IC3myGYHcdiF4kms/bAvOJ9UqqNWqi8x/Q==}
-    hasBin: true
-    peerDependencies:
-      ws: ^8.18.0
-      zod: ^3.25 || ^4.0
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
 
   opencc-js@1.3.0:
     resolution: {integrity: sha512-8sI0BQ3NECLM8GNWxWT/oZFDXpE853ZDc13MbLxtUL4sTJyr8DmoQSzPbvj7A5ZppwLn85wMdEaLGCycXjBmrQ==}
@@ -8259,11 +8259,6 @@ snapshots:
   onetime@7.0.0:
     dependencies:
       mimic-function: 5.0.1
-
-  openai@6.35.0(ws@8.21.0)(zod@4.4.1):
-    optionalDependencies:
-      ws: 8.21.0
-      zod: 4.4.1
 
   opencc-js@1.3.0: {}
 

@@ -1,16 +1,12 @@
-import { createOverviewInvalidationTracker } from "@renderer/hooks/useIpcSync";
-import { formatBytes } from "@renderer/utils/format";
-import { describe, expect, it } from "vitest";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { applyScrapeStatusSnapshot, createOverviewInvalidationTracker } from "@renderer/hooks/useIpcSync";
+import { afterEach, describe, expect, it } from "vitest";
+
+afterEach(() => {
+  useScrapeStore.getState().reset();
+});
 
 describe("overview UI contract", () => {
-  it("formats output summary byte counts for compact numeric cards", () => {
-    expect(formatBytes(0)).toBe("0 B");
-    expect(formatBytes(512)).toBe("512 B");
-    expect(formatBytes(1536)).toBe("1.5 KB");
-    expect(formatBytes(10 * 1024, { trimTrailingZeros: true })).toBe("10 KB");
-    expect(formatBytes(1536, { fractionDigits: 2 })).toBe("1.50 KB");
-  });
-
   it("refreshes overview data when a scrape button-status cycle returns to idle", () => {
     const shouldInvalidate = createOverviewInvalidationTracker();
 
@@ -19,5 +15,71 @@ describe("overview UI contract", () => {
     expect(shouldInvalidate(true)).toBe(false);
     expect(shouldInvalidate(false)).toBe(true);
     expect(shouldInvalidate(false)).toBe(false);
+  });
+
+  it("preserves live in-file progress while a scrape is paused", () => {
+    useScrapeStore.setState({
+      scrapeStatus: "running",
+      isScraping: true,
+      progress: 42,
+      total: 3,
+      current: 1,
+    });
+
+    applyScrapeStatusSnapshot({
+      state: "paused",
+      running: true,
+      totalFiles: 3,
+      completedFiles: 0,
+      successCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+    });
+
+    expect(useScrapeStore.getState()).toMatchObject({
+      scrapeStatus: "paused",
+      isScraping: true,
+      progress: 42,
+      total: 3,
+      current: 1,
+    });
+  });
+
+  it("hydrates paused progress when no live progress exists", () => {
+    useScrapeStore.setState({ scrapeStatus: "running", isScraping: true, progress: 0, total: 3, current: 0 });
+
+    applyScrapeStatusSnapshot({
+      state: "paused",
+      running: true,
+      totalFiles: 3,
+      completedFiles: 1,
+      successCount: 1,
+      failedCount: 0,
+      skippedCount: 0,
+    });
+
+    expect(useScrapeStore.getState()).toMatchObject({ total: 3, current: 1 });
+    expect(useScrapeStore.getState().progress).toBeCloseTo(100 / 3);
+  });
+
+  it("fails unfinished results when a running snapshot returns to idle", () => {
+    useScrapeStore.getState().seedProcessingResults(["/media/ABC-123.mp4"]);
+    useScrapeStore.getState().setScrapeStatus("running");
+    useScrapeStore.getState().setScraping(true);
+
+    applyScrapeStatusSnapshot({
+      state: "idle",
+      running: false,
+      totalFiles: 1,
+      completedFiles: 0,
+      successCount: 0,
+      failedCount: 1,
+      skippedCount: 0,
+    });
+
+    expect(useScrapeStore.getState().results[0]).toMatchObject({
+      status: "failed",
+      error: "已停止或未完成",
+    });
   });
 });

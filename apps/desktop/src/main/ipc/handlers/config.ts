@@ -12,6 +12,7 @@ import { fileOrganizer } from "@main/services/scraper/fileOrganizerAdapter";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
+import type { ConfigPathInput } from "@mdcz/shared/serverDtos";
 import { dialog } from "electron";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
@@ -36,7 +37,7 @@ export const createConfigHandlers = (
   const { windowService } = context;
 
   return {
-    [IpcChannel.Config_Get]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_Get]: t.procedure.input<ConfigPathInput>().action(async ({ input }) => {
       try {
         if (!input?.path) {
           return await configManager.getValidated();

@@ -1,6 +1,7 @@
 import { ActorImageService } from "@main/services/ActorImageService";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
+import { isAbortError, throwIfAborted } from "@main/utils/abort";
 import { toErrorMessage } from "@main/utils/common";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import {
@@ -17,12 +18,12 @@ import {
   PlanStage,
   PrepareOutputStage,
   ProbeStage,
+  resolveMetadataOutputDir,
   ScrapeContext,
   type ScrapeStage,
   TranslateStage,
 } from "@mdcz/runtime/scrape";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
-import { isAbortError, throwIfAborted } from "../abort";
 import type {
   FileScrapeOptions,
   FileScrapeProgress,
@@ -57,6 +58,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
   constructor(
     private readonly deps: FileScraperDependencies,
     private readonly scrapeMode: ScrapeExecutionMode = "batch",
+    private readonly scrapeSessionId?: string,
   ) {
     this.actorImageService = deps.actorImageService ?? new ActorImageService();
     this.localScanService = deps.localScanService ?? new LocalScanService();
@@ -65,12 +67,27 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     this.stages = this.createStages();
   }
 
-  createContext(
+  async createContext(
     filePath: string,
     progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 },
     options: FileScrapeOptions = {},
-  ): ScrapeContext {
-    return new ScrapeContext(filePath, progress, this.scrapeMode, options.manualScrape);
+  ): Promise<ScrapeContext> {
+    const configuration = await configManager.getValidated();
+    return new ScrapeContext(
+      filePath,
+      progress,
+      this.scrapeMode,
+      options.manualScrape,
+      configuration,
+      options.scrapeSessionId ?? this.scrapeSessionId,
+    );
+  }
+  notifyProcessing(context: ScrapeContext): void {
+    this.deps.signalService.showScrapeResult({
+      fileId: context.fileId,
+      fileInfo: context.fileInfo,
+      status: "processing",
+    });
   }
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {
@@ -128,7 +145,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
           config: context.requireConfiguration(),
           crawlerData: context.requireCrawlerData(),
           enabled: true,
-          movieDir: context.requirePlan().outputDir,
+          movieDir: resolveMetadataOutputDir(context.requirePlan()),
           sourceVideoPath: context.fileInfo.filePath,
           signal,
         });
@@ -154,7 +171,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
             .split(/[\\/]/u)
             .pop()
             ?.replace(/\.nfo$/iu, ""),
-          outputDir: plan.outputDir,
+          outputDir: resolveMetadataOutputDir(plan),
           signalService: this.deps.signalService,
           sources: aggregationResult.sources,
           callbacks: {

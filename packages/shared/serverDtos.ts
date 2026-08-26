@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
+import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
 export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
@@ -301,9 +302,27 @@ export const scrapeResultIdInputSchema = z.object({
 
 export type ScrapeResultIdInput = z.infer<typeof scrapeResultIdInputSchema>;
 
+export const posterCropSaveInputSchema = scrapeResultIdInputSchema.extend({
+  crop: normalizedCropRegionSchema,
+});
+
+export type PosterCropSaveInput = z.infer<typeof posterCropSaveInputSchema>;
+
+export const posterCropSessionResponseSchema = z.object({
+  sourceRelativePath: z.string().trim().min(1),
+  targetRelativePath: z.string().trim().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  initialCrop: normalizedCropRegionSchema,
+  revision: z.string().optional(),
+});
+
+export type PosterCropSessionResponse = z.infer<typeof posterCropSessionResponseSchema>;
+
 export const nfoReadInputSchema = z.object({
   rootId: z.string().trim().min(1),
   relativePath: z.string().trim().min(1),
+  videoRelativePath: z.string().trim().min(1).optional(),
 });
 
 export type NfoReadInput = z.infer<typeof nfoReadInputSchema>;
@@ -347,6 +366,7 @@ export const scrapeResultSchema = z.object({
   status: z.enum(["pending", "processing", "success", "failed", "skipped"]),
   error: z.string().nullable(),
   crawlerData: crawlerDataSchema.nullable(),
+  nfoRootId: z.string().nullable(),
   nfoRelativePath: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
   manualUrl: z.string().nullable(),
@@ -372,6 +392,7 @@ export type ScrapeResultDetailResponse = z.infer<typeof scrapeResultDetailRespon
 export const nfoReadResponseSchema = z.object({
   rootId: z.string(),
   relativePath: z.string(),
+  effectiveRelativePath: z.string(),
   exists: z.boolean(),
   data: crawlerDataSchema.nullable(),
 });
@@ -381,6 +402,7 @@ export type NfoReadResponse = z.infer<typeof nfoReadResponseSchema>;
 export const nfoWriteResponseSchema = z.object({
   rootId: z.string(),
   relativePath: z.string(),
+  effectiveRelativePath: z.string(),
   data: crawlerDataSchema,
 });
 
@@ -633,6 +655,7 @@ export type LibraryEntryDto = z.infer<typeof libraryEntrySchema>;
 
 export const libraryListInputSchema = z
   .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
     query: z.string().optional(),
     rootId: z.string().optional(),
     limit: z.number().int().min(1).max(500).optional(),
@@ -656,10 +679,35 @@ export type LibraryRelinkInput = z.infer<typeof libraryRelinkInputSchema>;
 
 export const libraryListResponseSchema = z.object({
   entries: z.array(libraryEntrySchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
   total: z.number(),
 });
 
 export type LibraryListResponse = z.infer<typeof libraryListResponseSchema>;
+
+export const libraryAvailabilityInputSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1).max(200),
+});
+
+export type LibraryAvailabilityInput = z.infer<typeof libraryAvailabilityInputSchema>;
+
+export const libraryAvailabilityResponseSchema = z.object({
+  entries: z.array(
+    z.object({
+      id: z.string(),
+      available: z.boolean().nullable(),
+      fileRefs: z.array(
+        z.object({
+          id: z.string(),
+          available: z.boolean().nullable(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export type LibraryAvailabilityResponse = z.infer<typeof libraryAvailabilityResponseSchema>;
 
 export const libraryDetailResponseSchema = z.object({
   entry: libraryEntrySchema,

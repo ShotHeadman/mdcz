@@ -40,7 +40,7 @@ export function FloatingToc({ className }: FloatingTocProps) {
     <nav
       aria-label="Settings sections"
       className={cn(
-        "sticky top-24 ml-8 hidden w-48 shrink-0 self-start border-l border-border/50 pl-4 lg:block",
+        "sticky top-8 ml-8 hidden w-48 shrink-0 self-start border-l border-border/50 pl-4 lg:block",
         className,
       )}
     >

@@ -1,11 +1,11 @@
 import type { WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import { createTaskHydrationState, useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { buildScrapeResultGroups } from "@mdcz/shared/viewModels/scrapeResultGrouping";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
+import { createTaskHydrationState, useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyTaskRealtimeEvent,
@@ -64,6 +64,7 @@ describe("web workbench route contracts", () => {
           status: "success" as const,
           error: null,
           crawlerData: null,
+          nfoRootId: null,
           nfoRelativePath: "BBB-002.nfo",
           outputRelativePath: "JAV_output/BBB-002/BBB-002.mp4",
           manualUrl: null,
@@ -81,6 +82,7 @@ describe("web workbench route contracts", () => {
           status: "success" as const,
           error: null,
           crawlerData: null,
+          nfoRootId: null,
           nfoRelativePath: "AAA-001.nfo",
           outputRelativePath: "JAV_output/AAA-001/AAA-001.mp4",
           manualUrl: null,
@@ -263,6 +265,7 @@ describe("web workbench route contracts", () => {
           status: "processing",
           error: null,
           crawlerData: null,
+          nfoRootId: null,
           nfoRelativePath: null,
           outputRelativePath: null,
           manualUrl: null,

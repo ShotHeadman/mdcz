@@ -17,6 +17,11 @@ export interface TranslateServiceOptions {
   mappingStore?: TranslationMappingStore;
 }
 
+interface TranslationContext {
+  field: string;
+  number: string;
+}
+
 const isLlmApiClientLike = (value: unknown): value is LlmApiClient =>
   typeof value === "object" && value !== null && "generateText" in value && typeof value.generateText === "function";
 
@@ -67,9 +72,13 @@ export class TranslateService {
 
     const target = toTarget(config.translate.targetLanguage);
 
-    const title_zh = toTranslatedFieldValue(await this.translateText(data.title, target, config, signal));
+    const title_zh = toTranslatedFieldValue(
+      await this.translateText(data.title, target, config, signal, { field: "title", number: data.number }),
+    );
     const plot_zh = data.plot
-      ? toTranslatedFieldValue(await this.translateText(data.plot, target, config, signal))
+      ? toTranslatedFieldValue(
+          await this.translateText(data.plot, target, config, signal, { field: "plot", number: data.number }),
+        )
       : undefined;
 
     throwIfAborted(signal);
@@ -103,6 +112,7 @@ export class TranslateService {
     target: LanguageTarget,
     config: Configuration,
     signal?: AbortSignal,
+    context?: TranslationContext,
   ): Promise<string> {
     const text = normalizeNewlines(input).trim();
     if (!text) {
@@ -134,7 +144,11 @@ export class TranslateService {
       }
     }
 
-    this.logger.warn("Translation engine failed, returning original text");
+    const field = context?.field ?? "text";
+    const number = context?.number ?? "unknown";
+    this.logger.warn(
+      `Translation engine failed for ${field} (${number}), returning original text: engine returned no translation`,
+    );
     return text;
   }
 }

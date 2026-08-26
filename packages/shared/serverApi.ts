@@ -18,6 +18,8 @@ import type {
   FileActionInput,
   FileActionResponse,
   HealthResponse,
+  LibraryAvailabilityInput,
+  LibraryAvailabilityResponse,
   LibraryDetailInput,
   LibraryDetailResponse,
   LibraryListInput,
@@ -40,6 +42,8 @@ import type {
   NfoWriteResponse,
   OverviewSummaryResponse,
   PersistenceStatusDto,
+  PosterCropSaveInput,
+  PosterCropSessionResponse,
   RootBrowserInput,
   RootBrowserResponse,
   ScanCandidatesInput,
@@ -112,7 +116,7 @@ export interface ServerApiContract {
     profiles: {
       list(): Promise<ConfigProfileListResponse>;
       create(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
-      switch(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
+      switch(input: ConfigProfileNameInput): Promise<Configuration>;
       delete(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
       export(input: ConfigProfileNameInput): Promise<ConfigProfileExportResponse>;
       import(input: ConfigProfileImportInput): Promise<ConfigProfileImportResponse>;
@@ -139,17 +143,18 @@ export interface ServerApiContract {
     stop(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
   };
   library: {
+    availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
     search(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
-    delete(input: LibraryDetailInput): Promise<{ ok: true }>;
+    delete(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;
-    removeRecentAcquisition(input: LibraryDetailInput): Promise<{ ok: true }>;
+    removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   mediaRoots: {
     list(): Promise<MediaRootListResponse>;
@@ -176,6 +181,8 @@ export interface ServerApiContract {
     getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
+    posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
+    posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
     pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
     resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;

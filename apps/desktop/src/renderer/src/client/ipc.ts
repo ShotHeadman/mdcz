@@ -12,6 +12,7 @@ import type {
   ShortcutPayload,
 } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { LibraryListInput } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
@@ -47,6 +48,7 @@ export const ipc = {
     getOutputSummary: () => client[IpcChannel.Overview_GetOutputSummary](undefined),
   },
   library: {
+    availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
     delete: (input: { deleteMediaFiles?: boolean; id: string }) => client[IpcChannel.Library_Delete](input),
   },
@@ -105,8 +107,12 @@ export const ipc = {
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),
-    nfoRead: (nfoPath: string) => client[IpcChannel.File_NfoRead]({ nfoPath }),
-    nfoWrite: (nfoPath: string, data: CrawlerData) => client[IpcChannel.File_NfoWrite]({ nfoPath, data }),
+    nfoRead: (nfoPath: string, videoPath?: string) => client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
+    nfoWrite: (nfoPath: string, data: CrawlerData, videoPath?: string) =>
+      client[IpcChannel.File_NfoWrite]({ nfoPath, videoPath, data }),
+    posterCropSession: (videoPath: string) => client[IpcChannel.File_PosterCropSession]({ videoPath }),
+    posterCropSave: (videoPath: string, crop: NormalizedCropRegion) =>
+      client[IpcChannel.File_PosterCropSave]({ videoPath, crop }),
   },
   tool: {
     createSymlink: (payload: {

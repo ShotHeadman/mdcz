@@ -363,7 +363,7 @@ describe("AggregationService", () => {
     expect(result?.sources.publisher).toBe(Website.FC2);
   });
 
-  it("keeps DMM family identity fields aligned with the title-winning source", async () => {
+  it("applies field priorities independently across DMM sources", async () => {
     const siteResults = makeSiteResults(
       [
         Website.DMM,
@@ -411,14 +411,14 @@ describe("AggregationService", () => {
     );
 
     expect(result?.data.title).toBe("DMM TV Title");
-    expect(result?.data.genres).toEqual(["DMM TV Genre 1", "DMM TV Genre 2"]);
-    expect(result?.data.studio).toBe("DMM TV Studio");
+    expect(result?.data.genres).toEqual(["DMM Genre"]);
+    expect(result?.data.studio).toBe("DMM Studio");
     expect(result?.data.durationSeconds).toBe(7_200);
     expect(result?.data.rating).toBe(4.6);
     expect(result?.data.trailer_url).toBe("https://dmm.example.com/trailer.mp4");
     expect(result?.sources.title).toBe(Website.DMM_TV);
-    expect(result?.sources.genres).toBe(Website.DMM_TV);
-    expect(result?.sources.studio).toBe(Website.DMM_TV);
+    expect(result?.sources.genres).toBe(Website.DMM);
+    expect(result?.sources.studio).toBe(Website.DMM);
     expect(result?.sources.durationSeconds).toBe(Website.DMM);
     expect(result?.sources.rating).toBe(Website.DMM);
     expect(result?.sources.trailer_url).toBe(Website.DMM);
@@ -637,6 +637,22 @@ describe("AggregationService", () => {
     expect(provider.calledSites.sort()).toEqual(
       [Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB].sort(),
     );
+  });
+
+  it("does not crawl Fantia without its required cookie", async () => {
+    const provider = new RecordingCrawlerProvider(
+      makeSiteResults([Website.DMM, { title: "DMM Title", thumb_url: "https://dmm.example/thumb.jpg" }]),
+    );
+    const config = makeConfig({
+      scrape: { sites: [Website.FANTIA, Website.DMM] },
+      network: { fantiaCookie: "" },
+    });
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    expect(provider.calledSites).toEqual([Website.DMM]);
+    expect(result?.stats.failedCount).toBe(0);
+    expect(result?.stats.rejectedSites).toEqual([{ site: Website.FANTIA, reason: "missing_credential" }]);
   });
 
   it("skips FC2-only sites when aggregating a non-FC2 number", async () => {

@@ -1,5 +1,7 @@
 import { type FieldAnchor, type FieldEntry, SECTION_FILTER_ALIASES, SECTION_LABELS } from "./settingsRegistry";
 
+export { valuesEqual } from "./autoSaveUtils";
+
 export interface ParsedSettingsQuery {
   raw: string;
   textTerms: string[];
@@ -47,18 +49,6 @@ function matchesGroup(anchor: FieldAnchor, term: string): boolean {
   const sectionLabel = normalize(SECTION_LABELS[anchor]);
   const candidates = [anchor.toLowerCase(), sectionLabel, ...SECTION_FILTER_ALIASES[anchor].map(normalize)];
   return candidates.some((candidate) => candidate.includes(normalizedTerm));
-}
-
-export function valuesEqual(a: unknown, b: unknown): boolean {
-  if (a === b) {
-    return true;
-  }
-
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
-  }
 }
 
 export function parseSettingsQuery(query: string): ParsedSettingsQuery {

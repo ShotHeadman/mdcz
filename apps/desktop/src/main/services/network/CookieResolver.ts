@@ -1,7 +1,13 @@
+import {
+  type CookieResolver,
+  filterCookiesForUrl,
+  normalizeCookieDomain,
+  normalizeCookiePath,
+  type ResolvedCookie,
+} from "@mdcz/runtime/network";
 import { BrowserWindow, type Cookie, type Event } from "electron";
-import { filterCookiesForUrl, normalizeCookieDomain, normalizeCookiePath, type ResolvedCookie } from "./cookieUtils";
 
-export type CookieResolver = (url: string) => Promise<ResolvedCookie[]>;
+export type { CookieResolver };
 
 export interface ElectronCookieResolverOptions {
   timeoutMs?: number;

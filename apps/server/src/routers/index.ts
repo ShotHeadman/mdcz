@@ -9,6 +9,7 @@ import {
   configUpdateInputSchema,
   crawlerProbeSiteConnectivityInputSchema,
   fileActionInputSchema,
+  libraryAvailabilityInputSchema,
   libraryDetailInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
@@ -19,6 +20,7 @@ import {
   maintenanceTaskInputSchema,
   nfoReadInputSchema,
   nfoWriteInputSchema,
+  posterCropSaveInputSchema,
   rootBrowserInputSchema,
   scanCandidatesInputSchema,
   scanStartInputSchema,
@@ -49,7 +51,7 @@ const syncMediaRootFromConfig = async (
   if (!mediaPath) {
     return;
   }
-  await services.mediaRoots.syncSingleEnabledRoot({
+  await services.mediaRoots.setPrimaryMediaRoot({
     displayName: options.displayName?.trim() || pathDisplayName(mediaPath),
     hostPath: mediaPath,
     enabled: true,
@@ -210,12 +212,15 @@ export const appRouter = t.router({
     }),
   }),
   library: t.router({
+    availability: protectedProcedure
+      .input(libraryAvailabilityInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.library.availability(input)),
     list: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
     search: protectedProcedure
       .input(libraryListInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.library.search(input)),
+      .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
     detail: protectedProcedure
       .input(libraryDetailInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.detail(input.id)),
@@ -312,6 +317,12 @@ export const appRouter = t.router({
     nfoWrite: protectedProcedure
       .input(nfoWriteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.nfoWrite(input)),
+    posterCropSession: protectedProcedure
+      .input(scrapeResultIdInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.scrape.posterCropSession(input.id)),
+    posterCropSave: protectedProcedure
+      .input(posterCropSaveInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.scrape.posterCropSave(input)),
     pause: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.pause(input)),

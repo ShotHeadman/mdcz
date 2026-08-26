@@ -23,6 +23,7 @@ import { createTaskEventBus } from "./taskEvents";
 
 export interface TestServerOptions {
   environmentPassword?: string;
+  webStaticDir?: string | false;
   automationWebhook?: {
     secret?: string;
     url?: string;
@@ -40,8 +41,11 @@ export interface LocalHttpServer {
 
 export interface TestAggregationOptions {
   actorPhotoPath?: string;
+  director?: string;
   titlePrefix?: string;
   titleZhPrefix?: string;
+  trailerUrl?: string;
+  trailerSourceUrl?: string;
 }
 
 const activeServers = new Map<ServerApp, TempDirectoryHarness>();
@@ -64,7 +68,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
     serviceOptions: {
       automationWebhook: options.automationWebhook,
     },
-    webStaticDir: false,
+    webStaticDir: options.webStaticDir ?? false,
     services: {
       auth:
         options.environmentPassword === undefined
@@ -168,10 +172,10 @@ export const createTestPngBytes = (): Buffer => {
   return Buffer.concat([png, Buffer.alloc(9000)]);
 };
 
-export const startTestImageServer = async (): Promise<LocalHttpServer> =>
+export const startTestImageServer = async (imageBytes: Buffer = createTestPngBytes()): Promise<LocalHttpServer> =>
   await startLocalHttpServer((_request, response) => {
     response.writeHead(200, { "content-type": "image/png" });
-    response.end(createTestPngBytes());
+    response.end(imageBytes);
   });
 
 export const createTestAggregation = (
@@ -188,6 +192,9 @@ export const createTestAggregation = (
         actor_profiles: options.actorPhotoPath ? [{ name: "Actor A", photo_url: options.actorPhotoPath }] : undefined,
         genres: ["Drama"],
         studio: "Runtime Studio",
+        director: options.director,
+        trailer_url: options.trailerUrl,
+        trailer_source_url: options.trailerSourceUrl,
         plot: "Runtime plot",
         release_date: "2024-01-15",
         thumb_url: imageUrl,
@@ -213,6 +220,7 @@ export const createTestAggregation = (
         failedCount: 0,
         skippedCount: 0,
         siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
+        rejectedSites: [],
         totalElapsedMs: 1,
       },
     };

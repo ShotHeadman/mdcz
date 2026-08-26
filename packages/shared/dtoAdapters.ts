@@ -17,6 +17,7 @@ const emptyCrawlerData = (relativePath = ""): CrawlerData => ({
 });
 
 export const scrapeResultDtoToScrapeResult = (result: ScrapeResultDto): ScrapeResult => ({
+  resultId: result.id,
   fileId: `${result.rootId}:${result.relativePath}`,
   fileInfo: {
     filePath: result.relativePath,
@@ -29,6 +30,7 @@ export const scrapeResultDtoToScrapeResult = (result: ScrapeResultDto): ScrapeRe
   crawlerData: result.crawlerData ?? undefined,
   error: result.error ?? undefined,
   outputPath: result.outputRelativePath ?? undefined,
+  nfoRootId: result.nfoRootId ?? undefined,
   nfoPath: result.nfoRelativePath ?? undefined,
   uncensoredAmbiguous: result.uncensoredAmbiguous,
   assets: undefined,

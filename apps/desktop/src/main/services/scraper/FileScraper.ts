@@ -1,15 +1,14 @@
 import type { ActorImageService } from "@main/services/ActorImageService";
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { SignalService } from "@main/services/SignalService";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { LocalScanService } from "@mdcz/runtime/maintenance";
-import type { TranslateService } from "@mdcz/runtime/scrape";
+import type { AggregationService, TranslateService } from "@mdcz/runtime/scrape";
 import {
   type FileScrapeOptions,
   type FileScrapeProgress,
   FileScraper,
   type ScrapeExecutionMode,
 } from "@mdcz/runtime/scrape";
-import type { AggregationService } from "./aggregation";
 import type { DownloadManager } from "./DownloadManager";
 import type { NfoGenerator } from "./NfoGenerator";
 import { DefaultFileScraperPipeline } from "./pipeline";
@@ -30,7 +29,8 @@ export interface FileScraperDependencies {
 
 export interface CreateFileScraperOptions {
   mode?: ScrapeExecutionMode;
+  scrapeSessionId?: string;
 }
 
 export const createFileScraper = (deps: FileScraperDependencies, options: CreateFileScraperOptions = {}): FileScraper =>
-  new FileScraper(new DefaultFileScraperPipeline(deps, options.mode));
+  new FileScraper(new DefaultFileScraperPipeline(deps, options.mode, options.scrapeSessionId));

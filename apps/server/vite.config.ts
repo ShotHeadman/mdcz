@@ -41,6 +41,13 @@ const serverDistributionAssets = (): Plugin => ({
     await cp(workspaceResolve("packages/persistence/drizzle"), resolve(serverDist, "persistence/drizzle"), {
       recursive: true,
     });
+    await cp(
+      workspaceResolve("packages/runtime/resources/mapping_table"),
+      resolve(serverDist, "resources/mapping_table"),
+      {
+        recursive: true,
+      },
+    );
   },
 });
 

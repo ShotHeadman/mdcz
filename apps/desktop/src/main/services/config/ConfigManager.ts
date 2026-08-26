@@ -7,9 +7,9 @@ import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import { RuntimeConfigProfileStore, RuntimeConfigService, RuntimeConfigValidationError } from "@mdcz/runtime/config";
+import { type Configuration, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { toConfigValidationDomainError } from "@mdcz/shared/error";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
-import { type Configuration, type DeepPartial, defaultConfiguration } from "./models";
 
 const CONFIG_DIRECTORY_META_FILE = ".config-directory.json";
 const DEFAULT_CONFIG_DIRECTORY = "config";
@@ -33,23 +33,63 @@ export class ConfigManager extends EventEmitter {
   private initializePromise: Promise<void> | null = null;
 
   private configDirectory = DEFAULT_CONFIG_DIRECTORY;
+  private saveSnapshot: {
+    configuration: Configuration;
+    configDirectory: string;
+    activeProfileName: string | undefined;
+  } | null = null;
 
   private readonly config = new RuntimeConfigService({
     store: this.createStore(),
     onBeforeSave: (configuration) => {
+      this.saveSnapshot = {
+        configuration: this.configuration,
+        configDirectory: this.configDirectory,
+        activeProfileName: this.activeProfileName,
+      };
       this.configuration = configuration;
       this.syncConfigDirectoryFromConfiguration();
       this.config.replaceStore(this.createStore());
     },
+    onSaveError: () => {
+      const snapshot = this.saveSnapshot;
+      if (!snapshot) return;
+      this.configuration = snapshot.configuration;
+      this.configDirectory = snapshot.configDirectory;
+      this.activeProfileName = snapshot.activeProfileName;
+      this.config.replaceStore(this.createStore());
+      this.computedConfig.invalidate();
+      this.saveSnapshot = null;
+    },
     onAfterSave: async (configuration) => {
       await this.persistConfigDirectory();
-      return this.applyLoadedConfiguration(configuration);
+      const applied = this.applyLoadedConfiguration(configuration);
+      await this.rebindRuntimeStoreIfNeeded();
+      this.saveSnapshot = null;
+      return applied;
     },
-    onAfterLoad: (configuration) => this.applyLoadedConfiguration(configuration),
+    onAfterLoad: async (configuration) => {
+      const applied = this.applyLoadedConfiguration(configuration);
+      await this.rebindRuntimeStoreIfNeeded();
+      return applied;
+    },
     mapValidationError: (error) => new ConfigValidationError(error.message, error.fields, error.fieldErrors),
   });
 
   private activeProfileName: string | undefined;
+
+  constructor() {
+    super();
+    this.config.onChange((event) => {
+      if (event.source !== "watch" && event.source !== "switch") return;
+      this.applyLoadedConfiguration(event.configuration);
+      void this.rebindRuntimeStoreIfNeeded();
+      this.notify();
+    });
+    this.config.onDiagnostic((event) => {
+      this.logger.warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
+    });
+  }
 
   async ensureLoaded(): Promise<void> {
     if (!this.initializePromise) {
@@ -60,6 +100,15 @@ export class ConfigManager extends EventEmitter {
     }
 
     await this.initializePromise;
+  }
+
+  async startWatching(): Promise<void> {
+    await this.ensureLoaded();
+    await this.config.startWatching();
+  }
+
+  async stopWatching(): Promise<void> {
+    await this.config.stopWatching();
   }
 
   async get(): Promise<Configuration>;
@@ -91,12 +140,6 @@ export class ConfigManager extends EventEmitter {
 
   async reset(path?: string): Promise<void> {
     await this.ensureLoaded();
-
-    if (!path) {
-      await this.config.reset();
-      this.notify();
-      return;
-    }
 
     await this.config.reset(path);
     this.notify();
@@ -261,6 +304,13 @@ export class ConfigManager extends EventEmitter {
     this.syncConfigDirectoryFromConfiguration();
     this.computedConfig.invalidate();
     return this.configuration;
+  }
+
+  private async rebindRuntimeStoreIfNeeded(): Promise<void> {
+    const expectedDirectory = this.getDataDirectory();
+    if (this.config.configDirectory !== expectedDirectory) {
+      this.config.replaceStore(this.createStore());
+    }
   }
 }
 

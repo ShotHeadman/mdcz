@@ -11,7 +11,7 @@ import type {
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
 import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
-import type { RuntimeActorImageService } from "../scrape/actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
 import { MaintenanceArtifactResolver } from "./MaintenanceArtifactResolver";
@@ -33,7 +33,7 @@ import type { MaintenancePreset } from "./presets";
 
 export interface MaintenanceFileScraperDependencies {
   actorImageService?: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
   aggregationService: AggregationService;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;

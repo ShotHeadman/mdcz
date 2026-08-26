@@ -1,5 +1,5 @@
-import { ActorSourceProvider, ActorSourceRegistry, type BaseActorSource } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { ActorSourceProvider, ActorSourceRegistry, type BaseActorSource } from "@mdcz/runtime/actorSource";
 import type { ActorProfile } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 

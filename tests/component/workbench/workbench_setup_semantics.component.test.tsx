@@ -1,5 +1,6 @@
 import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
+import { MediaBrowserList } from "@mdcz/views/common";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
 import { expect, test } from "vitest";
 import { render } from "vitest-browser-react";
@@ -115,4 +116,28 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
     await expect.element(screen.getByText(option.description)).toBeVisible();
     await screen.unmount();
   }
+});
+
+test("media browser list renders processing items with spinner state", async () => {
+  const screen = await render(
+    <MediaBrowserList
+      items={[
+        {
+          id: "ABC-123",
+          title: "ABC-123",
+          subtitle: "ABC-123.mp4",
+          status: "processing",
+          active: false,
+          menuContent: null,
+          onClick: () => undefined,
+        },
+      ]}
+      filter="all"
+      onFilterChange={() => undefined}
+      stats={[{ label: "总计", value: "1" }]}
+    />,
+  );
+
+  await expect.element(screen.getByText("ABC-123", { exact: true })).toBeVisible();
+  expect(screen.container.querySelector(".animate-spin")).not.toBeNull();
 });

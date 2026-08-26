@@ -22,11 +22,51 @@ export interface ImageHostCooldownStore {
     policy: ImageHostCooldownFailurePolicy,
   ): { cooldownUntil?: number | null; failureCount: number } | null;
   reset(key: string): void;
+  clear?(): void;
+}
+
+export class MemoryImageHostCooldownStore implements ImageHostCooldownStore {
+  private readonly entries = new Map<string, { failures: number[]; cooldownUntil?: number }>();
+
+  getActiveCooldown(key: string): ActiveCooldown | null {
+    const cooldownUntil = this.entries.get(key)?.cooldownUntil;
+    if (!cooldownUntil) return null;
+    const remainingMs = cooldownUntil - Date.now();
+    if (remainingMs <= 0) {
+      this.reset(key);
+      return null;
+    }
+    return { cooldownUntil, remainingMs };
+  }
+
+  isCoolingDown(key: string): boolean {
+    return this.getActiveCooldown(key) !== null;
+  }
+
+  recordFailure(
+    key: string,
+    policy: ImageHostCooldownFailurePolicy,
+  ): { cooldownUntil?: number | null; failureCount: number } {
+    const now = Date.now();
+    const entry = this.entries.get(key) ?? { failures: [] };
+    const failures = [...entry.failures.filter((timestamp) => now - timestamp <= policy.windowMs), now];
+    const cooldownUntil = failures.length >= policy.threshold ? now + policy.cooldownMs : entry.cooldownUntil;
+    this.entries.set(key, { failures, cooldownUntil });
+    return { cooldownUntil, failureCount: failures.length };
+  }
+
+  reset(key: string): void {
+    this.entries.delete(key);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
 }
 
 const IMAGE_HOST_COOLDOWN_MS = 5 * 60 * 1000;
 const IMAGE_HOST_FAILURE_POLICY: ImageHostCooldownFailurePolicy = {
-  threshold: 2,
+  threshold: 3,
   windowMs: IMAGE_HOST_COOLDOWN_MS,
   cooldownMs: IMAGE_HOST_COOLDOWN_MS,
 };
@@ -48,7 +88,7 @@ const parseHttpStatus = (message?: string): number | null => {
 const shouldRecordImageHostFailure = (status?: number, reason?: string): boolean => {
   const resolvedStatus = typeof status === "number" && status > 0 ? status : parseHttpStatus(reason);
   if (resolvedStatus === null) {
-    return true;
+    return false;
   }
 
   return IMAGE_HOST_COOLDOWN_STATUS_CODES.has(resolvedStatus) || resolvedStatus >= 500;
@@ -115,6 +155,11 @@ export class ImageHostCooldownTracker {
     this.store.reset(host);
   }
 
+  resetAll(): void {
+    this.store.clear?.();
+    this.loggedCooldownUntilByImageHost.clear();
+  }
+
   recordFailure(url: string, reason?: string, status?: number): void {
     const host = getUrlHost(url);
     if (!host || this.store.isCoolingDown(host) || !shouldRecordImageHostFailure(status, reason)) {
@@ -148,7 +193,7 @@ export class ImageHostCooldownTracker {
     }
 
     this.loggedCooldownUntilByImageHost.set(host, activeCooldown.cooldownUntil);
-    this.logger.info(
+    this.logger.warn(
       `Skipping ${url}: image host cooldown active for ${host} (${formatCooldownDetails(
         activeCooldown.cooldownUntil,
         activeCooldown.remainingMs,

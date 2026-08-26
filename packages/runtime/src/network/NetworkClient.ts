@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type Browser, Impit, type RequestInit as ImpitRequestInit } from "impit";
-import { createAbortError } from "../scrape/utils/abort";
+import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
@@ -71,9 +71,10 @@ export interface NetworkJsonResponse<T = unknown> {
   data: T | string | null;
 }
 
-interface RequestBehavior {
+interface RequestBehavior<TResult> {
   allowNonOkResponse?: boolean;
   retryLogPrefix?: string;
+  transformResponse?: (response: ImpitResponse) => Promise<TResult> | TResult;
 }
 
 interface ImpitClientState {
@@ -180,7 +181,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
 
-    const response = await this.executeRequest(
+    return await this.executeRequest(
       url,
       {
         ...init,
@@ -189,17 +190,18 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
         body: JSON.stringify(payload),
       },
       undefined,
-      { allowNonOkResponse: true },
+      {
+        allowNonOkResponse: true,
+        transformResponse: async (response) => ({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          resolvedUrl: response.url || url,
+          headers: response.headers,
+          data: await this.parseJsonResponseBody<TResponse>(response),
+        }),
+      },
     );
-
-    return {
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      resolvedUrl: response.url || url,
-      headers: response.headers,
-      data: await this.parseJsonResponseBody<TResponse>(response),
-    };
   }
 
   async postContent(
@@ -365,12 +367,12 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     });
   }
 
-  private async executeRequest(
+  private async executeRequest<TResult = ImpitResponse>(
     url: string,
     init: ImpitRequestInit,
     client?: Impit,
-    behavior: RequestBehavior = {},
-  ): Promise<ImpitResponse> {
+    behavior: RequestBehavior<TResult> = {},
+  ): Promise<TResult> {
     return this.rateLimiter.schedule(
       url,
       async () => {
@@ -380,28 +382,53 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
         const maxRetries = this.resolveRetryCount();
         let attempt = 0;
-
-        while (true) {
-          const response = await this.fetchOnce(url, init, client);
-          if (response.ok) {
-            return response;
+        const transformResponse = behavior.transformResponse ?? ((response: ImpitResponse) => response as TResult);
+        const retryTransportError = async (error: unknown): Promise<void> => {
+          if (isAbortError(error) || init.signal?.aborted) {
+            throw error;
+          }
+          if (attempt >= maxRetries) {
+            throw error;
           }
 
-          const retryable = this.shouldRetryResponse(response);
-          if (!retryable || attempt >= maxRetries) {
-            if (behavior.allowNonOkResponse) {
-              return response;
-            }
-
-            throw this.toHttpError(url, response);
-          }
-
-          const delayMs = this.getRetryDelayMs(response, attempt);
+          const delayMs = this.getRetryDelayMsForAttempt(attempt);
           attempt += 1;
           this.logger.warn(
-            `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
+            `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to transport error: ${error instanceof Error ? error.message : String(error)}`,
           );
           await this.waitForRetryDelay(delayMs, init.signal);
+        };
+
+        while (true) {
+          let response: ImpitResponse;
+          try {
+            response = await this.fetchOnce(url, init, client);
+          } catch (error) {
+            await retryTransportError(error);
+            continue;
+          }
+
+          if (!response.ok) {
+            if (this.shouldRetryResponse(response) && attempt < maxRetries) {
+              const delayMs = this.getRetryDelayMs(response, attempt);
+              attempt += 1;
+              this.logger.warn(
+                `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
+              );
+              await this.waitForRetryDelay(delayMs, init.signal);
+              continue;
+            }
+
+            if (!behavior.allowNonOkResponse) {
+              throw this.toHttpError(url, response);
+            }
+          }
+
+          try {
+            return await transformResponse(response);
+          } catch (error) {
+            await retryTransportError(error);
+          }
         }
       },
       init.signal,
@@ -558,6 +585,10 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       return retryAfterMs;
     }
 
+    return this.getRetryDelayMsForAttempt(attempt);
+  }
+
+  private getRetryDelayMsForAttempt(attempt: number): number {
     return Math.min(1000 * 2 ** attempt, RETRY_AFTER_CAP_MS);
   }
 

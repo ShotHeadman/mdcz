@@ -6,7 +6,6 @@ electronLanguages:
   - zh-CN
   - en-US
 asarUnpack:
-  - resources/**
   - "**/*.node"
   - node_modules/sharp/**
   - node_modules/@img/sharp-*/**
@@ -24,11 +23,9 @@ directories:
 files:
   - out/**
   - persistence/**
-  - resources/**
   - package.json
   - "!**/*.map"
   - "!node_modules/mediainfo.js/dist/MediaInfoModule.wasm"
-  - "!node_modules/openai/src/**"
   # Strip the hoisted better-sqlite3 native artifacts; the Electron-ABI .node
   # is shipped via extraResources/native and loaded explicitly through
   # PersistenceDatabaseConfig.nativeBinding.
@@ -42,6 +39,8 @@ extraResources:
     to: MediaInfoModule.wasm
   - from: native/better_sqlite3.node
     to: native/better_sqlite3.node
+  - from: ../../packages/runtime/resources/mapping_table
+    to: mapping_table
 
 win:
   executableName: MDCz

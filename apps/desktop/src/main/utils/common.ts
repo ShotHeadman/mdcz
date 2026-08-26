@@ -1,6 +1,9 @@
 /**
  * Shared utility functions used across the application
  */
+import { isRecord } from "@mdcz/runtime/shared";
+
+export { buildUrl, getProperty, isRecord } from "@mdcz/runtime/shared";
 export { formatErrorMessage, toErrorMessage } from "@mdcz/shared/error";
 
 /**
@@ -15,38 +18,10 @@ export function toArray<T>(value: T | T[] | undefined): T[] {
 }
 
 /**
- * Type guard to check if a value is a record object
- */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
  * Type guard to check if a value is a string
  */
 export function isString(value: unknown): value is string {
   return typeof value === "string";
-}
-
-/**
- * Safely gets a nested property from an object
- */
-export function getProperty<T = unknown>(obj: unknown, path: string, defaultValue?: T): T | undefined {
-  if (!isRecord(obj)) {
-    return defaultValue;
-  }
-
-  const keys = path.split(".");
-  let current: unknown = obj;
-
-  for (const key of keys) {
-    if (!isRecord(current) || !(key in current)) {
-      return defaultValue;
-    }
-    current = current[key];
-  }
-
-  return current as T;
 }
 
 /**
@@ -95,20 +70,4 @@ export function mergeDeep<T>(base: T, override: unknown): T {
   }
 
   return override as T;
-}
-
-/**
- * Builds a URL with optional query parameters.
- */
-export function buildUrl(baseUrl: string, pathname = "/", query: Record<string, string | undefined> = {}): string {
-  const url = new URL(pathname, `${baseUrl}/`);
-
-  for (const [key, value] of Object.entries(query)) {
-    if (!value) {
-      continue;
-    }
-    url.searchParams.set(key, value);
-  }
-
-  return url.toString();
 }

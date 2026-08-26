@@ -342,12 +342,18 @@ export function EnumField({
 
 // ── Cookie with validation ──
 
-const COOKIE_VALIDATE_FIELDS = new Set(["network.javdbCookie", "network.javbusCookie"]);
+const COOKIE_VALIDATE_FIELDS = new Set(["network.javdbCookie", "network.javbusCookie", "network.fantiaCookie"]);
 
 function CookieValidateButton({ fieldKey }: { fieldKey: string }) {
   const services = useSettingsServices();
   const [checking, setChecking] = useState(false);
-  const siteName = fieldKey.includes("javdb") ? "JavDB" : "JavBus";
+  const siteName = fieldKey.includes("javdb")
+    ? "JavDB"
+    : fieldKey.includes("javbus")
+      ? "JavBus"
+      : fieldKey.includes("fantia")
+        ? "Fantia"
+        : "Unknown";
 
   const handleCheck = async () => {
     setChecking(true);

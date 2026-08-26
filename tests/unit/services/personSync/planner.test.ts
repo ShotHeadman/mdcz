@@ -1,4 +1,4 @@
-import { hasMissingActorInfo, planPersonSync } from "@main/services/personSync/planner";
+import { hasMissingActorInfo, planPersonSync } from "@mdcz/runtime/mediaserver";
 import { describe, expect, it } from "vitest";
 
 describe("person sync planner", () => {

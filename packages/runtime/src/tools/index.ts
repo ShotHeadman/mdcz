@@ -3,6 +3,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 import { inspectStrmTarget } from "../scrape/utils/strm";
 import { SUBTITLE_EXTENSIONS } from "../scrape/utils/subtitles";
 
+export * from "./AmazonJpImageService";
 export { applyAmazonPosters, lookupAmazonPoster, scanAmazonPosters } from "./amazonPoster";
 export {
   applyBatchNfoTranslations,

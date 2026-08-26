@@ -1,8 +1,8 @@
 import "./index.css";
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import { Toaster, TooltipProvider } from "@mdcz/ui";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { Suspense, useEffect, useRef } from "react";

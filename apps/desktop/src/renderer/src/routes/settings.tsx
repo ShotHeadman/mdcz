@@ -1,8 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import {
   mergeConfigWithFlatPayload,
-  type SettingsCrawlerSiteInfo,
   SettingsEditor,
   SettingsLayout,
   type SettingsNotifier,
@@ -10,6 +8,7 @@ import {
   type SettingsServices,
   SettingsServicesProvider,
 } from "@mdcz/views/settings";
+import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
@@ -64,10 +63,8 @@ function SettingsComponent() {
         getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
         incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
         listCrawlerSites: async () => {
-          const result = (await ipc.crawler.listSites()) as {
-            sites?: SettingsCrawlerSiteInfo[];
-          };
-          return { sites: result.sites ?? [] };
+          const result = await ipc.crawler.listSites();
+          return { sites: result.sites };
         },
         openWatermarkDirectory: async () => {
           await ipc.app.openWatermarkDirectory();

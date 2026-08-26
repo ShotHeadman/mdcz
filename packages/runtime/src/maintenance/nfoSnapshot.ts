@@ -3,7 +3,9 @@ import type { ActorProfile, CrawlerData, NfoLocalState } from "@mdcz/shared/type
 import { XMLParser } from "fast-xml-parser";
 import { isManagedMovieTag, normalizeNfoLocalState, parseManagedMovieTags, tagToUncensoredChoice } from "./movieTags";
 
-const WEBSITE_VALUES = new Set(Object.values(Website));
+const WEBSITE_VALUES: Readonly<Record<Website, true>> = Object.fromEntries(
+  Object.values(Website).map((website) => [website, true]),
+) as Record<Website, true>;
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
 
 // MDCx writes external IDs as <{site}id>. Keep only sites present in both projects.
@@ -24,10 +26,11 @@ const MDCX_PROVIDER_TAGS: Readonly<Record<string, Website>> = {
 const toArray = <T>(value: T | T[] | undefined): T[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
 
-const parseWebsite = (value: unknown): Website | null =>
-  typeof value === "string" && WEBSITE_VALUES.has(value.trim().toLowerCase() as Website)
-    ? (value.trim().toLowerCase() as Website)
-    : null;
+const parseWebsite = (value: unknown): Website | null => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return WEBSITE_VALUES[normalized as Website] ? (normalized as Website) : null;
+};
 
 const toStringValue = (value: unknown): string | undefined => {
   if (typeof value === "string") {

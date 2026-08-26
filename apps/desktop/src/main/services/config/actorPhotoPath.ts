@@ -4,7 +4,7 @@ import {
   resolveActorPhotoFolderPath,
   usesLocalActorImageSource,
 } from "@mdcz/runtime/scrape/actorImage/actorPhotoPath";
-import type { Configuration } from "./models";
+import type { Configuration } from "@mdcz/shared/config";
 
 export {
   ActorPhotoFolderConfigurationError,

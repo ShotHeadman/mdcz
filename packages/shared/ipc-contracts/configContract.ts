@@ -1,12 +1,13 @@
 import type { Configuration } from "../config";
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
+import type { ConfigPathInput, ConfigUpdateInput } from "../serverDtos";
 import type { NamingPreviewItem } from "../types";
 
 export type ConfigIpcContract = {
-  [IpcChannel.Config_Get]: IpcProcedure<{ path?: string }, Configuration | unknown>;
+  [IpcChannel.Config_Get]: IpcProcedure<ConfigPathInput, Configuration | unknown>;
   [IpcChannel.Config_GetDefaults]: IpcProcedure<void, Configuration>;
-  [IpcChannel.Config_Save]: IpcProcedure<{ config?: Partial<Configuration> }, { success: true }>;
+  [IpcChannel.Config_Save]: IpcProcedure<{ config?: ConfigUpdateInput }, { success: true }>;
   [IpcChannel.Config_List]: IpcProcedure<void, { configPath: string; dataDir: string }>;
   [IpcChannel.Config_Reset]: IpcProcedure<{ path?: string }, { success: true }>;
   [IpcChannel.Config_PreviewNaming]: IpcProcedure<{ config?: Partial<Configuration> }, { items: NamingPreviewItem[] }>;

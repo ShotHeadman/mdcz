@@ -38,6 +38,8 @@ export enum IpcChannel {
   File_Delete = "file:delete",
   File_NfoRead = "file:nfo-read",
   File_NfoWrite = "file:nfo-write",
+  File_PosterCropSession = "file:poster-crop-session",
+  File_PosterCropSave = "file:poster-crop-save",
 
   Event_Log = "event:log",
   Event_Progress = "event:progress",
@@ -61,6 +63,7 @@ export enum IpcChannel {
   Overview_GetOutputSummary = "overview:get-output-summary",
 
   Library_List = "library:list",
+  Library_Availability = "library:availability",
   Library_Delete = "library:delete",
 
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",

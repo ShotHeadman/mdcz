@@ -1,7 +1,7 @@
-import type { ActorLookupResult, ActorSourceProvider } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { checkConnection, EmbyActorInfo, EmbyActorPhoto } from "@main/services/mediaServer/emby";
 import { SignalService } from "@main/services/SignalService";
+import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { describe, expect, it, vi } from "vitest";
 

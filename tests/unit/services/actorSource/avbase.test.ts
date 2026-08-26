@@ -1,5 +1,5 @@
-import { AvbaseActorSource } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { AvbaseActorSource } from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { describe, expect, it, vi } from "vitest";
 

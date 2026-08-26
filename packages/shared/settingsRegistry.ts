@@ -192,6 +192,7 @@ const ADVANCED_FIELD_KEYS = new Set<string>([
 const FIELD_ALIASES: Record<string, string[]> = {
   ...AGGREGATION_PRIORITY_ALIASES,
   "paths.mediaPath": ["media", "library", "媒体库"],
+  "paths.metadataPath": ["metadata", "sidecar", "strm", "元数据", "本地目录"],
   "paths.actorPhotoFolder": ["actor", "photo", "头像", "演员"],
   "paths.softlinkPath": ["symlink", "softlink", "链接"],
   "paths.successOutputFolder": ["output", "success", "成功目录"],
@@ -202,6 +203,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   "scrape.sites": SITE_PRIORITY_EDITOR_ALIASES,
   "network.javdbCookie": ["cookie", "javdb", "凭证"],
   "network.javbusCookie": ["cookie", "javbus", "凭证"],
+  "network.fantiaCookie": ["cookie", "fantia", "凭证"],
   "translate.engine": ["translator", "translation", "翻译引擎"],
   "translate.llmModelName": ["model", "openai", "llm"],
   "translate.llmApiKey": ["api key", "token", "openai key", "密钥"],
@@ -214,6 +216,47 @@ const FIELD_ALIASES: Record<string, string[]> = {
   "titleRepair.rules": ["title repair", "replacement", "replace", "标题替换", "修复规则"],
   "download.generateNfo": ["nfo", "metadata file"],
   "download.nfoNaming": ["nfo", "naming", "metadata file"],
+  "download.nfoIgnoreFields": [
+    "nfo",
+    "metadata file",
+    "num",
+    "number",
+    "plot",
+    "release",
+    "runtime",
+    "technical",
+    "rating",
+    "studio",
+    "director",
+    "publisher",
+    "series",
+    "genres",
+    "tags",
+    "poster",
+    "thumb",
+    "fanart",
+    "sceneImages",
+    "trailer",
+    "source",
+    "简介",
+    "发行信息",
+    "时长",
+    "技术信息",
+    "评分",
+    "片商",
+    "导演",
+    "发行商",
+    "系列",
+    "类型",
+    "标签",
+    "海报",
+    "缩略图",
+    "背景图",
+    "剧照",
+    "预告片",
+    "来源",
+    "番号",
+  ],
   "download.tagBadges": ["badge", "badges", "mark", "corner", "角标", "标签角标"],
   "download.tagBadgeTypes": [
     "badge types",
@@ -274,6 +317,12 @@ const RAW_FIELD_REGISTRY: Array<
   Pick<FieldEntry, "key" | "label" | "anchor" | "description"> & Partial<Pick<FieldEntry, "surface" | "visibility">>
 > = [
   { key: "paths.mediaPath", label: "媒体目录", anchor: "paths" },
+  {
+    key: "paths.metadataPath",
+    label: "本地元数据目录",
+    anchor: "paths",
+    description: "配置后，NFO、图片和 STRM 写入本地镜像目录；留空则与影片保存在同一目录。",
+  },
   { key: "paths.actorPhotoFolder", label: "本地演员头像库目录", anchor: "paths" },
   { key: "paths.softlinkPath", label: "软链接目录", anchor: "paths" },
   { key: "paths.successOutputFolder", label: "成功输出目录", anchor: "paths" },
@@ -300,6 +349,18 @@ const RAW_FIELD_REGISTRY: Array<
     visibility: "hidden",
     description: "R18.dev 行内语言偏好，由启用站点与优先级控件保存。",
   },
+  {
+    key: "scrape.filenameIgnoreTokens",
+    label: "文件名番号忽略词",
+    anchor: "scrape",
+    description: "番号识别前从文件名中忽略这些文字；仅影响识别，不会修改原始文件名。",
+  },
+  {
+    key: "scrape.filenameBlacklistTokens",
+    label: "文件名黑名单词",
+    anchor: "scrape",
+    description: "自动扫描时排除文件名中包含这些文字的影片。",
+  },
   { key: "scrape.threadNumber", label: "并发线程数", anchor: "scrape" },
   { key: "scrape.javdbDelaySeconds", label: "JavDB 请求延迟(秒)", anchor: "scrape" },
   { key: "scrape.restAfterCount", label: "连续刮削后休息(条数)", anchor: "scrape" },
@@ -311,6 +372,7 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "network.retryCount", label: "重试次数", anchor: "network" },
   { key: "network.javdbCookie", label: "JavDB Cookie", anchor: "network" },
   { key: "network.javbusCookie", label: "JavBus Cookie", anchor: "network" },
+  { key: "network.fantiaCookie", label: "Fantia Cookie", anchor: "network" },
   ...AGGREGATION_PRIORITY_FIELDS.map((entry) => ({
     key: entry.key,
     label: entry.label,
@@ -352,6 +414,12 @@ const RAW_FIELD_REGISTRY: Array<
   },
   { key: "download.generateNfo", label: "生成 NFO", anchor: "download" },
   { key: "download.nfoNaming", label: "NFO 文件命名", anchor: "download" },
+  {
+    key: "download.nfoIgnoreFields",
+    label: "NFO 忽略字段",
+    anchor: "download",
+    description: "选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。",
+  },
   { key: "download.keepThumb", label: "保留已有横版缩略图", anchor: "download" },
   { key: "download.keepPoster", label: "保留已有海报", anchor: "download" },
   { key: "download.keepFanart", label: "保留已有背景图", anchor: "download" },
@@ -465,6 +533,49 @@ export const FIELD_REGISTRY: FieldEntry[] = RAW_FIELD_REGISTRY.map((entry) => ({
 }));
 
 export const FIELD_KEYS = FIELD_REGISTRY.map((entry) => entry.key);
+
+export interface SettingsSchemaExemption {
+  path: string;
+  kind: "internal" | "dynamic-record";
+  reason: string;
+}
+
+export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
+  {
+    path: "personSync.actorAliases",
+    kind: "dynamic-record",
+    reason: "Actor aliases are user-defined keys and cannot be represented as static registry leaves.",
+  },
+  { path: "ui.language", kind: "internal", reason: "Language selection is not exposed by the current settings UI." },
+  { path: "ui.theme", kind: "internal", reason: "Theme is controlled by the application shell." },
+  {
+    path: "behavior.updateCheck",
+    kind: "internal",
+    reason: "Update checks are controlled by the Desktop lifecycle rather than the settings editor.",
+  },
+];
+
+export interface SettingsSchemaDiff {
+  registryOnly: string[];
+  schemaOnly: string[];
+  staleExemptions: string[];
+}
+
+export function diffSettingsRegistrySchemaPaths(
+  schemaPaths: readonly string[],
+  registryPaths: readonly string[],
+  exemptions: readonly SettingsSchemaExemption[] = SETTINGS_SCHEMA_EXEMPTIONS,
+): SettingsSchemaDiff {
+  const schema = new Set(schemaPaths);
+  const registry = new Set(registryPaths);
+  const exemptionPaths = new Set(exemptions.map((entry) => entry.path));
+
+  return {
+    registryOnly: registryPaths.filter((path) => !schema.has(path)),
+    schemaOnly: schemaPaths.filter((path) => !registry.has(path) && !exemptionPaths.has(path)),
+    staleExemptions: exemptions.map((entry) => entry.path).filter((path) => !schema.has(path) || registry.has(path)),
+  };
+}
 
 export const FIELD_REGISTRY_BY_KEY = Object.fromEntries(FIELD_REGISTRY.map((entry) => [entry.key, entry])) as Record<
   string,

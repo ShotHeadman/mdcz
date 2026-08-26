@@ -1,34 +1,34 @@
-import { randomUUID } from "node:crypto";
-import PQueue from "p-queue";
 import { isAbortError } from "../../scrape/utils/abort";
-import { noopRuntimeLogger } from "../../shared";
+import { TaskExecutor } from "../executor";
+import { InMemoryScrapeSessionExecutionStore } from "./InMemoryScrapeSessionExecutionStore";
 import { SessionProgressTracker } from "./SessionProgressTracker";
-import { hasRecoverableWork, toRecoverableSnapshot } from "./SessionRecovery";
-import { SessionStateStore } from "./SessionStateStore";
 import type {
-  PersistedSessionState,
   QueueTask,
   RecoverableSessionSnapshot,
+  ScrapeSessionExecutionStore,
   ScrapeSessionOptions,
   ScrapeSuccessItem,
+  SessionExecution,
   SessionState,
 } from "./types";
 
+interface ExecutedQueueTask {
+  owned: boolean;
+  result: Awaited<ReturnType<QueueTask["taskFn"]>> | null;
+}
+
 export class ScrapeSession {
   private readonly progress = new SessionProgressTracker();
-
-  private readonly stateStore: SessionStateStore;
-
-  private queue: PQueue | null = null;
-
-  private taskId: string | null = null;
-
+  private readonly executionStore: ScrapeSessionExecutionStore;
+  private pendingTasks: QueueTask[] = [];
+  private executor: TaskExecutor<QueueTask, ExecutedQueueTask> | null = null;
+  private execution: SessionExecution | null = null;
+  private runPromise: Promise<void> | null = null;
   private stopRequested = false;
-
-  private controller: AbortController | null = null;
+  private concurrency = 1;
 
   constructor(options: ScrapeSessionOptions = {}) {
-    this.stateStore = new SessionStateStore(options.logger ?? noopRuntimeLogger, () => this.buildSnapshot(), options);
+    this.executionStore = options.executionStore ?? new InMemoryScrapeSessionExecutionStore();
   }
 
   getStatus() {
@@ -40,7 +40,7 @@ export class ScrapeSession {
   }
 
   getTaskId(): string | null {
-    return this.taskId;
+    return this.execution?.taskId ?? null;
   }
 
   getFailedFiles(): string[] {
@@ -51,149 +51,145 @@ export class ScrapeSession {
     return this.progress.getSuccessItemsSnapshot();
   }
 
-  getSignal(): AbortSignal {
-    if (!this.controller) {
-      throw new Error("Scrape session is not active");
-    }
-
-    return this.controller.signal;
-  }
-
   async hasRecoverableSession(): Promise<boolean> {
-    return hasRecoverableWork(await this.stateStore.read());
+    return (await this.executionStore.getRecoverable()) !== null;
   }
 
   async getRecoverableSnapshot(): Promise<RecoverableSessionSnapshot | null> {
-    return toRecoverableSnapshot(await this.stateStore.read());
+    return await this.executionStore.getRecoverable();
   }
 
   async discardRecoverableSession(): Promise<void> {
-    if (this.getStatus().running) {
-      throw new Error("Scrape session is active");
-    }
-
-    await this.stateStore.clear();
+    if (this.getStatus().running) throw new Error("Scrape session is active");
+    const snapshot = await this.executionStore.getRecoverable();
+    if (snapshot) await this.executionStore.discard(snapshot.taskId);
   }
 
-  begin(files: string[], concurrency: number): string {
-    if (this.getState() !== "idle") {
-      throw new Error("Scrape session is already active");
-    }
-
-    this.taskId = randomUUID();
+  async begin(files: string[], concurrency: number, recoverTaskId?: string): Promise<string> {
+    if (this.getState() !== "idle") throw new Error("Scrape session is already active");
+    this.execution = recoverTaskId
+      ? await this.executionStore.recover(recoverTaskId)
+      : await this.executionStore.create(files);
+    this.concurrency = Math.max(1, Math.trunc(concurrency));
+    this.pendingTasks = [];
     this.stopRequested = false;
-    this.controller = new AbortController();
-    this.queue = new PQueue({ concurrency: Math.max(1, concurrency) });
     this.progress.begin(files);
-    this.stateStore.start();
-
-    return this.taskId;
+    return this.execution.taskId;
   }
 
-  addTask(task: QueueTask): boolean {
-    if (!this.queue || !this.controller) {
-      throw new Error("Scrape session is not active");
-    }
-
-    if (task.isRetry && !this.progress.queueRetry(task.sourcePath)) {
-      return false;
-    }
-
+  async addTask(task: QueueTask): Promise<boolean> {
+    const execution = this.requireExecution();
     if (task.isRetry) {
-      this.stateStore.markDirty();
+      if (!this.progress.queueRetry(task.sourcePath)) return false;
+      if (!(await this.executionStore.queueRetry(execution, task.sourcePath))) return false;
     }
-
-    const signal = this.controller.signal;
-    this.queue.add(async () => {
-      if (this.stopRequested) {
-        return;
-      }
-
-      const result = await task.taskFn(signal).catch((error) => {
-        if (isAbortError(error)) {
-          return null;
-        }
-
-        throw error;
-      });
-      if (!result) {
-        return;
-      }
-
-      const update = this.progress.applyResult(task.sourcePath, result, task.isRetry);
-      this.stateStore.markDirty();
-
-      if (update.failureMembershipChanged) {
-        void this.stateStore.flushNow();
-      }
-    });
-
+    this.pendingTasks.push(task);
     return true;
   }
 
   async onIdle(): Promise<void> {
-    if (!this.queue) {
-      return;
-    }
-
-    await this.queue.onIdle();
+    if (!this.execution) return;
+    do {
+      await (this.runPromise ?? this.startDrain());
+    } while (this.execution && !this.stopRequested && this.getState() === "running" && this.pendingTasks.length > 0);
   }
 
-  stop(): { pendingCount: number } {
-    if (!this.queue || !this.getStatus().running) {
-      return { pendingCount: 0 };
-    }
-
-    if (this.getState() !== "stopping") {
-      this.progress.transitionTo("stopping");
-      this.stopRequested = true;
-      this.controller?.abort();
-      this.stateStore.markDirty();
-    }
-
-    const pendingCount = this.queue.size;
-    this.queue.clear();
+  async stop(): Promise<{ pendingCount: number }> {
+    if (!this.execution || !this.getStatus().running) return { pendingCount: 0 };
+    const pendingCount = this.progress.getPendingFiles().length;
+    this.stopRequested = true;
+    this.executor?.stop();
+    this.progress.transitionTo("stopping");
+    await this.executionStore.stop(this.execution);
     return { pendingCount };
   }
 
-  pause(): void {
-    if (!this.queue || this.getState() !== "running") {
-      return;
-    }
-
-    this.queue.pause();
+  async pause(): Promise<void> {
+    if (!this.execution || this.getState() !== "running") return;
+    this.executor?.pause();
+    if (!(await this.executionStore.pause(this.execution))) return;
     this.progress.transitionTo("paused");
-    this.stateStore.markDirty();
   }
 
-  resume(): void {
-    if (!this.queue || this.getState() !== "paused") {
-      return;
-    }
-
-    this.queue.start();
+  async resume(): Promise<void> {
+    if (!this.execution || this.getState() !== "paused") return;
+    const resumed = await this.executionStore.resume(this.execution);
+    if (!resumed) return;
+    this.execution = resumed;
     this.progress.transitionTo("running");
-    this.stateStore.markDirty();
+    this.executor?.resume();
   }
 
   async finish(): Promise<void> {
-    if (!this.getStatus().running && this.getState() === "idle") {
-      return;
-    }
-
+    if (!this.execution || (!this.getStatus().running && this.getState() === "idle")) return;
+    await this.executionStore.complete(this.execution, this.progress.getStatus());
     this.progress.finish();
-    this.taskId = null;
-    this.queue = null;
+    this.execution = null;
+    this.executor = null;
+    this.pendingTasks = [];
     this.stopRequested = false;
-    this.controller = null;
-    await this.stateStore.clear();
   }
 
-  private buildSnapshot(): PersistedSessionState | null {
-    if (!this.taskId || !this.getStatus().running) {
-      return null;
-    }
+  private async drain(): Promise<void> {
+    while (!this.stopRequested) {
+      if (this.getState() === "paused") {
+        return;
+      }
+      if (this.pendingTasks.length === 0) return;
 
-    return this.progress.buildSnapshot(this.taskId);
+      const execution = this.requireExecution();
+      const batch = this.pendingTasks.splice(0);
+      const started = new Set<QueueTask>();
+      const executor = new TaskExecutor<QueueTask, ExecutedQueueTask>({
+        concurrency: this.concurrency,
+        gate: { beforeItem: async (task) => void started.add(task) },
+        runItem: async (task, context) => {
+          const owned = await this.executionStore.markProcessing(execution, task.sourcePath);
+          if (!owned) return { owned: false, result: null };
+          try {
+            return { owned: true, result: await task.taskFn(context.signal) };
+          } catch (error) {
+            if (isAbortError(error) || context.signal.aborted) return { owned: true, result: null };
+            throw error;
+          }
+        },
+        applyResult: async (task, executed) => {
+          if (!executed.owned) return;
+          const committed = await this.executionStore.markResult(execution, task.sourcePath, executed.result);
+          if (!committed) return;
+          if (executed.result) this.progress.applyResult(task.sourcePath, executed.result, task.isRetry);
+          else this.progress.applyStopped(task.sourcePath, task.isRetry);
+        },
+      });
+      this.executor = executor;
+      const summary = await executor.execute(batch, execution.executionVersion);
+      this.pendingTasks.unshift(...batch.filter((task) => !started.has(task)));
+      if (this.executor === executor) this.executor = null;
+
+      if (summary.outcome === "paused") {
+        return;
+      } else if (summary.outcome === "stopped") {
+        for (const task of this.pendingTasks.splice(0)) {
+          if (await this.executionStore.markResult(execution, task.sourcePath, null)) {
+            this.progress.applyStopped(task.sourcePath, task.isRetry);
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  private startDrain(): Promise<void> {
+    const run = this.drain();
+    const tracked = run.finally(() => {
+      if (this.runPromise === tracked) this.runPromise = null;
+    });
+    this.runPromise = tracked;
+    return tracked;
+  }
+
+  private requireExecution(): SessionExecution {
+    if (!this.execution) throw new Error("Scrape session is not active");
+    return this.execution;
   }
 }

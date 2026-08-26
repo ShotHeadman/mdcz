@@ -213,6 +213,9 @@ describe("buildServer maintenance integration", () => {
     const aggregation = createTestAggregation(`${imageServer.url}/image.png`, {
       titlePrefix: "Remote Title",
       titleZhPrefix: "远程标题",
+      director: "Remote Director",
+      trailerUrl: "https://example.com/maintenance-trailer.mp4",
+      trailerSourceUrl: "https://example.com/maintenance-trailer-source.mp4",
     }) as AggregationService;
     const { fastify } = await createTestServer({
       createMaintenanceRuntime: (config) => createMaintenanceRuntime(config, aggregation),
@@ -221,7 +224,12 @@ describe("buildServer maintenance integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     await configureOrganizedOutput(fastify, token, root, {
-      download: { generateNfo: true, downloadSceneImages: false, downloadTrailer: false },
+      download: {
+        generateNfo: true,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+        nfoIgnoreFields: ["director"],
+      },
       translate: { enableTranslation: false },
     });
     const { preview, taskId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all");
@@ -248,7 +256,11 @@ describe("buildServer maintenance integration", () => {
     const organizedVideo = join(root, "JAV_output", "ABC-300", "ABC-300.mp4");
     const organizedNfo = join(root, "JAV_output", "ABC-300", "ABC-300.nfo");
     await expect(access(organizedVideo)).resolves.toBeUndefined();
-    expect(await readFile(organizedNfo, "utf8")).toContain("Remote Title ABC-300");
+    const organizedNfoContent = await readFile(organizedNfo, "utf8");
+    expect(organizedNfoContent).toContain("Remote Title ABC-300");
+    expect(organizedNfoContent).not.toContain("<director>Remote Director</director>");
+    expect(organizedNfoContent).toContain("<trailer>");
+    expect(organizedNfoContent).toContain("trailer_source_url");
     await expect(access(join(root, "ABC-300.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 

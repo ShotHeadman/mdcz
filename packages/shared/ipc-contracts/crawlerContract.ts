@@ -1,6 +1,7 @@
 import type { Website } from "../enums";
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
+import type { CrawlerListSitesResponse } from "../serverDtos";
 import type { CrawlerData } from "../types";
 
 export type CrawlerIpcContract = {
@@ -8,7 +9,7 @@ export type CrawlerIpcContract = {
     { site?: Website; number?: string },
     { data: CrawlerData | null; error?: string; elapsed: number }
   >;
-  [IpcChannel.Crawler_ListSites]: IpcProcedure<void, unknown>;
+  [IpcChannel.Crawler_ListSites]: IpcProcedure<void, CrawlerListSitesResponse>;
   [IpcChannel.Crawler_ProbeSiteConnectivity]: IpcProcedure<
     { site?: Website },
     {

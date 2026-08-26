@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { configurationSchema, defaultConfiguration } from "./config";
+import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoField } from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
+  it("defaults separated metadata storage off and round-trips an explicit path", () => {
+    expect(parseConfigurationContent("[paths]\n", "toml").paths.metadataPath).toBe("");
+
+    const configuration = {
+      ...defaultConfiguration,
+      paths: { ...defaultConfiguration.paths, metadataPath: "/local/metadata" },
+    };
+
+    expect(parseConfigurationContent(serializeConfiguration(configuration, "toml"), "toml").paths.metadataPath).toBe(
+      "/local/metadata",
+    );
+  });
+
   it("round-trips title repair array-of-tables through TOML", () => {
     const configuration = {
       ...defaultConfiguration,
@@ -81,5 +94,92 @@ describe("configuration codec", () => {
         personSync: { actorAliases: { 河北彩花: [] } },
       }).success,
     ).toBe(false);
+  });
+  it("defaults filename token lists to empty and round-trips configured literal values", () => {
+    expect(defaultConfiguration.scrape).toMatchObject({
+      filenameIgnoreTokens: [],
+      filenameBlacklistTokens: [],
+    });
+
+    const configuration = {
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
+        filenameBlacklistTokens: ["sample.", "广告"],
+      },
+    };
+
+    expect(parseConfigurationContent(serializeConfiguration(configuration, "toml"), "toml").scrape).toMatchObject({
+      filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
+      filenameBlacklistTokens: ["sample.", "广告"],
+    });
+    expect(parseConfigurationContent("[scrape]\n", "toml").scrape).toMatchObject({
+      filenameIgnoreTokens: [],
+      filenameBlacklistTokens: [],
+    });
+  });
+
+  it("defaults, validates, and round-trips NFO fields through every configuration codec", () => {
+    const expectedFields: NfoField[] = [
+      "num",
+      "plot",
+      "release",
+      "runtime",
+      "fileinfo",
+      "rating",
+      "studio",
+      "director",
+      "publisher",
+      "series",
+      "genres",
+      "tags",
+      "poster",
+      "thumb",
+      "fanart",
+      "sceneImages",
+      "trailer",
+      "sourceComment",
+    ];
+    expect(NFO_FIELD_OPTIONS).toEqual(expectedFields);
+    expect(defaultConfiguration.download.nfoIgnoreFields).toEqual([]);
+
+    const configuration = {
+      ...defaultConfiguration,
+      download: {
+        ...defaultConfiguration.download,
+        nfoIgnoreFields: ["num", "plot", "director"] as NfoField[],
+      },
+    };
+
+    for (const format of ["toml", "json"] as const) {
+      expect(
+        parseConfigurationContent(serializeConfiguration(configuration, format), format).download.nfoIgnoreFields,
+      ).toEqual(["num", "plot", "director"]);
+      expect(
+        parseConfigurationContent(
+          serializeConfiguration(
+            {
+              ...configuration,
+              download: { ...configuration.download, nfoIgnoreFields: [] },
+            },
+            format,
+          ),
+          format,
+        ).download.nfoIgnoreFields,
+      ).toEqual([]);
+      expect(
+        parseConfigurationContent(format === "toml" ? "[download]\n" : '{"download":{}}', format).download
+          .nfoIgnoreFields,
+      ).toEqual([]);
+      expect(() =>
+        parseConfigurationContent(
+          format === "toml"
+            ? '[download]\nnfoIgnoreFields = ["actors"]\n'
+            : '{"download":{"nfoIgnoreFields":["actors"]}}',
+          format,
+        ),
+      ).toThrow();
+    }
   });
 });

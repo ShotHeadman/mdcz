@@ -34,6 +34,26 @@ docker run -d \
 
 打开 `http://localhost:3838`。如需不用 Docker，可下载 `mdcz-<version>.tar.gz`，安装 Node.js 24 或更新版本。解压后运行安装脚本；
 
+NAS bind mount 可通过 `PUID`、`PGID` 与 `UMASK` 对齐宿主机权限（默认值分别为
+`1000`、`1000`、`022`）：
+
+```bash
+docker run -d \
+  --name mdcz \
+  -p 3838:3838 \
+  -e PUID=1026 \
+  -e PGID=100 \
+  -e UMASK=002 \
+  -v /volume1/docker/mdcz:/data \
+  -v /volume1/media:/media \
+  --restart unless-stopped \
+  ghcr.io/shotheadman/mdcz:latest
+```
+
+容器只会调整 `/data` 挂载点本身，不会递归修改已有数据，也不会修改 `/media`
+的所有权。媒体目录应预先授予对应用户或用户组访问权限；需要补充组时可使用
+Docker 的 `--group-add <gid>`。
+
 ```bash
 tar -xzf mdcz-<version>.tar.gz
 cd mdcz-<version>

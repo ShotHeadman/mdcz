@@ -76,7 +76,7 @@ export function OverviewPage() {
             <h2 className="text-2xl font-bold tracking-tight">最近入库</h2>
           </div>
           <RecentAcquisitionsGrid
-            getImageSrc={(path, item) => getLibraryAssetSrc({ path, rootId: item.rootId })}
+            getImageSrc={(path, item) => getLibraryAssetSrc({ format: "webp", path, rootId: item.rootId, width: 400 })}
             isError={overviewQ.isError}
             isLoading={overviewQ.isLoading}
             items={recent}

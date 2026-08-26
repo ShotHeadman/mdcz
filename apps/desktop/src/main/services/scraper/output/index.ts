@@ -1,20 +1,23 @@
+import { getDesktopUserDataPath } from "@main/appIdentity";
 import type { ActorImageService } from "@main/services/ActorImageService";
-import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { Configuration } from "@main/services/config";
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
-import { resolvePosterBadgeDefinitions } from "@main/utils/movieTags";
 import { probeVideoMetadata } from "@main/utils/video";
-import type { FileOrganizer, OrganizePlan } from "@mdcz/runtime/scrape";
-import { prepareCrawlerDataForMovieOutput, prepareImageAlternativesForDownload } from "@mdcz/runtime/scrape";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import type { FileOrganizer, ImageAlternatives, OrganizePlan, SourceMap } from "@mdcz/runtime/scrape";
+import {
+  applyPosterTagBadgesIfNeeded,
+  nfoIgnoreFieldsToEnabledFields,
+  PosterWatermarkService,
+  prepareCrawlerDataForMovieOutput,
+  prepareImageAlternativesForDownload,
+} from "@mdcz/runtime/scrape";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import type { Logger } from "winston";
-import { throwIfAborted } from "../abort";
-import type { ImageAlternatives, SourceMap } from "../aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../DownloadManager";
 import type { NfoGenerator } from "../NfoGenerator";
 import { reconcileExistingNfoFiles } from "../NfoGenerator";
-import { PosterWatermarkService } from "../PosterWatermarkService";
 
 export {
   prepareCrawlerDataForMovieOutput,
@@ -22,7 +25,7 @@ export {
   prepareImageAlternativesForDownload,
 } from "@mdcz/runtime/scrape";
 
-const posterWatermarkService = new PosterWatermarkService();
+const posterWatermarkService = new PosterWatermarkService({ dataDir: getDesktopUserDataPath() });
 
 export interface ScrapeProgressState {
   fileIndex: number;
@@ -89,57 +92,6 @@ export async function prepareOutputCrawlerData(input: {
   });
 }
 
-export const applyPosterTagBadgesIfNeeded = async (input: {
-  assets: DownloadedAssets;
-  config: Pick<Configuration, "download">;
-  crawlerData: CrawlerData;
-  fileInfo: FileInfo;
-  localState?: NfoLocalState;
-  logger: Pick<Logger, "warn">;
-  signal?: AbortSignal;
-  signalService?: Pick<SignalService, "showLogText">;
-  watermarkService?: Pick<PosterWatermarkService, "applyTagBadges">;
-}): Promise<DownloadedAssets> => {
-  if (!input.config.download.tagBadges) {
-    return input.assets;
-  }
-
-  const posterPath = input.assets.poster;
-  if (!posterPath || !input.assets.downloaded.includes(posterPath)) {
-    return input.assets;
-  }
-
-  const badges = resolvePosterBadgeDefinitions(
-    input.crawlerData,
-    input.fileInfo,
-    input.localState,
-    input.config.download.tagBadgeTypes,
-  );
-  if (badges.length === 0) {
-    return input.assets;
-  }
-
-  throwIfAborted(input.signal);
-  input.signalService?.showLogText(`[${input.fileInfo.number}] Applying poster tag badges...`);
-
-  try {
-    await (input.watermarkService ?? posterWatermarkService).applyTagBadges(
-      posterPath,
-      badges,
-      input.config.download.tagBadgePosition,
-      {
-        imageOverrides: input.config.download.tagBadgeImageOverrides,
-        onWarn: (message) => input.logger.warn(message),
-      },
-    );
-  } catch (error) {
-    input.logger.warn(`Failed to apply poster tag badges for ${posterPath}: ${toErrorMessage(error)}`);
-  }
-
-  throwIfAborted(input.signal);
-  return input.assets;
-};
-
 export const downloadCrawlerAssets = async (input: {
   callbacks?: DownloadCallbacks;
   config: Configuration;
@@ -182,11 +134,13 @@ export const downloadCrawlerAssets = async (input: {
     assets,
     config: input.config,
     crawlerData: input.crawlerData,
+    dataDir: getDesktopUserDataPath(),
     fileInfo: input.fileInfo,
     localState: input.localState,
     logger: input.logger,
     signal: input.callbacks?.signal,
     signalService: input.signalService,
+    watermarkService: posterWatermarkService,
   });
 };
 
@@ -265,6 +219,7 @@ export const writePreparedNfo = async (input: {
     fileInfo: input.fileInfo,
     localState: input.localState,
     nfoNaming: input.config.download.nfoNaming,
+    enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
   });
 };

@@ -8,6 +8,7 @@ import { getUrlHost, type ImageHostCooldownTracker } from "./ImageHostCooldownTr
 
 interface DownloadLogger {
   info(message: string): void;
+  warn(message: string): void;
 }
 
 export type SceneImageSet = { urls: string[]; source?: Website };
@@ -72,7 +73,7 @@ export class SceneImageDownloader {
       const setDetails = formatSceneImageSetDetails(sceneImageSet);
 
       if (attemptedUrls.length === 0) {
-        this.logger.info(
+        this.logger.warn(
           `Skipping scene image set ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}): all image hosts are cooling down`,
         );
         continue;

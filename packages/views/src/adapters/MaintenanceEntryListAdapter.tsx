@@ -1,15 +1,15 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
-import { type MaintenanceFilter, useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
-import { toggleMaintenanceSelectedIds } from "@mdcz/shared/stores/maintenanceSession";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import {
   buildMaintenanceEntryViewModel,
   type MaintenanceEntryGroupViewModel,
 } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import { ContextMenuItem } from "@mdcz/ui";
+import { type MaintenanceFilter, useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import { toggleMaintenanceSelectedIds } from "@mdcz/views/state/maintenanceSession";
 import { FileText, FolderOpen, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";

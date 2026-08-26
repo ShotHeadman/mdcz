@@ -1,5 +1,6 @@
 export interface FormatBytesOptions {
   fractionDigits?: number;
+  /** Drops zeros at the end of the fraction, and the decimal point if nothing is left after them. */
   trimTrailingZeros?: boolean;
 }
 
@@ -19,7 +20,9 @@ export const formatBytes = (bytes: number, options: FormatBytesOptions = {}): st
 
   const fractionDigits = unitIndex === 0 ? 0 : Math.max(0, Math.trunc(options.fractionDigits ?? 1));
   const formatted = value.toFixed(fractionDigits);
-  const displayValue = options.trimTrailingZeros ? formatted.replace(/\.0+$/u, "") : formatted;
+  const displayValue = options.trimTrailingZeros
+    ? formatted.replace(/(\.\d*?)0+$/u, "$1").replace(/\.$/u, "")
+    : formatted;
 
   return `${displayValue} ${units[unitIndex]}`;
 };

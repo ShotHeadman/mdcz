@@ -86,7 +86,12 @@ describe("buildServer scan integration", () => {
     expect(listResponse.statusCode).toBe(200);
     expect(listResponse.json().result.data.tasks[0]).toMatchObject({ id: taskId, kind: "scan" });
     expect(libraryResponse.statusCode).toBe(200);
-    expect(libraryResponse.json().result.data).toEqual({ entries: [], total: 0 });
+    expect(libraryResponse.json().result.data).toEqual({
+      entries: [],
+      hasMore: false,
+      nextCursor: null,
+      total: 0,
+    });
     expect(overviewResponse.statusCode).toBe(200);
     expect(overviewResponse.json().result.data.output).toMatchObject({ fileCount: 0, totalBytes: 0 });
     expect(overviewResponse.json().result.data.recentAcquisitions).toEqual([]);

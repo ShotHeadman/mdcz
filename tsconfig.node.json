@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.node.tsbuildinfo",
     "lib": ["ES2023"],
     "types": ["node", "electron-vite/node"]
   },
@@ -11,11 +13,13 @@
     "apps/desktop/src/main/**/*.ts",
     "apps/desktop/src/preload/**/*.ts",
     "apps/desktop/src/**/*.d.ts",
-    "packages/persistence/src/**/*.ts",
-    "packages/runtime/src/**/*.ts",
-    "packages/shared/**/*.ts",
-    "packages/media-store/src/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["packages/**/*.test.ts", "packages/shared/stores/**/*"]
+  "exclude": ["packages/**/*.test.ts"],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/media-store" },
+    { "path": "./packages/persistence" },
+    { "path": "./packages/runtime" }
+  ]
 }

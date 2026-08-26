@@ -31,46 +31,6 @@ const asNfoPath = (path: string): string => {
   return `${path}.nfo`;
 };
 
-const siblingPath = (path: string, name: string): string => {
-  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  if (slash < 0) {
-    return name;
-  }
-
-  return `${path.slice(0, slash + 1)}${name}`;
-};
-
-const dedupePaths = (paths: string[]): string[] => {
-  return [...new Set(paths.filter((value) => value.trim().length > 0))];
-};
-
-export const buildNfoReadCandidates = (path: string): string[] => {
-  const trimmed = path.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const primaryPath = asNfoPath(trimmed);
-  if (primaryPath.toLowerCase().endsWith("movie.nfo")) {
-    return [primaryPath];
-  }
-
-  return dedupePaths([siblingPath(primaryPath, "movie.nfo"), primaryPath]);
-};
-
-const shouldRetryWithAlternateNfo = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const code =
-    typeof (error as Error & { code?: unknown }).code === "string"
-      ? String((error as Error & { code?: unknown }).code)
-      : error.name;
-
-  return code === "ENOENT" || code === "ENOTDIR";
-};
-
 export const stopScrape = async () => {
   const data = await ipc.scraper.stop();
   return { data };
@@ -109,27 +69,13 @@ export const deleteFileAndFolder = async (path: string) => {
   return { data };
 };
 
-export const readNfo = async (path: string) => {
-  const candidates = buildNfoReadCandidates(path);
-  let lastError: unknown;
-
-  for (const candidate of candidates) {
-    try {
-      const response = await ipc.file.nfoRead(candidate);
-      const data: NfoResponse = {
-        path: candidate,
-        crawlerData: response.data,
-      };
-      return { data };
-    } catch (error) {
-      lastError = error;
-      if (!shouldRetryWithAlternateNfo(error)) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError ?? new Error("NFO path is required");
+export const readNfo = async (path: string, videoPath?: string) => {
+  const response = await ipc.file.nfoRead(asNfoPath(path), videoPath);
+  const data: NfoResponse = {
+    path: response.nfoPath,
+    crawlerData: response.data,
+  };
+  return { data };
 };
 
 export const resolveNfoWritePath = (path: string, videoPath?: string): string => {
@@ -148,7 +94,7 @@ export const resolveNfoWritePath = (path: string, videoPath?: string): string =>
 
 export const updateNfo = async (path: string, crawlerData: CrawlerData, videoPath?: string) => {
   const nfoPath = resolveNfoWritePath(path, videoPath);
-  const data = await ipc.file.nfoWrite(nfoPath, crawlerData);
+  const data = await ipc.file.nfoWrite(nfoPath, crawlerData, videoPath);
   return { data };
 };
 

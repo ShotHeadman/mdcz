@@ -1,6 +1,12 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/media-store" },
+    { "path": "./packages/persistence" },
+    { "path": "./packages/runtime" },
+    { "path": "./packages/ui" },
+    { "path": "./packages/views" },
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.desktop-renderer.json" },
     { "path": "./tsconfig.web.json" },

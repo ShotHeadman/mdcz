@@ -3,67 +3,107 @@ import { describe, expect, it } from "vitest";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import {
   type RecoverableSessionPort,
-  RuntimeTaskQueueRunner,
   type RuntimeTaskSnapshot,
   resolveRecoverableSession,
+  TaskExecutor,
   transitionTask,
 } from "./tasks";
 
-describe("runtime task queue runner", () => {
-  it("lets shutdown wait for the active drain to become idle", async () => {
-    let resolveTask!: () => void;
-    const taskFinished = new Promise<void>((resolve) => {
-      resolveTask = resolve;
+describe("task executor", () => {
+  it("pauses queue admission while allowing in-flight items to settle", async () => {
+    let releaseFirst!: () => void;
+    let signalStarted!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
     });
-    let nextTaskCalls = 0;
-    const runner = new RuntimeTaskQueueRunner({
-      getNextTask: async () => {
-        nextTaskCalls += 1;
-        return nextTaskCalls === 1 ? { id: "task-1" } : null;
+    const firstStarted = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    const started: number[] = [];
+    const applied: number[] = [];
+    const executor = new TaskExecutor<number, number>({
+      concurrency: 1,
+      runItem: async (item) => {
+        started.push(item);
+        signalStarted();
+        if (item === 1) await firstBlocked;
+        return item;
       },
-      runTask: async () => {
-        await taskFinished;
+      applyResult: async (_item, result) => {
+        applied.push(result);
       },
     });
 
-    runner.drain();
-    const idle = runner.waitForIdle();
+    const run = executor.execute([1, 2, 3], 1);
+    await firstStarted;
+    executor.pause();
 
-    expect(runner.isRunning).toBe(true);
-    resolveTask();
-    await idle;
-    expect(runner.isRunning).toBe(false);
+    expect(executor.activeItems).toBe(1);
+    expect(executor.isIdle).toBe(false);
+    releaseFirst();
+    await expect(run).resolves.toEqual({ outcome: "paused", startedCount: 1, settledCount: 1, pendingCount: 2 });
+    expect(started).toEqual([1]);
+    expect(applied).toEqual([1]);
   });
 
-  it("stops before starting another queued task during shutdown", async () => {
-    let resolveFirstTask!: () => void;
-    let signalFirstTaskStarted!: () => void;
-    const firstTaskFinished = new Promise<void>((resolve) => {
-      resolveFirstTask = resolve;
+  it("uses a deterministic result gate to reject an obsolete execution version", async () => {
+    let releaseResult!: () => void;
+    let signalResult!: () => void;
+    const resultBlocked = new Promise<void>((resolve) => {
+      releaseResult = resolve;
     });
-    const firstTaskStarted = new Promise<void>((resolve) => {
-      signalFirstTaskStarted = resolve;
+    const resultReached = new Promise<void>((resolve) => {
+      signalResult = resolve;
     });
-    const startedTasks: string[] = [];
-    const queuedTasks = [{ id: "task-1" }, { id: "task-2" }];
-    const runner = new RuntimeTaskQueueRunner({
-      getNextTask: async () => queuedTasks.shift() ?? null,
-      runTask: async (task) => {
-        startedTasks.push(task.id);
-        if (task.id === "task-1") {
-          signalFirstTaskStarted();
-          await firstTaskFinished;
-        }
+    let ownedExecutionVersion = 1;
+    const summaries: number[] = [];
+    const executor = new TaskExecutor<string, number>({
+      concurrency: 1,
+      runItem: async () => 42,
+      gate: {
+        beforeResult: async () => {
+          signalResult();
+          await resultBlocked;
+        },
+      },
+      applyResult: async (_item, result, context) => {
+        if (context.executionVersion !== ownedExecutionVersion) return false;
+        summaries.push(result);
+        return true;
       },
     });
 
-    runner.drain();
-    await firstTaskStarted;
-    runner.requestStop();
-    resolveFirstTask();
-    await runner.waitForIdle();
+    const run = executor.execute(["item-1"], 1);
+    await resultReached;
+    ownedExecutionVersion = 2;
+    releaseResult();
+    await run;
 
-    expect(startedTasks).toEqual(["task-1"]);
+    expect(summaries).toEqual([]);
+  });
+
+  it("aborts in-flight work and never starts pending items after stop", async () => {
+    let signalStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    const invoked: number[] = [];
+    const executor = new TaskExecutor<number, number>({
+      concurrency: 1,
+      runItem: async (item, context) => {
+        invoked.push(item);
+        signalStarted();
+        await new Promise<void>((resolve) => context.signal.addEventListener("abort", () => resolve(), { once: true }));
+        return item;
+      },
+      applyResult: async () => undefined,
+    });
+
+    const run = executor.execute([1, 2], 1);
+    await started;
+    executor.stop();
+    await expect(run).resolves.toEqual({ outcome: "stopped", startedCount: 1, settledCount: 1, pendingCount: 1 });
+    expect(invoked).toEqual([1]);
   });
 });
 

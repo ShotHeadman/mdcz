@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "../../node_modules/.cache/typescript/shared",
+    "rootDir": ".",
+    "tsBuildInfoFile": "../../node_modules/.cache/typescript/shared.tsbuildinfo"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["**/*.test.ts"]
+}

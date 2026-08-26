@@ -38,7 +38,10 @@ export interface DesktopPersistenceState {
 export class DesktopPersistenceService {
   private state: DesktopPersistenceState | null = null;
 
-  constructor(private readonly databasePath = join(getDesktopUserDataPath(), "mdcz.sqlite")) {}
+  constructor(
+    private readonly databasePath = join(getDesktopUserDataPath(), "mdcz.sqlite"),
+    private readonly nativeBinding?: string | null,
+  ) {}
 
   get initialized(): boolean {
     return this.state !== null;
@@ -56,7 +59,7 @@ export class DesktopPersistenceService {
     await mkdir(dirname(this.databasePath), { recursive: true });
     const database = createPersistenceDatabase({
       path: this.databasePath,
-      nativeBinding: resolveNativeBinding(),
+      ...(this.nativeBinding === null ? {} : { nativeBinding: this.nativeBinding ?? resolveNativeBinding() }),
     });
 
     try {

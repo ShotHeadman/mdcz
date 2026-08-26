@@ -1,3 +1,5 @@
+import { defaultConfiguration } from "@mdcz/shared/config";
+import { SETTINGS_FIELD_REGISTRY } from "@mdcz/shared/settingsRegistry";
 import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form";
 import {
   AdvancedSettingsFooterContent,
@@ -6,9 +8,11 @@ import {
   flattenConfig,
   NamingSection,
   NetworkTopLevelSection,
+  NfoSection,
   PathsSection,
   ProfileCapsule,
   SectionAnchor,
+  SettingsEditor,
   SettingsEditorAutosaveProvider,
   SettingsSectionModeProvider,
   type SettingsServices,
@@ -59,8 +63,8 @@ function FormHarness({
   services?: SettingsServices;
   values?: Record<string, unknown>;
 }) {
-  const form = useForm<FieldValues>({ defaultValues: values });
   const flatValues = useMemo(() => flattenConfig(values), [values]);
+  const form = useForm<FieldValues>({ defaultValues: flatValues });
 
   return (
     <SettingsServicesProvider notifier={settingsNotifier} services={services}>
@@ -72,6 +76,84 @@ function FormHarness({
     </SettingsServicesProvider>
   );
 }
+
+function SettingsSurfaceHarness() {
+  const configuration = useMemo(
+    () => ({
+      ...defaultConfiguration,
+      download: {
+        ...defaultConfiguration.download,
+        downloadPoster: true,
+        generateNfo: true,
+        tagBadges: true,
+      },
+      titleRepair: {
+        ...defaultConfiguration.titleRepair,
+        enabled: true,
+      },
+    }),
+    [],
+  );
+
+  return (
+    <SettingsServicesProvider notifier={settingsNotifier} services={baseSettingsServices}>
+      <SettingsEditor
+        data={configuration}
+        defaultConfig={configuration}
+        defaultConfigReady
+        profiles={["default"]}
+        activeProfile="default"
+        onSwitchProfile={noop}
+        onCreateProfile={noop}
+        onDeleteProfile={noop}
+        onResetConfig={noop}
+        onExportProfile={noop}
+        onImportProfile={noop}
+      />
+    </SettingsServicesProvider>
+  );
+}
+
+test("settings editor renders every visible registry field", async () => {
+  class ImmediateIntersectionObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "";
+    readonly thresholds = [0];
+
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+
+    disconnect() {}
+    observe(target: Element) {
+      this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this);
+    }
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    unobserve() {}
+  }
+
+  const nativeIntersectionObserver = window.IntersectionObserver;
+  vi.stubGlobal("IntersectionObserver", ImmediateIntersectionObserver);
+
+  try {
+    const screen = await render(<SettingsSurfaceHarness />);
+    await screen.getByRole("button", { name: "显示高级设置" }).click();
+
+    const expectedFields = SETTINGS_FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map(
+      (entry) => entry.key,
+    );
+    await expect.poll(() => screen.container.querySelectorAll("[data-field-name]").length).toBe(expectedFields.length);
+
+    const renderedFields = Array.from(
+      screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),
+      (element) => element.dataset.fieldName,
+    ).filter((key): key is string => Boolean(key));
+
+    expect(new Set(renderedFields)).toEqual(new Set(expectedFields));
+  } finally {
+    vi.stubGlobal("IntersectionObserver", nativeIntersectionObserver);
+  }
+});
 
 test("ordered site field exposes grouped priority semantics", async () => {
   const screen = await render(
@@ -306,6 +388,40 @@ test("settings sections expose public labels and naming placeholder help", async
   );
   await expect.element(advancedDownload.getByText("剧照下载并发")).toBeVisible();
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
+});
+
+test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {
+  const disabled = await render(
+    <FormHarness values={{ download: { generateNfo: false, nfoIgnoreFields: ["director", "trailer"] } }}>
+      <NfoSection />
+    </FormHarness>,
+  );
+  await expect.element(disabled.getByText("NFO 忽略字段")).not.toBeInTheDocument();
+
+  const enabled = await render(
+    <FormHarness
+      values={{
+        download: {
+          generateNfo: true,
+          keepNfo: true,
+          nfoIgnoreFields: ["num", "director", "trailer"],
+          nfoNaming: "both",
+        },
+      }}
+    >
+      <NfoSection />
+    </FormHarness>,
+  );
+
+  await expect.element(enabled.getByText("NFO 忽略字段")).toBeVisible();
+  await expect.element(enabled.getByText("num（番号兼容字段）")).toBeVisible();
+  await expect.element(enabled.getByText("director（导演）")).toBeVisible();
+  await expect.element(enabled.getByText("trailer（预告片）")).toBeVisible();
+  await expect
+    .element(
+      enabled.getByText("选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。"),
+    )
+    .toBeVisible();
 });
 
 test("title repair settings expose ordered rules and add validated rows", async () => {

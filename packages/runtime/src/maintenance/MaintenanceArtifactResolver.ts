@@ -2,7 +2,7 @@ import { unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { DiscoveredAssets, LocalScanEntry, MaintenanceAssetDecisions } from "@mdcz/shared/types";
-import type { OrganizePlan } from "../scrape";
+import { type OrganizePlan, resolveMetadataOutputDir } from "../scrape";
 import { reconcileExistingNfoFiles, resolveCanonicalNfoPath } from "../scrape/nfo";
 import { moveFileSafely, pathExists } from "../scrape/utils/filesystem";
 import { runtimeLoggerService } from "../shared";
@@ -47,7 +47,7 @@ export class MaintenanceArtifactResolver {
       };
     }
 
-    const outputDir = dirname(input.outputVideoPath);
+    const outputDir = resolveMetadataOutputDir(input.plan);
     const nfoPath = await this.resolveNfoPath(input.entry, input.plan, input.savedNfoPath, input.nfoNaming);
 
     return {

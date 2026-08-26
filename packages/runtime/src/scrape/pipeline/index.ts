@@ -24,10 +24,11 @@ export interface FileScraperPipeline {
   createContext(
     filePath: string,
     progress?: { fileIndex: number; totalFiles: number },
-    options?: { manualScrape?: ManualScrapeOptions },
-  ): ScrapeContext;
+    options?: { manualScrape?: ManualScrapeOptions; scrapeSessionId?: string },
+  ): Promise<ScrapeContext>;
 
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void;
+  notifyProcessing?(context: ScrapeContext): void;
 
   runExclusiveByNumber<T>(number: string, operation: () => Promise<T>): Promise<T>;
 

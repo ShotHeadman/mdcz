@@ -1,6 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { getLogSearchText, projectLogEntryLevel } from "@mdcz/shared/logFormatting";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import {
   Button,
   Dialog,
@@ -12,6 +11,7 @@ import {
   DialogTitle,
 } from "@mdcz/ui";
 import { LogsPanelView } from "@mdcz/views/logs";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";

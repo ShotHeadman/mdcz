@@ -1,5 +1,6 @@
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+import { isRecord } from "../shared/utils";
+
+export { isRecord };
 
 export const isString = (value: unknown): value is string => typeof value === "string";
 

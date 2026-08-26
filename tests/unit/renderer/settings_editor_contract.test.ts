@@ -18,8 +18,11 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("translate.engine")?.anchor).toBe("translate");
     expect(entry("download.sceneImageConcurrency")?.visibility).toBe("advanced");
     expect(entry("download.tagBadgeTypes")).toMatchObject({ anchor: "download", visibility: "public" });
+    expect(entry("download.nfoIgnoreFields")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
+    expect(entry("scrape.filenameIgnoreTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
+    expect(entry("scrape.filenameBlacklistTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
 
     const keys = new Set(FIELD_REGISTRY.map((candidate) => candidate.key));
@@ -33,8 +36,13 @@ describe("settings editor metadata and filtering", () => {
     const flat = flattenConfig({
       download: {
         tagBadgeTypes: ["subtitle", "leak"],
+        nfoIgnoreFields: ["director"],
       },
-      scrape: { sites: ["javdb"] },
+      scrape: {
+        sites: ["javdb"],
+        filenameIgnoreTokens: ["[7SIS-001]+"],
+        filenameBlacklistTokens: ["sample."],
+      },
       paths: {
         defaultScanExcludeDirs: ["failed_22", "/archive/output"],
       },
@@ -47,13 +55,20 @@ describe("settings editor metadata and filtering", () => {
 
     expect(flat).toMatchObject({
       "download.tagBadgeTypes": ["subtitle", "leak"],
+      "download.nfoIgnoreFields": ["director"],
       "scrape.sites": ["javdb"],
+      "scrape.filenameIgnoreTokens": ["[7SIS-001]+"],
+      "scrape.filenameBlacklistTokens": ["sample."],
       "paths.defaultScanExcludeDirs": ["failed_22", "/archive/output"],
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
-      download: { tagBadgeTypes: ["subtitle", "leak"] },
-      scrape: { sites: ["javdb"] },
+      download: { nfoIgnoreFields: ["director"], tagBadgeTypes: ["subtitle", "leak"] },
+      scrape: {
+        sites: ["javdb"],
+        filenameIgnoreTokens: ["[7SIS-001]+"],
+        filenameBlacklistTokens: ["sample."],
+      },
       paths: { defaultScanExcludeDirs: ["failed_22", "/archive/output"] },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });

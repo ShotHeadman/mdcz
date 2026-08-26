@@ -28,6 +28,7 @@ import { ServerPathService } from "./services/serverPathService";
 import { SystemService } from "./services/systemService";
 import { ToolsService } from "./services/toolsService";
 import { createTaskEventBus } from "./taskEvents";
+import { createServerTranslationMappingStore } from "./translationMappingStore";
 
 export interface BuildServerOptions {
   serviceOptions?: ServerServiceOptions;
@@ -46,11 +47,19 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const taskEvents = options.services?.taskEvents ?? createTaskEventBus();
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
+  config.onDiagnostic((event) => {
+    runtimeLogs
+      .getLogger("config")
+      .warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
+  });
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
-  const scrape = options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, config, taskEvents);
+  const mappingStore = createServerTranslationMappingStore(config);
+  const scrape =
+    options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, config, taskEvents, undefined, mappingStore);
   const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);
   const maintenance =
-    options.services?.maintenance ?? new MaintenanceService(persistence, mediaRoots, config, taskEvents);
+    options.services?.maintenance ??
+    new MaintenanceService(persistence, mediaRoots, config, taskEvents, undefined, mappingStore);
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents);
   const system = options.services?.system ?? new SystemService();
   const services: ServerServices = {
@@ -71,7 +80,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     serverPaths: options.services?.serverPaths ?? new ServerPathService(mediaRoots, config),
     system,
     taskEvents,
-    tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape, library),
+    tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape),
   };
   const fastify = Fastify({
     logger: false,
@@ -79,6 +88,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
 
   fastify.addHook("onReady", async () => {
     await services.config.load();
+    await services.config.startWatching();
     await services.persistence.initialize();
     await services.scans.resumeQueued();
     await services.scrape.resumeQueued();
@@ -86,6 +96,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   });
 
   fastify.addHook("onClose", async () => {
+    await services.config.stopWatching();
     await services.scrape.close();
     await services.persistence.close();
   });

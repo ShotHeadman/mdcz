@@ -1,7 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 import {
   buildAmbiguousUncensoredScrapeGroups,
@@ -12,11 +9,15 @@ import {
   activateNewScrapeTask,
   applyScrapeTaskStatus,
   MaintenanceWorkbenchAdapter,
+  resetScrapeWorkbenchToSetup,
   ScrapeWorkbenchAdapter,
   startMaintenanceFlow,
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -112,7 +113,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
 
     try {
-      activateNewScrapeTask();
+      activateNewScrapeTask(filePaths);
       const response = await startSelectedScrape(filePaths);
       await refreshCurrentConfig();
       toast.success(response.data.message);
@@ -123,6 +124,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
         return;
       }
 
+      resetScrapeWorkbenchToSetup();
       if (errorMessage.includes("NO_FILES")) {
         toast.info("当前目录中没有需要刮削的媒体文件");
         return;

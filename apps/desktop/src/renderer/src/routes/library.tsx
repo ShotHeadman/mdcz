@@ -1,8 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
-import { LibraryDeleteDialog, LibraryIndexView } from "@mdcz/views/library";
-import { useQuery } from "@tanstack/react-query";
+import {
+  chunkLibraryEntryIds,
+  LibraryDeleteDialog,
+  LibraryIndexView,
+  mergeLibraryAvailability,
+} from "@mdcz/views/library";
+import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,21 +19,45 @@ export function LibraryPage() {
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
   const [deleteMediaFiles, setDeleteMediaFiles] = useState(false);
-  const libraryQ = useQuery({
+  const queryClient = useQueryClient();
+  const libraryQ = useInfiniteQuery({
     queryKey: ["library", "list", query],
-    queryFn: () => ipc.library.list({ query }),
+    queryFn: ({ pageParam }) => ipc.library.list({ cursor: pageParam, query, limit: 100 }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
+  const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
+  const availabilityQs = useQueries({
+    queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
+      chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
+        queryKey: ["library", "availability", ids],
+        queryFn: async () => await ipc.library.availability(ids),
+        retry: false,
+        staleTime: 30_000,
+      })),
+    ),
+  });
+  const entries = mergeLibraryAvailability(
+    pageEntries,
+    availabilityQs.flatMap((availabilityQ) => availabilityQ.data ?? []),
+  );
 
   return (
     <>
       <LibraryIndexView
         availabilityFilter={availabilityFilter}
-        entries={libraryQ.data?.entries ?? []}
+        entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={getImageSrc}
+        hasMore={libraryQ.hasNextPage}
+        isAvailabilityLoading={availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
         isLoading={libraryQ.isLoading}
+        isLoadingMore={libraryQ.isFetchingNextPage}
         onAvailabilityFilterChange={setAvailabilityFilter}
         onDeleteEntry={setDeleteTarget}
+        onLoadMore={() => {
+          void libraryQ.fetchNextPage();
+        }}
         onOpenFolder={(entry) => {
           const path = entry.lastKnownPath;
           if (!path) {
@@ -42,9 +71,10 @@ export function LibraryPage() {
         onQueryChange={setQuery}
         onRefresh={() => {
           void libraryQ.refetch();
+          void queryClient.invalidateQueries({ queryKey: ["library", "availability"] });
         }}
         query={query}
-        total={libraryQ.data?.total ?? 0}
+        total={libraryQ.data?.pages[0]?.total ?? 0}
       />
       <LibraryDeleteDialog
         open={Boolean(deleteTarget)}
@@ -62,6 +92,7 @@ export function LibraryPage() {
             setDeleteTarget(null);
             setDeleteMediaFiles(false);
             void libraryQ.refetch();
+            void queryClient.invalidateQueries({ queryKey: ["library", "availability"] });
           });
         }}
       />

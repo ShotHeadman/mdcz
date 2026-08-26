@@ -1,6 +1,8 @@
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { listRootFiles, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
+import type { TaskRecord } from "@mdcz/persistence";
+import { TaskScheduler } from "@mdcz/runtime/tasks";
 import { isHostPathWithinDirectory } from "@mdcz/shared/mediaCandidate";
 import type {
   LogListResponse,
@@ -33,22 +35,28 @@ const toIso = (value: Date | null): string | null => value?.toISOString() ?? nul
 const toPosixPath = (value: string): string => value.replace(/\\/gu, "/");
 
 export class ScanQueueService {
-  #running = false;
+  private readonly scheduler: TaskScheduler<TaskRecord>;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
     private readonly taskEvents: TaskEventBus,
-  ) {}
+  ) {
+    this.scheduler = new TaskScheduler({
+      claimNext: async () => await (await this.persistence.getState()).repositories.tasks.claimNext("scan"),
+      runExecution: async (task) => await this.runTask(task),
+    });
+  }
 
   async start(rootId: string): Promise<ScanTaskDto> {
     await this.mediaRoots.getActiveRoot(rootId);
     const state = await this.persistence.getState();
     const task = await state.repositories.tasks.createScanTask({ rootId });
     await this.addEvent(task.id, "queued", "扫描任务已排队");
-    this.taskEvents.publish({ kind: "task", task: await this.toDto(task.id) });
-    void this.drain();
-    return await this.toDto(task.id);
+    const queuedTask = await this.toDto(task.id);
+    this.taskEvents.publish({ kind: "task", task: queuedTask });
+    this.scheduler.drain();
+    return queuedTask;
   }
 
   async list(): Promise<ScanTaskListResponse> {
@@ -88,19 +96,17 @@ export class ScanQueueService {
       throw new Error("Only completed or failed scan tasks can be retried");
     }
     await this.mediaRoots.getActiveRoot(task.rootId);
-    await state.repositories.tasks.patch(taskId, {
-      status: "queued",
-      startedAt: null,
-      completedAt: null,
-      videoCount: 0,
-      directoryCount: 0,
-      error: null,
+    const queued = await state.repositories.tasks.requeue(taskId, {
+      status: ["completed", "failed"],
+      executionVersion: task.executionVersion,
     });
+    if (!queued) throw new Error(`Failed to requeue scan task: ${taskId}`);
     await state.repositories.tasks.replaceScanResults({ taskId, rootId: task.rootId, results: [] });
     await this.addEvent(taskId, "queued", "重试扫描已排队");
-    this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
-    void this.drain();
-    return await this.toDto(taskId);
+    const queuedTask = await this.toDto(taskId);
+    this.taskEvents.publish({ kind: "task", task: queuedTask });
+    this.scheduler.drain();
+    return queuedTask;
   }
 
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
@@ -166,49 +172,26 @@ export class ScanQueueService {
   async resumeQueued(): Promise<void> {
     const state = await this.persistence.getState();
     await state.repositories.tasks.requeueRunning("scan");
-    void this.drain();
+    this.scheduler.drain();
   }
 
-  private async drain(): Promise<void> {
-    if (this.#running) {
-      return;
-    }
-    this.#running = true;
-    try {
-      while (true) {
-        const state = await this.persistence.getState();
-        const task = await state.repositories.tasks.nextQueued("scan");
-        if (!task) {
-          return;
-        }
-        await this.runTask(task.id, task.rootId);
-      }
-    } finally {
-      this.#running = false;
-    }
-  }
-
-  private async runTask(taskId: string, rootId: string): Promise<void> {
+  private async runTask(task: TaskRecord): Promise<void> {
     const state = await this.persistence.getState();
-    await state.repositories.tasks.patch(taskId, {
-      status: "running",
-      startedAt: new Date(),
-      error: null,
-    });
+    const { id: taskId, rootId, executionVersion } = task;
     await this.addEvent(taskId, "running", "开始扫描媒体目录");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
 
     try {
       const root = await this.mediaRoots.getActiveRoot(rootId);
       const result = await this.scanDirectory(root);
-      await state.repositories.tasks.replaceScanResults({ taskId, rootId, results: result.videos });
-      await state.repositories.tasks.patch(taskId, {
-        status: "completed",
-        completedAt: new Date(),
-        videoCount: result.videos.length,
+      const committed = await state.repositories.tasks.completeScanTask({
+        taskId,
+        rootId,
+        executionVersion,
+        results: result.videos,
         directoryCount: result.directoryCount,
-        error: null,
       });
+      if (!committed) return;
       await this.addEvent(
         taskId,
         "completed",
@@ -217,11 +200,12 @@ export class ScanQueueService {
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await state.repositories.tasks.patch(taskId, {
-        status: "failed",
-        completedAt: new Date(),
-        error: message,
-      });
+      const committed = await state.repositories.tasks.patch(
+        taskId,
+        { status: "failed", completedAt: new Date(), error: message },
+        { status: "running", executionVersion },
+      );
+      if (!committed) return;
       await this.addEvent(taskId, "failed", message);
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     }

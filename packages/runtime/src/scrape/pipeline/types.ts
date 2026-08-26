@@ -1,7 +1,7 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
-import type { RuntimeActorImageService } from "../actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "../aggregation";
 import type { FileOrganizer } from "../FileOrganizer";
 import type { NfoGenerator } from "../nfo";
@@ -25,7 +25,7 @@ export interface RuntimeScrapeSignalService {
 
 export interface FileScraperStageRuntime {
   actorImageService?: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
   fileOrganizer: FileOrganizer;
   logger: { warn(message: string): void };
   nfoGenerator: NfoGenerator;

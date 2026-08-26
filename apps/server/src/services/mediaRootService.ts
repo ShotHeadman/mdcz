@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
+import { deterministicMediaRootId } from "@mdcz/runtime/library";
 import {
   type MediaRootAvailabilityDto,
   type MediaRootCreateInput,
@@ -11,6 +12,9 @@ import type { ServerPersistenceService } from "./persistenceService";
 
 const isRemoteUrl = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim());
 const hasInvalidPathBytes = (value: string): boolean => value.includes("\0");
+
+export const METADATA_OUTPUT_ROOT_ID = "mdcz-metadata-output";
+const METADATA_OUTPUT_ROOT_DISPLAY_NAME = "本地元数据目录";
 
 export const toMediaRootDto = (
   root: MediaRoot & { deleted?: boolean; availability?: MediaRootAvailabilityDto },
@@ -31,49 +35,53 @@ export class MediaRootService {
 
   async list(): Promise<{ roots: MediaRootDto[] }> {
     const state = await this.persistence.getState();
-    const roots = await state.repositories.mediaRoots.list();
+    const roots = (await state.repositories.mediaRoots.list()).filter((root) => root.id !== METADATA_OUTPUT_ROOT_ID);
     return { roots: roots.map(toMediaRootDto) };
   }
 
-  async syncSingleEnabledRoot(input: MediaRootCreateInput): Promise<MediaRootDto> {
+  async setPrimaryMediaRoot(input: MediaRootCreateInput): Promise<MediaRootDto> {
     const parsed = mediaRootCreateInputSchema.parse(input);
     const normalizedPath = await this.validateMountedFilesystemPath(parsed.hostPath);
     const state = await this.persistence.getState();
-    const roots = await state.repositories.mediaRoots.list();
-    const existing = roots.find((root) => root.hostPath === normalizedPath);
     const now = new Date();
-    const activeRoot =
-      existing ??
-      createMediaRoot({
-        displayName: parsed.displayName,
-        hostPath: normalizedPath,
-        enabled: true,
-        now,
-      });
-
-    for (const root of roots) {
-      if (root.id === activeRoot.id) {
-        continue;
-      }
-      if (root.enabled) {
-        await state.repositories.mediaRoots.upsert({
-          ...root,
-          enabled: false,
-          updatedAt: now,
-        });
-      }
-    }
+    const activeRoot = createMediaRoot({
+      id: deterministicMediaRootId(normalizedPath),
+      displayName: parsed.displayName,
+      hostPath: normalizedPath,
+      enabled: true,
+      now,
+    });
 
     return toMediaRootDto(
-      await state.repositories.mediaRoots.upsert({
-        ...activeRoot,
-        displayName: parsed.displayName,
-        hostPath: normalizedPath,
-        enabled: true,
-        deleted: false,
-        updatedAt: now,
+      await state.repositories.mediaRoots.activateExclusive(activeRoot, {
+        exemptRootIds: [METADATA_OUTPUT_ROOT_ID],
       }),
     );
+  }
+
+  async ensureMetadataRoot(hostPath: string): Promise<MediaRoot> {
+    const normalizedPath = await this.validateMountedFilesystemPath(hostPath);
+    const state = await this.persistence.getState();
+    const existing = await state.repositories.mediaRoots
+      .get(METADATA_OUTPUT_ROOT_ID, { includeDeleted: true })
+      .catch(() => null);
+    const now = new Date();
+
+    return await state.repositories.mediaRoots.upsert({
+      ...(existing ??
+        createMediaRoot({
+          id: METADATA_OUTPUT_ROOT_ID,
+          displayName: METADATA_OUTPUT_ROOT_DISPLAY_NAME,
+          hostPath: normalizedPath,
+          enabled: true,
+          now,
+        })),
+      displayName: METADATA_OUTPUT_ROOT_DISPLAY_NAME,
+      hostPath: normalizedPath,
+      enabled: true,
+      deleted: false,
+      updatedAt: now,
+    });
   }
 
   async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {

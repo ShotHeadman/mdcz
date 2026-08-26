@@ -16,6 +16,7 @@ export const toScrapeResultDto = (
   status: record.status,
   error: record.error,
   crawlerData: record.crawlerDataJson ? (JSON.parse(record.crawlerDataJson) as CrawlerDataDto) : null,
+  nfoRootId: record.nfoRootId,
   nfoRelativePath: record.nfoRelativePath,
   outputRelativePath: record.outputRelativePath,
   manualUrl: record.manualUrl,

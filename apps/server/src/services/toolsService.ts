@@ -1,14 +1,19 @@
 import { resolveRootRelativePath } from "@mdcz/media-store";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import {
+  EmbyActorInfoService,
+  EmbyActorPhotoService,
+  JellyfinActorInfoService,
+  JellyfinActorPhotoService,
   type MediaServerKey,
+  type MediaServerSignalService,
   probeMediaServer,
-  syncMediaServerPersonInfo,
-  syncMediaServerPersonPhotos,
 } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyAmazonPosters,
   applyBatchNfoTranslations,
@@ -21,31 +26,48 @@ import {
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import type { ToolCatalogResponse, ToolExecuteInput, ToolExecuteResponse } from "@mdcz/shared/serverDtos";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
-import type { ActorProfile } from "@mdcz/shared/types";
+import { createServerActorSourceProvider } from "../actorSourceFactory";
 import type { ServerConfigService } from "./configService";
-import type { LibraryService } from "./libraryService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ScrapeService } from "./scrapeService";
 
+const noopMediaServerSignal: MediaServerSignalService = {
+  resetProgress: () => undefined,
+  setProgress: () => undefined,
+  showLogText: () => undefined,
+};
+
+export interface ToolsServiceDependencies {
+  networkClient?: NetworkClient;
+  actorSourceProvider?: ActorSourceProvider;
+}
+
 export class ToolsService {
-  private readonly networkClient = new NetworkClient();
-  private readonly aggregation = new AggregationService(
-    new CrawlerProvider({
-      fetchGateway: new FetchGateway(this.networkClient),
-      siteRequestConfigRegistrar: this.networkClient,
-    }),
-  );
-  private readonly translate = new TranslateService(this.networkClient);
+  private readonly networkClient: NetworkClient;
+  private readonly actorSourceProvider: ActorSourceProvider;
+  private readonly aggregation: AggregationService;
+  private readonly translate: TranslateService;
   private readonly localScanService = new LocalScanService();
-  private readonly llmApiClient = new LlmApiClient(this.networkClient);
+  private readonly llmApiClient: LlmApiClient;
   private readonly nfoGenerator = new NfoGenerator();
 
   constructor(
     private readonly config: ServerConfigService,
     private readonly mediaRoots: MediaRootService,
     private readonly scrape: ScrapeService,
-    private readonly library?: LibraryService,
-  ) {}
+    deps: ToolsServiceDependencies = {},
+  ) {
+    this.networkClient = deps.networkClient ?? new NetworkClient();
+    this.actorSourceProvider = deps.actorSourceProvider ?? createServerActorSourceProvider(config, this.networkClient);
+    this.aggregation = new AggregationService(
+      new CrawlerProvider({
+        fetchGateway: new FetchGateway(this.networkClient),
+        siteRequestConfigRegistrar: this.networkClient,
+      }),
+    );
+    this.translate = new TranslateService(this.networkClient);
+    this.llmApiClient = new LlmApiClient(this.networkClient);
+  }
 
   catalog(): ToolCatalogResponse {
     return {
@@ -93,35 +115,17 @@ export class ToolsService {
       }
       case "media-library-tools": {
         const server = input.server as MediaServerKey;
-        if (input.action === "sync-info") {
+        if (input.action === "sync-info" || input.action === "sync-photo") {
           const config = await this.config.get();
-          const result = await syncMediaServerPersonInfo(
-            this.networkClient,
-            config,
-            server,
-            await this.collectActorProfiles(),
-            input.mode,
-          );
+          const result =
+            input.action === "sync-info"
+              ? await this.createActorInfoService(server).run(config, input.mode)
+              : await this.createActorPhotoService(server).run(config, input.mode);
+          const label = input.action === "sync-info" ? "人物简介同步完成" : "人物头像同步完成";
           return {
             toolId: input.toolId,
             ok: result.failedCount === 0,
-            message: `人物简介同步完成：${result.processedCount} 成功，${result.skippedCount} 跳过，${result.failedCount} 失败`,
-            data: result,
-          };
-        }
-        if (input.action === "sync-photo") {
-          const config = await this.config.get();
-          const result = await syncMediaServerPersonPhotos(
-            this.networkClient,
-            config,
-            server,
-            await this.collectActorProfiles(),
-            input.mode,
-          );
-          return {
-            toolId: input.toolId,
-            ok: result.failedCount === 0,
-            message: `人物头像同步完成：${result.processedCount} 成功，${result.skippedCount} 跳过，${result.failedCount} 失败`,
+            message: `${label}：${result.processedCount} 成功，${result.skippedCount} 跳过，${result.failedCount} 失败`,
             data: result,
           };
         }
@@ -204,7 +208,9 @@ export class ToolsService {
           if (!input.nfoPath || !input.title) {
             return { toolId: input.toolId, ok: false, message: "NFO 路径和标题不能为空。" };
           }
-          const result = await lookupAmazonPoster(this.networkClient, input.nfoPath, input.title);
+          const result = await lookupAmazonPoster(this.networkClient, input.nfoPath, input.title, {
+            logger: runtimeLoggerService.getLogger("AmazonJpImageService"),
+          });
           return {
             toolId: input.toolId,
             ok: Boolean(result.amazonPosterUrl),
@@ -230,18 +236,22 @@ export class ToolsService {
     }
   }
 
-  private async collectActorProfiles(): Promise<ActorProfile[]> {
-    if (!this.library) return [];
-    const library = await this.library.list({ limit: 500 });
-    const profiles = new Map<string, ActorProfile>();
-    for (const entry of library.entries) {
-      for (const profile of entry.crawlerData?.actor_profiles ?? []) {
-        const key = profile.name.trim().toLowerCase();
-        if (key && !profiles.has(key)) {
-          profiles.set(key, profile);
-        }
-      }
-    }
-    return [...profiles.values()];
+  private actorServiceDeps(server: MediaServerKey) {
+    return {
+      signalService: noopMediaServerSignal,
+      networkClient: this.networkClient,
+      actorSourceProvider: this.actorSourceProvider,
+      logger: runtimeLoggerService.getLogger(server === "emby" ? "EmbyActorSync" : "JellyfinActorSync"),
+    };
+  }
+
+  private createActorInfoService(server: MediaServerKey) {
+    const deps = this.actorServiceDeps(server);
+    return server === "emby" ? new EmbyActorInfoService(deps) : new JellyfinActorInfoService(deps);
+  }
+
+  private createActorPhotoService(server: MediaServerKey) {
+    const deps = this.actorServiceDeps(server);
+    return server === "emby" ? new EmbyActorPhotoService(deps) : new JellyfinActorPhotoService(deps);
   }
 }

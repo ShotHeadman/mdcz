@@ -17,6 +17,8 @@
     "./scrape": "./src/scrape/index.ts",
     "./logs": "./src/logs/index.ts",
     "./settings": "./src/settings/index.ts",
+    "./state": "./src/state/index.ts",
+    "./state/*": "./src/state/*.ts",
     "./shell": "./src/shell/index.ts",
     "./tools": "./src/tools/index.ts",
     "./common": "./src/common/index.ts",
@@ -37,10 +39,10 @@
     "@tanstack/react-virtual": "^3.13.12",
     "lucide-react": "^0.563.0",
     "sonner": "^2.0.7",
-    "zustand": "^5.0.9"
+    "zustand": "catalog:"
   },
   "peerDependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react": "catalog:",
+    "react-dom": "catalog:"
   }
 }

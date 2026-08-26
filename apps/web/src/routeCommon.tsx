@@ -30,15 +30,6 @@ export const Notice = ({ children }: { children: ReactNode }) => (
 export const formatDate = (value: string | null | undefined): string =>
   value ? new Date(value).toLocaleString() : "—";
 
-export const formatBytes = (value: number): string => {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"] as const;
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-};
-
 export const scanStatusLabels: Record<ScanTaskDto["status"], string> = {
   queued: "排队中",
   running: "运行中",

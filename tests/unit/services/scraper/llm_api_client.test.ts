@@ -1,4 +1,4 @@
-import { LlmApiClient } from "@mdcz/runtime/scrape";
+import { LlmApiClient, type LlmTransportError } from "@mdcz/runtime/scrape";
 import { DEFAULT_LLM_BASE_URL } from "@mdcz/shared/llm";
 import { describe, expect, it, vi } from "vitest";
 
@@ -42,6 +42,51 @@ describe("LlmApiClient", () => {
 
     const headers = postJsonDetailed.mock.calls[0][2].headers as Headers;
     expect(headers.has("authorization")).toBe(false);
+  });
+
+  it("extracts only visible output text from responses containing reasoning", async () => {
+    const postJsonDetailed = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      resolvedUrl: "http://127.0.0.1:1234/v1/responses",
+      headers: new Headers(),
+      data: {
+        output: [
+          {
+            type: "reasoning",
+            content: [
+              {
+                type: "reasoning_text",
+                text: "The user wants me to translate the Japanese sentence...",
+              },
+            ],
+          },
+          {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "那是某日黄昏时分的事。",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const client = new LlmApiClient({ postJsonDetailed });
+
+    await expect(
+      client.generateText({
+        model: "qwen3.8-27b",
+        apiKey: "",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        temperature: 0,
+        prompt: "translate",
+      }),
+    ).resolves.toBe("那是某日黄昏时分的事。");
   });
 
   it("falls back to chat completions when responses is unsupported", async () => {
@@ -169,6 +214,25 @@ describe("LlmApiClient", () => {
       status: 401,
       message: expect.stringContaining("Invalid API key"),
     });
+  });
+
+  it("preserves transport failures as LlmTransportError with a cause", async () => {
+    const cause = new Error("Error reading response stream: kind: Body");
+    const client = new LlmApiClient({ postJsonDetailed: vi.fn().mockRejectedValue(cause) });
+
+    await expect(
+      client.generateText({
+        model: "deepseek-chat",
+        apiKey: "test-key",
+        baseUrl: "https://api.deepseek.com",
+        temperature: 0,
+        prompt: "translate",
+      }),
+    ).rejects.toMatchObject({
+      name: "LlmTransportError",
+      message: expect.stringContaining("LLM request failed for https://api.deepseek.com/responses"),
+      cause,
+    } satisfies Partial<LlmTransportError>);
   });
 
   it("throws a clear error when a successful response contains no text", async () => {

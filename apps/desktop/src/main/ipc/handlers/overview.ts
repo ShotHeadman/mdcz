@@ -6,6 +6,7 @@ import { createRecentAcquisitionsFromEntries } from "@mdcz/runtime/library";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { OverviewRecentAcquisitionItem } from "@mdcz/shared/ipc-contracts/overviewContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
+import type { LibraryDetailInput } from "@mdcz/shared/serverDtos";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:overview");
@@ -50,9 +51,9 @@ export const createOverviewHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Overview_RemoveRecentAcquisition]: t.procedure.input<{ id?: string }>().action(async ({ input }) => {
+    [IpcChannel.Overview_RemoveRecentAcquisition]: t.procedure.input<LibraryDetailInput>().action(async ({ input }) => {
       try {
-        return await context.desktopLibraryService.removeRecentAcquisition(input?.id ?? "");
+        return await context.desktopLibraryService.removeRecentAcquisition(input.id);
       } catch (error) {
         logger.error(`Overview remove recent acquisition failed: ${toErrorMessage(error)}`);
         throw asSerializableIpcError(error);

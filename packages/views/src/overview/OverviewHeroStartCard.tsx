@@ -1,6 +1,6 @@
+import { formatBytes } from "@mdcz/shared/format";
 import { Button, cn } from "@mdcz/ui";
 import { FolderCog, Play, Telescope } from "lucide-react";
-import { formatBytes } from "./format";
 
 export interface OverviewHeroStartCardProps {
   className?: string;
@@ -69,7 +69,10 @@ export function OverviewHeroStartCard({
           ) : hasOutputRoot ? (
             <>
               <MetricBlock label="Files" value={data?.fileCount ?? 0} />
-              <MetricBlock label="Size" value={formatBytes(data?.totalBytes ?? 0)} />
+              <MetricBlock
+                label="Size"
+                value={formatBytes(data?.totalBytes ?? 0, { fractionDigits: 2, trimTrailingZeros: true })}
+              />
             </>
           ) : hasConfiguredOutput ? (
             <>

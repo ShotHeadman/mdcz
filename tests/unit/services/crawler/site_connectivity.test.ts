@@ -1,9 +1,9 @@
-import { type Configuration, defaultConfiguration } from "@main/services/config/models";
 import {
   buildSiteConnectivityHeaders,
   probeSiteConnectivity,
   resolveSiteConnectivityTargetUrl,
 } from "@mdcz/runtime/crawler";
+import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 

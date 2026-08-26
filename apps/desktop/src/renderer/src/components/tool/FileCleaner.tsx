@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { formatBytes } from "@mdcz/shared/format";
 import {
   type FileCleanerCandidateView,
   type FileCleanerScanInput,
@@ -9,7 +10,6 @@ import { deleteFile } from "@/api/manual";
 import { listEntries } from "@/client/api";
 import type { FileItem } from "@/client/types";
 import { useToast } from "@/contexts/ToastProvider";
-import { formatBytes } from "@/utils/format";
 import { browseDirectoryPath } from "./toolUtils";
 
 const CLEANUP_MAX_SCANNED_DIRECTORIES = 50000;

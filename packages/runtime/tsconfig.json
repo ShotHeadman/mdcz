@@ -1,9 +1,17 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
     "lib": ["ES2023"],
+    "noEmit": false,
+    "outDir": "../../node_modules/.cache/typescript/runtime",
     "types": ["node"],
-    "rootDir": "../.."
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../node_modules/.cache/typescript/runtime.tsbuildinfo"
   },
-  "include": ["src/**/*.ts", "../shared/**/*.ts", "../storage/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [{ "path": "../media-store" }, { "path": "../shared" }]
 }

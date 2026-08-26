@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import path from "node:path";
-import { RuntimeConfigProfileStore, RuntimeConfigService, RuntimeConfigValidationError } from "@mdcz/runtime/config";
+import {
+  type RuntimeConfigChangeEvent,
+  type RuntimeConfigDiagnosticEvent,
+  RuntimeConfigProfileStore,
+  RuntimeConfigService,
+  RuntimeConfigValidationError,
+} from "@mdcz/runtime/config";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import { CONFIGURATION_FILE_EXTENSIONS } from "@mdcz/shared/configCodec";
 import { toConfigValidationDomainError } from "@mdcz/shared/error";
@@ -64,6 +70,8 @@ export interface ProfileExportOutput {
 
 export class ServerConfigService {
   private readonly config: RuntimeConfigService;
+  private readonly changeListeners = new Set<(event: RuntimeConfigChangeEvent) => void>();
+  private readonly diagnosticListeners = new Set<(event: RuntimeConfigDiagnosticEvent) => void>();
 
   constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {
     this.config = new RuntimeConfigService({
@@ -73,6 +81,12 @@ export class ServerConfigService {
       }),
       mapValidationError: (error) => new ServerConfigValidationError(error.message, error.fields, error.fieldErrors),
     });
+    this.config.onChange((event) => {
+      for (const listener of this.changeListeners) listener(event);
+    });
+    this.config.onDiagnostic((event) => {
+      for (const listener of this.diagnosticListeners) listener(event);
+    });
   }
 
   get runtimePaths(): ServerRuntimePaths {
@@ -81,6 +95,24 @@ export class ServerConfigService {
 
   async load(): Promise<Configuration> {
     return await this.config.load();
+  }
+
+  onChange(listener: (event: RuntimeConfigChangeEvent) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  onDiagnostic(listener: (event: RuntimeConfigDiagnosticEvent) => void): () => void {
+    this.diagnosticListeners.add(listener);
+    return () => this.diagnosticListeners.delete(listener);
+  }
+
+  async startWatching(): Promise<void> {
+    await this.config.startWatching();
+  }
+
+  async stopWatching(): Promise<void> {
+    await this.config.stopWatching();
   }
 
   async get(): Promise<Configuration>;

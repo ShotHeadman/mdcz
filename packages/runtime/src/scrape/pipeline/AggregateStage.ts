@@ -13,7 +13,11 @@ export class AggregateStage implements ScrapeStage {
       context.requireConfiguration(),
     );
 
-    this.runtime.signalService.showLogText(`Starting scrape task ${context.taskId} for ${context.fileInfo.fileName}`);
+    this.runtime.signalService.showLogText(
+      `Starting file scrape task ${context.fileTaskId} for ${context.fileInfo.fileName} (scrapeSessionId: ${
+        context.scrapeSessionId ?? "standalone"
+      })`,
+    );
     throwIfAborted(signal);
 
     this.runtime.signalService.showScrapeInfo({

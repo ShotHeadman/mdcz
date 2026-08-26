@@ -1,5 +1,5 @@
+import type { Configuration } from "@mdcz/shared/config";
 import { ProxyType, type Website } from "@mdcz/shared/enums";
-import type { Configuration } from "./models";
 
 export interface ComputedConfiguration {
   proxyUrl?: string;

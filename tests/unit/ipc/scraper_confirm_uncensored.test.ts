@@ -8,12 +8,16 @@ const createConfig = (): Configuration =>
   ({
     download: {
       generateNfo: true,
+      nfoIgnoreFields: ["director"],
     },
     naming: {},
     paths: {
       sceneImagesFolder: "extrafanart",
     },
-  }) as Configuration;
+    scrape: {
+      filenameIgnoreTokens: [],
+    },
+  }) as unknown as Configuration;
 
 const createCrawlerData = (number = "FC2-123456"): CrawlerData => ({
   title: number,
@@ -156,6 +160,7 @@ describe("confirmUncensoredItems", () => {
         localState: expect.objectContaining({
           uncensoredChoice: "uncensored",
         }),
+        enabledFields: expect.not.arrayContaining(["director"]),
       }),
     );
     expect(resolve).toHaveBeenCalledTimes(2);

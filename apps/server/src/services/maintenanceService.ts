@@ -9,11 +9,13 @@ import {
 } from "@mdcz/runtime/maintenance";
 import {
   type RuntimeTaskAction,
-  RuntimeTaskQueueRunner,
+  TaskExecutor,
+  TaskScheduler,
   toRuntimeTaskSnapshot,
   toServerTaskStatus,
   transitionTask,
 } from "@mdcz/runtime/tasks";
+import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type {
   CrawlerDataDto,
   LogListResponse,
@@ -45,32 +47,35 @@ const confirmationTokenFor = (taskId: string): string => `maintenance:${taskId}`
 
 export class MaintenanceService {
   #stopRequested = new Set<string>();
-  #paused = new Set<string>();
   #pendingRefs = new Map<string, Array<{ relativePath: string }>>();
   #pendingPresets = new Map<string, MaintenancePresetId>();
-  #executors = new Map<string, MaintenanceExecutor>();
-  private readonly runner: RuntimeTaskQueueRunner<{ id: string; presetId: MaintenancePresetId }>;
+  #executors = new Map<string, { pause(): void; stop(): void; resume(): void }>();
+  private readonly runtime: MaintenanceRuntime;
+  private readonly runner: TaskScheduler<{ id: string; executionVersion: number; presetId: MaintenancePresetId }>;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
     config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-    private readonly runtime = createServerMaintenanceRuntime(config),
+    runtime?: MaintenanceRuntime,
+    mappingStore?: TranslationMappingStore,
   ) {
-    this.runner = new RuntimeTaskQueueRunner({
-      getNextTask: async () => {
-        const task = await (await this.persistence.getState()).repositories.tasks.nextQueued("maintenance");
+    this.runtime = runtime ?? createServerMaintenanceRuntime(config, mappingStore);
+    this.runner = new TaskScheduler({
+      claimNext: async () => {
+        const task = await (await this.persistence.getState()).repositories.tasks.claimNext("maintenance");
         if (!task) {
           return null;
         }
         return {
           id: task.id,
+          executionVersion: task.executionVersion,
           presetId: await this.resolveTaskPreset(task.id, "read_local"),
         };
       },
-      runTask: async (task) => {
-        await this.runTask(task.id, task.presetId);
+      runExecution: async (task) => {
+        await this.runTask(task.id, task.presetId, task.executionVersion);
       },
     });
   }
@@ -102,9 +107,10 @@ export class MaintenanceService {
     this.#pendingPresets.set(task.id, input.presetId);
     await this.addEvent(task.id, "queued", `Maintenance task queued. Preset: ${input.presetId}`);
     await this.addEvent(task.id, "preset", `Maintenance preset: ${input.presetId}`);
-    this.taskEvents.publish({ kind: "task", task: await this.toDto(task.id) });
+    const queuedTask = await this.toDto(task.id);
+    this.taskEvents.publish({ kind: "task", task: queuedTask });
     this.drain(input.presetId);
-    return await this.toDto(task.id);
+    return queuedTask;
   }
 
   async list(): Promise<ScanTaskListResponse> {
@@ -247,12 +253,6 @@ export class MaintenanceService {
               result: await this.recordSkippedMaintenanceApply(input.taskId, preview, "维护已停止"),
             };
           }
-          if (this.#paused.has(input.taskId)) {
-            return {
-              status: "skipped",
-              result: await this.recordSkippedMaintenanceApply(input.taskId, preview, "维护已暂停"),
-            };
-          }
           if (preview.status !== "ready") {
             return {
               status: "skipped",
@@ -387,7 +387,6 @@ export class MaintenanceService {
   }
 
   async pause(input: MaintenanceTaskInput): Promise<ScanTaskDto> {
-    this.#paused.add(input.taskId);
     this.#executors.get(input.taskId)?.pause();
     await this.transitionTask(input.taskId, "pause");
     await this.addEvent(input.taskId, "paused", "Maintenance task paused");
@@ -398,7 +397,6 @@ export class MaintenanceService {
   async stop(input: MaintenanceTaskInput): Promise<ScanTaskDto> {
     this.#stopRequested.add(input.taskId);
     this.#executors.get(input.taskId)?.stop();
-    this.#paused.delete(input.taskId);
     await this.transitionTask(input.taskId, "stop", "维护已停止");
     await this.addEvent(input.taskId, "stopping", "Stopping maintenance task");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
@@ -406,7 +404,6 @@ export class MaintenanceService {
   }
 
   async resume(input: MaintenanceTaskInput): Promise<ScanTaskDto> {
-    this.#paused.delete(input.taskId);
     this.#executors.get(input.taskId)?.resume();
     await this.transitionTask(input.taskId, "resume");
     await this.addEvent(input.taskId, "queued", "Maintenance task resumed and requeued");
@@ -425,7 +422,7 @@ export class MaintenanceService {
     this.runner.drain();
   }
 
-  private async runTask(taskId: string, presetId: MaintenancePresetId): Promise<void> {
+  private async runTask(taskId: string, presetId: MaintenancePresetId, executionVersion: number): Promise<void> {
     const state = await this.persistence.getState();
     const task = await state.repositories.tasks.get(taskId);
     const persistedPreviews = await state.repositories.maintenance.listPreviews(taskId);
@@ -434,7 +431,9 @@ export class MaintenanceService {
       (persistedPreviews.length > 0
         ? persistedPreviews.map((preview) => ({ relativePath: preview.relativePath }))
         : undefined);
-    await this.transitionTask(taskId, "start");
+    if (task.status !== "running") {
+      await this.transitionTask(taskId, "start", undefined, executionVersion);
+    }
     await this.addEvent(
       taskId,
       "running",
@@ -447,86 +446,85 @@ export class MaintenanceService {
       await state.repositories.maintenance.deletePreviewsForTask(taskId);
       const entries = await (refs?.length ? this.runtime.scanRefs({ root, refs }) : this.runtime.scan({ root }));
       await this.addEvent(taskId, "log", `Maintenance scan completed. Found ${entries.length} item(s).`);
-      const executor = new MaintenanceExecutor();
-      this.#executors.set(taskId, executor);
-      type PreviewEntry = (typeof entries)[number];
-      type PreviewItem = Awaited<ReturnType<MaintenanceRuntime["previewEntries"]>>[number];
-      const items = await executor.run<PreviewEntry, PreviewItem>({
-        state: "previewing",
-        items: entries,
+      const results: PreviewItem[] = [];
+      let executor!: TaskExecutor<PreviewEntry, PreviewItem | null>;
+      executor = new TaskExecutor<PreviewEntry, PreviewItem | null>({
         concurrency: 1,
-        runItem: async (entry, _index, signal) => {
-          if (this.#stopRequested.has(taskId)) {
-            return { status: "skipped", error: "维护已停止" };
-          }
-          if (this.#paused.has(taskId)) {
-            await this.transitionTask(taskId, "pause");
-            await this.addEvent(taskId, "paused", "Maintenance task paused");
-            this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
-            return { status: "skipped", error: "维护已暂停" };
-          }
-          const [item] = await this.runtime.previewEntries({ root, presetId, entries: [entry], signal });
-          if (!item) {
-            return { status: "failed", error: "维护预览未返回结果" };
-          }
-          return {
-            status: item.status === "ready" ? "success" : "failed",
-            result: item,
-            error: item.error ?? undefined,
-          };
+        runItem: async (entry, context) => {
+          const [item] = await this.runtime.previewEntries({
+            root,
+            presetId,
+            entries: [entry],
+            signal: context.signal,
+          });
+          return item ?? null;
         },
-        callbacks: {
-          onItemComplete: async (_entry, index, result) => {
-            this.taskEvents.publishRealtime({
-              id: `${taskId}:maintenance-preview-progress:${index + 1}`,
-              taskId,
-              createdAt: new Date().toISOString(),
-              kind: "task-progress",
-              taskKind: "maintenance",
-              current: index + 1,
-              total: entries.length,
-              ...(result.result ? { message: result.result.relativePath } : {}),
-            });
-            const item = result.result;
-            if (!item) {
-              return;
-            }
-            const preview = await state.repositories.maintenance.upsertPreview({
-              taskId,
-              rootId: item.rootId,
-              relativePath: item.relativePath,
-              presetId,
-              status: item.status,
-              error: item.error,
-              fieldDiffsJson: JSON.stringify(item.fieldDiffs),
-              unchangedFieldDiffsJson: JSON.stringify(item.unchangedFieldDiffs),
-              pathDiffJson: item.pathDiff ? JSON.stringify(item.pathDiff) : null,
-              proposedCrawlerDataJson: item.proposedCrawlerData ? JSON.stringify(item.proposedCrawlerData) : null,
-            });
-            await this.addEvent(taskId, item.status === "ready" ? "item-ready" : "item-blocked", item.relativePath);
-            const previewItem = await this.previewToDto(preview);
-            this.taskEvents.publishRealtime({
-              id: `${previewItem.id}:maintenance-preview-item:${previewItem.updatedAt}`,
-              taskId,
-              createdAt: previewItem.updatedAt,
-              kind: "maintenance-preview-item",
-              item: previewItem,
-            });
-          },
+        applyResult: async (_entry, item) => {
+          if (!item) return;
+          results.push(item);
+          const preview = await state.repositories.maintenance.upsertPreview({
+            taskId,
+            rootId: item.rootId,
+            relativePath: item.relativePath,
+            presetId,
+            status: item.status,
+            error: item.error,
+            fieldDiffsJson: JSON.stringify(item.fieldDiffs),
+            unchangedFieldDiffsJson: JSON.stringify(item.unchangedFieldDiffs),
+            pathDiffJson: item.pathDiff ? JSON.stringify(item.pathDiff) : null,
+            proposedCrawlerDataJson: item.proposedCrawlerData ? JSON.stringify(item.proposedCrawlerData) : null,
+          });
+          await this.addEvent(taskId, item.status === "ready" ? "item-ready" : "item-blocked", item.relativePath);
+          const previewItem = await this.previewToDto(preview);
+          this.taskEvents.publishRealtime({
+            id: `${previewItem.id}:maintenance-preview-item:${previewItem.updatedAt}`,
+            taskId,
+            createdAt: previewItem.updatedAt,
+            kind: "maintenance-preview-item",
+            item: previewItem,
+          });
         },
       });
-      if (this.#paused.has(taskId)) {
+      this.#executors.set(taskId, {
+        pause: () => executor.pause(),
+        stop: () => executor.stop(),
+        resume: () => undefined,
+      });
+      type PreviewEntry = (typeof entries)[number];
+      type PreviewItem = Awaited<ReturnType<MaintenanceRuntime["previewEntries"]>>[number];
+      const summary = await executor.execute(entries, executionVersion);
+      for (const [index, item] of results.entries()) {
+        this.taskEvents.publishRealtime({
+          id: `${taskId}:maintenance-preview-progress:${index + 1}`,
+          taskId,
+          createdAt: new Date().toISOString(),
+          kind: "task-progress",
+          taskKind: "maintenance",
+          current: index + 1,
+          total: entries.length,
+          message: item.relativePath,
+        });
+      }
+      const items = results;
+      if (summary.outcome !== "settled") return;
+      const currentTask = await state.repositories.tasks.get(taskId);
+      if (currentTask.status === "paused" || currentTask.status === "stopping") {
         return;
       }
       const readyCount = items.filter((item) => item.status === "ready").length;
       const blockedCount = items.filter((item) => item.status === "blocked").length;
-      await state.repositories.tasks.patch(taskId, {
-        status: blockedCount > 0 && readyCount === 0 ? "failed" : "completed",
-        completedAt: new Date(),
-        videoCount: readyCount,
-        directoryCount: new Set(items.map((item) => path.posix.dirname(item.relativePath))).size,
-        error: blockedCount > 0 && readyCount === 0 ? "维护预览全部失败" : null,
-      });
+      const completed = await state.repositories.tasks.patch(
+        taskId,
+        {
+          status: blockedCount > 0 && readyCount === 0 ? "failed" : "completed",
+          completedAt: new Date(),
+          videoCount: readyCount,
+          directoryCount: new Set(items.map((item) => path.posix.dirname(item.relativePath))).size,
+          error: blockedCount > 0 && readyCount === 0 ? "维护预览全部失败" : null,
+        },
+        { status: "running", executionVersion },
+      );
+      if (!completed) return;
       await this.addEvent(
         taskId,
         "completed",
@@ -535,7 +533,12 @@ export class MaintenanceService {
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.transitionTask(taskId, "fail", message);
+      const failed = await state.repositories.tasks.patch(
+        taskId,
+        { status: "failed", completedAt: new Date(), error: message },
+        { status: ["running", "paused", "stopping"], executionVersion },
+      );
+      if (!failed) return;
       await this.addEvent(taskId, "failed", message);
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } finally {
@@ -610,16 +613,26 @@ export class MaintenanceService {
     });
   }
 
-  private async transitionTask(taskId: string, action: RuntimeTaskAction, error?: string | null): Promise<void> {
+  private async transitionTask(
+    taskId: string,
+    action: RuntimeTaskAction,
+    error?: string | null,
+    executionVersion?: number,
+  ): Promise<void> {
     const state = await this.persistence.getState();
     const task = await state.repositories.tasks.get(taskId);
     const next = transitionTask(toRuntimeTaskSnapshot(task), { action, error });
-    await state.repositories.tasks.patch(taskId, {
+    const patch = {
       status: toServerTaskStatus(next.status),
       startedAt: next.startedAt,
       completedAt: next.completedAt,
       error: next.error,
-    });
+    };
+    if (executionVersion === undefined) {
+      await state.repositories.tasks.patch(taskId, patch);
+    } else {
+      await state.repositories.tasks.patch(taskId, patch, { status: task.status, executionVersion });
+    }
   }
 
   private async addEvent(taskId: string, type: string, message: string): Promise<TaskEventDto> {

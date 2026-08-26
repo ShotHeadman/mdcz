@@ -1,5 +1,4 @@
 import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { CrawlerData, LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -8,6 +7,7 @@ import type {
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { api, getLibraryAssetSrc } from "../client";
 
 const dedupeValues = (values: string[]): string[] =>
@@ -77,6 +77,7 @@ const toRelativePath = (item: DetailViewItem, path: string): string => {
 };
 
 const getRootId = (item: DetailViewItem): string => item.id.split(":")[0] || "";
+const getMetadataRootId = (item: DetailViewItem): string => item.nfoRootId ?? getRootId(item);
 
 const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
@@ -115,7 +116,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
 
-  const rootId = getRootId(item);
+  const rootId = getMetadataRootId(item);
   if (!rootId) {
     return trimmed;
   }
@@ -129,6 +130,7 @@ export const createWebDetailPort = (): DetailActionPort => ({
     play: "hidden",
     openFolder: "hidden",
     openNfo: "enabled",
+    editPoster: "enabled",
   },
   showFilePath: false,
   resolveImageCandidates: async (candidates, baseDir, item) =>
@@ -136,17 +138,38 @@ export const createWebDetailPort = (): DetailActionPort => ({
   play: () => undefined,
   openFolder: () => undefined,
   readNfo: async (item, path) => {
-    const rootId = getRootId(item);
+    const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
-    const response = await api.scrape.nfoRead({ rootId, relativePath });
+    const videoPath = item.outputPath ?? item.path;
+    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
+    const response = await api.scrape.nfoRead({ rootId, relativePath, videoRelativePath });
     return {
-      path: response.relativePath,
+      path: response.effectiveRelativePath,
       crawlerData: response.data as CrawlerData | null,
     };
   },
   writeNfo: async (item, path, data) => {
-    const rootId = getRootId(item);
-    await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), data });
+    const rootId = getMetadataRootId(item);
+    const videoPath = item.outputPath ?? item.path;
+    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
+    await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
+  },
+  preparePosterCrop: async (item) => {
+    if (!item.resultId) throw new Error("缺少刮削结果标识");
+    const response = await api.scrape.posterCropSession({ id: item.resultId });
+    return {
+      ...response,
+      sourceUrl: getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.sourceRelativePath }),
+    };
+  },
+  savePosterCrop: async (item, crop) => {
+    if (!item.resultId) throw new Error("缺少刮削结果标识");
+    const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
+    const posterUrl = new URL(
+      getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.targetRelativePath }),
+    );
+    if (response.revision) posterUrl.searchParams.set("revision", response.revision);
+    return { posterUrl: posterUrl.toString() };
   },
 });
 

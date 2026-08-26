@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
-
+import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
 import sharp from "sharp";
 import { toErrorMessage } from "../../../shared";
 
 const SMALL_POSTER_THRESHOLD_BYTES = 50_000;
-const PORTRAIT_ASPECT_RATIO_THRESHOLD = 1.4;
 
 export type PosterDerivationResult =
   | { status: "derived"; path: string }
@@ -22,13 +21,6 @@ export interface DerivePosterFromThumbOptions {
   thumbPath: string | undefined;
 }
 
-interface CropRegion {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
 const inferOutputExtension = (filePath: string): string => extname(filePath) || ".jpg";
 
 const encodePoster = (pipeline: sharp.Sharp, outputPath: string): sharp.Sharp => {
@@ -42,61 +34,7 @@ const encodePoster = (pipeline: sharp.Sharp, outputPath: string): sharp.Sharp =>
   }
 };
 
-const clampCropRegion = (region: CropRegion, imageWidth: number, imageHeight: number): CropRegion => {
-  const left = Math.min(Math.max(0, Math.round(region.left)), Math.max(0, imageWidth - 1));
-  const top = Math.min(Math.max(0, Math.round(region.top)), Math.max(0, imageHeight - 1));
-  const width = Math.min(Math.max(1, Math.round(region.width)), imageWidth - left);
-  const height = Math.min(Math.max(1, Math.round(region.height)), imageHeight - top);
-
-  return { left, top, width, height };
-};
-
-export const resolveThumbToPosterCropRegion = (imageWidth: number, imageHeight: number): CropRegion | null => {
-  const aspectRatio = imageHeight / imageWidth;
-  if (aspectRatio >= PORTRAIT_ASPECT_RATIO_THRESHOLD) {
-    return null;
-  }
-
-  if (aspectRatio >= 1) {
-    const cropWidth = Math.floor(imageHeight / 1.5);
-    return clampCropRegion(
-      {
-        left: Math.floor((imageWidth - cropWidth) / 2),
-        top: 0,
-        width: cropWidth,
-        height: imageHeight,
-      },
-      imageWidth,
-      imageHeight,
-    );
-  }
-
-  let left = Math.round(imageWidth / 1.9);
-  let right = imageWidth;
-  if (imageWidth === 800) {
-    if (imageHeight === 439) {
-      left = 420;
-    } else if (imageHeight >= 499 && imageHeight <= 503) {
-      left = 437;
-    } else {
-      left = 421;
-    }
-  } else if (imageWidth === 840 && imageHeight === 472) {
-    left = 473;
-    right = 788;
-  }
-
-  return clampCropRegion(
-    {
-      left,
-      top: 0,
-      width: right - left,
-      height: imageHeight,
-    },
-    imageWidth,
-    imageHeight,
-  );
-};
+export { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
 
 export class PosterImageDerivationService {
   constructor(private readonly logger: PosterDerivationLogger) {}

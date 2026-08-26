@@ -12,6 +12,5 @@
     "../../packages/runtime/**/*.ts",
     "../../packages/shared/**/*.ts",
     "../../packages/media-store/**/*.ts"
-  ],
-  "exclude": ["../../packages/shared/stores/**/*"]
+  ]
 }

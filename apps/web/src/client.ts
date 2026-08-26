@@ -61,7 +61,13 @@ const encodePathSegments = (value: string): string =>
     .map((segment) => encodeURIComponent(segment))
     .join("/");
 
-export const getLibraryAssetSrc = (input: { rootId?: string | null; path: string | null | undefined }): string => {
+export const getLibraryAssetSrc = (input: {
+  format?: "avif" | "source" | "webp";
+  revision?: string;
+  rootId?: string | null;
+  path: string | null | undefined;
+  width?: number;
+}): string => {
   const assetPath = input.path?.trim();
   if (!assetPath) {
     return "";
@@ -80,6 +86,15 @@ export const getLibraryAssetSrc = (input: { rootId?: string | null; path: string
   const token = getAdminToken();
   if (token) {
     url.searchParams.set("token", token);
+  }
+  if (input.width) {
+    url.searchParams.set("w", String(input.width));
+    if (input.format && input.format !== "source") {
+      url.searchParams.set("format", input.format);
+    }
+  }
+  if (input.revision) {
+    url.searchParams.set("revision", input.revision);
   }
   return url.toString();
 };
@@ -193,6 +208,7 @@ export const api: ServerApiContract = {
     stop: (input) => trpcMutation("maintenance.stop", input),
   },
   library: {
+    availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),
     search: (input) => trpcQuery("library.search", input),
     detail: (input) => trpcQuery("library.detail", input),
@@ -230,6 +246,8 @@ export const api: ServerApiContract = {
     getRecoverableSession: () => trpcQuery("scrape.getRecoverableSession"),
     nfoRead: (input) => trpcQuery("scrape.nfoRead", input),
     nfoWrite: (input) => trpcMutation("scrape.nfoWrite", input),
+    posterCropSession: (input) => trpcQuery("scrape.posterCropSession", input),
+    posterCropSave: (input) => trpcMutation("scrape.posterCropSave", input),
     pause: (input) => trpcMutation("scrape.pause", input),
     result: (input) => trpcQuery("scrape.result", input),
     resume: (input) => trpcMutation("scrape.resume", input),

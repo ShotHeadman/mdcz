@@ -1,5 +1,5 @@
 import type { ScrapeResult } from "@mdcz/shared/types";
-import type { RuntimeActorImageService } from "./actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationService, ManualScrapeOptions } from "./aggregation";
 import type { FileOrganizer } from "./FileOrganizer";
 import type { NfoGenerator } from "./nfo";
@@ -11,7 +11,7 @@ export interface FileScraperDependencies {
   nfoGenerator: NfoGenerator;
   fileOrganizer: FileOrganizer;
   actorImageService?: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
 }
 
 export type ScrapeExecutionMode = "single" | "batch";
@@ -21,9 +21,10 @@ export interface FileScrapeProgress {
   totalFiles: number;
 }
 
-export interface FileScrapeOptions {
+export type FileScrapeOptions = {
   manualScrape?: ManualScrapeOptions;
-}
+  scrapeSessionId?: string;
+};
 
 export interface CreateFileScraperOptions {
   mode?: ScrapeExecutionMode;
@@ -38,7 +39,8 @@ export class FileScraper {
     signal?: AbortSignal,
     options: FileScrapeOptions = {},
   ): Promise<ScrapeResult> {
-    const context = this.pipeline.createContext(filePath, progress, options);
+    const context = await this.pipeline.createContext(filePath, progress, options);
+    this.pipeline.notifyProcessing?.(context);
     this.pipeline.setProgress(progress, 0);
 
     try {

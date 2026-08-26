@@ -1,4 +1,5 @@
 import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceCommit";
+import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
@@ -15,6 +16,7 @@ export interface NativeActionCapabilities {
   play?: ActionAvailability;
   openFolder?: ActionAvailability;
   openNfo?: ActionAvailability;
+  editPoster?: ActionAvailability;
   deleteFile?: ActionAvailability;
   deleteFileAndFolder?: ActionAvailability;
 }
@@ -25,13 +27,22 @@ export interface DetailNfoReadResponse {
 }
 
 export interface DetailActionPort {
-  capabilities?: Pick<NativeActionCapabilities, "play" | "openFolder" | "openNfo">;
+  capabilities?: Pick<NativeActionCapabilities, "play" | "openFolder" | "openNfo" | "editPoster">;
   showFilePath: boolean;
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
   play(item: DetailViewItem): Promise<void> | void;
   openFolder(item: DetailViewItem): Promise<void> | void;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
+  preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
+  savePosterCrop(item: DetailViewItem, crop: NormalizedCropRegion): Promise<{ posterUrl: string }>;
+}
+
+export interface PosterCropEditSession {
+  sourceUrl: string;
+  width: number;
+  height: number;
+  initialCrop: NormalizedCropRegion;
 }
 
 export interface ScrapeActionPort {

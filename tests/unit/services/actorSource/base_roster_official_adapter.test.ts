@@ -1,5 +1,5 @@
-import { BaseRosterOfficialAdapter } from "@main/services/actorSource/sources/official/BaseRosterOfficialAdapter";
-import type { OfficialLookupRequest, OfficialLookupResult } from "@main/services/actorSource/sources/official/types";
+import { BaseRosterOfficialAdapter } from "@mdcz/runtime/actorSource/sources/official/BaseRosterOfficialAdapter";
+import type { OfficialLookupRequest, OfficialLookupResult } from "@mdcz/runtime/actorSource/sources/official/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class TestRosterAdapter extends BaseRosterOfficialAdapter<string[]> {

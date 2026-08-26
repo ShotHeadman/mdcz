@@ -1,6 +1,6 @@
-import { normalizeActorName, toUniqueActorNames } from "@main/utils/actor";
+import { normalizeText } from "@mdcz/runtime/shared";
+import { normalizeActorName, toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { ActorProfile } from "@mdcz/shared/types";
-import { normalizeText } from "./normalization";
 
 const PROFILE_SECTION_TITLE = "基本资料";
 const ALIASES_PREFIX = "别名：";

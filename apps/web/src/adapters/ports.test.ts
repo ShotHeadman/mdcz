@@ -1,7 +1,7 @@
 import type { ScanTaskDto } from "@mdcz/shared/serverDtos";
-import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -135,6 +135,43 @@ describe("web detail action port", () => {
     expect(scene).toBe(
       "http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/Actor%20A/GNI-006/extrafanart/1.jpg?token=token-1",
     );
+  });
+
+  it("prepares and saves poster crops through result-scoped Web APIs", async () => {
+    setAdminToken("token-1");
+    const initialCrop = { x: 0.4, y: 0, width: 0.3, height: 0.9 };
+    vi.spyOn(api.scrape, "posterCropSession").mockResolvedValue({
+      sourceRelativePath: "JAV_output/ABC-001/thumb.png",
+      targetRelativePath: "JAV_output/ABC-001/poster.png",
+      width: 900,
+      height: 500,
+      initialCrop,
+    });
+    const save = vi.spyOn(api.scrape, "posterCropSave").mockResolvedValue({
+      sourceRelativePath: "JAV_output/ABC-001/thumb.png",
+      targetRelativePath: "JAV_output/ABC-001/poster.png",
+      width: 900,
+      height: 500,
+      initialCrop,
+      revision: "42",
+    });
+    const item = {
+      id: "root-1:ABC-001.mp4",
+      resultId: "result-1",
+      number: "ABC-001",
+      path: "ABC-001.mp4",
+      status: "success" as const,
+    };
+    const port = createWebDetailPort();
+    const session = await port.preparePosterCrop(item);
+    const result = await port.savePosterCrop(item, initialCrop);
+
+    expect(session.sourceUrl).toBe(
+      "http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/ABC-001/thumb.png?token=token-1",
+    );
+    expect(save).toHaveBeenCalledWith({ id: "result-1", crop: initialCrop });
+    expect(result.posterUrl).toContain("poster.png");
+    expect(result.posterUrl).toContain("revision=42");
   });
 });
 

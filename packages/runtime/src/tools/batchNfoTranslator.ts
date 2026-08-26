@@ -13,7 +13,7 @@ import {
   normalizeNewlines,
   toTarget,
 } from "../scrape";
-import { NfoGenerator } from "../scrape/nfo";
+import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
 
@@ -179,6 +179,7 @@ const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration[
 const defaultWriteNfo: BatchTranslateWriteNfo = async ({ config, crawlerData, nfoGenerator, nfoPath }) => {
   return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
     nfoNaming: config.download.nfoNaming,
+    enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
     nfoTitleTemplate: config.naming.nfoTitleTemplate,
   });
 };

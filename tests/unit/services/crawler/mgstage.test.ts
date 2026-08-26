@@ -27,15 +27,15 @@ describe("MGStageCrawler", () => {
           <tr><th>レーベル</th><td>Label A</td></tr>
           <tr><th>シリーズ</th><td>Series A</td></tr>
         </table>
-        <a href="/search/cSearch.php?tag_id=1">Actor A</a>
+        <a href="/search/cSearch.php?actor[]=actor_a_1&type=top">Actor A</a>
         <a href="/search/cSearch.php?tag_id=2">Actor B</a>
-        <a href="/search/cSearch.php?genre=10">Genre A</a>
+        <a href="/search/cSearch.php?genre[]=genre_a_1&type=top">Genre A</a>
         <a href="/search/cSearch.php?genre=20">Genre B</a>
         <p class="txt introduction">Sample plot</p>
         <a class="enlarge_image" href="/images/cover.jpg">cover</a>
         <a class="sample_image" href="/images/sample1.jpg">1</a>
         <a class="sample_image" href="https://cdn.example.com/sample2.jpg">2</a>
-        <span class="review_average">4.2</span>
+        <table><tr><th>評価：</th><td class="review">4.2 (12 件)</td></tr></table>
       </body></html>
     `;
 

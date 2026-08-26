@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { deterministicMediaRootId } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
+import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -115,6 +117,27 @@ beforeEach(() => {
 });
 
 describe("buildServer composition integration", () => {
+  it("applies watched config edits without publishing a task event", async () => {
+    const { fastify, services } = await createTestServer();
+    await fastify.ready();
+    const taskEvents: string[] = [];
+    const unsubscribe = services.taskEvents.subscribe((event) => taskEvents.push(event.event));
+    const current = await services.config.get();
+
+    await writeFile(
+      services.config.runtimePaths.configPath,
+      serializeConfiguration({
+        ...current,
+        network: { ...current.network, timeout: 41 },
+      }),
+      "utf8",
+    );
+
+    await expect.poll(async () => (await services.config.get()).network.timeout).toBe(41);
+    expect(taskEvents).toEqual([]);
+    unsubscribe();
+  });
+
   it("completes first-run setup without a prior session and persists completion", async () => {
     const root = await createTempRoot("setup-root");
     const { fastify, services } = await createTestServer();
@@ -378,8 +401,28 @@ describe("buildServer composition integration", () => {
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
     expect(roots.filter((root: { enabled: boolean }) => root.enabled)).toEqual([
-      expect.objectContaining({ hostPath: secondRoot }),
+      expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
     ]);
+    expect(roots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot, enabled: false }),
+      ]),
+    );
+  });
+
+  it("coalesces concurrent media root synchronization by deterministic id", async () => {
+    const mediaPath = await createTempRoot("config-media-root-concurrent");
+    const { services } = await createTestServer();
+
+    const roots = await Promise.all([
+      services.mediaRoots.setPrimaryMediaRoot({ displayName: "First", hostPath: mediaPath, enabled: true }),
+      services.mediaRoots.setPrimaryMediaRoot({ displayName: "Second", hostPath: mediaPath, enabled: true }),
+    ]);
+
+    expect(new Set(roots.map((root) => root.id))).toEqual(new Set([deterministicMediaRootId(mediaPath)]));
+    await expect(services.mediaRoots.list()).resolves.toMatchObject({
+      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath, enabled: true })],
+    });
   });
 
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {
@@ -551,6 +594,104 @@ describe("buildServer composition integration", () => {
     expect(recentAcquisitions.map((entry: { id: string }) => entry.id)).not.toContain("hidden-entry");
   });
 
+  it("paginates library entries and resolves availability outside the list request", async () => {
+    const root = await createTempRoot("library-page-root");
+    await writeFile(join(root, "present-a.mp4"), "a");
+    await writeFile(join(root, "present-b.mp4"), "b");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const state = await services.persistence.getState();
+    for (const [id, relativePath, createdAt] of [
+      ["entry-a", "present-a.mp4", "2026-05-01T00:00:00.000Z"],
+      ["entry-b", "present-b.mp4", "2026-05-02T00:00:00.000Z"],
+      ["entry-c", "missing-c.mp4", "2026-05-03T00:00:00.000Z"],
+    ] as const) {
+      await state.repositories.library.upsertEntry({
+        id,
+        rootId,
+        rootRelativePath: relativePath,
+        number: id,
+        createdAt: new Date(createdAt),
+      });
+    }
+
+    const firstResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.list",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { limit: 2 },
+    });
+    const firstPage = firstResponse.json().result.data;
+    const secondResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.list",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { cursor: firstPage.nextCursor, limit: 2 },
+    });
+    const secondPage = secondResponse.json().result.data;
+    const availabilityResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.availability",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: firstPage.entries.map((entry: { id: string }) => entry.id) },
+    });
+
+    expect(firstPage).toMatchObject({
+      entries: [
+        expect.objectContaining({ id: "entry-c", available: null }),
+        expect.objectContaining({ id: "entry-b", available: null }),
+      ],
+      hasMore: true,
+      total: 3,
+    });
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+    expect(secondPage).toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-a", available: null })],
+      hasMore: false,
+      nextCursor: null,
+      total: 3,
+    });
+    expect(availabilityResponse.json().result.data.entries).toEqual([
+      expect.objectContaining({ id: "entry-c", available: false }),
+      expect.objectContaining({ id: "entry-b", available: true }),
+    ]);
+  });
+
+  it("collects deduplicated actor profiles from crawler payloads and tolerates unusable ones", async () => {
+    const root = await createTempRoot("actor-profile-root");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const state = await services.persistence.getState();
+
+    expect(await services.library.listActorProfiles()).toEqual([]);
+
+    for (const [id, crawlerDataJson] of [
+      ["profile-a", JSON.stringify({ actor_profiles: [{ name: "Alice", birth_place: "Tokyo" }] })],
+      // Same actor under different casing/padding, plus one the first payload never mentioned.
+      ["profile-b", JSON.stringify({ actor_profiles: [{ name: " alice ", birth_place: "Osaka" }, { name: "Bob" }] })],
+      // Neither of these may take the whole collection down.
+      ["profile-broken", "{ not json"],
+      ["profile-empty-name", JSON.stringify({ actor_profiles: [{ name: "  " }] })],
+    ] as const) {
+      await state.repositories.library.upsertEntry({
+        id,
+        rootId,
+        rootRelativePath: `${id}.mp4`,
+        number: id,
+        crawlerDataJson,
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      });
+    }
+
+    // First occurrence wins, so Alice keeps Tokyo rather than Osaka.
+    expect(await services.library.listActorProfiles()).toEqual([
+      { name: "Alice", birth_place: "Tokyo" },
+      { name: "Bob" },
+    ]);
+  });
+
   it("rejects root browser escape attempts", async () => {
     const root = await createTempRoot("browser-root");
     const { fastify } = await createTestServer();
@@ -704,6 +845,98 @@ describe("buildServer composition integration", () => {
     expect(statusResponse.json().webhook.delivered).toBeGreaterThanOrEqual(2);
 
     await webhook.close();
+  });
+
+  it("applies NFO field settings to manual saves without coupling trailer downloads", async () => {
+    const root = await createTempRoot("manual-nfo-root");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const data = {
+      title: "Manual NFO",
+      number: "ABC-123",
+      actors: [],
+      genres: [],
+      director: "Director",
+      trailer_url: "https://example.com/trailer.mp4",
+      trailer_source_url: "https://example.com/trailer-source.mp4",
+      scene_images: [],
+      website: Website.JAVDB,
+    };
+    const writeManualNfo = async (relativePath: string) =>
+      await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.nfoWrite",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { rootId, relativePath, data },
+      });
+
+    await services.config.update({ download: { nfoIgnoreFields: ["director"] } });
+    const directorOnlyResponse = await writeManualNfo("director-only.nfo");
+    const directorOnlyXml = await readFile(join(root, "director-only.nfo"), "utf8");
+
+    expect(directorOnlyResponse.statusCode).toBe(200);
+    expect(directorOnlyXml).not.toContain("<director>Director</director>");
+    expect(directorOnlyXml).toContain("<trailer>");
+    expect(directorOnlyXml).toContain("trailer_source_url");
+
+    await services.config.update({
+      download: {
+        downloadTrailer: false,
+        nfoIgnoreFields: ["trailer"],
+      },
+    });
+    const trailerOnlyResponse = await writeManualNfo("trailer-only.nfo");
+    const trailerOnlyXml = await readFile(join(root, "trailer-only.nfo"), "utf8");
+
+    expect(trailerOnlyResponse.statusCode).toBe(200);
+    expect(trailerOnlyXml).toContain("<director>Director</director>");
+    expect(trailerOnlyXml).not.toContain("<trailer>https://example.com/trailer.mp4</trailer>");
+    expect(trailerOnlyXml).not.toContain(
+      "<trailer_source_url>https://example.com/trailer-source.mp4</trailer_source_url>",
+    );
+  });
+
+  it("resolves configured filename NFO paths and preserves unmanaged XML on edit", async () => {
+    const root = await createTempRoot("nfo-editor-root");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    await services.config.update({ download: { nfoNaming: "filename" } });
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    await writeFile(
+      join(root, "ABC-123.nfo"),
+      '<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="javdb" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><providerid source="local">keep-me</providerid></movie>',
+    );
+
+    const readInput = { rootId, relativePath: "movie.nfo", videoRelativePath: "ABC-123.mp4" };
+    const readResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.nfoRead?input=${encodeURIComponent(JSON.stringify(readInput))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const readResult = readResponse.json().result.data;
+    expect(readResponse.statusCode).toBe(200);
+    expect(readResult.effectiveRelativePath).toBe("ABC-123.nfo");
+    expect(readResult.data.actors).toEqual(["Actor A"]);
+
+    const writeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.nfoWrite",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...readInput,
+        relativePath: readResult.effectiveRelativePath,
+        data: { ...readResult.data, title: "New", title_zh: "New" },
+      },
+    });
+    const savedXml = await readFile(join(root, "ABC-123.nfo"), "utf8");
+    expect(writeResponse.statusCode).toBe(200);
+    expect(writeResponse.json().result.data.effectiveRelativePath).toBe("ABC-123.nfo");
+    expect(savedXml).toContain("<title>New</title>");
+    expect(savedXml).toContain('<movie custom="keep">');
+    expect(savedXml).toContain('<actor role="lead">');
+    expect(savedXml).toContain('<providerid source="local">keep-me</providerid>');
   });
 
   it("closes the persistence database with the Fastify lifecycle", async () => {

@@ -1,15 +1,14 @@
 import type { ActorImageService } from "@main/services/ActorImageService";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import type { FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import type { AggregationService, FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager } from "./helpers";
+import { mockConfigManager } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -79,6 +78,7 @@ describe("FileScraper plan timing", () => {
             failedCount: 0,
             skippedCount: 0,
             siteResults: [],
+            rejectedSites: [],
             totalElapsedMs: 1,
           },
         }),

@@ -1,7 +1,7 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import { MaintenanceFileScraper } from "@main/services/scraper/maintenance/MaintenanceFileScraper";
-import { getPreset } from "@main/services/scraper/maintenance/presets";
+import { getMaintenancePreset as getPreset } from "@mdcz/runtime/maintenance";
+import { MaintenanceFileScraper } from "@mdcz/runtime/maintenance/MaintenanceFileScraper";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";

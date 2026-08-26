@@ -29,6 +29,28 @@ const DEFAULT_SITES: Website[] = [
 
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
 const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
+export const NFO_FIELD_OPTIONS = [
+  "num",
+  "plot",
+  "release",
+  "runtime",
+  "fileinfo",
+  "rating",
+  "studio",
+  "director",
+  "publisher",
+  "series",
+  "genres",
+  "tags",
+  "poster",
+  "thumb",
+  "fanart",
+  "sceneImages",
+  "trailer",
+  "sourceComment",
+] as const;
+export type NfoField = (typeof NFO_FIELD_OPTIONS)[number];
+
 const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
 
 const networkSchema = z.object({
@@ -39,10 +61,13 @@ const networkSchema = z.object({
   retryCount: z.number().int().min(0).max(10).default(3),
   javdbCookie: z.string().default(""),
   javbusCookie: z.string().default(""),
+  fantiaCookie: z.string().default(""),
 });
 
 const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
+  filenameIgnoreTokens: z.array(z.string()).default([]),
+  filenameBlacklistTokens: z.array(z.string()).default([]),
   r18MetadataLanguage: z.enum(R18_METADATA_LANGUAGE_OPTIONS).default(DEFAULT_R18_METADATA_LANGUAGE),
   threadNumber: z.number().int().min(1).max(128).default(2),
   javdbDelaySeconds: z.number().int().min(0).max(120).default(10),
@@ -82,7 +107,7 @@ const translateSchema = z.object({
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
   llmPrompt: z.string().default("自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}"),
   llmTemperature: z.number().min(0).max(2).default(1.0),
-  llmTimeout: z.number().int().min(1).max(300).default(10),
+  llmTimeout: z.number().int().min(1).max(300).default(60),
   llmMaxRetries: z.number().int().min(1).max(20).default(3),
   llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
   targetLanguage: translationTargetSchema,
@@ -100,6 +125,7 @@ const downloadSchema = z.object({
   downloadTrailer: z.boolean().default(true),
   generateNfo: z.boolean().default(true),
   nfoNaming: z.enum(NFO_NAMING_OPTIONS).default("both"),
+  nfoIgnoreFields: z.array(z.enum(NFO_FIELD_OPTIONS)).default([]),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepThumb: z.boolean().default(true),
   keepPoster: z.boolean().default(true),
@@ -209,6 +235,7 @@ const uiSchema = z.object({
 
 const pathsSchema = z.object({
   mediaPath: z.string().default(""),
+  metadataPath: z.string().default(""),
   actorPhotoFolder: z.string().default(""),
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),

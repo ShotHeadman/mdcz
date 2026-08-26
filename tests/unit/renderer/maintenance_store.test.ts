@@ -1,6 +1,7 @@
-import { useMaintenanceEntryStore } from "@mdcz/shared/stores/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
+import type { LocalScanEntry } from "@mdcz/shared/types";
+import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
   applyMaintenanceExecutionItemResult,
   applyMaintenancePreviewResult,
@@ -9,8 +10,7 @@ import {
   clearMaintenancePreviewResults,
   invalidateMaintenancePreview,
   toggleMaintenanceSelectedIds,
-} from "@mdcz/shared/stores/maintenanceSession";
-import type { LocalScanEntry } from "@mdcz/shared/types";
+} from "@mdcz/views/state/maintenanceSession";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildMaintenanceEntryGroups, findMaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
 import {

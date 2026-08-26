@@ -1,48 +1,91 @@
 import { rm, stat } from "node:fs/promises";
 import type { DesktopPersistenceService } from "@main/services/persistence";
+import { mapWithConcurrency } from "@main/utils/async";
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
-import type { CrawlerDataDto, LibraryEntryDto, LibraryListInput, LibraryListResponse } from "@mdcz/shared/serverDtos";
+import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
+import type {
+  CrawlerDataDto,
+  LibraryAvailabilityInput,
+  LibraryAvailabilityResponse,
+  LibraryEntryDto,
+  LibraryListInput,
+  LibraryListResponse,
+} from "@mdcz/shared/serverDtos";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
+const AVAILABILITY_CACHE_TTL_MS = 30_000;
+const AVAILABILITY_CONCURRENCY = 8;
 
 export class DesktopLibraryService {
+  private readonly availabilityCache = new Map<string, { available: boolean; expiresAt: number }>();
+
   constructor(private readonly persistenceService: DesktopPersistenceService) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistenceService.getState();
-    const [roots, records] = await Promise.all([
+    const [roots, page] = await Promise.all([
       state.repositories.mediaRoots.list(),
-      state.repositories.library.listEntries(),
+      state.repositories.library.listEntriesPage({
+        cursor: decodeLibraryPageCursor(input?.cursor),
+        limit: input?.limit ?? 100,
+        query: input?.query,
+        rootId: input?.rootId,
+      }),
     ]);
     const rootMap = new Map(roots.map((root) => [root.id, root]));
-    const query = input?.query?.trim().toLowerCase() ?? "";
-    const rootId = input?.rootId?.trim();
-    const limit = input?.limit ?? 200;
-
-    const filtered = records
-      .filter((entry) => !rootId || entry.rootId === rootId || entry.files.some((file) => file.rootId === rootId))
-      .filter((entry) => {
-        const rootDisplayName = rootMap.get(entry.rootId)?.displayName ?? fallbackRootDisplayName(entry.rootId);
-        if (!query) return true;
-        return [
-          entry.fileName,
-          entry.rootRelativePath,
-          rootDisplayName,
-          entry.title,
-          entry.number,
-          entry.mediaIdentity,
-          ...entry.actors,
-        ]
-          .filter((value): value is string => Boolean(value))
-          .some((value) => value.toLowerCase().includes(query));
-      });
 
     return {
-      entries: await Promise.all(filtered.slice(0, limit).map((entry) => this.toDto(entry, rootMap))),
-      total: filtered.length,
+      entries: await Promise.all(page.entries.map((entry) => this.toDto(entry, rootMap, false))),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor ? encodeLibraryPageCursor(page.nextCursor) : null,
+      total: page.total,
+    };
+  }
+
+  async availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse> {
+    const state = await this.persistenceService.getState();
+    const [roots, records] = await Promise.all([
+      state.repositories.mediaRoots.list(),
+      state.repositories.library.getAvailabilityEntriesByIds(input.ids),
+    ]);
+    const rootMap = new Map(roots.map((root) => [root.id, root]));
+    const paths = new Map<string, { root: MediaRoot; relativePath: string }>();
+    for (const entry of records) {
+      const root = rootMap.get(entry.rootId);
+      if (root) {
+        paths.set(availabilityKey(root, entry.rootRelativePath), { root, relativePath: entry.rootRelativePath });
+      }
+      for (const file of entry.files) {
+        const fileRoot = rootMap.get(file.rootId);
+        if (fileRoot) {
+          paths.set(availabilityKey(fileRoot, file.rootRelativePath), {
+            root: fileRoot,
+            relativePath: file.rootRelativePath,
+          });
+        }
+      }
+    }
+    const availability = new Map(
+      await mapWithConcurrency([...paths.entries()], AVAILABILITY_CONCURRENCY, async ([key, pathInfo]) => [
+        key,
+        await this.checkAvailability(pathInfo.root, pathInfo.relativePath),
+      ]),
+    );
+    const resolveAvailability = (root: MediaRoot | undefined, relativePath: string): boolean | null =>
+      root ? (availability.get(availabilityKey(root, relativePath)) ?? false) : null;
+
+    return {
+      entries: records.map((entry) => ({
+        id: entry.id,
+        available: resolveAvailability(rootMap.get(entry.rootId), entry.rootRelativePath),
+        fileRefs: entry.files.map((file) => ({
+          id: file.id,
+          available: resolveAvailability(rootMap.get(file.rootId), file.rootRelativePath),
+        })),
+      })),
     };
   }
 
@@ -64,13 +107,13 @@ export class DesktopLibraryService {
     const state = await this.persistenceService.getState();
     if (options.deleteMediaFiles) {
       const [roots, entry] = await Promise.all([
-        state.repositories.mediaRoots.list(),
+        state.repositories.mediaRoots.list({ includeDeleted: true }),
         state.repositories.library.getEntryById(normalizedId),
       ]);
       const rootMap = new Map(roots.map((root) => [root.id, root]));
       const filePaths = new Set(
         entry.files
-          .map((file) => resolveAssetDisplayPath(rootMap, file.rootId, file.lastKnownPath ?? file.rootRelativePath))
+          .map((file) => resolveAssetDeletionPath(rootMap, file.rootId, file.rootRelativePath))
           .filter((filePath): filePath is string => typeof filePath === "string" && !isRemotePath(filePath)),
       );
       for (const filePath of filePaths) {
@@ -81,13 +124,18 @@ export class DesktopLibraryService {
     return { success: true };
   }
 
-  private async toDto(entry: LibraryEntryRecord, rootMap: Map<string, MediaRoot>): Promise<LibraryEntryDto> {
+  private async toDto(
+    entry: LibraryEntryRecord,
+    rootMap: Map<string, MediaRoot>,
+    includeAvailability: boolean,
+  ): Promise<LibraryEntryDto> {
     const root = rootMap.get(entry.rootId);
-    const available = root ? await this.checkAvailability(root, entry.rootRelativePath) : null;
+    const available = includeAvailability && root ? await this.checkAvailability(root, entry.rootRelativePath) : null;
     const fileRefs = await Promise.all(
       entry.files.map(async (file) => {
         const fileRoot = rootMap.get(file.rootId);
-        const fileAvailable = fileRoot ? await this.checkAvailability(fileRoot, file.rootRelativePath) : null;
+        const fileAvailable =
+          includeAvailability && fileRoot ? await this.checkAvailability(fileRoot, file.rootRelativePath) : null;
         return {
           id: file.id,
           rootId: file.rootId,
@@ -143,12 +191,20 @@ export class DesktopLibraryService {
     if (!root.enabled) {
       return false;
     }
+    const key = availabilityKey(root, relativePath);
+    const cached = this.availabilityCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.available;
+    }
+    let available = false;
     try {
       const stats = await stat(resolveRootRelativePath(root, relativePath));
-      return stats.isFile();
+      available = stats.isFile();
     } catch {
-      return false;
+      available = false;
     }
+    this.availabilityCache.set(key, { available, expiresAt: Date.now() + AVAILABILITY_CACHE_TTL_MS });
+    return available;
   }
 }
 
@@ -183,6 +239,26 @@ const resolveAssetDisplayPath = (
   const root = rootMap.get(rootId);
   return root ? resolveRootRelativePath(root, trimmed) : trimmed;
 };
+
+const resolveAssetDeletionPath = (
+  rootMap: ReadonlyMap<string, MediaRoot>,
+  rootId: string,
+  relativePath: string,
+): string | null => {
+  const trimmed = relativePath.trim();
+  const root = rootMap.get(rootId);
+  if (!trimmed || !root || isRemotePath(trimmed) || isAbsoluteLocalPath(trimmed)) {
+    return null;
+  }
+  try {
+    return resolveRootRelativePath(root, trimmed);
+  } catch {
+    return null;
+  }
+};
+
+const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>
+  `${root.hostPath}\u0000${relativePath}`;
 
 const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
   if (!value) {

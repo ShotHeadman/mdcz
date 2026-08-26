@@ -1,11 +1,11 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
-import type { RuntimeActorImageService } from "../scrape/actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import type { ImageAlternatives, SourceMap } from "../scrape/aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../scrape/download";
 import type { FileOrganizer, OrganizePlan } from "../scrape/FileOrganizer";
 import type { NfoGenerator } from "../scrape/nfo";
-import { reconcileExistingNfoFiles } from "../scrape/nfo";
+import { nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "../scrape/nfo";
 import { prepareCrawlerDataForMovieOutput } from "../scrape/output/prepareCrawlerDataForMovieOutput";
 import { prepareImageAlternativesForDownload } from "../scrape/output/prepareImageAlternativesForDownload";
 import { pathExists } from "../scrape/utils/filesystem";
@@ -36,7 +36,7 @@ export const updateScrapeProgress = (
 
 export async function prepareOutputCrawlerData(input: {
   actorImageService: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
   config: Configuration;
   crawlerData: CrawlerData | undefined;
   enabled: boolean;
@@ -116,6 +116,7 @@ export const writePreparedNfo = async (input: {
     localState: input.localState,
     buildTags: buildMovieTags,
     nfoNaming: input.config.download.nfoNaming,
+    enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
     sources: input.sources,
     videoMeta: input.videoMeta,

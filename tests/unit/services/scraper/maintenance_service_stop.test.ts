@@ -1,10 +1,10 @@
 import { configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import { createAbortError } from "@main/services/scraper/abort";
-import { MaintenanceFileScraper } from "@main/services/scraper/maintenance/MaintenanceFileScraper";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
+import { createAbortError } from "@main/utils/abort";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
+import { MaintenanceFileScraper } from "@mdcz/runtime/maintenance/MaintenanceFileScraper";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import type { MaintenanceCommitItem, MaintenanceItemResult, MaintenancePreviewItem } from "@mdcz/shared/types";

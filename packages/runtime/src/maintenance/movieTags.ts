@@ -1,6 +1,7 @@
 import type { CrawlerData, FileInfo, NfoLocalState, UncensoredChoice } from "@mdcz/shared/types";
 import { classifyMovie } from "../scrape/utils/movieClassification";
 import { resolveFileInfoSubtitleTag } from "../scrape/utils/subtitles";
+import { normalizeText } from "../shared";
 
 const MANAGED_MOVIE_TAG_PREFIX = "mdcz:";
 const UNCENSORED_CHOICE_TAGS: Record<UncensoredChoice, string> = {
@@ -29,8 +30,6 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     tags: tags.length > 0 ? tags : undefined,
   };
 };
-
-const normalizeText = (value: string | undefined | null): string => value?.trim().replace(/\s+/gu, " ") ?? "";
 
 const buildManagedMovieTag = (key: "content_type", value: string | undefined): string | undefined => {
   const normalized = normalizeText(value);

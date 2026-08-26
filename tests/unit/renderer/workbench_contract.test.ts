@@ -3,8 +3,8 @@ import {
   mergeMediaCandidates,
   resolveMediaCandidateScanPlan,
 } from "@mdcz/shared/mediaCandidate";
-import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
 import type { MediaCandidate } from "@mdcz/shared/types";
+import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import type { ConfigOutput } from "@renderer/client/types";
 import { beforeEach, describe, expect, it } from "vitest";
 

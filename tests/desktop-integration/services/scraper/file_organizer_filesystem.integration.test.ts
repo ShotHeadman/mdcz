@@ -105,6 +105,84 @@ describe("FileOrganizer filesystem organize", () => {
     await expectPathExists(resultPath);
   });
 
+  it("mirrors metadata locally and writes STRM after organizing the video", async () => {
+    const root = await createTempDir();
+    const mediaRoot = join(root, "media");
+    const metadataRoot = join(root, "metadata");
+    const sourcePath = join(mediaRoot, "incoming", "ABC-123.mp4");
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, "video", "utf8");
+
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      paths: {
+        mediaPath: mediaRoot,
+        metadataPath: metadataRoot,
+        successOutputFolder: "organized",
+      },
+      naming: {
+        folderTemplate: "{actor}/{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+    const fileInfo = createFileInfo({ filePath: sourcePath, fileName: "ABC-123" });
+    const plan = await organizer.ensureOutputReady(
+      organizer.plan(fileInfo, createCrawlerData({ actors: ["Actor A"] }), config),
+      sourcePath,
+    );
+
+    expect(plan).toMatchObject({
+      outputDir: join(mediaRoot, "organized", "Actor A", "ABC-123-CEN"),
+      metadataDir: join(metadataRoot, "organized", "Actor A", "ABC-123-CEN"),
+      nfoPath: join(metadataRoot, "organized", "Actor A", "ABC-123-CEN", "ABC-123-CEN.nfo"),
+      strmPath: join(metadataRoot, "organized", "Actor A", "ABC-123-CEN", "ABC-123-CEN.strm"),
+    });
+
+    const organizedPath = await organizer.organizeVideo(fileInfo, plan, config);
+
+    await expect(readFile(plan.strmPath as string, "utf8")).resolves.toBe(resolve(organizedPath));
+    await expectPathExists(organizedPath);
+  });
+
+  it("copies the playable target when separated metadata is generated from a source STRM", async () => {
+    const root = await createTempDir();
+    const mediaRoot = join(root, "media");
+    const metadataRoot = join(root, "metadata");
+    const sourcePath = join(mediaRoot, "incoming", "ABC-123.strm");
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, "https://example.com/ABC-123.m3u8", "utf8");
+
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      paths: { mediaPath: mediaRoot, metadataPath: metadataRoot, successOutputFolder: "organized" },
+      naming: { folderTemplate: "{number}", fileTemplate: "{number}" },
+    });
+    const fileInfo = createFileInfo({ filePath: sourcePath, fileName: "ABC-123", extension: ".strm" });
+    const plan = await organizer.ensureOutputReady(organizer.plan(fileInfo, createCrawlerData(), config), sourcePath);
+
+    await organizer.organizeVideo(fileInfo, plan, config);
+
+    await expect(readFile(plan.strmPath as string, "utf8")).resolves.toBe("https://example.com/ABC-123.m3u8");
+  });
+
+  it("rejects overlapping media and metadata roots before creating output", async () => {
+    const root = await createTempDir();
+    const mediaRoot = join(root, "media");
+    const sourcePath = join(mediaRoot, "ABC-123.mp4");
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      paths: { mediaPath: mediaRoot, metadataPath: join(mediaRoot, "metadata") },
+    });
+
+    expect(() => organizer.plan(createFileInfo({ filePath: sourcePath }), createCrawlerData(), config)).toThrow(
+      "本地元数据目录不能与媒体目录相同或互相包含",
+    );
+  });
+
   it("moves matching subtitle sidecars alongside successful video moves", async () => {
     const root = await createTempDir();
     const sourcePath = join(root, "source.mp4");

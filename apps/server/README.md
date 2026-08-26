@@ -25,6 +25,30 @@ docker run -d \
 
 The image (`linux/amd64` + `linux/arm64`) is published from `apps/server/Dockerfile` on every release. State persists in the `mdcz-data` volume (`/data`).
 
+For bind mounts on Unraid, Synology, and other NAS systems, set the container
+identity to the numeric owner of the host directories:
+
+```bash
+docker run -d \
+  --name mdcz \
+  -p 3838:3838 \
+  -e PUID=1026 \
+  -e PGID=100 \
+  -e UMASK=002 \
+  -v /volume1/docker/mdcz:/data \
+  -v /volume1/media:/media \
+  --restart unless-stopped \
+  ghcr.io/shotheadman/mdcz:latest
+```
+
+`PUID` and `PGID` default to `1000`; `UMASK` defaults to `022`. All three
+values are optional. IDs must be positive decimal numbers and `UMASK` must be
+an octal value from `0000` through `0777`. The image adjusts only the `/data`
+mountpoint itself; it never recursively changes existing data or media
+ownership. Ensure the host media tree is already accessible to the configured
+identity. Docker `--group-add <gid>` can grant an additional host group when
+required.
+
 ## Release Artifact
 
 The GitHub release workflow uploads `mdcz-<version>.tar.gz` next to the Desktop installers. This is a lightweight no-Docker bundle: it does not include `node_modules` or a bundled Node runtime, so the first install stays small and compiles/downloads platform-specific native dependencies on the target machine.

@@ -1,6 +1,5 @@
-import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@mdcz/shared/actorSource";
 import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
-import type { Configuration } from "@mdcz/shared/config";
+import { type Configuration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@mdcz/shared/llm";
 import {
@@ -56,8 +55,9 @@ import {
 } from "../config-form/FieldRenderer";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
-import { shouldRenderFieldInSectionMode, useSettingsSectionMode } from "./SettingsSectionModeContext";
+import { useSettingsSectionMode } from "./SettingsSectionModeContext";
 import { useSettingsInFlightSaves, useSettingsNotifier, useSettingsServices } from "./SettingsServices";
+import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_FIELDS, getNestedValue, isRecord, unflattenConfig } from "./settingsRegistry";
 
 // ── Constants ──
@@ -83,6 +83,30 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "movie", label: "仅 movie.nfo" },
   { value: "filename", label: "仅 文件名.nfo" },
 ];
+const NFO_ENABLED_FIELD_LABELS: Record<NfoField, string> = {
+  num: "番号兼容字段",
+  plot: "简介与摘要",
+  release: "发行信息",
+  runtime: "片长",
+  fileinfo: "视频技术信息",
+  rating: "评分",
+  studio: "片商",
+  director: "导演",
+  publisher: "发行商",
+  series: "系列",
+  genres: "类型",
+  tags: "标签",
+  poster: "海报",
+  thumb: "横版缩略图",
+  fanart: "背景图",
+  sceneImages: "剧照来源",
+  trailer: "预告片",
+  sourceComment: "聚合来源注释",
+};
+const NFO_ENABLED_FIELD_OPTIONS: EnumOption[] = NFO_FIELD_OPTIONS.map((value) => ({
+  value,
+  label: `${value}（${NFO_ENABLED_FIELD_LABELS[value]}）`,
+}));
 const TAG_BADGE_TYPE_OPTIONS = POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({
   value,
   label: POSTER_TAG_BADGE_TYPE_LABELS[value],
@@ -202,8 +226,6 @@ const NAMING_SECTION_FIELD_KEYS = [
   "titleRepair.rules",
 ] as const;
 
-const PERSON_SYNC_SHARED_FIELD_KEYS = ["personSync.personOverviewSources", "personSync.personImageSources"] as const;
-
 export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
   const flat: Record<string, unknown> = {};
   for (const key of NAMING_PREVIEW_FIELD_KEYS) {
@@ -239,19 +261,6 @@ function toSiteOptions(value: unknown): string[] {
     }
   }
   return outputs;
-}
-
-function useHasRenderableFields(fieldNames: readonly string[]): boolean {
-  const search = useOptionalSettingsSearch();
-  const sectionMode = useSettingsSectionMode();
-
-  return fieldNames.some((name) => {
-    if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
-      return false;
-    }
-
-    return search ? search.isFieldVisible(name) : true;
-  });
 }
 
 function shouldMountConditionalSettings(
@@ -299,6 +308,12 @@ export function PathsSection() {
     <>
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
       <PathFieldWrapper
+        name="paths.metadataPath"
+        label="本地元数据目录"
+        description="配置后，NFO、图片和 STRM 会按影片整理后的相对路径保存到此目录；留空则继续与影片保存在一起。"
+        isDirectory
+      />
+      <PathFieldWrapper
         name="paths.actorPhotoFolder"
         label="本地演员头像库目录"
         description="仅当“人物头像来源顺序”启用“本地”时读取，用于本地头像覆盖和媒体服务器头像同步。"
@@ -330,6 +345,22 @@ export function ScrapePacingSection() {
     </>
   );
 }
+export function FilenameFilteringSection() {
+  return (
+    <>
+      <ChipArrayFieldWrapper
+        name="scrape.filenameIgnoreTokens"
+        label="番号识别忽略词"
+        description="番号识别前忽略这些文字；仅影响识别，不修改文件名。支持 Enter、逗号或空格分割添加。"
+      />
+      <ChipArrayFieldWrapper
+        name="scrape.filenameBlacklistTokens"
+        label="自动扫描黑名单词"
+        description="自动扫描时排除包含这些文字的文件；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。"
+      />
+    </>
+  );
+}
 
 export function NetworkConnectionSection() {
   return (
@@ -348,6 +379,7 @@ export function NetworkCookiesSection() {
     <>
       <CookieFieldWrapper name="network.javdbCookie" label="JavDB Cookie" />
       <CookieFieldWrapper name="network.javbusCookie" label="JavBus Cookie" />
+      <CookieFieldWrapper name="network.fantiaCookie" label="Fantia Cookie" />
     </>
   );
 }
@@ -575,6 +607,13 @@ export function NfoSection() {
       {shouldMountConditionalSettings(generateNfo, search) && (
         <>
           <EnumField name="download.nfoNaming" label="NFO 文件命名" options={NFO_NAMING_OPTIONS} />
+          <ChipArrayFieldWrapper
+            name="download.nfoIgnoreFields"
+            label="NFO 忽略字段"
+            description="选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。"
+            options={NFO_ENABLED_FIELD_OPTIONS}
+            showBulkActions
+          />
           <BoolField name="download.keepNfo" label="保留已有 NFO" />
         </>
       )}
@@ -997,7 +1036,7 @@ export function TranslateSection() {
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
       llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
       llmTemperature: Number(form.getValues("translate.llmTemperature") ?? 0),
-      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 10),
+      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 60),
     };
 
     setTesting(true);
@@ -1149,74 +1188,6 @@ export function AggregationPrioritySection({ siteOptions }: { siteOptions: strin
   );
 }
 
-export function PersonSyncSharedSection() {
-  const hasRenderableFields = useHasRenderableFields(PERSON_SYNC_SHARED_FIELD_KEYS);
-
-  if (!hasRenderableFields) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
-      <div className="space-y-1">
-        <h4 className="text-sm font-medium">共享人物资料源</h4>
-        <p className="text-xs text-muted-foreground">
-          同时服务 Jellyfin 和 Emby。人物简介会按顺序选择一个质量达标的主资料源。
-        </p>
-      </div>
-      <ChipArrayFieldWrapper
-        name="personSync.personOverviewSources"
-        label="人物简介来源顺序"
-        options={[...ACTOR_OVERVIEW_SOURCE_OPTIONS]}
-      />
-      <ChipArrayFieldWrapper
-        name="personSync.personImageSources"
-        label="人物头像来源顺序"
-        options={[...ACTOR_IMAGE_SOURCE_OPTIONS]}
-      />
-    </div>
-  );
-}
-
-export function JellyfinSection() {
-  return (
-    <>
-      <UrlField name="jellyfin.url" label="Jellyfin 服务器地址" />
-      <CookieFieldWrapper name="jellyfin.apiKey" label="Jellyfin API Key" />
-      <TextField
-        name="jellyfin.userId"
-        label="Jellyfin 用户 ID"
-        description="必须是 UUID。用于人物列表读取，留空则按服务端默认处理。"
-      />
-      <BoolField
-        name="jellyfin.refreshPersonAfterSync"
-        label="同步后刷新人物"
-        description="同步简介或头像后，额外请求 Jellyfin 刷新人物元数据与图片。"
-      />
-      <BoolField
-        name="jellyfin.lockOverviewAfterSync"
-        label="同步后锁定人物简介"
-        description="写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。"
-      />
-    </>
-  );
-}
-
-export function EmbySection() {
-  return (
-    <>
-      <UrlField name="emby.url" label="Emby 服务器地址" />
-      <CookieFieldWrapper name="emby.apiKey" label="Emby API Key" />
-      <TextField name="emby.userId" label="Emby 用户 ID" description="用于人物列表读取，留空则按服务端默认处理。" />
-      <BoolField
-        name="emby.refreshPersonAfterSync"
-        label="同步后刷新人物"
-        description="同步简介或头像后，额外请求 Emby 刷新人物元数据与图片。"
-      />
-    </>
-  );
-}
-
 export function ShortcutsSection() {
   return (
     <>
@@ -1302,3 +1273,5 @@ export function BehaviorSection() {
     </>
   );
 }
+
+export { EmbySection, JellyfinSection, PersonSyncSharedSection } from "./sections/MediaServerSections";

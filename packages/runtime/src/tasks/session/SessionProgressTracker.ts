@@ -1,11 +1,5 @@
 import type { ScrapeResult, ScraperStatus } from "@mdcz/shared/types";
-import {
-  createIdleScraperStatus,
-  type PersistedSessionState,
-  type ScrapeSuccessItem,
-  SessionFileState,
-  type SessionState,
-} from "./types";
+import { createIdleScraperStatus, type ScrapeSuccessItem, SessionFileState, type SessionState } from "./types";
 
 interface ApplyResultOutcome {
   failureMembershipChanged: boolean;
@@ -133,6 +127,14 @@ export class SessionProgressTracker {
     };
   }
 
+  applyStopped(sourcePath: string, isRetry: boolean): void {
+    const previousState = this.fileStates.get(sourcePath);
+    if (!isRetry) this.status.completedFiles += 1;
+    if (isFailedState(previousState)) this.status.failedCount = Math.max(0, this.status.failedCount - 1);
+    this.status.skippedCount += 1;
+    this.fileStates.delete(sourcePath);
+  }
+
   getFailedFiles(): string[] {
     return this.collectFiles(isFailedState);
   }
@@ -158,15 +160,6 @@ export class SessionProgressTracker {
           }
         : undefined,
     }));
-  }
-
-  buildSnapshot(taskId: string): PersistedSessionState {
-    return {
-      taskId,
-      status: this.getStatus(),
-      failedFiles: this.getFailedFiles(),
-      pendingFiles: this.getPendingFiles(),
-    };
   }
 
   private collectFiles(predicate: (state: SessionFileState | undefined) => boolean): string[] {

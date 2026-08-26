@@ -10,7 +10,7 @@ import type {
   PathDiff,
 } from "@mdcz/shared/types";
 import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
-import type { RuntimeActorImageService } from "../scrape/actorOutput";
+import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import { buildCommittedCrawlerData, type MaintenanceFieldSelectionSide } from "./commit";
 import { LocalScanService } from "./LocalScanService";
 import { MaintenanceFileScraper, type MaintenanceFileScraperDependencies } from "./MaintenanceFileScraper";
@@ -23,7 +23,7 @@ export interface MaintenanceRuntimeConfigProvider {
 
 export interface MaintenanceRuntimeDependencies {
   actorImageService: RuntimeActorImageService;
-  actorSourceProvider?: unknown;
+  actorSourceProvider?: RuntimeActorSourceProvider;
   aggregationService: AggregationService;
   config: MaintenanceRuntimeConfigProvider;
   downloadManager: DownloadManager;

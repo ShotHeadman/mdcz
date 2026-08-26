@@ -124,22 +124,25 @@ export function useDetailViewController(item?: DetailViewItem | null) {
     setThumbSrc(thumbRenderableCandidates[thumbCandidateIndex] ?? "");
   }, [thumbCandidateIndex, thumbRenderableCandidates]);
 
-  const openNfoEditor = useCallback(async (path: string) => {
-    try {
-      setNfoLoading(true);
-      const response = await readNfo(path);
-      const editableData = normalizeEditableNfoData(response.data.crawlerData);
-      setNfoPath(response.data.path);
-      setNfoData(editableData);
-      setNfoInitialSnapshot(serializeEditableNfoData(editableData));
-      setNfoValidationErrors({});
-      setNfoOpen(true);
-    } catch (error) {
-      toast.error(`加载 NFO 失败: ${toErrorMessage(error)}`);
-    } finally {
-      setNfoLoading(false);
-    }
-  }, []);
+  const openNfoEditor = useCallback(
+    async (path: string) => {
+      try {
+        setNfoLoading(true);
+        const response = await readNfo(path, item?.path);
+        const editableData = normalizeEditableNfoData(response.data.crawlerData);
+        setNfoPath(response.data.path);
+        setNfoData(editableData);
+        setNfoInitialSnapshot(serializeEditableNfoData(editableData));
+        setNfoValidationErrors({});
+        setNfoOpen(true);
+      } catch (error) {
+        toast.error(`加载 NFO 失败: ${toErrorMessage(error)}`);
+      } finally {
+        setNfoLoading(false);
+      }
+    },
+    [item?.path],
+  );
 
   const handleSaveNfo = useCallback(async () => {
     const validation = validateEditableNfoData(nfoData);

@@ -117,14 +117,63 @@ const checkJavbusCookie = async (
   }
 };
 
+const checkFantiaCookie = async (
+  cookie: string,
+  networkClient: CookieCheckNetworkClient,
+): Promise<CookieCheckResult> => {
+  if (!cookie) {
+    return { site: "Fantia", valid: false, message: "未配置 Cookie", status: "not_configured" };
+  }
+
+  try {
+    const html = await networkClient.getText("https://fantia.jp/mypage/dashboard", {
+      headers: { cookie },
+    });
+    if (html.includes("外部サービスでログイン") || /type=["']password["']/iu.test(html)) {
+      return { site: "Fantia", valid: false, message: "Cookie 无效或已过期", status: "invalid_or_expired" };
+    }
+
+    if (
+      html.includes("あなたは18歳以上ですか？") ||
+      html.includes("成人向けの画像、動画、テキストなどが表示される可能性があります")
+    ) {
+      return {
+        site: "Fantia",
+        valid: false,
+        message: "Fantia 页面需要完成年龄验证。请在浏览器完成验证后复制 Cookie。",
+        status: "verification_required",
+      };
+    }
+
+    if (/href=["']\/mypage\/dashboard["']/iu.test(html)) {
+      return { site: "Fantia", valid: true, message: "Cookie 有效", status: "ready_with_cookie" };
+    }
+
+    return {
+      site: "Fantia",
+      valid: false,
+      message: "Fantia 页面未返回可识别的登录状态，请稍后重试。",
+      status: "unexpected_page",
+    };
+  } catch (error) {
+    return {
+      site: "Fantia",
+      valid: false,
+      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
+      status: "request_failed",
+    };
+  }
+};
+
 export const checkConfiguredSiteCookies = async (
   configuration: Configuration,
   networkClient: CookieCheckNetworkClient,
 ): Promise<{ results: CookieCheckResult[] }> => {
-  const [javdb, javbus] = await Promise.all([
+  const [javdb, javbus, fantia] = await Promise.all([
     checkJavdbCookie(configuration.network.javdbCookie.trim(), networkClient),
     checkJavbusCookie(configuration.network.javbusCookie.trim(), networkClient),
+    checkFantiaCookie(configuration.network.fantiaCookie.trim(), networkClient),
   ]);
 
-  return { results: [javdb, javbus] };
+  return { results: [javdb, javbus, fantia] };
 };

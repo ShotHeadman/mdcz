@@ -1,5 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { useSettingsSavingStore } from "@mdcz/shared/stores/settingsSavingStore";
 import { Button, Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, Form } from "@mdcz/ui";
 import { ConfigFieldLayoutProvider } from "@mdcz/views/config-form";
 import {
@@ -8,13 +7,13 @@ import {
   JellyfinSection,
   mergeConfigWithFlatPayload,
   PersonSyncSharedSection,
-  type SettingsCrawlerSiteInfo,
   SettingsEditorAutosaveProvider,
   type SettingsNotifier,
   type SettingsServices,
   SettingsServicesProvider,
   valuesEqual,
 } from "@mdcz/views/settings";
+import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import type { FieldValues } from "react-hook-form";
@@ -60,10 +59,8 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
         getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
         incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
         listCrawlerSites: async () => {
-          const result = (await ipc.crawler.listSites()) as {
-            sites?: SettingsCrawlerSiteInfo[];
-          };
-          return { sites: result.sites ?? [] };
+          const result = await ipc.crawler.listSites();
+          return { sites: result.sites };
         },
         openWatermarkDirectory: async () => {
           await ipc.app.openWatermarkDirectory();

@@ -17,6 +17,9 @@ import {
 } from "@mdcz/shared/configCodec";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { NamingEngine } from "../scrape/organize/NamingEngine";
+import { profileFileName, RuntimeProfileWatcher } from "./profileWatcher";
+
+export { RuntimeProfileWatcher } from "./profileWatcher";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
 export const RUNTIME_DEFAULT_PROFILE_NAME = "default";
@@ -201,13 +204,38 @@ export interface RuntimeConfigServiceOptions {
   onBeforeLoad?: () => Promise<void> | void;
   onAfterLoad?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
   onBeforeSave?: (configuration: Configuration) => Promise<void> | void;
+  onSaveError?: (error: unknown) => Promise<void> | void;
   onAfterSave?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
   mapValidationError?: (error: RuntimeConfigValidationError) => Error;
+}
+
+export type RuntimeConfigChangeSource = "load" | "watch" | "save" | "switch";
+
+export interface RuntimeConfigChangeEvent {
+  profileName: string;
+  configPath: string;
+  configuration: Configuration;
+  source: RuntimeConfigChangeSource;
+}
+
+export interface RuntimeConfigDiagnosticEvent {
+  profileName: string;
+  configPath: string;
+  kind: "missing" | "invalid" | "read-error" | "watch-error";
+  message: string;
+}
+
+export interface RuntimeConfigWatchOptions {
+  debounceMs?: number;
 }
 
 export class RuntimeConfigService {
   private configuration: Configuration | null = null;
   private store: RuntimeConfigProfileStore;
+  private watcher: RuntimeProfileWatcher | null = null;
+  private watcherTransition: Promise<void> = Promise.resolve();
+  private readonly changeListeners = new Set<(event: RuntimeConfigChangeEvent) => void>();
+  private readonly diagnosticListeners = new Set<(event: RuntimeConfigDiagnosticEvent) => void>();
 
   constructor(private readonly options: RuntimeConfigServiceOptions) {
     this.store = options.store;
@@ -221,8 +249,64 @@ export class RuntimeConfigService {
     return this.store.configPath;
   }
 
+  get configDirectory(): string {
+    return this.store.configDirectory;
+  }
+
   replaceStore(store: RuntimeConfigProfileStore): void {
+    const previousDirectory = this.store.configDirectory;
     this.store = store;
+    const watcher = this.watcher;
+    if (!watcher || previousDirectory === store.configDirectory) return;
+
+    this.watcherTransition = this.watcherTransition
+      .then(async () => {
+        if (this.watcher === watcher) {
+          await watcher.rebind(store.configDirectory);
+        }
+      })
+      .catch((error) => this.emitDiagnostic("watch-error", error));
+  }
+
+  onChange(listener: (event: RuntimeConfigChangeEvent) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  onDiagnostic(listener: (event: RuntimeConfigDiagnosticEvent) => void): () => void {
+    this.diagnosticListeners.add(listener);
+    return () => this.diagnosticListeners.delete(listener);
+  }
+
+  async startWatching(options: RuntimeConfigWatchOptions = {}): Promise<void> {
+    await this.stopWatching();
+    this.watcher = new RuntimeProfileWatcher({
+      directory: this.store.configDirectory,
+      debounceMs: options.debounceMs,
+      shouldReload: (fileName) => this.isWatchedFile(fileName),
+      reload: async (fileName) => {
+        try {
+          const profileSwitch = fileName === RUNTIME_ACTIVE_PROFILE_META_FILE;
+          if (profileSwitch) {
+            await this.store.reloadActiveProfileName();
+          }
+          const loaded = await this.store.reloadActiveProfile();
+          this.configuration = await this.applyAfterLoad(loaded);
+          this.emitChange(profileSwitch ? "switch" : "watch");
+        } catch (error) {
+          this.emitDiagnostic(this.classifyReloadError(error), error);
+        }
+      },
+      onDiagnostic: (kind, error) => this.emitDiagnostic(kind, error),
+    });
+    await this.watcher.start();
+  }
+
+  async stopWatching(): Promise<void> {
+    const watcher = this.watcher;
+    this.watcher = null;
+    await this.watcherTransition;
+    await watcher?.stop();
   }
 
   async load(): Promise<Configuration> {
@@ -231,6 +315,7 @@ export class RuntimeConfigService {
       const loaded = await this.store.load();
       return await this.applyAfterLoad(loaded);
     });
+    this.emitChange("load");
     return this.configuration;
   }
 
@@ -252,10 +337,20 @@ export class RuntimeConfigService {
   async saveFull(configuration: Configuration): Promise<Configuration> {
     this.configuration = await this.runWithValidation(async () => {
       const parsed = parseRuntimeConfiguration(configuration);
-      await this.options.onBeforeSave?.(parsed);
-      const saved = await this.store.save(parsed);
-      return await this.applyAfterSave(saved);
+      let beforeSaveCompleted = false;
+      try {
+        await this.options.onBeforeSave?.(parsed);
+        beforeSaveCompleted = true;
+        const saved = await this.store.save(parsed);
+        return await this.applyAfterSave(saved);
+      } catch (error) {
+        if (beforeSaveCompleted) {
+          await this.options.onSaveError?.(error);
+        }
+        throw error;
+      }
     });
+    this.emitChange("save");
     return this.configuration;
   }
 
@@ -314,6 +409,7 @@ export class RuntimeConfigService {
       const switched = await this.store.switchProfile(name);
       return await this.applyAfterLoad(switched);
     });
+    this.emitChange("switch");
     return this.configuration;
   }
 
@@ -379,6 +475,45 @@ export class RuntimeConfigService {
       throw error;
     }
   }
+
+  private isWatchedFile(fileName: string | null): boolean {
+    if (!fileName) return true;
+    return fileName === profileFileName(this.store.configPath) || fileName === RUNTIME_ACTIVE_PROFILE_META_FILE;
+  }
+
+  private emitChange(source: RuntimeConfigChangeSource): void {
+    if (!this.configuration) return;
+    const event: RuntimeConfigChangeEvent = {
+      profileName: this.store.activeProfile,
+      configPath: this.store.configPath,
+      configuration: this.configuration,
+      source,
+    };
+    for (const listener of this.changeListeners) listener(event);
+  }
+
+  private emitDiagnostic(kind: RuntimeConfigDiagnosticEvent["kind"], error: unknown): void {
+    const rawMessage =
+      error instanceof RuntimeConfigValidationError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    const message = rawMessage.replaceAll(this.store.configDirectory, "<config-dir>");
+    const event: RuntimeConfigDiagnosticEvent = {
+      profileName: this.store.activeProfile,
+      configPath: profileFileName(this.store.configPath),
+      kind,
+      message,
+    };
+    for (const listener of this.diagnosticListeners) listener(event);
+  }
+
+  private classifyReloadError(error: unknown): RuntimeConfigDiagnosticEvent["kind"] {
+    if (error instanceof RuntimeConfigValidationError) return "invalid";
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return "missing";
+    return "read-error";
+  }
 }
 
 export class RuntimeConfigProfileStore {
@@ -398,6 +533,19 @@ export class RuntimeConfigProfileStore {
 
   get configPath(): string {
     return this.getProfilePath(this.activeProfileName);
+  }
+
+  get configDirectory(): string {
+    return this.options.configDir;
+  }
+
+  async reloadActiveProfile(): Promise<Configuration> {
+    return await this.readConfigurationFile(this.getExistingProfilePath(this.activeProfileName));
+  }
+
+  async reloadActiveProfileName(): Promise<string> {
+    await this.loadActiveProfileName();
+    return this.activeProfileName;
   }
 
   async load(): Promise<Configuration> {

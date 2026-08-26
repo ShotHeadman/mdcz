@@ -1,9 +1,10 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { RendererShortcutAction } from "@mdcz/shared/ipcEvents";
-import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
-import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
-import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
+import { activateRetryScrapeTask } from "@mdcz/views/adapters";
+import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
+import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -66,13 +67,6 @@ export function ShortcutHandler() {
         const groupedVideoPaths = actionContext?.videoPaths ?? [];
         const selectedPath = selectedItem?.fileInfo.filePath;
         const selectedNumber = selectedItem?.fileInfo.number;
-        const resetForNewTask = () => {
-          scrapeState.clearResults();
-          uiState.setSelectedResultId(null);
-          scrapeState.updateProgress(0, 0);
-          scrapeState.setScraping(true);
-          scrapeState.setScrapeStatus("running");
-        };
         const handleRetrySelectedScrape = async () => {
           if (!selectedPath) {
             toast.info("请先选择一个结果项");
@@ -86,7 +80,7 @@ export function ShortcutHandler() {
             });
 
             if (response.data.strategy === "new-task") {
-              resetForNewTask();
+              activateRetryScrapeTask(groupedVideoPaths);
             }
 
             toast.success(response.data.message);

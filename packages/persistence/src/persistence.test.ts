@@ -1,11 +1,16 @@
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createMediaRoot } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
+import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 
-import type { PersistenceDatabase } from "./database";
+import { createPersistenceDatabase, type PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { LibraryRepository } from "./libraryRepository";
 import { MaintenanceRepository } from "./maintenanceRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
+import { defaultMigrationsFolder, runMigrations } from "./migrate";
+import { TaskRepository } from "./taskRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 let database: PersistenceDatabase | undefined;
@@ -15,7 +20,7 @@ afterEach(() => {
   database = undefined;
 });
 
-describe("MediaRootRepository", () => {
+describe("Persistence migrations", () => {
   it("migrates isolated test databases with the package migration facade", () => {
     database = createTestPersistenceDatabase();
 
@@ -35,8 +40,92 @@ describe("MediaRootRepository", () => {
     expect(tables).toContain("library_item_files");
     expect(tables).toContain("library_item_assets");
     expect(tables).toContain("__drizzle_migrations");
+
+    const indexes = database.sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
+      .all()
+      .map((row) => (row as { name: string }).name);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        "library_item_assets_item_idx",
+        "library_item_files_item_idx",
+        "library_item_files_root_path_idx",
+        "library_items_source_task_idx",
+        "media_roots_state_idx",
+        "scan_results_task_root_path_idx",
+        "scrape_results_task_path_idx",
+        "task_events_task_created_at_idx",
+      ]),
+    );
   });
 
+  it("configures SQLite for bounded WAL concurrency", () => {
+    database = createTestPersistenceDatabase();
+
+    expect(database.sqlite.pragma("journal_mode", { simple: true })).toBe("memory");
+    expect(database.sqlite.pragma("busy_timeout", { simple: true })).toBe(5000);
+    expect(database.sqlite.pragma("synchronous", { simple: true })).toBe(1);
+  });
+
+  it("upgrades the v0.11 schema through the consolidated migration", async () => {
+    const migrations = await createTempDirectory("persistence-v011-migrations");
+    try {
+      await mkdir(join(migrations.path, "meta"), { recursive: true });
+      await cp(join(defaultMigrationsFolder, "0000_initial.sql"), join(migrations.path, "0000_initial.sql"));
+      const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
+        entries: Array<{ idx: number }>;
+      };
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx === 0) }),
+      );
+
+      database = createPersistenceDatabase({ path: ":memory:" });
+      runMigrations(database, { migrationsFolder: migrations.path });
+      const insertScanResult = database.sqlite.prepare(
+        "INSERT INTO scan_results (task_id, root_id, relative_path, size, modified_at) VALUES (?, ?, ?, ?, ?)",
+      );
+      insertScanResult.run("task-1", "root-1", "ABC-001.mp4", 10, 100);
+      insertScanResult.run("task-1", "root-1", "ABC-001.mp4", 20, 200);
+      const insertRoot = database.sqlite.prepare(
+        "INSERT INTO media_roots (id, display_name, host_path, root_type, enabled, deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      insertRoot.run("123e4567-e89b-12d3-a456-426614174000", "Legacy", "/legacy", "mounted-filesystem", 1, 0, 1, 1);
+      insertRoot.run("path-deterministic", "Current", "/current", "mounted-filesystem", 1, 0, 1, 1);
+      insertRoot.run("mdcz-metadata-output", "Metadata", "/metadata", "mounted-filesystem", 1, 0, 1, 1);
+      database.sqlite
+        .prepare(
+          "INSERT INTO task_records (id, kind, root_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("task-1", "scan", "root-1", "queued", 1, 1);
+
+      runMigrations(database);
+
+      expect(
+        database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
+      ).toEqual([{ task_id: "task-1", root_id: "root-1", relative_path: "ABC-001.mp4", size: 20, modified_at: 200 }]);
+      expect(() => insertScanResult.run("task-1", "root-1", "ABC-001.mp4", 30, null)).toThrow(
+        /UNIQUE constraint failed/u,
+      );
+      expect(database.sqlite.prepare("SELECT execution_version FROM task_records WHERE id = ?").get("task-1")).toEqual({
+        execution_version: 0,
+      });
+      expect(database.sqlite.prepare("SELECT id, enabled, deleted FROM media_roots ORDER BY id").all()).toEqual([
+        { id: "123e4567-e89b-12d3-a456-426614174000", enabled: 0, deleted: 1 },
+        { id: "mdcz-metadata-output", enabled: 1, deleted: 0 },
+        { id: "path-deterministic", enabled: 1, deleted: 0 },
+      ]);
+      const scrapeResultColumns = database.sqlite.prepare("PRAGMA table_info(scrape_results)").all() as Array<{
+        name: string;
+      }>;
+      expect(scrapeResultColumns.some((column) => column.name === "nfo_root_id")).toBe(true);
+    } finally {
+      await migrations.cleanup();
+    }
+  });
+});
+
+describe("MediaRootRepository", () => {
   it("persists and reads media roots through the facade", async () => {
     database = createTestPersistenceDatabase();
     const repository = new MediaRootRepository(database);
@@ -53,6 +142,51 @@ describe("MediaRootRepository", () => {
 
     await expect(repository.get("root-1")).resolves.toEqual(persistedRoot);
     await expect(repository.list()).resolves.toEqual([persistedRoot]);
+  });
+
+  it("always disables a soft-deleted media root", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new MediaRootRepository(database);
+    const root = createMediaRoot({
+      id: "root-deleted",
+      displayName: "Deleted",
+      hostPath: "/deleted",
+      enabled: true,
+      now: new Date("2026-08-22T00:00:00.000Z"),
+    });
+
+    await expect(repository.upsert({ ...root, deleted: true })).resolves.toMatchObject({
+      enabled: false,
+      deleted: true,
+    });
+    await expect(repository.get(root.id, { includeDeleted: true })).resolves.toMatchObject({
+      enabled: false,
+      deleted: true,
+    });
+  });
+
+  it("switches the enabled media root atomically while preserving reserved roots", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new MediaRootRepository(database);
+    const now = new Date("2026-08-22T00:00:00.000Z");
+    const metadataRoot = createMediaRoot({
+      id: "mdcz-metadata-output",
+      displayName: "Metadata",
+      hostPath: "/metadata",
+      now,
+    });
+    const firstRoot = createMediaRoot({ id: "path-first", displayName: "First", hostPath: "/first", now });
+    const secondRoot = createMediaRoot({ id: "path-second", displayName: "Second", hostPath: "/second", now });
+    await repository.upsert(metadataRoot);
+
+    await Promise.all([
+      repository.activateExclusive(firstRoot, { exemptRootIds: [metadataRoot.id] }),
+      repository.activateExclusive(secondRoot, { exemptRootIds: [metadataRoot.id] }),
+    ]);
+
+    const roots = await repository.list();
+    expect(roots.filter((root) => root.id !== metadataRoot.id && root.enabled)).toHaveLength(1);
+    expect(roots.find((root) => root.id === metadataRoot.id)?.enabled).toBe(true);
   });
 
   it("uses stable not-found errors", async () => {
@@ -115,6 +249,7 @@ describe("LibraryRepository", () => {
       relativePath: "ABC-123.mp4",
       status: "success",
       crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123" }),
+      nfoRootId: "metadata-root",
       nfoRelativePath: "ABC-123.nfo",
       outputRelativePath: "ABC-123.mp4",
       manualUrl: "https://example.invalid/detail",
@@ -174,6 +309,119 @@ describe("LibraryRepository", () => {
     ]);
   });
 
+  it("uses the root-path index for library entry lookup", async () => {
+    database = createTestPersistenceDatabase();
+    const plan = database.sqlite
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT * FROM library_item_files WHERE root_id = ? AND root_relative_path = ? LIMIT 1",
+      )
+      .all("root-1", "ABC-123/ABC-123.mp4") as Array<{ detail: string }>;
+
+    expect(plan.some((row) => row.detail.includes("library_item_files_root_path_idx"))).toBe(true);
+  });
+
+  it("paginates library entries with a stable created-at and id cursor", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    const createdAt = new Date("2026-05-01T00:00:00.000Z");
+    await repository.upsertEntry({
+      id: "entry-a",
+      rootId: "root-1",
+      rootRelativePath: "A/ABC-001.mp4",
+      title: "Alpha",
+      createdAt,
+    });
+    await repository.upsertEntry({
+      id: "entry-b",
+      rootId: "root-1",
+      rootRelativePath: "B/ABC-002.mp4",
+      title: "Beta",
+      createdAt,
+    });
+    await repository.upsertEntry({
+      id: "entry-c",
+      rootId: "root-2",
+      rootRelativePath: "C/DEF-003.mp4",
+      title: "Gamma",
+      createdAt: new Date("2026-05-02T00:00:00.000Z"),
+    });
+
+    const first = await repository.listEntriesPage({ limit: 2 });
+    const second = await repository.listEntriesPage({ cursor: first.nextCursor ?? undefined, limit: 2 });
+
+    expect(first.entries.map((entry) => entry.id)).toEqual(["entry-c", "entry-b"]);
+    expect(first).toMatchObject({ hasMore: true, total: 3 });
+    expect(second.entries.map((entry) => entry.id)).toEqual(["entry-a"]);
+    expect(second).toMatchObject({ hasMore: false, nextCursor: null, total: 3 });
+  });
+
+  it("filters paged library entries by file/root and metadata in SQL", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "movies/ABC-123.mp4",
+      actors: ["Actor One"],
+      title: "First title",
+    });
+    await repository.upsertEntry({
+      id: "entry-2",
+      rootId: "root-2",
+      rootRelativePath: "other/DEF-456.mp4",
+      title: "Second title",
+    });
+
+    await expect(repository.listEntriesPage({ limit: 10, query: "actor one" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-1" })],
+      total: 1,
+    });
+    await expect(repository.listEntriesPage({ limit: 10, query: "abc-123" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-1" })],
+      total: 1,
+    });
+    await expect(repository.listEntriesPage({ limit: 10, rootId: "root-2" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "entry-2" })],
+      total: 1,
+    });
+  });
+
+  it("filters deleted roots before pagination and treats LIKE metacharacters literally", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    const roots = new MediaRootRepository(database);
+    const now = new Date("2026-05-01T00:00:00.000Z");
+    await roots.upsert(createMediaRoot({ id: "active-root", displayName: "Active", hostPath: "/active", now }));
+    await roots.upsert({
+      ...createMediaRoot({ id: "deleted-root", displayName: "Deleted", hostPath: "/deleted", now }),
+      deleted: true,
+    });
+    await repository.upsertEntry({
+      id: "active-entry",
+      rootId: "active-root",
+      rootRelativePath: "100%-title.mp4",
+      title: "100% title",
+      createdAt: now,
+    });
+    await repository.upsertEntry({
+      id: "deleted-entry",
+      rootId: "deleted-root",
+      rootRelativePath: "deleted.mp4",
+      title: "Deleted title",
+      createdAt: new Date(now.getTime() - 1),
+    });
+
+    await expect(repository.listEntriesPage({ limit: 1 })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "active-entry" })],
+      total: 1,
+      hasMore: false,
+    });
+    await expect(repository.listEntriesPage({ limit: 10, query: "%" })).resolves.toMatchObject({
+      entries: [expect.objectContaining({ id: "active-entry" })],
+      total: 1,
+    });
+  });
+
   it("prefers poster assets for library row artwork", async () => {
     database = createTestPersistenceDatabase();
     const repository = new LibraryRepository(database);
@@ -199,23 +447,60 @@ describe("LibraryRepository", () => {
     ]);
   });
 
+  it("relinks the primary library file without retaining the old path", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "old/ABC-123.mp4",
+      size: 10,
+    });
+
+    await repository.relinkEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "new/ABC-123-流出.mp4",
+      size: 11,
+    });
+
+    await expect(repository.getEntryById("entry-1")).resolves.toMatchObject({
+      rootRelativePath: "new/ABC-123-流出.mp4",
+      size: 11,
+      files: [expect.objectContaining({ rootRelativePath: "new/ABC-123-流出.mp4" })],
+    });
+    await expect(repository.getEntry("root-1", "old/ABC-123.mp4")).rejects.toThrow("Library entry not found");
+  });
+
   it("hides entries from recent acquisitions without deleting the library item", async () => {
     database = createTestPersistenceDatabase();
     const repository = new LibraryRepository(database);
+    const createdAt = new Date("2026-05-01T00:00:00.000Z");
+    const hiddenAt = new Date("2026-05-12T00:00:00.000Z");
 
     await repository.upsertEntry({
       id: "entry-1",
       rootId: "root-1",
       rootRelativePath: "ABC-123/ABC-123.mp4",
       title: "Title",
+      createdAt,
     });
 
-    await repository.hideFromRecent("entry-1", new Date("2026-05-12T00:00:00.000Z"));
+    await repository.hideFromRecent("entry-1", hiddenAt);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      title: "Refreshed title",
+      createdAt: new Date("2026-05-20T00:00:00.000Z"),
+    });
 
     await expect(repository.getEntryById("entry-1")).resolves.toEqual(
       expect.objectContaining({
         id: "entry-1",
-        hiddenFromRecentAt: new Date("2026-05-12T00:00:00.000Z"),
+        title: "Refreshed title",
+        createdAt,
+        hiddenFromRecentAt: hiddenAt,
       }),
     );
     await expect(repository.listEntries()).resolves.toHaveLength(1);
@@ -246,5 +531,148 @@ describe("LibraryRepository", () => {
         rootRelativePath: "DEF-456/DEF-456.mp4",
       }),
     ]);
+  });
+});
+
+describe("TaskRepository", () => {
+  it("claims a queued task atomically and assigns a new execution version", async () => {
+    database = createTestPersistenceDatabase();
+    const first = new TaskRepository(database);
+    const second = new TaskRepository(database);
+    await first.createTask({ id: "task-1", kind: "scan", rootId: "root-1" });
+
+    const claims = await Promise.all([first.claimNext("scan"), second.claimNext("scan")]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.find(Boolean)).toMatchObject({ id: "task-1", status: "running", executionVersion: 1 });
+    await expect(first.claimNext("scan")).resolves.toBeNull();
+  });
+
+  it("uses status and execution version as the conditional update guard", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "scrape", rootId: "root-1" });
+    const claimed = await repository.claimNext("scrape");
+    expect(claimed).not.toBeNull();
+
+    await expect(
+      repository.patch("task-1", { status: "completed" }, { status: "running", executionVersion: 0 }),
+    ).resolves.toBeNull();
+    await expect(
+      repository.patch("task-1", { status: "completed" }, { status: "running", executionVersion: 1 }),
+    ).resolves.toMatchObject({ status: "completed", executionVersion: 1 });
+  });
+
+  it("invalidates an old worker execution version while requeueing interrupted work", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "maintenance", rootId: "root-1" });
+    await repository.claimNext("maintenance");
+
+    await repository.requeueRunning("maintenance");
+
+    await expect(repository.get("task-1")).resolves.toMatchObject({ status: "queued", executionVersion: 2 });
+    await expect(
+      repository.patch("task-1", { status: "completed" }, { status: "running", executionVersion: 1 }),
+    ).resolves.toBeNull();
+  });
+
+  it("commits scan results and terminal summary only for the current execution version", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "scan", rootId: "root-1" });
+    await repository.claimNext("scan");
+    await repository.requeueRunning("scan");
+
+    await expect(
+      repository.completeScanTask({
+        taskId: "task-1",
+        rootId: "root-1",
+        executionVersion: 1,
+        directoryCount: 1,
+        results: [{ relativePath: "stale.mp4", size: 1, modifiedAt: null }],
+      }),
+    ).resolves.toBeNull();
+    await expect(repository.listScanResults("task-1")).resolves.toEqual([]);
+    await expect(repository.get("task-1")).resolves.toMatchObject({
+      status: "queued",
+      executionVersion: 2,
+      videoCount: 0,
+    });
+  });
+
+  it("rejects stale scrape item and library writes as one atomic operation", async () => {
+    database = createTestPersistenceDatabase();
+    const tasks = new TaskRepository(database);
+    const library = new LibraryRepository(database);
+    await tasks.createTask({ id: "task-1", kind: "scrape", rootId: "root-1" });
+    await library.upsertScrapeResult({
+      id: "result-1",
+      taskId: "task-1",
+      rootId: "root-1",
+      relativePath: "ABC-001.mp4",
+      status: "pending",
+    });
+    await tasks.claimNext("scrape");
+    await tasks.requeueRunning("scrape");
+
+    await expect(
+      library.commitOwnedScrapeSuccess({
+        execution: { taskId: "task-1", executionVersion: 1 },
+        result: {
+          id: "result-1",
+          taskId: "task-1",
+          rootId: "root-1",
+          relativePath: "ABC-001.mp4",
+          status: "success",
+          outputRelativePath: "ABC-001/ABC-001.mp4",
+        },
+        entry: {
+          rootId: "root-1",
+          rootRelativePath: "ABC-001/ABC-001.mp4",
+          sourceTaskId: "task-1",
+        },
+      }),
+    ).resolves.toBeNull();
+    await expect(library.getScrapeResult("result-1")).resolves.toMatchObject({ status: "pending" });
+    await expect(library.listEntries()).resolves.toEqual([]);
+  });
+
+  it("commits scrape output and terminal summary only for the current execution version", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    await repository.createTask({ id: "task-1", kind: "scrape", rootId: "root-1" });
+    await repository.claimNext("scrape");
+    await repository.requeueRunning("scrape");
+
+    await expect(
+      repository.completeScrapeTask({
+        taskId: "task-1",
+        executionVersion: 1,
+        rootId: "root-1",
+        fileCount: 1,
+        failedCount: 0,
+        totalBytes: 10,
+      }),
+    ).resolves.toBeNull();
+    await expect(repository.get("task-1")).resolves.toMatchObject({ status: "queued", videoCount: 0 });
+    await expect(new LibraryRepository(database).latestScrapeOutput()).resolves.toBeNull();
+  });
+
+  it("rejects duplicate scan paths within one task and root", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new TaskRepository(database);
+    const duplicate = { relativePath: "ABC-123.mp4", size: 10, modifiedAt: null };
+
+    await expect(
+      repository.replaceScanResults({
+        taskId: "task-1",
+        rootId: "root-1",
+        results: [duplicate, duplicate],
+      }),
+    ).rejects.toMatchObject({
+      code: persistenceErrorCodes.ConstraintViolation,
+      message: "Duplicate scan result path for task task-1: ABC-123.mp4",
+    });
   });
 });
