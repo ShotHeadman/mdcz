@@ -107,6 +107,31 @@ describe("task executor", () => {
     await expect(run).resolves.toEqual({ outcome: "stopped", startedCount: 1, settledCount: 1, pendingCount: 1 });
     expect(invoked).toEqual([1]);
   });
+  it("waits for sibling workers before rejecting a concurrent execution", async () => {
+    const siblingStarted = deferred<void>();
+    const releaseSibling = deferred<void>();
+    let settled = false;
+    const executor = new TaskExecutor<number, number>({
+      concurrency: 2,
+      runItem: async (item) => {
+        if (item === 1) throw new Error("worker failed");
+        siblingStarted.resolve();
+        await releaseSibling.promise;
+        return item;
+      },
+      applyResult: async () => undefined,
+    });
+
+    const run = executor.execute([1, 2], 1).finally(() => {
+      settled = true;
+    });
+    await siblingStarted.promise;
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    releaseSibling.resolve();
+    await expect(run).rejects.toThrow("worker failed");
+    expect(executor.activeItems).toBe(0);
+  });
 });
 
 const deferred = <T>() => {
@@ -215,6 +240,73 @@ describe("scrape run session", () => {
     expect(observedStatuses[0]).toBe("queued");
     expect(observedStatuses).toContain("running");
     expect(observedStatuses.at(-1)).toBe("completed");
+  });
+
+  it.each([
+    { concurrency: 1, ids: ["one"] },
+    { concurrency: 2, ids: ["one", "two"] },
+  ])("completes after resume while $concurrency item(s) are still settling", async ({ concurrency, ids }) => {
+    const started = ids.map(() => deferred<void>());
+    const releases = ids.map(() => deferred<void>());
+    const items = ids.map(runItem);
+    const session = new ScrapeRunSession({
+      runId: `run-resume-${concurrency}`,
+      items,
+      concurrency,
+      executeItem: async (item) => {
+        const index = ids.indexOf(item.id);
+        started[index]?.resolve();
+        await releases[index]?.promise;
+        return terminalResult(item, "success");
+      },
+      commitItem: async (_item, result) => result,
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await Promise.all(started.map((entry) => entry.promise));
+    const paused = session.pause();
+    await session.resume();
+    for (const release of releases) release.resolve();
+    await paused;
+    await session.waitForIdle();
+
+    expect(session.snapshot()).toMatchObject({
+      status: "completed",
+      progress: { completedItems: ids.length, totalItems: ids.length, percent: 100 },
+    });
+  });
+
+  it("keeps reported progress monotonic and floors it by terminal items", async () => {
+    const first = deferred<ScrapeResult>();
+    const started = deferred<void>();
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession({
+      runId: "run-progress",
+      items,
+      concurrency: 1,
+      executeItem: async (item) => {
+        if (item.id === "one") {
+          started.resolve();
+          return await first.promise;
+        }
+        return terminalResult(item, "success");
+      },
+      commitItem: async (_item, result) => result,
+      onSnapshot: () => undefined,
+    });
+
+    session.recordProgress(42.4);
+    session.recordProgress(20);
+    expect(session.snapshot().progress.percent).toBe(42);
+    await session.start();
+    await started.promise;
+    const paused = session.pause();
+    first.resolve(terminalResult(items[0], "success"));
+    await paused;
+    expect(session.snapshot().progress).toEqual({ completedItems: 1, totalItems: 2, percent: 50 });
+    session.recordProgress(-10);
+    expect(session.snapshot().progress.percent).toBe(50);
   });
 
   it("requeues a failed item as the next attempt without replaying settled work", async () => {

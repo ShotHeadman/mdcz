@@ -19,6 +19,7 @@ const defaultScraperStatus = (): ScraperStatus => ({
   running: false,
   totalFiles: 0,
   completedFiles: 0,
+  percent: 0,
   successCount: 0,
   failedCount: 0,
   skippedCount: 0,

@@ -98,7 +98,7 @@ export const applyScrapeLiveRunsSnapshot = (
 
   const results = selected.items.map(liveItemToScrapeResult);
   scrapeStore.replaceResults(results);
-  scrapeStore.updateProgress(selected.progress.completedItems, selected.progress.totalItems);
+  scrapeStore.updateProgress(selected.progress.completedItems, selected.progress.totalItems, selected.progress.percent);
   scrapeStore.setScrapeStatus(liveTaskStatusToScrapeStatus(selected.task.status));
   scrapeStore.setScraping(true);
   if (uiStore.selectedResultId && !results.some((result) => result.fileId === uiStore.selectedResultId)) {

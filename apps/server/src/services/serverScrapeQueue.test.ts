@@ -172,6 +172,60 @@ describe("ServerScrapeQueue", () => {
     await vi.waitFor(() => expect(queue.get("run-1")).toBeNull());
   });
 
+  it("continues with the next queued run after one execution throws", async () => {
+    const errors: string[] = [];
+    const starts: string[] = [];
+    const settled: string[] = [];
+    const queue = new ServerScrapeQueue(
+      () => undefined,
+      (entry, error) => {
+        errors.push(`${entry.runId}:${error instanceof Error ? error.message : String(error)}`);
+      },
+    );
+    const failedSession = new ScrapeRunSession({
+      runId: "run-failed",
+      items: [item("run-failed", 0)],
+      concurrency: 1,
+      executeItem: async (current) => resultFor(current),
+      commitItem: async (_current, result) => result,
+      onSnapshot: () => undefined,
+    });
+    vi.spyOn(failedSession, "start").mockRejectedValueOnce(new Error("schedule failed"));
+    const nextSession = new ScrapeRunSession({
+      runId: "run-next",
+      items: [item("run-next", 0)],
+      concurrency: 1,
+      executeItem: async (current) => {
+        starts.push("run-next");
+        return resultFor(current);
+      },
+      commitItem: async (_current, result) => result,
+      onSnapshot: () => undefined,
+    });
+
+    queue.submit({
+      runId: "run-failed",
+      session: failedSession,
+      createdAt: new Date(1),
+      settle: async () => {
+        settled.push("run-failed");
+      },
+    });
+    queue.submit({
+      runId: "run-next",
+      session: nextSession,
+      createdAt: new Date(2),
+      settle: async () => {
+        settled.push("run-next");
+      },
+    });
+
+    await vi.waitFor(() => expect(settled).toEqual(["run-failed", "run-next"]));
+    expect(errors).toEqual(["run-failed:schedule failed"]);
+    expect(starts).toEqual(["run-next"]);
+    expect(queue.list()).toEqual([]);
+  });
+
   it("aborts active sessions on close without settling them", async () => {
     const settled: string[] = [];
     const queue = new ServerScrapeQueue();

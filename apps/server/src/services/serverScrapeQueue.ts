@@ -30,10 +30,22 @@ export class ServerScrapeQueue<TManualScrape = unknown> {
   private activeRunId: string | null = null;
   private closing = false;
 
-  constructor(private readonly onQueueChange: (runId: string | null) => void = () => undefined) {
+  constructor(
+    private readonly onQueueChange: (runId: string | null) => void = () => undefined,
+    private readonly onExecutionError: (
+      entry: ServerScrapeQueueEntry<TManualScrape>,
+      error: unknown,
+    ) => Promise<void> | void = () => undefined,
+  ) {
     this.scheduler = new TaskScheduler({
       claimNext: async () => await this.claimNext(),
       runExecution: async (entry) => await this.runExecution(entry),
+      onExecutionError: async (entry, error) => {
+        await this.onExecutionError(this.copyEntry(entry), error);
+        if (this.entries.get(entry.runId) !== entry) return;
+        const snapshot = await entry.session.stop();
+        await this.settleAndRemove(entry, snapshot);
+      },
     });
   }
 
@@ -104,7 +116,7 @@ export class ServerScrapeQueue<TManualScrape = unknown> {
     entry.status = "paused";
     this.removeReadyRun(runId);
     this.onQueueChange(runId);
-    if (this.activeRunId === runId) await entry.session.pause();
+    await entry.session.pause();
     return this.copyEntry(entry);
   }
 

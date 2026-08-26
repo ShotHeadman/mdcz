@@ -10,6 +10,7 @@ export class TaskScheduler<TExecution extends SchedulableExecution> {
     private readonly deps: {
       claimNext: () => Promise<TExecution | null>;
       runExecution: (execution: TExecution) => Promise<void>;
+      onExecutionError?: (execution: TExecution, error: unknown) => Promise<void> | void;
     },
   ) {}
 
@@ -42,7 +43,12 @@ export class TaskScheduler<TExecution extends SchedulableExecution> {
       while (!this.stopRequested) {
         const execution = await this.deps.claimNext();
         if (!execution || this.stopRequested) break;
-        await this.deps.runExecution(execution);
+        try {
+          await this.deps.runExecution(execution);
+        } catch (error) {
+          if (!this.deps.onExecutionError) throw error;
+          await this.deps.onExecutionError(execution, error);
+        }
       }
     } finally {
       this.activeDrain = null;

@@ -158,7 +158,14 @@ export class ScrapeService {
       (result) => this.resolveMetadataVideoPath(result),
     );
     this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
-    this.queue = new ServerScrapeQueue((runId) => this.handleQueueChange(runId));
+    this.queue = new ServerScrapeQueue(
+      (runId) => this.handleQueueChange(runId),
+      (entry, error) => {
+        runtimeLoggerService
+          .getLogger(`scrape:${entry.runId}`)
+          .error(`Scrape queue execution failed: ${errorMessage(error)}`);
+      },
+    );
   }
 
   async start(
@@ -650,6 +657,7 @@ export class ScrapeService {
           this.addEvent(manifest.id, type, message, item.id);
         },
         onProgress: ({ value, current, total }) => {
+          this.queue.get(manifest.id)?.session.recordProgress(value);
           const createdAt = new Date().toISOString();
           this.taskEvents.publishRealtime({
             id: `${item.id}:progress:${current}:${value}:${createdAt}`,

@@ -60,20 +60,13 @@ export const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   const previousState = scrapeStore.scrapeStatus;
   const activeState = status.state ?? (status.running ? "running" : "idle");
   const active = activeState !== "idle";
-  const shouldSyncProgressFromStatus =
-    activeState === "idle" ||
-    (activeState === "paused" && (scrapeStore.total !== status.totalFiles || scrapeStore.progress <= 0));
 
   if (activeState === "idle" && previousState !== "idle") {
     scrapeStore.failUnfinishedResults("已停止或未完成");
   }
   scrapeStore.setScraping(active);
   scrapeStore.setScrapeStatus(activeState);
-
-  if (shouldSyncProgressFromStatus) {
-    scrapeStore.updateProgress(status.completedFiles, status.totalFiles);
-  }
-
+  scrapeStore.updateProgress(status.completedFiles, status.totalFiles, status.percent);
   scrapeStore.setFailedCount(status.failedCount);
 };
 
@@ -239,7 +232,7 @@ export const useIpcSync = (queryClient: QueryClient) => {
               return;
             }
 
-            useScrapeStore.getState().updateProgress(payload.value, 100);
+            useScrapeStore.getState().setProgressPercent(payload.value);
           }),
         );
 

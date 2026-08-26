@@ -104,6 +104,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   private status: ScrapeRunLiveStatus = "queued";
   private latestStage: ScrapeRunStageSnapshot | null = null;
   private error: string | null = null;
+  private reportedPercent = 0;
   private executor: TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapeResult> | null = null;
   private runPromise: Promise<void> | null = null;
 
@@ -151,6 +152,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   async resume(): Promise<void> {
     if (this.status !== "paused") return;
     this.setStatus("running");
+    this.executor?.resume();
     this.startDrain();
   }
 
@@ -217,7 +219,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       generation: this.generation,
       status: this.status,
       progress: {
-        percent: Math.round((completedItems / totalItems) * 100),
+        percent: Math.max(Math.round((completedItems / totalItems) * 100), Math.round(this.reportedPercent)),
         completedItems,
         totalItems,
       },
@@ -226,6 +228,17 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       logs: this.logs.map((entry) => ({ ...entry, timestamp: new Date(entry.timestamp) })),
       error: this.error,
     };
+  }
+
+  /**
+   * The session is the sole progress authority; hosts must not maintain a
+   * second counter with different units.
+   */
+  recordProgress(percent: number): void {
+    const nextPercent = Math.min(100, Math.max(0, Number.isFinite(percent) ? percent : 0));
+    if (nextPercent <= this.reportedPercent) return;
+    this.reportedPercent = nextPercent;
+    this.emitSnapshot();
   }
 
   recordStage(stage: Omit<ScrapeRunStageSnapshot, "itemId" | "relativePath"> & { itemId?: string | null }): void {
@@ -266,7 +279,13 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     });
     const tracked = run.finally(() => {
       if (this.runPromise === tracked) this.runPromise = null;
-      if (this.status === "running" && this.items.some((item) => item.status === "pending")) this.startDrain();
+      if (
+        this.status === "running" &&
+        (this.items.some((item) => item.status === "pending") ||
+          this.items.every((item) => isTerminalItemStatus(item.status)))
+      ) {
+        this.startDrain();
+      }
     });
     this.runPromise = tracked;
   }
@@ -313,6 +332,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     item.error = result.error?.trim() || null;
     item.result = result;
     this.emitSnapshot();
+    if (this.runPromise === null && this.status === "running") this.startDrain();
   }
 
   private completeLiveRunIfSettled(generation: number): void {

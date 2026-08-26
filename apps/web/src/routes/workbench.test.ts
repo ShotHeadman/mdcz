@@ -166,6 +166,15 @@ describe("web workbench route contracts", () => {
     expect(useUIStore.getState().selectedResultId).toBe("root-1:nested/ABC-001.mp4");
   });
 
+  it("uses the authoritative live-run percent above the completed-item ratio", () => {
+    const run = liveRun("task-progress", "running");
+    run.progress.percent = 73;
+
+    applyScrapeLiveRunsSnapshot([run], createTaskHydrationState());
+
+    expect(useScrapeStore.getState()).toMatchObject({ current: 1, total: 2, progress: 73 });
+  });
+
   it("clears stale workbench scrape state when the backend reports no live runs", () => {
     const previous = applyScrapeLiveRunsSnapshot([liveRun("task-1", "running")], createTaskHydrationState());
     useUIStore.getState().setSelectedResultId("root-1:nested/ABC-001.mp4");

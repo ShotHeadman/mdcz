@@ -112,7 +112,11 @@ export class TaskExecutor<TItem, TResult> {
       }
     };
 
-    await Promise.all(Array.from({ length: Math.min(this.deps.concurrency, items.length) }, worker));
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: Math.min(this.deps.concurrency, items.length) }, worker),
+    );
+    const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+    if (rejected) throw rejected.reason;
     return {
       outcome: this.stopRequested ? "stopped" : this.pauseRequested ? "paused" : "settled",
       startedCount,

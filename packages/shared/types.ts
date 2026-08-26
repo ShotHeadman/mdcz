@@ -163,6 +163,7 @@ export interface ScraperStatus {
   running: boolean;
   totalFiles: number;
   completedFiles: number;
+  percent: number;
   successCount: number;
   failedCount: number;
   skippedCount: number;

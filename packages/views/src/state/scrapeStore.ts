@@ -18,7 +18,8 @@ interface ScrapeState {
 
   setScraping: (isScraping: boolean) => void;
   setScrapeStatus: (status: "idle" | "running" | "stopping" | "paused") => void;
-  updateProgress: (current: number, total: number) => void;
+  updateProgress: (current: number, total: number, percent?: number) => void;
+  setProgressPercent: (percent: number) => void;
   upsertResult: (result: ScrapeResult) => void;
   addResult: (result: ScrapeResult) => void;
   replaceResults: (results: ScrapeResult[]) => void;
@@ -59,12 +60,13 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
 
   setScraping: (isScraping) => set({ isScraping }),
   setScrapeStatus: (status) => set({ scrapeStatus: status }),
-  updateProgress: (current, total) =>
+  updateProgress: (current, total, percent) =>
     set({
       current,
       total,
-      progress: total > 0 ? (current / total) * 100 : 0,
+      progress: percent ?? (total > 0 ? (current / total) * 100 : 0),
     }),
+  setProgressPercent: (percent) => set({ progress: Math.min(100, Math.max(0, percent)) }),
   addResult: (result) =>
     set((state) => ({
       results: [...state.results, result],

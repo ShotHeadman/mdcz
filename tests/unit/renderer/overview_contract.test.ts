@@ -27,20 +27,17 @@ describe("overview UI contract", () => {
     expect(shouldInvalidate(false)).toBe(false);
   });
 
-  it("preserves live in-file progress while a scrape is paused", () => {
-    useScrapeStore.setState({
-      scrapeStatus: "running",
-      isScraping: true,
-      progress: 42,
-      total: 3,
-      current: 1,
-    });
+  it("preserves authoritative in-file progress while a scrape is paused", () => {
+    useScrapeStore.getState().setScrapeStatus("running");
+    useScrapeStore.getState().setScraping(true);
+    useScrapeStore.getState().updateProgress(42, 100);
 
     applyScrapeStatusSnapshot({
       state: "paused",
       running: true,
       totalFiles: 3,
       completedFiles: 0,
+      percent: 42,
       successCount: 0,
       failedCount: 0,
       skippedCount: 0,
@@ -51,7 +48,7 @@ describe("overview UI contract", () => {
       isScraping: true,
       progress: 42,
       total: 3,
-      current: 1,
+      current: 0,
     });
   });
 
@@ -63,6 +60,7 @@ describe("overview UI contract", () => {
       running: true,
       totalFiles: 3,
       completedFiles: 1,
+      percent: 100 / 3,
       successCount: 1,
       failedCount: 0,
       skippedCount: 0,
@@ -82,6 +80,7 @@ describe("overview UI contract", () => {
       running: false,
       totalFiles: 1,
       completedFiles: 0,
+      percent: 0,
       successCount: 0,
       failedCount: 1,
       skippedCount: 0,

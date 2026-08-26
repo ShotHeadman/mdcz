@@ -51,6 +51,7 @@ const idleStatus = (): ScraperStatus => ({
   running: false,
   totalFiles: 0,
   completedFiles: 0,
+  percent: 0,
   successCount: 0,
   failedCount: 0,
   skippedCount: 0,
@@ -172,6 +173,7 @@ export class ScraperService {
     const lifecycle = this.lifecycle;
     const session = lifecycle?.session;
     if (!session || session.snapshot().status !== "paused") return;
+    await session.waitForIdle();
     await session.resume();
     this.trackRun(lifecycle);
   }
@@ -213,7 +215,7 @@ export class ScraperService {
     return await this.beginSession(filePaths, configuration, "batch", manualScrape);
   }
 
-  private createFileScraperDependencies() {
+  private createFileScraperDependencies(recordProgress: (percent: number) => void) {
     return {
       aggregationService: this.aggregationService,
       translateService: new TranslateService(this.sharedNetworkClient, {
@@ -225,7 +227,16 @@ export class ScraperService {
         imageHostCooldownStore: this.imageHostCooldownStore,
       }),
       fileOrganizer,
-      signalService: this.signalService,
+      signalService: {
+        setProgress: (value: number, current: number, total: number) => {
+          recordProgress(value);
+          this.signalService.setProgress(value, current, total);
+        },
+        showFailedInfo: this.signalService.showFailedInfo.bind(this.signalService),
+        showLogText: this.signalService.showLogText.bind(this.signalService),
+        showScrapeInfo: this.signalService.showScrapeInfo.bind(this.signalService),
+        showScrapeResult: this.signalService.showScrapeResult.bind(this.signalService),
+      },
       actorImageService: this.actorImageService,
       actorSourceProvider: this.actorSourceProvider,
     };
@@ -253,10 +264,13 @@ export class ScraperService {
         ...(manualScrape ? { manualScrape } : {}),
       }));
       const fileIndexByItemId = new Map(items.map((item, index) => [item.id, index + 1]));
-      const fileScraper = createFileScraper(this.createFileScraperDependencies(), {
-        mode,
-        scrapeSessionId: created.manifest.id,
-      });
+      const fileScraper = createFileScraper(
+        this.createFileScraperDependencies((percent) => this.lifecycle?.session.recordProgress(percent)),
+        {
+          mode,
+          scrapeSessionId: created.manifest.id,
+        },
+      );
       return {
         manifest: created.manifest,
         items,
@@ -337,6 +351,7 @@ export class ScraperService {
       running: !terminal,
       totalFiles: snapshot.items.length,
       completedFiles,
+      percent: snapshot.progress.percent,
       successCount: snapshot.items.filter((item) => item.status === "success").length,
       failedCount: snapshot.items.filter((item) => item.status === "failed").length,
       skippedCount: snapshot.items.filter((item) => item.status === "skipped").length,

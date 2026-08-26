@@ -2,7 +2,7 @@ import type { ActorImageService } from "@main/services/ActorImageService";
 import type { SignalService } from "@main/services/SignalService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { LocalScanService } from "@mdcz/runtime/maintenance";
-import type { AggregationService, TranslateService } from "@mdcz/runtime/scrape";
+import type { AggregationService, FileOrganizer, TranslateService } from "@mdcz/runtime/scrape";
 import {
   type FileScrapeOptions,
   type FileScrapeProgress,
@@ -20,8 +20,11 @@ export interface FileScraperDependencies {
   translateService: TranslateService;
   nfoGenerator: NfoGenerator;
   downloadManager: DownloadManager;
-  fileOrganizer: import("@mdcz/runtime/scrape").FileOrganizer;
-  signalService: SignalService;
+  fileOrganizer: FileOrganizer;
+  signalService: Pick<
+    SignalService,
+    "setProgress" | "showFailedInfo" | "showLogText" | "showScrapeInfo" | "showScrapeResult"
+  >;
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
   localScanService?: Pick<LocalScanService, "scanVideo">;
