@@ -3,8 +3,16 @@ import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
-import { DownloadManager } from "@mdcz/runtime/scrape";
+import {
+  DownloadManager,
+  DownloadStage,
+  downloadCrawlerAssets,
+  type FileScraperStageRuntime,
+  ScrapeContext,
+} from "@mdcz/runtime/scrape";
 import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
+import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
+import { TrailerAssetDownloader } from "@mdcz/runtime/scrape/download/assets/TrailerAssetDownloader";
 import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -218,6 +226,48 @@ const expectPrimary = async (
 };
 
 describe("DownloadManager keep flags", () => {
+  it("does not enter scene or trailer downloaders when their download switches are off", async () => {
+    const { root, manager, networkClient } = await createSubject();
+    const sceneDownload = vi.spyOn(SceneImageAssetDownloader.prototype, "download");
+    const trailerDownload = vi.spyOn(TrailerAssetDownloader.prototype, "download");
+
+    const config = dl({
+      downloadThumb: false,
+      downloadPoster: false,
+      downloadFanart: false,
+      downloadSceneImages: false,
+      downloadTrailer: false,
+    });
+    const crawlerData = createCrawlerData({
+      scene_images: ["https://example.com/scene-001.jpg"],
+      trailer_url: "https://example.com/trailer.mp4",
+    });
+    const context = new ScrapeContext(join(root, "ABC-123.mp4"), undefined, "batch", undefined, config);
+    context.preparedCrawlerData = crawlerData;
+    const stage = new DownloadStage({
+      downloadCrawlerAssets: async (stageContext: ScrapeContext) =>
+        await downloadCrawlerAssets({
+          config: stageContext.requireConfiguration(),
+          crawlerData: stageContext.requireCrawlerData(),
+          downloadManager: manager,
+          fileInfo: stageContext.fileInfo,
+          outputDir: root,
+        }),
+      setProgress: vi.fn(),
+      signalService: { showScrapeInfo: vi.fn() },
+    } as unknown as FileScraperStageRuntime);
+
+    await stage.execute(context);
+
+    expect(context.assets).toEqual({ sceneImages: [], downloaded: [] });
+    expect(sceneDownload).not.toHaveBeenCalled();
+    expect(trailerDownload).not.toHaveBeenCalled();
+    expect(networkClient.probe).not.toHaveBeenCalled();
+    expect(networkClient.download).not.toHaveBeenCalled();
+    await expect(access(join(root, "extrafanart", "fanart1.jpg"))).rejects.toThrow();
+    await expect(access(join(root, "trailer.mp4"))).rejects.toThrow();
+  });
+
   afterEach(async () => {
     vi.restoreAllMocks();
     await Promise.all(tempDirs.splice(0, tempDirs.length).map((directory) => directory.cleanup()));

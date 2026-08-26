@@ -117,13 +117,12 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
 
-  const rootId = getMetadataRootId(item);
+  const rootId = item.assetRootId ?? getMetadataRootId(item);
   if (!rootId) {
     return trimmed;
   }
-  return (
-    getLibraryAssetSrc({ rootId, path: toRelativePath(item, resolveCandidatePath(trimmed, item, baseDir)) }) || trimmed
-  );
+  const path = item.assetRootId ? trimmed.replace(/\\/gu, "/") : resolveCandidatePath(trimmed, item, baseDir);
+  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path) }) || trimmed;
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({

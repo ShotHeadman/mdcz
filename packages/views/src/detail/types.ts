@@ -9,6 +9,7 @@ export interface DetailViewItem {
   title?: string;
   path?: string;
   nfoRootId?: string;
+  assetRootId?: string;
   nfoPath?: string;
   actors?: string[];
   plot?: string;
@@ -27,5 +28,6 @@ export interface DetailViewItem {
   fanartUrl?: string;
   outputPath?: string;
   sceneImages?: string[];
+  trailerUrl?: string;
   errorMessage?: string;
 }

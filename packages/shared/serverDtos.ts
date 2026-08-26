@@ -332,6 +332,12 @@ export const taskEventListResponseSchema = z.object({
 
 export type TaskEventListResponse = z.infer<typeof taskEventListResponseSchema>;
 
+const scrapeAssetReferenceShape = {
+  assetRootId: z.string().nullable(),
+  sceneImageRelativePaths: z.array(z.string()),
+  trailerRelativePath: z.string().nullable(),
+};
+
 export const scrapeResultSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -346,6 +352,7 @@ export const scrapeResultSchema = z.object({
   nfoRootId: z.string().nullable(),
   nfoRelativePath: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
+  ...scrapeAssetReferenceShape,
   manualUrl: z.string().nullable(),
   uncensoredAmbiguous: z.boolean().optional(),
   persistenceState: z.enum(["terminal", "interrupted"]).optional(),
@@ -374,6 +381,7 @@ export const scrapeLiveItemSchema = z.object({
   nfoRelativePath: z.string().nullable(),
   outputRootId: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
+  ...scrapeAssetReferenceShape,
   manualUrl: z.string().nullable(),
   uncensoredAmbiguous: z.boolean(),
   attempt: z.number().int().positive(),

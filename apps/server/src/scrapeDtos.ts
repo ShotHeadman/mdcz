@@ -1,12 +1,16 @@
 import path from "node:path";
 import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
-import type { ScrapeItemOutcomeRecord, ScrapeRunItemRecord } from "@mdcz/persistence";
+import type { LibraryItemAssetRecord, ScrapeItemOutcomeRecord, ScrapeRunItemRecord } from "@mdcz/persistence";
 import { crawlerDataSchema, type ScrapeResultDto } from "@mdcz/shared/serverDtos";
 
 export const toScrapeResultDto = (
   outcome: ScrapeItemOutcomeRecord,
   item: ScrapeRunItemRecord,
-  options: { rootDisplayName: string; runCreatedAt: Date },
+  options: {
+    rootDisplayName: string;
+    runCreatedAt: Date;
+    assets: Pick<LibraryItemAssetRecord, "kind" | "rootId" | "relativePath">[];
+  },
 ): ScrapeResultDto => ({
   id: outcome.id,
   taskId: outcome.runId,
@@ -21,12 +25,29 @@ export const toScrapeResultDto = (
   nfoRootId: outcome.nfoRootId,
   nfoRelativePath: outcome.nfoRelativePath,
   outputRelativePath: outcome.outputRelativePath,
+  ...toScrapeAssetDto(options.assets),
   manualUrl: item.manualUrl,
   uncensoredAmbiguous: outcome.uncensoredAmbiguous,
   persistenceState: "terminal",
   createdAt: options.runCreatedAt.toISOString(),
   updatedAt: outcome.completedAt.toISOString(),
 });
+
+export const toScrapeAssetDto = (
+  assets: Pick<LibraryItemAssetRecord, "kind" | "rootId" | "relativePath">[],
+): Pick<ScrapeResultDto, "assetRootId" | "sceneImageRelativePaths" | "trailerRelativePath"> => {
+  const localAssets = assets.filter(
+    (asset) => (asset.kind === "scene" || asset.kind === "trailer") && asset.rootId && asset.relativePath,
+  );
+  const assetRootId = localAssets[0]?.rootId ?? null;
+  return {
+    assetRootId,
+    sceneImageRelativePaths: localAssets
+      .filter((asset) => asset.kind === "scene")
+      .map((asset) => asset.relativePath as string),
+    trailerRelativePath: localAssets.find((asset) => asset.kind === "trailer")?.relativePath ?? null,
+  };
+};
 
 export const toRootRelativeAssetPath = (root: MediaRoot, assetPath: string | undefined): string | null => {
   if (!assetPath) {

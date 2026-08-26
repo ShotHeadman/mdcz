@@ -31,6 +31,7 @@ import {
   type ScrapeRunSnapshot,
 } from "@mdcz/runtime/tasks";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
+import { scrapeAssetReferencesToResult } from "@mdcz/shared/dtoAdapters";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import {
   type AmbiguousUncensoredItemDto,
@@ -64,7 +65,7 @@ import {
 } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult, UncensoredChoice } from "@mdcz/shared/types";
 import { getServerImageHostCooldownStore } from "../imageHostCooldownStore";
-import { toRootRelativeAssetPath, toScrapeResultDto } from "../scrapeDtos";
+import { toRootRelativeAssetPath, toScrapeAssetDto, toScrapeResultDto } from "../scrapeDtos";
 import { createServerScrapeRuntime } from "../scrapeRuntimeFactory";
 import { toScanTaskDto } from "../taskDto";
 import type { TaskEventBus } from "../taskEvents";
@@ -751,7 +752,13 @@ export class ScrapeService {
       this.pendingSuccesses.delete(key);
       await this.publishCommittedOutcome(manifest, item.id, committed.outcome);
       this.addEvent(manifest.id, "item-success", `Generated NFO: ${nfoRelativePath ?? "not generated"}`, item.id);
-      return { ...result, resultId: committed.outcome.id, status: "success" };
+      const assetDto = toScrapeAssetDto(committed.entry.assets);
+      return {
+        ...result,
+        ...scrapeAssetReferencesToResult(assetDto),
+        resultId: committed.outcome.id,
+        status: "success",
+      };
     }
 
     const message = result.error?.trim() || (result.status === "skipped" ? "刮削项目已跳过" : "刮削失败");
@@ -1000,9 +1007,13 @@ export class ScrapeService {
   }
 
   private async outcomeToDto(context: OutcomeContext): Promise<ScrapeResultDto> {
+    const libraryEntry = await (await this.persistence.getState()).repositories.library.getEntryBySourceOutcomeId(
+      context.outcome.id,
+    );
     return toScrapeResultDto(context.outcome, context.item, {
       rootDisplayName: await this.getRootDisplayName(context.item.rootId),
       runCreatedAt: context.manifest.createdAt,
+      assets: libraryEntry?.assets ?? [],
     });
   }
 
@@ -1033,6 +1044,7 @@ export class ScrapeService {
   ): ScrapeLiveItemDto {
     const manifestItem = manifest.items.find((candidate) => candidate.id === item.id);
     if (!manifestItem) throw new Error(`Scrape item not found in manifest: ${item.id}`);
+    const assetRootId = item.result?.assets?.rootId ?? null;
     return {
       id: item.id,
       resultId: item.result?.resultId ?? null,
@@ -1046,6 +1058,9 @@ export class ScrapeService {
       nfoRelativePath: item.result?.nfoPath ?? null,
       outputRootId: null,
       outputRelativePath: item.result?.outputPath ?? null,
+      assetRootId,
+      sceneImageRelativePaths: assetRootId ? (item.result?.assets?.sceneImages ?? []) : [],
+      trailerRelativePath: assetRootId ? (item.result?.assets?.trailer ?? null) : null,
       manualUrl: manifestItem.manualUrl,
       uncensoredAmbiguous: item.result?.uncensoredAmbiguous === true,
       attempt: item.attempt,

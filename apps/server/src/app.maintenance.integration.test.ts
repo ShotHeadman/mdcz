@@ -365,8 +365,9 @@ describe("buildServer maintenance integration", () => {
     const organizedNfoContent = await readFile(organizedNfo, "utf8");
     expect(organizedNfoContent).toContain("Remote Title ABC-300");
     expect(organizedNfoContent).not.toContain("<director>Remote Director</director>");
-    expect(organizedNfoContent).toContain("<trailer>");
-    expect(organizedNfoContent).toContain("trailer_source_url");
+    expect(organizedNfoContent).not.toContain("<trailer>");
+    expect(organizedNfoContent).not.toContain("trailer_source_url");
+    expect(organizedNfoContent).not.toContain("scene_images");
     await expect(access(join(root, "ABC-300.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 

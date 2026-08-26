@@ -2,6 +2,20 @@ import { Website } from "./enums";
 import type { MaintenancePreviewItemDto, ScrapeResultDto } from "./serverDtos";
 import type { CrawlerData, FieldDiff, MaintenancePreviewItem, ScrapeResult } from "./types";
 
+type ScrapeAssetReferences = Pick<ScrapeResultDto, "assetRootId" | "sceneImageRelativePaths" | "trailerRelativePath">;
+
+export const scrapeAssetReferencesToResult = (refs: ScrapeAssetReferences): Pick<ScrapeResult, "assets"> =>
+  refs.assetRootId
+    ? {
+        assets: {
+          rootId: refs.assetRootId,
+          sceneImages: refs.sceneImageRelativePaths,
+          downloaded: [],
+          ...(refs.trailerRelativePath ? { trailer: refs.trailerRelativePath } : {}),
+        },
+      }
+    : { assets: undefined };
+
 const emptyCrawlerData = (relativePath = ""): CrawlerData => ({
   actors: [],
   genres: [],
@@ -33,7 +47,7 @@ export const scrapeResultDtoToScrapeResult = (result: ScrapeResultDto): ScrapeRe
   nfoRootId: result.nfoRootId ?? undefined,
   nfoPath: result.nfoRelativePath ?? undefined,
   uncensoredAmbiguous: result.uncensoredAmbiguous,
-  assets: undefined,
+  ...scrapeAssetReferencesToResult(result),
 });
 
 export const scrapeResultDtoToDetailScrapeResult = (result: ScrapeResultDto): ScrapeResult => ({

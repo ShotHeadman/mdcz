@@ -133,6 +133,8 @@ export const writePreparedNfo = async (input: {
     assets: input.assets,
     buildTags: input.buildTags,
     enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
+    includeRemoteSceneImageUrls: input.config.download.downloadSceneImages,
+    allowRemoteTrailerFallback: input.config.download.downloadTrailer,
     fileInfo: input.fileInfo,
     localState: input.localState,
     nfoNaming: input.config.download.nfoNaming,

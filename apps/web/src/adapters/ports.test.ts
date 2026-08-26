@@ -67,13 +67,14 @@ describe("web detail action port", () => {
       undefined,
       {
         id: "root-1:ABC-001.mp4",
+        assetRootId: "metadata-root",
         number: "ABC-001",
         path: "ABC-001.mp4",
         status: "success",
       },
     );
 
-    expect(poster).toBe("http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/ABC-001/poster.jpg?token=token-1");
+    expect(poster).toContain("/api/library/assets/metadata-root/JAV_output/ABC-001/poster.jpg");
     expect(remote).toBe("https://img.example/poster.jpg");
   });
 

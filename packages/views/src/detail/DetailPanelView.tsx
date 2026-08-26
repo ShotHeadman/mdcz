@@ -62,6 +62,7 @@ export interface DetailPanelViewProps {
   compare?: DetailPanelCompareProps;
   posterSrc?: string;
   thumbSrc?: string;
+  trailerSrc?: string;
   nfo: DetailPanelNfoState;
   onPlay?: () => void;
   onOpenFolder?: () => void;
@@ -182,6 +183,7 @@ export function DetailPanelView({
   compare,
   posterSrc = "",
   thumbSrc = "",
+  trailerSrc = "",
   nfo,
   onPlay,
   onOpenFolder,
@@ -432,6 +434,19 @@ export function DetailPanelView({
                       label="剧照"
                       resolveImageCandidates={resolveImageCandidates}
                       variant="filmstrip"
+                    />
+                  </section>
+                ) : null}
+
+                {trailerSrc ? (
+                  <section className="space-y-3">
+                    <DetailSectionTitle>预告片</DetailSectionTitle>
+                    {/* biome-ignore lint/a11y/useMediaCaption: Remote trailers do not provide a caption track. */}
+                    <video
+                      className="w-full max-w-4xl rounded-quiet-lg bg-black"
+                      controls
+                      preload="metadata"
+                      src={trailerSrc}
                     />
                   </section>
                 ) : null}

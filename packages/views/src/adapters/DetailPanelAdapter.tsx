@@ -36,9 +36,9 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
   const candidates = useMemo(() => buildDetailArtworkCandidates(item), [item]);
   const posterCandidateKey = buildCandidateKey(candidates.poster);
   const thumbCandidateKey = buildCandidateKey(candidates.thumb);
+  const trailerCandidateKey = buildCandidateKey(item?.trailerUrl ? [item.trailerUrl] : []);
   const baseDir = item?.outputPath ?? (item?.path ? getDirFromPath(item.path) : undefined);
-  const [posterSources, setPosterSources] = useState<string[]>([]);
-  const [thumbSources, setThumbSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<[string[], string[], string[]]>([[], [], []]);
   const [posterIndex, setPosterIndex] = useState(0);
   const [thumbIndex, setThumbIndex] = useState(0);
 
@@ -46,19 +46,18 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
     let cancelled = false;
     const posterCandidates = readCandidateKey(posterCandidateKey);
     const thumbCandidates = readCandidateKey(thumbCandidateKey);
+    const trailerCandidates = readCandidateKey(trailerCandidateKey);
     setPosterIndex(0);
     setThumbIndex(0);
 
     const resolveSources = async () => {
-      const [nextPosterSources, nextThumbSources] = await Promise.all([
+      const resolved = await Promise.all([
         port.resolveImageCandidates(posterCandidates, baseDir, item),
         port.resolveImageCandidates(thumbCandidates, baseDir, item),
+        port.resolveImageCandidates(trailerCandidates, baseDir, item),
       ]);
 
-      if (!cancelled) {
-        setPosterSources(nextPosterSources);
-        setThumbSources(nextThumbSources);
-      }
+      if (!cancelled) setSources(resolved);
     };
 
     void resolveSources();
@@ -66,19 +65,20 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
     return () => {
       cancelled = true;
     };
-  }, [baseDir, posterCandidateKey, thumbCandidateKey, port, item]);
+  }, [baseDir, posterCandidateKey, thumbCandidateKey, trailerCandidateKey, port, item]);
 
   const handlePosterError = useCallback(() => {
-    setPosterIndex((currentIndex) => Math.min(currentIndex + 1, posterSources.length));
-  }, [posterSources.length]);
+    setPosterIndex((currentIndex) => Math.min(currentIndex + 1, sources[0].length));
+  }, [sources]);
 
   const handleThumbError = useCallback(() => {
-    setThumbIndex((currentIndex) => Math.min(currentIndex + 1, thumbSources.length));
-  }, [thumbSources.length]);
+    setThumbIndex((currentIndex) => Math.min(currentIndex + 1, sources[1].length));
+  }, [sources]);
 
   return {
-    posterSrc: posterOverride || posterSources[posterIndex] || "",
-    thumbSrc: thumbSources[thumbIndex] ?? "",
+    posterSrc: posterOverride || sources[0][posterIndex] || "",
+    thumbSrc: sources[1][thumbIndex] ?? "",
+    trailerSrc: sources[2][0] ?? "",
     handlePosterError,
     handleThumbError,
   };
@@ -315,6 +315,7 @@ export function DetailPanelAdapter({
       compare={compare}
       posterSrc={artwork.posterSrc}
       thumbSrc={artwork.thumbSrc}
+      trailerSrc={artwork.trailerSrc}
       nfo={{
         open: nfoOpen,
         data: nfoData,

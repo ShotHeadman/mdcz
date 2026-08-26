@@ -84,6 +84,7 @@ export type SubtitleTag = "字幕" | "中文字幕";
 
 /** Structured record of all files produced by DownloadManager. */
 export interface DownloadedAssets {
+  rootId?: string;
   thumb?: string;
   poster?: string;
   fanart?: string;

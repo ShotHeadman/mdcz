@@ -83,6 +83,7 @@ describe("detail panel adapter contract", () => {
         publisher: "Publisher A",
         series: "Series A",
         scene_images: [],
+        trailer_url: "https://example.com/remote-trailer.mp4",
       }),
       videoMeta: {
         durationSeconds: 3661,
@@ -91,10 +92,12 @@ describe("detail panel adapter contract", () => {
         bitrate: 12_500_000,
       },
       assets: {
+        rootId: "metadata-root",
         poster: "/art/poster.jpg",
         thumb: "/art/thumb.jpg",
         fanart: "/art/fanart.jpg",
         sceneImages: ["/art/scene-1.jpg"],
+        trailer: "/art/trailer.mp4",
         downloaded: ["/art/poster.jpg"],
       },
       outputPath: "/output/ABC-123",
@@ -115,10 +118,24 @@ describe("detail panel adapter contract", () => {
       thumbUrl: "/art/thumb.jpg",
       fanartUrl: "/art/fanart.jpg",
       sceneImages: ["/art/scene-1.jpg"],
+      assetRootId: "metadata-root",
+      trailerUrl: "/art/trailer.mp4",
       outputPath: "/output/ABC-123",
       nfoPath: "/output/ABC-123/ABC-123.nfo",
       rating: 4.6,
     });
+  });
+
+  it("falls back to remote scene and trailer references when local assets are absent", () => {
+    const result = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-123.mp4",
+      status: "success",
+      fileInfo: createEntry().fileInfo,
+      crawlerData: createCrawlerData({ trailer_url: "https://example.com/remote-trailer.mp4" }),
+    });
+
+    expect(result.sceneImages).toEqual(["https://example.com/remote-scene.jpg"]);
+    expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
   });
 
   it("builds the same poster and thumbnail fallback candidates as the desktop detail controller", () => {

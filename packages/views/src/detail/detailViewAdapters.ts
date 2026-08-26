@@ -10,8 +10,8 @@ import type {
 } from "@mdcz/shared/types";
 import type { DetailViewItem } from "./types";
 
-type DetailLocalAssets = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages">;
-type DetailDownloadedAssets = Pick<DownloadedAssets, "poster" | "thumb" | "fanart" | "sceneImages">;
+type DetailLocalAssets = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
+type DetailDownloadedAssets = Pick<DownloadedAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
 
 export const formatDuration = (durationSeconds: number | undefined): string | undefined => {
   if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -111,6 +111,7 @@ const buildDetailViewMetadata = (input: {
     rating: crawlerData?.rating,
     ...resolveArtworkUrls(crawlerData, assets),
     sceneImages: resolveSceneImages(crawlerData, assets?.sceneImages),
+    trailerUrl: assets?.trailer ?? crawlerData?.trailer_url,
   };
 };
 
@@ -127,6 +128,7 @@ export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailVi
   number: result.fileInfo.number,
   path: result.fileInfo.filePath,
   nfoRootId: result.nfoRootId,
+  assetRootId: result.assets?.rootId,
   nfoPath: result.nfoPath,
   outputPath: result.outputPath,
   errorMessage: result.error,

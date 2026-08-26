@@ -497,6 +497,16 @@ export class LibraryRepository {
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
   }
 
+  async getEntryBySourceOutcomeId(sourceOutcomeId: string): Promise<LibraryEntryRecord | null> {
+    const item = this.database.db
+      .select({ id: libraryItems.id })
+      .from(libraryItems)
+      .where(eq(libraryItems.sourceOutcomeId, sourceOutcomeId))
+      .limit(1)
+      .get();
+    return item ? await this.getEntryById(item.id) : null;
+  }
+
   async getEntriesByIds(ids: string[]): Promise<LibraryEntryRecord[]> {
     const normalizedIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
     if (normalizedIds.length === 0) {

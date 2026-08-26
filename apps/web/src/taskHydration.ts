@@ -1,4 +1,4 @@
-import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
+import { maintenancePreviewDtoToPreviewItem, scrapeAssetReferencesToResult } from "@mdcz/shared/dtoAdapters";
 import type {
   MaintenanceApplyLogDto,
   MaintenancePreviewResponse,
@@ -45,6 +45,7 @@ const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
   ...(item.outputRelativePath ? { outputPath: item.outputRelativePath } : {}),
   ...(item.nfoRootId ? { nfoRootId: item.nfoRootId } : {}),
   ...(item.nfoRelativePath ? { nfoPath: item.nfoRelativePath } : {}),
+  ...scrapeAssetReferencesToResult(item),
   uncensoredAmbiguous: item.uncensoredAmbiguous,
 });
 
