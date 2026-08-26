@@ -16,7 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { api, subscribeTaskEvents } from "../client";
+import { api, subscribeTaskNotifications } from "../client";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
@@ -50,16 +50,18 @@ export const LogsPage = () => {
 
   useEffect(
     () =>
-      subscribeTaskEvents((event) => {
-        if (event.kind !== "log") return;
-        if (activeTaskIds.length > 0 && event.log.source === "task" && !activeTaskIds.includes(event.log.taskId)) {
-          return;
-        }
-        queryClient.setQueryData(logsQueryKey, (previous: typeof logsQ.data | undefined) => {
-          if (!previous) return { logs: [event.log] };
-          if (previous.logs.some((log) => log.id === event.log.id)) return previous;
-          return { logs: [...previous.logs, event.log] };
-        });
+      subscribeTaskNotifications({
+        onNotification: (event) => {
+          if (event.kind !== "log") return;
+          if (activeTaskIds.length > 0 && event.log.source === "task" && !activeTaskIds.includes(event.log.taskId)) {
+            return;
+          }
+          queryClient.setQueryData(logsQueryKey, (previous: typeof logsQ.data | undefined) => {
+            if (!previous) return { logs: [event.log] };
+            if (previous.logs.some((log) => log.id === event.log.id)) return previous;
+            return { logs: [...previous.logs, event.log] };
+          });
+        },
       }),
     [activeTaskIds, logsQueryKey, queryClient],
   );

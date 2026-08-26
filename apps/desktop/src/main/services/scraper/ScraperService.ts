@@ -19,13 +19,9 @@ import {
   createScrapeExecutionPolicy,
   TranslateService,
 } from "@mdcz/runtime/scrape";
-import { ScrapeRunLifecycle, type ScrapeRunSnapshot } from "@mdcz/runtime/tasks";
+import { ScrapeRunSession, type ScrapeRunSnapshot } from "@mdcz/runtime/tasks";
 import type { ScraperStatus } from "@mdcz/shared/types";
-import {
-  type CreatedDesktopScrapeRun,
-  type DesktopScrapeExecutionAdapter,
-  DesktopScrapeExecutionStore,
-} from "./DesktopScrapeExecutionStore";
+import { DesktopScrapeExecutionStore } from "./DesktopScrapeExecutionStore";
 import { DownloadManager } from "./DownloadManager";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
 import { fileOrganizer } from "./fileOrganizerAdapter";
@@ -59,11 +55,14 @@ const idleStatus = (): ScraperStatus => ({
 
 const isTerminalItem = (status: string): boolean => status === "success" || status === "failed" || status === "skipped";
 
-type DesktopScrapeLifecycle = ScrapeRunLifecycle<CreatedDesktopScrapeRun["manifest"], ManualScrapeOptions>;
+type DesktopScrapeLifecycle = {
+  manifest: Awaited<ReturnType<DesktopScrapeExecutionStore["createRun"]>>["manifest"];
+  session: ScrapeRunSession<ManualScrapeOptions>;
+};
 
 export class ScraperService {
   private readonly logger = loggerService.getLogger("ScraperService");
-  private readonly executionStore: DesktopScrapeExecutionAdapter;
+  private readonly executionStore: Pick<DesktopScrapeExecutionStore, "createRun" | "commitItem" | "finalizeRun">;
   private lifecycle: DesktopScrapeLifecycle | null = null;
   private readonly actorImageService: ActorImageService;
   private readonly actorSourceProvider: ActorSourceProvider | undefined;
@@ -84,7 +83,7 @@ export class ScraperService {
     imageHostCooldownStore?: PersistentCooldownStore,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
-    executionStore?: DesktopScrapeExecutionAdapter,
+    executionStore?: Pick<DesktopScrapeExecutionStore, "createRun" | "commitItem" | "finalizeRun">,
   ) {
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
@@ -257,46 +256,28 @@ export class ScraperService {
     const startedAt = new Date();
     const requestedOutputRoot = createDesktopOutputRoot(configuration, startedAt);
     this.runStartedAt = startedAt;
-    const lifecycle = await ScrapeRunLifecycle.create(async () => {
-      const created = await this.executionStore.createRun(filePaths, mode, requestedOutputRoot);
-      const items = created.items.map((item) => ({
-        ...item,
-        ...(manualScrape ? { manualScrape } : {}),
-      }));
-      const fileIndexByItemId = new Map(items.map((item, index) => [item.id, index + 1]));
-      const fileScraper = createFileScraper(
-        this.createFileScraperDependencies((percent) => this.lifecycle?.session.recordProgress(percent)),
-        {
-          mode,
-          scrapeSessionId: created.manifest.id,
-        },
-      );
-      return {
-        manifest: created.manifest,
-        items,
-        concurrency: overrides.concurrency ?? policy.concurrency,
-        executeItem: async (item, signal) => {
-          await policy.restGate?.waitBeforeStart(signal);
-          const progress = {
-            fileIndex: fileIndexByItemId.get(item.id) ?? 1,
-            totalFiles: items.length,
-          };
-          return item.manualScrape
-            ? fileScraper.scrapeFile(item.sourcePath, progress, signal, { manualScrape: item.manualScrape })
-            : fileScraper.scrapeFile(item.sourcePath, progress, signal);
-        },
-        commitItem: async (item, result) => await this.executionStore.commitItem(created.manifest.id, item, result),
-        finalize: async (snapshot, finalizeOptions) => {
-          const disposition =
-            snapshot.status === "completed" ? "completed" : snapshot.status === "stopped" ? "stopped" : "failed";
-          await this.executionStore.finalizeRun(created.manifest.id, disposition, {
-            error: snapshot.error,
-            startedAt: finalizeOptions.startedAt ?? null,
-          });
-        },
-      };
+    const manifest = await this.executionStore.createRun(filePaths, mode, requestedOutputRoot);
+    const items = manifest.items.map((item) => ({ ...item, ...(manualScrape ? { manualScrape } : {}) }));
+    const fileIndexByItemId = new Map(items.map((item, index) => [item.id, index + 1]));
+    const fileScraper = createFileScraper(
+      this.createFileScraperDependencies((percent) => this.lifecycle?.session.recordProgress(percent)),
+      { mode, scrapeSessionId: manifest.manifest.id },
+    );
+    const session = new ScrapeRunSession<ManualScrapeOptions>({
+      runId: manifest.manifest.id,
+      items,
+      concurrency: overrides.concurrency ?? policy.concurrency,
+      executeItem: async (item, signal) => {
+        await policy.restGate?.waitBeforeStart(signal);
+        const progress = { fileIndex: fileIndexByItemId.get(item.id) ?? 1, totalFiles: items.length };
+        return item.manualScrape
+          ? fileScraper.scrapeFile(item.sourcePath, progress, signal, { manualScrape: item.manualScrape })
+          : fileScraper.scrapeFile(item.sourcePath, progress, signal);
+      },
+      commitItem: async (item, result) => await this.executionStore.commitItem(manifest.manifest.id, item, result),
+      onSnapshot: () => undefined,
     });
-    const session = lifecycle.session;
+    const lifecycle = { manifest: manifest.manifest, session };
     this.lifecycle = lifecycle;
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();
@@ -322,7 +303,12 @@ export class ScraperService {
       return;
     }
     try {
-      await lifecycle.finalize(snapshot, { startedAt: startedAt ?? null });
+      const disposition =
+        snapshot.status === "completed" ? "completed" : snapshot.status === "stopped" ? "stopped" : "failed";
+      await this.executionStore.finalizeRun(lifecycle.manifest.id, disposition, {
+        error: snapshot.error,
+        startedAt: startedAt ?? null,
+      });
       this.logger.info(`Scrape run finished: ${snapshot.runId}`);
     } finally {
       if (this.lifecycle === lifecycle) {

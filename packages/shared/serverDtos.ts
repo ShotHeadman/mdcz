@@ -401,6 +401,33 @@ export const scrapeResultDetailResponseSchema = z.object({
 
 export type ScrapeResultDetailResponse = z.infer<typeof scrapeResultDetailResponseSchema>;
 
+export const scrapeHistoryRunSchema = z.object({
+  id: z.string(),
+  rootId: z.string(),
+  rootDisplayName: z.string(),
+  requestedOutputRootId: z.string().nullable(),
+  outputRootId: z.string().nullable(),
+  executionMode: z.enum(["single", "batch"]),
+  disposition: z.enum(["completed", "failed", "stopped", "interrupted"]),
+  createdAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  successCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  totalBytes: z.number().nonnegative(),
+  error: z.string().nullable(),
+});
+
+export type ScrapeHistoryRunDto = z.infer<typeof scrapeHistoryRunSchema>;
+
+export const scrapeHistoryResponseSchema = z.object({
+  runs: z.array(scrapeHistoryRunSchema),
+  results: z.array(scrapeResultSchema),
+});
+
+export type ScrapeHistoryResponse = z.infer<typeof scrapeHistoryResponseSchema>;
+
 export const nfoReadResponseSchema = z.object({
   rootId: z.string(),
   relativePath: z.string(),
@@ -434,46 +461,6 @@ export const fileActionResponseSchema = z.object({
 });
 
 export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
-
-const maintenanceFieldDiffSchema = z
-  .object({
-    changed: z.boolean(),
-    field: z.string(),
-    kind: z.enum(["value", "image", "imageCollection"]),
-    label: z.string(),
-    newValue: z.any(),
-    oldValue: z.any(),
-  })
-  .passthrough();
-
-const maintenancePathDiffSchema = z.object({
-  changed: z.boolean(),
-  currentDir: z.string(),
-  currentVideoPath: z.string(),
-  fileId: z.string(),
-  targetDir: z.string(),
-  targetVideoPath: z.string(),
-});
-
-export const maintenancePreviewItemSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  presetId: maintenancePresetIdSchema,
-  rootId: z.string(),
-  rootDisplayName: z.string(),
-  relativePath: z.string(),
-  fileName: z.string(),
-  status: z.enum(["ready", "blocked", "applied", "failed"]),
-  error: z.string().nullable(),
-  fieldDiffs: z.array(maintenanceFieldDiffSchema),
-  unchangedFieldDiffs: z.array(maintenanceFieldDiffSchema),
-  pathDiff: maintenancePathDiffSchema.nullable(),
-  proposedCrawlerData: crawlerDataSchema.nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-
-export type MaintenancePreviewItemDto = z.infer<typeof maintenancePreviewItemSchema>;
 
 export const maintenanceStartInputSchema = z.object({
   rootId: z.string().trim().min(1),
@@ -510,6 +497,9 @@ export type MaintenanceUpdateDraftInput = z.infer<typeof maintenanceUpdateDraftI
 export const maintenanceDiscardSessionInputSchema = z.object({ taskId: z.string().min(1).optional() }).optional();
 export type MaintenanceDiscardSessionInput = z.infer<typeof maintenanceDiscardSessionInputSchema>;
 
+export const maintenanceMutationAckSchema = z.object({ sessionId: z.string() });
+export type MaintenanceMutationAckDto = z.infer<typeof maintenanceMutationAckSchema>;
+
 export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
   confirmationToken: z.string().trim().min(1).optional(),
   previewIds: z.array(z.string().trim().min(1)).optional(),
@@ -524,37 +514,6 @@ export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
 });
 
 export type MaintenanceApplyInput = z.infer<typeof maintenanceApplyInputSchema>;
-
-export const maintenancePreviewResponseSchema = z.object({
-  task: scanTaskSchema,
-  items: z.array(maintenancePreviewItemSchema),
-  confirmationToken: z.string(),
-});
-
-export type MaintenancePreviewResponse = z.infer<typeof maintenancePreviewResponseSchema>;
-
-export const maintenanceApplyLogSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  batchId: z.string(),
-  previewId: z.string(),
-  rootId: z.string(),
-  relativePath: z.string(),
-  presetId: maintenancePresetIdSchema,
-  status: z.enum(["success", "failed", "skipped"]),
-  error: z.string().nullable(),
-  appliedAt: z.string(),
-});
-
-export type MaintenanceApplyLogDto = z.infer<typeof maintenanceApplyLogSchema>;
-
-export const maintenanceApplyResponseSchema = z.object({
-  task: scanTaskSchema,
-  items: z.array(maintenancePreviewItemSchema),
-  applied: z.array(maintenanceApplyLogSchema),
-});
-
-export type MaintenanceApplyResponse = z.infer<typeof maintenanceApplyResponseSchema>;
 
 export const logEntrySchema = taskEventSchema.extend({
   source: z.enum(["task", "runtime"]),
@@ -628,51 +587,15 @@ export type ScrapePendingUncensoredConfirmationResponse = z.infer<
   typeof scrapePendingUncensoredConfirmationResponseSchema
 >;
 
-const taskRealtimeEventBaseSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  createdAt: z.string(),
-});
-
-export const taskRealtimeEventSchema = z.discriminatedUnion("kind", [
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("log"),
-    log: logEntrySchema,
+export const taskNotificationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("invalidate"),
+    resources: z.array(z.enum(["scan", "scrape-live", "scrape-history", "maintenance", "pending-confirmation"])),
   }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("task-progress"),
-    taskKind: taskKindSchema,
-    value: z.number().min(0).max(100).optional(),
-    current: z.number().int().nonnegative(),
-    total: z.number().int().nonnegative(),
-    message: z.string().optional(),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("scrape-stage"),
-    stage: z.string(),
-    message: z.string(),
-    relativePath: z.string().optional(),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("scrape-result"),
-    result: z.lazy(() => scrapeResultSchema),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("task-failed"),
-    message: z.string(),
-    error: z.string().nullable().optional(),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("maintenance-preview-item"),
-    item: z.lazy(() => maintenancePreviewItemSchema),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("maintenance-apply-item"),
-    item: maintenanceApplyLogSchema,
-  }),
+  z.object({ kind: z.literal("log"), log: logEntrySchema }),
 ]);
 
-export type TaskRealtimeEventDto = z.infer<typeof taskRealtimeEventSchema>;
+export type TaskNotificationDto = z.infer<typeof taskNotificationSchema>;
 
 export const libraryEntrySchema = z.object({
   id: z.string(),
@@ -816,19 +739,6 @@ export const overviewSummaryResponseSchema = z.object({
 });
 
 export type OverviewSummaryResponse = z.infer<typeof overviewSummaryResponseSchema>;
-
-export const webTaskUpdateSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("task"), task: scanTaskSchema }),
-  z.object({
-    kind: z.literal("event"),
-    event: taskEventSchema,
-    ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema).optional(),
-  }),
-  z.object({ kind: z.literal("snapshot"), tasks: z.array(scanTaskSchema) }),
-  z.object({ kind: z.literal("scrape-invalidated") }),
-]);
-
-export type WebTaskUpdateDto = z.infer<typeof webTaskUpdateSchema>;
 
 export const healthResponseSchema = z.object({
   service: z.string(),

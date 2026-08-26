@@ -5,9 +5,8 @@ import type {
   AutomationWebhookDeliveryStatusDto,
   AutomationWebhookDeliveryStatusResponse,
   AutomationWebhookEventDto,
-  ScanTaskDto,
 } from "@mdcz/shared/serverDtos";
-import type { TaskEventBus } from "../taskEvents";
+import type { TaskEventBus, TaskLifecycleEvent } from "../taskEvents";
 import type { MaintenanceService } from "./maintenanceService";
 import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
@@ -47,23 +46,19 @@ export class AutomationService {
       lastSuccessAt: null,
       lastError: null,
     };
-    taskEvents.subscribe((event) => {
-      if (event.data.kind !== "task") {
-        return;
-      }
-
-      this.enqueueWebhook(event.data.task);
-    });
+    taskEvents.subscribeLifecycle((task) => this.enqueueWebhook(task));
   }
 
   async scrapeStart(input: AutomationScrapeStartInput): Promise<AutomationScrapeStartResponse> {
     if (input.refs?.length) {
-      const task = await this.scrape.start({
-        refs: input.refs,
-        outputRootId: input.outputRootId,
-        manualUrl: input.manualUrl,
-        uncensoredConfirmed: input.uncensoredConfirmed,
-      });
+      const task = (
+        await this.scrape.start({
+          refs: input.refs,
+          outputRootId: input.outputRootId,
+          manualUrl: input.manualUrl,
+          uncensoredConfirmed: input.uncensoredConfirmed,
+        })
+      ).task;
       return { task, webhook: this.toWebhookEvent(task) };
     }
 
@@ -77,17 +72,35 @@ export class AutomationService {
 
   async recent(input?: { limit?: number }): Promise<AutomationRecentResponse> {
     const limit = input?.limit ?? 20;
-    const [scanTasks, scrapeTasks, maintenanceTasks] = await Promise.all([
+    const [scanTasks, scrapeHistory, maintenanceTask] = await Promise.all([
       this.scans.list(),
-      this.scrape.list(),
-      this.maintenance.list(),
+      this.scrape.history(),
+      this.maintenance.automationTask(),
     ]);
 
+    const tasks = [
+      ...scanTasks.tasks.map((task) => ({ updatedAt: task.updatedAt, event: this.toWebhookEvent(task) })),
+      ...scrapeHistory.runs.map((run) => ({
+        updatedAt: run.completedAt ?? run.createdAt,
+        event: {
+          taskId: run.id,
+          kind: "scrape" as const,
+          status: run.disposition === "completed" ? ("completed" as const) : ("failed" as const),
+          startedAt: run.startedAt,
+          completedAt: run.completedAt,
+          summary: `刮削 ${run.rootDisplayName || run.rootId}: ${run.disposition}`,
+          errors: run.error ? [run.error] : [],
+        },
+      })),
+      ...(maintenanceTask
+        ? [{ updatedAt: maintenanceTask.updatedAt, event: this.toWebhookEvent(maintenanceTask) }]
+        : []),
+    ];
     return {
-      tasks: [...scanTasks.tasks, ...scrapeTasks.tasks, ...maintenanceTasks.tasks]
+      tasks: tasks
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .slice(0, limit)
-        .map((task) => this.toWebhookEvent(task)),
+        .map(({ event }) => event),
     };
   }
 
@@ -95,7 +108,7 @@ export class AutomationService {
     return { webhook: { ...this.#deliveryStatus } };
   }
 
-  toWebhookEvent(task: ScanTaskDto): AutomationWebhookEventDto {
+  toWebhookEvent(task: TaskLifecycleEvent): AutomationWebhookEventDto {
     return {
       taskId: task.id,
       kind: task.kind,
@@ -107,7 +120,7 @@ export class AutomationService {
     };
   }
 
-  private summary(task: ScanTaskDto): string {
+  private summary(task: TaskLifecycleEvent): string {
     const target = task.rootDisplayName || task.rootId;
     if (task.kind === "scan") {
       return `扫描 ${target}: ${task.status}`;
@@ -118,7 +131,7 @@ export class AutomationService {
     return `维护 ${target}: ${task.status}`;
   }
 
-  private enqueueWebhook(task: ScanTaskDto): void {
+  private enqueueWebhook(task: TaskLifecycleEvent): void {
     if (!this.#webhook?.url) {
       return;
     }

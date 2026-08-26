@@ -1,8 +1,6 @@
 export * from "@mdcz/shared/maintenanceTasks";
 export { writePreparedNfo } from "../scrape/output/executeOutputSteps";
-export * from "./clientSession";
 export * from "./coordinator";
-export * from "./coordinatorContracts";
 export * from "./diffCrawlerData";
 export * from "./diffPaths";
 export * from "./LocalScanService";

@@ -1,50 +1,49 @@
-import type { TaskRealtimeEventDto, WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
+import type { LogEntryDto, TaskNotificationDto } from "@mdcz/shared/serverDtos";
 
-export type TaskUpdatePayload = WebTaskUpdateDto;
-export type TaskRealtimePayload = TaskRealtimeEventDto;
-export type TaskEventPayload = TaskRealtimePayload | TaskUpdatePayload;
-export type TaskSseEventName = "task-event" | "task-update";
-
-export interface TaskEventEnvelope {
+export interface TaskLifecycleEvent {
   id: string;
-  event: TaskSseEventName;
-  data: TaskEventPayload;
+  kind: "scan" | "scrape" | "maintenance";
+  rootId: string;
+  rootDisplayName: string;
+  status: "queued" | "running" | "paused" | "stopping" | "completed" | "failed";
+  startedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
 }
 
-type TaskEventListener = (event: TaskEventEnvelope) => void;
+export type TaskResource = Extract<TaskNotificationDto, { kind: "invalidate" }>["resources"][number];
+export type TaskEventEnvelope = { id: string; event: "notification"; data: TaskNotificationDto };
 
 export class TaskEventBus {
-  readonly #listeners = new Set<TaskEventListener>();
+  readonly #listeners = new Set<(event: TaskEventEnvelope) => void>();
+  readonly #lifecycleListeners = new Set<(task: TaskLifecycleEvent) => void>();
   #nextEventId = 1;
 
-  subscribe(listener: TaskEventListener): () => void {
+  subscribe(listener: (event: TaskEventEnvelope) => void): () => void {
     this.#listeners.add(listener);
-    return () => {
-      this.#listeners.delete(listener);
-    };
+    return () => this.#listeners.delete(listener);
   }
 
-  publish(payload: TaskUpdatePayload): TaskEventEnvelope {
-    return this.publishEnvelope("task-update", payload);
+  subscribeLifecycle(listener: (task: TaskLifecycleEvent) => void): () => void {
+    this.#lifecycleListeners.add(listener);
+    return () => this.#lifecycleListeners.delete(listener);
   }
 
-  publishRealtime(payload: TaskRealtimePayload): TaskEventEnvelope {
-    return this.publishEnvelope("task-event", payload);
+  lifecycle(task: TaskLifecycleEvent): void {
+    for (const listener of this.#lifecycleListeners) listener(task);
   }
 
-  private publishEnvelope(eventName: TaskSseEventName, payload: TaskEventPayload): TaskEventEnvelope {
-    const event: TaskEventEnvelope = {
-      id: String(this.#nextEventId),
-      event: eventName,
-      data: payload,
-    };
+  invalidate(...resources: TaskResource[]): TaskEventEnvelope {
+    return this.emit({ kind: "invalidate", resources: [...new Set(resources)] });
+  }
 
-    this.#nextEventId += 1;
+  log(log: LogEntryDto): void {
+    this.emit({ kind: "log", log });
+  }
 
-    for (const listener of this.#listeners) {
-      listener(event);
-    }
-
+  private emit(data: TaskNotificationDto): TaskEventEnvelope {
+    const event = { id: String(this.#nextEventId++), event: "notification" as const, data };
+    for (const listener of this.#listeners) listener(event);
     return event;
   }
 
@@ -54,8 +53,5 @@ export class TaskEventBus {
 }
 
 export const createTaskEventBus = (): TaskEventBus => new TaskEventBus();
-
-export const formatSseEvent = (event: TaskEventEnvelope): string => {
-  const data = JSON.stringify(event.data);
-  return `id: ${event.id}\nevent: ${event.event}\ndata: ${data}\n\n`;
-};
+export const formatSseEvent = (event: TaskEventEnvelope): string =>
+  `id: ${event.id}\nevent: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`;

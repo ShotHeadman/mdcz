@@ -2,9 +2,6 @@ import { buildFileId, normalizePathForIdentity } from "@mdcz/shared/mediaIdentit
 import type { AmbiguousUncensoredItemDto, ScanTaskDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
 import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
   applyMaintenancePreviewResult,
   applyMaintenanceScanResult,
@@ -12,7 +9,8 @@ import {
   cancelMaintenancePreviewFlow,
   changeMaintenancePreset,
   setMaintenancePreviewPending,
-} from "@mdcz/views/state/maintenanceSession";
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
@@ -55,10 +53,10 @@ export const getWorkbenchSessionSnapshot = (
   routeIntent?: WorkbenchRouteIntent,
 ): WorkbenchSessionSnapshot => {
   const scrapeStore = useScrapeStore.getState();
-  const maintenanceStatus = useMaintenanceExecutionStore.getState().executionStatus;
-  const maintenanceEntries = useMaintenanceEntryStore.getState().entries;
-  const maintenancePreviewResults = useMaintenancePreviewStore.getState().previewResults;
-  const maintenanceItemResults = useMaintenanceExecutionStore.getState().itemResults;
+  const maintenanceStatus = useMaintenanceStore.getState().executionStatus;
+  const maintenanceEntries = useMaintenanceStore.getState().entries;
+  const maintenancePreviewResults = useMaintenanceStore.getState().previewResults;
+  const maintenanceItemResults = useMaintenanceStore.getState().itemResults;
   const scrapeHasWork = scrapeStore.isScraping || scrapeStore.scrapeStatus !== "idle" || scrapeStore.results.length > 0;
   const maintenanceHasWork =
     maintenanceStatus !== "idle" ||
@@ -89,10 +87,10 @@ export const useWorkbenchSessionSnapshot = (
     (state) => state.isScraping || state.scrapeStatus !== "idle" || state.results.length > 0,
   );
   const isScraping = useScrapeStore((state) => state.isScraping);
-  const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
-  const maintenanceEntryCount = useMaintenanceEntryStore((state) => state.entries.length);
-  const maintenancePreviewCount = useMaintenancePreviewStore((state) => Object.keys(state.previewResults).length);
-  const maintenanceItemResultCount = useMaintenanceExecutionStore((state) => Object.keys(state.itemResults).length);
+  const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
+  const maintenanceEntryCount = useMaintenanceStore((state) => state.entries.length);
+  const maintenancePreviewCount = useMaintenanceStore((state) => Object.keys(state.previewResults).length);
+  const maintenanceItemResultCount = useMaintenanceStore((state) => Object.keys(state.itemResults).length);
   const maintenanceHasWork =
     maintenanceStatus !== "idle" ||
     maintenanceEntryCount > 0 ||
@@ -223,7 +221,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     return;
   }
 
-  const executionStore = useMaintenanceExecutionStore.getState();
+  const executionStore = useMaintenanceStore.getState();
 
   try {
     options.setWorkbenchMode?.("maintenance");

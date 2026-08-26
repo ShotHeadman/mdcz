@@ -1,13 +1,8 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { MaintenanceClientSession, MaintenanceStatus, ScraperStatus } from "@mdcz/shared/types";
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import type { ScraperStatus } from "@mdcz/shared/types";
 import { createRuntimeLog, useLogStore } from "@mdcz/views/state/logStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
-import {
-  applyMaintenanceClientSession,
-  applyMaintenanceExecutionItemResult,
-  applyMaintenanceStatusSnapshot,
-} from "@mdcz/views/state/maintenanceSession";
+import { applyMaintenanceSessionSnapshot, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -18,7 +13,7 @@ type SyncTarget = "all" | "scrape" | "maintenance";
 
 const getPollingInterval = (
   scrapeState: ScraperStatus["state"],
-  maintenanceState: MaintenanceStatus["state"],
+  maintenanceState: ReturnType<typeof useMaintenanceStore.getState>["executionStatus"],
 ): number => {
   if (scrapeState === "running" || maintenanceState === "executing") {
     return 800;
@@ -40,7 +35,7 @@ const getPollingInterval = (
 
 const getSyncTarget = (): SyncTarget => {
   const scrapeState = useScrapeStore.getState().scrapeStatus;
-  const maintenanceState = useMaintenanceExecutionStore.getState().executionStatus;
+  const maintenanceState = useMaintenanceStore.getState().executionStatus;
   const scrapeBusy = scrapeState !== "idle";
   const maintenanceBusy = maintenanceState !== "idle";
 
@@ -80,24 +75,20 @@ export const createOverviewInvalidationTracker = () => {
   };
 };
 
-export const applyMaintenanceRuntimeSnapshot = (
-  session: MaintenanceClientSession | null,
-  status: MaintenanceStatus,
-): void => {
-  const execution = useMaintenanceExecutionStore.getState();
+export const applyMaintenanceRuntimeSnapshot = (session: MaintenanceActiveSessionSnapshot | null): void => {
+  const execution = useMaintenanceStore.getState();
   const hasBackendOwnedRendererState =
     Boolean(execution.activeBatchId) ||
-    Object.values(useMaintenancePreviewStore.getState().previewResults).some(
+    Object.values(useMaintenanceStore.getState().previewResults).some(
       (preview) => Boolean(preview.previewId) || Boolean(preview.taskId),
     ) ||
     execution.executionStatus === "previewing" ||
     execution.executionStatus === "executing" ||
     execution.executionStatus === "paused" ||
     execution.executionStatus === "stopping";
-  if (session || (status.state === "idle" && hasBackendOwnedRendererState)) {
-    applyMaintenanceClientSession(session);
+  if (session || hasBackendOwnedRendererState) {
+    applyMaintenanceSessionSnapshot(session);
   }
-  applyMaintenanceStatusSnapshot(status);
 };
 
 export const useIpcSync = (queryClient: QueryClient) => {
@@ -131,7 +122,7 @@ export const useIpcSync = (queryClient: QueryClient) => {
 
       clearPollTimeout();
       const scrapeState = useScrapeStore.getState().scrapeStatus;
-      const maintenanceState = useMaintenanceExecutionStore.getState().executionStatus;
+      const maintenanceState = useMaintenanceStore.getState().executionStatus;
 
       pollTimeout = window.setTimeout(
         () => {
@@ -153,21 +144,16 @@ export const useIpcSync = (queryClient: QueryClient) => {
         }
 
         if (target === "maintenance") {
-          const [session, status] = await Promise.all([
-            ipc.maintenance.getActiveSession(),
-            ipc.maintenance.getStatus(),
-          ]);
-          applyMaintenanceRuntimeSnapshot(session, status);
+          applyMaintenanceRuntimeSnapshot(await ipc.maintenance.getActiveSession());
           return;
         }
 
-        const [scrapeStatus, maintenanceStatus, maintenanceSession] = await Promise.all([
+        const [scrapeStatus, maintenanceSession] = await Promise.all([
           ipc.scraper.getStatus(),
-          ipc.maintenance.getStatus(),
           ipc.maintenance.getActiveSession(),
         ]);
         applyScrapeStatusSnapshot(scrapeStatus);
-        applyMaintenanceRuntimeSnapshot(maintenanceSession, maintenanceStatus);
+        applyMaintenanceRuntimeSnapshot(maintenanceSession);
       })()
         .catch((error) => {
           reportAsyncError(`Failed to sync runtime status during ${context}`, error);
@@ -200,13 +186,6 @@ export const useIpcSync = (queryClient: QueryClient) => {
         );
 
         unsubscribers.push(
-          ipc.on.maintenanceItemResult((payload) => {
-            applyMaintenanceExecutionItemResult(payload);
-            safeSync("maintenance item result", "maintenance");
-          }),
-        );
-
-        unsubscribers.push(
           ipc.on.scrapeResult((payload) => {
             useScrapeStore.getState().upsertResult(payload);
             safeSync("scrape result", "scrape");
@@ -221,7 +200,7 @@ export const useIpcSync = (queryClient: QueryClient) => {
 
         unsubscribers.push(
           ipc.on.progress((payload) => {
-            const maintenanceState = useMaintenanceExecutionStore.getState();
+            const maintenanceState = useMaintenanceStore.getState();
             if (
               maintenanceState.executionStatus === "previewing" ||
               maintenanceState.executionStatus === "executing" ||

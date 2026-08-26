@@ -1,6 +1,4 @@
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import {
   applyMaintenanceRuntimeSnapshot,
@@ -11,9 +9,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 afterEach(() => {
   useScrapeStore.getState().reset();
-  useMaintenanceEntryStore.getState().reset();
-  useMaintenanceExecutionStore.getState().reset();
-  useMaintenancePreviewStore.getState().reset();
+  useMaintenanceStore.getState().reset();
+  useMaintenanceStore.getState().reset();
+  useMaintenanceStore.getState().reset();
 });
 
 describe("overview UI contract", () => {
@@ -93,7 +91,7 @@ describe("overview UI contract", () => {
   });
 
   it("does not clear local maintenance scan entries before a backend session exists", () => {
-    useMaintenanceEntryStore.getState().setEntries(
+    useMaintenanceStore.getState().setEntries(
       [
         {
           fileId: "entry-1",
@@ -111,24 +109,13 @@ describe("overview UI contract", () => {
       "/media",
     );
 
-    applyMaintenanceRuntimeSnapshot(null, {
-      state: "scanning",
-      totalEntries: 1,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
-    });
+    useMaintenanceStore.setState({ executionStatus: "scanning" });
+    applyMaintenanceRuntimeSnapshot(null);
 
-    expect(useMaintenanceEntryStore.getState().entries).toHaveLength(1);
-    expect(useMaintenanceExecutionStore.getState().executionStatus).toBe("scanning");
+    expect(useMaintenanceStore.getState().entries).toHaveLength(1);
+    expect(useMaintenanceStore.getState().executionStatus).toBe("scanning");
 
-    applyMaintenanceRuntimeSnapshot(null, {
-      state: "idle",
-      totalEntries: 0,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
-    });
-    expect(useMaintenanceEntryStore.getState().entries).toHaveLength(1);
+    applyMaintenanceRuntimeSnapshot(null);
+    expect(useMaintenanceStore.getState().entries).toHaveLength(1);
   });
 });

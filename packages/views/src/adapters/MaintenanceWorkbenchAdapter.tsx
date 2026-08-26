@@ -1,8 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { findMaintenanceEntryGroup } from "@mdcz/shared/viewModels/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import { applyMaintenanceSessionSnapshot, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -14,19 +12,18 @@ import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
 
 export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
-  const { entries, activeId, presetId } = useMaintenanceEntryStore(
+  const { entries, activeId, presetId } = useMaintenanceStore(
     useShallow((state) => ({
       entries: state.entries,
       activeId: state.activeId,
       presetId: state.presetId,
     })),
   );
-  const itemResults = useMaintenanceExecutionStore((state) => state.itemResults);
-  const { previewResults, fieldSelections, setFieldSelection } = useMaintenancePreviewStore(
+  const itemResults = useMaintenanceStore((state) => state.itemResults);
+  const { previewResults, fieldSelections } = useMaintenanceStore(
     useShallow((state) => ({
       previewResults: state.previewResults,
       fieldSelections: state.fieldSelections,
-      setFieldSelection: state.setFieldSelection,
     })),
   );
 
@@ -63,12 +60,12 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     field: import("@mdcz/shared/types").FieldDiff["field"],
     side: import("@mdcz/shared/maintenanceCommit").MaintenanceFieldSelectionSide,
   ) => {
-    setFieldSelection(fileId, field, side);
-    const previewId = useMaintenancePreviewStore.getState().previewResults[fileId]?.previewId;
+    const previewId = useMaintenanceStore.getState().previewResults[fileId]?.previewId;
     if (!previewId) return;
-    const selections = useMaintenancePreviewStore.getState().fieldSelections[fileId];
+    const selections = { ...useMaintenanceStore.getState().fieldSelections[fileId], [field]: side };
     void ports.maintenance
       .updateDraft(previewId, { fieldSelections: selections })
+      .then(async () => applyMaintenanceSessionSnapshot(await ports.maintenance.getActiveSession()))
       .catch((error) => toast.error(`保存维护选择失败: ${toErrorMessage(error)}`));
   };
   const detailItem = useMemo(() => {

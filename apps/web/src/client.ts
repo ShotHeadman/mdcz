@@ -1,4 +1,4 @@
-import type { TaskRealtimeEventDto, WebTaskUpdateDto } from "@mdcz/shared";
+import type { TaskNotificationDto } from "@mdcz/shared";
 import type { Configuration } from "@mdcz/shared/config";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
 import { createTRPCUntypedClient, httpLink } from "@trpc/client";
@@ -201,7 +201,6 @@ export const api: ServerApiContract = {
     scanSelectedFiles: (input) => trpcQuery("maintenance.scanSelectedFiles", input),
     apply: (input) => trpcMutation("maintenance.execute", input),
     pause: (input) => trpcMutation("maintenance.pause", input),
-    preview: (input) => trpcQuery("maintenance.preview", input),
     getActiveSession: () => trpcQuery("maintenance.getActiveSession"),
     updateDraft: (input) => trpcMutation("maintenance.updateDraft", input),
     discardSession: (input) => trpcMutation("maintenance.discardSession", input),
@@ -246,7 +245,7 @@ export const api: ServerApiContract = {
     pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
     startSelectedFiles: (input) => trpcMutation("scrape.startSelectedFiles", input),
     deleteFile: (input) => trpcMutation("scrape.deleteFile", input),
-    listResults: (input) => trpcQuery("scrape.listResults", input),
+    history: (input) => trpcQuery("scrape.history", input),
     nfoRead: (input) => trpcQuery("scrape.nfoRead", input),
     nfoWrite: (input) => trpcMutation("scrape.nfoWrite", input),
     posterCropSession: (input) => trpcQuery("scrape.posterCropSession", input),
@@ -258,12 +257,6 @@ export const api: ServerApiContract = {
     confirmUncensored: (input) => trpcMutation("scrape.confirmUncensored", input),
     start: (input) => trpcMutation("scrape.start", input),
     stop: (input) => trpcMutation("scrape.stop", input),
-  },
-  tasks: {
-    detail: (input) => trpcQuery("tasks.detail", input),
-    events: (input) => trpcQuery("tasks.events", input),
-    list: () => trpcQuery("tasks.list"),
-    retry: (input) => trpcMutation("tasks.retry", input),
   },
   setup: {
     complete: async (input) => {
@@ -284,11 +277,10 @@ const taskEventsUrl = (): string => {
 };
 
 const subscribeTaskEventSource = (handlers: {
-  onEvent?: (payload: TaskRealtimeEventDto) => void;
+  onNotification?: (payload: TaskNotificationDto) => void;
   onError?: () => void;
   onHeartbeat?: () => void;
   onOpen?: () => void;
-  onUpdate?: (payload: WebTaskUpdateDto) => void;
 }): (() => void) => {
   const eventSource = new EventSource(taskEventsUrl());
   eventSource.addEventListener("open", () => {
@@ -300,29 +292,17 @@ const subscribeTaskEventSource = (handlers: {
   eventSource.addEventListener("heartbeat", () => {
     handlers.onHeartbeat?.();
   });
-  eventSource.addEventListener("task-update", (event) => {
-    handlers.onUpdate?.(JSON.parse(event.data) as WebTaskUpdateDto);
-  });
-  eventSource.addEventListener("task-event", (event) => {
-    handlers.onEvent?.(JSON.parse(event.data) as TaskRealtimeEventDto);
+  eventSource.addEventListener("notification", (event) => {
+    handlers.onNotification?.(JSON.parse(event.data) as TaskNotificationDto);
   });
   return () => eventSource.close();
 };
 
-export const subscribeTaskUpdates = (onUpdate: (payload: WebTaskUpdateDto) => void): (() => void) => {
-  return subscribeTaskEventSource({ onUpdate });
-};
-
-export const subscribeTaskEvents = (onEvent: (payload: TaskRealtimeEventDto) => void): (() => void) => {
-  return subscribeTaskEventSource({ onEvent });
-};
-
-export const subscribeTaskRealtime = (handlers: {
-  onEvent?: (payload: TaskRealtimeEventDto) => void;
+export const subscribeTaskNotifications = (handlers: {
+  onNotification?: (payload: TaskNotificationDto) => void;
   onError?: () => void;
   onHeartbeat?: () => void;
   onOpen?: () => void;
-  onUpdate?: (payload: WebTaskUpdateDto) => void;
 }): (() => void) => {
   return subscribeTaskEventSource(handlers);
 };

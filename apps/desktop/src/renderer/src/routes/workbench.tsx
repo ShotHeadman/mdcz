@@ -15,7 +15,7 @@ import {
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -50,7 +50,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       results: state.results,
     })),
   );
-  const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
+  const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
   const { workbenchMode, setWorkbenchMode } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,

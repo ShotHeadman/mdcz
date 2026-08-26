@@ -18,9 +18,9 @@ import {
   type MaintenanceRuntime,
   MaintenanceTaskCoordinator,
 } from "@mdcz/runtime/maintenance";
-import { toMaintenanceClientSession } from "@mdcz/runtime/maintenance/clientSession";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type {
+  MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
   MaintenanceApplySelection,
   MaintenancePreviewBatch,
@@ -29,8 +29,6 @@ import type {
 import type {
   LocalScanEntry,
   MaintenanceApplyCommit,
-  MaintenanceClientSession,
-  MaintenanceItemResult,
   MaintenancePresetId,
   MaintenancePreviewResult,
   MaintenanceStatus,
@@ -56,17 +54,6 @@ const idleStatus = (): MaintenanceStatus => ({
   successCount: 0,
   failedCount: 0,
 });
-const desktopMaintenanceSessionHost = {
-  fileId: (
-    preview: import("@mdcz/shared/maintenanceTasks").MaintenanceTaskPreview,
-    entry: LocalScanEntry | null,
-  ): string => entry?.fileId ?? preview.relativePath,
-  toEntry: (
-    preview: import("@mdcz/shared/maintenanceTasks").MaintenanceTaskPreview,
-    fileId: string,
-  ): LocalScanEntry | null => (preview.entry ? { ...preview.entry, fileId } : null),
-};
-
 const sameValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 export class MaintenanceService {
@@ -124,8 +111,23 @@ export class MaintenanceService {
   async getStatus(taskId?: string): Promise<MaintenanceStatus> {
     if (this.scanningStatus) return { ...this.scanningStatus };
     const snapshot = await this.coordinator.getActiveSession();
-    if (!snapshot || (taskId && snapshot.task.id !== taskId)) return idleStatus();
-    return toMaintenanceClientSession(snapshot, desktopMaintenanceSessionHost)?.status ?? idleStatus();
+    if (!snapshot || (taskId && snapshot.id !== taskId)) return idleStatus();
+    return {
+      state:
+        snapshot.status === "paused"
+          ? "paused"
+          : snapshot.status === "stopping"
+            ? "stopping"
+            : snapshot.status === "queued" || snapshot.status === "running"
+              ? snapshot.phase === "preview"
+                ? "previewing"
+                : "executing"
+              : "idle",
+      totalEntries: snapshot.totalEntries,
+      completedEntries: snapshot.completedEntries,
+      successCount: snapshot.successCount,
+      failedCount: snapshot.failedCount,
+    };
   }
 
   async scan(dirPath: string): Promise<LocalScanEntry[]> {
@@ -168,8 +170,21 @@ export class MaintenanceService {
     const handle = await this.startPreview(entries, presetId);
     await handle.completion;
     const session = await this.getActiveSession();
-    if (!session || session.taskId !== handle.task.id) throw new Error("维护会话已变化");
-    return session.preview;
+    if (!session || session.id !== handle.task.id) throw new Error("维护会话已变化");
+    return {
+      items: session.previews.map((item) => ({
+        fileId: item.entry?.fileId ?? item.relativePath,
+        previewId: item.id,
+        taskId: item.taskId,
+        status: item.status === "ready" ? "ready" : "blocked",
+        ...(item.error ? { error: item.error } : {}),
+        ...(item.fieldDiffs.length ? { fieldDiffs: item.fieldDiffs } : {}),
+        ...(item.unchangedFieldDiffs.length ? { unchangedFieldDiffs: item.unchangedFieldDiffs } : {}),
+        ...(item.pathDiff ? { pathDiff: item.pathDiff } : {}),
+        ...(item.proposedCrawlerData ? { proposedCrawlerData: item.proposedCrawlerData } : {}),
+        ...(item.imageAlternatives ? { imageAlternatives: item.imageAlternatives } : {}),
+      })),
+    };
   }
 
   async execute(
@@ -180,10 +195,10 @@ export class MaintenanceService {
     if (items.length === 0) throw new Error("No entries to process");
     const state = await this.persistenceService.getState();
     const session = await this.coordinator.getActiveSession();
-    if (!session || session.task.id !== taskId) throw new Error("维护任务不存在");
-    if (session.execution.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
+    if (!session || session.id !== taskId) throw new Error("维护任务不存在");
+    if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
     if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
-    const root = await state.repositories.mediaRoots.get(session.task.rootId);
+    const root = await state.repositories.mediaRoots.get(session.rootId);
     const previews = (await this.coordinator.readPreview(taskId)).items;
     const byPath = new Map(previews.map((preview) => [preview.relativePath, preview]));
     const selected = new Set<string>();
@@ -236,8 +251,8 @@ export class MaintenanceService {
     return (await this.resolveTask())?.id ?? null;
   }
 
-  async getActiveSession(): Promise<MaintenanceClientSession | null> {
-    return toMaintenanceClientSession(await this.coordinator.getActiveSession(), desktopMaintenanceSessionHost);
+  async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
+    return await this.coordinator.getActiveSession();
   }
 
   async updateDraft(input: {
@@ -319,36 +334,6 @@ export class MaintenanceService {
     switch (event.kind) {
       case "log":
         this.signalService.showLogText(event.event.message);
-        return;
-      case "progress": {
-        const { completedEntries, totalEntries } = event.progress;
-        this.signalService.setProgress(
-          totalEntries > 0 ? Math.round((completedEntries / totalEntries) * 100) : 100,
-          completedEntries,
-          totalEntries,
-        );
-        return;
-      }
-      case "preview-item":
-        return;
-      case "apply-item": {
-        const fileId = event.result.entry?.fileId ?? event.log.relativePath;
-        const payload: MaintenanceItemResult = {
-          fileId,
-          batchId: event.log.batchId,
-          status: event.result.status,
-        };
-        if (event.result.error) payload.error = event.result.error;
-        if (event.result.crawlerData) payload.crawlerData = event.result.crawlerData;
-        if (event.result.entry) payload.updatedEntry = event.result.entry;
-        if (event.result.fieldDiffs) payload.fieldDiffs = event.result.fieldDiffs;
-        if (event.result.unchangedFieldDiffs) payload.unchangedFieldDiffs = event.result.unchangedFieldDiffs;
-        if (event.result.pathDiff) payload.pathDiff = event.result.pathDiff;
-        this.signalService.showMaintenanceItemResult(payload);
-        return;
-      }
-      case "task-failed":
-        this.signalService.showLogText(event.error, "error");
         return;
       case "task-changed":
         return;

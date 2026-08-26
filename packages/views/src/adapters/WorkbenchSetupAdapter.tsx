@@ -9,8 +9,7 @@ import {
 } from "@mdcz/shared/mediaCandidate";
 import type { ServerPathSuggestResponse } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { changeMaintenancePreset } from "@mdcz/views/state/maintenanceSession";
+import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -96,7 +95,7 @@ export function WorkbenchSetupAdapter({
       setAllSelected: state.setAllSelected,
     })),
   );
-  const presetId = useMaintenanceEntryStore((state) => state.presetId);
+  const presetId = useMaintenanceStore((state) => state.presetId);
   const [startPending, setStartPending] = useState(false);
   const scanRequestRef = useRef(0);
   const initializedRef = useRef(false);

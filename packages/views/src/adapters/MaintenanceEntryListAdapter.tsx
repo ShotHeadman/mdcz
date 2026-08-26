@@ -6,10 +6,11 @@ import {
   type MaintenanceEntryGroupViewModel,
 } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import { ContextMenuItem } from "@mdcz/ui";
-import { type MaintenanceFilter, useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
-import { toggleMaintenanceSelectedIds } from "@mdcz/views/state/maintenanceSession";
+import {
+  type MaintenanceFilter,
+  toggleMaintenanceSelectedIds,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { FileText, FolderOpen, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
@@ -90,7 +91,7 @@ function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
 }
 
 export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionPort }) {
-  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceEntryStore(
+  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
@@ -101,13 +102,13 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       setActiveId: state.setActiveId,
     })),
   );
-  const { itemResults, executionStatus } = useMaintenanceExecutionStore(
+  const { itemResults, executionStatus } = useMaintenanceStore(
     useShallow((state) => ({
       itemResults: state.itemResults,
       executionStatus: state.executionStatus,
     })),
   );
-  const previewResults = useMaintenancePreviewStore((state) => state.previewResults);
+  const previewResults = useMaintenanceStore((state) => state.previewResults);
   const showsSelection = getMaintenancePresetMeta(presetId).supportsExecution !== false;
   const selectionLocked = executionStatus !== "idle";
   const groupedEntries = useMemo(

@@ -7,13 +7,14 @@ export const toScrapeResultDto = (
   outcome: ScrapeItemOutcomeRecord,
   item: ScrapeRunItemRecord,
   options: {
+    runId: string;
     rootDisplayName: string;
     runCreatedAt: Date;
     assets: Pick<LibraryItemAssetRecord, "kind" | "rootId" | "relativePath">[];
   },
 ): ScrapeResultDto => ({
   id: outcome.id,
-  taskId: outcome.runId,
+  taskId: options.runId,
   rootId: item.rootId,
   rootDisplayName: options.rootDisplayName,
   outputRootId: outcome.outputRootId,

@@ -115,7 +115,7 @@ export const loginAsAdmin = async (fastify: FastifyInstance, password = "admin")
   return response.json().result.data.token as string;
 };
 
-export const waitForTaskStatus = async (
+export const waitForScanTaskStatus = async (
   fastify: FastifyInstance,
   token: string,
   taskId: string,
@@ -125,10 +125,35 @@ export const waitForTaskStatus = async (
     .poll(async () => {
       const detailResponse = await fastify.inject({
         method: "GET",
-        url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+        url: `/trpc/scans.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
         headers: { authorization: `Bearer ${token}` },
       });
       return detailResponse.json().result.data.task.status;
+    })
+    .toBe(status);
+};
+
+export const waitForScrapeRunStatus = async (
+  fastify: FastifyInstance,
+  token: string,
+  runId: string,
+  status: string,
+): Promise<void> => {
+  await expect
+    .poll(async () => {
+      const headers = { authorization: `Bearer ${token}` };
+      const liveResponse = await fastify.inject({ method: "GET", url: "/trpc/scrape.liveRuns", headers });
+      const liveRun = liveResponse
+        .json()
+        .result.data.runs.find((run: { task: { id: string } }) => run.task.id === runId);
+      if (liveRun) return liveRun.task.status;
+
+      const historyResponse = await fastify.inject({
+        method: "GET",
+        url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: runId }))}`,
+        headers,
+      });
+      return historyResponse.json().result?.data?.runs[0]?.disposition;
     })
     .toBe(status);
 };

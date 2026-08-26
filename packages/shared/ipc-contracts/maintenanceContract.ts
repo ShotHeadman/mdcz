@@ -1,13 +1,7 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
-import type {
-  LocalScanEntry,
-  MaintenanceApplyCommit,
-  MaintenanceClientSession,
-  MaintenancePresetId,
-  MaintenancePreviewResult,
-  MaintenanceStatus,
-} from "../types";
+import type { MaintenanceActiveSessionSnapshot } from "../maintenanceTasks";
+import type { LocalScanEntry, MaintenanceApplyCommit, MaintenancePresetId, MaintenancePreviewResult } from "../types";
 
 export type MaintenanceIpcContract = {
   [IpcChannel.Maintenance_Scan]: IpcProcedure<
@@ -25,8 +19,7 @@ export type MaintenanceIpcContract = {
   [IpcChannel.Maintenance_Stop]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Maintenance_Pause]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Maintenance_Resume]: IpcProcedure<void, { success: true }>;
-  [IpcChannel.Maintenance_GetStatus]: IpcProcedure<void, MaintenanceStatus>;
-  [IpcChannel.Maintenance_GetActiveSession]: IpcProcedure<void, MaintenanceClientSession | null>;
+  [IpcChannel.Maintenance_GetActiveSession]: IpcProcedure<void, MaintenanceActiveSessionSnapshot | null>;
   [IpcChannel.Maintenance_UpdateDraft]: IpcProcedure<
     {
       previewId: string;

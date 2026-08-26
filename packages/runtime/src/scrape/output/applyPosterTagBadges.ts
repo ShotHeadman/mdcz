@@ -1,8 +1,8 @@
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState } from "@mdcz/shared/types";
+import type { RuntimeScrapeSignalService } from "../FileScraper";
 import { PosterWatermarkService } from "../PosterWatermarkService";
-import type { RuntimeScrapeSignalService } from "../pipeline/types";
 import { resolvePosterBadgeDefinitions } from "../posterBadges";
 import { throwIfAborted } from "../utils/abort";
 

@@ -85,7 +85,7 @@ export class ToolsService {
           manualUrl: input.manualUrl,
           uncensoredConfirmed: true,
         });
-        return { toolId: input.toolId, ok: true, message: `已创建刮削任务 ${task.id}`, data: task };
+        return { toolId: input.toolId, ok: true, message: `已创建刮削任务 ${task.task.id}`, data: task };
       }
       case "crawler-tester": {
         const config = await this.config.get();

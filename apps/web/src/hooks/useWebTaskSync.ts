@@ -1,41 +1,25 @@
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { ScrapeLiveRunsResponse } from "@mdcz/shared/serverDtos";
-import type { MaintenanceClientSession } from "@mdcz/shared/types";
-import { applyMaintenanceClientSession } from "@mdcz/views/state/maintenanceSession";
+import { applyMaintenanceSessionSnapshot } from "@mdcz/views/state/maintenanceStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect } from "react";
-import { api, subscribeTaskRealtime } from "../client";
-import {
-  applyPendingUncensoredConfirmation,
-  applyScrapeLiveRunsSnapshot,
-  applyTaskRealtimeEvent,
-  applyWebTaskUpdate,
-} from "../taskHydration";
+import { api, subscribeTaskNotifications } from "../client";
+import { applyPendingUncensoredConfirmation, applyScrapeLiveRunsSnapshot } from "../taskHydration";
 
 const FAST_POLL_INTERVAL_MS = 2_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
 const LIVENESS_CHECK_INTERVAL_MS = 2_000;
 
-export interface ScrapeLiveRunsRefreshCoordinator {
+export interface RefreshCoordinator {
   dispose(): void;
   request(): Promise<void>;
 }
 
-export interface MaintenanceSessionRefreshCoordinator {
-  dispose(): void;
-  notifyLiveUpdate(): void;
-  request(): Promise<void>;
-}
-
-/**
- * Serializes all authority reads.  A new signal received while a request is in
- * flight simply marks the coordinator dirty, so its response can be applied
- * first and one fresh response immediately follows it.
- */
-export const createScrapeLiveRunsRefreshCoordinator = (input: {
-  apply(response: ScrapeLiveRunsResponse): void;
+export const createRefreshCoordinator = <T>(input: {
+  apply(response: T): void;
   onSuccess?(): void;
-  read(): Promise<ScrapeLiveRunsResponse>;
-}): ScrapeLiveRunsRefreshCoordinator => {
+  read(): Promise<T>;
+}): RefreshCoordinator => {
   let disposed = false;
   let dirty = false;
   let inFlight = false;
@@ -78,66 +62,6 @@ export const createScrapeLiveRunsRefreshCoordinator = (input: {
   };
 };
 
-/**
- * Serializes authoritative maintenance-session reads. A live maintenance
- * event invalidates an in-flight response, so an older full response cannot
- * replace the state that event just advanced.
- */
-export const createMaintenanceSessionRefreshCoordinator = (input: {
-  apply(session: MaintenanceClientSession | null): void;
-  read(): Promise<MaintenanceClientSession | null>;
-}): MaintenanceSessionRefreshCoordinator => {
-  let disposed = false;
-  let dirty = false;
-  let inFlight = false;
-  let liveUpdateVersion = 0;
-  let activeRequest: Promise<void> | null = null;
-
-  const drain = async (): Promise<void> => {
-    try {
-      while (dirty && !disposed) {
-        dirty = false;
-        const requestLiveUpdateVersion = liveUpdateVersion;
-        try {
-          const session = await input.read();
-          if (disposed) return;
-          if (liveUpdateVersion !== requestLiveUpdateVersion) {
-            dirty = true;
-            continue;
-          }
-          input.apply(session);
-        } catch {
-          // Keep the request dirty, but wait for the next heartbeat, polling
-          // tick, or reconnect to retry.
-          dirty = true;
-          return;
-        }
-      }
-    } finally {
-      inFlight = false;
-      activeRequest = null;
-    }
-  };
-
-  return {
-    request: async () => {
-      dirty = true;
-      if (!inFlight) {
-        inFlight = true;
-        activeRequest = drain();
-      }
-      await activeRequest;
-    },
-    notifyLiveUpdate: () => {
-      liveUpdateVersion += 1;
-      if (inFlight) dirty = true;
-    },
-    dispose: () => {
-      disposed = true;
-    },
-  };
-};
-
 let requestLiveRunsFromUi: (() => void) | null = null;
 let requestPendingUncensoredFromUi: (() => void) | null = null;
 
@@ -150,27 +74,15 @@ export const requestPendingUncensoredConfirmationRefresh = (): void => {
   requestPendingUncensoredFromUi?.();
 };
 
-export const applyWebTaskSnapshot = async (): Promise<void> => {
-  const response = await api.tasks.list();
-  const nextState = applyWebTaskUpdate(
-    {
-      kind: "snapshot",
-      tasks: response.tasks,
-    },
-    useWorkbenchTaskStore.getState().hydrationState,
-  );
-  useWorkbenchTaskStore.getState().setHydrationState(nextState);
-};
-
 export const hydratePendingUncensoredConfirmation = async (): Promise<void> => {
   const response = await api.scrape.pendingUncensoredConfirmation();
   const store = useWorkbenchTaskStore.getState();
   store.setHydrationState(applyPendingUncensoredConfirmation(response, store.hydrationState));
 };
 
-const applyActiveMaintenanceSession = (session: MaintenanceClientSession | null): void => {
-  applyMaintenanceClientSession(session);
-  useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(session?.taskId ?? "");
+const applyActiveMaintenanceSession = (session: MaintenanceActiveSessionSnapshot | null): void => {
+  applyMaintenanceSessionSnapshot(session);
+  useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(session?.id ?? "");
 };
 
 export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
@@ -178,8 +90,6 @@ export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
 };
 
 export const useWebTaskSync = (): void => {
-  const setHydrationState = useWorkbenchTaskStore((state) => state.setHydrationState);
-
   useEffect(() => {
     let closed = false;
     let connectionOpen = false;
@@ -192,7 +102,7 @@ export const useWebTaskSync = (): void => {
       fastPollingTimer = null;
     };
 
-    const coordinator = createScrapeLiveRunsRefreshCoordinator({
+    const coordinator = createRefreshCoordinator<ScrapeLiveRunsResponse>({
       read: async () => await api.scrape.liveRuns(),
       apply: (response) => {
         if (closed) return;
@@ -203,7 +113,7 @@ export const useWebTaskSync = (): void => {
         if (connectionOpen) stopFastPolling();
       },
     });
-    const maintenanceCoordinator = createMaintenanceSessionRefreshCoordinator({
+    const maintenanceCoordinator = createRefreshCoordinator<MaintenanceActiveSessionSnapshot | null>({
       read: async () => await api.maintenance.getActiveSession(),
       apply: (session) => {
         if (closed) return;
@@ -235,15 +145,11 @@ export const useWebTaskSync = (): void => {
     requestLiveRunsFromUi = refreshLiveRuns;
     requestPendingUncensoredFromUi = refreshPendingUncensored;
 
-    // These are deliberately independent first reads: generic task history,
-    // live scrape state, and durable uncensored confirmation do not gate one
-    // another on a page mount.
-    void applyWebTaskSnapshot().catch(() => {});
     refreshLiveRuns();
     refreshPendingUncensored();
     refreshMaintenanceSession();
 
-    const unsubscribe = subscribeTaskRealtime({
+    const unsubscribe = subscribeTaskNotifications({
       onOpen: () => {
         connectionOpen = true;
         recordDispatch();
@@ -259,38 +165,12 @@ export const useWebTaskSync = (): void => {
         refreshLiveRuns();
         refreshMaintenanceSession();
       },
-      onEvent: (payload) => {
+      onNotification: (payload) => {
         recordDispatch();
-        if (
-          payload.kind === "maintenance-preview-item" ||
-          payload.kind === "maintenance-apply-item" ||
-          (payload.kind === "task-progress" && payload.taskKind === "maintenance") ||
-          payload.kind === "task-failed"
-        ) {
-          maintenanceCoordinator.notifyLiveUpdate();
-        }
-        const nextState = applyTaskRealtimeEvent(payload, useWorkbenchTaskStore.getState().hydrationState);
-        setHydrationState(nextState);
-      },
-      onUpdate: (payload) => {
-        recordDispatch();
-        if (
-          (payload.kind === "task" && payload.task.kind === "maintenance") ||
-          (payload.kind === "snapshot" && payload.tasks.some((task) => task.kind === "maintenance"))
-        ) {
-          maintenanceCoordinator.notifyLiveUpdate();
-          refreshMaintenanceSession();
-        }
-        const nextState = applyWebTaskUpdate(payload, useWorkbenchTaskStore.getState().hydrationState);
-        setHydrationState(nextState);
-
-        if (payload.kind === "scrape-invalidated") {
-          refreshLiveRuns();
-          refreshPendingUncensored();
-        }
-        if (payload.kind === "event" && (payload.event.type === "completed" || payload.event.type === "failed")) {
-          refreshPendingUncensored();
-        }
+        if (payload.kind === "log") return;
+        if (payload.resources.includes("scrape-live")) refreshLiveRuns();
+        if (payload.resources.includes("maintenance")) refreshMaintenanceSession();
+        if (payload.resources.includes("pending-confirmation")) refreshPendingUncensored();
       },
     });
     const livenessTimer = setInterval(() => {
@@ -307,7 +187,7 @@ export const useWebTaskSync = (): void => {
       stopFastPolling();
       unsubscribe();
     };
-  }, [setHydrationState]);
+  }, []);
 };
 
 export const __webTaskSyncTestHooks = {

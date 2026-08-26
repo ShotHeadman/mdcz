@@ -3,10 +3,10 @@ import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type {
+  LibraryEntryRecord,
   ScrapeItemOutcomeRecord,
   ScrapeRunItemRecord,
   ScrapeRunManifest,
-  ScrapeRunSummaryRecord,
 } from "@mdcz/persistence";
 import { toLibraryAssets } from "@mdcz/runtime/library";
 import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
@@ -27,8 +27,9 @@ import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   type ScrapeRunItem,
   type ScrapeRunItemSnapshot,
-  ScrapeRunLifecycle,
+  ScrapeRunSession,
   type ScrapeRunSnapshot,
+  TaskScheduler,
 } from "@mdcz/runtime/tasks";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import { scrapeAssetReferencesToResult } from "@mdcz/shared/dtoAdapters";
@@ -39,29 +40,26 @@ import {
   type FileActionInput,
   type FileActionResponse,
   type LogEntryDto,
-  type LogListResponse,
   type NfoReadInput,
   type NfoReadResponse,
   type NfoWriteInput,
   type NfoWriteResponse,
   type PosterCropSaveInput,
   type PosterCropSessionResponse,
-  type ScanTaskDetailResponse,
   type ScanTaskDto,
-  type ScanTaskListResponse,
   type ScrapeConfirmUncensoredInput,
+  type ScrapeHistoryResponse,
+  type ScrapeHistoryRunDto,
   type ScrapeLiveItemDto,
   type ScrapeLiveRunSnapshotDto,
   type ScrapeLiveRunsResponse,
   type ScrapePendingUncensoredConfirmationResponse,
   type ScrapeResultDetailResponse,
   type ScrapeResultDto,
-  type ScrapeResultListResponse,
   type ScrapeStartInput,
   type ScrapeStartSelectedFilesInput,
   type ScrapeTaskControlInput,
   type TaskEventDto,
-  type TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult, UncensoredChoice } from "@mdcz/shared/types";
 import { getServerImageHostCooldownStore } from "../imageHostCooldownStore";
@@ -74,19 +72,27 @@ import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
 import { ServerNfoAdapter, ServerPosterCropAdapter, type ServerScrapeArtifactRecord } from "./scrapeAdapters";
-import { ServerScrapeQueue, type ServerScrapeQueueEntry } from "./serverScrapeQueue";
 
 export const SCRAPE_BACKEND_INTERRUPTED_MESSAGE = "刮削后端已重启，任务已中断；请重新扫描磁盘并基于当前文件创建新任务";
 const INTERRUPTED_RETRY_MESSAGE = "中断任务必须先重新扫描磁盘，再从当前文件列表创建新任务";
 const STOPPED_MESSAGE = "刮削已停止";
-const TERMINAL_SNAPSHOT_LIMIT = 25;
 
 type ServerManualScrape = {
   manualUrl: string | null;
   uncensoredChoice: UncensoredChoice | null;
 };
 
-type LiveQueueEntry = ServerScrapeQueueEntry<ServerManualScrape>;
+type LiveQueueEntry = {
+  id: string;
+  runId: string;
+  manifest: ScrapeRunManifest;
+  session: ScrapeRunSession<ServerManualScrape>;
+  status: "queued" | "running" | "paused" | "stopping";
+  createdAt: Date;
+  startedAt: Date | null;
+  settlement: Promise<void> | null;
+  rootDisplayName: string;
+};
 
 type PendingSuccess = {
   root: MediaRoot;
@@ -103,9 +109,6 @@ const outcomeKey = (runId: string, itemId: string, attempt: number): string =>
   `${runId}\u0000${itemId}\u0000${attempt}`;
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const isTerminalSnapshot = (snapshot: ScrapeRunSnapshot<ServerManualScrape>): boolean =>
-  snapshot.status === "completed" || snapshot.status === "failed" || snapshot.status === "stopped";
 
 const createFailedResult = (
   item: ScrapeRunItem<ServerManualScrape>,
@@ -125,12 +128,6 @@ const createFailedResult = (
 });
 
 export class ScrapeService {
-  private readonly liveManifests = new Map<string, ScrapeRunManifest>();
-  private readonly rootDisplayNames = new Map<string, string>();
-  private readonly snapshots = new Map<string, ScrapeRunSnapshot<ServerManualScrape>>();
-  private readonly snapshotUpdatedAt = new Map<string, Date>();
-  private readonly eventsByRun = new Map<string, TaskEventDto[]>();
-  private readonly lastPublishedStatus = new Map<string, ScanTaskDto["status"]>();
   private readonly pendingSuccesses = new Map<string, PendingSuccess>();
   private readonly networkClient = new NetworkClient();
   private readonly fileOrganizer = new FileOrganizer();
@@ -139,7 +136,11 @@ export class ScrapeService {
   private readonly nfoAdapter: ServerNfoAdapter;
   private readonly posterCropAdapter: ServerPosterCropAdapter;
   private readonly runtime: MountedRootScrapeRuntime;
-  private readonly queue: ServerScrapeQueue<ServerManualScrape>;
+  private readonly runs = new Map<string, LiveQueueEntry>();
+  private readonly readyRunIds: string[] = [];
+  private readonly scheduler: TaskScheduler<LiveQueueEntry>;
+  private activeRunId: string | null = null;
+  private closing = false;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -158,20 +159,23 @@ export class ScrapeService {
       (result) => this.resolveMetadataVideoPath(result),
     );
     this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
-    this.queue = new ServerScrapeQueue(
-      (runId) => this.handleQueueChange(runId),
-      (entry, error) => {
+    this.scheduler = new TaskScheduler({
+      claimNext: async () => this.claimNext(),
+      runExecution: async (entry) => this.runEntry(entry),
+      onExecutionError: async (entry, error) => {
         runtimeLoggerService
           .getLogger(`scrape:${entry.runId}`)
-          .error(`Scrape queue execution failed: ${errorMessage(error)}`);
+          .error(`Scrape execution failed: ${errorMessage(error)}`);
+        await this.stopEntry(entry);
       },
-    );
+    });
   }
 
   async start(
     input: ScrapeStartInput,
     options?: { uncensoredChoices?: Map<string, UncensoredChoice> },
-  ): Promise<ScanTaskDto> {
+  ): Promise<ScrapeLiveRunSnapshotDto> {
+    if (this.closing) throw new Error("Scrape queue is closing");
     const roots = new Map<string, MediaRoot>();
     for (const ref of input.refs) {
       if (!roots.has(ref.rootId)) roots.set(ref.rootId, await this.mediaRoots.getActiveRoot(ref.rootId));
@@ -184,84 +188,58 @@ export class ScrapeService {
     const configuration = await this.config.get();
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
-    const lifecycle = await ScrapeRunLifecycle.create(async () => {
-      const manifest = await (await this.persistence.getState()).repositories.scrapeRuns.createRun({
-        rootId: input.refs[0]?.rootId ?? "",
-        outputRootId: input.outputRootId ?? null,
-        executionMode: input.refs.length === 1 ? "single" : "batch",
-        items: input.refs.map((ref, ordinal) => ({
-          ordinal,
-          rootId: ref.rootId,
-          relativePath: ref.relativePath,
-          manualUrl: input.manualUrl ?? null,
-          uncensoredChoice: input.uncensoredConfirmed
-            ? (choices.get(`${ref.rootId}:${ref.relativePath}`) ?? null)
-            : null,
-        })),
-      });
-      const items = manifest.items.map((item) => {
-        const root = roots.get(item.rootId);
-        if (!root) throw new Error(`Scrape root disappeared before session creation: ${item.rootId}`);
-        return {
-          id: item.id,
-          rootId: item.rootId,
-          relativePath: item.relativePath,
-          sourcePath: resolveRootRelativePath(root, item.relativePath),
-          attempt: 1,
-          manualScrape: { manualUrl: item.manualUrl, uncensoredChoice: item.uncensoredChoice },
-        };
-      });
+    const manifest = await (await this.persistence.getState()).repositories.scrapeRuns.create({
+      rootId: input.refs[0]?.rootId ?? "",
+      outputRootId: input.outputRootId ?? null,
+      executionMode: input.refs.length === 1 ? "single" : "batch",
+      items: input.refs.map((ref, ordinal) => ({
+        ordinal,
+        rootId: ref.rootId,
+        relativePath: ref.relativePath,
+        manualUrl: input.manualUrl ?? null,
+        uncensoredChoice: input.uncensoredConfirmed ? (choices.get(`${ref.rootId}:${ref.relativePath}`) ?? null) : null,
+      })),
+    });
+    const items = manifest.items.map((item) => {
+      const root = roots.get(item.rootId);
+      if (!root) throw new Error(`Scrape root disappeared before session creation: ${item.rootId}`);
       return {
-        manifest,
-        items,
-        concurrency: policy.concurrency,
-        executeItem: async (item, signal) =>
-          await this.executeItem(manifest, item, signal, policy.restGate ?? undefined),
-        commitItem: async (item, result) => await this.commitItem(manifest, item, result),
-        onSnapshot: (snapshot) => this.handleSessionSnapshot(manifest, snapshot),
-        finalize: async (snapshot, finalizeOptions) =>
-          await this.settleRun(manifest, snapshot, finalizeOptions.startedAt ?? null),
+        id: item.id,
+        rootId: item.rootId,
+        relativePath: item.relativePath,
+        sourcePath: resolveRootRelativePath(root, item.relativePath),
+        attempt: 1,
+        manualScrape: { manualUrl: item.manualUrl, uncensoredChoice: item.uncensoredChoice },
       };
     });
-    const manifest = lifecycle.manifest;
-    const session = lifecycle.session;
-    for (const [rootId, root] of roots) this.rootDisplayNames.set(rootId, root.displayName);
-    this.liveManifests.set(manifest.id, manifest);
-    this.snapshotUpdatedAt.set(manifest.id, manifest.createdAt);
-    this.snapshots.set(manifest.id, session.snapshot());
-    try {
-      this.queue.submit({
-        runId: manifest.id,
-        session,
-        createdAt: manifest.createdAt,
-        settle: async (snapshot, startedAt) => await lifecycle.finalize(snapshot, { startedAt }),
-      });
-    } catch (error) {
-      let cleanupError: unknown = null;
-      try {
-        await (await this.persistence.getState()).repositories.scrapeRuns.discardUnstartedRun(manifest.id);
-      } catch (discardError) {
-        cleanupError = discardError;
-      }
-      this.liveManifests.delete(manifest.id);
-      this.snapshots.delete(manifest.id);
-      this.snapshotUpdatedAt.delete(manifest.id);
-      const logger = runtimeLoggerService.getLogger(`scrape:${manifest.id}`);
-      if (cleanupError) {
-        logger.error(
-          `Scrape task was never submitted: queue admission failed (${errorMessage(error)}) and unstarted manifest cleanup failed (${errorMessage(cleanupError)})`,
-        );
-        throw new Error(`Scrape task was not submitted and cleanup failed: ${errorMessage(cleanupError)}`, {
-          cause: error,
-        });
-      }
-      logger.warn(`Scrape task was never submitted and its unstarted manifest was discarded: ${errorMessage(error)}`);
-      throw error;
-    }
-    return await this.toDto(manifest.id);
+    const session = new ScrapeRunSession<ServerManualScrape>({
+      runId: manifest.id,
+      items,
+      concurrency: policy.concurrency,
+      executeItem: async (item, signal) => await this.executeItem(manifest, item, signal, policy.restGate ?? undefined),
+      commitItem: async (item, result) => await this.commitItem(manifest, item, result),
+      onSnapshot: () => this.handleSessionSnapshot(),
+    });
+    const entry: LiveQueueEntry = {
+      id: manifest.id,
+      runId: manifest.id,
+      manifest,
+      session,
+      status: "queued",
+      createdAt: manifest.createdAt,
+      startedAt: null,
+      settlement: null,
+      rootDisplayName: roots.get(manifest.rootId)?.displayName ?? "未知媒体目录",
+    };
+    this.runs.set(manifest.id, entry);
+    this.readyRunIds.push(manifest.id);
+    this.addEvent(manifest.id, "queued", "Scrape task queued");
+    this.scheduleScrapeInvalidation();
+    this.scheduler.drain();
+    return await this.liveRunSnapshotDto(manifest, entry, session.snapshot());
   }
 
-  async startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto> {
+  async startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScrapeLiveRunSnapshotDto> {
     if (!input.scanDir) throw new Error("scanDir is required when starting selected host files");
     const normalizedScanDir = path.resolve(input.scanDir);
     const configuredMediaPath = (await this.config.get()).paths.mediaPath.trim();
@@ -291,26 +269,19 @@ export class ScrapeService {
     });
   }
 
-  async list(): Promise<ScanTaskListResponse> {
-    const manifests = await (await this.persistence.getState()).repositories.scrapeRuns.listRuns();
-    return { tasks: await Promise.all(manifests.map(async (manifest) => await this.toDto(manifest.id))) };
-  }
-
   /**
    * The only live scrape read model.  It intentionally reads only the
    * currently running process queue; durable manifests and outcomes remain
    * available through the history endpoints instead.
    */
   async liveRuns(): Promise<ScrapeLiveRunsResponse> {
-    const entries = this.queue.list();
+    const entries = this.liveEntries();
     const runs: ScrapeLiveRunSnapshotDto[] = [];
     for (const entry of entries) {
       // Settlement removes the manifest before the queue entry is finally
       // unlinked.  Treat that narrow hand-off as already non-live instead of
       // turning an otherwise valid authority read into a 500 response.
-      const manifest = this.liveManifests.get(entry.runId);
-      if (!manifest) continue;
-      runs.push(await this.liveRunSnapshotDto(manifest, entry, entry.session.snapshot()));
+      runs.push(await this.liveRunSnapshotDto(entry.manifest, entry, entry.session.snapshot()));
     }
     return { runs };
   }
@@ -321,7 +292,7 @@ export class ScrapeService {
    */
   async pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse> {
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
-    const manifests = await repository.listRuns();
+    const manifests = await repository.list();
     const items = (
       await Promise.all(
         manifests.map(async (manifest) =>
@@ -332,105 +303,67 @@ export class ScrapeService {
     return { items };
   }
 
-  async detail(taskId: string): Promise<ScanTaskDetailResponse> {
-    return { task: await this.toDto(taskId), events: (await this.events(taskId)).events };
-  }
-
-  async events(taskId: string): Promise<TaskEventListResponse> {
-    const liveEvents = this.eventsByRun.get(taskId);
-    if (liveEvents) return { events: liveEvents.map((event) => ({ ...event })) };
-    const state = await this.persistence.getState();
-    const manifest = await state.repositories.scrapeRuns.getRun(taskId);
-    const summary = await state.repositories.scrapeRuns.getSummary(taskId);
-    if (summary) {
-      const completed = summary.disposition === "completed";
-      return {
-        events: [
-          {
-            id: `${taskId}:terminal`,
-            taskId,
-            type: completed ? "completed" : "failed",
-            message: completed
-              ? `Scrape completed. Succeeded: ${summary.successCount}, Failed: ${summary.failedCount}`
-              : `Scrape failed. Succeeded: ${summary.successCount}, Failed: ${summary.failedCount}, Skipped: ${summary.skippedCount}`,
-            createdAt: summary.completedAt.toISOString(),
-          },
-        ],
-      };
-    }
-    return {
-      events: [
-        {
-          id: `${taskId}:backend-interrupted`,
-          taskId,
-          type: "failed",
-          message: SCRAPE_BACKEND_INTERRUPTED_MESSAGE,
-          createdAt: manifest.createdAt.toISOString(),
-        },
-      ],
-    };
-  }
-
-  async logs(): Promise<LogListResponse> {
-    const manifests = await (await this.persistence.getState()).repositories.scrapeRuns.listRuns();
-    const logs = (
-      await Promise.all(
-        manifests.map(async (manifest) => {
-          const events = this.eventsByRun.get(manifest.id) ?? (await this.events(manifest.id)).events;
-          return events.map((event) => ({ ...event, source: "task" as const }));
-        }),
-      )
-    )
-      .flat()
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    return { logs };
-  }
-
-  async listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse> {
+  async history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse> {
     const state = await this.persistence.getState();
     const manifests = input?.taskId
-      ? [await state.repositories.scrapeRuns.getRun(input.taskId)]
-      : await state.repositories.scrapeRuns.listRuns();
+      ? [await state.repositories.scrapeRuns.get(input.taskId)]
+      : await state.repositories.scrapeRuns.list();
+    const runs: ScrapeHistoryRunDto[] = [];
     const results: ScrapeResultDto[] = [];
     for (const manifest of manifests) {
-      const latest = await state.repositories.scrapeRuns.listLatestOutcomes(manifest.id);
+      runs.push(await this.historyRunDto(manifest));
       const itemById = new Map(manifest.items.map((item) => [item.id, item]));
-      for (const outcome of latest) {
+      for (const outcome of state.repositories.scrapeRuns.latestOutcomes(manifest)) {
         const item = itemById.get(outcome.itemId);
         if (!item) throw new Error(`Scrape outcome item is missing from manifest: ${outcome.itemId}`);
         results.push(await this.outcomeToDto({ manifest, item, outcome }));
       }
     }
-    return { results };
+    return { runs, results };
   }
 
   async result(id: string): Promise<ScrapeResultDetailResponse> {
     return { result: await this.outcomeToDto(await this.loadOutcomeContext(id)) };
   }
 
-  async stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
-    await this.queue.stop(input.taskId);
-    return await this.toDto(input.taskId);
+  async stop(input: ScrapeTaskControlInput): Promise<string> {
+    await this.stopEntry(this.requireLive(input.taskId));
+    return input.taskId;
   }
 
-  async pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
-    await this.queue.pause(input.taskId);
-    return await this.toDto(input.taskId);
+  async pause(input: ScrapeTaskControlInput): Promise<string> {
+    const entry = this.requireLive(input.taskId);
+    if (entry.status !== "queued" && entry.status !== "running") {
+      throw new Error(`Cannot pause scrape run in ${entry.status} state: ${entry.runId}`);
+    }
+    entry.status = "paused";
+    this.removeReadyRun(entry.runId);
+    await entry.session.pause();
+    this.addEvent(entry.runId, "paused", "Scrape task paused");
+    this.scheduleScrapeInvalidation();
+    return input.taskId;
   }
 
-  async resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
-    this.queue.resume(input.taskId);
-    return await this.toDto(input.taskId);
+  async resume(input: ScrapeTaskControlInput): Promise<string> {
+    const entry = this.requireLive(input.taskId);
+    if (entry.status !== "paused") throw new Error(`Cannot resume scrape run in ${entry.status} state: ${entry.runId}`);
+    if (this.closing) throw new Error("Scrape queue is closing");
+    entry.status = "queued";
+    this.readyRunIds.push(entry.runId);
+    this.addEvent(entry.runId, "queued", "Scrape task queued");
+    this.scheduleScrapeInvalidation();
+    this.scheduler.drain();
+    return input.taskId;
   }
 
-  async retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
+  async retry(input: ScrapeTaskControlInput): Promise<ScrapeLiveRunSnapshotDto> {
     const state = await this.persistence.getState();
-    const manifest = await state.repositories.scrapeRuns.getRun(input.taskId);
-    const summary = await state.repositories.scrapeRuns.getSummary(input.taskId);
+    const manifest = await state.repositories.scrapeRuns.get(input.taskId);
+    const summary = state.repositories.scrapeRuns.summary(manifest);
     if (!summary) throw new Error(INTERRUPTED_RETRY_MESSAGE);
-    const latest = await state.repositories.scrapeRuns.listLatestOutcomes(input.taskId);
     const retryItemIds = new Set(
-      latest
+      state.repositories.scrapeRuns
+        .latestOutcomes(manifest)
         .filter((outcome) => outcome.outcome === "failed" || outcome.outcome === "skipped")
         .map((outcome) => outcome.itemId),
     );
@@ -446,7 +379,7 @@ export class ScrapeService {
     return await this.start(
       {
         refs: retryItems.map((item) => ({ rootId: item.rootId, relativePath: item.relativePath })),
-        outputRootId: manifest.outputRootId ?? undefined,
+        outputRootId: manifest.requestedOutputRootId ?? undefined,
         manualUrl: retryItems.every((item) => item.manualUrl === retryItems[0]?.manualUrl)
           ? (retryItems[0]?.manualUrl ?? undefined)
           : undefined,
@@ -456,12 +389,12 @@ export class ScrapeService {
     );
   }
 
-  async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto> {
+  async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<string> {
     const state = await this.persistence.getState();
-    const manifest = await state.repositories.scrapeRuns.getRun(input.taskId);
-    const summary = await state.repositories.scrapeRuns.getSummary(input.taskId);
+    const manifest = await state.repositories.scrapeRuns.get(input.taskId);
+    const summary = state.repositories.scrapeRuns.summary(manifest);
     if (!summary) throw new Error("无码确认只允许修改已结束刮削的成功结果");
-    const outcomes = await state.repositories.scrapeRuns.listLatestOutcomes(input.taskId);
+    const outcomes = state.repositories.scrapeRuns.latestOutcomes(manifest);
     const outcomeByItem = new Map(outcomes.map((outcome) => [outcome.itemId, outcome]));
     const itemByRef = new Map(manifest.items.map((item) => [`${item.rootId}:${item.relativePath}`, item]));
     const selectedItems = input.items ?? input.refs?.map((ref) => ({ ref, choice: "uncensored" as const })) ?? [];
@@ -547,7 +480,7 @@ export class ScrapeService {
       const fileStats = await stat(updated.targetVideoPath);
       const crawlerDataJson = outcome.crawlerDataJson ?? "{}";
       const crawlerData = crawlerDataSchema.parse(JSON.parse(crawlerDataJson));
-      const revised = await state.repositories.scrapeRuns.reviseSuccess({
+      await state.repositories.scrapeRuns.reviseSuccess({
         outcomeId: outcome.id,
         crawlerDataJson,
         nfoRootId: nfoRelativePath && nfoRoot.id !== outputRoot.id ? nfoRoot.id : null,
@@ -575,17 +508,9 @@ export class ScrapeService {
           lastRefreshedAt: new Date(),
         },
       });
-      this.taskEvents.publishRealtime({
-        id: `${revised.outcome.id}:result:${revised.outcome.completedAt.toISOString()}`,
-        taskId: manifest.id,
-        createdAt: new Date().toISOString(),
-        kind: "scrape-result",
-        result: await this.outcomeToDto({ manifest, item, outcome: revised.outcome }),
-      });
     }
-    this.taskEvents.publish({ kind: "task", task: await this.toDto(manifest.id) });
-    this.scheduleScrapeInvalidation();
-    return await this.toDto(manifest.id);
+    this.taskEvents.invalidate("scrape-history", "pending-confirmation");
+    return manifest.id;
   }
 
   async nfoRead(input: NfoReadInput): Promise<NfoReadResponse> {
@@ -623,12 +548,17 @@ export class ScrapeService {
       clearTimeout(this.scrapeInvalidationTimer);
       this.scrapeInvalidationTimer = null;
     }
-    await this.queue.beginClose();
+    this.closing = true;
+    this.scheduler.requestStop();
+    this.readyRunIds.length = 0;
+    await Promise.all([...this.runs.values()].map(async (entry) => await entry.session.abortForShutdown()));
+    await this.scheduler.waitForIdle();
+    this.runs.clear();
+    this.activeRunId = null;
     if (this.scrapeInvalidationTimer) {
       clearTimeout(this.scrapeInvalidationTimer);
       this.scrapeInvalidationTimer = null;
     }
-    this.liveManifests.clear();
   }
 
   private async executeItem(
@@ -656,33 +586,11 @@ export class ScrapeService {
         onEvent: (type, message) => {
           this.addEvent(manifest.id, type, message, item.id);
         },
-        onProgress: ({ value, current, total }) => {
-          this.queue.get(manifest.id)?.session.recordProgress(value);
-          const createdAt = new Date().toISOString();
-          this.taskEvents.publishRealtime({
-            id: `${item.id}:progress:${current}:${value}:${createdAt}`,
-            taskId: manifest.id,
-            createdAt,
-            kind: "task-progress",
-            taskKind: "scrape",
-            value,
-            current,
-            total,
-            message: item.relativePath,
-          });
+        onProgress: ({ value }) => {
+          this.runs.get(manifest.id)?.session.recordProgress(value);
         },
         onStage: (stage, message) => {
-          this.queue.get(manifest.id)?.session.recordStage({ stage, message, itemId: item.id });
-          const createdAt = new Date().toISOString();
-          this.taskEvents.publishRealtime({
-            id: `${item.id}:stage:${stage}:${createdAt}`,
-            taskId: manifest.id,
-            createdAt,
-            kind: "scrape-stage",
-            stage,
-            message,
-            relativePath: item.relativePath,
-          });
+          this.runs.get(manifest.id)?.session.recordStage({ stage, message, itemId: item.id });
         },
       });
       if (runtimeResult.status === "success") {
@@ -712,10 +620,10 @@ export class ScrapeService {
         metadataRoot,
         runtimeResult.result.assets?.poster ?? runtimeResult.result.assets?.thumb,
       );
-      let committed: Awaited<ReturnType<typeof repository.commitSuccess>>;
+      let committed: { outcome: ScrapeItemOutcomeRecord; entry: LibraryEntryRecord };
       try {
-        committed = await repository.commitSuccess({
-          runId: manifest.id,
+        committed = await repository.commitOutcome({
+          outcome: "success",
           itemId: item.id,
           attempt: item.attempt,
           crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
@@ -747,18 +655,16 @@ export class ScrapeService {
       } catch (error) {
         this.pendingSuccesses.delete(key);
         const coordinatedError = formatDiskCommitFailure(error);
-        const failure = await repository.commitFailure({
-          runId: manifest.id,
+        const failure = await repository.commitOutcome({
+          outcome: "failed",
           itemId: item.id,
           attempt: item.attempt,
           error: coordinatedError,
         });
-        await this.publishCommittedOutcome(manifest, item.id, failure);
         this.addEvent(manifest.id, "item-failed", `${item.relativePath}: ${coordinatedError}`, item.id);
         return { ...result, resultId: failure.id, status: "failed", error: coordinatedError };
       }
       this.pendingSuccesses.delete(key);
-      await this.publishCommittedOutcome(manifest, item.id, committed.outcome);
       this.addEvent(manifest.id, "item-success", `Generated NFO: ${nfoRelativePath ?? "not generated"}`, item.id);
       const assetDto = toScrapeAssetDto(committed.entry.assets);
       return {
@@ -772,19 +678,18 @@ export class ScrapeService {
     const message = result.error?.trim() || (result.status === "skipped" ? "刮削项目已跳过" : "刮削失败");
     const outcome =
       result.status === "skipped"
-        ? await repository.commitSkipped({
-            runId: manifest.id,
+        ? await repository.commitOutcome({
+            outcome: "skipped",
             itemId: item.id,
             attempt: item.attempt,
             error: message,
           })
-        : await repository.commitFailure({
-            runId: manifest.id,
+        : await repository.commitOutcome({
+            outcome: "failed",
             itemId: item.id,
             attempt: item.attempt,
             error: message,
           });
-    await this.publishCommittedOutcome(manifest, item.id, outcome);
     this.addEvent(
       manifest.id,
       outcome.outcome === "skipped" ? "item-skipped" : "item-failed",
@@ -792,6 +697,80 @@ export class ScrapeService {
       item.id,
     );
     return { ...result, resultId: outcome.id, status: outcome.outcome, error: message };
+  }
+
+  private claimNext(): LiveQueueEntry | null {
+    while (!this.closing) {
+      const runId = this.readyRunIds.shift();
+      if (!runId) return null;
+      const entry = this.runs.get(runId);
+      if (!entry || entry.status !== "queued") continue;
+      entry.status = "running";
+      entry.startedAt ??= new Date();
+      this.activeRunId = runId;
+      const task = this.liveTaskDto(entry.manifest, entry, entry.session.snapshot());
+      this.addEvent(entry.runId, "running", "Scrape task started");
+      this.taskEvents.lifecycle(task);
+      this.scheduleScrapeInvalidation();
+      return entry;
+    }
+    return null;
+  }
+
+  private async runEntry(entry: LiveQueueEntry): Promise<void> {
+    try {
+      const status = entry.session.snapshot().status;
+      if (status === "queued") await entry.session.start();
+      else if (status === "paused") await entry.session.resume();
+      else throw new Error(`Cannot schedule scrape session in ${status} state: ${entry.runId}`);
+      await entry.session.waitForIdle();
+      if (this.closing) return;
+      const snapshot = entry.session.snapshot();
+      if (snapshot.status === "completed" || snapshot.status === "failed" || snapshot.status === "stopped") {
+        await this.settleEntry(entry, snapshot);
+      }
+    } finally {
+      if (this.activeRunId === entry.runId) this.activeRunId = null;
+    }
+  }
+
+  private async stopEntry(entry: LiveQueueEntry): Promise<void> {
+    entry.status = "stopping";
+    this.removeReadyRun(entry.runId);
+    this.addEvent(entry.runId, "stopping", "Stopping scrape task");
+    this.scheduleScrapeInvalidation();
+    await this.settleEntry(entry, await entry.session.stop());
+  }
+
+  private async settleEntry(entry: LiveQueueEntry, snapshot: ScrapeRunSnapshot<ServerManualScrape>): Promise<void> {
+    entry.settlement ??= this.settleRun(entry.manifest, snapshot, entry.startedAt);
+    await entry.settlement;
+    if (this.runs.get(entry.runId) !== entry) return;
+    this.runs.delete(entry.runId);
+    this.removeReadyRun(entry.runId);
+    this.scheduleScrapeInvalidation();
+  }
+
+  private requireLive(runId: string): LiveQueueEntry {
+    const entry = this.runs.get(runId);
+    if (!entry) throw new Error(`Scrape run is not live in this backend process: ${runId}`);
+    return entry;
+  }
+
+  private removeReadyRun(runId: string): void {
+    for (let index = this.readyRunIds.length - 1; index >= 0; index -= 1) {
+      if (this.readyRunIds[index] === runId) this.readyRunIds.splice(index, 1);
+    }
+  }
+
+  private liveEntries(): LiveQueueEntry[] {
+    const ordered = [this.activeRunId, ...this.readyRunIds].filter((runId): runId is string =>
+      Boolean(runId && this.runs.has(runId)),
+    );
+    const seen = new Set(ordered);
+    return [...ordered, ...[...this.runs.keys()].filter((runId) => !seen.has(runId))]
+      .map((runId) => this.runs.get(runId))
+      .filter((entry): entry is LiveQueueEntry => Boolean(entry));
   }
 
   private async settleRun(
@@ -802,79 +781,49 @@ export class ScrapeService {
     try {
       const state = await this.persistence.getState();
       const repository = state.repositories.scrapeRuns;
-      const latest = await repository.listLatestOutcomes(manifest.id);
-      const firstSuccess = latest.find((outcome) => outcome.outcome === "success");
-      const outputRoot = firstSuccess?.outputRootId
-        ? await state.repositories.mediaRoots.get(firstSuccess.outputRootId, { includeDeleted: true })
-        : null;
       const disposition =
         snapshot.status === "completed" ? "completed" : snapshot.status === "stopped" ? "stopped" : "failed";
-      const summary = await repository.finalizeRun({
+      const finalized = await repository.finalize({
         runId: manifest.id,
         disposition,
-        outputRootId: firstSuccess?.outputRootId ?? null,
-        outputDirectory: outputRoot?.hostPath ?? null,
         error: snapshot.error ?? (snapshot.status === "stopped" ? STOPPED_MESSAGE : null),
         startedAt,
       });
-      this.snapshots.set(manifest.id, snapshot);
-      this.snapshotUpdatedAt.set(manifest.id, summary.completedAt);
-      const terminalTask = await this.historyTaskDto(manifest, summary);
-      this.lastPublishedStatus.set(manifest.id, terminalTask.status);
-      const completedEvent = this.addEvent(
+      const summary = repository.summary(finalized);
+      if (!summary) throw new Error(`Scrape run finalization disappeared after update: ${manifest.id}`);
+      const terminalRun = await this.historyRunDto(finalized);
+      const terminalStatus = summary.disposition === "completed" ? "completed" : "failed";
+      this.addEvent(
         manifest.id,
-        terminalTask.status,
-        terminalTask.status === "completed"
+        terminalStatus,
+        terminalStatus === "completed"
           ? `Scrape completed. Succeeded: ${summary.successCount}, Failed: ${summary.failedCount}`
           : `Scrape failed. Succeeded: ${summary.successCount}, Failed: ${summary.failedCount}, Skipped: ${summary.skippedCount}`,
       );
-      const ambiguousUncensoredItems = await this.buildAmbiguousUncensoredItems(manifest.id);
-      this.taskEvents.publish({
-        kind: "event",
-        event: completedEvent,
-        ...(ambiguousUncensoredItems.length > 0 ? { ambiguousUncensoredItems } : {}),
+      this.taskEvents.lifecycle({
+        id: terminalRun.id,
+        kind: "scrape",
+        rootId: terminalRun.rootId,
+        rootDisplayName: terminalRun.rootDisplayName,
+        status: terminalStatus,
+        startedAt: terminalRun.startedAt,
+        completedAt: terminalRun.completedAt,
+        error: terminalRun.error,
       });
-      this.taskEvents.publish({ kind: "task", task: terminalTask });
+      this.taskEvents.invalidate("scrape-history", "pending-confirmation");
     } catch (error) {
       runtimeLoggerService
         .getLogger(`scrape:${manifest.id}`)
         .error(`Failed to finalize scrape run; it will project as interrupted: ${errorMessage(error)}`);
     } finally {
-      this.liveManifests.delete(manifest.id);
       this.pendingSuccesses.forEach((_value, key) => {
         if (key.startsWith(`${manifest.id}\u0000`)) this.pendingSuccesses.delete(key);
       });
-      this.retainTerminalSnapshots();
     }
   }
 
-  private handleSessionSnapshot(manifest: ScrapeRunManifest, snapshot: ScrapeRunSnapshot<ServerManualScrape>): void {
-    this.snapshots.set(manifest.id, snapshot);
-    this.snapshotUpdatedAt.set(manifest.id, new Date());
+  private handleSessionSnapshot(): void {
     this.scheduleScrapeInvalidation();
-    if (!isTerminalSnapshot(snapshot)) this.publishLiveTask(manifest, snapshot);
-  }
-
-  private handleQueueChange(runId: string | null): void {
-    this.scheduleScrapeInvalidation();
-    if (!runId) return;
-    const manifest = this.liveManifests.get(runId);
-    const entry = this.queue.get(runId);
-    if (!manifest || !entry) return;
-    this.publishLiveTask(manifest, entry.session.snapshot(), entry);
-  }
-
-  private publishLiveTask(
-    manifest: ScrapeRunManifest,
-    snapshot: ScrapeRunSnapshot<ServerManualScrape>,
-    entry = this.queue.get(manifest.id),
-  ): void {
-    if (!entry) return;
-    const task = this.liveTaskDto(manifest, entry, snapshot);
-    if (this.lastPublishedStatus.get(manifest.id) === task.status) return;
-    this.lastPublishedStatus.set(manifest.id, task.status);
-    this.addEvent(manifest.id, task.status, this.lifecycleMessage(task.status));
-    this.taskEvents.publish({ kind: "task", task });
   }
 
   private addEvent(runId: string, type: string, message: string, itemId?: string): TaskEventDto {
@@ -886,51 +835,15 @@ export class ScrapeService {
       message,
       createdAt: createdAt.toISOString(),
     };
-    const events = this.eventsByRun.get(runId) ?? [];
-    events.push(event);
-    if (events.length > 200) events.splice(0, events.length - 200);
-    this.eventsByRun.set(runId, events);
-    const session = this.queue.get(runId)?.session;
+    const session = this.runs.get(runId)?.session;
     session?.recordLog({
       level: type.includes("failed") ? "error" : "info",
       message,
       itemId: itemId ?? null,
       timestamp: createdAt,
     });
-    this.taskEvents.publishRealtime({
-      id: event.id,
-      taskId: runId,
-      createdAt: event.createdAt,
-      kind: "log",
-      log: decorateTaskLog(event),
-    });
+    this.taskEvents.log(decorateTaskLog(event));
     return event;
-  }
-
-  private async publishCommittedOutcome(
-    manifest: ScrapeRunManifest,
-    itemId: string,
-    outcome: ScrapeItemOutcomeRecord,
-  ): Promise<void> {
-    const item = manifest.items.find((candidate) => candidate.id === itemId);
-    if (!item) throw new Error(`Scrape item not found in manifest: ${itemId}`);
-    this.taskEvents.publishRealtime({
-      id: `${outcome.id}:result:${outcome.completedAt.toISOString()}`,
-      taskId: manifest.id,
-      createdAt: outcome.completedAt.toISOString(),
-      kind: "scrape-result",
-      result: await this.outcomeToDto({ manifest, item, outcome }),
-    });
-  }
-
-  private async toDto(runId: string): Promise<ScanTaskDto> {
-    const live = this.queue.get(runId);
-    const manifest =
-      this.liveManifests.get(runId) ??
-      (await (await this.persistence.getState()).repositories.scrapeRuns.getRun(runId));
-    if (live) return this.liveTaskDto(manifest, live, live.session.snapshot());
-    const summary = await (await this.persistence.getState()).repositories.scrapeRuns.getSummary(runId);
-    return summary ? await this.historyTaskDto(manifest, summary) : await this.interruptedTaskDto(manifest);
   }
 
   private liveTaskDto(
@@ -948,7 +861,7 @@ export class ScrapeService {
           rootId: manifest.rootId,
           status,
           createdAt: manifest.createdAt,
-          updatedAt: this.snapshotUpdatedAt.get(manifest.id) ?? manifest.createdAt,
+          updatedAt: new Date(),
           startedAt: entry.startedAt,
           completedAt: null,
           videoCount: successCount,
@@ -956,7 +869,7 @@ export class ScrapeService {
           error: snapshot.error,
         },
         {
-          rootDisplayName: this.rootDisplayNames.get(manifest.rootId) ?? "未知媒体目录",
+          rootDisplayName: entry.rootDisplayName,
           videos: manifest.items.map((item) => item.relativePath),
         },
       ),
@@ -964,53 +877,28 @@ export class ScrapeService {
     };
   }
 
-  private async historyTaskDto(manifest: ScrapeRunManifest, summary: ScrapeRunSummaryRecord): Promise<ScanTaskDto> {
-    const rootDisplayName = await this.getRootDisplayName(manifest.rootId);
+  private async historyRunDto(manifest: ScrapeRunManifest): Promise<ScrapeHistoryRunDto> {
+    const repository = (await this.persistence.getState()).repositories.scrapeRuns;
+    const summary = repository.summary(manifest);
+    const outcomes = repository.latestOutcomes(manifest);
     return {
-      ...toScanTaskDto(
-        {
-          id: manifest.id,
-          kind: "scrape",
-          rootId: manifest.rootId,
-          status: summary.disposition === "completed" ? "completed" : "failed",
-          createdAt: manifest.createdAt,
-          updatedAt: summary.completedAt,
-          startedAt: summary.startedAt,
-          completedAt: summary.completedAt,
-          videoCount: summary.successCount,
-          directoryCount: 0,
-          error: summary.error,
-        },
-        { rootDisplayName, videos: manifest.items.map((item) => item.relativePath) },
-      ),
-      continuity: "final",
-    };
-  }
-
-  private async interruptedTaskDto(manifest: ScrapeRunManifest): Promise<ScanTaskDto> {
-    const outcomes = await (await this.persistence.getState()).repositories.scrapeRuns.listLatestOutcomes(manifest.id);
-    const successCount = outcomes.filter((outcome) => outcome.outcome === "success").length;
-    return {
-      ...toScanTaskDto(
-        {
-          id: manifest.id,
-          kind: "scrape",
-          rootId: manifest.rootId,
-          status: "failed",
-          createdAt: manifest.createdAt,
-          updatedAt: manifest.createdAt,
-          startedAt: null,
-          completedAt: null,
-          videoCount: successCount,
-          directoryCount: 0,
-          error: SCRAPE_BACKEND_INTERRUPTED_MESSAGE,
-        },
-        {
-          rootDisplayName: await this.getRootDisplayName(manifest.rootId),
-          videos: manifest.items.map((item) => item.relativePath),
-        },
-      ),
-      continuity: "interrupted",
+      id: manifest.id,
+      rootId: manifest.rootId,
+      rootDisplayName: await this.getRootDisplayName(manifest.rootId),
+      requestedOutputRootId: manifest.requestedOutputRootId,
+      outputRootId: summary?.outputRootId ?? null,
+      executionMode: manifest.executionMode,
+      disposition: summary?.disposition ?? "interrupted",
+      createdAt: manifest.createdAt.toISOString(),
+      startedAt: summary?.startedAt?.toISOString() ?? null,
+      completedAt: summary?.completedAt.toISOString() ?? null,
+      successCount: summary?.successCount ?? outcomes.filter((outcome) => outcome.outcome === "success").length,
+      failedCount: summary?.failedCount ?? outcomes.filter((outcome) => outcome.outcome === "failed").length,
+      skippedCount: summary?.skippedCount ?? outcomes.filter((outcome) => outcome.outcome === "skipped").length,
+      totalBytes:
+        summary?.totalBytes ??
+        outcomes.reduce((total, outcome) => total + (outcome.outcome === "success" ? outcome.size : 0), 0),
+      error: summary?.error ?? SCRAPE_BACKEND_INTERRUPTED_MESSAGE,
     };
   }
 
@@ -1019,6 +907,7 @@ export class ScrapeService {
       context.outcome.id,
     );
     return toScrapeResultDto(context.outcome, context.item, {
+      runId: context.manifest.id,
       rootDisplayName: await this.getRootDisplayName(context.item.rootId),
       runCreatedAt: context.manifest.createdAt,
       assets: libraryEntry?.assets ?? [],
@@ -1110,8 +999,11 @@ export class ScrapeService {
 
   private async loadOutcomeContext(outcomeId: string): Promise<OutcomeContext> {
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
-    const outcome = await repository.getOutcome(outcomeId);
-    const manifest = await repository.getRun(outcome.runId);
+    const manifests = await repository.list();
+    const manifest = manifests.find((candidate) => candidate.outcomes.some((outcome) => outcome.id === outcomeId));
+    if (!manifest) throw new Error(`Scrape outcome not found: ${outcomeId}`);
+    const outcome = manifest.outcomes.find((candidate) => candidate.id === outcomeId);
+    if (!outcome) throw new Error(`Scrape outcome not found: ${outcomeId}`);
     const item = manifest.items.find((candidate) => candidate.id === outcome.itemId);
     if (!item) throw new Error(`Scrape outcome item is missing from manifest: ${outcome.itemId}`);
     return { manifest, item, outcome };
@@ -1119,10 +1011,10 @@ export class ScrapeService {
 
   private async buildAmbiguousUncensoredItems(runId: string): Promise<AmbiguousUncensoredItemDto[]> {
     const state = await this.persistence.getState();
-    const manifest = await state.repositories.scrapeRuns.getRun(runId);
+    const manifest = await state.repositories.scrapeRuns.get(runId);
     const itemById = new Map(manifest.items.map((item) => [item.id, item]));
-    const outcomes = await state.repositories.scrapeRuns.listLatestOutcomes(runId);
-    return outcomes
+    return state.repositories.scrapeRuns
+      .latestOutcomes(manifest)
       .filter((outcome) => outcome.outcome === "success" && outcome.uncensoredAmbiguous)
       .flatMap((outcome) => {
         const item = itemById.get(outcome.itemId);
@@ -1181,52 +1073,17 @@ export class ScrapeService {
   }
 
   private async getRootDisplayName(rootId: string): Promise<string> {
-    const cached = this.rootDisplayNames.get(rootId);
-    if (cached) return cached;
     const root = await (await this.persistence.getState()).repositories.mediaRoots
       .get(rootId, { includeDeleted: true })
       .catch(() => null);
-    const displayName = root?.displayName ?? "未知媒体目录";
-    this.rootDisplayNames.set(rootId, displayName);
-    return displayName;
-  }
-
-  private lifecycleMessage(status: ScanTaskDto["status"]): string {
-    switch (status) {
-      case "queued":
-        return "Scrape task queued";
-      case "running":
-        return "Scrape task started";
-      case "paused":
-        return "Scrape task paused";
-      case "stopping":
-        return "Stopping scrape task";
-      case "completed":
-        return "Scrape task completed";
-      case "failed":
-        return "Scrape task failed";
-    }
+    return root?.displayName ?? "未知媒体目录";
   }
 
   private scheduleScrapeInvalidation(): void {
     if (this.scrapeInvalidationTimer) return;
     this.scrapeInvalidationTimer = setTimeout(() => {
       this.scrapeInvalidationTimer = null;
-      this.taskEvents.publish({ kind: "scrape-invalidated" });
+      this.taskEvents.invalidate("scrape-live");
     }, 250);
-  }
-
-  private retainTerminalSnapshots(): void {
-    const terminalRunIds = [...this.snapshots.entries()]
-      .filter(([runId, snapshot]) => !this.queue.get(runId) && isTerminalSnapshot(snapshot))
-      .map(([runId]) => runId);
-    while (terminalRunIds.length > TERMINAL_SNAPSHOT_LIMIT) {
-      const runId = terminalRunIds.shift();
-      if (!runId) break;
-      this.snapshots.delete(runId);
-      this.snapshotUpdatedAt.delete(runId);
-      this.eventsByRun.delete(runId);
-      this.lastPublishedStatus.delete(runId);
-    }
   }
 }

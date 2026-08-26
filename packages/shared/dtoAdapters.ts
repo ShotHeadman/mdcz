@@ -1,6 +1,6 @@
 import { Website } from "./enums";
-import type { MaintenancePreviewItemDto, ScrapeResultDto } from "./serverDtos";
-import type { CrawlerData, FieldDiff, MaintenancePreviewItem, ScrapeResult } from "./types";
+import type { ScrapeResultDto } from "./serverDtos";
+import type { CrawlerData, ScrapeResult } from "./types";
 
 type ScrapeAssetReferences = Pick<ScrapeResultDto, "assetRootId" | "sceneImageRelativePaths" | "trailerRelativePath">;
 
@@ -53,30 +53,4 @@ export const scrapeResultDtoToScrapeResult = (result: ScrapeResultDto): ScrapeRe
 export const scrapeResultDtoToDetailScrapeResult = (result: ScrapeResultDto): ScrapeResult => ({
   ...scrapeResultDtoToScrapeResult(result),
   crawlerData: result.crawlerData ?? emptyCrawlerData(result.relativePath),
-});
-
-const toMaintenanceFieldDiffs = (diffs: unknown): FieldDiff[] =>
-  Array.isArray(diffs)
-    ? (diffs.map((diff) => ({
-        ...(diff as Record<string, unknown>),
-        newValue: (diff as { newValue?: unknown }).newValue,
-        oldValue: (diff as { oldValue?: unknown }).oldValue,
-      })) as FieldDiff[])
-    : [];
-
-export const maintenancePreviewDtoToPreviewItem = (
-  item: Omit<MaintenancePreviewItemDto, "fieldDiffs" | "unchangedFieldDiffs"> & {
-    fieldDiffs: unknown[];
-    unchangedFieldDiffs: unknown[];
-  },
-): MaintenancePreviewItem => ({
-  fileId: `${item.rootId}:${item.relativePath}`,
-  previewId: item.id,
-  taskId: item.taskId,
-  status: item.status === "ready" || item.status === "applied" ? "ready" : "blocked",
-  error: item.error ?? undefined,
-  fieldDiffs: toMaintenanceFieldDiffs(item.fieldDiffs),
-  unchangedFieldDiffs: toMaintenanceFieldDiffs(item.unchangedFieldDiffs),
-  pathDiff: item.pathDiff ?? undefined,
-  proposedCrawlerData: item.proposedCrawlerData ?? undefined,
 });

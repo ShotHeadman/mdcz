@@ -13,7 +13,7 @@ import {
   releaseTestServer,
   startLocalHttpServer,
   syncMediaRootFromConfig,
-  waitForTaskStatus,
+  waitForScanTaskStatus,
 } from "./app.testSupport";
 import type { RuntimeActionService } from "./services/runtimeActionService";
 import { formatSseEvent } from "./taskEvents";
@@ -767,7 +767,7 @@ describe("buildServer composition integration", () => {
     });
     const taskId = startResponse.json().task.id;
 
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScanTaskStatus(fastify, token, taskId, "completed");
 
     const recentResponse = await fastify.inject({
       method: "GET",
@@ -819,7 +819,7 @@ describe("buildServer composition integration", () => {
     });
     const taskId = startResponse.json().task.id;
 
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScanTaskStatus(fastify, token, taskId, "completed");
 
     await expect
       .poll(() =>
@@ -983,27 +983,9 @@ describe("buildServer composition integration", () => {
 
     const initialChunk = await readStreamChunk(reader);
     expect(initialChunk).toContain(": connected\n\n");
-    expect(initialChunk).toContain('data: {"kind":"snapshot","tasks":[]}');
     const listenerCountWithSse = services.taskEvents.listenerCount();
 
-    const event = services.taskEvents.publish({
-      kind: "task",
-      task: {
-        id: "task-1",
-        kind: "scan",
-        rootId: "root-1",
-        rootDisplayName: "Media",
-        status: "running",
-        createdAt: "2026-04-28T00:00:00.000Z",
-        updatedAt: "2026-04-28T00:00:00.000Z",
-        startedAt: "2026-04-28T00:00:00.000Z",
-        completedAt: null,
-        videoCount: 0,
-        directoryCount: 0,
-        error: null,
-        videos: [],
-      },
-    });
+    const event = services.taskEvents.invalidate("scan");
 
     expect(await readStreamChunk(reader)).toBe(formatSseEvent(event));
 

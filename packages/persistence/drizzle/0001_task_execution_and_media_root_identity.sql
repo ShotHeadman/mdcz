@@ -77,7 +77,11 @@ CREATE TABLE `scrape_runs` (
   `root_id` text NOT NULL,
   `output_root_id` text,
   `execution_mode` text NOT NULL CHECK (`execution_mode` IN ('single', 'batch')),
-  `created_at` integer NOT NULL
+  `created_at` integer NOT NULL,
+  `started_at` integer,
+  `completed_at` integer,
+  `disposition` text CHECK (`disposition` IS NULL OR `disposition` IN ('completed', 'failed', 'stopped')),
+  `error_message` text
 );
 --> statement-breakpoint
 CREATE INDEX `scrape_runs_created_at_idx` ON `scrape_runs` (`created_at`);
@@ -98,7 +102,6 @@ CREATE UNIQUE INDEX `scrape_run_items_run_root_path_idx` ON `scrape_run_items` (
 --> statement-breakpoint
 CREATE TABLE `scrape_item_outcomes` (
   `id` text PRIMARY KEY NOT NULL,
-  `run_id` text NOT NULL REFERENCES `scrape_runs`(`id`),
   `item_id` text NOT NULL REFERENCES `scrape_run_items`(`id`),
   `attempt` integer NOT NULL CHECK (`attempt` > 0),
   `outcome` text NOT NULL CHECK (`outcome` IN ('success', 'failed', 'skipped')),
@@ -115,21 +118,3 @@ CREATE TABLE `scrape_item_outcomes` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `scrape_item_outcomes_item_attempt_idx` ON `scrape_item_outcomes` (`item_id`, `attempt`);
---> statement-breakpoint
-CREATE INDEX `scrape_item_outcomes_run_item_idx` ON `scrape_item_outcomes` (`run_id`, `item_id`, `attempt`);
---> statement-breakpoint
-CREATE TABLE `scrape_run_summaries` (
-  `run_id` text PRIMARY KEY NOT NULL REFERENCES `scrape_runs`(`id`),
-  `disposition` text NOT NULL CHECK (`disposition` IN ('completed', 'failed', 'stopped')),
-  `started_at` integer,
-  `completed_at` integer NOT NULL,
-  `success_count` integer NOT NULL CHECK (`success_count` >= 0),
-  `failed_count` integer NOT NULL CHECK (`failed_count` >= 0),
-  `skipped_count` integer NOT NULL CHECK (`skipped_count` >= 0),
-  `total_bytes` integer NOT NULL CHECK (`total_bytes` >= 0),
-  `output_root_id` text,
-  `output_directory` text,
-  `error_message` text
-);
---> statement-breakpoint
-CREATE INDEX `scrape_run_summaries_completed_at_idx` ON `scrape_run_summaries` (`completed_at`);

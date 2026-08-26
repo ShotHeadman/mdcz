@@ -8,7 +8,7 @@ import type {
   ProgressPayload,
   ScrapeInfoPayload,
 } from "@mdcz/shared/ipcEvents";
-import type { MaintenanceItemResult, ScrapeResult } from "@mdcz/shared/types";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import type { BrowserWindow } from "electron";
 import { type LoggerEventPayload, loggerService } from "./LoggerService";
 
@@ -80,10 +80,6 @@ export class SignalService extends EventEmitter {
     };
 
     this.send(IpcChannel.Event_ButtonStatus, payload);
-  }
-
-  showMaintenanceItemResult(payload: MaintenanceItemResult): void {
-    this.send(IpcChannel.Event_MaintenanceItemResult, payload);
   }
 
   private send<TChannel extends EventChannel>(channel: TChannel, payload: EventPayloadByChannel[TChannel]): void {

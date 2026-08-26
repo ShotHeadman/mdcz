@@ -46,12 +46,12 @@ describe("buildServer scan integration", () => {
 
     const detailResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scans.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     const listResponse = await fastify.inject({
       method: "GET",
-      url: "/trpc/tasks.list",
+      url: "/trpc/scans.list",
       headers: { authorization: `Bearer ${token}` },
     });
     const libraryResponse = await fastify.inject({
@@ -117,7 +117,7 @@ describe("buildServer scan integration", () => {
 
     const retryResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/tasks.retry",
+      url: "/trpc/scans.retry",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });

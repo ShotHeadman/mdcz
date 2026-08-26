@@ -252,8 +252,8 @@ describe("MaintenanceTaskCoordinator", () => {
     expect(new Set(batch.applied.map((item) => item.previewId)).size).toBe(3);
     expect(batch.applied.every((item) => item.status === "skipped")).toBe(true);
     expect(batch.items).toEqual([]);
-    expect(snapshot?.recentBatch?.items).toHaveLength(3);
-    expect(snapshot?.applyItems.every((item) => item.status === "skipped")).toBe(true);
+    expect(snapshot?.currentBatch?.items).toHaveLength(3);
+    expect(snapshot?.currentBatch?.items.every((item) => item.status === "skipped")).toBe(true);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledTimes(1);
     await fixture.coordinator.close();
   });
@@ -285,9 +285,8 @@ describe("MaintenanceTaskCoordinator", () => {
     await pausing;
 
     const paused = await fixture.coordinator.getActiveSession();
-    expect(paused?.recentBatch?.items).toHaveLength(1);
-    expect(paused?.applyItems.map((item) => item.status).sort()).toEqual(["failed", "pending"]);
-    expect(await fixture.coordinator.listApplyLogs(previewHandle.task.id)).toHaveLength(1);
+    expect(paused?.currentBatch?.items.filter((item) => item.result)).toHaveLength(1);
+    expect(paused?.currentBatch?.items.map((item) => item.status).sort()).toEqual(["failed", "pending"]);
 
     await fixture.coordinator.resume(previewHandle.task.id);
     const applied = await applyHandle.completion;
@@ -327,12 +326,11 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
-    const logs = await fixture.coordinator.listApplyLogs(previewHandle.task.id);
 
     expect(snapshot?.previews.map((item) => item.id)).toEqual([second?.id]);
     expect(snapshot?.draft.fieldSelections).toEqual({ [second?.id ?? ""]: { title: "old" } });
-    expect(snapshot?.recentBatch?.items.map((item) => item.log)).toEqual(logs);
-    expect(snapshot?.recentBatch?.items[0]?.result).toMatchObject({ status: "failed", error: "one.mp4" });
+    expect(snapshot?.currentBatch?.items).toHaveLength(1);
+    expect(snapshot?.currentBatch?.items[0]?.result).toMatchObject({ status: "failed", error: "one.mp4" });
     await fixture.coordinator.close();
   });
 

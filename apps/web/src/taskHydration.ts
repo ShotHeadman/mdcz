@@ -1,20 +1,10 @@
-import { maintenancePreviewDtoToPreviewItem, scrapeAssetReferencesToResult } from "@mdcz/shared/dtoAdapters";
+import { scrapeAssetReferencesToResult } from "@mdcz/shared/dtoAdapters";
 import type {
-  MaintenanceApplyLogDto,
-  MaintenancePreviewResponse,
   ScrapeLiveItemDto,
   ScrapeLiveRunSnapshotDto,
   ScrapePendingUncensoredConfirmationResponse,
-  TaskRealtimeEventDto,
-  WebTaskUpdateDto,
 } from "@mdcz/shared/serverDtos";
-import type { MaintenancePreviewItem, ScrapeResult } from "@mdcz/shared/types";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
-import {
-  applyMaintenanceExecutionItemResult,
-  applyMaintenancePreviewResult,
-} from "@mdcz/views/state/maintenanceSession";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
@@ -142,76 +132,4 @@ export const applyPendingUncensoredConfirmation = (
     uncensoredTaskId: taskId,
     ambiguousUncensoredItems: items.map(({ taskId: _taskId, ...item }) => item),
   };
-};
-
-export const hydrateMaintenancePreview = (response: MaintenancePreviewResponse): MaintenancePreviewItem[] => {
-  const items = response.items.map(maintenancePreviewDtoToPreviewItem);
-  applyMaintenancePreviewResult({ items });
-  return items;
-};
-
-const maintenanceApplyLogDtoToItemResult = (item: MaintenanceApplyLogDto) => ({
-  fileId: `${item.rootId}:${item.relativePath}`,
-  batchId: item.batchId,
-  status: item.status,
-  ...(item.error || item.status === "skipped" ? { error: item.error ?? "已跳过" } : {}),
-});
-
-/**
- * Generic task snapshots never write Maintenance UI state. The complete
- * maintenance-session endpoint is its sole authority, preventing a delayed
- * task-list response from overwriting a newer session read.
- */
-export const applyWebTaskUpdate = (_payload: WebTaskUpdateDto, previous: TaskHydrationState): TaskHydrationState => ({
-  ...previous,
-  shouldOpenUncensoredDialog: false,
-});
-
-/**
- * Realtime task events continue to feed generic logs and Maintenance UI.  A
- * scrape event never mutates the workbench's live snapshot; invalidation plus
- * the serialized liveRuns read does that instead.
- */
-export const applyTaskRealtimeEvent = (
-  payload: TaskRealtimeEventDto,
-  previous: TaskHydrationState,
-): TaskHydrationState => {
-  const next = { ...previous, shouldOpenUncensoredDialog: false };
-
-  switch (payload.kind) {
-    case "log":
-    case "scrape-stage":
-    case "scrape-result":
-      return next;
-    case "task-progress":
-      if (payload.taskKind === "maintenance") {
-        next.activeMaintenanceTaskId = payload.taskId;
-        useMaintenanceExecutionStore
-          .getState()
-          .setProgress(
-            payload.value ?? (payload.total > 0 ? Math.round((payload.current / payload.total) * 100) : 0),
-            payload.current,
-            payload.total,
-          );
-      }
-      return next;
-    case "task-failed":
-      next.latestTaskFailure = {
-        taskId: payload.taskId,
-        message: payload.message,
-        ...(payload.error !== undefined ? { error: payload.error } : {}),
-      };
-      if (previous.activeMaintenanceTaskId === payload.taskId) {
-        useMaintenanceExecutionStore.getState().setExecutionStatus("idle");
-      }
-      return next;
-    case "maintenance-preview-item":
-      next.activeMaintenanceTaskId = payload.taskId;
-      useMaintenancePreviewStore.getState().upsertPreviewItem(maintenancePreviewDtoToPreviewItem(payload.item));
-      return next;
-    case "maintenance-apply-item":
-      next.activeMaintenanceTaskId = payload.taskId;
-      applyMaintenanceExecutionItemResult(maintenanceApplyLogDtoToItemResult(payload.item));
-      return next;
-  }
 };

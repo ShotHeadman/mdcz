@@ -22,7 +22,6 @@ export * from "./output/prepareCrawlerDataForNfo";
 export * from "./output/prepareImageAlternativesForDownload";
 export * from "./PosterCropService";
 export * from "./PosterWatermarkService";
-export * from "./pipeline";
 export * from "./posterBadges";
 export * from "./restGate";
 export * from "./TranslateService";

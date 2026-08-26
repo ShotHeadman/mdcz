@@ -17,7 +17,6 @@ export const createMaintenanceHandlers = (
   | typeof IpcChannel.Maintenance_Stop
   | typeof IpcChannel.Maintenance_Pause
   | typeof IpcChannel.Maintenance_Resume
-  | typeof IpcChannel.Maintenance_GetStatus
   | typeof IpcChannel.Maintenance_GetActiveSession
   | typeof IpcChannel.Maintenance_UpdateDraft
   | typeof IpcChannel.Maintenance_DiscardSession
@@ -61,12 +60,9 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          const handle = await maintenanceService.startPreview(entries, presetId);
-          activeTaskId = handle.task.id;
-          await handle.completion;
-          const session = await maintenanceService.getActiveSession();
-          if (!session || session.taskId !== handle.task.id) throw new Error("维护会话已变化");
-          return session.preview;
+          const preview = await maintenanceService.preview(entries, presetId);
+          activeTaskId = (await maintenanceService.getActiveSession())?.id ?? null;
+          return preview;
         } catch (error) {
           logger.error("Maintenance preview failed");
           throw asSerializableIpcError(error);
@@ -128,14 +124,9 @@ export const createMaintenanceHandlers = (
       }
     }),
 
-    [IpcChannel.Maintenance_GetStatus]: t.procedure.action(async () => {
-      const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
-      return await maintenanceService.getStatus(taskId ?? undefined);
-    }),
-
     [IpcChannel.Maintenance_GetActiveSession]: t.procedure.action(async () => {
       const session = await maintenanceService.getActiveSession();
-      activeTaskId = session?.taskId ?? null;
+      activeTaskId = session?.id ?? null;
       return session;
     }),
 

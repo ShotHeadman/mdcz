@@ -4,6 +4,7 @@ import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { AggregationService } from "@mdcz/runtime/scrape";
 import { FileOrganizer, NfoGenerator } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -15,7 +16,6 @@ import {
   loginAsAdmin,
   startTestImageServer,
   syncMediaRootFromConfig,
-  waitForTaskStatus,
 } from "./app.testSupport";
 import type { ServerConfigService } from "./services/configService";
 
@@ -68,15 +68,37 @@ const startMaintenancePreview = async (
     payload: { rootId, presetId },
   });
   expect(startResponse.statusCode).toBe(200);
-  const taskId = startResponse.json().result.data.id as string;
-  await waitForTaskStatus(fastify, token, taskId, "completed");
-  const previewResponse = await fastify.inject({
+  const taskId = startResponse.json().result.data.sessionId as string;
+  const session = await waitForMaintenanceSession(fastify, token, taskId, "preview", "completed");
+  return { session, taskId };
+};
+
+const readMaintenanceSession = async (fastify: TestFastify, token: string) => {
+  const response = await fastify.inject({
     method: "GET",
-    url: `/trpc/maintenance.preview?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+    url: "/trpc/maintenance.getActiveSession",
     headers: { authorization: `Bearer ${token}` },
   });
-  expect(previewResponse.statusCode).toBe(200);
-  return { preview: previewResponse.json().result.data, taskId };
+  expect(response.statusCode).toBe(200);
+  return response.json().result.data as MaintenanceActiveSessionSnapshot | null;
+};
+
+const waitForMaintenanceSession = async (
+  fastify: TestFastify,
+  token: string,
+  sessionId: string,
+  phase: "preview" | "apply",
+  status: "paused" | "completed",
+): Promise<MaintenanceActiveSessionSnapshot> => {
+  let session: MaintenanceActiveSessionSnapshot | null = null;
+  await expect
+    .poll(async () => {
+      session = await readMaintenanceSession(fastify, token);
+      return session?.id === sessionId ? `${session.phase}:${session.status}` : null;
+    })
+    .toBe(`${phase}:${status}`);
+  if (!session) throw new Error(`Maintenance session disappeared: ${sessionId}`);
+  return session;
 };
 
 const createMaintenanceRuntime = (
@@ -136,16 +158,9 @@ describe("buildServer maintenance integration", () => {
         refs: ["ABC-201.mp4", "ABC-203.mp4"].map((relativePath) => ({ rootId, relativePath })),
       },
     });
-    const taskId = startResponse.json().result.data.id as string;
-    const previewResponse = await fastify.inject({
-      method: "GET",
-      url: `/trpc/maintenance.preview?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(previewResponse.statusCode).toBe(200);
-    expect(previewResponse.json().result.data.items.map((item: { relativePath: string }) => item.relativePath)).toEqual(
-      ["ABC-201.mp4", "ABC-203.mp4"],
-    );
+    const taskId = startResponse.json().result.data.sessionId as string;
+    const session = await waitForMaintenanceSession(fastify, token, taskId, "preview", "completed");
+    expect(session.previews.map((item) => item.relativePath)).toEqual(["ABC-201.mp4", "ABC-203.mp4"]);
   });
 
   it("pauses an in-flight preview and resumes only the pending selected ref", async () => {
@@ -191,7 +206,7 @@ describe("buildServer maintenance integration", () => {
         refs: ["ABC-211.mp4", "ABC-212.mp4"].map((relativePath) => ({ rootId, relativePath })),
       },
     });
-    const taskId = startResponse.json().result.data.id as string;
+    const taskId = startResponse.json().result.data.sessionId as string;
     await started;
     const pauseResponsePromise = fastify.inject({
       method: "POST",
@@ -199,7 +214,7 @@ describe("buildServer maintenance integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
-    await waitForTaskStatus(fastify, token, taskId, "paused");
+    await waitForMaintenanceSession(fastify, token, taskId, "preview", "paused");
     releaseFirstCall();
     const pauseResponse = await pauseResponsePromise;
     expect(pauseResponse.statusCode).toBe(200);
@@ -212,13 +227,8 @@ describe("buildServer maintenance integration", () => {
       payload: { taskId },
     });
     expect(resumeResponse.statusCode).toBe(200);
-    await waitForTaskStatus(fastify, token, taskId, "completed");
-    const previewResponse = await fastify.inject({
-      method: "GET",
-      url: `/trpc/maintenance.preview?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const items = previewResponse.json().result.data.items as Array<{ id: string; relativePath: string }>;
+    const completed = await waitForMaintenanceSession(fastify, token, taskId, "preview", "completed");
+    const items = completed.previews;
     expect(items.map((item) => item.relativePath)).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
     expect(new Set(items.map((item) => item.id)).size).toBe(2);
     expect(previewedPaths).toEqual(["ABC-211", "ABC-212"]);
@@ -247,7 +257,7 @@ describe("buildServer maintenance integration", () => {
     });
   });
 
-  it("runs organize_files preview and apply through task-backed logs with filesystem moves", async () => {
+  it("runs organize_files preview and apply through the authoritative session", async () => {
     const root = await createTempRoot("maintenance-organize-root");
     await writeMaintenanceInput(root, "ABC-125", "Local Title ABC-125");
     const { fastify } = await createTestServer();
@@ -255,54 +265,33 @@ describe("buildServer maintenance integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     await configureOrganizedOutput(fastify, token, root);
-    const { preview, taskId } = await startMaintenancePreview(fastify, token, rootId, "organize_files");
+    const { session, taskId } = await startMaintenancePreview(fastify, token, rootId, "organize_files");
     const applyResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { taskId, confirmationToken: preview.confirmationToken },
+      payload: { taskId, confirmationToken: `maintenance:${taskId}` },
     });
-    const logsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/logs.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
+    const appliedSession = await waitForMaintenanceSession(fastify, token, taskId, "apply", "completed");
     const libraryResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/library.search",
       headers: { authorization: `Bearer ${token}` },
       payload: { query: "ABC-125", limit: 20 },
     });
-    const tasksResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/tasks.list",
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(preview.items[0]).toMatchObject({
+    expect(session.previews[0]).toMatchObject({
       presetId: "organize_files",
       relativePath: "ABC-125.mp4",
       status: "ready",
       proposedCrawlerData: { number: "ABC-125", title: "Local Title ABC-125" },
     });
     expect(applyResponse.statusCode).toBe(200);
-    expect(applyResponse.json().result.data.applied[0]).toMatchObject({
-      relativePath: "ABC-125.mp4",
-      status: "success",
-    });
-    expect(tasksResponse.json().result.data.tasks.some((task: { kind: string }) => task.kind === "maintenance")).toBe(
-      true,
-    );
+    expect(applyResponse.json().result.data).toEqual({ sessionId: taskId });
+    expect(appliedSession.currentBatch?.items[0]).toMatchObject({ status: "success" });
     expect(libraryResponse.json().result.data.entries[0]).toMatchObject({
       number: "ABC-125",
       title: "Local Title ABC-125",
     });
-    expect(logsResponse.json().result.data.logs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ source: "task", message: expect.stringContaining("Maintenance") }),
-      ]),
-    );
-
     const organizedVideo = join(root, "JAV_output", "ABC-125", "ABC-125.mp4");
     const organizedNfo = join(root, "JAV_output", "ABC-125", "ABC-125.nfo");
     await expect(access(organizedVideo)).resolves.toBeUndefined();
@@ -338,26 +327,25 @@ describe("buildServer maintenance integration", () => {
       },
       translate: { enableTranslation: false },
     });
-    const { preview, taskId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all");
-    expect(preview.items[0]).toMatchObject({
+    const { session, taskId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all");
+    expect(session.previews[0]).toMatchObject({
       presetId: "rebuild_all",
       relativePath: "ABC-300.mp4",
       status: "ready",
       proposedCrawlerData: { number: "ABC-300", title: "Remote Title ABC-300" },
     });
-    expect(preview.items[0].pathDiff).toBeTruthy();
+    expect(session.previews[0].pathDiff).toBeTruthy();
 
     const applyResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { taskId, confirmationToken: preview.confirmationToken },
+      payload: { taskId, confirmationToken: `maintenance:${taskId}` },
     });
     expect(applyResponse.statusCode).toBe(200);
-    expect(applyResponse.json().result.data.applied[0]).toMatchObject({
-      relativePath: "ABC-300.mp4",
-      status: "success",
-    });
+    expect(applyResponse.json().result.data).toEqual({ sessionId: taskId });
+    const appliedSession = await waitForMaintenanceSession(fastify, token, taskId, "apply", "completed");
+    expect(appliedSession.currentBatch?.items[0]).toMatchObject({ status: "success" });
 
     const organizedVideo = join(root, "JAV_output", "ABC-300", "ABC-300.mp4");
     const organizedNfo = join(root, "JAV_output", "ABC-300", "ABC-300.nfo");
@@ -390,7 +378,7 @@ describe("buildServer maintenance integration", () => {
       translate: { enableTranslation: false },
       download: { downloadSceneImages: false, downloadTrailer: false },
     });
-    const { preview } = await startMaintenancePreview(fastify, token, rootId, "refresh_data");
-    expect(preview.items[0].pathDiff).toBeFalsy();
+    const { session } = await startMaintenancePreview(fastify, token, rootId, "refresh_data");
+    expect(session.previews[0].pathDiff).toBeFalsy();
   });
 });

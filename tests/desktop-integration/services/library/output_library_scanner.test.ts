@@ -44,15 +44,15 @@ const createCompletedRun = async (
     size: number;
   },
 ) => {
-  const manifest = await scrapeRuns.createRun({
+  const manifest = await scrapeRuns.create({
     id: input.id,
     rootId: "root-1",
     outputRootId: "root-1",
     executionMode: "single",
     items: [{ id: `${input.id}:item`, ordinal: 0, rootId: "root-1", relativePath: input.outputRelativePath }],
   });
-  await scrapeRuns.commitSuccess({
-    runId: manifest.id,
+  await scrapeRuns.commitOutcome({
+    outcome: "success",
     itemId: manifest.items[0].id,
     attempt: 1,
     crawlerDataJson: JSON.stringify({ number: input.id }),
@@ -71,11 +71,9 @@ const createCompletedRun = async (
       createdAt: input.completedAt,
     },
   });
-  await scrapeRuns.finalizeRun({
+  await scrapeRuns.finalize({
     runId: manifest.id,
     disposition: "completed",
-    outputRootId: "root-1",
-    outputDirectory: input.outputDirectory,
     completedAt: input.completedAt,
   });
 };
@@ -125,7 +123,7 @@ describe("OutputLibraryScanner", () => {
       fileCount: 1,
       totalBytes: 10,
       scannedAt: 1_700_000_000_000,
-      rootPath: "output-root",
+      rootPath: "E:\\media\\output",
     });
 
     await createCompletedRun(scrapeRuns, {
@@ -142,7 +140,7 @@ describe("OutputLibraryScanner", () => {
       fileCount: 1,
       totalBytes: 18,
       scannedAt: 1_700_000_000_100,
-      rootPath: "next-output",
+      rootPath: "E:\\media\\output",
     });
   });
 

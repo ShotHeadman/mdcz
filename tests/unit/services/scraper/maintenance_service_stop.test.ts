@@ -9,16 +9,10 @@ import { createAbortError } from "@main/utils/abort";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
-import type { LocalScanEntry, MaintenanceApplyCommit, MaintenanceItemResult } from "@mdcz/shared/types";
+import type { LocalScanEntry, MaintenanceApplyCommit } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-class CaptureSignalService extends SignalService {
-  readonly results: MaintenanceItemResult[] = [];
-
-  override showMaintenanceItemResult(payload: MaintenanceItemResult): void {
-    this.results.push(payload);
-  }
-}
+class CaptureSignalService extends SignalService {}
 
 const tempPaths: string[] = [];
 const fixtureCleanups: Array<() => Promise<void>> = [];
@@ -137,7 +131,6 @@ describe("desktop maintenance facade", () => {
     release();
     await handle.completion;
     expect(vi.mocked(fixture.runtime.applyEntry).mock.calls[0]?.[0].committed?.crawlerData?.title).toBe("old title");
-    expect(fixture.signalService.results).toEqual([expect.objectContaining({ fileId: "ABP-123", status: "success" })]);
   });
 
   it("aborts scanning without creating a task", async () => {

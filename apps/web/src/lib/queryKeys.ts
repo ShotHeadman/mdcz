@@ -34,14 +34,10 @@ export const queryKeys = {
   system: {
     about: ["system", "about"] as const,
   },
-  tasks: {
-    all: ["tasks"] as const,
-    list: ["tasks", "list"] as const,
-  },
   scrape: {
     all: ["scrape"] as const,
     result: (resultId: string) => ["scrape", "result", resultId] as const,
-    results: (taskId?: string) =>
-      taskId ? (["scrape", "results", taskId] as const) : (["scrape", "results"] as const),
+    history: (taskId?: string) =>
+      taskId ? (["scrape", "history", taskId] as const) : (["scrape", "history"] as const),
   },
 };

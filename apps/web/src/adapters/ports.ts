@@ -1,4 +1,3 @@
-import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
 import type { CrawlerData, LocalScanEntry, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -7,6 +6,7 @@ import type {
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
+import { maintenanceSnapshotPreviewItems } from "@mdcz/views/state/maintenanceStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { api, getLibraryAssetSrc } from "../client";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
@@ -256,12 +256,11 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
         relativePath: entry.rootRef?.relativePath ?? entry.fileInfo.filePath,
       }));
       const rootId = refs[0]?.rootId ?? "";
-      const task = await api.maintenance.start({ rootId, presetId, refs });
-      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(task.id);
-      const preview = await api.maintenance.preview({ taskId: task.id });
-      return {
-        items: preview.items.map(maintenancePreviewDtoToPreviewItem),
-      };
+      const { sessionId } = await api.maintenance.start({ rootId, presetId, refs });
+      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(sessionId);
+      const session = await api.maintenance.getActiveSession();
+      if (!session || session.id !== sessionId) throw new Error("维护会话已变化");
+      return { items: maintenanceSnapshotPreviewItems(session) };
     },
     execute: async (commitItems: MaintenanceApplyCommit[], _presetId: MaintenancePresetId, context) => {
       const selectedFileIds = new Set(commitItems.map((item) => item.entry.fileId));

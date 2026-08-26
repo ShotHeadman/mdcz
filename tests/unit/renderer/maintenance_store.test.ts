@@ -1,17 +1,17 @@
-import type { LocalScanEntry } from "@mdcz/shared/types";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import type { LocalScanEntry, MaintenanceStatus } from "@mdcz/shared/types";
 import {
-  applyMaintenanceClientSession,
   applyMaintenanceExecutionItemResult,
   applyMaintenancePreviewResult,
+  applyMaintenanceSessionSnapshot,
+  beginMaintenancePreviewRequest,
   cancelMaintenancePreviewFlow,
   changeMaintenancePreset,
   clearMaintenancePreviewResults,
   invalidateMaintenancePreview,
   toggleMaintenanceSelectedIds,
-} from "@mdcz/views/state/maintenanceSession";
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildMaintenanceEntryGroups, findMaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
 import {
@@ -20,10 +20,76 @@ import {
   createMaintenanceValueDiff,
 } from "./maintenanceTestSupport";
 
+const sessionSnapshot = (
+  entries: LocalScanEntry[],
+  status: MaintenanceStatus,
+  options: {
+    fieldSelections?: MaintenanceActiveSessionSnapshot["draft"]["fieldSelections"];
+    imageSelections?: MaintenanceActiveSessionSnapshot["draft"]["imageSelections"];
+    pendingPreviewId?: string;
+  } = {},
+): MaintenanceActiveSessionSnapshot => ({
+  id: "task-1",
+  rootId: "root-1",
+  presetId: "refresh_data",
+  phase: options.pendingPreviewId ? "apply" : "preview",
+  status:
+    status.state === "paused"
+      ? "paused"
+      : status.state === "stopping"
+        ? "stopping"
+        : status.state === "idle"
+          ? "completed"
+          : "running",
+  generation: 1,
+  refs: entries.map((entry) => ({ relativePath: entry.fileInfo.filePath })),
+  timestamps: { createdAt: new Date(0), updatedAt: new Date(0), startedAt: new Date(0), completedAt: null },
+  error: null,
+  previews: entries.map((entry, index) => ({
+    id: `preview-${index + 1}`,
+    taskId: "task-1",
+    rootId: "root-1",
+    relativePath: entry.fileInfo.filePath,
+    presetId: "refresh_data",
+    status: "ready",
+    error: null,
+    fieldDiffs: [],
+    unchangedFieldDiffs: [],
+    pathDiff: null,
+    proposedCrawlerData: null,
+    entry,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  })),
+  currentBatch: options.pendingPreviewId
+    ? {
+        id: "batch-1",
+        items: [
+          {
+            id: "batch-item-1",
+            selection: { previewId: options.pendingPreviewId },
+            status: "pending",
+            error: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        ],
+      }
+    : null,
+  draft: {
+    fieldSelections: options.fieldSelections ?? {},
+    imageSelections: options.imageSelections ?? {},
+  },
+  totalEntries: status.totalEntries,
+  completedEntries: status.completedEntries,
+  successCount: status.successCount,
+  failedCount: status.failedCount,
+});
+
 afterEach(() => {
-  useMaintenancePreviewStore.getState().reset();
-  useMaintenanceExecutionStore.getState().reset();
-  useMaintenanceEntryStore.getState().reset();
+  useMaintenanceStore.getState().reset();
+  useMaintenanceStore.getState().reset();
+  useMaintenanceStore.getState().reset();
 });
 
 describe("maintenance execution stores", () => {
@@ -39,43 +105,36 @@ describe("maintenance execution stores", () => {
         number: "ABC-124",
       },
     };
-    applyMaintenanceClientSession({
-      taskId: "task-1",
-      batchId: "batch-1",
-      presetId: "refresh_data",
-      entries: [first, second],
-      preview: {
-        items: [
-          { fileId: first.fileId, previewId: "preview-1", taskId: "task-1", status: "ready" },
-          { fileId: second.fileId, previewId: "preview-2", taskId: "task-1", status: "ready" },
-        ],
-      },
-      fieldSelections: { "entry-1": { title: "old" }, "entry-2": { title: "new" } },
-      imageSelections: { "entry-1": { poster: "old.jpg" }, "entry-2": { poster: "new.jpg" } },
-      status: {
-        state: "idle",
-        totalEntries: 1,
-        completedEntries: 1,
-        successCount: 0,
-        failedCount: 1,
-      },
-      currentResults: [],
-      recentResults: [],
-    });
+    applyMaintenanceSessionSnapshot(
+      sessionSnapshot(
+        [first, second],
+        {
+          state: "idle",
+          totalEntries: 1,
+          completedEntries: 1,
+          successCount: 0,
+          failedCount: 1,
+        },
+        {
+          fieldSelections: { "preview-1": { title: "old" }, "preview-2": { title: "new" } },
+          imageSelections: { "preview-1": { poster: "old.jpg" }, "preview-2": { poster: "new.jpg" } },
+        },
+      ),
+    );
     const result = { fileId: "entry-1", batchId: "batch-1", status: "failed" as const, error: "boom" };
     applyMaintenanceExecutionItemResult(result);
     applyMaintenanceExecutionItemResult(result);
-    expect(useMaintenanceEntryStore.getState()).toMatchObject({
+    expect(useMaintenanceStore.getState()).toMatchObject({
       entries: [second],
       selectedIds: ["entry-2"],
       activeId: "entry-2",
     });
-    expect(useMaintenancePreviewStore.getState()).toMatchObject({
+    expect(useMaintenanceStore.getState()).toMatchObject({
       previewResults: { "entry-2": expect.objectContaining({ previewId: "preview-2" }) },
       fieldSelections: { "entry-2": { title: "new" } },
       imageSelections: { "entry-2": { poster: "new.jpg" } },
     });
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({ "entry-1": result });
+    expect(useMaintenanceStore.getState().itemResults).toEqual({ "entry-1": result });
   });
 
   it("restores only the current batch selection and its pending state", () => {
@@ -85,32 +144,22 @@ describe("maintenance execution stores", () => {
       fileId: "entry-2",
       fileInfo: { ...createMaintenanceEntry().fileInfo, filePath: "/media/ABC-124.mp4" },
     };
-    applyMaintenanceClientSession({
-      taskId: "task-1",
-      batchId: "batch-1",
-      presetId: "refresh_data",
-      entries: [first, second],
-      preview: {
-        items: [
-          { fileId: first.fileId, previewId: "preview-1", taskId: "task-1", status: "ready" },
-          { fileId: second.fileId, previewId: "preview-2", taskId: "task-1", status: "ready" },
-        ],
-      },
-      fieldSelections: {},
-      imageSelections: {},
-      status: {
-        state: "paused",
-        totalEntries: 1,
-        completedEntries: 0,
-        successCount: 0,
-        failedCount: 0,
-      },
-      currentResults: [{ fileId: first.fileId, batchId: "batch-1", status: "pending" }],
-      recentResults: [],
-    });
+    applyMaintenanceSessionSnapshot(
+      sessionSnapshot(
+        [first, second],
+        {
+          state: "paused",
+          totalEntries: 1,
+          completedEntries: 0,
+          successCount: 0,
+          failedCount: 0,
+        },
+        { pendingPreviewId: "preview-1" },
+      ),
+    );
 
-    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual([first.fileId]);
-    expect(useMaintenanceExecutionStore.getState()).toMatchObject({
+    expect(useMaintenanceStore.getState().selectedIds).toEqual([first.fileId]);
+    expect(useMaintenanceStore.getState()).toMatchObject({
       activeBatchId: "batch-1",
       itemResults: { [first.fileId]: { fileId: first.fileId, batchId: "batch-1", status: "pending" } },
     });
@@ -149,8 +198,8 @@ describe("maintenance execution stores", () => {
       },
     };
 
-    useMaintenanceEntryStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
-    useMaintenanceExecutionStore.getState().beginExecution({
+    useMaintenanceStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
+    useMaintenanceStore.getState().beginExecution({
       fileIds: ["entry-1"],
     });
     applyMaintenanceExecutionItemResult({
@@ -158,13 +207,13 @@ describe("maintenance execution stores", () => {
       status: "processing",
     });
 
-    expect(useMaintenanceExecutionStore.getState().itemResults["entry-1"]).toEqual({
+    expect(useMaintenanceStore.getState().itemResults["entry-1"]).toEqual({
       fileId: "entry-1",
       status: "processing",
     });
 
     const compareGroup = buildMaintenanceEntryGroups([createMaintenanceEntry(createMaintenanceCrawlerData())], {
-      itemResults: useMaintenanceExecutionStore.getState().itemResults,
+      itemResults: useMaintenanceStore.getState().itemResults,
       previewResults,
     })[0];
     expect(compareGroup?.compareResult).toMatchObject({
@@ -174,17 +223,17 @@ describe("maintenance execution stores", () => {
       pathDiff,
     });
 
-    useMaintenanceExecutionStore.getState().rollbackExecutionStart();
+    useMaintenanceStore.getState().rollbackExecutionStart();
 
-    expect(useMaintenanceExecutionStore.getState().executionStatus).toBe("idle");
-    expect(useMaintenanceExecutionStore.getState().progressTotal).toBe(0);
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+    expect(useMaintenanceStore.getState().executionStatus).toBe("idle");
+    expect(useMaintenanceStore.getState().progressTotal).toBe(0);
+    expect(useMaintenanceStore.getState().itemResults).toEqual({});
   });
 });
 
 describe("maintenance preview store", () => {
   it("keeps preview refresh state separate from full invalidation", () => {
-    useMaintenanceExecutionStore.setState({
+    useMaintenanceStore.setState({
       executionStatus: "idle",
       progressValue: 100,
       progressCurrent: 1,
@@ -196,7 +245,7 @@ describe("maintenance preview store", () => {
         },
       },
     });
-    useMaintenancePreviewStore.setState({
+    useMaintenanceStore.setState({
       previewPending: false,
       executeDialogOpen: true,
       previewResults: {
@@ -212,11 +261,11 @@ describe("maintenance preview store", () => {
       },
     });
 
-    useMaintenancePreviewStore.getState().beginPreviewRequest();
+    beginMaintenancePreviewRequest();
 
-    expect(useMaintenancePreviewStore.getState().previewPending).toBe(true);
-    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+    expect(useMaintenanceStore.getState().previewPending).toBe(true);
+    expect(useMaintenanceStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenanceStore.getState().itemResults).toEqual({
       "entry-1": {
         fileId: "entry-1",
         status: "success",
@@ -225,17 +274,17 @@ describe("maintenance preview store", () => {
 
     clearMaintenancePreviewResults();
 
-    expect(useMaintenancePreviewStore.getState().previewPending).toBe(false);
-    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
-    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+    expect(useMaintenanceStore.getState().previewPending).toBe(false);
+    expect(useMaintenanceStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenanceStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceStore.getState().fieldSelections).toEqual({});
+    expect(useMaintenanceStore.getState().itemResults).toEqual({
       "entry-1": {
         fileId: "entry-1",
         status: "success",
       },
     });
-    useMaintenancePreviewStore.setState({
+    useMaintenanceStore.setState({
       previewPending: true,
       executeDialogOpen: true,
       previewResults: {
@@ -251,14 +300,14 @@ describe("maintenance preview store", () => {
       },
     });
 
-    useMaintenanceEntryStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
+    useMaintenanceStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
     invalidateMaintenancePreview();
 
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
-    expect(useMaintenancePreviewStore.getState().previewPending).toBe(false);
-    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
-    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
+    expect(useMaintenanceStore.getState().itemResults).toEqual({});
+    expect(useMaintenanceStore.getState().previewPending).toBe(false);
+    expect(useMaintenanceStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenanceStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceStore.getState().fieldSelections).toEqual({});
   });
 
   it("retargets the active entry to the latest preview set and exposes preview diffs instead of stale execution results", () => {
@@ -277,9 +326,9 @@ describe("maintenance preview store", () => {
       nfoPath: "/media/ABC-124.nfo",
     };
 
-    useMaintenanceEntryStore.getState().setEntries([firstEntry, secondEntry], "/media");
-    useMaintenanceEntryStore.getState().setActiveId("entry-2");
-    useMaintenanceExecutionStore.setState({
+    useMaintenanceStore.getState().setEntries([firstEntry, secondEntry], "/media");
+    useMaintenanceStore.getState().setActiveId("entry-2");
+    useMaintenanceStore.setState({
       executionStatus: "idle",
       progressValue: 100,
       progressCurrent: 1,
@@ -311,9 +360,9 @@ describe("maintenance preview store", () => {
       ],
     });
 
-    const entryState = useMaintenanceEntryStore.getState();
-    const executionState = useMaintenanceExecutionStore.getState();
-    const previewState = useMaintenancePreviewStore.getState();
+    const entryState = useMaintenanceStore.getState();
+    const executionState = useMaintenanceStore.getState();
+    const previewState = useMaintenanceStore.getState();
     const group = findMaintenanceEntryGroup(entryState.entries, "entry-1", {
       itemResults: executionState.itemResults,
       previewResults: previewState.previewResults,
@@ -328,7 +377,7 @@ describe("maintenance preview store", () => {
   });
 
   it("invalidates preview state when selection changes under non-diff presets", () => {
-    useMaintenanceEntryStore.getState().setEntries(
+    useMaintenanceStore.getState().setEntries(
       [
         createMaintenanceEntry(createMaintenanceCrawlerData()),
         {
@@ -338,7 +387,7 @@ describe("maintenance preview store", () => {
       ],
       "/media",
     );
-    useMaintenanceExecutionStore.setState({
+    useMaintenanceStore.setState({
       executionStatus: "idle",
       progressValue: 100,
       progressCurrent: 1,
@@ -350,7 +399,7 @@ describe("maintenance preview store", () => {
         },
       },
     });
-    useMaintenancePreviewStore.setState({
+    useMaintenanceStore.setState({
       previewPending: false,
       executeDialogOpen: true,
       previewResults: {
@@ -368,13 +417,13 @@ describe("maintenance preview store", () => {
 
     toggleMaintenanceSelectedIds(["entry-2"]);
 
-    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual(["entry-1"]);
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+    expect(useMaintenanceStore.getState().selectedIds).toEqual(["entry-1"]);
+    expect(useMaintenanceStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceStore.getState().itemResults).toEqual({});
   });
 
   it("preserves preview state when selection changes under diff presets", () => {
-    useMaintenanceEntryStore.getState().setEntries(
+    useMaintenanceStore.getState().setEntries(
       [
         createMaintenanceEntry(createMaintenanceCrawlerData()),
         {
@@ -384,8 +433,8 @@ describe("maintenance preview store", () => {
       ],
       "/media",
     );
-    useMaintenanceEntryStore.getState().setPresetId("refresh_data");
-    useMaintenanceExecutionStore.setState({
+    useMaintenanceStore.getState().setPresetId("refresh_data");
+    useMaintenanceStore.setState({
       executionStatus: "idle",
       progressValue: 100,
       progressCurrent: 1,
@@ -397,7 +446,7 @@ describe("maintenance preview store", () => {
         },
       },
     });
-    useMaintenancePreviewStore.setState({
+    useMaintenanceStore.setState({
       previewPending: false,
       executeDialogOpen: true,
       previewResults: {
@@ -415,14 +464,14 @@ describe("maintenance preview store", () => {
 
     toggleMaintenanceSelectedIds(["entry-2"]);
 
-    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual(["entry-1"]);
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({
+    expect(useMaintenanceStore.getState().selectedIds).toEqual(["entry-1"]);
+    expect(useMaintenanceStore.getState().previewResults).toEqual({
       "entry-1": {
         fileId: "entry-1",
         status: "ready",
       },
     });
-    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+    expect(useMaintenanceStore.getState().itemResults).toEqual({
       "entry-1": {
         fileId: "entry-1",
         status: "success",
@@ -431,9 +480,9 @@ describe("maintenance preview store", () => {
   });
 
   it("invalidates preview state when preset changes", () => {
-    useMaintenanceEntryStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
-    useMaintenanceEntryStore.getState().setPresetId("refresh_data");
-    useMaintenancePreviewStore.setState({
+    useMaintenanceStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
+    useMaintenanceStore.getState().setPresetId("refresh_data");
+    useMaintenanceStore.setState({
       previewPending: false,
       executeDialogOpen: true,
       previewResults: {
@@ -451,20 +500,20 @@ describe("maintenance preview store", () => {
 
     changeMaintenancePreset("organize_files");
 
-    expect(useMaintenanceEntryStore.getState().presetId).toBe("organize_files");
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceStore.getState().presetId).toBe("organize_files");
+    expect(useMaintenanceStore.getState().previewResults).toEqual({});
   });
 
   it("resets preview flow back to idle state when previewing is canceled", () => {
-    useMaintenanceEntryStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
-    useMaintenanceExecutionStore.setState({
+    useMaintenanceStore.getState().setEntries([createMaintenanceEntry(createMaintenanceCrawlerData())], "/media");
+    useMaintenanceStore.setState({
       executionStatus: "previewing",
       progressValue: 37,
       progressCurrent: 1,
       progressTotal: 3,
       itemResults: {},
     });
-    useMaintenancePreviewStore.setState({
+    useMaintenanceStore.setState({
       previewPending: true,
       executeDialogOpen: false,
       previewResults: {
@@ -482,14 +531,14 @@ describe("maintenance preview store", () => {
 
     cancelMaintenancePreviewFlow();
 
-    expect(useMaintenanceExecutionStore.getState()).toMatchObject({
+    expect(useMaintenanceStore.getState()).toMatchObject({
       executionStatus: "idle",
       progressValue: 0,
       progressCurrent: 0,
       progressTotal: 0,
       itemResults: {},
     });
-    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
-    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
+    expect(useMaintenanceStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceStore.getState().fieldSelections).toEqual({});
   });
 });

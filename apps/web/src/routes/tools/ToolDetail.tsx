@@ -96,8 +96,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
     mutationFn: (input: Parameters<typeof api.tools.execute>[0]) => api.tools.execute(input),
     onSuccess: async (_response, input) => {
       if (input.toolId === "single-file-scraper") {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.scrape.results() });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.scrape.history() });
       }
     },
   });

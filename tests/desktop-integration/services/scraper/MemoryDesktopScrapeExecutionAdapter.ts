@@ -1,22 +1,14 @@
-import type {
-  CreatedDesktopScrapeRun,
-  DesktopScrapeExecutionAdapter,
-} from "@main/services/scraper/DesktopScrapeExecutionStore";
 import type { MediaRoot } from "@mdcz/media-store";
 import type { ScrapeRunSummaryRecord } from "@mdcz/persistence";
 import type { ScrapeRunItem } from "@mdcz/runtime/tasks";
 import type { ScrapeResult } from "@mdcz/shared/types";
 
-export class MemoryDesktopScrapeExecutionAdapter implements DesktopScrapeExecutionAdapter {
+export class MemoryDesktopScrapeExecutionAdapter {
   readonly committed: Array<{ runId: string; item: ScrapeRunItem; result: ScrapeResult }> = [];
   readonly finalized: ScrapeRunSummaryRecord[] = [];
   private nextRun = 1;
 
-  async createRun(
-    files: readonly string[],
-    executionMode: "single" | "batch",
-    requestedOutputRoot: MediaRoot | null,
-  ): Promise<CreatedDesktopScrapeRun> {
+  async createRun(files: readonly string[], executionMode: "single" | "batch", requestedOutputRoot: MediaRoot | null) {
     const runId = `run-${this.nextRun}`;
     this.nextRun += 1;
     const createdAt = new Date();
@@ -33,9 +25,14 @@ export class MemoryDesktopScrapeExecutionAdapter implements DesktopScrapeExecuti
       manifest: {
         id: runId,
         rootId: "desktop-input",
-        outputRootId: requestedOutputRoot?.id ?? null,
+        requestedOutputRootId: requestedOutputRoot?.id ?? null,
         executionMode,
         createdAt,
+        startedAt: null,
+        completedAt: null,
+        disposition: null,
+        error: null,
+        outcomes: [],
         items: manifestItems,
       },
       items: manifestItems.map((item, index) => ({
@@ -74,7 +71,6 @@ export class MemoryDesktopScrapeExecutionAdapter implements DesktopScrapeExecuti
       skippedCount: results.filter((result) => result.status === "skipped").length,
       totalBytes: 0,
       outputRootId: null,
-      outputDirectory: null,
       error: options.error ?? null,
     };
     this.finalized.push(summary);

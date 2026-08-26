@@ -1,4 +1,4 @@
-import type { ScanTaskDto } from "@mdcz/shared/serverDtos";
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
@@ -226,31 +226,32 @@ const createEntry = (): LocalScanEntry => ({
 
 describe("web maintenance action port", () => {
   it("stores maintenance task id in shared workbench state and reuses it across port instances", async () => {
-    const runningTask: ScanTaskDto = {
+    const session: MaintenanceActiveSessionSnapshot = {
       id: "maintenance-task-1",
-      kind: "maintenance",
       rootId: "root-1",
-      rootDisplayName: "Media",
+      presetId: "refresh_data",
+      phase: "preview",
       status: "running",
-      createdAt: "2026-05-12T00:00:00.000Z",
-      updatedAt: "2026-05-12T00:00:00.000Z",
-      startedAt: "2026-05-12T00:00:00.000Z",
-      completedAt: null,
-      videoCount: 1,
-      directoryCount: 0,
+      generation: 1,
+      refs: [{ relativePath: "ABC-001.mp4" }],
+      timestamps: {
+        createdAt: new Date("2026-05-12T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-12T00:00:00.000Z"),
+        startedAt: new Date("2026-05-12T00:00:00.000Z"),
+        completedAt: null,
+      },
       error: null,
-      videos: ["ABC-001.mp4"],
+      previews: [],
+      currentBatch: null,
+      draft: { fieldSelections: {}, imageSelections: {} },
+      totalEntries: 1,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
     };
-    vi.spyOn(api.maintenance, "start").mockResolvedValue(runningTask);
-    vi.spyOn(api.maintenance, "preview").mockResolvedValue({
-      task: runningTask,
-      items: [],
-      confirmationToken: "maintenance:maintenance-task-1",
-    });
-    const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({
-      ...runningTask,
-      status: "paused",
-    });
+    vi.spyOn(api.maintenance, "start").mockResolvedValue({ sessionId: session.id });
+    vi.spyOn(api.maintenance, "getActiveSession").mockResolvedValue(session);
+    const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({ sessionId: session.id });
 
     await createWebMaintenanceActionPort().preview([createEntry()], "refresh_data");
     await createWebMaintenanceActionPort().pause();

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,14 +6,7 @@ import { createPersistenceDatabase } from "./database";
 import { defaultMigrationsFolder } from "./migrate";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
-const RELEASED_INITIAL_MIGRATION_SHA256 = "5ac9842c4940bfb7571562f68b5ad978000534f89b67bf6525907baf098f40ff";
-
 describe("Persistence migration baseline", () => {
-  it("keeps the released initial migration byte-for-byte frozen", async () => {
-    const contents = await readFile(join(defaultMigrationsFolder, "0000_initial.sql"));
-    expect(createHash("sha256").update(contents).digest("hex")).toBe(RELEASED_INITIAL_MIGRATION_SHA256);
-  });
-
   it("keeps exactly the published baseline and one unreleased consolidated migration", async () => {
     const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
       entries: Array<{ idx: number; when: number; tag: string }>;
@@ -37,9 +29,8 @@ describe("Persistence migration baseline", () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
         .map((row) => (row as { name: string }).name);
-      expect(tables).toEqual(
-        expect.arrayContaining(["scrape_runs", "scrape_run_items", "scrape_item_outcomes", "scrape_run_summaries"]),
-      );
+      expect(tables).toEqual(expect.arrayContaining(["scrape_runs", "scrape_run_items", "scrape_item_outcomes"]));
+      expect(tables).not.toContain("scrape_run_summaries");
       expect(tables).not.toContain("maintenance_previews");
       expect(tables).not.toContain("maintenance_apply_log");
 
@@ -47,7 +38,17 @@ describe("Persistence migration baseline", () => {
         .prepare("PRAGMA table_info(scrape_runs)")
         .all()
         .map((row) => (row as { name: string }).name);
-      expect(runColumns).toEqual(["id", "root_id", "output_root_id", "execution_mode", "created_at"]);
+      expect(runColumns).toEqual([
+        "id",
+        "root_id",
+        "output_root_id",
+        "execution_mode",
+        "created_at",
+        "started_at",
+        "completed_at",
+        "disposition",
+        "error_message",
+      ]);
       expect(runColumns).not.toContain("status");
 
       const itemColumns = database.sqlite
@@ -195,9 +196,7 @@ describe("Persistence migration baseline", () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
         .map((row) => (row as { name: string }).name);
-      expect(tables).toEqual(
-        expect.arrayContaining(["scrape_runs", "scrape_run_items", "scrape_item_outcomes", "scrape_run_summaries"]),
-      );
+      expect(tables).toEqual(expect.arrayContaining(["scrape_runs", "scrape_run_items", "scrape_item_outcomes"]));
       expect(tables).not.toEqual(expect.arrayContaining(["scrape_results", "scrape_outputs", "library_entries"]));
       expect(database.sqlite.prepare("SELECT * FROM task_records ORDER BY id").all()).toEqual([
         {

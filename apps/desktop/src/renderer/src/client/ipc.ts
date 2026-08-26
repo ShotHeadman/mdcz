@@ -18,7 +18,6 @@ import type {
   CrawlerData,
   LocalScanEntry,
   MaintenanceApplyCommit,
-  MaintenanceItemResult,
   MaintenancePresetId,
   MediaCandidate,
   ScrapeResult,
@@ -145,7 +144,6 @@ export const ipc = {
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
     pause: () => client[IpcChannel.Maintenance_Pause](undefined),
     resume: () => client[IpcChannel.Maintenance_Resume](undefined),
-    getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined),
     getActiveSession: () => client[IpcChannel.Maintenance_GetActiveSession](undefined),
     updateDraft: (input: {
       previewId: string;
@@ -168,7 +166,5 @@ export const ipc = {
       window.api.on(IpcChannel.Event_ButtonStatus, callback),
     shortcut: (callback: (payload: ShortcutPayload) => void): Unsubscribe =>
       window.api.on(IpcChannel.Event_Shortcut, callback),
-    maintenanceItemResult: (callback: (payload: MaintenanceItemResult) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_MaintenanceItemResult, callback),
   },
 };

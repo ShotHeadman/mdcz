@@ -313,16 +313,3 @@ export interface MaintenanceStatus {
   successCount: number;
   failedCount: number;
 }
-
-export interface MaintenanceClientSession {
-  taskId: string;
-  batchId: string | null;
-  presetId: MaintenancePresetId;
-  entries: LocalScanEntry[];
-  preview: MaintenancePreviewResult;
-  fieldSelections: Record<string, Record<string, "old" | "new">>;
-  imageSelections: Record<string, Record<string, string>>;
-  status: MaintenanceStatus;
-  currentResults: MaintenanceItemResult[];
-  recentResults: MaintenanceItemResult[];
-}

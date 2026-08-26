@@ -1,11 +1,11 @@
 import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceCommit";
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
   LocalScanEntry,
   MaintenanceApplyCommit,
-  MaintenanceClientSession,
   MaintenancePresetId,
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
@@ -70,7 +70,7 @@ export interface MaintenanceActionPort {
   play(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
   scanFiles(filePaths: string[], context?: { scanDir?: string }): Promise<{ entries: LocalScanEntry[] }>;
-  getActiveSession(): Promise<MaintenanceClientSession | null>;
+  getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
   updateDraft(
     previewId: string,
     draft: {

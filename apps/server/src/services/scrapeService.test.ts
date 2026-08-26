@@ -14,9 +14,14 @@ const root = createMediaRoot({ id: "root-1", displayName: "Media", hostPath: "/m
 const manifest: ScrapeRunManifest = {
   id: "unsubmitted-run",
   rootId: root.id,
-  outputRootId: null,
+  requestedOutputRootId: null,
   executionMode: "single",
   createdAt: new Date("2026-08-25T00:00:00.000Z"),
+  startedAt: null,
+  completedAt: null,
+  disposition: null,
+  error: null,
+  outcomes: [],
   items: [
     {
       id: "unsubmitted-item",
@@ -30,10 +35,9 @@ const manifest: ScrapeRunManifest = {
   ],
 };
 
-const createService = (discardUnstartedRun: () => Promise<void>) => {
+const createService = () => {
   const scrapeRuns = {
-    createRun: vi.fn(async () => manifest),
-    discardUnstartedRun: vi.fn(discardUnstartedRun),
+    create: vi.fn(async () => manifest),
   };
   const persistence = {
     getState: vi.fn(async () => ({ repositories: { scrapeRuns } })),
@@ -51,28 +55,14 @@ const createService = (discardUnstartedRun: () => Promise<void>) => {
 };
 
 describe("ScrapeService queue admission", () => {
-  it("discards a newly persisted run when the queue is already closing", async () => {
-    const { service, scrapeRuns } = createService(async () => undefined);
+  it("rejects a run before persistence when the queue is closing", async () => {
+    const { service, scrapeRuns } = createService();
     await service.close();
 
     await expect(service.start({ refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }] })).rejects.toThrow(
       "Scrape queue is closing",
     );
 
-    expect(scrapeRuns.createRun).toHaveBeenCalledOnce();
-    expect(scrapeRuns.discardUnstartedRun).toHaveBeenCalledWith(manifest.id);
-  });
-
-  it("reports failed cleanup as an unsuccessful submission", async () => {
-    const { service, scrapeRuns } = createService(async () => {
-      throw new Error("database unavailable");
-    });
-    await service.close();
-
-    await expect(service.start({ refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }] })).rejects.toThrow(
-      "Scrape task was not submitted and cleanup failed: database unavailable",
-    );
-
-    expect(scrapeRuns.discardUnstartedRun).toHaveBeenCalledWith(manifest.id);
+    expect(scrapeRuns.create).not.toHaveBeenCalled();
   });
 });

@@ -33,7 +33,7 @@ describe("Persistence migrations", () => {
     expect(tables).toContain("scrape_runs");
     expect(tables).toContain("scrape_run_items");
     expect(tables).toContain("scrape_item_outcomes");
-    expect(tables).toContain("scrape_run_summaries");
+    expect(tables).not.toContain("scrape_run_summaries");
     expect(tables).not.toContain("scrape_outputs");
     expect(tables).not.toContain("scrape_results");
     expect(tables).not.toContain("library_entries");

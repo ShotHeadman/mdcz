@@ -58,9 +58,10 @@ describe("DesktopScrapeExecutionStore", () => {
     const created = await store.createRun([filePath], "single", null);
     const state = await persistence.getState();
 
-    await expect(state.repositories.scrapeRuns.getRun(created.manifest.id)).resolves.toEqual(created.manifest);
-    await expect(state.repositories.scrapeRuns.listOutcomes(created.manifest.id)).resolves.toEqual([]);
-    await expect(state.repositories.scrapeRuns.getSummary(created.manifest.id)).resolves.toBeNull();
+    const run = await state.repositories.scrapeRuns.get(created.manifest.id);
+    expect(run).toEqual(created.manifest);
+    expect(run.outcomes).toEqual([]);
+    expect(state.repositories.scrapeRuns.summary(run)).toBeNull();
     await expect(state.repositories.tasks.list()).resolves.toEqual([]);
   });
 
@@ -85,7 +86,9 @@ describe("DesktopScrapeExecutionStore", () => {
     const entries = await state.repositories.library.listEntries();
 
     expect(committed).toMatchObject({ status: "success", resultId: expect.any(String) });
-    expect(await state.repositories.scrapeRuns.listLatestOutcomes(created.manifest.id)).toMatchObject([
+    expect(
+      state.repositories.scrapeRuns.latestOutcomes(await state.repositories.scrapeRuns.get(created.manifest.id)),
+    ).toMatchObject([
       {
         id: committed.resultId,
         outcome: "success",
@@ -108,7 +111,6 @@ describe("DesktopScrapeExecutionStore", () => {
       successCount: 1,
       totalBytes: Buffer.byteLength("organized-video"),
       outputRootId: "desktop-output",
-      outputDirectory: outputRootPath,
     });
     await expect(store.finalizeRun(created.manifest.id, "completed")).rejects.toThrow();
   });
@@ -119,7 +121,7 @@ describe("DesktopScrapeExecutionStore", () => {
     await writeFile(filePath, "video");
     const created = await store.createRun([filePath], "single", null);
     const state = await persistence.getState();
-    vi.spyOn(state.repositories.scrapeRuns, "commitSuccess").mockRejectedValueOnce(
+    vi.spyOn(state.repositories.scrapeRuns, "commitOutcome").mockRejectedValueOnce(
       new Error("library constraint failed"),
     );
 
@@ -129,7 +131,9 @@ describe("DesktopScrapeExecutionStore", () => {
       status: "failed",
       error: expect.stringContaining("文件操作已完成，但媒体库提交失败：library constraint failed"),
     });
-    await expect(state.repositories.scrapeRuns.listLatestOutcomes(created.manifest.id)).resolves.toMatchObject([
+    expect(
+      state.repositories.scrapeRuns.latestOutcomes(await state.repositories.scrapeRuns.get(created.manifest.id)),
+    ).toMatchObject([
       {
         id: committed.resultId,
         outcome: "failed",

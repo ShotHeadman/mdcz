@@ -28,7 +28,7 @@ const createAutomationService = (taskEvents: TaskEventBus): AutomationService =>
   });
 
 const publishTask = (taskEvents: TaskEventBus, task: ScanTaskDto): void => {
-  taskEvents.publish({ kind: "task", task });
+  taskEvents.lifecycle(task);
 };
 
 const requestBodies = (fetchMock: ReturnType<typeof vi.fn>): Array<Record<string, unknown>> =>

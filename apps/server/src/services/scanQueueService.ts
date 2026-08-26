@@ -54,7 +54,7 @@ export class ScanQueueService {
     const task = await state.repositories.tasks.createScanTask({ rootId });
     await this.addEvent(task.id, "queued", "扫描任务已排队");
     const queuedTask = await this.toDto(task.id);
-    this.taskEvents.publish({ kind: "task", task: queuedTask });
+    this.publishTask(queuedTask);
     this.scheduler.drain();
     return queuedTask;
   }
@@ -104,7 +104,7 @@ export class ScanQueueService {
     await state.repositories.tasks.replaceScanResults({ taskId, rootId: task.rootId, results: [] });
     await this.addEvent(taskId, "queued", "重试扫描已排队");
     const queuedTask = await this.toDto(taskId);
-    this.taskEvents.publish({ kind: "task", task: queuedTask });
+    this.publishTask(queuedTask);
     this.scheduler.drain();
     return queuedTask;
   }
@@ -179,7 +179,7 @@ export class ScanQueueService {
     const state = await this.persistence.getState();
     const { id: taskId, rootId, executionVersion } = task;
     await this.addEvent(taskId, "running", "开始扫描媒体目录");
-    this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+    this.publishTask(await this.toDto(taskId));
 
     try {
       const root = await this.mediaRoots.getActiveRoot(rootId);
@@ -197,7 +197,7 @@ export class ScanQueueService {
         "completed",
         `扫描完成：${result.videos.length} 个视频，${result.directoryCount} 个目录`,
       );
-      this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+      this.publishTask(await this.toDto(taskId));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const committed = await state.repositories.tasks.patch(
@@ -207,7 +207,7 @@ export class ScanQueueService {
       );
       if (!committed) return;
       await this.addEvent(taskId, "failed", message);
-      this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+      this.publishTask(await this.toDto(taskId));
     }
   }
 
@@ -252,25 +252,13 @@ export class ScanQueueService {
     const state = await this.persistence.getState();
     const event = await state.repositories.tasks.addEvent({ taskId, type, message });
     const dto = toTaskEventDto(event);
-    this.taskEvents.publish({ kind: "event", event: dto });
-    this.taskEvents.publishRealtime({
-      id: dto.id,
-      taskId: dto.taskId,
-      createdAt: dto.createdAt,
-      kind: "log",
-      log: decorateTaskLog(dto),
-    });
-    if (type === "failed") {
-      this.taskEvents.publishRealtime({
-        id: `${dto.id}:failed`,
-        taskId: dto.taskId,
-        createdAt: dto.createdAt,
-        kind: "task-failed",
-        message,
-        error: message,
-      });
-    }
+    this.taskEvents.log(decorateTaskLog(dto));
     return dto;
+  }
+
+  private publishTask(task: ScanTaskDto): void {
+    this.taskEvents.lifecycle(task);
+    this.taskEvents.invalidate("scan");
   }
 }
 

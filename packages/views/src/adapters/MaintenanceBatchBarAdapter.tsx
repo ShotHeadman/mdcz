@@ -3,18 +3,16 @@ import { buildMaintenanceApplyCommit } from "@mdcz/shared/maintenanceCommit";
 import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePreviewItem } from "@mdcz/shared/types";
 import { buildMaintenanceEntryViewModel } from "@mdcz/shared/viewModels/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
 import {
-  applyMaintenanceClientSession,
   applyMaintenancePreviewResult,
+  applyMaintenanceSessionSnapshot,
   beginMaintenanceExecution,
   beginMaintenancePreviewRequest,
   cancelMaintenancePreviewFlow,
   resetMaintenanceSession,
   setMaintenancePreviewPending,
-} from "@mdcz/views/state/maintenanceSession";
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useMemo } from "react";
 import { toast } from "sonner";
@@ -28,7 +26,7 @@ const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
 
 export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPort }) {
   const isScraping = useScrapeStore((state) => state.isScraping);
-  const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceEntryStore(
+  const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
@@ -38,7 +36,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     })),
   );
   const { executionStatus, progressValue, itemResults, setExecutionStatus, setProgress, rollbackExecutionStart } =
-    useMaintenanceExecutionStore(
+    useMaintenanceStore(
       useShallow((state) => ({
         executionStatus: state.executionStatus,
         progressValue: state.progressValue,
@@ -49,7 +47,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       })),
     );
   const { previewPending, previewResults, fieldSelections, executeDialogOpen, setExecuteDialogOpen } =
-    useMaintenancePreviewStore(
+    useMaintenanceStore(
       useShallow((state) => ({
         previewPending: state.previewPending,
         previewResults: state.previewResults,
@@ -131,7 +129,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
     try {
       const preview = await port.preview(selectedEntries, presetId);
-      const liveState = useMaintenanceEntryStore.getState();
+      const liveState = useMaintenanceStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
@@ -160,7 +158,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       }
       return preview.items;
     } catch (error) {
-      const liveState = useMaintenanceEntryStore.getState();
+      const liveState = useMaintenanceStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
@@ -195,7 +193,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       return;
     }
 
-    const liveEntryState = useMaintenanceEntryStore.getState();
+    const liveEntryState = useMaintenanceStore.getState();
     const effectivePreviewResults = previewMapOverride ?? previewResults;
     const latestSelectedEntries = liveEntryState.entries.filter((entry) =>
       liveEntryState.selectedIds.includes(entry.fileId),
@@ -220,7 +218,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     try {
       await port.execute(commitItems, presetId, { previewResults: effectivePreviewResults, fieldSelections });
       try {
-        applyMaintenanceClientSession(await port.getActiveSession());
+        applyMaintenanceSessionSnapshot(await port.getActiveSession());
       } catch {
         // Realtime events or the next host snapshot will converge the renderer state.
       }

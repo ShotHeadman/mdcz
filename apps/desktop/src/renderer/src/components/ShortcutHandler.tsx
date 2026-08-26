@@ -1,7 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { RendererShortcutAction } from "@mdcz/shared/ipcEvents";
 import { activateRetryScrapeTask } from "@mdcz/views/adapters";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
@@ -103,7 +103,7 @@ export function ShortcutHandler() {
             }
 
             try {
-              const maintenanceBusy = useMaintenanceExecutionStore.getState().executionStatus !== "idle";
+              const maintenanceBusy = useMaintenanceStore.getState().executionStatus !== "idle";
               if (maintenanceBusy) {
                 toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
                 return;

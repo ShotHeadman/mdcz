@@ -14,27 +14,7 @@ interface DesktopScrapeRunContext {
   requestedOutputRoot: MediaRoot | null;
 }
 
-export type CreatedDesktopScrapeRunItem = Omit<ScrapeRunItem, "manualScrape">;
-export interface CreatedDesktopScrapeRun {
-  manifest: ScrapeRunManifest;
-  items: CreatedDesktopScrapeRunItem[];
-}
-
-export interface DesktopScrapeExecutionAdapter {
-  createRun(
-    files: readonly string[],
-    executionMode: "single" | "batch",
-    requestedOutputRoot: MediaRoot | null,
-  ): Promise<CreatedDesktopScrapeRun>;
-  commitItem(runId: string, item: ScrapeRunItem, result: ScrapeResult): Promise<ScrapeResult>;
-  finalizeRun(
-    runId: string,
-    disposition: "completed" | "failed" | "stopped",
-    options?: { error?: string | null; startedAt?: Date | null },
-  ): Promise<ScrapeRunSummaryRecord>;
-}
-
-export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapter {
+export class DesktopScrapeExecutionStore {
   private readonly contextByRunId = new Map<string, DesktopScrapeRunContext>();
 
   constructor(
@@ -42,18 +22,14 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
     private readonly getConfiguredMediaPath: () => Promise<string>,
   ) {}
 
-  async createRun(
-    files: readonly string[],
-    executionMode: "single" | "batch",
-    requestedOutputRoot: MediaRoot | null,
-  ): Promise<CreatedDesktopScrapeRun> {
+  async createRun(files: readonly string[], executionMode: "single" | "batch", requestedOutputRoot: MediaRoot | null) {
     const state = await this.persistence.getState();
     const configuredMediaPath = (await this.getConfiguredMediaPath()).trim();
     const inputRoot = createDesktopInputRoot(resolveDesktopInputRootPath(files, configuredMediaPath || undefined));
     await state.repositories.mediaRoots.upsert(inputRoot);
     if (requestedOutputRoot) await state.repositories.mediaRoots.upsert(requestedOutputRoot);
 
-    const manifest = await state.repositories.scrapeRuns.createRun({
+    const manifest = await state.repositories.scrapeRuns.create({
       rootId: inputRoot.id,
       outputRootId: requestedOutputRoot?.id ?? null,
       executionMode,
@@ -79,8 +55,8 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
   async commitItem(runId: string, item: ScrapeRunItem, result: ScrapeResult): Promise<ScrapeResult> {
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
     if (result.status === "failed") {
-      const outcome = await repository.commitFailure({
-        runId,
+      const outcome = await repository.commitOutcome({
+        outcome: "failed",
         itemId: item.id,
         attempt: item.attempt,
         error: result.error?.trim() || "刮削失败",
@@ -88,8 +64,8 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
       return { ...result, resultId: outcome.id, status: "failed" };
     }
     if (result.status === "skipped") {
-      const outcome = await repository.commitSkipped({
-        runId,
+      const outcome = await repository.commitOutcome({
+        outcome: "skipped",
         itemId: item.id,
         attempt: item.attempt,
         error: result.error?.trim() || null,
@@ -105,8 +81,8 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
     } catch (error) {
       const coordinatedError = formatDiskCommitFailure(error);
       try {
-        const outcome = await repository.commitFailure({
-          runId,
+        const outcome = await repository.commitOutcome({
+          outcome: "failed",
           itemId: item.id,
           attempt: item.attempt,
           error: coordinatedError,
@@ -124,23 +100,15 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
     options: { error?: string | null; startedAt?: Date | null } = {},
   ): Promise<ScrapeRunSummaryRecord> {
     const state = await this.persistence.getState();
-    const outcomes = await state.repositories.scrapeRuns.listLatestOutcomes(runId);
-    const successful = outcomes.filter((outcome) => outcome.outcome === "success");
-    const outputRootIds = new Set(
-      successful.map((outcome) => outcome.outputRootId).filter((rootId): rootId is string => Boolean(rootId)),
-    );
-    const outputRootId = outputRootIds.size === 1 ? [...outputRootIds][0] : null;
-    const outputRoot = outputRootId
-      ? await state.repositories.mediaRoots.get(outputRootId, { includeDeleted: true })
-      : null;
-    return await state.repositories.scrapeRuns.finalizeRun({
+    const finalized = await state.repositories.scrapeRuns.finalize({
       runId,
       disposition,
-      outputRootId,
-      outputDirectory: outputRoot?.hostPath ?? null,
       error: options.error ?? null,
       startedAt: options.startedAt ?? null,
     });
+    const summary = state.repositories.scrapeRuns.summary(finalized);
+    if (!summary) throw new Error(`Scrape run finalization disappeared after update: ${runId}`);
+    return summary;
   }
 
   private async commitSuccess(runId: string, item: ScrapeRunItem, result: ScrapeResult): Promise<ScrapeResult> {
@@ -162,8 +130,8 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
       }
     }
     const crawlerDataJson = JSON.stringify(result.crawlerData);
-    const committed = await (await this.persistence.getState()).repositories.scrapeRuns.commitSuccess({
-      runId,
+    const committed = await (await this.persistence.getState()).repositories.scrapeRuns.commitOutcome({
+      outcome: "success",
       itemId: item.id,
       attempt: item.attempt,
       crawlerDataJson,
@@ -190,6 +158,7 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
         createdAt: completedAt,
       },
     });
+    if (!("entry" in committed)) throw new Error(`Successful scrape outcome was not committed: ${item.id}`);
     return { ...result, resultId: committed.outcome.id };
   }
 
@@ -197,10 +166,10 @@ export class DesktopScrapeExecutionStore implements DesktopScrapeExecutionAdapte
     const cached = this.contextByRunId.get(runId);
     if (cached) return cached;
     const state = await this.persistence.getState();
-    const manifest = await state.repositories.scrapeRuns.getRun(runId);
+    const manifest = await state.repositories.scrapeRuns.get(runId);
     const inputRoot = await state.repositories.mediaRoots.get(manifest.rootId, { includeDeleted: true });
-    const requestedOutputRoot = manifest.outputRootId
-      ? await state.repositories.mediaRoots.get(manifest.outputRootId, { includeDeleted: true })
+    const requestedOutputRoot = manifest.requestedOutputRootId
+      ? await state.repositories.mediaRoots.get(manifest.requestedOutputRootId, { includeDeleted: true })
       : null;
     const context = { manifest, inputRoot, requestedOutputRoot };
     this.contextByRunId.set(runId, context);

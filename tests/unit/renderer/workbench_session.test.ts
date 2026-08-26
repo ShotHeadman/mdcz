@@ -9,9 +9,7 @@ import {
   resolveWorkbenchMode,
   startMaintenanceFlow,
 } from "@mdcz/views/adapters";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,9 +17,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const resetStores = () => {
   useScrapeStore.getState().reset();
   useUIStore.getState().setSelectedResultId(null);
-  useMaintenanceEntryStore.getState().reset();
-  useMaintenanceExecutionStore.getState().reset();
-  useMaintenancePreviewStore.getState().reset();
+  useMaintenanceStore.getState().reset();
+  useMaintenanceStore.getState().reset();
+  useMaintenanceStore.getState().reset();
 };
 
 const createEntry = (): LocalScanEntry => ({
@@ -70,7 +68,7 @@ describe("workbench session shared controller", () => {
     expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(false);
     resetStores();
 
-    useMaintenanceEntryStore.getState().setEntries([createEntry()], "/media");
+    useMaintenanceStore.getState().setEntries([createEntry()], "/media");
     expect(getWorkbenchSessionSnapshot("maintenance").showSetup).toBe(false);
   });
 
@@ -170,7 +168,7 @@ describe("workbench session shared controller", () => {
     });
 
     expect(port.scanFiles).toHaveBeenCalledWith([entry.fileInfo.filePath], { scanDir: "/media" });
-    expect(useMaintenanceEntryStore.getState().entries).toEqual([entry]);
+    expect(useMaintenanceStore.getState().entries).toEqual([entry]);
     expect(toast.success).toHaveBeenCalledWith("本地读取完成，共 1 项");
   });
 });

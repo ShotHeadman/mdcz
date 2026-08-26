@@ -6,8 +6,6 @@ import type { RuntimeActorImageService } from "../actorOutput";
 import type { DownloadCallbacks, DownloadManager } from "../download";
 import type { FileOrganizer, OrganizePlan } from "../FileOrganizer";
 import type { NfoGenerator, NfoOptions } from "../nfo";
-import type { FileScraperStageRuntime } from "../pipeline";
-import { createDefaultScrapeStages } from "../pipeline";
 import {
   downloadCrawlerAssets,
   organizePreparedVideo,
@@ -188,24 +186,5 @@ describe("shared output steps", () => {
       plan.targetVideoPath,
     );
     expect(organizeVideo).toHaveBeenCalledOnce();
-  });
-});
-
-describe("createDefaultScrapeStages", () => {
-  it("constructs the single fixed stage order", () => {
-    const stages = createDefaultScrapeStages({} as FileScraperStageRuntime);
-
-    expect(stages.map((stage) => stage.constructor.name)).toEqual([
-      "ParseStage",
-      "ProbeStage",
-      "AggregateStage",
-      "TranslateStage",
-      "CanonicalizeActorAliasesStage",
-      "PlanStage",
-      "PrepareOutputStage",
-      "DownloadStage",
-      "NfoStage",
-      "OrganizeStage",
-    ]);
   });
 });

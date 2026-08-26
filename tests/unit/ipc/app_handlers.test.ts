@@ -9,7 +9,7 @@ const { mockExit, mockOpenPath, mockRelaunch, mockUserDataPath } = vi.hoisted(()
   mockExit: vi.fn(),
   mockOpenPath: vi.fn(),
   mockRelaunch: vi.fn(),
-  mockUserDataPath: "/tmp/mdcz-vitest-app-handlers",
+  mockUserDataPath: `${process.cwd()}/.tmp/mdcz-vitest-app-handlers-${process.pid}`,
 }));
 
 vi.mock("electron", () => {

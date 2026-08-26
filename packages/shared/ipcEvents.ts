@@ -1,6 +1,6 @@
 import type { Website } from "./enums";
 import { IpcChannel } from "./IpcChannel";
-import type { FileInfo, MaintenanceItemResult, ScrapeResult } from "./types";
+import type { FileInfo, ScrapeResult } from "./types";
 
 export type RendererShortcutAction =
   | "start-or-stop-scrape"
@@ -53,7 +53,6 @@ export type EventPayloadByChannel = {
   [IpcChannel.Event_FailedInfo]: FailedInfoPayload;
   [IpcChannel.Event_ButtonStatus]: ButtonStatusPayload;
   [IpcChannel.Event_Shortcut]: ShortcutPayload;
-  [IpcChannel.Event_MaintenanceItemResult]: MaintenanceItemResult;
 };
 
 export type EventChannel = keyof EventPayloadByChannel;
@@ -66,7 +65,6 @@ export const IPC_EVENT_CHANNELS = [
   IpcChannel.Event_FailedInfo,
   IpcChannel.Event_ButtonStatus,
   IpcChannel.Event_Shortcut,
-  IpcChannel.Event_MaintenanceItemResult,
 ] as const satisfies readonly EventChannel[];
 
 const EVENT_CHANNEL_SET = new Set<string>(IPC_EVENT_CHANNELS);

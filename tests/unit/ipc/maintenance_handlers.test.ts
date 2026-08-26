@@ -70,7 +70,7 @@ const batch = {
 };
 
 describe("maintenance IPC task adapter", () => {
-  it("keeps all seven legacy shapes while resolving one active task ID", async () => {
+  it("uses one active maintenance session across IPC commands", async () => {
     let releasePreview!: () => void;
     const previewCompletion = new Promise<typeof batch>((resolve) => {
       releasePreview = () => resolve(batch);
@@ -78,15 +78,12 @@ describe("maintenance IPC task adapter", () => {
     const service = {
       scanFiles: vi.fn(async () => [entry]),
       scan: vi.fn(async () => [entry]),
-      startPreview: vi.fn(async () => ({
-        task: { ...task, status: "queued" as const },
-        completion: previewCompletion,
-      })),
+      preview: vi.fn(async () => {
+        await previewCompletion;
+        return { items: [{ fileId: entry.fileId, previewId: "preview-1", taskId: task.id, status: "ready" as const }] };
+      }),
       getActiveSession: vi.fn(async () => ({
-        taskId: task.id,
-        preview: {
-          items: [{ fileId: entry.fileId, previewId: "preview-1", taskId: task.id, status: "ready" as const }],
-        },
+        id: task.id,
       })),
       resolveActiveTaskId: vi.fn(async (preferred?: string) => preferred ?? task.id),
       execute: vi.fn(async () => ({ task, completion: Promise.resolve({ ...batch, applied: [] }) })),
@@ -112,7 +109,7 @@ describe("maintenance IPC task adapter", () => {
       ...args,
       input: { entries: [entry], presetId: "organize_files" },
     });
-    await vi.waitFor(() => expect(service.startPreview).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(service.preview).toHaveBeenCalledOnce());
     await expect(handlers[IpcChannel.Maintenance_Pause].action({ ...args, input: undefined })).resolves.toEqual({
       success: true,
     });
@@ -136,15 +133,7 @@ describe("maintenance IPC task adapter", () => {
     await expect(handlers[IpcChannel.Maintenance_Resume].action({ ...args, input: undefined })).resolves.toEqual({
       success: true,
     });
-    await expect(handlers[IpcChannel.Maintenance_GetStatus].action({ ...args, input: undefined })).resolves.toEqual({
-      state: "idle",
-      totalEntries: 0,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
-    });
     expect(service.stop).toHaveBeenCalledWith(task.id);
     expect(service.resume).toHaveBeenCalledWith(task.id);
-    expect(service.getStatus).toHaveBeenCalledWith(task.id);
   });
 });

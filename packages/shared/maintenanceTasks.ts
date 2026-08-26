@@ -33,16 +33,6 @@ export interface MaintenanceTaskSnapshot extends MaintenanceTaskProgress {
   error: string | null;
 }
 
-export interface MaintenanceExecutionState extends MaintenanceTaskProgress {
-  taskId: string;
-  presetId: MaintenancePresetId;
-  phase: MaintenanceTaskPhase;
-  batchId: string | null;
-  refs: MaintenanceTaskRef[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export type MaintenanceTaskPreviewStatus = "ready" | "blocked" | "applied" | "failed";
 
 export interface MaintenanceTaskPreview {
@@ -69,18 +59,6 @@ export type MaintenanceTaskApplyItemStatus = "pending" | "processing" | "success
 export interface MaintenanceApplySelection {
   previewId: string;
   fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-}
-
-export interface MaintenanceTaskApplyQueueItem {
-  id: string;
-  taskId: string;
-  batchId: string;
-  previewId: string;
-  status: MaintenanceTaskApplyItemStatus;
-  fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-  error: string | null;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface MaintenanceTaskApplyLog {
@@ -141,16 +119,28 @@ export interface MaintenanceSessionDraft {
   imageSelections: Record<string, Record<string, string>>;
 }
 
-export interface MaintenanceBatchResultSnapshot {
-  batchId: string;
-  items: Array<{ log: MaintenanceTaskApplyLog; result: MaintenanceApplyItemResult }>;
-}
-
-export interface MaintenanceActiveSessionSnapshot {
-  task: MaintenanceTaskSnapshot;
-  execution: MaintenanceExecutionState;
+export interface MaintenanceActiveSessionSnapshot extends MaintenanceTaskProgress {
+  id: string;
+  rootId: string;
+  presetId: MaintenancePresetId;
+  phase: MaintenanceTaskPhase;
+  status: MaintenanceTaskStatus;
+  generation: number;
+  refs: MaintenanceTaskRef[];
+  timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
+  error: string | null;
   previews: MaintenanceTaskPreview[];
-  applyItems: MaintenanceTaskApplyQueueItem[];
+  currentBatch: {
+    id: string;
+    items: Array<{
+      id: string;
+      selection: MaintenanceApplySelection;
+      status: MaintenanceTaskApplyItemStatus;
+      error: string | null;
+      result?: MaintenanceApplyItemResult;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+  } | null;
   draft: MaintenanceSessionDraft;
-  recentBatch: MaintenanceBatchResultSnapshot | null;
 }

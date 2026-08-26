@@ -84,10 +84,7 @@ export enum IpcChannel {
   Maintenance_Stop = "maintenance:stop",
   Maintenance_Pause = "maintenance:pause",
   Maintenance_Resume = "maintenance:resume",
-  Maintenance_GetStatus = "maintenance:get-status",
   Maintenance_GetActiveSession = "maintenance:get-active-session",
   Maintenance_UpdateDraft = "maintenance:update-draft",
   Maintenance_DiscardSession = "maintenance:discard-session",
-
-  Event_MaintenanceItemResult = "event:maintenance-item-result",
 }
