@@ -11,7 +11,7 @@ import { createAbortError } from "@main/utils/abort";
 import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { createDesktopInputRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { createDesktopInputRoot, mediaPathOwnership, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
@@ -19,6 +19,7 @@ import {
   MaintenanceTaskCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { commitPublishedMedia, createPublicationPlan } from "@mdcz/runtime/publication";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -28,7 +29,6 @@ import type {
 } from "@mdcz/shared/maintenanceTasks";
 import type {
   LocalScanEntry,
-  MaintenanceApplyCommit,
   MaintenancePresetId,
   MaintenancePreviewResult,
   MaintenanceStatus,
@@ -54,7 +54,6 @@ const idleStatus = (): MaintenanceStatus => ({
   successCount: 0,
   failedCount: 0,
 });
-const sameValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 export class MaintenanceService {
   private readonly logger = loggerService.getLogger("MaintenanceService");
@@ -100,8 +99,21 @@ export class MaintenanceService {
             ),
           preflightRefresh: async (input) =>
             await (await this.persistenceService.getState()).repositories.library.preflightMaintenanceRefresh(input),
-          commitRefresh: async (input) =>
-            await (await this.persistenceService.getState()).repositories.library.commitRefresh(input),
+          publishRefresh: async (input) => {
+            const state = await this.persistenceService.getState();
+            const plan = createPublicationPlan(
+              input.operationId,
+              "maintenance",
+              input.plan,
+              await state.repositories.mediaRoots.list(),
+            );
+            return await commitPublishedMedia(plan, {
+              resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
+              acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
+              repairIssues: state.repositories.libraryRepairIssues,
+              commit: async () => await state.repositories.library.commitRefresh(input.refresh),
+            });
+          },
         },
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
         concurrency: 1,
@@ -189,33 +201,18 @@ export class MaintenanceService {
 
   async execute(
     taskId: string,
-    items: MaintenanceApplyCommit[],
+    selections: MaintenanceApplySelection[],
     presetId: MaintenancePresetId,
   ): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
-    if (items.length === 0) throw new Error("No entries to process");
-    const state = await this.persistenceService.getState();
+    if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.coordinator.getActiveSession();
     if (!session || session.id !== taskId) throw new Error("维护任务不存在");
     if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
     if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
-    const root = await state.repositories.mediaRoots.get(session.rootId);
-    const previews = (await this.coordinator.readPreview(taskId)).items;
-    const byPath = new Map(previews.map((preview) => [preview.relativePath, preview]));
-    const selected = new Set<string>();
-    const selections: MaintenanceApplySelection[] = items.map((item) => {
-      const relativePath = toRootRelativePath(root, item.entry.fileInfo.filePath);
-      const preview = byPath.get(relativePath);
-      if (!preview) throw new Error(`维护项目不属于当前任务：${item.entry.fileInfo.filePath}`);
-      if (selected.has(preview.id)) throw new Error(`维护项目重复：${relativePath}`);
-      selected.add(preview.id);
-      const fieldSelections = Object.fromEntries(
-        preview.fieldDiffs.map((diff) => [
-          diff.field,
-          item.crawlerData && sameValue(item.crawlerData[diff.field], diff.oldValue) ? "old" : "new",
-        ]),
-      ) as Record<string, "old" | "new">;
-      return { previewId: preview.id, fieldSelections };
-    });
+    const previewIds = new Set(session.previews.map((preview) => preview.id));
+    if (selections.some((selection) => !previewIds.has(selection.previewId))) {
+      throw new Error("维护项目不属于当前任务");
+    }
     this.signalService.resetProgress();
     const handle = await this.coordinator.beginApply({ taskId, selections });
     void handle.completion.catch((error) => this.signalService.showLogText(String(error), "error"));
@@ -255,11 +252,7 @@ export class MaintenanceService {
     return await this.coordinator.getActiveSession();
   }
 
-  async updateDraft(input: {
-    previewId: string;
-    fieldSelections?: Record<string, "old" | "new">;
-    imageSelections?: Record<string, string>;
-  }): Promise<void> {
+  async updateDraft(input: { previewId: string; fieldSelections?: Record<string, "old" | "new"> }): Promise<void> {
     const taskId = await this.resolveActiveTaskId();
     if (!taskId) throw new Error("没有活动的维护会话");
     await this.coordinator.updateDraft({ taskId, ...input });

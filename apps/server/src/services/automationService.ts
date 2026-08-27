@@ -24,7 +24,8 @@ export interface AutomationWebhookOptions {
 export class AutomationService {
   readonly #webhook?: AutomationWebhookOptions;
   #deliveryStatus: AutomationWebhookDeliveryStatusDto;
-  #deliveryChain: Promise<void> = Promise.resolve();
+  readonly #deliveryQueue: AutomationWebhookEventDto[] = [];
+  #delivering = false;
   readonly #taskDeliveryPhases = new Map<string, number>();
 
   constructor(
@@ -151,23 +152,27 @@ export class AutomationService {
       return;
     }
 
-    if (!this.#taskDeliveryPhases.has(task.id) && this.#taskDeliveryPhases.size >= MAX_TRACKED_WEBHOOK_TASKS) {
-      let evictionCandidate: string | undefined;
-      for (const [taskId, taskPhases] of this.#taskDeliveryPhases) {
-        evictionCandidate ??= taskId;
-        if ((taskPhases & WEBHOOK_PHASE_TERMINAL) !== 0) {
-          evictionCandidate = taskId;
-          break;
-        }
-      }
-      if (evictionCandidate) {
-        this.#taskDeliveryPhases.delete(evictionCandidate);
-      }
+    if (this.#deliveryQueue.length >= MAX_TRACKED_WEBHOOK_TASKS) {
+      this.#deliveryStatus.failed += 1;
+      this.#deliveryStatus.lastError = "Webhook delivery queue is full";
+      return;
     }
     this.#taskDeliveryPhases.set(task.id, deliveredPhases | phase);
+    this.#deliveryQueue.push(this.toWebhookEvent(task));
+    void this.processWebhookQueue();
+  }
 
-    const payload = this.toWebhookEvent(task);
-    this.#deliveryChain = this.#deliveryChain.then(() => this.deliverWebhook(payload));
+  private async processWebhookQueue(): Promise<void> {
+    if (this.#delivering) return;
+    this.#delivering = true;
+    try {
+      while (this.#deliveryQueue.length > 0) {
+        const payload = this.#deliveryQueue.shift();
+        if (payload) await this.deliverWebhook(payload);
+      }
+    } finally {
+      this.#delivering = false;
+    }
   }
 
   private async deliverWebhook(payload: AutomationWebhookEventDto): Promise<void> {

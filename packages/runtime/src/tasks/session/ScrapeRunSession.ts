@@ -1,4 +1,4 @@
-import { basename, extname } from "node:path";
+import { basename } from "node:path";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { TaskExecutor } from "../executor";
 
@@ -12,7 +12,6 @@ export interface ScrapeRunItem<TManualScrape = unknown> {
   rootId: string;
   relativePath: string;
   sourcePath: string;
-  attempt: number;
   manualScrape?: TManualScrape;
 }
 
@@ -58,6 +57,7 @@ export interface ScrapeRunSessionOptions<TManualScrape = unknown> {
   runId: string;
   items: readonly ScrapeRunItem<TManualScrape>[];
   concurrency: number;
+  acquireItem?: (item: ScrapeRunItem<TManualScrape>) => () => void;
   executeItem: (item: ScrapeRunItem<TManualScrape>, signal: AbortSignal) => Promise<ScrapeResult>;
   commitItem: (item: ScrapeRunItem<TManualScrape>, result: ScrapeResult) => Promise<ScrapeResult>;
   onSnapshot: (snapshot: ScrapeRunSnapshot<TManualScrape>) => void;
@@ -68,6 +68,7 @@ interface MutableScrapeRunItem<TManualScrape> extends ScrapeRunItem<TManualScrap
   error: string | null;
   result?: ScrapeResult;
 }
+type ScrapeExecution = { result: ScrapeResult; release: () => void };
 
 class StaleScrapeRunGenerationError extends Error {}
 
@@ -79,22 +80,18 @@ const toTerminalItemStatus = (status: ScrapeResultStatus): ScrapeRunItemStatus =
   throw new Error(`Scrape commit returned non-terminal status: ${status}`);
 };
 
-const createSkippedResult = <TManualScrape>(item: MutableScrapeRunItem<TManualScrape>, error: string): ScrapeResult => {
-  const extension = extname(item.sourcePath);
-  const fileName = basename(item.sourcePath);
-  return {
-    fileId: item.id,
-    fileInfo: {
-      filePath: item.sourcePath,
-      fileName,
-      extension,
-      number: basename(fileName, extension),
-      isSubtitled: false,
-    },
-    status: "skipped",
-    error,
-  };
-};
+const createSkippedResult = <TManualScrape>(
+  item: MutableScrapeRunItem<TManualScrape>,
+  error: string,
+): ScrapeResult => ({
+  fileId: item.id,
+  rootId: item.rootId,
+  relativePath: item.relativePath,
+  fileName: basename(item.sourcePath),
+  status: "skipped",
+  error,
+  assets: [],
+});
 
 export class ScrapeRunSession<TManualScrape = unknown> {
   private readonly items: MutableScrapeRunItem<TManualScrape>[];
@@ -104,8 +101,8 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   private status: ScrapeRunLiveStatus = "queued";
   private latestStage: ScrapeRunStageSnapshot | null = null;
   private error: string | null = null;
-  private reportedPercent = 0;
-  private executor: TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapeResult> | null = null;
+  private readonly progressByItemId = new Map<string, number>();
+  private executor: TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapeExecution> | null = null;
   private runPromise: Promise<void> | null = null;
 
   constructor(private readonly options: ScrapeRunSessionOptions<TManualScrape>) {
@@ -122,9 +119,6 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       if (!item.rootId.trim()) throw new Error(`Scrape item root ID must not be empty: ${item.id}`);
       if (!item.relativePath.trim()) throw new Error(`Scrape item relative path must not be empty: ${item.id}`);
       if (!item.sourcePath.trim()) throw new Error(`Scrape item source path must not be empty: ${item.id}`);
-      if (!Number.isSafeInteger(item.attempt) || item.attempt < 1) {
-        throw new Error(`Scrape item attempt must be a positive integer: ${item.id}`);
-      }
       if (ids.has(item.id)) throw new Error(`Duplicate scrape item ID: ${item.id}`);
       ids.add(item.id);
       const pathKey = `${item.rootId}\u0000${item.relativePath}`;
@@ -152,14 +146,13 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   async resume(): Promise<void> {
     if (this.status !== "paused") return;
     this.setStatus("running");
-    this.executor?.resume();
     this.startDrain();
   }
 
   async stop(): Promise<ScrapeRunSnapshot<TManualScrape>> {
     if (this.isTerminalStatus() || this.status === "stopping") return this.snapshot();
     this.setStatus("stopping");
-    this.executor?.stop();
+    this.executor?.stopAdmission();
     await this.waitForIdle();
     this.generation += 1;
     this.emitSnapshot();
@@ -183,31 +176,16 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     return this.snapshot();
   }
 
-  requeue(itemId: string, manualScrape?: TManualScrape): boolean {
-    if (this.status !== "running" && this.status !== "paused") return false;
-    const item = this.itemsById.get(itemId);
-    if (!item || (item.status !== "failed" && item.status !== "skipped")) return false;
-    item.attempt += 1;
-    if (manualScrape !== undefined) item.manualScrape = manualScrape;
-    item.status = "pending";
-    item.error = null;
-    delete item.result;
-    this.emitSnapshot();
-    if (this.status === "running") this.startDrain();
-    return true;
-  }
-
   async waitForIdle(): Promise<void> {
     while (this.runPromise) await this.runPromise;
   }
-
   async abortForShutdown(): Promise<void> {
     if (this.isTerminalStatus()) return;
     this.setStatus("stopping");
-    this.executor?.stop();
-    await this.waitForIdle();
     this.generation += 1;
     this.emitSnapshot();
+    this.executor?.stop();
+    await this.waitForIdle();
     this.setStatus("stopped");
   }
 
@@ -219,7 +197,11 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       generation: this.generation,
       status: this.status,
       progress: {
-        percent: Math.max(Math.round((completedItems / totalItems) * 100), Math.round(this.reportedPercent)),
+        percent: Math.round(
+          ((completedItems + [...this.progressByItemId.values()].reduce((total, percent) => total + percent / 100, 0)) /
+            totalItems) *
+            100,
+        ),
         completedItems,
         totalItems,
       },
@@ -234,10 +216,12 @@ export class ScrapeRunSession<TManualScrape = unknown> {
    * The session is the sole progress authority; hosts must not maintain a
    * second counter with different units.
    */
-  recordProgress(percent: number): void {
+  recordProgress(itemId: string, percent: number): void {
+    const item = this.itemsById.get(itemId);
+    if (!item || isTerminalItemStatus(item.status)) return;
     const nextPercent = Math.min(100, Math.max(0, Number.isFinite(percent) ? percent : 0));
-    if (nextPercent <= this.reportedPercent) return;
-    this.reportedPercent = nextPercent;
+    if (nextPercent <= (this.progressByItemId.get(itemId) ?? 0)) return;
+    this.progressByItemId.set(itemId, nextPercent);
     this.emitSnapshot();
   }
 
@@ -298,7 +282,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
         return;
       }
 
-      const executor = new TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapeResult>({
+      const executor = new TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapeExecution>({
         concurrency: this.options.concurrency,
         gate: {
           beforeItem: async (item) => {
@@ -307,20 +291,32 @@ export class ScrapeRunSession<TManualScrape = unknown> {
             item.error = null;
             this.emitSnapshot();
           },
-          beforeResult: async () => this.assertCurrent(generation, ["running", "paused"]),
+          beforeResult: async () => this.assertCurrent(generation, ["running", "paused", "stopping"]),
         },
-        runItem: async (item, context) => await this.options.executeItem(item, context.signal),
-        applyResult: async (item, result) => {
-          this.assertCurrent(generation, ["running", "paused"]);
-          const committed = await this.options.commitItem(item, result);
-          this.assertCurrent(generation, ["running", "paused", "stopping"]);
-          this.applyCommittedResult(item, committed);
+        runItem: async (item, context) => {
+          const release = this.options.acquireItem?.(item) ?? (() => undefined);
+          try {
+            return { result: await this.options.executeItem(item, context.signal), release };
+          } catch (error) {
+            release();
+            throw error;
+          }
+        },
+        discardResult: (_item, execution) => execution.release(),
+        applyResult: async (item, execution) => {
+          try {
+            this.assertCurrent(generation, ["running", "paused", "stopping"]);
+            const committed = await this.options.commitItem(item, execution.result);
+            this.assertCurrent(generation, ["running", "paused", "stopping"]);
+            this.applyCommittedResult(item, committed);
+          } finally {
+            execution.release();
+          }
         },
       });
       this.executor = executor;
       try {
-        const summary = await executor.execute(pending, generation);
-        if (summary.outcome !== "settled") return;
+        await executor.execute(pending, generation);
       } finally {
         if (this.executor === executor) this.executor = null;
       }
@@ -329,6 +325,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
 
   private applyCommittedResult(item: MutableScrapeRunItem<TManualScrape>, result: ScrapeResult): void {
     item.status = toTerminalItemStatus(result.status);
+    this.progressByItemId.delete(item.id);
     item.error = result.error?.trim() || null;
     item.result = result;
     this.emitSnapshot();

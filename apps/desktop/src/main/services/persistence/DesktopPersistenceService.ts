@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   createPersistenceDatabase,
+  LibraryRepairIssueRepository,
   LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
@@ -25,6 +26,7 @@ const resolveNativeBinding = (): string =>
 
 export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
+  libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
   scrapeRuns: ScrapeRunRepository;
   tasks: TaskRepository;
@@ -64,12 +66,15 @@ export class DesktopPersistenceService {
 
     try {
       runMigrations(database);
+      const scrapeRuns = new ScrapeRunRepository(database);
+      scrapeRuns.interruptUnfinished();
       this.state = {
         database,
         repositories: {
           library: new LibraryRepository(database),
+          libraryRepairIssues: new LibraryRepairIssueRepository(database),
           mediaRoots: new MediaRootRepository(database),
-          scrapeRuns: new ScrapeRunRepository(database),
+          scrapeRuns,
           tasks: new TaskRepository(database),
         },
       };

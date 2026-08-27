@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +7,14 @@ import { createPersistenceDatabase } from "./database";
 import { defaultMigrationsFolder } from "./migrate";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
+const publishedBaselineChecksum = "5ac9842c4940bfb7571562f68b5ad978000534f89b67bf6525907baf098f40ff";
+
 describe("Persistence migration baseline", () => {
+  it("keeps the released baseline byte-for-byte intact", async () => {
+    const contents = await readFile(join(defaultMigrationsFolder, "0000_initial.sql"));
+    expect(createHash("sha256").update(contents).digest("hex")).toBe(publishedBaselineChecksum);
+  });
+
   it("keeps exactly the published baseline and one unreleased consolidated migration", async () => {
     const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
       entries: Array<{ idx: number; when: number; tag: string }>;
@@ -29,7 +37,9 @@ describe("Persistence migration baseline", () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
         .map((row) => (row as { name: string }).name);
-      expect(tables).toEqual(expect.arrayContaining(["scrape_runs", "scrape_run_items", "scrape_item_outcomes"]));
+      expect(tables).toEqual(
+        expect.arrayContaining(["scrape_runs", "scrape_run_items", "scrape_item_outcomes", "library_repair_issues"]),
+      );
       expect(tables).not.toContain("scrape_run_summaries");
       expect(tables).not.toContain("maintenance_previews");
       expect(tables).not.toContain("maintenance_apply_log");
@@ -43,6 +53,7 @@ describe("Persistence migration baseline", () => {
         "root_id",
         "output_root_id",
         "execution_mode",
+        "retry_of_run_id",
         "created_at",
         "started_at",
         "completed_at",
@@ -62,6 +73,7 @@ describe("Persistence migration baseline", () => {
         .all()
         .map((row) => (row as { name: string }).name);
       expect(outcomeColumns).toContain("outcome");
+      expect(outcomeColumns).not.toContain("attempt");
       expect(outcomeColumns).not.toContain("status");
     } finally {
       database.close();
@@ -273,6 +285,78 @@ describe("Persistence migration baseline", () => {
           relative_path: "ABC-001-poster.jpg",
           created_at: 700,
         },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back a failed 0001 so the baseline is left intact", async () => {
+    const database = createPersistenceDatabase({ path: ":memory:" });
+    try {
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0000_initial.sql"), "utf8"));
+      database.sqlite
+        .prepare(
+          `INSERT INTO media_roots
+            (id, display_name, host_path, root_type, enabled, deleted, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("root-1", "Media", "/media", "media", 1, 0, 100, 200);
+      const before = database.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all();
+      const sql = (
+        await readFile(join(defaultMigrationsFolder, "0001_task_execution_and_media_root_identity.sql"), "utf8")
+      )
+        .replaceAll("--> statement-breakpoint", "")
+        .concat("\nSELECT * FROM __mdcz_0001_should_not_exist;\n");
+      database.sqlite.exec("BEGIN");
+      expect(() => database.sqlite.exec(sql)).toThrow();
+      database.sqlite.exec("ROLLBACK");
+      expect(
+        database.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all(),
+      ).toEqual(before);
+      expect(database.sqlite.prepare("SELECT id FROM media_roots").all()).toEqual([{ id: "root-1" }]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps the newest duplicate scan result and preserves disabled or deleted roots", async () => {
+    const database = createPersistenceDatabase({ path: ":memory:" });
+    try {
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0000_initial.sql"), "utf8"));
+      const insertRoot = database.sqlite.prepare(
+        `INSERT INTO media_roots
+          (id, display_name, host_path, root_type, enabled, deleted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      insertRoot.run("root-live", "Live", "/media", "media", 1, 0, 100, 200);
+      insertRoot.run("root-disabled", "Disabled", "/disabled", "media", 0, 0, 101, 201);
+      insertRoot.run("root-deleted", "Deleted", "/deleted", "media", 1, 1, 102, 202);
+      database.sqlite
+        .prepare(
+          `INSERT INTO task_records
+            (id, kind, root_id, status, summary, created_at, updated_at, started_at, completed_at, error_message, video_count, directory_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("scan-task", "scan", "root-live", "completed", "scan", 800, 801, 802, 803, null, 1, 0);
+      const insertScan = database.sqlite.prepare(
+        "INSERT INTO scan_results (task_id, root_id, relative_path, size, modified_at) VALUES (?, ?, ?, ?, ?)",
+      );
+      insertScan.run("scan-task", "root-live", "ABC-001.mp4", 100, 10);
+      insertScan.run("scan-task", "root-live", "ABC-001.mp4", 200, 20);
+      insertScan.run("scan-task", "root-live", "ABC-001.mp4", 300, 20);
+      database.sqlite.exec(
+        (
+          await readFile(join(defaultMigrationsFolder, "0001_task_execution_and_media_root_identity.sql"), "utf8")
+        ).replaceAll("--> statement-breakpoint", ""),
+      );
+      expect(database.sqlite.prepare("SELECT size, modified_at FROM scan_results").all()).toEqual([
+        { size: 300, modified_at: 20 },
+      ]);
+      expect(database.sqlite.prepare("SELECT id, enabled, deleted FROM media_roots ORDER BY id").all()).toEqual([
+        { id: "root-deleted", enabled: 1, deleted: 1 },
+        { id: "root-disabled", enabled: 0, deleted: 0 },
+        { id: "root-live", enabled: 1, deleted: 0 },
       ]);
     } finally {
       database.close();

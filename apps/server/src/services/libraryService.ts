@@ -196,6 +196,7 @@ export class LibraryService {
         totalBytes: output.totalBytes,
         outputAt: output.outputAt,
         rootPath: output.rootPath,
+        unresolvedRepairCount: state.repositories.libraryRepairIssues.countUnresolved(),
       },
       recentAcquisitions,
     };

@@ -1,14 +1,11 @@
-import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceCommit";
-import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import type {
+  MaintenanceActiveSessionSnapshot,
+  MaintenanceApplySelection,
+  MaintenanceFieldSelectionSide,
+} from "@mdcz/shared/maintenanceTasks";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
-import type {
-  CrawlerData,
-  LocalScanEntry,
-  MaintenanceApplyCommit,
-  MaintenancePresetId,
-  MaintenancePreviewItem,
-} from "@mdcz/shared/types";
+import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import type { DetailViewItem } from "../detail";
 
 export type ActionAvailability = "enabled" | "disabled" | "hidden";
@@ -53,10 +50,9 @@ export interface ScrapeActionPort {
     targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>,
     options: {
       scrapeStatus: "idle" | "running" | "stopping" | "paused";
-      canRequeueCurrentRun?: boolean;
       manualUrl?: string;
     },
-  ): Promise<{ message: string; strategy?: "new-task" | string }>;
+  ): Promise<{ message: string }>;
   deleteFile(targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>): Promise<void>;
   deleteFileAndFolder(filePath: string): Promise<void>;
   openFolder(filePath: string): Promise<void> | void;
@@ -75,19 +71,11 @@ export interface MaintenanceActionPort {
     previewId: string,
     draft: {
       fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-      imageSelections?: Record<string, string>;
     },
   ): Promise<void>;
   discardSession(): Promise<void>;
-  preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<{ items: MaintenancePreviewItem[] }>;
-  execute(
-    commitItems: MaintenanceApplyCommit[],
-    presetId: MaintenancePresetId,
-    context?: {
-      previewResults: Record<string, MaintenancePreviewItem>;
-      fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
-    },
-  ): Promise<void>;
+  preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<{ sessionId: string }>;
+  execute(selections: MaintenanceApplySelection[], presetId: MaintenancePresetId): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;

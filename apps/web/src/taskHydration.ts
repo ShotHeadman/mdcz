@@ -1,48 +1,14 @@
-import { scrapeAssetReferencesToResult } from "@mdcz/shared/dtoAdapters";
-import type {
-  ScrapeLiveItemDto,
-  ScrapeLiveRunSnapshotDto,
-  ScrapePendingUncensoredConfirmationResponse,
-} from "@mdcz/shared/serverDtos";
-import type { ScrapeResult } from "@mdcz/shared/types";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import type { ScrapePendingUncensoredConfirmationResponse, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
+import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
 export type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
-const liveTaskStatusToScrapeStatus = (
-  status: ScrapeLiveRunSnapshotDto["task"]["status"],
-): ReturnType<typeof useScrapeStore.getState>["scrapeStatus"] => {
-  if (status === "paused") return "paused";
-  if (status === "stopping") return "stopping";
-  return "running";
-};
-
-const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
-  ...(item.resultId ? { resultId: item.resultId } : {}),
-  fileId: `${item.rootId}:${item.relativePath}`,
-  fileInfo: {
-    filePath: item.relativePath,
-    fileName: item.fileName,
-    extension: item.fileName.split(".").pop() ?? "",
-    number: item.crawlerData?.number ?? item.fileName.replace(/\.[^.]+$/u, ""),
-    isSubtitled: false,
-  },
-  status: item.status,
-  ...(item.crawlerData ? { crawlerData: item.crawlerData } : {}),
-  ...(item.error ? { error: item.error } : {}),
-  ...(item.outputRelativePath ? { outputPath: item.outputRelativePath } : {}),
-  ...(item.nfoRootId ? { nfoRootId: item.nfoRootId } : {}),
-  ...(item.nfoRelativePath ? { nfoPath: item.nfoRelativePath } : {}),
-  ...scrapeAssetReferencesToResult(item),
-  uncensoredAmbiguous: item.uncensoredAmbiguous,
-});
-
 export const selectActiveLiveScrapeRun = (
-  runs: ScrapeLiveRunSnapshotDto[],
+  runs: ScrapeRunSnapshotDto[],
   previousActiveRunId: string,
-): ScrapeLiveRunSnapshotDto | null => {
+): ScrapeRunSnapshotDto | null => {
   const retained = runs.find((run) => run.task.id === previousActiveRunId);
   if (retained) return retained;
 
@@ -61,22 +27,19 @@ export const selectActiveLiveScrapeRun = (
  * mutation acknowledgement can enter the live scrape stores directly.
  */
 export const applyScrapeLiveRunsSnapshot = (
-  runs: ScrapeLiveRunSnapshotDto[],
+  runs: ScrapeRunSnapshotDto[],
   previous: TaskHydrationState,
 ): TaskHydrationState => {
   const liveScrapeRunsById = Object.fromEntries(runs.map((run) => [run.task.id, run])) as Record<
     string,
-    ScrapeLiveRunSnapshotDto
+    ScrapeRunSnapshotDto
   >;
   const selected = selectActiveLiveScrapeRun(runs, previous.activeScrapeTaskId);
   const scrapeStore = useScrapeStore.getState();
   const uiStore = useUIStore.getState();
 
   if (!selected) {
-    scrapeStore.replaceResults([]);
-    scrapeStore.updateProgress(0, 0);
-    scrapeStore.setScrapeStatus("idle");
-    scrapeStore.setScraping(false);
+    scrapeStore.setSnapshot(null);
     if (uiStore.selectedResultId) uiStore.setSelectedResultId(null);
     return {
       ...previous,
@@ -86,11 +49,8 @@ export const applyScrapeLiveRunsSnapshot = (
     };
   }
 
-  const results = selected.items.map(liveItemToScrapeResult);
-  scrapeStore.replaceResults(results);
-  scrapeStore.updateProgress(selected.progress.completedItems, selected.progress.totalItems, selected.progress.percent);
-  scrapeStore.setScrapeStatus(liveTaskStatusToScrapeStatus(selected.task.status));
-  scrapeStore.setScraping(true);
+  scrapeStore.setSnapshot(selected);
+  const results = selectScrapeResults(useScrapeStore.getState());
   if (uiStore.selectedResultId && !results.some((result) => result.fileId === uiStore.selectedResultId)) {
     uiStore.setSelectedResultId(null);
   }

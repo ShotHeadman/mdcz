@@ -1,9 +1,11 @@
 import path from "node:path";
+import { mediaPathOwnership } from "@mdcz/runtime/library";
 import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceTaskCoordinator,
 } from "@mdcz/runtime/maintenance";
+import { commitPublishedMedia, createPublicationPlan } from "@mdcz/runtime/publication";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
@@ -43,8 +45,21 @@ export class MaintenanceService {
           await (await this.persistence.getState()).repositories.library.resolveMaintenanceSource(absolutePath),
         preflightRefresh: async (input) =>
           await (await this.persistence.getState()).repositories.library.preflightMaintenanceRefresh(input),
-        commitRefresh: async (input) =>
-          await (await this.persistence.getState()).repositories.library.commitRefresh(input),
+        publishRefresh: async (input) => {
+          const state = await this.persistence.getState();
+          const plan = createPublicationPlan(
+            input.operationId,
+            "maintenance",
+            input.plan,
+            await state.repositories.mediaRoots.list(),
+          );
+          return await commitPublishedMedia(plan, {
+            resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
+            acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
+            repairIssues: state.repositories.libraryRepairIssues,
+            commit: async () => await state.repositories.library.commitRefresh(input.refresh),
+          });
+        },
       },
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       concurrency: 1,
@@ -165,7 +180,6 @@ export class MaintenanceService {
     taskId: string;
     previewId: string;
     fieldSelections?: Record<string, "old" | "new">;
-    imageSelections?: Record<string, string>;
   }): Promise<MaintenanceMutationAckDto> {
     await this.coordinator.updateDraft(input);
     return { sessionId: input.taskId };

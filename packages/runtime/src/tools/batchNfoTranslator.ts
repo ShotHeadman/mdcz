@@ -39,6 +39,7 @@ type BatchTranslateWriteNfoInput = {
   nfoGenerator: NfoGenerator;
   nfoPath: string;
   sourceVideoPath: string;
+  writeFile?: (path: string, content: string) => Promise<void>;
 };
 
 export type BatchTranslateWriteNfo = (input: BatchTranslateWriteNfoInput) => Promise<string | undefined>;
@@ -176,11 +177,12 @@ const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration[
   return (await pathExists(moviePath)) ? "both" : "filename";
 };
 
-const defaultWriteNfo: BatchTranslateWriteNfo = async ({ config, crawlerData, nfoGenerator, nfoPath }) => {
+const defaultWriteNfo: BatchTranslateWriteNfo = async ({ config, crawlerData, nfoGenerator, nfoPath, writeFile }) => {
   return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
     nfoNaming: config.download.nfoNaming,
     enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
     nfoTitleTemplate: config.naming.nfoTitleTemplate,
+    writeFile,
   });
 };
 

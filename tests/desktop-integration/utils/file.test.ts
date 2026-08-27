@@ -113,7 +113,7 @@ describe("moveFileSafely", () => {
     await expect(access(sourcePath)).rejects.toThrow();
   });
 
-  it("copies then deletes the source when rename reports EXDEV", async () => {
+  it("copies across devices without deleting the source", async () => {
     const root = await createTempDir();
     const sourcePath = join(root, "source.mp4");
     const targetPath = join(root, "output", "movie.mp4");
@@ -139,15 +139,14 @@ describe("moveFileSafely", () => {
     expect(temporaryPath).toMatch(/\.part$/u);
     expect(rename).toHaveBeenLastCalledWith(temporaryPath, targetPath);
     await expect(readFile(targetPath, "utf8")).resolves.toBe("video");
-    await expect(access(sourcePath)).rejects.toThrow();
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("video");
   });
 
-  it("cleans failed parts but preserves a published copy when source deletion fails", async () => {
+  it("cleans failed parts but preserves the source", async () => {
     const failures: Array<{
       message: string;
       overrides: FileSystemOverrides;
       publishFails?: boolean;
-      preservesPublishedTarget?: boolean;
     }> = [
       {
         message: "copy failed",
@@ -164,16 +163,6 @@ describe("moveFileSafely", () => {
           copyFile: copyFileOnDisk,
         },
         publishFails: true,
-      },
-      {
-        message: "source deletion failed",
-        overrides: {
-          copyFile: copyFileOnDisk,
-          unlink: async () => {
-            throw createNodeError("EACCES", "source deletion failed");
-          },
-        },
-        preservesPublishedTarget: true,
       },
     ];
 
@@ -196,11 +185,7 @@ describe("moveFileSafely", () => {
 
       await expect(moveFileSafely(sourcePath, targetPath)).rejects.toThrow(failure.message);
       await expect(readFile(sourcePath, "utf8")).resolves.toBe("video");
-      if (failure.preservesPublishedTarget) {
-        await expect(readFile(targetPath, "utf8")).resolves.toBe("video");
-      } else {
-        await expect(access(targetPath)).rejects.toThrow();
-      }
+      await expect(access(targetPath)).rejects.toThrow();
       await expectNoPartialFiles(targetPath);
     }
   });

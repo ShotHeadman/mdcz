@@ -1,5 +1,6 @@
 export * from "./logStore";
 export * from "./maintenanceStore";
+export * from "./refreshCoordinator";
 export * from "./scrapeStore";
 export * from "./settingsSavingStore";
 export * from "./uiStore";

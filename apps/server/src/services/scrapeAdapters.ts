@@ -1,6 +1,4 @@
-import { rm } from "node:fs/promises";
 import {
-  atomicWriteRootFile,
   type MediaRoot,
   readRootFile,
   resolveRootRelativePath,
@@ -9,6 +7,7 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { commitPublishedMedia } from "@mdcz/runtime/publication";
 import {
   getNfoReadCandidates,
   getNfoWritePaths,
@@ -103,10 +102,20 @@ export class ServerNfoAdapter {
       ? this.nfoGenerator.mergeEditableXml(existingXml, input.data, options)
       : this.nfoGenerator.buildXml(input.data, options);
     const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
-    for (const requiredPath of paths.requiredPaths) await atomicWriteRootFile(root, requiredPath, xml);
-    for (const stalePath of paths.stalePaths) {
-      await rm(resolveRootRelativePath(root, stalePath), { force: true });
-    }
+    await commitPublishedMedia(
+      {
+        operationId: `nfo-write:${input.rootId}:${plannedRelativePath}`,
+        operationType: "maintenance",
+        artifacts: paths.requiredPaths.map((relativePath) => ({
+          target: { rootId: root.id, relativePath },
+          content: { kind: "text" as const, data: xml },
+        })),
+        assets: [],
+        obsolete: paths.stalePaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+        replaceExistingTargets: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+      },
+      { resolveRoot: async () => root, commit: async () => undefined },
+    );
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,

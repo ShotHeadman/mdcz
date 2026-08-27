@@ -17,7 +17,7 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
   onExecute: vi.fn(),
   onExecuteDialogOpenChange: vi.fn(),
   onPauseToggle: vi.fn(),
-  onPreview: vi.fn(async () => null),
+  onPreview: vi.fn(async () => undefined),
   onReturnToSetup: vi.fn(),
   onStop: vi.fn(),
   paused: false,
@@ -80,7 +80,7 @@ function OrganizeHarness({ onExecute }: { onExecute: () => void }) {
         hasPreviewResults,
         onPreview: async () => {
           setHasPreviewResults(true);
-          return null;
+          return undefined;
         },
         onExecute,
       })}

@@ -128,6 +128,7 @@ describe("MaintenanceFileScraper asset replacement", () => {
     const root = await createTempDir();
     const oldTrailerPath = join(root, "trailer.mp4");
     await writeFile(oldTrailerPath, "old-trailer", "utf8");
+    await writeFile(join(root, "ABC-123.mp4"), "video", "utf8");
     const { scraper, config } = createScraperHarness(
       root,
       vi.fn().mockResolvedValue({ downloaded: [], sceneImages: [] }),
@@ -148,6 +149,7 @@ describe("MaintenanceFileScraper asset replacement", () => {
 
     expect(result.status).toBe("success");
     expect(result.updatedEntry?.assets.trailer).toBeUndefined();
-    await expect(readFile(oldTrailerPath, "utf8")).rejects.toThrow();
+    expect(result.publicationPlan?.obsoletePaths).toContain(oldTrailerPath);
+    await expect(readFile(oldTrailerPath, "utf8")).resolves.toBe("old-trailer");
   });
 });

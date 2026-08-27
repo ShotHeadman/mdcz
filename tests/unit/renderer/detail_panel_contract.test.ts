@@ -60,13 +60,9 @@ describe("detail panel adapter contract", () => {
     const payload: ScrapeResult = {
       fileId: "file:/library/ABC-123/ABC-123.mp4",
       status: "success",
-      fileInfo: {
-        filePath: "/library/ABC-123/ABC-123.mp4",
-        fileName: "ABC-123.mp4",
-        extension: ".mp4",
-        number: "ABC-123",
-        isSubtitled: false,
-      },
+      rootId: "library",
+      relativePath: "ABC-123/ABC-123.mp4",
+      fileName: "ABC-123.mp4",
       crawlerData: createCrawlerData({
         title: "Remote Title",
         title_zh: "中文标题",
@@ -91,17 +87,15 @@ describe("detail panel adapter contract", () => {
         height: 1080,
         bitrate: 12_500_000,
       },
-      assets: {
-        rootId: "metadata-root",
-        poster: "/art/poster.jpg",
-        thumb: "/art/thumb.jpg",
-        fanart: "/art/fanart.jpg",
-        sceneImages: ["/art/scene-1.jpg"],
-        trailer: "/art/trailer.mp4",
-        downloaded: ["/art/poster.jpg"],
-      },
-      outputPath: "/output/ABC-123",
-      nfoPath: "/output/ABC-123/ABC-123.nfo",
+      assets: [
+        { type: "local", kind: "poster", file: { rootId: "metadata-root", relativePath: "/art/poster.jpg" } },
+        { type: "local", kind: "thumb", file: { rootId: "metadata-root", relativePath: "/art/thumb.jpg" } },
+        { type: "local", kind: "fanart", file: { rootId: "metadata-root", relativePath: "/art/fanart.jpg" } },
+        { type: "local", kind: "scene", file: { rootId: "metadata-root", relativePath: "/art/scene-1.jpg" } },
+        { type: "local", kind: "trailer", file: { rootId: "metadata-root", relativePath: "/art/trailer.mp4" } },
+      ],
+      output: { rootId: "output", relativePath: "/output/ABC-123" },
+      nfo: { rootId: "output", relativePath: "/output/ABC-123/ABC-123.nfo" },
       uncensoredAmbiguous: true,
     };
 
@@ -118,7 +112,6 @@ describe("detail panel adapter contract", () => {
       thumbUrl: "/art/thumb.jpg",
       fanartUrl: "/art/fanart.jpg",
       sceneImages: ["/art/scene-1.jpg"],
-      assetRootId: "metadata-root",
       trailerUrl: "/art/trailer.mp4",
       outputPath: "/output/ABC-123",
       nfoPath: "/output/ABC-123/ABC-123.nfo",
@@ -130,7 +123,10 @@ describe("detail panel adapter contract", () => {
     const result = toDetailViewItemFromScrapeResult({
       fileId: "root:ABC-123.mp4",
       status: "success",
-      fileInfo: createEntry().fileInfo,
+      rootId: "root",
+      relativePath: "ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      assets: [],
       crawlerData: createCrawlerData({ trailer_url: "https://example.com/remote-trailer.mp4" }),
     });
 

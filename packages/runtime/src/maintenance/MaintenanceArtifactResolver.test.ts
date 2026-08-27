@@ -57,8 +57,9 @@ describe("MaintenanceArtifactResolver", () => {
     });
 
     expect(result.assets.thumb).toBe(targetPath);
-    await expect(readFile(targetPath, "utf8")).resolves.toBe("thumb");
-    await expect(access(sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.publicationArtifacts).toEqual([{ targetPath, data: Buffer.from("thumb") }]);
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("thumb");
+    await expect(access(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rejects an unreferenced target-only state without changing the target", async () => {
@@ -159,7 +160,8 @@ describe("MaintenanceArtifactResolver", () => {
     });
 
     expect(result.assets.thumb).toBe(targetPath);
-    await expect(access(sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.obsoletePaths).toContain(sourcePath);
+    await expect(access(sourcePath)).resolves.toBeUndefined();
     await expect(readFile(targetPath, "utf8")).resolves.toBe("identical-thumb");
   });
 });

@@ -30,8 +30,8 @@ export const useLogStore = create<LogStore>()(
     addLog: (log) =>
       set((state) => {
         const newLogs = [...state.logs, log];
-        if (newLogs.length > 1000) {
-          return { logs: newLogs.slice(-1000) };
+        if (newLogs.length > 200) {
+          return { logs: newLogs.slice(-200) };
         }
         return { logs: newLogs };
       }),

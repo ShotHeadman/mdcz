@@ -12,7 +12,15 @@ import {
   probeMediaServer,
 } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
+import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import {
+  AggregationService,
+  getNfoWritePaths,
+  LlmApiClient,
+  NfoGenerator,
+  TranslateService,
+  toTarget,
+} from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyAmazonPosters,
@@ -180,7 +188,23 @@ export class ToolsService {
               llmApiClient: this.llmApiClient,
               localScanService: this.localScanService,
               nfoGenerator: this.nfoGenerator,
-              writeNfo: writePreparedNfo,
+              writeNfo: async (writeInput) => {
+                const artifacts: Array<{ targetPath: string; content: { kind: "text"; data: string } }> = [];
+                const savedNfoPath = await writePreparedNfo({
+                  ...writeInput,
+                  writeFile: async (targetPath, content) => {
+                    artifacts.push({ targetPath, content: { kind: "text", data: content } });
+                  },
+                });
+                await commitAbsolutePublication({
+                  operationId: `batch-nfo-translation:${writeInput.fileInfo.filePath}`,
+                  operationType: "maintenance",
+                  artifacts,
+                  obsoletePaths: getNfoWritePaths(writeInput.nfoPath, writeInput.config.download.nfoNaming).stalePaths,
+                  replaceExistingArtifacts: true,
+                });
+                return savedNfoPath;
+              },
             },
             {
               maxBatchItems: input.batchSize,

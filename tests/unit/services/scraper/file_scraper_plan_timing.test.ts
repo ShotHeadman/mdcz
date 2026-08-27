@@ -54,6 +54,7 @@ describe("FileScraper plan timing", () => {
     };
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
+      resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
       ensureOutputReady: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer;

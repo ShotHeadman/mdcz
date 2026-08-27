@@ -2,7 +2,8 @@ import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
+import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import { getNfoWritePaths, LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   applyBatchNfoTranslations,
   type BatchNfoTranslatorApplyOptions,
@@ -53,7 +54,23 @@ export class BatchTranslateToolService {
         localScanService: this.localScanService,
         logger: this.logger,
         nfoGenerator: this.nfoGenerator,
-        writeNfo: this.writeNfo,
+        writeNfo: async (writeInput) => {
+          const artifacts: Array<{ targetPath: string; content: { kind: "text"; data: string } }> = [];
+          const savedNfoPath = await this.writeNfo({
+            ...writeInput,
+            writeFile: async (targetPath, content) => {
+              artifacts.push({ targetPath, content: { kind: "text", data: content } });
+            },
+          });
+          await commitAbsolutePublication({
+            operationId: `batch-nfo-translation:${writeInput.fileInfo.filePath}`,
+            operationType: "maintenance",
+            artifacts,
+            obsoletePaths: getNfoWritePaths(writeInput.nfoPath, writeInput.config.download.nfoNaming).stalePaths,
+            replaceExistingArtifacts: true,
+          });
+          return savedNfoPath;
+        },
       },
       options,
     );

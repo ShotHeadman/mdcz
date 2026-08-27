@@ -1,6 +1,6 @@
 import path from "node:path";
-import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryItemAssetRecord, ScrapeItemOutcomeRecord, ScrapeRunItemRecord } from "@mdcz/persistence";
+import type { AssetRef } from "@mdcz/shared/mediaRef";
 import { crawlerDataSchema, type ScrapeResultDto } from "@mdcz/shared/serverDtos";
 
 export const toScrapeResultDto = (
@@ -10,7 +10,7 @@ export const toScrapeResultDto = (
     runId: string;
     rootDisplayName: string;
     runCreatedAt: Date;
-    assets: Pick<LibraryItemAssetRecord, "kind" | "rootId" | "relativePath">[];
+    assets: Pick<LibraryItemAssetRecord, "kind" | "uri" | "rootId" | "relativePath">[];
   },
 ): ScrapeResultDto => ({
   id: outcome.id,
@@ -26,37 +26,15 @@ export const toScrapeResultDto = (
   nfoRootId: outcome.nfoRootId,
   nfoRelativePath: outcome.nfoRelativePath,
   outputRelativePath: outcome.outputRelativePath,
-  ...toScrapeAssetDto(options.assets),
+  assets: options.assets.map(
+    (asset): AssetRef =>
+      asset.rootId && asset.relativePath
+        ? { type: "local", kind: asset.kind, file: { rootId: asset.rootId, relativePath: asset.relativePath } }
+        : { type: "remote", kind: asset.kind, url: asset.uri },
+  ),
   manualUrl: item.manualUrl,
   uncensoredAmbiguous: outcome.uncensoredAmbiguous,
   persistenceState: "terminal",
   createdAt: options.runCreatedAt.toISOString(),
   updatedAt: outcome.completedAt.toISOString(),
 });
-
-export const toScrapeAssetDto = (
-  assets: Pick<LibraryItemAssetRecord, "kind" | "rootId" | "relativePath">[],
-): Pick<ScrapeResultDto, "assetRootId" | "sceneImageRelativePaths" | "trailerRelativePath"> => {
-  const localAssets = assets.filter(
-    (asset) => (asset.kind === "scene" || asset.kind === "trailer") && asset.rootId && asset.relativePath,
-  );
-  const assetRootId = localAssets[0]?.rootId ?? null;
-  return {
-    assetRootId,
-    sceneImageRelativePaths: localAssets
-      .filter((asset) => asset.kind === "scene")
-      .map((asset) => asset.relativePath as string),
-    trailerRelativePath: localAssets.find((asset) => asset.kind === "trailer")?.relativePath ?? null,
-  };
-};
-
-export const toRootRelativeAssetPath = (root: MediaRoot, assetPath: string | undefined): string | null => {
-  if (!assetPath) {
-    return null;
-  }
-  try {
-    return toRootRelativePath(root, assetPath);
-  } catch {
-    return null;
-  }
-};

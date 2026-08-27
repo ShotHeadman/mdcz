@@ -17,7 +17,7 @@ export class MemoryDesktopScrapeExecutionAdapter {
       runId,
       ordinal,
       rootId: "desktop-input",
-      relativePath: sourcePath,
+      relativePath: sourcePath.replace(/\\/gu, "/").replace(/^\/+/u, ""),
       manualUrl: null,
       uncensoredChoice: null,
     }));
@@ -27,6 +27,7 @@ export class MemoryDesktopScrapeExecutionAdapter {
         rootId: "desktop-input",
         requestedOutputRootId: requestedOutputRoot?.id ?? null,
         executionMode,
+        retryOfRunId: null,
         createdAt,
         startedAt: null,
         completedAt: null,
@@ -40,13 +41,12 @@ export class MemoryDesktopScrapeExecutionAdapter {
         rootId: item.rootId,
         relativePath: item.relativePath,
         sourcePath: files[index],
-        attempt: 1,
       })),
     };
   }
 
   async commitItem(runId: string, item: ScrapeRunItem, result: ScrapeResult): Promise<ScrapeResult> {
-    const committed = { ...result, resultId: `${item.id}:attempt-${item.attempt}` };
+    const committed = { ...result, resultId: item.id };
     this.committed.push({ runId, item: { ...item }, result: committed });
     return committed;
   }

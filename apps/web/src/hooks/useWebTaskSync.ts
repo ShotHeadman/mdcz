@@ -1,6 +1,7 @@
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { ScrapeLiveRunsResponse } from "@mdcz/shared/serverDtos";
 import { applyMaintenanceSessionSnapshot } from "@mdcz/views/state/maintenanceStore";
+import { createRefreshCoordinator } from "@mdcz/views/state/refreshCoordinator";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect } from "react";
 import { api, subscribeTaskNotifications } from "../client";
@@ -9,58 +10,6 @@ import { applyPendingUncensoredConfirmation, applyScrapeLiveRunsSnapshot } from 
 const FAST_POLL_INTERVAL_MS = 2_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
 const LIVENESS_CHECK_INTERVAL_MS = 2_000;
-
-export interface RefreshCoordinator {
-  dispose(): void;
-  request(): Promise<void>;
-}
-
-export const createRefreshCoordinator = <T>(input: {
-  apply(response: T): void;
-  onSuccess?(): void;
-  read(): Promise<T>;
-}): RefreshCoordinator => {
-  let disposed = false;
-  let dirty = false;
-  let inFlight = false;
-  let activeRequest: Promise<void> | null = null;
-
-  const drain = async (): Promise<void> => {
-    try {
-      while (dirty && !disposed) {
-        dirty = false;
-        try {
-          const response = await input.read();
-          if (disposed) return;
-          input.apply(response);
-          input.onSuccess?.();
-        } catch {
-          // Keep the request dirty, but wait for the next heartbeat, polling
-          // tick, invalidation, or mutation acknowledgement to retry.
-          dirty = true;
-          return;
-        }
-      }
-    } finally {
-      inFlight = false;
-      activeRequest = null;
-    }
-  };
-
-  return {
-    request: async () => {
-      dirty = true;
-      if (!inFlight) {
-        inFlight = true;
-        activeRequest = drain();
-      }
-      await activeRequest;
-    },
-    dispose: () => {
-      disposed = true;
-    },
-  };
-};
 
 let requestLiveRunsFromUi: (() => void) | null = null;
 let requestPendingUncensoredFromUi: (() => void) | null = null;
@@ -95,6 +44,19 @@ export const useWebTaskSync = (): void => {
     let connectionOpen = false;
     let lastDispatchAt = Date.now();
     let fastPollingTimer: ReturnType<typeof setInterval> | null = null;
+    const refreshErrors: Record<"maintenance" | "pending" | "scrape", string | null> = {
+      maintenance: null,
+      pending: null,
+      scrape: null,
+    };
+    const updateRefreshError = (source: keyof typeof refreshErrors, error: unknown | null): void => {
+      refreshErrors[source] = error === null ? null : error instanceof Error ? error.message : String(error);
+      useWorkbenchTaskStore.getState().setRefreshError(
+        Object.values(refreshErrors)
+          .filter((message): message is string => Boolean(message))
+          .join("；") || null,
+      );
+    };
 
     const stopFastPolling = (): void => {
       if (!fastPollingTimer) return;
@@ -109,7 +71,9 @@ export const useWebTaskSync = (): void => {
         const store = useWorkbenchTaskStore.getState();
         store.setHydrationState(applyScrapeLiveRunsSnapshot(response.runs, store.hydrationState));
       },
+      onError: (error) => updateRefreshError("scrape", error),
       onSuccess: () => {
+        updateRefreshError("scrape", null);
         if (connectionOpen) stopFastPolling();
       },
     });
@@ -119,6 +83,8 @@ export const useWebTaskSync = (): void => {
         if (closed) return;
         applyActiveMaintenanceSession(session);
       },
+      onError: (error) => updateRefreshError("maintenance", error),
+      onSuccess: () => updateRefreshError("maintenance", null),
     });
     const refreshLiveRuns = (): void => {
       void coordinator.request();
@@ -127,7 +93,10 @@ export const useWebTaskSync = (): void => {
       void maintenanceCoordinator.request();
     };
     const refreshPendingUncensored = (): void => {
-      void hydratePendingUncensoredConfirmation().catch(() => {});
+      void hydratePendingUncensoredConfirmation().then(
+        () => updateRefreshError("pending", null),
+        (error) => updateRefreshError("pending", error),
+      );
     };
     const startFastPolling = (): void => {
       refreshLiveRuns();

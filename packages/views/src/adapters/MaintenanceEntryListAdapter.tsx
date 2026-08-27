@@ -8,6 +8,10 @@ import {
 import { ContextMenuItem } from "@mdcz/ui";
 import {
   type MaintenanceFilter,
+  selectMaintenanceEntries,
+  selectMaintenanceExecutionStatus,
+  selectMaintenanceItemResults,
+  selectMaintenancePreviewResults,
   toggleMaintenanceSelectedIds,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
@@ -93,7 +97,7 @@ function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
 export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionPort }) {
   const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceStore(
     useShallow((state) => ({
-      entries: state.entries,
+      entries: selectMaintenanceEntries(state),
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
@@ -104,11 +108,11 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
   );
   const { itemResults, executionStatus } = useMaintenanceStore(
     useShallow((state) => ({
-      itemResults: state.itemResults,
-      executionStatus: state.executionStatus,
+      itemResults: selectMaintenanceItemResults(state),
+      executionStatus: selectMaintenanceExecutionStatus(state),
     })),
   );
-  const previewResults = useMaintenanceStore((state) => state.previewResults);
+  const previewResults = useMaintenanceStore(selectMaintenancePreviewResults);
   const showsSelection = getMaintenancePresetMeta(presetId).supportsExecution !== false;
   const selectionLocked = executionStatus !== "idle";
   const groupedEntries = useMemo(

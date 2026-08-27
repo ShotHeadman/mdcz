@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
-import { buildMaintenanceApplyCommit } from "@mdcz/shared/maintenanceCommit";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -20,8 +19,10 @@ import type {
   MaintenanceTaskStatus,
 } from "@mdcz/shared/maintenanceTasks";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
+import type { PreparedPublicationPlan } from "../publication";
 import { isAbortError } from "../scrape/utils/abort";
 import { TaskExecutor } from "../tasks";
+import { buildMaintenanceApplyData } from "./applyData";
 import type { MaintenanceRuntime, MaintenanceRuntimePreviewItem } from "./MaintenanceRuntime";
 
 export interface MaintenanceRootPort {
@@ -35,16 +36,20 @@ export interface MaintenanceLibraryPort {
     sourceAbsolutePath: string;
     targetAbsolutePath: string;
   }): Promise<void>;
-  commitRefresh(input: {
-    librarySource?: MaintenanceLibrarySource;
-    sourceAbsolutePath: string;
-    targetAbsolutePath: string;
-    size: number;
-    modifiedAt: Date;
-    crawlerData?: CrawlerData;
-    fallbackNumber: string;
-    assets: DiscoveredAssets;
-    refreshedAt: Date;
+  publishRefresh(input: {
+    operationId: string;
+    plan: PreparedPublicationPlan;
+    refresh: {
+      librarySource?: MaintenanceLibrarySource;
+      sourceAbsolutePath: string;
+      targetAbsolutePath: string;
+      size: number;
+      modifiedAt: Date;
+      crawlerData?: CrawlerData;
+      fallbackNumber: string;
+      assets: DiscoveredAssets;
+      refreshedAt: Date;
+    };
   }): Promise<{ libraryItemId: string }>;
 }
 
@@ -80,6 +85,7 @@ type Session = {
   previews: Map<string, MaintenanceTaskPreview>;
   currentBatch: { id: string; items: Map<string, CurrentBatchItem> } | null;
   draft: MaintenanceSessionDraft;
+  releasePaths: Array<() => void>;
 };
 
 type ActiveExecution = {
@@ -96,7 +102,7 @@ type PreviewExecutionResult = {
 
 type ApplyExecutionResult = {
   result: MaintenanceApplyItemResult;
-  libraryCommit?: Parameters<MaintenanceLibraryPort["commitRefresh"]>[0];
+  publication?: Parameters<MaintenanceLibraryPort["publishRefresh"]>[0];
 };
 
 const ACTIVE_STATUSES: readonly MaintenanceTaskStatus[] = ["queued", "running", "paused", "stopping"];
@@ -193,7 +199,8 @@ export class MaintenanceTaskCoordinator {
       error: null,
       previews: new Map(),
       currentBatch: null,
-      draft: { fieldSelections: {}, imageSelections: {} },
+      draft: { fieldSelections: {} },
+      releasePaths: [],
     };
     await this.publishStatus(this.session, "queued", `Maintenance task queued. Preset: ${input.presetId}`);
     await this.publishLog(this.session, "preset", `Maintenance preset: ${input.presetId}`);
@@ -236,6 +243,14 @@ export class MaintenanceTaskCoordinator {
         throw new Error("部分维护预览不存在、已提交或不属于当前会话");
       }
     }
+    const releasePaths: Array<() => void> = [];
+    try {
+      void previewIds;
+    } catch (error) {
+      for (const release of releasePaths) release();
+      throw error;
+    }
+    session.releasePaths = releasePaths;
     const now = new Date();
     const batchId = randomUUID();
     const items = new Map<string, CurrentBatchItem>();
@@ -325,7 +340,6 @@ export class MaintenanceTaskCoordinator {
     taskId: string;
     previewId: string;
     fieldSelections?: Record<string, "old" | "new">;
-    imageSelections?: Record<string, string>;
   }): Promise<MaintenanceActiveSessionSnapshot> {
     const session = this.require(input.taskId);
     const preview = session.previews.get(input.previewId);
@@ -333,7 +347,6 @@ export class MaintenanceTaskCoordinator {
       throw new Error("维护预览不存在或已提交");
     }
     if (input.fieldSelections) session.draft.fieldSelections[input.previewId] = { ...input.fieldSelections };
-    if (input.imageSelections) session.draft.imageSelections[input.previewId] = { ...input.imageSelections };
     this.touch(session);
     await this.publishChanged(session);
     return this.snapshot(session);
@@ -345,6 +358,7 @@ export class MaintenanceTaskCoordinator {
     if (ACTIVE_STATUSES.includes(this.session.status)) throw new Error("维护会话仍在运行，请先停止后再返回设置");
     const id = this.session.id;
     this.session.generation += 1;
+    this.releasePaths(this.session);
     this.session = null;
     this.notify(id);
   }
@@ -463,8 +477,8 @@ export class MaintenanceTaskCoordinator {
         },
       });
       this.active = { sessionId, generation, executor };
-      const summary = await executor.execute(pending, generation);
-      if (summary.outcome !== "settled") return;
+      await executor.execute(pending, generation);
+      if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== "running") return;
       current = this.assertCurrent(sessionId, generation, ["running"]);
       const progress = this.progress(current);
       const allBlocked =
@@ -513,7 +527,7 @@ export class MaintenanceTaskCoordinator {
             );
             if (!entry)
               return { result: { status: "failed", error: `维护文件不存在：${active.preview.relativePath}` } };
-            const committed = buildMaintenanceApplyCommit(entry, active.preview, active.item.selection.fieldSelections);
+            const committed = buildMaintenanceApplyData(entry, active.preview, active.item.selection.fieldSelections);
             const sourceAbsolutePath = active.preview.entry?.fileInfo.filePath ?? entry.fileInfo.filePath;
             const targetAbsolutePath = active.preview.pathDiff?.targetVideoPath ?? sourceAbsolutePath;
             await this.deps.library.preflightRefresh({
@@ -535,10 +549,11 @@ export class MaintenanceTaskCoordinator {
               signal: context.signal,
             });
             if (applied.status === "failed") return { result: { status: "failed", error: applied.error } };
+            if (!applied.plan?.video) return { result: { status: "failed", error: "维护应用未生成视频发布计划" } };
             const outputRelativePath = applied.outputRelativePath || active.preview.relativePath;
             let file: Awaited<ReturnType<typeof stat>>;
             try {
-              file = await stat(applied.entry.fileInfo.filePath);
+              file = await stat(applied.plan.video.sourcePath);
             } catch (error) {
               return { result: libraryCommitFailure(error) };
             }
@@ -555,16 +570,20 @@ export class MaintenanceTaskCoordinator {
                 outputSize: file.size,
                 outputModifiedAt: file.mtime,
               },
-              libraryCommit: {
-                librarySource: active.preview.librarySource,
-                sourceAbsolutePath,
-                targetAbsolutePath: applied.entry.fileInfo.filePath,
-                size: file.size,
-                modifiedAt: file.mtime,
-                crawlerData,
-                fallbackNumber: applied.entry.fileInfo.number,
-                assets: applied.entry.assets,
-                refreshedAt: new Date(),
+              publication: {
+                operationId: `${sessionId}:${active.preview.id}`,
+                plan: applied.plan,
+                refresh: {
+                  librarySource: active.preview.librarySource,
+                  sourceAbsolutePath,
+                  targetAbsolutePath: applied.plan.video.targetPath,
+                  size: applied.plan.video.size,
+                  modifiedAt: file.mtime,
+                  crawlerData,
+                  fallbackNumber: applied.entry.fileInfo.number,
+                  assets: applied.entry.assets,
+                  refreshedAt: new Date(),
+                },
               },
             };
           } catch (error) {
@@ -576,10 +595,10 @@ export class MaintenanceTaskCoordinator {
         },
         applyResult: async (item, executionResult) => {
           let result = executionResult.result;
-          if (executionResult.libraryCommit) {
+          if (executionResult.publication) {
             try {
               this.assertCurrent(sessionId, generation, ["running", "paused"]);
-              await this.deps.library.commitRefresh(executionResult.libraryCommit);
+              await this.deps.library.publishRefresh(executionResult.publication);
             } catch (error) {
               if (!this.isCurrent(sessionId, generation)) throw error;
               result = libraryCommitFailure(error);
@@ -589,8 +608,8 @@ export class MaintenanceTaskCoordinator {
         },
       });
       this.active = { sessionId, generation, executor };
-      const summary = await executor.execute(pending, generation);
-      if (summary.outcome !== "settled") return;
+      await executor.execute(pending, generation);
+      if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== "running") return;
       const current = this.assertCurrent(sessionId, generation, ["running"]);
       const progress = this.progress(current);
       const failedAll =
@@ -679,7 +698,6 @@ export class MaintenanceTaskCoordinator {
     preview.error = result.error ?? null;
     preview.updatedAt = now;
     delete session.draft.fieldSelections[preview.id];
-    delete session.draft.imageSelections[preview.id];
     this.touch(session, now);
     await this.publishChanged(session);
   }
@@ -725,6 +743,7 @@ export class MaintenanceTaskCoordinator {
     session.status = status;
     session.error = error;
     session.timestamps = { ...session.timestamps, completedAt: now, updatedAt: now };
+    this.releasePaths(session);
     const progress = this.progress(session);
     const message =
       session.phase === "preview"
@@ -735,6 +754,10 @@ export class MaintenanceTaskCoordinator {
           ? (error ?? APPLY_FAILED)
           : `Maintenance completed. Succeeded: ${progress.successCount}, Failed: ${progress.failedCount}`;
     await this.publishStatus(session, status, message);
+  }
+
+  private releasePaths(session: Session): void {
+    for (const release of session.releasePaths.splice(0)) release();
   }
 
   private async failSession(sessionId: string, generation: number, error: string): Promise<void> {
@@ -806,9 +829,6 @@ export class MaintenanceTaskCoordinator {
       draft: {
         fieldSelections: Object.fromEntries(
           Object.entries(session.draft.fieldSelections).map(([id, value]) => [id, { ...value }]),
-        ),
-        imageSelections: Object.fromEntries(
-          Object.entries(session.draft.imageSelections).map(([id, value]) => [id, { ...value }]),
         ),
       },
     };

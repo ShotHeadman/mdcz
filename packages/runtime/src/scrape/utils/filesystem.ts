@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { copyFile, mkdir, readdir, realpath, rename, rm, stat, statfs, unlink } from "node:fs/promises";
+import { copyFile, mkdir, readdir, realpath, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join, parse, resolve } from "node:path";
 import { SUPPORTED_MEDIA_EXTENSIONS_WITH_DOT } from "@mdcz/shared/mediaExtensions";
 import { throwIfAborted } from "./abort";
@@ -179,41 +179,37 @@ const createCrossDeviceTemporaryPath = (targetPath: string): string => {
 
 export const moveFileSafely = async (sourcePath: string, targetPath: string): Promise<string> => {
   await ensureParentDirectory(targetPath);
-  const resolved = await resolveAvailablePath(targetPath, sourcePath);
+  if (resolve(sourcePath) !== resolve(targetPath) && (await pathExists(targetPath))) {
+    throw new Error(`Target already exists: ${targetPath}`);
+  }
 
   try {
-    await rename(sourcePath, resolved);
+    await rename(sourcePath, targetPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code !== "EXDEV") {
       throw error;
     }
 
-    const temporaryPath = createCrossDeviceTemporaryPath(resolved);
+    const temporaryPath = createCrossDeviceTemporaryPath(targetPath);
 
     try {
       await copyFile(sourcePath, temporaryPath);
+      const [source, copied] = await Promise.all([stat(sourcePath), stat(temporaryPath)]);
+      if (!copied.isFile() || copied.size !== source.size) {
+        throw new Error(`Copied file size mismatch: expected ${source.size}, received ${copied.size}`);
+      }
     } catch (copyError) {
       await cleanupFailedCrossDeviceTarget(sourcePath, temporaryPath, "copy", copyError);
     }
 
     try {
-      await rename(temporaryPath, resolved);
+      await rename(temporaryPath, targetPath);
     } catch (publishError) {
       await cleanupFailedCrossDeviceTarget(sourcePath, temporaryPath, "publish copied file", publishError);
     }
-
-    try {
-      await unlink(sourcePath);
-    } catch (unlinkError) {
-      const message = unlinkError instanceof Error ? unlinkError.message : String(unlinkError);
-      throw new Error(
-        `Published copied file at ${resolved}, but failed to remove source ${sourcePath}; both complete copies were preserved: ${message}`,
-        { cause: unlinkError },
-      );
-    }
   }
 
-  return resolved;
+  return targetPath;
 };
 
 export const hasEnoughDiskSpace = async (targetPath: string, requiredBytes: number): Promise<boolean> => {

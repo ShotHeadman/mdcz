@@ -12,7 +12,12 @@ import {
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  selectIsScraping,
+  selectScrapeResults,
+  selectScrapeStatus,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +29,7 @@ import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
 import { requestPendingUncensoredConfirmationRefresh, requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
+import { ErrorBanner } from "../routeCommon";
 
 export const Route = createFileRoute("/workbench")({
   validateSearch: (search): { intent?: "maintenance" } => ({
@@ -68,18 +74,14 @@ const getRetryFailedConfirmMessage = (failedCount: number): string => `确定要
 
 type WebScrapeRetryTarget = Parameters<SharedWorkbenchPorts["scrape"]["retrySelection"]>[0][number];
 
-const scrapeResultToWebRetryRef = (result: ScrapeResult): WebScrapeRetryTarget["ref"] => {
-  const [rootId, ...relativeParts] = result.fileId.split(":");
-  const relativePath = relativeParts.join(":");
-
-  return rootId && relativePath ? { rootId, relativePath } : undefined;
-};
+const scrapeResultToWebRetryRef = (result: ScrapeResult): WebScrapeRetryTarget["ref"] =>
+  result.rootId && result.relativePath ? { rootId: result.rootId, relativePath: result.relativePath } : undefined;
 
 const scrapeResultsToWebRetryTargets = (results: ScrapeResult[]): WebScrapeRetryTarget[] =>
   results
     .filter((result) => result.status === "failed")
     .map((result) => ({
-      filePath: result.fileInfo.filePath,
+      filePath: result.output?.relativePath ?? result.relativePath,
       ref: scrapeResultToWebRetryRef(result),
     }));
 
@@ -89,10 +91,11 @@ function WorkbenchPage() {
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const { hydrationState, clearUncensoredConfirmation, setScrapeStartPending } = useWorkbenchTaskStore(
+  const { hydrationState, clearUncensoredConfirmation, refreshError, setScrapeStartPending } = useWorkbenchTaskStore(
     useShallow((state) => ({
       hydrationState: state.hydrationState,
       clearUncensoredConfirmation: state.clearUncensoredConfirmation,
+      refreshError: state.refreshError,
       setScrapeStartPending: state.setScrapeStartPending,
     })),
   );
@@ -101,9 +104,9 @@ function WorkbenchPage() {
 
   const { isScraping, scrapeStatus, results } = useScrapeStore(
     useShallow((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      results: state.results,
+      isScraping: selectIsScraping(state),
+      scrapeStatus: selectScrapeStatus(state),
+      results: selectScrapeResults(state),
     })),
   );
   const { workbenchMode, setWorkbenchMode } = useUIStore(
@@ -209,7 +212,7 @@ function WorkbenchPage() {
   };
 
   const handleRetryFailed = async () => {
-    const targets = scrapeResultsToWebRetryTargets(useScrapeStore.getState().results);
+    const targets = scrapeResultsToWebRetryTargets(selectScrapeResults(useScrapeStore.getState()));
     if (targets.length === 0) {
       toast.info("当前没有可重试的失败项目");
       return;
@@ -240,28 +243,31 @@ function WorkbenchPage() {
   };
 
   return (
-    <div className="h-full min-h-0 overflow-hidden">
-      {showSetup ? (
-        <WorkbenchSetupAdapter
-          mode={workbenchMode}
-          config={configQ.data}
-          configLoading={configQ.isLoading}
-          port={setupPort}
-          onStartScrape={handleStartSelectedScrape}
-          onStartMaintenance={handleStartSelectedMaintenance}
-        />
-      ) : workbenchMode === "scrape" ? (
-        <ScrapeWorkbenchAdapter
-          ports={ports}
-          failedCount={failedTargets.length}
-          onPauseScrape={() => void handlePauseScrape()}
-          onResumeScrape={() => void handleResumeScrape()}
-          onRetryFailed={() => void handleRetryFailed()}
-          onStopScrape={() => void handleStopScrape()}
-        />
-      ) : (
-        <MaintenanceWorkbenchAdapter ports={ports} />
-      )}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {refreshError ? <ErrorBanner>{`任务状态刷新失败: ${refreshError}`}</ErrorBanner> : null}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {showSetup ? (
+          <WorkbenchSetupAdapter
+            mode={workbenchMode}
+            config={configQ.data}
+            configLoading={configQ.isLoading}
+            port={setupPort}
+            onStartScrape={handleStartSelectedScrape}
+            onStartMaintenance={handleStartSelectedMaintenance}
+          />
+        ) : workbenchMode === "scrape" ? (
+          <ScrapeWorkbenchAdapter
+            ports={ports}
+            failedCount={failedTargets.length}
+            onPauseScrape={() => void handlePauseScrape()}
+            onResumeScrape={() => void handleResumeScrape()}
+            onRetryFailed={() => void handleRetryFailed()}
+            onStopScrape={() => void handleStopScrape()}
+          />
+        ) : (
+          <MaintenanceWorkbenchAdapter ports={ports} />
+        )}
+      </div>
       <UncensoredConfirmDialog
         open={uncensoredDialogOpen && hydrationState.ambiguousUncensoredItems.length > 0}
         items={hydrationState.ambiguousUncensoredItems}

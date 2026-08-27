@@ -2,7 +2,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { findScrapeResultGroup } from "@mdcz/shared/viewModels/scrapeResultGrouping";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ import {
 } from "../nfo";
 import type { ActionAvailability, DetailActionPort, PosterCropEditSession } from "./ports";
 
-const EMPTY_RESULTS: ReturnType<typeof useScrapeStore.getState>["results"] = [];
+const EMPTY_RESULTS: ReturnType<typeof selectScrapeResults> = [];
 
 const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
 
@@ -97,7 +97,7 @@ export function DetailPanelAdapter({
   emptyMessage = "请选择一个项目以查看详情",
   compare,
 }: DetailPanelProps) {
-  const results = useScrapeStore((state) => (explicitItem === undefined ? state.results : EMPTY_RESULTS));
+  const results = useScrapeStore((state) => (explicitItem === undefined ? selectScrapeResults(state) : EMPTY_RESULTS));
   const selectedResultId = useUIStore((state) => (explicitItem === undefined ? state.selectedResultId : null));
 
   const item = useMemo(

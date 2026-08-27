@@ -50,7 +50,7 @@ afterEach(async () => {
 });
 
 describe("moveFileSafely", () => {
-  it("preserves both complete copies when cross-device source removal fails", async () => {
+  it("preserves both complete copies after a verified cross-device copy", async () => {
     const root = await createRoot();
     const sourcePath = join(root, "source", "movie.mp4");
     const targetPath = join(root, "target", "movie.mp4");
@@ -59,7 +59,7 @@ describe("moveFileSafely", () => {
     filesystemFaults.renameErrors.push(createError("cross-device", "EXDEV"));
     filesystemFaults.unlinkError = createError("source busy", "EBUSY");
 
-    await expect(moveFileSafely(sourcePath, targetPath)).rejects.toThrow("both complete copies were preserved");
+    await expect(moveFileSafely(sourcePath, targetPath)).resolves.toBe(targetPath);
 
     await expect(readFile(sourcePath, "utf8")).resolves.toBe("complete-video");
     await expect(readFile(targetPath, "utf8")).resolves.toBe("complete-video");
@@ -80,6 +80,20 @@ describe("moveFileSafely", () => {
 
     await expect(readFile(sourcePath, "utf8")).resolves.toBe("complete-video");
     await expect(readdir(targetDirectory)).resolves.toEqual([]);
+  });
+
+  it("rejects a colliding target instead of inventing a suffix", async () => {
+    const root = await createRoot();
+    const sourcePath = join(root, "source", "movie.mp4");
+    const targetPath = join(root, "target", "movie.mp4");
+    await mkdir(join(root, "source"), { recursive: true });
+    await mkdir(join(root, "target"), { recursive: true });
+    await writeFile(sourcePath, "source-video");
+    await writeFile(targetPath, "existing-video");
+
+    await expect(moveFileSafely(sourcePath, targetPath)).rejects.toThrow("Target already exists");
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("source-video");
+    await expect(readFile(targetPath, "utf8")).resolves.toBe("existing-video");
   });
 
   it("does not include hidden crash-leftover part files in media scans", async () => {

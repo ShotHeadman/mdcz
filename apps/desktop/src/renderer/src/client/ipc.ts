@@ -3,24 +3,16 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type {
-  ButtonStatusPayload,
-  FailedInfoPayload,
-  LogPayload,
-  ProgressPayload,
-  ScrapeInfoPayload,
-  ShortcutPayload,
-} from "@mdcz/shared/ipcEvents";
+import type { InvalidatePayload, LogPayload, ShortcutPayload } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { LibraryListInput } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
   LocalScanEntry,
-  MaintenanceApplyCommit,
   MaintenancePresetId,
   MediaCandidate,
-  ScrapeResult,
   UncensoredConfirmItem,
 } from "@mdcz/shared/types";
 
@@ -72,10 +64,7 @@ export const ipc = {
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
     getStatus: () => client[IpcChannel.Scraper_GetStatus](undefined),
-    getFailedFiles: () => client[IpcChannel.Scraper_GetFailedFiles](undefined),
-    requeue: (filePaths: string[], manualUrl?: string) => client[IpcChannel.Scraper_Requeue]({ filePaths, manualUrl }),
-    retryFailed: (filePaths: string[], manualUrl?: string) =>
-      client[IpcChannel.Scraper_RetryFailed]({ filePaths, manualUrl }),
+    retry: (runId: string) => client[IpcChannel.Scraper_Retry]({ runId }),
     confirmUncensored: (items: UncensoredConfirmItem[]) => client[IpcChannel.Scraper_ConfirmUncensored]({ items }),
   },
   crawler: {
@@ -138,32 +127,21 @@ export const ipc = {
     scan: (dirPath: string) => client[IpcChannel.Maintenance_Scan]({ dirPath }),
     scanFiles: (filePaths: string[]) => client[IpcChannel.Maintenance_Scan]({ filePaths }),
     preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_Preview]({ entries, presetId }),
-    execute: (items: MaintenanceApplyCommit[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_Execute]({ items, presetId }),
+      client[IpcChannel.Maintenance_StartPreview]({ entries, presetId }),
+    execute: (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Apply]({ selections, presetId }),
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
     pause: () => client[IpcChannel.Maintenance_Pause](undefined),
     resume: () => client[IpcChannel.Maintenance_Resume](undefined),
-    getActiveSession: () => client[IpcChannel.Maintenance_GetActiveSession](undefined),
-    updateDraft: (input: {
-      previewId: string;
-      fieldSelections?: Record<string, "old" | "new">;
-      imageSelections?: Record<string, string>;
-    }) => client[IpcChannel.Maintenance_UpdateDraft](input),
+    getActiveSession: () => client[IpcChannel.Maintenance_ReadSnapshot](undefined),
+    updateDraft: (input: { previewId: string; fieldSelections?: Record<string, "old" | "new"> }) =>
+      client[IpcChannel.Maintenance_UpdateDraft](input),
     discardSession: () => client[IpcChannel.Maintenance_DiscardSession](undefined),
   },
   on: {
     log: (callback: (payload: LogPayload) => void): Unsubscribe => window.api.on(IpcChannel.Event_Log, callback),
-    progress: (callback: (payload: ProgressPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_Progress, callback),
-    scrapeResult: (callback: (payload: ScrapeResult) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_ScrapeResult, callback),
-    scrapeInfo: (callback: (payload: ScrapeInfoPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_ScrapeInfo, callback),
-    failedInfo: (callback: (payload: FailedInfoPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_FailedInfo, callback),
-    buttonStatus: (callback: (payload: ButtonStatusPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_ButtonStatus, callback),
+    invalidate: (callback: (payload: InvalidatePayload) => void): Unsubscribe =>
+      window.api.on(IpcChannel.Event_Invalidate, callback),
     shortcut: (callback: (payload: ShortcutPayload) => void): Unsubscribe =>
       window.api.on(IpcChannel.Event_Shortcut, callback),
   },

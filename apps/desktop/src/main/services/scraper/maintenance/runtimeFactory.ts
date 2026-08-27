@@ -9,7 +9,7 @@ import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, TranslateService } from "@mdcz/runtime/scrape";
 import { DownloadManager } from "../DownloadManager";
-import { fileOrganizer } from "../fileOrganizerAdapter";
+import { fileOrganizer } from "../FileScraper";
 import { NfoGenerator } from "../NfoGenerator";
 import { translationMappingStore } from "../translationMappingStore";
 

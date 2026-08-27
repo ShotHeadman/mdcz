@@ -67,7 +67,13 @@ describe("web detail action port", () => {
       undefined,
       {
         id: "root-1:ABC-001.mp4",
-        assetRootId: "metadata-root",
+        assets: [
+          {
+            type: "local",
+            kind: "poster",
+            file: { rootId: "metadata-root", relativePath: "JAV_output/ABC-001/poster.jpg" },
+          },
+        ],
         number: "ABC-001",
         path: "ABC-001.mp4",
         status: "success",
@@ -243,7 +249,7 @@ describe("web maintenance action port", () => {
       error: null,
       previews: [],
       currentBatch: null,
-      draft: { fieldSelections: {}, imageSelections: {} },
+      draft: { fieldSelections: {} },
       totalEntries: 1,
       completedEntries: 0,
       successCount: 0,

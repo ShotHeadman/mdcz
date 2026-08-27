@@ -9,7 +9,7 @@ import { createAbortError } from "@main/utils/abort";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
-import type { LocalScanEntry, MaintenanceApplyCommit } from "@mdcz/shared/types";
+import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class CaptureSignalService extends SignalService {}
@@ -124,8 +124,11 @@ describe("desktop maintenance facade", () => {
         outputRelativePath: path.basename(fixture.filePath),
       };
     });
-    const commit: MaintenanceApplyCommit = { entry: fixture.entry, crawlerData: fixture.entry.crawlerData };
-    const handle = await fixture.service.execute(previewHandle.task.id, [commit], "refresh_data");
+    const handle = await fixture.service.execute(
+      previewHandle.task.id,
+      [{ previewId: preview?.id ?? "", fieldSelections: { title: "old" } }],
+      "refresh_data",
+    );
     expect(vi.mocked(fixture.runtime.applyEntry)).not.toHaveBeenCalled();
 
     release();

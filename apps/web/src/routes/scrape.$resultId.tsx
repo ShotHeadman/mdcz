@@ -1,7 +1,6 @@
-import { scrapeResultDtoToDetailScrapeResult } from "@mdcz/shared/dtoAdapters";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
-import { toDetailViewItemFromScrapeResult } from "@mdcz/views/detail";
+import { toDetailViewItemFromScrapeResultDto } from "@mdcz/views/detail";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
@@ -18,9 +17,7 @@ export function ScrapeResultPage() {
     queryKey: queryKeys.scrape.result(resultId),
     retry: false,
   });
-  const detailItem = detailQ.data?.result
-    ? toDetailViewItemFromScrapeResult(scrapeResultDtoToDetailScrapeResult(detailQ.data.result))
-    : null;
+  const detailItem = detailQ.data?.result ? toDetailViewItemFromScrapeResultDto(detailQ.data.result) : null;
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-canvas text-foreground">

@@ -1,61 +1,47 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { buildMaintenanceApplyCommit } from "@mdcz/shared/maintenanceCommit";
 import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePreviewItem } from "@mdcz/shared/types";
 import { buildMaintenanceEntryViewModel } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import {
-  applyMaintenancePreviewResult,
-  applyMaintenanceSessionSnapshot,
-  beginMaintenanceExecution,
-  beginMaintenancePreviewRequest,
-  cancelMaintenancePreviewFlow,
   resetMaintenanceSession,
-  setMaintenancePreviewPending,
+  selectMaintenanceEntries,
+  selectMaintenanceExecutionStatus,
+  selectMaintenanceFieldSelections,
+  selectMaintenanceItemResults,
+  selectMaintenancePreviewResults,
+  selectMaintenanceProgress,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
-import { useMemo } from "react";
+import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { type MaintenanceBatchBarPreviewGroup, MaintenanceBatchBarView } from "../maintenance";
 import type { MaintenanceActionPort } from "./ports";
 
-const areEntriesEqual = <T,>(left: T[], right: T[]): boolean => {
-  return left.length === right.length && left.every((entry, index) => entry === right[index]);
-};
-
 export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPort }) {
-  const isScraping = useScrapeStore((state) => state.isScraping);
+  const isScraping = useScrapeStore(selectIsScraping);
   const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceStore(
     useShallow((state) => ({
-      entries: state.entries,
+      entries: selectMaintenanceEntries(state),
       selectedIds: state.selectedIds,
       presetId: state.presetId,
       currentPath: state.currentPath,
       setCurrentPath: state.setCurrentPath,
     })),
   );
-  const { executionStatus, progressValue, itemResults, setExecutionStatus, setProgress, rollbackExecutionStart } =
+  const { executionStatus, progressValue, itemResults, previewPending, previewResults, fieldSelections } =
     useMaintenanceStore(
       useShallow((state) => ({
-        executionStatus: state.executionStatus,
-        progressValue: state.progressValue,
-        itemResults: state.itemResults,
-        setExecutionStatus: state.setExecutionStatus,
-        setProgress: state.setProgress,
-        rollbackExecutionStart: state.rollbackExecutionStart,
+        executionStatus: selectMaintenanceExecutionStatus(state),
+        progressValue: selectMaintenanceProgress(state),
+        itemResults: selectMaintenanceItemResults(state),
+        previewPending: state.pending,
+        previewResults: selectMaintenancePreviewResults(state),
+        fieldSelections: selectMaintenanceFieldSelections(state),
       })),
     );
-  const { previewPending, previewResults, fieldSelections, executeDialogOpen, setExecuteDialogOpen } =
-    useMaintenanceStore(
-      useShallow((state) => ({
-        previewPending: state.previewPending,
-        previewResults: state.previewResults,
-        fieldSelections: state.fieldSelections,
-        executeDialogOpen: state.executeDialogOpen,
-        setExecuteDialogOpen: state.setExecuteDialogOpen,
-      })),
-    );
+  const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
 
   const presetMeta = getMaintenancePresetMeta(presetId);
   const supportsExecution = presetMeta.supportsExecution !== false;
@@ -106,79 +92,32 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     [selectedEntriesViewModel.groups],
   );
 
-  const handlePreview = async (): Promise<MaintenancePreviewItem[] | null> => {
+  const handlePreview = async (): Promise<void> => {
     if (!supportsExecution) {
-      return null;
+      return;
     }
 
     if (isScraping) {
       toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
-      return null;
+      return;
     }
 
     if (selectedEntries.length === 0) {
       toast.info("请先选择要执行的项目");
-      return null;
+      return;
     }
 
-    beginMaintenancePreviewRequest();
-    setExecutionStatus("previewing");
-    setProgress(0, 0, selectedEntries.length);
-    const requestedPresetId = presetId;
-    const requestedEntries = selectedEntries;
-
+    useMaintenanceStore.getState().setPending(true);
     try {
-      const preview = await port.preview(selectedEntries, presetId);
-      const liveState = useMaintenanceStore.getState();
-      const previewExpired =
-        liveState.presetId !== requestedPresetId ||
-        !areEntriesEqual(
-          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.fileId)),
-          requestedEntries,
-        );
-
-      if (previewExpired) {
-        return null;
-      }
-
-      applyMaintenancePreviewResult(preview);
-      setExecutionStatus("idle");
-      if (usesDiffView) {
-        const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
-        const nextPreviewSummary = buildMaintenanceEntryViewModel(requestedEntries, {
-          previewResults: previewMap,
-        }).previewSummary;
-        toast.info(
-          nextPreviewSummary.readyCount > 0
-            ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
-            : "预览完成，请在右侧数据对比中查看阻塞项。",
-        );
-      } else {
-        toast.info("预览完成，请在右侧路径计划中确认后执行。");
-      }
-      return preview.items;
+      await port.preview(selectedEntries, presetId);
+      toast.info("维护预览已启动");
     } catch (error) {
-      const liveState = useMaintenanceStore.getState();
-      const previewExpired =
-        liveState.presetId !== requestedPresetId ||
-        !areEntriesEqual(
-          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.fileId)),
-          requestedEntries,
-        );
-
-      if (previewExpired) {
-        return null;
-      }
-
-      setMaintenancePreviewPending(false);
+      useMaintenanceStore.getState().setPending(false);
       if (toErrorMessage(error) === "Operation aborted") {
-        cancelMaintenancePreviewFlow();
-        return null;
+        return;
       }
-
-      setExecutionStatus("idle");
+      useMaintenanceStore.getState().setError(toErrorMessage(error));
       toast.error(`预览失败: ${toErrorMessage(error)}`);
-      return null;
     }
   };
 
@@ -195,36 +134,33 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
     const liveEntryState = useMaintenanceStore.getState();
     const effectivePreviewResults = previewMapOverride ?? previewResults;
-    const latestSelectedEntries = liveEntryState.entries.filter((entry) =>
+    const latestSelectedEntries = selectMaintenanceEntries(liveEntryState).filter((entry) =>
       liveEntryState.selectedIds.includes(entry.fileId),
     );
     const executionViewModel = buildMaintenanceEntryViewModel(latestSelectedEntries, {
       previewResults: effectivePreviewResults,
     });
     const executableEntries = executionViewModel.executableEntries;
-    const commitItems = executableEntries.map((entry) =>
-      buildMaintenanceApplyCommit(entry, effectivePreviewResults[entry.fileId], fieldSelections[entry.fileId]),
-    );
+    const selections = executableEntries.map((entry) => {
+      const preview = effectivePreviewResults[entry.fileId];
+      if (!preview?.previewId) throw new Error(`维护预览缺少 ID：${entry.fileInfo.filePath}`);
+      return { previewId: preview.previewId, fieldSelections: fieldSelections[entry.fileId] };
+    });
 
-    if (commitItems.length === 0) {
+    if (selections.length === 0) {
       toast.info("没有可执行的项目，请先完成预览并处理阻塞项。");
       return;
     }
 
     const displayCount = buildMaintenanceEntryViewModel(executableEntries).displayCount;
-    beginMaintenanceExecution(commitItems.map((item) => item.entry.fileId));
-    setCurrentPath(commitItems[0]?.entry.fileInfo.filePath ?? currentPath);
+    useMaintenanceStore.getState().setPending(true);
+    setCurrentPath(executableEntries[0]?.fileInfo.filePath ?? currentPath);
 
     try {
-      await port.execute(commitItems, presetId, { previewResults: effectivePreviewResults, fieldSelections });
-      try {
-        applyMaintenanceSessionSnapshot(await port.getActiveSession());
-      } catch {
-        // Realtime events or the next host snapshot will converge the renderer state.
-      }
+      await port.execute(selections, presetId);
       toast.success(`维护任务已启动，共 ${displayCount} 项`);
     } catch (error) {
-      rollbackExecutionStart();
+      useMaintenanceStore.getState().setError(toErrorMessage(error));
       toast.error(`启动失败: ${toErrorMessage(error)}`);
     }
   };
@@ -238,13 +174,11 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       const pausingPreview = previewing;
       if (paused) {
         await port.resume();
-        setExecutionStatus(previewPending ? "previewing" : "executing");
         toast.success(previewPending ? "维护预览已恢复" : "维护任务已恢复");
         return;
       }
 
       await port.pause();
-      setExecutionStatus("paused");
       toast.info(pausingPreview ? "维护预览已暂停" : "维护任务已暂停");
     } catch (error) {
       toast.error(`${paused ? "恢复" : "暂停"}失败: ${toErrorMessage(error)}`);
@@ -254,7 +188,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   const handleStop = async () => {
     try {
       await port.stop();
-      setExecutionStatus("stopping");
+      useMaintenanceStore.getState().setPending(true);
       toast.info("正在停止维护流程...");
     } catch (error) {
       toast.error(`停止失败: ${toErrorMessage(error)}`);

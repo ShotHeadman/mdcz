@@ -5,17 +5,12 @@ import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
-import { type AggregationService, type FileOrganizer, FileScraper, type TranslateService } from "@mdcz/runtime/scrape";
+import { type AggregationService, FileOrganizer, FileScraper, type TranslateService } from "@mdcz/runtime/scrape";
 import type { DownloadManager } from "./DownloadManager";
 import type { NfoGenerator } from "./NfoGenerator";
 import { applyDesktopPosterTagBadges, probeVideoMetadataOrWarn } from "./output";
 
-export {
-  type FileScrapeOptions,
-  type FileScrapeProgress,
-  FileScraper,
-  type ScrapeExecutionMode,
-} from "@mdcz/runtime/scrape";
+export const fileOrganizer = new FileOrganizer(loggerService.getLogger("FileOrganizer"));
 
 export interface FileScraperDependencies {
   aggregationService: AggregationService;

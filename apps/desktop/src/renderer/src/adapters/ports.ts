@@ -1,4 +1,5 @@
-import type { CrawlerData, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
@@ -92,7 +93,6 @@ export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
     const response = await retryScrapeSelection(filePaths, options);
     return {
       message: response.data.message,
-      strategy: response.data.strategy,
     };
   },
   deleteFile: async (targets) => {
@@ -133,8 +133,8 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
     await ipc.maintenance.discardSession();
   },
   preview: (entries, presetId) => ipc.maintenance.preview(entries, presetId),
-  execute: async (commitItems: MaintenanceApplyCommit[], presetId: MaintenancePresetId) => {
-    await ipc.maintenance.execute(commitItems, presetId);
+  execute: async (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) => {
+    await ipc.maintenance.execute(selections, presetId);
   },
   pause: async () => {
     await ipc.maintenance.pause();

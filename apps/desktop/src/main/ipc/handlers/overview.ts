@@ -61,7 +61,11 @@ export const createOverviewHandlers = (
     }),
     [IpcChannel.Overview_GetOutputSummary]: t.procedure.action(async () => {
       try {
-        return await outputLibraryScanner.getSummary();
+        const [summary, state] = await Promise.all([
+          outputLibraryScanner.getSummary(),
+          context.persistenceService.getState(),
+        ]);
+        return { ...summary, unresolvedRepairCount: state.repositories.libraryRepairIssues.countUnresolved() };
       } catch (error) {
         logger.error(`Overview output summary failed: ${toErrorMessage(error)}`);
         throw asSerializableIpcError(error);

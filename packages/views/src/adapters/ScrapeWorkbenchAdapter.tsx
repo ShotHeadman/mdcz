@@ -1,4 +1,10 @@
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  selectIsScraping,
+  selectScrapeProgress,
+  selectScrapeResults,
+  selectScrapeStatus,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { useShallow } from "zustand/react/shallow";
 import { ScrapeWorkbenchFrame } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";
@@ -25,10 +31,10 @@ export function ScrapeWorkbenchAdapter({
 }: ScrapeWorkbenchAdapterProps) {
   const { isScraping, scrapeStatus, progress, resultsCount } = useScrapeStore(
     useShallow((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      progress: state.progress,
-      resultsCount: state.results.length,
+      isScraping: selectIsScraping(state),
+      scrapeStatus: selectScrapeStatus(state),
+      progress: selectScrapeProgress(state),
+      resultsCount: selectScrapeResults(state).length,
     })),
   );
 

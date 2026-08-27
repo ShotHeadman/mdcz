@@ -3,45 +3,16 @@ import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
 import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
-import type { ManualScrapeOptions } from "@main/services/scraper/manualScrape";
 import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
-import type { ScraperStatus, UncensoredConfirmItem } from "@mdcz/shared/types";
+import type { UncensoredConfirmItem } from "@mdcz/shared/types";
 import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
-const defaultScraperStatus = (): ScraperStatus => ({
-  state: "idle",
-  running: false,
-  totalFiles: 0,
-  completedFiles: 0,
-  percent: 0,
-  successCount: 0,
-  failedCount: 0,
-  skippedCount: 0,
-});
-
 const withLaunchMessage = (result: StartScrapeResult, message: string) => ({ ...result, message });
-const resolveManualScrapeOptions = (manualUrl?: string): ManualScrapeOptions | undefined => {
-  const value = manualUrl?.trim();
-  if (!value) {
-    return undefined;
-  }
-
-  const validation = validateManualScrapeUrl(value);
-  if (!validation.valid) {
-    throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, validation.message);
-  }
-
-  return {
-    site: validation.route.site,
-    detailUrl: validation.route.detailUrl,
-  };
-};
 const toScraperServiceIpcError = (error: unknown) => {
   if (error instanceof ScraperServiceError) {
     return createIpcError(error.code, error.message);
@@ -55,26 +26,19 @@ export const createScraperHandlers = (
 ): Pick<
   IpcRouterContract,
   | typeof IpcChannel.Scraper_GetStatus
-  | typeof IpcChannel.Scraper_GetFailedFiles
   | typeof IpcChannel.Scraper_Start
   | typeof IpcChannel.Scraper_Stop
   | typeof IpcChannel.Scraper_Pause
   | typeof IpcChannel.Scraper_Resume
-  | typeof IpcChannel.Scraper_Requeue
-  | typeof IpcChannel.Scraper_RetryFailed
+  | typeof IpcChannel.Scraper_Retry
   | typeof IpcChannel.Scraper_ConfirmUncensored
 > => {
   const { scraperService } = context;
 
   return {
     [IpcChannel.Scraper_GetStatus]: t.procedure.action(async () => {
-      return scraperService.getStatus() ?? defaultScraperStatus();
+      return scraperService.getSnapshot();
     }),
-    [IpcChannel.Scraper_GetFailedFiles]: t.procedure.action(() =>
-      withIpcErrorHandling("get failed files", async () => {
-        return { filePaths: scraperService.getFailedFiles() };
-      }),
-    ),
     [IpcChannel.Scraper_Start]: t.procedure
       .input<{ mode?: "single" | "selection"; paths?: string[] }>()
       .action(({ input }) =>
@@ -112,32 +76,16 @@ export const createScraperHandlers = (
         return { success: true as const };
       }),
     ),
-    [IpcChannel.Scraper_Requeue]: t.procedure
-      .input<{ filePaths?: string[]; manualUrl?: string }>()
-      .action(({ input }) =>
-        withIpcErrorHandling(
-          "requeue files",
-          async () => {
-            return await scraperService.requeue(input?.filePaths ?? [], resolveManualScrapeOptions(input?.manualUrl));
-          },
-          { mapError: toScraperServiceIpcError },
-        ),
+    [IpcChannel.Scraper_Retry]: t.procedure.input<{ runId: string }>().action(({ input }) =>
+      withIpcErrorHandling(
+        "retry files",
+        async () => {
+          const result = await scraperService.retry(input.runId);
+          return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
+        },
+        { mapError: toScraperServiceIpcError },
       ),
-    [IpcChannel.Scraper_RetryFailed]: t.procedure
-      .input<{ filePaths?: string[]; manualUrl?: string }>()
-      .action(({ input }) =>
-        withIpcErrorHandling(
-          "retry files",
-          async () => {
-            const result = await scraperService.retryFiles(
-              input?.filePaths ?? [],
-              resolveManualScrapeOptions(input?.manualUrl),
-            );
-            return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
-          },
-          { mapError: toScraperServiceIpcError },
-        ),
-      ),
+    ),
     [IpcChannel.Scraper_ConfirmUncensored]: t.procedure
       .input<{ items?: UncensoredConfirmItem[] }>()
       .action(({ input }) =>

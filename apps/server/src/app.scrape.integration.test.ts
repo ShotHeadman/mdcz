@@ -99,46 +99,6 @@ const createGatedAggregation = (
   };
 };
 
-const createAbortAwareAggregation = (): {
-  aggregation: MountedRootScrapeAggregationService;
-  aborted: Promise<void>;
-  started: Promise<void>;
-} => {
-  let resolveStarted!: () => void;
-  let resolveAborted!: () => void;
-  const started = new Promise<void>((resolve) => {
-    resolveStarted = resolve;
-  });
-  const aborted = new Promise<void>((resolve) => {
-    resolveAborted = resolve;
-  });
-
-  return {
-    started,
-    aborted,
-    aggregation: {
-      async aggregate(_number, _configuration, signal): Promise<AggregationResult | null> {
-        resolveStarted();
-        return await new Promise<AggregationResult | null>((resolve) => {
-          if (signal?.aborted) {
-            resolveAborted();
-            resolve(null);
-            return;
-          }
-          signal?.addEventListener(
-            "abort",
-            () => {
-              resolveAborted();
-              resolve(null);
-            },
-            { once: true },
-          );
-        });
-      },
-    },
-  };
-};
-
 afterEach(async () => {
   await closeTestServers();
 });
@@ -634,7 +594,6 @@ describe("buildServer scrape integration", () => {
       await state.repositories.scrapeRuns.commitOutcome({
         outcome: "success",
         itemId: item.id,
-        attempt: 1,
         crawlerDataJson: JSON.stringify({
           title: item.relativePath,
           number: item.relativePath.replace(".mp4", ""),
@@ -786,10 +745,11 @@ describe("buildServer scrape integration", () => {
     expect(startResponse.json().error.message).toContain("文件不在已注册媒体目录内");
   });
 
-  it("aborts an active scrape runtime pipeline when the task is stopped", async () => {
+  it("drains an in-flight scrape item when the task is stopped", async () => {
     const root = await createTempRoot("scrape-stop-root");
     await writeFile(join(root, "ABC-124.mp4"), "video");
-    const control = createAbortAwareAggregation();
+    const imageServer = await startTestImageServer();
+    const control = createGatedAggregation(`${imageServer.url}/image.png`);
     const { fastify } = await createTestServer({ scrapeAggregation: control.aggregation });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
@@ -801,28 +761,27 @@ describe("buildServer scrape integration", () => {
       payload: { refs: [{ rootId, relativePath: "ABC-124.mp4" }] },
     });
     const taskId = startResponse.json().result.data.runId;
-    await control.started;
+    await control.firstCallStarted;
 
-    const stopResponse = await fastify.inject({
+    const stopping = fastify.inject({
       method: "POST",
       url: "/trpc/scrape.stop",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
+    control.releaseFirstCall();
+    const stopResponse = await stopping;
 
     expect(stopResponse.statusCode).toBe(200);
-    await control.aborted;
     await waitForScrapeRunStatus(fastify, token, taskId, "stopped");
 
     const historyResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
+      payload: undefined,
     });
-    expect(historyResponse.json().result.data.results[0]).toMatchObject({
-      status: "skipped",
-      error: "刮削已停止",
-    });
+    expect(historyResponse.json().result.data.results[0]?.status).toBe("success");
   });
 
   it("reads manifest-only runs as interrupted history and removes recovery routes", async () => {
@@ -845,7 +804,6 @@ describe("buildServer scrape integration", () => {
       outcome: "failed",
       id: "failed-outcome",
       itemId: "failed-item",
-      attempt: 1,
       error: "boom",
       completedAt: new Date(1_700_000_001_000),
     });

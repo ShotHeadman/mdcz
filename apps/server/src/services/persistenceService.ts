@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   createPersistenceDatabase,
+  LibraryRepairIssueRepository,
   LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
@@ -14,6 +15,7 @@ import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
   library: LibraryRepository;
+  libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
   scrapeRuns: ScrapeRunRepository;
   tasks: TaskRepository;
@@ -51,12 +53,15 @@ export class ServerPersistenceService {
 
     try {
       runMigrations(database);
+      const scrapeRuns = new ScrapeRunRepository(database);
+      scrapeRuns.interruptUnfinished();
       this.state = {
         database,
         repositories: {
           library: new LibraryRepository(database),
+          libraryRepairIssues: new LibraryRepairIssueRepository(database),
           mediaRoots: new MediaRootRepository(database),
-          scrapeRuns: new ScrapeRunRepository(database),
+          scrapeRuns,
           tasks: new TaskRepository(database),
         },
       };

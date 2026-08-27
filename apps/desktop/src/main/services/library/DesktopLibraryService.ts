@@ -1,10 +1,11 @@
-import { rm, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { mapWithConcurrency } from "@main/utils/async";
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
+import { commitAbsolutePublication } from "@mdcz/runtime/publication";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
   CrawlerDataDto,
@@ -120,7 +121,21 @@ export class DesktopLibraryService {
           return resolveRootRelativePath(root, file.rootRelativePath);
         }),
       );
-      await Promise.all([...filePaths].map(async (filePath) => await rm(filePath, { force: true })));
+      for (const asset of entry.assets) {
+        if (!asset.rootId || !asset.relativePath) continue;
+        const root = rootMap.get(asset.rootId);
+        if (!root) throw new Error(`Media root not found: ${asset.rootId}`);
+        filePaths.add(resolveRootRelativePath(root, asset.relativePath));
+      }
+      await commitAbsolutePublication(
+        {
+          operationId: `delete-library-entry:${normalizedId}`,
+          operationType: "maintenance",
+          obsoletePaths: [...filePaths],
+        },
+        { commit: async () => await state.repositories.library.deleteEntry(normalizedId) },
+      );
+      return { success: true };
     }
     await state.repositories.library.deleteEntry(normalizedId);
     return { success: true };

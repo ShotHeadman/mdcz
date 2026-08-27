@@ -9,7 +9,7 @@ export interface DetailViewItem {
   title?: string;
   path?: string;
   nfoRootId?: string;
-  assetRootId?: string;
+  assets?: AssetRef[];
   nfoPath?: string;
   actors?: string[];
   plot?: string;
@@ -31,3 +31,5 @@ export interface DetailViewItem {
   trailerUrl?: string;
   errorMessage?: string;
 }
+
+import type { AssetRef } from "@mdcz/shared/mediaRef";

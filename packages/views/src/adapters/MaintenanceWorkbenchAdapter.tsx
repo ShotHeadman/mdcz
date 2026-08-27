@@ -1,6 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { findMaintenanceEntryGroup } from "@mdcz/shared/viewModels/maintenanceGrouping";
-import { applyMaintenanceSessionSnapshot, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import {
+  applyMaintenanceSessionSnapshot,
+  selectMaintenanceEntries,
+  selectMaintenanceFieldSelections,
+  selectMaintenanceItemResults,
+  selectMaintenancePreviewResults,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -14,16 +21,16 @@ import type { SharedWorkbenchPorts } from "./ports";
 export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
   const { entries, activeId, presetId } = useMaintenanceStore(
     useShallow((state) => ({
-      entries: state.entries,
+      entries: selectMaintenanceEntries(state),
       activeId: state.activeId,
       presetId: state.presetId,
     })),
   );
-  const itemResults = useMaintenanceStore((state) => state.itemResults);
+  const itemResults = useMaintenanceStore(selectMaintenanceItemResults);
   const { previewResults, fieldSelections } = useMaintenanceStore(
     useShallow((state) => ({
-      previewResults: state.previewResults,
-      fieldSelections: state.fieldSelections,
+      previewResults: selectMaintenancePreviewResults(state),
+      fieldSelections: selectMaintenanceFieldSelections(state),
     })),
   );
 
@@ -58,11 +65,12 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
   const handleFieldSelectionChange = (
     fileId: string,
     field: import("@mdcz/shared/types").FieldDiff["field"],
-    side: import("@mdcz/shared/maintenanceCommit").MaintenanceFieldSelectionSide,
+    side: import("../maintenance").MaintenanceFieldSelectionSide,
   ) => {
-    const previewId = useMaintenanceStore.getState().previewResults[fileId]?.previewId;
+    const state = useMaintenanceStore.getState();
+    const previewId = selectMaintenancePreviewResults(state)[fileId]?.previewId;
     if (!previewId) return;
-    const selections = { ...useMaintenanceStore.getState().fieldSelections[fileId], [field]: side };
+    const selections = { ...selectMaintenanceFieldSelections(state)[fileId], [field]: side };
     void ports.maintenance
       .updateDraft(previewId, { fieldSelections: selections })
       .then(async () => applyMaintenanceSessionSnapshot(await ports.maintenance.getActiveSession()))

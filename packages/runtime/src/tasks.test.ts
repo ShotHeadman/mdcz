@@ -2,13 +2,7 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
-import {
-  MAX_LIVE_SCRAPE_LOGS,
-  type RuntimeTaskSnapshot,
-  ScrapeRunSession,
-  TaskExecutor,
-  transitionTask,
-} from "./tasks";
+import { MAX_LIVE_SCRAPE_LOGS, ScrapeRunSession, TaskExecutor } from "./tasks";
 
 describe("task executor", () => {
   it("pauses queue admission while allowing in-flight items to settle", async () => {
@@ -42,7 +36,7 @@ describe("task executor", () => {
     expect(executor.activeItems).toBe(1);
     expect(executor.isIdle).toBe(false);
     releaseFirst();
-    await expect(run).resolves.toEqual({ outcome: "paused", startedCount: 1, settledCount: 1, pendingCount: 2 });
+    await expect(run).resolves.toBeUndefined();
     expect(started).toEqual([1]);
     expect(applied).toEqual([1]);
   });
@@ -103,7 +97,7 @@ describe("task executor", () => {
     const run = executor.execute([1, 2], 1);
     await started;
     executor.stop();
-    await expect(run).resolves.toEqual({ outcome: "stopped", startedCount: 1, settledCount: 1, pendingCount: 1 });
+    await expect(run).resolves.toBeUndefined();
     expect(invoked).toEqual([1]);
   });
   it("waits for sibling workers before rejecting a concurrent execution", async () => {
@@ -146,22 +140,18 @@ const runItem = (id: string) => ({
   rootId: "root-1",
   relativePath: `${id}.mp4`,
   sourcePath: `/media/${id}.mp4`,
-  attempt: 1,
 });
 
 const terminalResult = (
-  item: { id: string; sourcePath: string },
+  item: { id: string; rootId: string; relativePath: string; sourcePath: string },
   status: "success" | "failed" | "skipped",
 ): ScrapeResult => ({
   fileId: item.id,
-  fileInfo: {
-    filePath: item.sourcePath,
-    fileName: `${item.id}.mp4`,
-    extension: ".mp4",
-    number: item.id,
-    isSubtitled: false,
-  },
+  rootId: item.rootId,
+  relativePath: item.relativePath,
+  fileName: `${item.id}.mp4`,
   status,
+  assets: [],
   ...(status === "failed" ? { error: "failed" } : {}),
 });
 
@@ -186,8 +176,8 @@ describe("scrape run session", () => {
         return terminalResult(item, "success");
       },
       commitItem: async (item, result) => {
-        committed.push(`${item.id}:${item.attempt}`);
-        return { ...result, resultId: `${item.id}:attempt-${item.attempt}` };
+        committed.push(item.id);
+        return { ...result, resultId: item.id };
       },
       onSnapshot: (snapshot) => {
         observedStatuses.push(snapshot.status);
@@ -220,7 +210,7 @@ describe("scrape run session", () => {
       ],
     });
     expect(executed).toEqual(["one"]);
-    expect(committed).toEqual(["one:1"]);
+    expect(committed).toEqual(["one"]);
 
     await session.resume();
     await session.waitForIdle();
@@ -230,12 +220,12 @@ describe("scrape run session", () => {
       status: "completed",
       progress: { completedItems: 2, totalItems: 2, percent: 100 },
       items: [
-        { id: "one", attempt: 1, status: "success", result: { resultId: "one:attempt-1" } },
-        { id: "two", attempt: 1, status: "success", result: { resultId: "two:attempt-1" } },
+        { id: "one", status: "success", result: { resultId: "one" } },
+        { id: "two", status: "success", result: { resultId: "two" } },
       ],
     });
     expect(executed).toEqual(["one", "two"]);
-    expect(committed).toEqual(["one:1", "two:1"]);
+    expect(committed).toEqual(["one", "two"]);
     expect(observedStatuses[0]).toBe("queued");
     expect(observedStatuses).toContain("running");
     expect(observedStatuses.at(-1)).toBe("completed");
@@ -295,64 +285,22 @@ describe("scrape run session", () => {
       onSnapshot: () => undefined,
     });
 
-    session.recordProgress(42.4);
-    session.recordProgress(20);
-    expect(session.snapshot().progress.percent).toBe(42);
+    session.recordProgress("one", 42.4);
+    session.recordProgress("one", 20);
+    expect(session.snapshot().progress.percent).toBe(21);
     await session.start();
     await started.promise;
     const paused = session.pause();
     first.resolve(terminalResult(items[0], "success"));
     await paused;
     expect(session.snapshot().progress).toEqual({ completedItems: 1, totalItems: 2, percent: 50 });
-    session.recordProgress(-10);
+    session.recordProgress("one", -10);
     expect(session.snapshot().progress.percent).toBe(50);
   });
 
-  it("requeues a failed item as the next attempt without replaying settled work", async () => {
-    const second = deferred<ScrapeResult>();
-    const failureCommitted = deferred<void>();
-    const secondStarted = deferred<void>();
-    const executed: string[] = [];
-    const committed: string[] = [];
-    const items = [runItem("one"), runItem("two")];
-    const session = new ScrapeRunSession<{ detailUrl: string }>({
-      runId: "run-1",
-      items,
-      concurrency: 2,
-      executeItem: async (item) => {
-        executed.push(`${item.id}:${item.attempt}`);
-        if (item.id === "two") {
-          secondStarted.resolve();
-          return await second.promise;
-        }
-        return terminalResult(item, item.attempt === 1 ? "failed" : "success");
-      },
-      commitItem: async (item, result) => {
-        committed.push(`${item.id}:${item.attempt}:${result.status}`);
-        if (item.id === "one" && item.attempt === 1) failureCommitted.resolve();
-        return result;
-      },
-      onSnapshot: () => undefined,
-    });
-
-    await session.start();
-    await Promise.all([failureCommitted.promise, secondStarted.promise]);
-    expect(session.requeue("one", { detailUrl: "https://example.test/one" })).toBe(true);
-    second.resolve(terminalResult(items[1], "success"));
-    await session.waitForIdle();
-
-    expect(executed).toEqual(["one:1", "two:1", "one:2"]);
-    expect(committed).toEqual(["one:1:failed", "two:1:success", "one:2:success"]);
-    expect(session.snapshot().items[0]).toMatchObject({
-      id: "one",
-      attempt: 2,
-      status: "success",
-      manualScrape: { detailUrl: "https://example.test/one" },
-    });
-  });
-
-  it("stops with skipped outcomes while fencing the aborted execution result", async () => {
+  it("drains the active outcome and skips work that was not admitted", async () => {
     const started = deferred<void>();
+    const release = deferred<void>();
     const executed: string[] = [];
     const committed: string[] = [];
     const items = [runItem("one"), runItem("two")];
@@ -360,10 +308,10 @@ describe("scrape run session", () => {
       runId: "run-1",
       items,
       concurrency: 1,
-      executeItem: async (item, signal) => {
+      executeItem: async (item) => {
         executed.push(item.id);
         started.resolve();
-        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        await release.promise;
         return terminalResult(item, "success");
       },
       commitItem: async (item, result) => {
@@ -375,13 +323,15 @@ describe("scrape run session", () => {
 
     await session.start();
     await started.promise;
-    await expect(session.stop()).resolves.toMatchObject({
+    const stopping = session.stop();
+    release.resolve();
+    await expect(stopping).resolves.toMatchObject({
       generation: 1,
       status: "stopped",
       progress: { completedItems: 2, totalItems: 2, percent: 100 },
     });
     expect(executed).toEqual(["one"]);
-    expect(committed).toEqual(["one:skipped", "two:skipped"]);
+    expect(committed).toEqual(["one:success", "two:skipped"]);
   });
 
   it("lets an admitted terminal transaction finish before skipping remaining items on stop", async () => {
@@ -499,50 +449,5 @@ describe("scrape execution policy", () => {
       "clear:javdb.com",
       "clear:www.javdb.com",
     ]);
-  });
-});
-
-const baseTask = (status: RuntimeTaskSnapshot["status"]): RuntimeTaskSnapshot => ({
-  completedAt: null,
-  error: null,
-  id: "task-1",
-  startedAt: null,
-  status,
-});
-
-describe("runtime task FSM", () => {
-  it("pauses, resumes, and retries through durable queued states", () => {
-    const now = new Date("2026-04-30T00:00:00.000Z");
-    const running = transitionTask(baseTask("queued"), { action: "start", now });
-    const paused = transitionTask(running, { action: "pause", now });
-    const resumed = transitionTask(paused, { action: "resume", now });
-    const failed = transitionTask(resumed, { action: "fail", error: "boom", now });
-    const retried = transitionTask(failed, { action: "retry", now });
-
-    expect(running).toMatchObject({ status: "running", startedAt: now, completedAt: null, error: null });
-    expect(paused.status).toBe("paused");
-    expect(resumed).toMatchObject({ status: "queued", startedAt: null, completedAt: null, error: null });
-    expect(failed).toMatchObject({ status: "failed", completedAt: now, error: "boom" });
-    expect(retried).toMatchObject({ status: "queued", startedAt: null, completedAt: null, error: null });
-  });
-
-  it("allows paused tasks to be retried as durable queued work", () => {
-    const paused = transitionTask(baseTask("queued"), { action: "pause" });
-    const retried = transitionTask(paused, { action: "retry" });
-
-    expect(retried).toMatchObject({ status: "queued", startedAt: null, completedAt: null, error: null });
-  });
-
-  it("moves running stop requests through stopping and rejects invalid transitions", () => {
-    const running = transitionTask(baseTask("queued"), {
-      action: "start",
-      now: new Date("2026-04-30T00:00:00.000Z"),
-    });
-    const stopping = transitionTask(running, { action: "stop", error: "stop requested" });
-
-    expect(stopping).toMatchObject({ status: "stopping", error: "stop requested" });
-    expect(() => transitionTask(baseTask("completed"), { action: "pause" })).toThrow(
-      "Invalid task transition: completed -> pause",
-    );
   });
 });

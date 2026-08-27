@@ -1,22 +1,9 @@
-import type { CrawlerData, ScraperStatus } from "@mdcz/shared/types";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { ipc } from "@/client/ipc";
 
 export interface NfoResponse {
   path: string;
   crawlerData: CrawlerData;
-}
-
-export interface RequeueResponse {
-  message: string;
-  running: boolean;
-  queued: number;
-  strategy: "new-task" | "requeue";
-}
-
-export interface RetryScrapeSelectionOptions {
-  scrapeStatus: ScraperStatus["state"];
-  canRequeueCurrentRun?: boolean;
-  manualUrl?: string;
 }
 
 const asNfoPath = (path: string): string => {
@@ -98,38 +85,11 @@ export const updateNfo = async (path: string, crawlerData: CrawlerData, videoPat
   return { data };
 };
 
-export const retryScrapeSelection = async (path: string | string[], options: RetryScrapeSelectionOptions) => {
-  const filePaths = Array.isArray(path) ? path : [path];
-
-  if (options.scrapeStatus === "idle") {
-    const result = await ipc.scraper.retryFailed(filePaths, options.manualUrl);
-    const data: RequeueResponse = {
-      message: result.message,
-      running: true,
-      queued: result.totalFiles,
-      strategy: "new-task",
-    };
-    return { data };
+export const retryScrapeSelection = async (_path: string | string[], _options: unknown = {}) => {
+  const snapshot = await ipc.scraper.getStatus();
+  if (!snapshot) throw new Error("没有可重试的刮削任务");
+  if (snapshot.task.status === "running" || snapshot.task.status === "paused" || snapshot.task.status === "stopping") {
+    throw new Error("当前刮削任务仍在进行，请等待任务结束后再重试");
   }
-
-  if (options.scrapeStatus === "running" || options.scrapeStatus === "paused") {
-    if (!options.canRequeueCurrentRun) {
-      throw new Error("当前刮削任务仍在进行，已成功项目请等待任务结束后再重新刮削");
-    }
-
-    const result = await ipc.scraper.requeue(filePaths, options.manualUrl);
-    if (result.requeuedCount <= 0) {
-      throw new Error("当前项目不在失败队列中，无法加入当前任务");
-    }
-
-    const data: RequeueResponse = {
-      message: `已加入当前任务队列，共 ${result.requeuedCount} 个文件`,
-      running: true,
-      queued: result.requeuedCount,
-      strategy: "requeue",
-    };
-    return { data };
-  }
-
-  throw new Error("当前刮削任务正在停止，请等待停止完成后再重新刮削");
+  return { data: await ipc.scraper.retry(snapshot.task.id) };
 };

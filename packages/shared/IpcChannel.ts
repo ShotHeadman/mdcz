@@ -17,9 +17,7 @@ export enum IpcChannel {
   Scraper_Pause = "scraper:pause",
   Scraper_Resume = "scraper:resume",
   Scraper_GetStatus = "scraper:get-status",
-  Scraper_Requeue = "scraper:requeue",
-  Scraper_RetryFailed = "scraper:retry-failed",
-  Scraper_GetFailedFiles = "scraper:get-failed-files",
+  Scraper_Retry = "scraper:retry",
   Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",
@@ -40,11 +38,7 @@ export enum IpcChannel {
   File_PosterCropSave = "file:poster-crop-save",
 
   Event_Log = "event:log",
-  Event_Progress = "event:progress",
-  Event_ScrapeResult = "event:scrape-result",
-  Event_ScrapeInfo = "event:scrape-info",
-  Event_FailedInfo = "event:failed-info",
-  Event_ButtonStatus = "event:button-status",
+  Event_Invalidate = "event:invalidate",
   Event_Shortcut = "event:shortcut",
 
   App_Info = "app:info",
@@ -79,12 +73,12 @@ export enum IpcChannel {
   Tool_ToggleDevTools = "tool:toggle-devtools",
 
   Maintenance_Scan = "maintenance:scan",
-  Maintenance_Preview = "maintenance:preview",
-  Maintenance_Execute = "maintenance:execute",
+  Maintenance_StartPreview = "maintenance:start-preview",
+  Maintenance_Apply = "maintenance:apply",
   Maintenance_Stop = "maintenance:stop",
   Maintenance_Pause = "maintenance:pause",
   Maintenance_Resume = "maintenance:resume",
-  Maintenance_GetActiveSession = "maintenance:get-active-session",
+  Maintenance_ReadSnapshot = "maintenance:read-snapshot",
   Maintenance_UpdateDraft = "maintenance:update-draft",
   Maintenance_DiscardSession = "maintenance:discard-session",
 }

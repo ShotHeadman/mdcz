@@ -1,7 +1,8 @@
+import type { AssetRef } from "@mdcz/shared/mediaRef";
+import type { ScrapeResultDto } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
   DiscoveredAssets,
-  DownloadedAssets,
   LocalScanEntry,
   MaintenanceItemResult,
   MaintenancePreviewItem,
@@ -11,7 +12,30 @@ import type {
 import type { DetailViewItem } from "./types";
 
 type DetailLocalAssets = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
-type DetailDownloadedAssets = Pick<DownloadedAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
+type DetailDownloadedAssets = {
+  poster?: string;
+  thumb?: string;
+  fanart?: string;
+  sceneImages: string[];
+  trailer?: string;
+};
+
+const assetPath = (assets: readonly AssetRef[], kind: string): string | undefined => {
+  const local = assets.find((asset) => asset.type === "local" && asset.kind === kind);
+  if (local?.type === "local") return local.file.relativePath;
+  const remote = assets.find((asset) => asset.type === "remote" && asset.kind === kind);
+  return remote?.type === "remote" ? remote.url : undefined;
+};
+
+const assetsToPathBag = (assets: readonly AssetRef[]): DetailDownloadedAssets => ({
+  poster: assetPath(assets, "poster"),
+  thumb: assetPath(assets, "thumb"),
+  fanart: assetPath(assets, "fanart"),
+  trailer: assetPath(assets, "trailer"),
+  sceneImages: assets.flatMap((asset) =>
+    asset.kind !== "scene" ? [] : [asset.type === "local" ? asset.file.relativePath : asset.url],
+  ),
+});
 
 export const formatDuration = (durationSeconds: number | undefined): string | undefined => {
   if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -125,19 +149,48 @@ export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailVi
   resultId: result.resultId,
   id: result.fileId,
   status: toDetailStatus(result.status),
-  number: result.fileInfo.number,
-  path: result.fileInfo.filePath,
-  nfoRootId: result.nfoRootId,
-  assetRootId: result.assets?.rootId,
-  nfoPath: result.nfoPath,
-  outputPath: result.outputPath,
+  number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
+  path: result.output?.relativePath ?? result.relativePath,
+  nfoRootId: result.nfo?.rootId,
+  assets: result.assets,
+  nfoPath: result.nfo?.relativePath,
+  outputPath: result.output?.relativePath,
   errorMessage: result.error,
   ...buildDetailViewMetadata({
     crawlerData: result.crawlerData,
     videoMeta: result.videoMeta,
-    assets: result.assets,
+    assets: assetsToPathBag(result.assets),
   }),
 });
+
+export const toDetailViewItemFromScrapeResultDto = (result: ScrapeResultDto): DetailViewItem => {
+  const localAssets = result.assets.filter((asset) => asset.type === "local");
+  const remoteAssets = result.assets.filter((asset) => asset.type === "remote");
+  const assetPath = (kind: string): string | undefined =>
+    localAssets.find((asset) => asset.kind === kind)?.file.relativePath ??
+    remoteAssets.find((asset) => asset.kind === kind)?.url;
+  const sceneImages = result.assets.flatMap((asset) =>
+    asset.kind !== "scene" ? [] : [asset.type === "local" ? asset.file.relativePath : asset.url],
+  );
+  return {
+    resultId: result.id,
+    id: `${result.rootId}:${result.relativePath}`,
+    status: toDetailStatus(result.status),
+    number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
+    path: result.outputRelativePath ?? result.relativePath,
+    nfoRootId: result.nfoRootId ?? undefined,
+    assets: result.assets,
+    nfoPath: result.nfoRelativePath ?? undefined,
+    outputPath: result.outputRelativePath ?? undefined,
+    errorMessage: result.error ?? undefined,
+    ...buildDetailViewMetadata({ crawlerData: result.crawlerData ?? undefined }),
+    posterUrl: assetPath("poster") ?? result.crawlerData?.poster_url,
+    thumbUrl: assetPath("thumb") ?? assetPath("fanart") ?? result.crawlerData?.thumb_url,
+    fanartUrl: assetPath("fanart") ?? assetPath("thumb") ?? result.crawlerData?.fanart_url,
+    sceneImages: sceneImages.length ? sceneImages : result.crawlerData?.scene_images,
+    trailerUrl: assetPath("trailer") ?? result.crawlerData?.trailer_url,
+  };
+};
 
 export const toDetailViewItemFromMaintenanceEntry = (
   entry: LocalScanEntry,

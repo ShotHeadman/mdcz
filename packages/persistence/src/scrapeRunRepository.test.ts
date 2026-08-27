@@ -53,29 +53,20 @@ describe("ScrapeRunRepository", () => {
     ).toEqual([{ name: "scrape_item_outcomes" }, { name: "scrape_run_items" }, { name: "scrape_runs" }]);
   });
 
-  it("appends attempts and derives the latest outcome per item", async () => {
+  it("stores one final outcome for each item", async () => {
     const repository = createRepository();
     const run = await createRun(repository);
-    await repository.commitOutcome({
+    const outcome = await repository.commitOutcome({
       id: "first",
       outcome: "failed",
       itemId: run.items[0].id,
-      attempt: 1,
       error: "network failed",
-    });
-    const latest = await repository.commitOutcome({
-      id: "second",
-      outcome: "failed",
-      itemId: run.items[0].id,
-      attempt: 2,
-      error: "metadata failed",
     });
 
     const reloaded = await repository.get(run.id);
-    expect(reloaded.outcomes).toHaveLength(2);
-    expect(repository.latestOutcomes(reloaded)).toEqual([latest]);
-    await expect(repository.commitOutcome({ outcome: "skipped", itemId: run.items[0].id, attempt: 2 })).rejects.toThrow(
-      "Expected attempt 3",
+    expect(reloaded.outcomes).toEqual([outcome]);
+    await expect(repository.commitOutcome({ outcome: "skipped", itemId: run.items[0].id })).rejects.toThrow(
+      "Scrape item already has an outcome",
     );
   });
 
@@ -87,7 +78,6 @@ describe("ScrapeRunRepository", () => {
       id: "success-1",
       outcome: "success",
       itemId: run.items[0].id,
-      attempt: 1,
       crawlerDataJson,
       outputRootId: "actual-output",
       outputRelativePath: "ABC-001/ABC-001.mp4",
@@ -118,7 +108,6 @@ describe("ScrapeRunRepository", () => {
       repository.commitOutcome({
         outcome: "success",
         itemId: run.items[0].id,
-        attempt: 1,
         crawlerDataJson: "{}",
         outputRootId: "output",
         outputRelativePath: "occupied.mp4",
@@ -137,13 +126,11 @@ describe("ScrapeRunRepository", () => {
     const failed = await repository.commitOutcome({
       outcome: "failed",
       itemId: run.items[0].id,
-      attempt: 1,
       error: "failed",
     });
     const success = await repository.commitOutcome({
       outcome: "success",
       itemId: run.items[1].id,
-      attempt: 1,
       crawlerDataJson: "{}",
       outputRootId: "output",
       outputRelativePath: "before.mp4",
@@ -180,7 +167,6 @@ describe("ScrapeRunRepository", () => {
     await repository.commitOutcome({
       outcome: "success",
       itemId: run.items[0].id,
-      attempt: 1,
       crawlerDataJson: "{}",
       outputRootId: "actual-output",
       outputRelativePath: "ABC-001.mp4",
@@ -193,7 +179,6 @@ describe("ScrapeRunRepository", () => {
     await repository.commitOutcome({
       outcome: "failed",
       itemId: run.items[1].id,
-      attempt: 1,
       error: "not found",
     });
     const finalized = await repository.finalize({
@@ -216,5 +201,27 @@ describe("ScrapeRunRepository", () => {
       error: null,
     });
     await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow("already finalized");
+  });
+  it("creates a linked retry only for settled failed or skipped items", async () => {
+    const repository = createRepository();
+    const run = await createRun(repository);
+    await repository.commitOutcome({ outcome: "failed", itemId: run.items[0].id, error: "network failed" });
+    await repository.commitOutcome({
+      outcome: "success",
+      itemId: run.items[1].id,
+      crawlerDataJson: "{}",
+      outputRootId: "out",
+      outputRelativePath: "DEF-002.mp4",
+      size: 1,
+      libraryEntry: { rootId: "out", rootRelativePath: "DEF-002.mp4" },
+    });
+    await repository.finalize({ runId: run.id, disposition: "failed" });
+
+    const retry = await repository.retry(run.id);
+
+    expect(retry).toMatchObject({ retryOfRunId: run.id, items: [{ ordinal: 0, relativePath: "ABC-001.mp4" }] });
+    const interrupted = await createRun(repository, "interrupted");
+    await repository.finalize({ runId: interrupted.id, disposition: "interrupted" });
+    await expect(repository.retry(interrupted.id)).rejects.toThrow("Only completed, failed, or stopped");
   });
 });

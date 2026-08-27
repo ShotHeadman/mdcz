@@ -78,10 +78,7 @@ describe("maintenance IPC task adapter", () => {
     const service = {
       scanFiles: vi.fn(async () => [entry]),
       scan: vi.fn(async () => [entry]),
-      preview: vi.fn(async () => {
-        await previewCompletion;
-        return { items: [{ fileId: entry.fileId, previewId: "preview-1", taskId: task.id, status: "ready" as const }] };
-      }),
+      startPreview: vi.fn(async () => ({ task, completion: previewCompletion })),
       getActiveSession: vi.fn(async () => ({
         id: task.id,
       })),
@@ -105,27 +102,26 @@ describe("maintenance IPC task adapter", () => {
       handlers[IpcChannel.Maintenance_Scan].action({ ...args, input: { filePaths: [entry.fileInfo.filePath] } }),
     ).resolves.toEqual({ entries: [entry] });
 
-    const previewResponse = handlers[IpcChannel.Maintenance_Preview].action({
+    const previewResponse = handlers[IpcChannel.Maintenance_StartPreview].action({
       ...args,
       input: { entries: [entry], presetId: "organize_files" },
     });
-    await vi.waitFor(() => expect(service.preview).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(service.startPreview).toHaveBeenCalledOnce());
     await expect(handlers[IpcChannel.Maintenance_Pause].action({ ...args, input: undefined })).resolves.toEqual({
       success: true,
     });
     expect(service.pause).toHaveBeenCalledWith(task.id);
+    await expect(previewResponse).resolves.toEqual({ sessionId: task.id });
     releasePreview();
-    await expect(previewResponse).resolves.toEqual({
-      items: [{ fileId: entry.fileId, previewId: "preview-1", taskId: task.id, status: "ready" }],
-    });
 
+    const selections = [{ previewId: "preview-1", fieldSelections: { title: "old" as const } }];
     await expect(
-      handlers[IpcChannel.Maintenance_Execute].action({
+      handlers[IpcChannel.Maintenance_Apply].action({
         ...args,
-        input: { items: [{ entry }], presetId: "organize_files" },
+        input: { selections, presetId: "organize_files" },
       }),
-    ).resolves.toEqual({ success: true });
-    expect(service.execute).toHaveBeenCalledWith(task.id, [{ entry }], "organize_files");
+    ).resolves.toEqual({ sessionId: task.id });
+    expect(service.execute).toHaveBeenCalledWith(task.id, selections, "organize_files");
 
     await expect(handlers[IpcChannel.Maintenance_Stop].action({ ...args, input: undefined })).resolves.toEqual({
       success: true,

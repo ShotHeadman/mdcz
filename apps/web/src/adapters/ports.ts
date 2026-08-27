@@ -1,4 +1,5 @@
-import type { CrawlerData, LocalScanEntry, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
@@ -6,7 +7,6 @@ import type {
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
-import { maintenanceSnapshotPreviewItems } from "@mdcz/views/state/maintenanceStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { api, getLibraryAssetSrc } from "../client";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
@@ -117,11 +117,16 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
 
-  const rootId = item.assetRootId ?? getMetadataRootId(item);
+  const normalizedCandidate = trimmed.replace(/\\/gu, "/");
+  const asset = item.assets?.find(
+    (candidate) =>
+      candidate.type === "local" && candidate.file.relativePath.replace(/\\/gu, "/") === normalizedCandidate,
+  );
+  const rootId = asset?.type === "local" ? asset.file.rootId : getMetadataRootId(item);
   if (!rootId) {
     return trimmed;
   }
-  const path = item.assetRootId ? trimmed.replace(/\\/gu, "/") : resolveCandidatePath(trimmed, item, baseDir);
+  const path = asset?.type === "local" ? asset.file.relativePath : resolveCandidatePath(trimmed, item, baseDir);
   return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path) }) || trimmed;
 };
 
@@ -182,16 +187,13 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     openNfo: "enabled",
   },
   retrySelection: async (targets, options) => {
-    const refs = targets.map((target) => target.ref);
-    if (refs.some((ref) => !ref)) {
-      throw new Error("Web 重试需要媒体目录引用，请从工作台重新扫描后启动。");
-    }
-    await api.scrape.start({
-      refs: refs as NonNullable<(typeof refs)[number]>[],
-      manualUrl: options.manualUrl,
-    });
+    void targets;
+    void options;
+    const runId = useWorkbenchTaskStore.getState().hydrationState.activeScrapeTaskId;
+    if (!runId) throw new Error("没有可重试的刮削任务");
+    const retry = await api.scrape.retry({ taskId: runId });
     requestScrapeLiveRunsRefresh();
-    return { message: `重试任务已启动，共 ${refs.length} 个文件`, strategy: "live-runs" };
+    return { message: `重试任务已启动：${retry.runId}` };
   },
   getDeleteFileAvailability: (targets) =>
     targets.length > 0 && targets.every((target) => target.ref) ? "enabled" : "hidden",
@@ -258,42 +260,16 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       const rootId = refs[0]?.rootId ?? "";
       const { sessionId } = await api.maintenance.start({ rootId, presetId, refs });
       useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(sessionId);
-      const session = await api.maintenance.getActiveSession();
-      if (!session || session.id !== sessionId) throw new Error("维护会话已变化");
-      return { items: maintenanceSnapshotPreviewItems(session) };
+      return { sessionId };
     },
-    execute: async (commitItems: MaintenanceApplyCommit[], _presetId: MaintenancePresetId, context) => {
-      const selectedFileIds = new Set(commitItems.map((item) => item.entry.fileId));
-      const previews = Object.values(context?.previewResults ?? {}).filter((preview) =>
-        selectedFileIds.has(preview.fileId),
-      );
-      const previewIds = previews.map((preview) => preview.previewId).filter((id): id is string => Boolean(id));
-      if (previewIds.length === 0) {
-        throw new Error("没有可应用的维护预览");
-      }
-      const taskIds = new Set(
-        previews.map((preview) => preview.taskId).filter((taskId): taskId is string => Boolean(taskId)),
-      );
-      if (taskIds.size !== 1) {
-        throw new Error("维护预览缺少任务 ID");
-      }
-      const taskId = [...taskIds][0];
+    execute: async (selections: MaintenanceApplySelection[]) => {
+      const taskId = requireTaskId();
       useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(taskId);
       await api.maintenance.apply({
         taskId,
         confirmationToken: `maintenance:${taskId}`,
-        previewIds,
-        selections: previews
-          .map((preview) => {
-            if (!preview.previewId) {
-              return null;
-            }
-            return {
-              previewId: preview.previewId,
-              fieldSelections: context?.fieldSelections[preview.fileId],
-            };
-          })
-          .filter((selection): selection is NonNullable<typeof selection> => Boolean(selection)),
+        previewIds: selections.map((selection) => selection.previewId),
+        selections,
       });
     },
     pause: async () => {

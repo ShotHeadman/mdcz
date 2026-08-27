@@ -112,6 +112,7 @@ export const writePreparedNfo = async (input: {
   probeVideoMetadata?: (sourcePath: string) => Promise<VideoMeta | undefined>;
   onLog?: (message: string) => void;
   startLogLabel?: string;
+  writeFile?: (path: string, content: string) => Promise<void>;
 }): Promise<string | undefined> => {
   if (!(input.enabled && input.crawlerData && input.nfoPath)) {
     return undefined;
@@ -141,6 +142,7 @@ export const writePreparedNfo = async (input: {
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
     sources: input.sources,
     videoMeta,
+    writeFile: input.writeFile,
   });
 };
 
@@ -161,5 +163,5 @@ export const organizePreparedVideo = async (input: {
     input.onLog?.(input.startLogLabel);
   }
 
-  return await input.fileOrganizer.organizeVideo(input.fileInfo, input.plan, input.config);
+  return input.plan.targetVideoPath;
 };

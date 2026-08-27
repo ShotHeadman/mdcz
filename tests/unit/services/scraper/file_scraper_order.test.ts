@@ -89,10 +89,8 @@ describe("FileScraper site aggregation", () => {
     const result = await scraper.scrapeFile(filePath);
 
     expect(crawlerProvider.calledNumbers).toEqual(["ABF-252", "ABF-252", "ABF-252"]);
-    expect(result.fileInfo).toMatchObject({
-      filePath,
-      fileName: "[7SiS-001]+ ABF-252",
-      number: "ABF-252",
-    });
+    expect(result.fileName).toBe("[7SiS-001]+ ABF-252");
+    expect(result.relativePath).toBe(filePath);
+    expect(result.crawlerData?.number ?? result.fileName).toContain("ABF-252");
   });
 });

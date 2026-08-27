@@ -166,7 +166,7 @@ describe("shared output steps", () => {
     expect(logs).toEqual(["Generating NFO"]);
   });
 
-  it("organizes only when the output step and plan are both enabled", async () => {
+  it("returns the planned target without performing file work", async () => {
     const fileInfo = createFileInfo();
     const plan: OrganizePlan = {
       nfoPath: "/output/ABC-123.nfo",
@@ -185,6 +185,6 @@ describe("shared output steps", () => {
     await expect(organizePreparedVideo({ config, enabled: true, fileInfo, fileOrganizer, plan })).resolves.toBe(
       plan.targetVideoPath,
     );
-    expect(organizeVideo).toHaveBeenCalledOnce();
+    expect(organizeVideo).not.toHaveBeenCalled();
   });
 });

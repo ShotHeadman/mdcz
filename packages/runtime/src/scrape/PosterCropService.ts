@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, parse } from "node:path";
 import { type AssetNamingMode, buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import {
@@ -8,6 +8,7 @@ import {
   resolvePosterEditorCropRegion,
 } from "@mdcz/shared/posterCrop";
 import sharp from "sharp";
+import { publishAbsoluteFile } from "../publication";
 import { resolveExistingImageAsset } from "./download/assets/helpers";
 
 const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);
@@ -73,7 +74,7 @@ export class PosterCropService {
     try {
       const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
       await encodePoster(source, extension).toFile(tempPath);
-      await rename(tempPath, session.targetPath);
+      await publishAbsoluteFile(tempPath, session.targetPath, `poster-crop:${session.targetPath}`);
     } finally {
       await rm(tempPath, { force: true }).catch(() => undefined);
     }

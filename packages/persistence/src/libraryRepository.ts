@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { stat as fsStat } from "node:fs/promises";
 import path from "node:path";
 import { and, desc, eq, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { writeLibraryEntry } from "./libraryWrite";
+import { writeLibraryRows } from "./libraryWrite";
 import {
   type LibraryItemAssetRow,
   type LibraryItemFileRow,
@@ -41,6 +40,7 @@ export interface LibraryEntryRecord {
 
 export interface UpsertLibraryEntryInput {
   id?: string;
+  fileId?: string;
   mediaIdentity?: string | null;
   rootId: string;
   rootRelativePath: string;
@@ -267,7 +267,7 @@ export class LibraryRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
-    const transaction = this.database.sqlite.transaction(() => writeLibraryEntry(this.database, input));
+    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input));
     const id = transaction();
     return await this.getEntryById(id);
   }
@@ -325,109 +325,39 @@ export class LibraryRepository {
     const mediaIdentity = input.crawlerData?.number?.trim() || input.fallbackNumber.trim() || null;
     const title = input.crawlerData?.title ?? null;
     const number = input.crawlerData?.number ?? input.fallbackNumber ?? null;
-    const actorsJson = JSON.stringify(input.crawlerData?.actors ?? []);
-
+    const existingItem = input.librarySource
+      ? this.database.db
+          .select()
+          .from(libraryItems)
+          .where(eq(libraryItems.id, input.librarySource.libraryItemId))
+          .limit(1)
+          .get()
+      : null;
+    const itemId = input.librarySource?.libraryItemId ?? `${target.rootId}:${target.rootRelativePath}`;
     const transaction = this.database.sqlite.transaction(() => {
       this.assertMaintenanceSource(input.librarySource);
       this.assertNoMaintenanceTargetConflict(targetCandidates, input.librarySource?.libraryItemId);
-      const directory = path.posix.dirname(target.rootRelativePath);
-      const itemId = input.librarySource?.libraryItemId ?? `${target.rootId}:${target.rootRelativePath}`;
-
-      if (input.librarySource) {
-        const updatedItem = this.database.db
-          .update(libraryItems)
-          .set({
-            mediaIdentity,
-            crawlerDataJson,
-            title,
-            number,
-            actorsJson,
-            lastRefreshedAt: input.refreshedAt,
-          })
-          .where(eq(libraryItems.id, itemId))
-          .run();
-        if (updatedItem.changes !== 1) throw new Error("原媒体库条目已变化，请重新预览");
-        const updated = this.database.db
-          .update(libraryItemFiles)
-          .set({
-            rootId: target.rootId,
-            rootRelativePath: target.rootRelativePath,
-            fileName: path.posix.basename(target.rootRelativePath),
-            directory: directory === "." ? "" : directory,
-            size: input.size,
-            modifiedAt: input.modifiedAt,
-            lastKnownPath: target.rootRelativePath,
-            updatedAt: input.refreshedAt,
-          })
-          .where(
-            and(
-              eq(libraryItemFiles.id, input.librarySource.libraryFileId),
-              eq(libraryItemFiles.itemId, input.librarySource.libraryItemId),
-            ),
-          )
-          .run();
-        if (updated.changes !== 1) throw new Error("原媒体库文件引用已变化，请重新预览");
-      } else {
-        const existingItem = this.database.db
-          .select({ id: libraryItems.id })
-          .from(libraryItems)
-          .where(eq(libraryItems.id, itemId))
-          .limit(1)
-          .get();
-        if (existingItem) throw new Error(`媒体库条目 ID 冲突：${itemId}`);
-        this.database.db
-          .insert(libraryItems)
-          .values({
-            id: itemId,
-            mediaIdentity,
-            crawlerDataJson,
-            sourceRunId: null,
-            sourceOutcomeId: null,
-            title,
-            number,
-            actorsJson,
-            createdAt: input.refreshedAt,
-            lastRefreshedAt: input.refreshedAt,
-            hiddenFromRecentAt: null,
-          })
-          .run();
-        this.database.db
-          .insert(libraryItemFiles)
-          .values({
-            id: `${itemId}:primary`,
-            itemId,
-            rootId: target.rootId,
-            rootRelativePath: target.rootRelativePath,
-            fileName: path.posix.basename(target.rootRelativePath),
-            directory: directory === "." ? "" : directory,
-            size: input.size,
-            modifiedAt: input.modifiedAt,
-            lastKnownPath: target.rootRelativePath,
-            createdAt: input.refreshedAt,
-            updatedAt: input.refreshedAt,
-          })
-          .run();
-      }
-
-      this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, itemId)).run();
-      if (assets.length > 0) {
-        this.database.db
-          .insert(libraryItemAssets)
-          .values(
-            assets.map((asset) => ({
-              id: randomUUID(),
-              itemId,
-              ...asset,
-              createdAt: input.refreshedAt,
-            })),
-          )
-          .run();
-      }
-      return itemId;
+      return writeLibraryRows(this.database, {
+        id: itemId,
+        fileId: input.librarySource?.libraryFileId,
+        rootId: target.rootId,
+        rootRelativePath: target.rootRelativePath,
+        mediaIdentity,
+        size: input.size,
+        modifiedAt: input.modifiedAt,
+        sourceRunId: existingItem?.sourceRunId ?? null,
+        sourceOutcomeId: existingItem?.sourceOutcomeId ?? null,
+        title,
+        number,
+        actors: input.crawlerData?.actors ?? [],
+        crawlerDataJson,
+        assets,
+        lastKnownPath: target.rootRelativePath,
+        createdAt: existingItem?.createdAt ?? input.refreshedAt,
+        lastRefreshedAt: input.refreshedAt,
+      });
     });
-
-    const libraryItemId = transaction();
-    return { libraryItemId };
+    return { libraryItemId: transaction() };
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {

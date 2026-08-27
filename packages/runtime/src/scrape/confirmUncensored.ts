@@ -13,6 +13,7 @@ import type {
 } from "@mdcz/shared/types";
 import { LocalScanService } from "../maintenance/LocalScanService";
 import { MaintenanceArtifactResolver } from "../maintenance/MaintenanceArtifactResolver";
+import { commitAbsolutePublication } from "../publication";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
@@ -49,11 +50,20 @@ interface PreparedUncensoredConfirmItem {
 
 export interface UncensoredConfirmDependencies {
   artifactResolver: Pick<MaintenanceArtifactResolver, "resolve">;
-  fileOrganizer: Pick<FileOrganizer, "ensureOutputReady" | "organizeVideo" | "plan">;
+  fileOrganizer: Pick<FileOrganizer, "ensureOutputReady" | "organizeVideo" | "plan"> &
+    Partial<Pick<FileOrganizer, "resolveOutputPlan">>;
   localScanService: Pick<LocalScanService, "scanVideo">;
   logger: Pick<RuntimeLogger, "info" | "warn">;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   pathExists: typeof pathExists;
+  publish?(input: {
+    operationId: string;
+    sourceVideoPath: string;
+    targetVideoPath: string;
+    artifacts: Array<{ targetPath: string; content: { kind: "bytes"; data: Buffer } | { kind: "text"; data: string } }>;
+    obsoletePaths: string[];
+    replaceExistingArtifacts?: boolean;
+  }): Promise<void>;
 }
 
 const buildBatchKey = (nfoPath: string, choice: UncensoredChoice): string => `${nfoPath.trim()}::${choice}`;
@@ -78,6 +88,24 @@ const defaultDependencies = (): UncensoredConfirmDependencies => ({
   logger: noopRuntimeLogger,
   nfoGenerator: new NfoGenerator(),
   pathExists,
+  publish: async ({
+    operationId,
+    sourceVideoPath,
+    targetVideoPath,
+    artifacts,
+    obsoletePaths,
+    replaceExistingArtifacts,
+  }) => {
+    await commitAbsolutePublication({
+      operationId,
+      operationType: "maintenance",
+      sourceVideoPath,
+      targetVideoPath,
+      artifacts,
+      obsoletePaths,
+      replaceExistingArtifacts,
+    });
+  },
 });
 
 export const confirmUncensoredOutputs = async (
@@ -165,8 +193,12 @@ export const confirmUncensoredOutputs = async (
           config,
           prepared.nextLocalState,
         );
-        const plan = await dependencies.fileOrganizer.ensureOutputReady(rawPlan, prepared.entry.fileInfo.filePath);
-        const outputVideoPath = await dependencies.fileOrganizer.organizeVideo(prepared.entry.fileInfo, plan, config);
+        const plan = dependencies.fileOrganizer.resolveOutputPlan
+          ? await dependencies.fileOrganizer.resolveOutputPlan(rawPlan, prepared.entry.fileInfo.filePath)
+          : await dependencies.fileOrganizer.ensureOutputReady(rawPlan, prepared.entry.fileInfo.filePath);
+        const outputVideoPath = dependencies.publish
+          ? plan.targetVideoPath
+          : await dependencies.fileOrganizer.organizeVideo(prepared.entry.fileInfo, plan, config);
         processedItems.push({ ...prepared, outputVideoPath, plan });
       } catch (error) {
         fail(prepared.item, `Failed to reorganize ${prepared.item.videoPath}: ${toErrorMessage(error)}`);
@@ -175,6 +207,7 @@ export const confirmUncensoredOutputs = async (
     if (processedItems.length === 0) continue;
 
     let savedNfoPath: string;
+    const nfoArtifacts = new Map<string, string>();
     try {
       const seed = processedItems[0];
       savedNfoPath = await dependencies.nfoGenerator.writeNfo(
@@ -189,6 +222,9 @@ export const confirmUncensoredOutputs = async (
           nfoNaming: config.download.nfoNaming,
           enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
           nfoTitleTemplate: config.naming.nfoTitleTemplate,
+          writeFile: async (targetPath, content) => {
+            nfoArtifacts.set(targetPath, content);
+          },
         },
       );
     } catch (error) {
@@ -197,6 +233,10 @@ export const confirmUncensoredOutputs = async (
       continue;
     }
 
+    const finalizedItems: Array<{
+      processed: (typeof processedItems)[number];
+      artifacts: Awaited<ReturnType<UncensoredConfirmDependencies["artifactResolver"]["resolve"]>>;
+    }> = [];
     for (const processed of processedItems) {
       try {
         const artifacts = await dependencies.artifactResolver.resolve({
@@ -206,6 +246,33 @@ export const confirmUncensoredOutputs = async (
           savedNfoPath,
           nfoNaming: config.download.nfoNaming,
         });
+        finalizedItems.push({ processed, artifacts });
+      } catch (error) {
+        fail(processed.item, `Failed to finalize ${processed.item.videoPath}: ${toErrorMessage(error)}`);
+      }
+    }
+
+    for (const { processed, artifacts } of finalizedItems) {
+      try {
+        if (dependencies.publish) {
+          await dependencies.publish({
+            operationId: `uncensored-confirm:${processed.item.fileId}`,
+            sourceVideoPath: processed.item.videoPath,
+            targetVideoPath: processed.outputVideoPath,
+            artifacts: [
+              ...[...nfoArtifacts].map(([targetPath, data]) => ({
+                targetPath,
+                content: { kind: "text" as const, data },
+              })),
+              ...artifacts.publicationArtifacts.map(({ targetPath, data }) => ({
+                targetPath,
+                content: { kind: "bytes" as const, data },
+              })),
+            ],
+            obsoletePaths: artifacts.obsoletePaths,
+            replaceExistingArtifacts: true,
+          });
+        }
         updatedItems.push({
           fileId: processed.item.fileId,
           sourceVideoPath: processed.item.videoPath,

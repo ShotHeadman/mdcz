@@ -1,4 +1,5 @@
 import type { Website } from "./enums";
+import type { AssetRef, RootFileRef } from "./mediaRef";
 
 export type FileId = string;
 export type GroupId = string;
@@ -97,19 +98,21 @@ export interface DownloadedAssets {
 export interface ScrapeResult {
   resultId?: string;
   fileId: FileId;
-  fileInfo: FileInfo;
+  rootId: string;
+  relativePath: string;
+  fileName: string;
   status: ScrapeResultStatus;
   crawlerData?: CrawlerData;
   videoMeta?: VideoMeta;
   error?: string;
-  outputPath?: string;
-  nfoRootId?: string;
-  nfoPath?: string;
-  assets?: DownloadedAssets;
+  output?: RootFileRef;
+  nfo?: RootFileRef;
+  assets: AssetRef[];
   /** Maps each CrawlerData field to the Website that provided the value. */
   sources?: Partial<Record<keyof CrawlerData, Website>>;
   /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
   uncensoredAmbiguous?: boolean;
+  part?: FileInfo["part"];
 }
 
 export type UncensoredChoice = "umr" | "leak" | "uncensored";
@@ -156,17 +159,6 @@ export interface MediaCandidate {
   relativeDirectory: string;
   rootId?: string;
   rootRelativePath?: string;
-}
-
-export interface ScraperStatus {
-  state: "idle" | "running" | "stopping" | "paused";
-  running: boolean;
-  totalFiles: number;
-  completedFiles: number;
-  percent: number;
-  successCount: number;
-  failedCount: number;
-  skippedCount: number;
 }
 
 export interface IpcError {
@@ -281,13 +273,6 @@ export interface MaintenanceAssetDecisions {
   fanart?: "preserve" | "replace";
   sceneImages?: "preserve" | "replace";
   trailer?: "preserve" | "replace";
-}
-
-export interface MaintenanceApplyCommit {
-  entry: LocalScanEntry;
-  crawlerData?: CrawlerData;
-  imageAlternatives?: MaintenanceImageAlternatives;
-  assetDecisions?: MaintenanceAssetDecisions;
 }
 
 export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";

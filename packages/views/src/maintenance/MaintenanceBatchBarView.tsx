@@ -1,4 +1,4 @@
-import type { MaintenanceItemResult, MaintenancePreviewItem, PathDiff } from "@mdcz/shared/types";
+import type { MaintenanceItemResult, PathDiff } from "@mdcz/shared/types";
 import {
   Button,
   Dialog,
@@ -37,7 +37,7 @@ export interface MaintenanceBatchBarViewProps {
   onExecute: () => void;
   onExecuteDialogOpenChange: (open: boolean) => void;
   onPauseToggle: () => void;
-  onPreview: () => Promise<MaintenancePreviewItem[] | null | undefined>;
+  onPreview: () => Promise<void>;
   onReturnToSetup: () => void;
   onStop: () => void;
   paused: boolean;

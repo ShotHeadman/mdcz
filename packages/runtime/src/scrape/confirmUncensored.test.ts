@@ -38,6 +38,8 @@ const dependencies = (): UncensoredConfirmDependencies => ({
       nfoPath: savedNfoPath,
       assets: entry.assets,
       outputVideoPath,
+      publicationArtifacts: [],
+      obsoletePaths: [],
     })),
   },
   fileOrganizer: {

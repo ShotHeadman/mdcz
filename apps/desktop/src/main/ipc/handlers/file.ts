@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config/ConfigManager";
@@ -6,8 +6,8 @@ import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
-import { atomicWriteFile } from "@mdcz/media-store";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { commitAbsolutePublication } from "@mdcz/runtime/publication";
 import {
   findExistingNfoPath,
   getNfoReadCandidates,
@@ -229,7 +229,11 @@ export const createFileHandlers = (
             continue;
           }
           try {
-            await rm(filePath, { force: true });
+            await commitAbsolutePublication({
+              operationId: `delete:${filePath}`,
+              operationType: "maintenance",
+              obsoletePaths: [filePath],
+            });
             deletedCount += 1;
           } catch (error) {
             failedCount += 1;
@@ -284,8 +288,16 @@ export const createFileHandlers = (
             ? nfoGenerator.mergeEditableXml(existingXml, data, options)
             : nfoGenerator.buildXml(data, options);
           const paths = getNfoWritePaths(plannedNfoPath, config.download.nfoNaming);
-          for (const requiredPath of paths.requiredPaths) await atomicWriteFile(requiredPath, xml);
-          for (const stalePath of paths.stalePaths) await rm(stalePath, { force: true });
+          await commitAbsolutePublication({
+            operationId: `nfo-write:${plannedNfoPath}`,
+            operationType: "maintenance",
+            artifacts: paths.requiredPaths.map((targetPath) => ({
+              targetPath,
+              content: { kind: "text" as const, data: xml },
+            })),
+            obsoletePaths: paths.stalePaths,
+            replaceExistingArtifacts: true,
+          });
           return { success: true as const, nfoPath: paths.canonicalPath };
         } catch (error) {
           throw asSerializableIpcError(error);

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { type AnySQLiteColumn, check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable(
   "media_roots",
@@ -70,19 +70,21 @@ export const scrapeRuns = sqliteTable(
     rootId: text("root_id").notNull(),
     outputRootId: text("output_root_id"),
     executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
+    retryOfRunId: text("retry_of_run_id").references((): AnySQLiteColumn => scrapeRuns.id),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
-    disposition: text("disposition").$type<"completed" | "failed" | "stopped">(),
+    disposition: text("disposition").$type<"completed" | "failed" | "stopped" | "interrupted">(),
     errorMessage: text("error_message"),
   },
   (table) => [
     check("scrape_runs_execution_mode_check", sql`${table.executionMode} in ('single', 'batch')`),
     check(
       "scrape_runs_disposition_check",
-      sql`${table.disposition} is null or ${table.disposition} in ('completed', 'failed', 'stopped')`,
+      sql`${table.disposition} is null or ${table.disposition} in ('completed', 'failed', 'stopped', 'interrupted')`,
     ),
     index("scrape_runs_created_at_idx").on(table.createdAt),
+    index("scrape_runs_retry_of_run_idx").on(table.retryOfRunId),
   ],
 );
 
@@ -117,7 +119,6 @@ export const scrapeItemOutcomes = sqliteTable(
     itemId: text("item_id")
       .notNull()
       .references(() => scrapeRunItems.id),
-    attempt: integer("attempt").notNull(),
     outcome: text("outcome").$type<"success" | "failed" | "skipped">().notNull(),
     errorMessage: text("error_message"),
     crawlerDataJson: text("crawler_data_json"),
@@ -131,10 +132,9 @@ export const scrapeItemOutcomes = sqliteTable(
     completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
-    check("scrape_item_outcomes_attempt_check", sql`${table.attempt} > 0`),
     check("scrape_item_outcomes_outcome_check", sql`${table.outcome} in ('success', 'failed', 'skipped')`),
     check("scrape_item_outcomes_size_check", sql`${table.size} >= 0`),
-    uniqueIndex("scrape_item_outcomes_item_attempt_idx").on(table.itemId, table.attempt),
+    uniqueIndex("scrape_item_outcomes_item_idx").on(table.itemId),
   ],
 );
 
@@ -194,6 +194,26 @@ export const libraryItemAssets = sqliteTable(
   (table) => [index("library_item_assets_item_idx").on(table.itemId)],
 );
 
+export const libraryRepairIssues = sqliteTable(
+  "library_repair_issues",
+  {
+    id: text("id").primaryKey(),
+    operationId: text("operation_id").notNull(),
+    operationType: text("operation_type").$type<"scrape" | "maintenance">().notNull(),
+    rootId: text("root_id").notNull(),
+    relativePath: text("relative_path").notNull(),
+    errorMessage: text("error_message").notNull(),
+    detectedAt: integer("detected_at", { mode: "timestamp_ms" }).notNull(),
+    resolvedAt: integer("resolved_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    check("library_repair_issues_operation_type_check", sql`${table.operationType} in ('scrape', 'maintenance')`),
+    uniqueIndex("library_repair_issues_operation_path_idx").on(table.operationId, table.rootId, table.relativePath),
+    index("library_repair_issues_unresolved_idx").on(table.resolvedAt, table.detectedAt),
+    index("library_repair_issues_operation_idx").on(table.operationId, table.operationType),
+  ],
+);
+
 export const schema = {
   mediaRoots,
   taskRecords,
@@ -201,7 +221,7 @@ export const schema = {
   scanResults,
   scrapeRuns,
   scrapeRunItems,
-  scrapeItemOutcomes,
+  libraryRepairIssues,
   libraryItems,
   libraryItemFiles,
   libraryItemAssets,
@@ -227,3 +247,5 @@ export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
 export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
 export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
 export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;
+export type LibraryRepairIssueRow = typeof libraryRepairIssues.$inferSelect;
+export type InsertLibraryRepairIssueRow = typeof libraryRepairIssues.$inferInsert;

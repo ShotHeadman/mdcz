@@ -65,7 +65,7 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
   const library = {
     resolveSource: vi.fn(async () => null),
     preflightRefresh: vi.fn(async () => undefined),
-    commitRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
+    publishRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
   };
   const coordinator = new MaintenanceTaskCoordinator({
     roots: { getActiveRoot: async () => root },
@@ -153,13 +153,19 @@ describe("MaintenanceTaskCoordinator", () => {
           status: "success" as const,
           entry: { ...entry, fileInfo: { ...entry.fileInfo, filePath: outputPath } },
           outputRelativePath: "one.mp4",
+          plan: {
+            video: { sourcePath: outputPath, targetPath: outputPath, size: 1 },
+            artifacts: [],
+            assets: [],
+            obsoletePaths: [],
+          },
         };
       }),
     });
     fixture.library.preflightRefresh.mockImplementation(async () => {
       order.push("preflight");
     });
-    fixture.library.commitRefresh.mockImplementation(async () => {
+    fixture.library.publishRefresh.mockImplementation(async () => {
       order.push("commit");
       throw new Error("database unavailable");
     });
@@ -365,7 +371,7 @@ describe("MaintenanceTaskCoordinator", () => {
     await stopping;
     const batch = await apply.completion;
 
-    expect(fixture.library.commitRefresh).not.toHaveBeenCalled();
+    expect(fixture.library.publishRefresh).not.toHaveBeenCalled();
     expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
     await fixture.coordinator.close();
   });

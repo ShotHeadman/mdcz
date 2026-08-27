@@ -15,8 +15,13 @@ import {
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
-import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import {
+  selectIsScraping,
+  selectScrapeResults,
+  selectScrapeStatus,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -45,12 +50,12 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
   const { isScraping, scrapeStatus, results } = useScrapeStore(
     useShallow((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      results: state.results,
+      isScraping: selectIsScraping(state),
+      scrapeStatus: selectScrapeStatus(state),
+      results: selectScrapeResults(state),
     })),
   );
-  const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
+  const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const { workbenchMode, setWorkbenchMode } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,
@@ -65,19 +70,19 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       ambiguousItems.map((group) => ({
         id: group.id,
         ref: {
-          rootId: "",
-          relativePath: group.display.fileInfo.filePath,
+          rootId: group.display.rootId,
+          relativePath: group.display.relativePath,
         },
         fileId: group.display.fileId,
-        fileName: group.display.fileInfo.fileName,
-        number: group.display.fileInfo.number,
+        fileName: group.display.fileName,
+        number: group.display.crawlerData?.number ?? group.display.fileName.replace(/\.[^.]+$/u, ""),
         title: group.display.crawlerData?.title_zh ?? group.display.crawlerData?.title ?? null,
-        nfoRelativePath: group.display.nfoPath ?? null,
+        nfoRelativePath: group.display.nfo?.relativePath ?? null,
       })),
     [ambiguousItems],
   );
   const failedPaths = useMemo(
-    () => results.filter((result) => result.status === "failed").map((result) => result.fileInfo.filePath),
+    () => results.filter((result) => result.status === "failed").map((result) => result.relativePath),
     [results],
   );
   const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, routeIntent);
@@ -207,9 +212,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       const result = await retryScrapeSelection(failedPaths, {
         scrapeStatus,
       });
-      if (result.data.strategy === "new-task") {
-        resetForNewTask();
-      }
+      resetForNewTask();
       toast.success(result.data.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);
@@ -229,7 +232,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     const { successCount, failedCount } = summarizeUncensoredConfirmResultForScrapeGroups(ambiguousItems, result.items);
 
     if (result.updatedCount > 0) {
-      useScrapeStore.getState().resolveUncensoredResults(result.items);
+      useScrapeStore.getState().setPending(true);
     }
 
     if (failedCount === 0) {

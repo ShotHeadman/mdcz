@@ -2,7 +2,8 @@ import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { LocalScanEntry, MaintenanceApplyCommit, MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:maintenance");
@@ -12,18 +13,16 @@ export const createMaintenanceHandlers = (
 ): Pick<
   IpcRouterContract,
   | typeof IpcChannel.Maintenance_Scan
-  | typeof IpcChannel.Maintenance_Preview
-  | typeof IpcChannel.Maintenance_Execute
+  | typeof IpcChannel.Maintenance_StartPreview
+  | typeof IpcChannel.Maintenance_Apply
   | typeof IpcChannel.Maintenance_Stop
   | typeof IpcChannel.Maintenance_Pause
   | typeof IpcChannel.Maintenance_Resume
-  | typeof IpcChannel.Maintenance_GetActiveSession
+  | typeof IpcChannel.Maintenance_ReadSnapshot
   | typeof IpcChannel.Maintenance_UpdateDraft
   | typeof IpcChannel.Maintenance_DiscardSession
 > => {
   const { maintenanceService } = context;
-  let activeTaskId: string | null = null;
-
   return {
     [IpcChannel.Maintenance_Scan]: t.procedure
       .input<{ dirPath?: string; filePaths?: string[] }>()
@@ -47,7 +46,7 @@ export const createMaintenanceHandlers = (
         }
       }),
 
-    [IpcChannel.Maintenance_Preview]: t.procedure
+    [IpcChannel.Maintenance_StartPreview]: t.procedure
       .input<{ entries?: LocalScanEntry[]; presetId?: MaintenancePresetId }>()
       .action(async ({ input }) => {
         try {
@@ -60,34 +59,33 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          const preview = await maintenanceService.preview(entries, presetId);
-          activeTaskId = (await maintenanceService.getActiveSession())?.id ?? null;
-          return preview;
+          const handle = await maintenanceService.startPreview(entries, presetId);
+          void handle.completion.catch(() => undefined);
+          return { sessionId: handle.task.id };
         } catch (error) {
           logger.error("Maintenance preview failed");
           throw asSerializableIpcError(error);
         }
       }),
 
-    [IpcChannel.Maintenance_Execute]: t.procedure
-      .input<{ items?: MaintenanceApplyCommit[]; presetId?: MaintenancePresetId }>()
+    [IpcChannel.Maintenance_Apply]: t.procedure
+      .input<{ selections?: MaintenanceApplySelection[]; presetId?: MaintenancePresetId }>()
       .action(async ({ input }) => {
         try {
-          const items = input?.items;
+          const selections = input?.selections;
           const presetId = input?.presetId;
-          if (!items || !Array.isArray(items) || items.length === 0) {
-            throw new Error("items is required and must be non-empty");
+          if (!selections || !Array.isArray(selections) || selections.length === 0) {
+            throw new Error("selections is required and must be non-empty");
           }
           if (!presetId) {
             throw new Error("presetId is required");
           }
 
-          const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+          const taskId = await maintenanceService.resolveActiveTaskId();
           if (!taskId) throw new Error("没有活动的维护预览任务");
-          activeTaskId = taskId;
-          await maintenanceService.execute(taskId, items, presetId);
+          await maintenanceService.execute(taskId, selections, presetId);
 
-          return { success: true as const };
+          return { sessionId: taskId };
         } catch (error) {
           logger.error("Maintenance execute failed");
           throw asSerializableIpcError(error);
@@ -96,7 +94,7 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Stop]: t.procedure.action(async () => {
       try {
-        const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+        const taskId = await maintenanceService.resolveActiveTaskId();
         await maintenanceService.stop(taskId ?? undefined);
         return { success: true as const };
       } catch (error) {
@@ -106,7 +104,7 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Pause]: t.procedure.action(async () => {
       try {
-        const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+        const taskId = await maintenanceService.resolveActiveTaskId();
         await maintenanceService.pause(taskId ?? undefined);
         return { success: true as const };
       } catch (error) {
@@ -116,7 +114,7 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Resume]: t.procedure.action(async () => {
       try {
-        const taskId = await maintenanceService.resolveActiveTaskId(activeTaskId ?? undefined);
+        const taskId = await maintenanceService.resolveActiveTaskId();
         await maintenanceService.resume(taskId ?? undefined);
         return { success: true as const };
       } catch (error) {
@@ -124,17 +122,12 @@ export const createMaintenanceHandlers = (
       }
     }),
 
-    [IpcChannel.Maintenance_GetActiveSession]: t.procedure.action(async () => {
-      const session = await maintenanceService.getActiveSession();
-      activeTaskId = session?.id ?? null;
-      return session;
-    }),
+    [IpcChannel.Maintenance_ReadSnapshot]: t.procedure.action(async () => await maintenanceService.getActiveSession()),
 
     [IpcChannel.Maintenance_UpdateDraft]: t.procedure
       .input<{
         previewId: string;
         fieldSelections?: Record<string, "old" | "new">;
-        imageSelections?: Record<string, string>;
       }>()
       .action(async ({ input }) => {
         try {
@@ -148,7 +141,6 @@ export const createMaintenanceHandlers = (
     [IpcChannel.Maintenance_DiscardSession]: t.procedure.action(async () => {
       try {
         await maintenanceService.discardSession();
-        activeTaskId = null;
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);

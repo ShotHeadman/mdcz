@@ -1,10 +1,10 @@
-import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
+import type { PublicationPlan } from "../publication";
 import { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
@@ -48,10 +48,13 @@ export interface MountedRootScrapeAggregationService {
 
 export interface MountedRootScrapeRuntimeItemInput {
   root: MediaRoot;
+  outputRoot?: MediaRoot;
   relativePath: string;
   scrapeSessionId?: string;
   manualScrape?: ManualScrapeOptions;
   localState?: NfoLocalState;
+  operationId?: string;
+  publicationRoots?: MediaRoot[];
   progress: { fileIndex: number; totalFiles: number };
   onEvent?: (type: string, message: string) => Promise<void> | void;
   onProgress?: (progress: { value: number; current: number; total: number }) => Promise<void> | void;
@@ -67,6 +70,7 @@ export interface MountedRootScrapeRuntimeItemSuccess {
   outputRelativePath: string;
   size: number;
   modifiedAt: Date | null;
+  plan: PublicationPlan;
 }
 
 export interface MountedRootScrapeRuntimeItemFailure {
@@ -150,7 +154,10 @@ export class MountedRootScrapeRuntime {
       fileOrganizer,
       getConfiguration: async () => {
         const configuration = await this.config.get();
-        return { ...configuration, paths: { ...configuration.paths, mediaPath: input.root.hostPath } };
+        return {
+          ...configuration,
+          paths: { ...configuration.paths, mediaPath: (input.outputRoot ?? input.root).hostPath },
+        };
       },
       loadExistingNfoLocalState: async () => input.localState,
       logger: this.logger,
@@ -173,11 +180,20 @@ export class MountedRootScrapeRuntime {
     });
 
     try {
+      const roots = input.publicationRoots?.length
+        ? input.publicationRoots
+        : [input.root, input.outputRoot].filter((root): root is MediaRoot => Boolean(root));
       const result = await scraper.scrapeFile(
         resolveRootRelativePath(input.root, input.relativePath),
         input.progress,
         input.signal,
-        { manualScrape: input.manualScrape, scrapeSessionId: input.scrapeSessionId },
+        {
+          manualScrape: input.manualScrape,
+          scrapeSessionId: input.scrapeSessionId,
+          source: { rootId: input.root.id, relativePath: input.relativePath },
+          roots,
+          operationId: input.operationId ?? `${input.scrapeSessionId ?? "scrape"}:${input.relativePath}`,
+        },
       );
       if (result.status !== "success" || !result.crawlerData) {
         return {
@@ -186,17 +202,22 @@ export class MountedRootScrapeRuntime {
           error: result.error ?? "刮削失败",
         };
       }
-
-      const outputVideoPath = result.fileInfo.filePath;
-      const stats = await stat(outputVideoPath).catch(() => null);
+      if (!result.publicationPlan?.video) throw new Error("Successful scrape did not produce a publication plan");
+      const video = result.publicationPlan.video;
       return {
         status: "success",
         result,
         crawlerData: result.crawlerData,
-        nfoPath: result.nfoPath ?? null,
-        outputRelativePath: toRootRelativePath(input.root, outputVideoPath),
-        size: stats?.size ?? 0,
-        modifiedAt: stats?.mtime ?? null,
+        nfoPath: result.nfo
+          ? resolveRootRelativePath(
+              roots.find((root) => root.id === result.nfo?.rootId) ?? input.root,
+              result.nfo.relativePath,
+            )
+          : null,
+        outputRelativePath: video.target.relativePath,
+        size: video.size,
+        modifiedAt: null,
+        plan: result.publicationPlan,
       };
     } finally {
       await signalService.flush();

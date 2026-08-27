@@ -5,7 +5,7 @@ import {
   type ScrapeResultGroup,
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@mdcz/ui";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeResults, selectScrapeStatus, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { Copy, FileText, Link2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -31,8 +31,8 @@ function buildMenuContent(
 ) {
   const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
   const result = actionContext.selectedItem;
-  const resultPath = result.fileInfo.filePath;
-  const resultNumber = result.fileInfo.number;
+  const resultPath = result.output?.relativePath ?? result.relativePath;
+  const resultNumber = result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, "");
   const nfoPath = actionContext.nfoPath ?? resultPath;
   const groupedTargets = actionContext.targets;
   const groupedVideoPaths = groupedTargets.map((target) => target.filePath);
@@ -56,11 +56,8 @@ function buildMenuContent(
     try {
       const response = await port.retrySelection(groupedTargets, {
         scrapeStatus,
-        canRequeueCurrentRun: group.status === "failed",
       });
-      if (response.strategy === "new-task") {
-        activateRetryScrapeTask(groupedTargets.map((target) => target.filePath));
-      }
+      activateRetryScrapeTask(groupedTargets.map((target) => target.filePath));
       toast.success(response.message);
     } catch (error) {
       toast.error(toErrorMessage(error, "重新刮削失败"));
@@ -120,7 +117,6 @@ function buildMenuContent(
       videoPaths: groupedVideoPaths,
       targets: groupedTargets,
       number: resultNumber || "未识别番号",
-      canRequeueCurrentRun: group.status === "failed",
     });
   };
 
@@ -197,7 +193,9 @@ function buildMenuContent(
 }
 
 export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
-  const { results, clearResults, scrapeStatus } = useScrapeStore();
+  const results = useScrapeStore(selectScrapeResults);
+  const scrapeStatus = useScrapeStore(selectScrapeStatus);
+  const clearResults = useScrapeStore((state) => state.clearVisibleResults);
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
   const [manualUrlTarget, setManualUrlTarget] = useState<ResultTreeManualUrlTarget | null>(null);
@@ -210,8 +208,10 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
       resultGroups.map((group) => ({
         id: group.id,
         active: group.items.some((item) => item.fileId === selectedResultId),
-        title: group.display.fileInfo.number || "未识别番号",
-        subtitle: getScrapeResultTitle(group.display) || getFileNameFromPath(group.display.fileInfo.filePath),
+        title: group.display.crawlerData?.number ?? (group.display.fileName.replace(/\.[^.]+$/u, "") || "未识别番号"),
+        subtitle:
+          getScrapeResultTitle(group.display) ||
+          getFileNameFromPath(group.display.output?.relativePath ?? group.display.relativePath),
         errorText: group.errorText ?? group.display.error,
         status: group.status,
         onClick: () =>
@@ -245,12 +245,9 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
         try {
           const response = await port.retrySelection(target.targets, {
             scrapeStatus,
-            canRequeueCurrentRun: target.canRequeueCurrentRun,
             manualUrl,
           });
-          if (response.strategy === "new-task") {
-            activateRetryScrapeTask(target.targets.map((item) => item.filePath));
-          }
+          activateRetryScrapeTask(target.targets.map((item) => item.filePath));
           toast.success(response.message);
         } catch (error) {
           toast.error(toErrorMessage(error, "按 URL 重新刮削失败"));

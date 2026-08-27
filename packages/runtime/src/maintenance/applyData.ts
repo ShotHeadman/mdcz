@@ -2,11 +2,10 @@ import type {
   CrawlerData,
   FieldDiff,
   LocalScanEntry,
-  MaintenanceApplyCommit,
   MaintenanceAssetDecisions,
   MaintenanceImageAlternatives,
   MaintenancePreviewItem,
-} from "./types";
+} from "@mdcz/shared/types";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
 
@@ -309,11 +308,15 @@ const buildAssetDecisions = (
   return Object.keys(assetDecisions).length > 0 ? assetDecisions : undefined;
 };
 
-export const buildMaintenanceApplyCommit = (
+export const buildMaintenanceApplyData = (
   entry: LocalScanEntry,
   preview: MaintenanceCommitPreview | undefined,
   fieldSelections: Record<string, MaintenanceFieldSelectionSide> | undefined,
-): MaintenanceApplyCommit => {
+): {
+  crawlerData?: CrawlerData;
+  imageAlternatives?: MaintenanceImageAlternatives;
+  assetDecisions?: MaintenanceAssetDecisions;
+} => {
   const crawlerData = buildCommittedCrawlerData(entry, preview, fieldSelections);
   const proposedCrawlerData = preview?.proposedCrawlerData;
   const imageAlternatives = preview?.imageAlternatives;
@@ -337,7 +340,6 @@ export const buildMaintenanceApplyCommit = (
   }
 
   return {
-    entry,
     crawlerData,
     imageAlternatives: Object.keys(filteredAlternatives).length > 0 ? filteredAlternatives : undefined,
     assetDecisions: buildAssetDecisions(preview?.fieldDiffs, fieldSelections),

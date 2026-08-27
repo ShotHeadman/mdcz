@@ -132,4 +132,21 @@ describe("AutomationService webhook delivery", () => {
     expect(requestBodies(fetchMock).map((body) => body.taskId)).toEqual(["task-1", "task-2"]);
     expect(service.deliveryStatus().webhook).toMatchObject({ delivered: 1, failed: 1, lastError: null });
   });
+  it("rejects new deliveries when the one-thousand-entry queue is full", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    const taskEvents = new TaskEventBus();
+    const service = createAutomationService(taskEvents);
+
+    publishTask(taskEvents, makeTask("active", "running"));
+    for (let index = 0; index <= 1_000; index += 1) {
+      publishTask(taskEvents, makeTask(`queued-${index}`, "running"));
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(service.deliveryStatus().webhook).toMatchObject({
+      failed: 1,
+      lastError: "Webhook delivery queue is full",
+    });
+  });
 });

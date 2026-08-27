@@ -274,7 +274,7 @@ export class NfoGenerator {
     const xml = this.buildXml(data, options);
     const nfoNaming = options?.nfoNaming ?? "both";
     const { primaryPath, moviePath, canonicalPath, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
-    await mkdir(dirname(primaryPath), { recursive: true });
+    if (!options?.writeFile) await mkdir(dirname(primaryPath), { recursive: true });
 
     if (nfoNaming === "both") {
       await write(primaryPath, xml);

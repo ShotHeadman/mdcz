@@ -17,6 +17,7 @@ export interface OverviewOutputSummary {
   totalBytes: number;
   scannedAt: number;
   rootPath: string | null;
+  unresolvedRepairCount: number;
 }
 
 export type OverviewIpcContract = {

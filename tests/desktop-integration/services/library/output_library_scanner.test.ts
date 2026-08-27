@@ -54,7 +54,6 @@ const createCompletedRun = async (
   await scrapeRuns.commitOutcome({
     outcome: "success",
     itemId: manifest.items[0].id,
-    attempt: 1,
     crawlerDataJson: JSON.stringify({ number: input.id }),
     outputRootId: "root-1",
     outputRelativePath: input.outputRelativePath,
@@ -123,7 +122,7 @@ describe("OutputLibraryScanner", () => {
       fileCount: 1,
       totalBytes: 10,
       scannedAt: 1_700_000_000_000,
-      rootPath: "E:\\media\\output",
+      rootPath: "/media/output",
     });
 
     await createCompletedRun(scrapeRuns, {
@@ -140,7 +139,7 @@ describe("OutputLibraryScanner", () => {
       fileCount: 1,
       totalBytes: 18,
       scannedAt: 1_700_000_000_100,
-      rootPath: "E:\\media\\output",
+      rootPath: "/media/output",
     });
   });
 

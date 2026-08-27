@@ -1,6 +1,6 @@
+import type { AssetRef } from "@mdcz/shared/mediaRef";
 import type {
   CrawlerData,
-  DownloadedAssets,
   ScrapeResult,
   ScrapeResultStatus,
   UncensoredConfirmItem,
@@ -24,13 +24,17 @@ export interface ScrapeResultGroupActionContext {
   videoPaths: string[];
 }
 
+const scrapeResultPath = (result: ScrapeResult): string => result.output?.relativePath ?? result.relativePath;
+const scrapeResultNumber = (result: ScrapeResult): string =>
+  result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, "");
+const scrapeResultNfoPath = (result: ScrapeResult): string | undefined => result.nfo?.relativePath;
+
 const scrapeResultMultipartSelectors = {
-  getDirectory: (result: ScrapeResult) =>
-    result.outputPath ?? deriveGroupingDirectoryFromPath(result.fileInfo.filePath),
-  getFileName: (result: ScrapeResult) => result.fileInfo.filePath,
+  getDirectory: (result: ScrapeResult) => deriveGroupingDirectoryFromPath(scrapeResultPath(result)),
+  getFileName: (result: ScrapeResult) => scrapeResultPath(result),
   getItemKey: (result: ScrapeResult) => result.fileId,
-  getNumber: (result: ScrapeResult) => result.fileInfo.number,
-  getPart: (result: ScrapeResult) => result.fileInfo.part,
+  getNumber: (result: ScrapeResult) => scrapeResultNumber(result),
+  getPart: (result: ScrapeResult) => result.part,
 };
 
 const pickLongerArray = <T>(incoming: T[] | undefined, existing: T[] | undefined): T[] | undefined => {
@@ -67,24 +71,18 @@ const mergeCrawlerData = (
   };
 };
 
-const mergeDownloadedAssets = (
-  existing: DownloadedAssets | undefined,
-  incoming: DownloadedAssets | undefined,
-): DownloadedAssets | undefined => {
-  if (!existing) {
-    return incoming;
+const mergeAssets = (existing: AssetRef[], incoming: AssetRef[]): AssetRef[] => {
+  if (incoming.length === 0) return existing;
+  if (existing.length === 0) return incoming;
+  const merged = new Map<string, AssetRef>();
+  for (const asset of [...existing, ...incoming]) {
+    const key =
+      asset.type === "local"
+        ? `${asset.kind}:${asset.file.rootId}:${asset.file.relativePath}`
+        : `${asset.kind}:${asset.url}`;
+    merged.set(key, asset);
   }
-
-  if (!incoming) {
-    return existing;
-  }
-
-  return {
-    ...existing,
-    ...incoming,
-    sceneImages: pickLongerArray(incoming.sceneImages, existing.sceneImages) ?? existing.sceneImages,
-    downloaded: pickLongerArray(incoming.downloaded, existing.downloaded) ?? existing.downloaded,
-  };
+  return [...merged.values()];
 };
 
 const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult): ScrapeResult => {
@@ -94,9 +92,9 @@ const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult
     crawlerData: mergeCrawlerData(existing.crawlerData, incoming.crawlerData),
     videoMeta: incoming.videoMeta ?? existing.videoMeta,
     error: incoming.error ?? existing.error,
-    outputPath: existing.outputPath ?? incoming.outputPath,
-    nfoPath: incoming.nfoPath ?? existing.nfoPath,
-    assets: mergeDownloadedAssets(existing.assets, incoming.assets),
+    output: existing.output ?? incoming.output,
+    nfo: incoming.nfo ?? existing.nfo,
+    assets: mergeAssets(existing.assets, incoming.assets),
     sources: incoming.sources ? { ...existing.sources, ...incoming.sources } : existing.sources,
     uncensoredAmbiguous: incoming.uncensoredAmbiguous ?? existing.uncensoredAmbiguous,
   };
@@ -136,14 +134,15 @@ export const buildAmbiguousUncensoredScrapeGroups = (results: ScrapeResult[]): S
 export const getAmbiguousUncensoredItemsForScrapeGroup = (
   group: ScrapeResultGroup,
 ): Array<ScrapeResult & { nfoPath: string }> =>
-  group.items.filter(
-    (item): item is ScrapeResult & { nfoPath: string } => Boolean(item.nfoPath) && item.uncensoredAmbiguous === true,
-  );
+  group.items.flatMap((item) => {
+    const nfoPath = scrapeResultNfoPath(item);
+    return nfoPath && item.uncensoredAmbiguous === true ? [{ ...item, nfoPath }] : [];
+  });
 
 export const getScrapeResultGroupNfoPath = (group: ScrapeResultGroup): string | undefined =>
   getAmbiguousUncensoredItemsForScrapeGroup(group)[0]?.nfoPath ??
-  group.items.find((item) => Boolean(item.nfoPath))?.nfoPath ??
-  group.display.nfoPath;
+  group.items.map(scrapeResultNfoPath).find((nfoPath) => Boolean(nfoPath)) ??
+  scrapeResultNfoPath(group.display);
 
 export const findScrapeResultGroupItem = (
   group: ScrapeResultGroup,
@@ -157,7 +156,7 @@ export const findScrapeResultGroupItem = (
 };
 
 export const getScrapeResultGroupVideoPaths = (group: ScrapeResultGroup): string[] => {
-  return Array.from(new Set(group.items.map((item) => item.fileInfo.filePath).filter((value) => value.length > 0)));
+  return Array.from(new Set(group.items.map(scrapeResultPath).filter((value) => value.length > 0)));
 };
 
 export const getScrapeResultGroupTargets = (
@@ -165,14 +164,11 @@ export const getScrapeResultGroupTargets = (
 ): Array<{ filePath: string; ref?: ScrapeFileRefDto }> => {
   const targets = new Map<string, { filePath: string; ref?: ScrapeFileRefDto }>();
   for (const item of group.items) {
-    if (!item.fileInfo.filePath) {
-      continue;
-    }
-    const [rootId, ...relativeParts] = item.fileId.split(":");
-    const relativePath = relativeParts.join(":");
-    targets.set(item.fileInfo.filePath, {
-      filePath: item.fileInfo.filePath,
-      ref: rootId && relativePath ? { rootId, relativePath } : undefined,
+    const filePath = scrapeResultPath(item);
+    if (!filePath) continue;
+    targets.set(filePath, {
+      filePath,
+      ref: item.output ?? { rootId: item.rootId, relativePath: item.relativePath },
     });
   }
   return [...targets.values()];
@@ -199,7 +195,7 @@ export const buildUncensoredConfirmItemsForScrapeGroups = (
     getAmbiguousUncensoredItemsForScrapeGroup(group).map((item) => ({
       fileId: item.fileId,
       nfoPath: item.nfoPath,
-      videoPath: item.fileInfo.filePath,
+      videoPath: scrapeResultPath(item),
       choice: choicesByGroupId[group.id] ?? "uncensored",
     })),
   );
@@ -216,7 +212,7 @@ export const summarizeUncensoredConfirmResultForScrapeGroups = (
     .filter((group) => group.items.length > 0);
 
   const successCount = submittedGroups.filter((group) =>
-    group.items.every((item) => updatedSourcePaths.has(item.fileInfo.filePath)),
+    group.items.every((item) => updatedSourcePaths.has(scrapeResultPath(item))),
   ).length;
   return {
     successCount,

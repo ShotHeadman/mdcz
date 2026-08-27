@@ -1,7 +1,7 @@
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
-import { buildCommittedCrawlerData, type MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceCommit";
+import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
 import type {
   CrawlerData,
   FieldDiff,
@@ -10,6 +10,7 @@ import type {
   MaintenancePresetId,
   PathDiff,
 } from "@mdcz/shared/types";
+import type { PreparedPublicationPlan } from "../publication";
 import {
   type AggregationService,
   applyScrapeNetworkPolicy,
@@ -20,6 +21,7 @@ import {
   type TranslateService,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
+import { buildCommittedCrawlerData } from "./applyData";
 import { LocalScanService } from "./LocalScanService";
 import {
   MaintenanceFileScraper,
@@ -116,6 +118,7 @@ export interface MaintenanceRuntimeApplySuccess {
   unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
   outputRelativePath: string;
+  plan?: PreparedPublicationPlan;
 }
 
 export interface MaintenanceRuntimeApplyFailure {
@@ -303,6 +306,10 @@ export class MaintenanceRuntime {
     }
 
     const updatedEntry = result.updatedEntry ?? entry;
+    const plan = result.publicationPlan;
+    if (!plan && supportsMaintenanceExecution(preset)) {
+      return { status: "failed", error: "维护应用未生成发布计划" };
+    }
     return {
       status: "success",
       entry: updatedEntry,
@@ -311,6 +318,7 @@ export class MaintenanceRuntime {
       unchangedFieldDiffs: result.unchangedFieldDiffs,
       pathDiff: result.pathDiff,
       outputRelativePath: this.toRelativePath(input.root, updatedEntry.fileInfo.filePath),
+      plan,
     };
   }
 

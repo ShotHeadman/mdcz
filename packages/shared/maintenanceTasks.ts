@@ -1,4 +1,5 @@
-import type { MaintenanceFieldSelectionSide } from "./maintenanceCommit";
+export type MaintenanceFieldSelectionSide = "old" | "new";
+
 import type {
   CrawlerData,
   FieldDiff,
@@ -116,7 +117,6 @@ export interface MaintenanceLibrarySource {
 
 export interface MaintenanceSessionDraft {
   fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
-  imageSelections: Record<string, Record<string, string>>;
 }
 
 export interface MaintenanceActiveSessionSnapshot extends MaintenanceTaskProgress {

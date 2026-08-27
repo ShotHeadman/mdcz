@@ -18,7 +18,6 @@ export interface ResultTreeManualUrlTarget {
   videoPaths: string[];
   targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>;
   number: string;
-  canRequeueCurrentRun: boolean;
 }
 
 export interface ResultTreeViewProps {

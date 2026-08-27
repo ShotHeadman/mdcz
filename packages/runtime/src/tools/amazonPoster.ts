@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, rename, stat, unlink } from "node:fs/promises";
+import { readdir, readFile, stat, unlink } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
 import { Website } from "@mdcz/shared/enums";
@@ -10,6 +10,7 @@ import type {
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeDownloadNetworkClient } from "../network";
+import { commitAbsolutePublication } from "../publication";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
 import type { RuntimeLogger } from "../shared";
@@ -241,8 +242,13 @@ export const applyAmazonPosters = async (
         await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
         const validation = await validateImageFn(tempPosterPath);
         if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
-        if (replacedExisting) await unlink(savedPosterPath).catch(() => undefined);
-        await rename(tempPosterPath, savedPosterPath);
+        await commitAbsolutePublication({
+          operationId: `amazon-poster:${savedPosterPath}`,
+          operationType: "maintenance",
+          sourceVideoPath: tempPosterPath,
+          targetVideoPath: savedPosterPath,
+          replaceExistingTarget: true,
+        });
       } catch (error) {
         await unlink(tempPosterPath).catch(() => undefined);
         throw error;

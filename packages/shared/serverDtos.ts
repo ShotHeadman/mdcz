@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
+import { assetRefSchema, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
@@ -50,10 +51,7 @@ export const rootBrowserInputSchema = z.object({
 
 export type RootBrowserInput = z.infer<typeof rootBrowserInputSchema>;
 
-export interface RootRelativeFileRefDto {
-  rootId: string;
-  relativePath: string;
-}
+export type { RootFileRef } from "./mediaRef";
 
 export const rootBrowserEntrySchema = z.object({
   type: z.enum(["directory", "file"]),
@@ -211,12 +209,9 @@ export interface ScanCandidatesResponse {
   candidates: MediaCandidate[];
 }
 
-export const scrapeFileRefSchema = z.object({
-  rootId: z.string().trim().min(1),
-  relativePath: z.string().trim().min(1),
-});
+export const scrapeFileRefSchema = rootFileRefSchema;
 
-export type ScrapeFileRefDto = z.infer<typeof scrapeFileRefSchema>;
+export type ScrapeFileRefDto = RootFileRef;
 
 export const ambiguousUncensoredItemSchema = z.object({
   id: z.string(),
@@ -332,12 +327,6 @@ export const taskEventListResponseSchema = z.object({
 
 export type TaskEventListResponse = z.infer<typeof taskEventListResponseSchema>;
 
-const scrapeAssetReferenceShape = {
-  assetRootId: z.string().nullable(),
-  sceneImageRelativePaths: z.array(z.string()),
-  trailerRelativePath: z.string().nullable(),
-};
-
 export const scrapeResultSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -352,7 +341,7 @@ export const scrapeResultSchema = z.object({
   nfoRootId: z.string().nullable(),
   nfoRelativePath: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
-  ...scrapeAssetReferenceShape,
+  assets: z.array(assetRefSchema),
   manualUrl: z.string().nullable(),
   uncensoredAmbiguous: z.boolean().optional(),
   persistenceState: z.enum(["terminal", "interrupted"]).optional(),
@@ -366,7 +355,7 @@ export type ScrapeResultDto = z.infer<typeof scrapeResultSchema>;
  * A live item belongs to an in-process scrape run.  Unlike ScrapeResultDto it
  * is not persisted history: its `id` is the stable manifest item id and it
  * can therefore describe pending and processing work as well as a committed
- * terminal attempt.
+ * terminal outcome.
  */
 export const scrapeLiveItemSchema = z.object({
   id: z.string(),
@@ -381,10 +370,9 @@ export const scrapeLiveItemSchema = z.object({
   nfoRelativePath: z.string().nullable(),
   outputRootId: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
-  ...scrapeAssetReferenceShape,
+  assets: z.array(assetRefSchema),
   manualUrl: z.string().nullable(),
   uncensoredAmbiguous: z.boolean(),
-  attempt: z.number().int().positive(),
 });
 
 export type ScrapeLiveItemDto = z.infer<typeof scrapeLiveItemSchema>;
@@ -490,7 +478,6 @@ export type MaintenanceTaskInput = z.infer<typeof maintenanceTaskInputSchema>;
 export const maintenanceUpdateDraftInputSchema = maintenanceTaskInputSchema.extend({
   previewId: z.string().min(1),
   fieldSelections: z.record(z.string(), z.enum(["old", "new"])).optional(),
-  imageSelections: z.record(z.string(), z.string()).optional(),
 });
 export type MaintenanceUpdateDraftInput = z.infer<typeof maintenanceUpdateDraftInputSchema>;
 
@@ -540,7 +527,7 @@ export const logListResponseSchema = z.object({
 
 export type LogListResponse = z.infer<typeof logListResponseSchema>;
 
-export const scrapeLiveRunSnapshotSchema = z.object({
+export const scrapeRunSnapshotSchema = z.object({
   task: scanTaskSchema,
   progress: z.object({
     percent: z.number().min(0).max(100),
@@ -559,10 +546,10 @@ export const scrapeLiveRunSnapshotSchema = z.object({
   ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema),
 });
 
-export type ScrapeLiveRunSnapshotDto = z.infer<typeof scrapeLiveRunSnapshotSchema>;
+export type ScrapeRunSnapshotDto = z.infer<typeof scrapeRunSnapshotSchema>;
 
 export const scrapeLiveRunsResponseSchema = z.object({
-  runs: z.array(scrapeLiveRunSnapshotSchema),
+  runs: z.array(scrapeRunSnapshotSchema),
 });
 
 export type ScrapeLiveRunsResponse = z.infer<typeof scrapeLiveRunsResponseSchema>;
@@ -729,6 +716,7 @@ export const overviewOutputSummarySchema = z.object({
   totalBytes: z.number(),
   outputAt: z.string().nullable(),
   rootPath: z.string().nullable(),
+  unresolvedRepairCount: z.number().int().nonnegative(),
 });
 
 export type OverviewOutputSummaryDto = z.infer<typeof overviewOutputSummarySchema>;

@@ -583,6 +583,7 @@ describe("buildServer composition integration", () => {
       totalBytes: 33,
       outputAt: "2026-05-11T00:08:00.000Z",
       rootPath: null,
+      unresolvedRepairCount: 0,
     });
     const recentAcquisitions = overviewResponse.json().result.data.recentAcquisitions;
     expect(recentAcquisitions).toHaveLength(8);
@@ -828,6 +829,16 @@ describe("buildServer composition integration", () => {
         ),
       )
       .toBe(true);
+    await expect
+      .poll(async () => {
+        const response = await fastify.inject({
+          method: "GET",
+          url: "/api/automation/webhooks/status",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return response.json().webhook.delivered;
+      })
+      .toBe(2);
     const statusResponse = await fastify.inject({
       method: "GET",
       url: "/api/automation/webhooks/status",

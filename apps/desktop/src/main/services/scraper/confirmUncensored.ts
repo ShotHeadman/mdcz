@@ -1,10 +1,11 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
-import { fileOrganizer } from "@main/services/scraper/fileOrganizerAdapter";
+import { fileOrganizer } from "@main/services/scraper/FileScraper";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { pathExists } from "@main/utils/file";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
+import { commitAbsolutePublication } from "@mdcz/runtime/publication";
 import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "@mdcz/runtime/scrape";
 import type { UncensoredConfirmItem, UncensoredConfirmResultItem } from "@mdcz/shared/types";
 
@@ -17,6 +18,24 @@ const defaultDependencies = (): UncensoredConfirmDependencies => ({
   logger,
   nfoGenerator,
   pathExists,
+  publish: async ({
+    operationId,
+    sourceVideoPath,
+    targetVideoPath,
+    artifacts,
+    obsoletePaths,
+    replaceExistingArtifacts,
+  }) => {
+    await commitAbsolutePublication({
+      operationId,
+      operationType: "maintenance",
+      sourceVideoPath,
+      targetVideoPath,
+      artifacts,
+      obsoletePaths,
+      replaceExistingArtifacts,
+    });
+  },
 });
 
 export const confirmUncensoredItems = async (
