@@ -57,9 +57,9 @@ export class MaintenanceService {
           return await commitPublishedMedia(plan, {
             resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
             acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
+            journal: state.repositories.publicationJournal,
             repairIssues: state.repositories.libraryRepairIssues,
-            commit: async () =>
-              state.database.sqlite.transaction(() => state.repositories.library.writeRefresh(refresh))(),
+            commit: () => state.repositories.library.writeRefresh(refresh),
           });
         },
       },

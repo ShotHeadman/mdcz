@@ -133,7 +133,13 @@ export class DesktopLibraryService {
           operationType: "maintenance",
           obsoletePaths: [...filePaths],
         },
-        { commit: async () => await state.repositories.library.deleteEntry(normalizedId) },
+        {
+          journal: state.repositories.publicationJournal,
+          repairIssues: state.repositories.libraryRepairIssues,
+          commit: () => {
+            state.repositories.library.deleteEntry(normalizedId);
+          },
+        },
       );
       return { success: true };
     }

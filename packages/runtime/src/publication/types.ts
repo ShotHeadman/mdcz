@@ -32,7 +32,7 @@ export interface PublicationFileSystem {
   rm(path: string, options: { force: true }): Promise<void>;
   stat(path: string): Promise<Stats>;
   statfs(path: string): Promise<{ bavail: number; bsize: number }>;
-  writeFile(path: string, data: Buffer | string): Promise<void>;
+  writeFile(path: string, data: Buffer | string, options?: { flush?: boolean }): Promise<void>;
 }
 
 export interface PublicationRepairPort {
@@ -46,9 +46,41 @@ export interface PublicationRepairPort {
   resolve(operationId: string, rootId: string, relativePath: string): Promise<void> | void;
 }
 
+export interface PublicationJournalManifestEntry {
+  rootId: string;
+  relativePath: string;
+  temporaryPath: string;
+  backupPath: string | null;
+  targetExisted: boolean;
+}
+
+export interface PublicationJournalManifest {
+  entries: PublicationJournalManifestEntry[];
+  obsolete: RootFileRef[];
+}
+
+export type PublicationJournalState = "pending" | "committed";
+
+export interface PublicationJournalRecord {
+  operationId: string;
+  operationType: string;
+  state: PublicationJournalState;
+  manifest: unknown;
+  createdAt: Date;
+}
+
+export interface PublicationJournalPort {
+  begin(entry: { operationId: string; operationType: string; manifest: unknown; createdAt: Date }): void;
+  commit<T>(operationId: string, write: () => T): T;
+  finish(operationId: string): void;
+  conflicts(refs: readonly RootFileRef[]): { operationId: string } | null;
+  listUnfinished(): PublicationJournalRecord[];
+}
+
 export interface PublishMediaOptions<TResult> {
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
-  commit(): Promise<TResult>;
+  journal: PublicationJournalPort;
+  commit(): TResult;
   download?(url: string): Promise<Uint8Array>;
   repairIssues?: PublicationRepairPort;
   acquireAll?(refs: readonly RootFileRef[]): () => void;

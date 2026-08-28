@@ -11,6 +11,7 @@ import {
   ScrapeRunRepository,
   TaskRepository,
 } from "@mdcz/persistence";
+import { recoverPublications } from "@mdcz/runtime/publication";
 import { app } from "electron";
 import { getDesktopUserDataPath } from "../../appIdentity";
 
@@ -70,13 +71,21 @@ export class DesktopPersistenceService {
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
+      const libraryRepairIssues = new LibraryRepairIssueRepository(database);
+      const mediaRoots = new MediaRootRepository(database);
+      const publicationJournal = new PublicationJournalRepository(database);
+      await recoverPublications({
+        journal: publicationJournal,
+        repairIssues: libraryRepairIssues,
+        resolveRoot: async (rootId) => await mediaRoots.get(rootId, { includeDeleted: true }),
+      });
       this.state = {
         database,
         repositories: {
           library: new LibraryRepository(database),
-          libraryRepairIssues: new LibraryRepairIssueRepository(database),
-          mediaRoots: new MediaRootRepository(database),
-          publicationJournal: new PublicationJournalRepository(database),
+          libraryRepairIssues,
+          mediaRoots,
+          publicationJournal,
           scrapeRuns,
           tasks: new TaskRepository(database),
         },

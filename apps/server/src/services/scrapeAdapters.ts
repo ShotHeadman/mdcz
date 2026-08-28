@@ -26,6 +26,7 @@ import type {
 } from "@mdcz/shared/serverDtos";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
+import type { ServerPersistenceService } from "./persistenceService";
 
 export interface ServerScrapeArtifactRecord {
   rootId: string;
@@ -60,6 +61,7 @@ export class ServerNfoAdapter {
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly nfoGenerator: NfoGenerator,
+    private readonly persistence: ServerPersistenceService,
   ) {}
 
   async read(input: NfoReadInput): Promise<NfoReadResponse> {
@@ -102,6 +104,7 @@ export class ServerNfoAdapter {
       ? this.nfoGenerator.mergeEditableXml(existingXml, input.data, options)
       : this.nfoGenerator.buildXml(input.data, options);
     const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
+    const state = await this.persistence.getState();
     await commitPublishedMedia(
       {
         operationId: `nfo-write:${input.rootId}:${plannedRelativePath}`,
@@ -114,7 +117,12 @@ export class ServerNfoAdapter {
         obsolete: paths.stalePaths.map((relativePath) => ({ rootId: root.id, relativePath })),
         replaceExistingTargets: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
       },
-      { resolveRoot: async () => root, commit: async () => undefined },
+      {
+        resolveRoot: async () => root,
+        journal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
+        commit: () => undefined,
+      },
     );
     return {
       rootId: input.rootId,

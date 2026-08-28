@@ -114,7 +114,7 @@ export class ScrapeService {
     runtime?: MountedRootScrapeRuntime,
     mappingStore?: TranslationMappingStore,
   ) {
-    this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, this.nfoGenerator);
+    this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, this.nfoGenerator, this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,
       this.config,
@@ -346,15 +346,18 @@ export class ScrapeService {
           obsoletePaths,
           replaceExistingArtifacts,
         }) => {
-          await commitAbsolutePublication({
-            operationId,
-            operationType: "maintenance",
-            sourceVideoPath,
-            targetVideoPath,
-            artifacts,
-            obsoletePaths,
-            replaceExistingArtifacts,
-          });
+          await commitAbsolutePublication(
+            {
+              operationId,
+              operationType: "maintenance",
+              sourceVideoPath,
+              targetVideoPath,
+              artifacts,
+              obsoletePaths,
+              replaceExistingArtifacts,
+            },
+            { journal: state.repositories.publicationJournal, repairIssues: state.repositories.libraryRepairIssues },
+          );
         },
       },
     );
@@ -464,8 +467,9 @@ export class ScrapeService {
         obsoletePaths: [...obsolete],
       },
       {
-        commit: async () => {
-          if (entry) await state.repositories.library.deleteEntry(entry.id);
+        journal: state.repositories.publicationJournal,
+        commit: () => {
+          if (entry) state.repositories.library.deleteEntry(entry.id);
         },
         repairIssues: state.repositories.libraryRepairIssues,
       },
@@ -618,38 +622,37 @@ export class ScrapeService {
         committed = await commitPublishedMedia(runtimeResult.plan, {
           resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
           acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
+          journal: state.repositories.publicationJournal,
           repairIssues: state.repositories.libraryRepairIssues,
-          commit: async () =>
-            state.database.sqlite.transaction(() =>
-              repository.commitSuccessOutcome({
-                outcome: "success",
-                itemId: item.id,
-                crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
-                nfoRootId: nfoRelativePath && metadataRoot.id !== outputRef.rootId ? metadataRoot.id : null,
-                nfoRelativePath,
-                outputRootId: outputRef.rootId,
-                outputRelativePath: outputRef.relativePath,
-                uncensoredAmbiguous: item.manualScrape?.uncensoredChoice
-                  ? false
-                  : (runtimeResult.result.uncensoredAmbiguous ?? false),
+          commit: () =>
+            repository.commitSuccessOutcome({
+              outcome: "success",
+              itemId: item.id,
+              crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
+              nfoRootId: nfoRelativePath && metadataRoot.id !== outputRef.rootId ? metadataRoot.id : null,
+              nfoRelativePath,
+              outputRootId: outputRef.rootId,
+              outputRelativePath: outputRef.relativePath,
+              uncensoredAmbiguous: item.manualScrape?.uncensoredChoice
+                ? false
+                : (runtimeResult.result.uncensoredAmbiguous ?? false),
+              size: runtimeResult.size,
+              modifiedAt: runtimeResult.modifiedAt,
+              libraryEntry: {
+                rootId: outputRef.rootId,
+                rootRelativePath: outputRef.relativePath,
+                mediaIdentity: runtimeResult.crawlerData.number,
                 size: runtimeResult.size,
                 modifiedAt: runtimeResult.modifiedAt,
-                libraryEntry: {
-                  rootId: outputRef.rootId,
-                  rootRelativePath: outputRef.relativePath,
-                  mediaIdentity: runtimeResult.crawlerData.number,
-                  size: runtimeResult.size,
-                  modifiedAt: runtimeResult.modifiedAt,
-                  title: runtimeResult.crawlerData.title,
-                  number: runtimeResult.crawlerData.number,
-                  actors: runtimeResult.crawlerData.actors,
-                  crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
-                  thumbnailPath,
-                  assets: libraryAssets,
-                  lastKnownPath: outputRef.relativePath,
-                },
-              }),
-            )(),
+                title: runtimeResult.crawlerData.title,
+                number: runtimeResult.crawlerData.number,
+                actors: runtimeResult.crawlerData.actors,
+                crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
+                thumbnailPath,
+                assets: libraryAssets,
+                lastKnownPath: outputRef.relativePath,
+              },
+            }),
         });
       } catch (error) {
         if (error instanceof PublicationError && error.committed) {

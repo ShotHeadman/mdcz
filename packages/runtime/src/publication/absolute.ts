@@ -1,8 +1,9 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { toRootFileRef } from "./createPublicationPlan";
+import { createMemoryPublicationJournal } from "./memoryJournal";
 import { commitPublishedMedia } from "./publishMedia";
-import type { PublicationPlan, PublicationRepairPort } from "./types";
+import type { PublicationJournalPort, PublicationPlan, PublicationRepairPort } from "./types";
 
 type AbsolutePublicationRoot = { id: string; hostPath: string };
 
@@ -34,7 +35,8 @@ export interface AbsolutePublicationInput {
 export const commitAbsolutePublication = async <TResult>(
   input: AbsolutePublicationInput,
   options: {
-    commit?: () => Promise<TResult>;
+    commit?: () => TResult;
+    journal?: PublicationJournalPort;
     repairIssues?: PublicationRepairPort;
   } = {},
 ): Promise<TResult | undefined> => {
@@ -80,8 +82,9 @@ export const commitAbsolutePublication = async <TResult>(
       if (!root) throw new Error(`Absolute publication root not found: ${rootId}`);
       return root;
     },
+    journal: options.journal ?? createMemoryPublicationJournal(),
     repairIssues: options.repairIssues,
-    commit: options.commit ?? (async () => undefined),
+    commit: options.commit ?? (() => undefined as TResult),
   });
 };
 
