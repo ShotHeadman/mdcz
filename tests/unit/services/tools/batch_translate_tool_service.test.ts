@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import type { DesktopPersistenceService } from "@main/services/persistence";
 import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import type { LlmApiClient } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
@@ -82,11 +84,25 @@ const createService = (
       return nfoPath;
     });
 
-  const service = new BatchTranslateToolService({} as NetworkClient, {
-    localScanService,
-    llmApiClient,
-    writeNfo: writeNfo as never,
-  });
+  const service = new BatchTranslateToolService(
+    {} as NetworkClient,
+    {
+      getState: async () => ({
+        repositories: {
+          publicationJournal: createMemoryPublicationJournal(),
+          mediaRoots: {
+            list: async () => [{ id: "library", hostPath: "/library" }],
+            upsert: async () => undefined,
+          },
+        },
+      }),
+    } as unknown as DesktopPersistenceService,
+    {
+      localScanService,
+      llmApiClient,
+      writeNfo: writeNfo as never,
+    },
+  );
 
   return {
     service,

@@ -1,3 +1,5 @@
+import type { DesktopPersistenceService } from "@main/services/persistence";
+import { createDesktopInputRoot, findEnclosingMediaRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { validateImage } from "@mdcz/runtime/scrape/utils/image";
 import {
@@ -16,10 +18,17 @@ export class AmazonPosterToolService {
   constructor(
     private readonly networkClient: NetworkClient,
     private readonly amazonJpImageService: AmazonJpImageService,
+    private readonly persistence: DesktopPersistenceService,
   ) {}
 
   async scan(rootDirectory: string): Promise<AmazonPosterScanItem[]> {
-    return await scanAmazonPosters(rootDirectory, { validateImage });
+    const items = await scanAmazonPosters(rootDirectory, { validateImage });
+    const state = await this.persistence.getState();
+    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+    if (!findEnclosingMediaRoot(rootDirectory, roots)) {
+      await state.repositories.mediaRoots.upsert(createDesktopInputRoot(rootDirectory));
+    }
+    return items;
   }
 
   async lookup(nfoPath: string, title: string): Promise<AmazonPosterLookupResult> {
@@ -29,6 +38,19 @@ export class AmazonPosterToolService {
   }
 
   async apply(items: Array<{ nfoPath: string; amazonPosterUrl: string }>): Promise<AmazonPosterApplyResultItem[]> {
-    return await applyAmazonPosters(this.networkClient, items, { validateImage });
+    const state = await this.persistence.getState();
+    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+    if (items.length > 0) {
+      const hostPath = resolveDesktopInputRootPath(items.map((item) => item.nfoPath));
+      if (!findEnclosingMediaRoot(hostPath, roots)) {
+        await state.repositories.mediaRoots.upsert(createDesktopInputRoot(hostPath));
+      }
+    }
+    return await applyAmazonPosters(this.networkClient, items, {
+      validateImage,
+      journal: state.repositories.publicationJournal,
+      repairIssues: state.repositories.libraryRepairIssues,
+      roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+    });
   }
 }

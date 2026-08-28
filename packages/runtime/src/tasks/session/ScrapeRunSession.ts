@@ -361,7 +361,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     if (!hasSuccess && this.items.some((item) => item.status === "skipped")) {
       this.error ??= "刮削未产生成功结果";
     }
-    this.setStatus(hasSuccess ? "completed" : "failed");
+    this.setStatus(this.items.every((item) => item.status === "success") ? "completed" : "failed");
   }
 
   private async handleFatalError(generation: number, error: unknown): Promise<void> {

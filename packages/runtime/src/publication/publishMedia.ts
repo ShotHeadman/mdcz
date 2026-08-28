@@ -1,7 +1,16 @@
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, open, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { preflightPublication } from "./preflight";
+import { mediaPathOwnership } from "../library/mediaPathOwnership";
+import {
+  assertPublicationFileUnchanged,
+  type ObservedPublicationFile,
+  observePublicationFile,
+  preflightPublication,
+  removeCommittedObsoleteFiles,
+  toObsoleteObservation,
+} from "./preflight";
 import {
   PublicationError,
   type PublicationFileSystem,
@@ -43,17 +52,13 @@ const toErrorMessage = (error: unknown): string => (error instanceof Error ? err
 
 const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${ref.relativePath}`;
 
-const exists = async (fileSystem: PublicationFileSystem, filePath: string): Promise<boolean> => {
-  try {
-    await fileSystem.stat(filePath);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-};
+const observedAt = (
+  observed: readonly ObservedPublicationFile[],
+  filePath: string,
+): ObservedPublicationFile | undefined => observed.find((file) => file.path === filePath);
 
-const operationFileToken = (operationId: string): string => operationId.replaceAll(/[^A-Za-z0-9._-]/g, "_");
+const operationFileToken = (operationId: string): string =>
+  createHash("sha256").update(operationId).digest("hex").slice(0, 16);
 
 const createTargetTemporaryPath = (targetPath: string, operationId: string): string => {
   const target = path.parse(targetPath);
@@ -104,44 +109,56 @@ export const commitPublishedMedia = async <TResult>(
     ...plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : [])),
     ...plan.obsolete,
   ]);
-  const resolved = await preflightPublication(plan, options, fileSystem);
-  const conflict = options.journal.conflicts(lockRefs);
-  if (conflict) throw new Error(`Publication conflicts with unfinished operation: ${conflict.operationId}`);
-  const release = options.acquireAll?.(lockRefs) ?? (() => undefined);
+  const previewed = await preflightPublication(plan, options, fileSystem);
+  const release = options.acquireAll?.(lockRefs) ?? mediaPathOwnership.acquireAll(lockRefs);
   let journalOpen = false;
+  let committed = false;
   const planned: PlannedPublication[] = [];
   const published: PlannedPublication[] = [];
 
   const rollback = async (error: unknown): Promise<never> => {
-    const restoreErrors: unknown[] = [];
+    const secondary: unknown[] = [];
     for (const item of [...published].reverse()) {
       try {
         if (item.targetExisted && item.backupPath) await fileSystem.rename(item.backupPath, item.targetPath);
         else await fileSystem.rm(item.targetPath, { force: true });
       } catch (restoreError) {
-        restoreErrors.push(restoreError);
-        await recordRepair(plan, options.repairIssues, item.ref, restoreError);
+        secondary.push(restoreError);
+        try {
+          await recordRepair(plan, options.repairIssues, item.ref, restoreError);
+        } catch (repairError) {
+          secondary.push(repairError);
+        }
       }
     }
-    if (restoreErrors.length > 0) {
+    if (secondary.length > 0) {
       throw new AggregateError(
-        [error, ...restoreErrors],
+        [error, ...secondary],
         `Publication rollback failed for ${plan.operationId}: ${toErrorMessage(error)}`,
       );
     }
-    for (const item of planned) await fileSystem.rm(item.temporaryPath, { force: true });
-    options.journal.finish(plan.operationId);
+    try {
+      for (const item of planned) await fileSystem.rm(item.temporaryPath, { force: true });
+      options.journal.finish(plan.operationId);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Publication rollback failed for ${plan.operationId}: ${toErrorMessage(error)}`,
+      );
+    }
     throw error;
   };
 
   try {
+    const conflict = options.journal.conflicts(lockRefs);
+    if (conflict) throw new Error(`Publication conflicts with unfinished operation: ${conflict.operationId}`);
+    const resolved = await preflightPublication(plan, options, fileSystem, previewed.observed);
     const replacing = new Set((plan.replaceExistingTargets ?? []).map(refKey));
     for (const artifact of plan.artifacts) {
       const targetPath = resolved.resolve(artifact.target);
-      const targetExisted = await exists(fileSystem, targetPath);
-      const alreadySatisfied =
-        targetExisted && artifact.content.kind !== "download" && !replacing.has(refKey(artifact.target));
-      if (alreadySatisfied) continue;
+      const targetFact = observedAt(resolved.observed, targetPath);
+      const targetExisted = targetFact?.exists === true;
+      if (targetExisted && artifact.content.kind !== "download" && !replacing.has(refKey(artifact.target))) continue;
       await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
       const temporaryPath = createTargetTemporaryPath(targetPath, plan.operationId);
       planned.push({
@@ -175,11 +192,9 @@ export const commitPublishedMedia = async <TResult>(
       const video = plan.video;
       const sourcePath = resolved.resolve(video.source);
       const targetPath = resolved.resolve(video.target);
-      const targetStats = await fileSystem.stat(targetPath).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return null;
-        throw error;
-      });
-      const targetSatisfied = Boolean(targetStats?.isFile() && targetStats.size === video.size);
+      const targetFact = observedAt(resolved.observed, targetPath);
+      const targetExisted = targetFact?.exists === true;
+      const targetSatisfied = targetFact?.exists === true && targetFact.isFile && targetFact.size === video.size;
       if (sourcePath !== targetPath && (!targetSatisfied || replacing.has(refKey(video.target)))) {
         await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
         const temporaryPath = createTargetTemporaryPath(targetPath, plan.operationId);
@@ -187,9 +202,21 @@ export const commitPublishedMedia = async <TResult>(
           ref: video.target,
           targetPath,
           temporaryPath,
-          backupPath: targetStats ? createTargetBackupPath(targetPath, plan.operationId) : null,
-          targetExisted: Boolean(targetStats),
+          backupPath: targetExisted ? createTargetBackupPath(targetPath, plan.operationId) : null,
+          targetExisted,
           stage: async () => {
+            const sourceNow = await fileSystem.stat(sourcePath);
+            const observed = observedAt(resolved.observed, sourcePath);
+            if (
+              !sourceNow.isFile() ||
+              sourceNow.size !== video.size ||
+              (observed?.exists === true &&
+                (sourceNow.size !== observed.size || sourceNow.mtimeMs !== observed.mtimeMs))
+            ) {
+              throw new Error(
+                `Publication source changed before mutation: ${video.source.rootId}:${video.source.relativePath}`,
+              );
+            }
             await fileSystem.copyFile(sourcePath, temporaryPath);
             const copied = await fileSystem.stat(temporaryPath);
             if (!copied.isFile() || copied.size !== video.size) {
@@ -205,7 +232,12 @@ export const commitPublishedMedia = async <TResult>(
       ...(plan.video && resolved.resolve(plan.video.source) !== resolved.resolve(plan.video.target)
         ? [plan.video.source]
         : []),
-    ]);
+    ]).map((ref) => {
+      const obsoletePath = resolved.resolve(ref);
+      const fact = observedAt(resolved.observed, obsoletePath);
+      if (!fact) throw new Error(`Publication obsolete path was not observed: ${obsoletePath}`);
+      return { ...ref, observed: toObsoleteObservation(fact) };
+    });
     const manifest: PublicationJournalManifest = {
       entries: planned.map((item) => ({
         rootId: item.ref.rootId,
@@ -225,17 +257,36 @@ export const commitPublishedMedia = async <TResult>(
     journalOpen = true;
 
     for (const item of planned) await item.stage();
+    const staged = await preflightPublication(plan, options, fileSystem, resolved.observed);
 
     for (const item of planned) {
-      if (item.targetExisted && item.backupPath) await fileSystem.rename(item.targetPath, item.backupPath);
+      const expectedTarget = observedAt(staged.observed, item.targetPath);
+      if (!expectedTarget) throw new Error(`Publication target was not observed: ${item.targetPath}`);
+      assertPublicationFileUnchanged(expectedTarget, await observePublicationFile(fileSystem, item.targetPath));
+      if (item.targetExisted && item.backupPath) {
+        await fileSystem.rename(item.targetPath, item.backupPath);
+        published.push(item);
+      }
       await fileSystem.rename(item.temporaryPath, item.targetPath);
-      published.push(item);
+      if (!item.targetExisted) published.push(item);
     }
 
     const result = options.journal.commit(plan.operationId, () => options.commit());
+    committed = true;
+    journalOpen = false;
 
     try {
-      for (const ref of obsolete) await fileSystem.rm(resolved.resolve(ref), { force: true });
+      const retainedObsolete = await removeCommittedObsoleteFiles(fileSystem, obsolete, (rootId, relativePath) =>
+        resolved.resolve({ rootId, relativePath }),
+      );
+      for (const ref of retainedObsolete) {
+        await recordRepair(
+          plan,
+          options.repairIssues,
+          ref,
+          new Error(`Publication obsolete path changed before cleanup: ${ref.rootId}:${ref.relativePath}`),
+        );
+      }
       for (const item of planned) {
         if (item.backupPath) await fileSystem.rm(item.backupPath, { force: true });
         await fileSystem.rm(item.temporaryPath, { force: true });
@@ -247,10 +298,7 @@ export const commitPublishedMedia = async <TResult>(
         await options.repairIssues?.resolve(plan.operationId, target.rootId, target.relativePath);
       }
       options.journal.finish(plan.operationId);
-      journalOpen = false;
     } catch (error) {
-      const target = plan.video?.target ?? plan.artifacts[0]?.target ?? plan.obsolete[0];
-      await recordRepair(plan, options.repairIssues, target, error);
       throw new PublicationError(
         `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
         plan.operationId,
@@ -261,7 +309,29 @@ export const commitPublishedMedia = async <TResult>(
 
     return result;
   } catch (error) {
-    if (error instanceof PublicationError && error.committed) throw error;
+    if (committed) {
+      const publicationError =
+        error instanceof PublicationError && error.committed
+          ? error
+          : new PublicationError(
+              `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
+              plan.operationId,
+              true,
+              { cause: error },
+            );
+      try {
+        const target = plan.video?.target ?? plan.artifacts[0]?.target ?? plan.obsolete[0];
+        await recordRepair(plan, options.repairIssues, target, error);
+      } catch (repairError) {
+        throw new PublicationError(
+          `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
+          plan.operationId,
+          true,
+          { cause: new AggregateError([error, repairError]) },
+        );
+      }
+      throw publicationError;
+    }
     if (error instanceof AggregateError) throw error;
     if (journalOpen) await rollback(error);
     throw error;

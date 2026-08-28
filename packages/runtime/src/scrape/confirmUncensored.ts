@@ -11,13 +11,11 @@ import type {
   UncensoredChoice,
   UncensoredConfirmResultItem,
 } from "@mdcz/shared/types";
-import { LocalScanService } from "../maintenance/LocalScanService";
-import { MaintenanceArtifactResolver } from "../maintenance/MaintenanceArtifactResolver";
-import { commitAbsolutePublication } from "../publication";
-import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
-import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
-import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
-import { pathExists } from "./utils/filesystem";
+import type { LocalScanService } from "../maintenance/LocalScanService";
+import type { MaintenanceArtifactResolver } from "../maintenance/MaintenanceArtifactResolver";
+import type { RuntimeLogger } from "../shared";
+import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
+import { type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { parseFileInfo } from "./utils/number";
 
 export interface RuntimeUncensoredConfirmItem {
@@ -55,7 +53,7 @@ export interface UncensoredConfirmDependencies {
   localScanService: Pick<LocalScanService, "scanVideo">;
   logger: Pick<RuntimeLogger, "info" | "warn">;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
-  pathExists: typeof pathExists;
+  pathExists: (filePath: string) => Promise<boolean>;
   publish?(input: {
     operationId: string;
     sourceVideoPath: string;
@@ -81,37 +79,10 @@ const buildSharedFileInfo = (entries: LocalScanEntry[], outputVideoPath: string)
   };
 };
 
-const defaultDependencies = (): UncensoredConfirmDependencies => ({
-  artifactResolver: new MaintenanceArtifactResolver(),
-  fileOrganizer: new FileOrganizer(),
-  localScanService: new LocalScanService(),
-  logger: noopRuntimeLogger,
-  nfoGenerator: new NfoGenerator(),
-  pathExists,
-  publish: async ({
-    operationId,
-    sourceVideoPath,
-    targetVideoPath,
-    artifacts,
-    obsoletePaths,
-    replaceExistingArtifacts,
-  }) => {
-    await commitAbsolutePublication({
-      operationId,
-      operationType: "maintenance",
-      sourceVideoPath,
-      targetVideoPath,
-      artifacts,
-      obsoletePaths,
-      replaceExistingArtifacts,
-    });
-  },
-});
-
 export const confirmUncensoredOutputs = async (
   items: RuntimeUncensoredConfirmItem[],
   config: Configuration,
-  dependencies: UncensoredConfirmDependencies = defaultDependencies(),
+  dependencies: UncensoredConfirmDependencies,
 ): Promise<RuntimeUncensoredConfirmResult> => {
   const updatedItems: Array<UncensoredConfirmResultItem & { assets: DiscoveredAssets }> = [];
   const failures: RuntimeUncensoredConfirmFailure[] = [];

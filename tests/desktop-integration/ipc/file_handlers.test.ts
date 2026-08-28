@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createFileHandlers } from "@main/ipc/handlers/file";
 import { configManager } from "@main/services/config/ConfigManager";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
@@ -56,12 +57,26 @@ vi.mock("electron", () => {
 
 const actionArgs = <TInput>(input: TInput) => ({ context: { sender: {} as never }, input });
 
-const createContext = (): ServiceContainer =>
-  ({
+const createContext = (mediaRoots?: {
+  list?: () => Promise<Array<{ id: string; hostPath: string }>>;
+  upsert?: (root: unknown) => Promise<unknown>;
+}): ServiceContainer => {
+  const upsert = mediaRoots?.upsert ?? (async () => undefined);
+  const list = mediaRoots?.list ?? (async () => [{ id: "tmp", hostPath: tmpdir() }]);
+  return {
     windowService: {
       getMainWindow: () => null,
     },
-  }) as unknown as ServiceContainer;
+    persistenceService: {
+      getState: async () => ({
+        repositories: {
+          publicationJournal: createMemoryPublicationJournal(),
+          mediaRoots: { list, upsert },
+        },
+      }),
+    },
+  } as unknown as ServiceContainer;
+};
 
 const tempDirs: string[] = [];
 
@@ -315,5 +330,52 @@ describe("createFileHandlers", () => {
     );
     expect(saved.revision).toEqual(expect.any(String));
     expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);
+  });
+
+  it("does not persist media roots for read-only file operations", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "movie.nfo");
+    await writeFile(nfoPath, '<?xml version="1.0"?><movie><title>Example</title><num>ABC-123</num></movie>');
+    const upsert = vi.fn(async () => undefined);
+    const handlers = createFileHandlers(createContext({ upsert }));
+
+    await handlers[IpcChannel.File_ListEntries].action(actionArgs({ dirPath: root }));
+    await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
+    await handlers[IpcChannel.File_Exists].action(actionArgs({ path: nfoPath }));
+    await handlers[IpcChannel.File_NfoRead].action(actionArgs({ nfoPath }));
+
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("admits one enclosing root at the NFO write boundary", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123.nfo");
+    const roots: Array<{ id: string; hostPath: string }> = [];
+    const upsert = vi.fn(async (rootRecord: unknown) => {
+      const record = rootRecord as { id: string; hostPath: string };
+      roots.push(record);
+    });
+    const handlers = createFileHandlers(
+      createContext({
+        list: async () => roots,
+        upsert,
+      }),
+    );
+
+    await handlers[IpcChannel.File_NfoWrite].action(
+      actionArgs({
+        nfoPath,
+        data: {
+          title: "Manual NFO",
+          number: "ABC-123",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.JAVDB,
+        },
+      }),
+    );
+
+    expect(upsert).toHaveBeenCalledOnce();
   });
 });

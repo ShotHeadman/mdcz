@@ -118,4 +118,43 @@ describe("ScrapeCoordinator retry", () => {
     release.resolve();
     await coordinator.waitForIdle();
   });
+
+  it("finalizes mixed item outcomes as failed", async () => {
+    const run: Run = {
+      id: "run-mixed",
+      createdAt: new Date("2026-08-28T00:00:00.000Z"),
+      items: [
+        { id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" },
+        { id: "item-2", rootId: "root-1", relativePath: "ABC-002.mp4" },
+      ],
+    };
+    const store: ScrapeRunStore<string, Run> = {
+      create: vi.fn(async () => run),
+      get: vi.fn(async () => run),
+      list: vi.fn(async () => [run]),
+      retry: vi.fn(async () => run),
+      finalize: vi.fn(async () => run),
+      summary: vi.fn(() => null),
+      latestOutcomes: vi.fn(() => []),
+    };
+    const host: ScrapeHostPort<Run, undefined> = {
+      runId: (entry) => entry.id,
+      createdAt: (entry) => entry.createdAt,
+      createExecution: async (entry) => ({
+        items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
+        concurrency: 1,
+        admitItem: async (item) => `${item.id}:attempt`,
+        executeItem: async (item) => resultFor(item, item.id === "item-1" ? "success" : "failed"),
+        commitItem: async (_item, result) => result,
+      }),
+      onInvalidate: () => undefined,
+    };
+    const coordinator = new ScrapeCoordinator(store, host);
+
+    await coordinator.start("start");
+    await coordinator.waitForIdle();
+
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-mixed", disposition: "failed" }));
+    expect(coordinator.latestSnapshot()?.status).toBe("failed");
+  });
 });

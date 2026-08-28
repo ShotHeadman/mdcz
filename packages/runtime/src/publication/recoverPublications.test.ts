@@ -40,6 +40,7 @@ describe("recoverPublications", () => {
     await writeFile(backup, "original-nfo");
     await writeFile(temporary, "partial");
     const journal = createMemoryPublicationJournal();
+    const repairIssues = { record: vi.fn(() => undefined), resolve: vi.fn(() => undefined) };
     const manifest: PublicationJournalManifest = {
       entries: [
         {
@@ -56,6 +57,7 @@ describe("recoverPublications", () => {
 
     await recoverPublications({
       journal,
+      repairIssues,
       resolveRoot: async () => ({ id: "root-1", hostPath: directory }),
     });
 
@@ -63,6 +65,7 @@ describe("recoverPublications", () => {
     await expect(stat(backup)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(temporary)).rejects.toMatchObject({ code: "ENOENT" });
     expect(journal.listUnfinished()).toEqual([]);
+    expect(repairIssues.resolve).toHaveBeenCalledWith("op-1", "root-1", "movie.nfo");
   });
 
   it("rolls forward a committed row by removing backups and obsolete sources", async () => {
@@ -74,6 +77,7 @@ describe("recoverPublications", () => {
     await writeFile(target, "new-video");
     await writeFile(backup, "old-video");
     await writeFile(obsolete, "old");
+    const obsoleteInfo = await stat(obsolete);
     const journal = createMemoryPublicationJournal();
     journal.begin({
       operationId: "op-1",
@@ -88,14 +92,27 @@ describe("recoverPublications", () => {
             targetExisted: true,
           },
         ],
-        obsolete: [{ rootId: "root-1", relativePath: "old.jpg" }],
+        obsolete: [
+          {
+            rootId: "root-1",
+            relativePath: "old.jpg",
+            observed: {
+              exists: true,
+              size: obsoleteInfo.size,
+              mtimeMs: obsoleteInfo.mtimeMs,
+              isFile: obsoleteInfo.isFile(),
+            },
+          },
+        ],
       } satisfies PublicationJournalManifest,
       createdAt: new Date(),
     });
     journal.commit("op-1", () => undefined);
+    const repairIssues = { record: vi.fn(() => undefined), resolve: vi.fn(() => undefined) };
 
     await recoverPublications({
       journal,
+      repairIssues,
       resolveRoot: async () => ({ id: "root-1", hostPath: directory }),
     });
 
@@ -104,6 +121,8 @@ describe("recoverPublications", () => {
     await expect(stat(obsolete)).rejects.toMatchObject({ code: "ENOENT" });
     expect(journal.listUnfinished()).toEqual([]);
     await expect(residue(directory)).resolves.toEqual([]);
+    expect(repairIssues.resolve).toHaveBeenCalledWith("op-1", "root-1", "movie.mp4");
+    expect(repairIssues.resolve).toHaveBeenCalledWith("op-1", "root-1", "old.jpg");
   });
 
   it("retains the row when the root is unresolvable and rejects a later conflicting publication", async () => {
@@ -196,5 +215,68 @@ describe("recoverPublications", () => {
 
     expect(repairIssues.record).toHaveBeenCalledOnce();
     expect(journal.listUnfinished()).toHaveLength(1);
+  });
+
+  it("retains a changed obsolete file on committed recovery and still finishes the row", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
+    directories.push(directory);
+    const target = path.join(directory, "movie.mp4");
+    const backup = sibling(target, "op-1", "bak");
+    const obsolete = path.join(directory, "old.jpg");
+    await writeFile(target, "new-video");
+    await writeFile(backup, "old-video");
+    await writeFile(obsolete, "old");
+    const obsoleteInfo = await stat(obsolete);
+    await writeFile(obsolete, "foreign obsolete");
+    const journal = createMemoryPublicationJournal();
+    journal.begin({
+      operationId: "op-1",
+      operationType: "scrape",
+      manifest: {
+        entries: [
+          {
+            rootId: "root-1",
+            relativePath: "movie.mp4",
+            temporaryPath: sibling(target, "op-1", "part"),
+            backupPath: backup,
+            targetExisted: true,
+          },
+        ],
+        obsolete: [
+          {
+            rootId: "root-1",
+            relativePath: "old.jpg",
+            observed: {
+              exists: true,
+              size: obsoleteInfo.size,
+              mtimeMs: obsoleteInfo.mtimeMs,
+              isFile: obsoleteInfo.isFile(),
+            },
+          },
+        ],
+      } satisfies PublicationJournalManifest,
+      createdAt: new Date(),
+    });
+    journal.commit("op-1", () => undefined);
+    const repairIssues = { record: vi.fn(() => undefined), resolve: vi.fn(() => undefined) };
+
+    await recoverPublications({
+      journal,
+      repairIssues,
+      resolveRoot: async () => ({ id: "root-1", hostPath: directory }),
+    });
+
+    await expect(readFile(obsolete, "utf8")).resolves.toBe("foreign obsolete");
+    await expect(stat(backup)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(journal.listUnfinished()).toEqual([]);
+    expect(repairIssues.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: "op-1",
+        rootId: "root-1",
+        relativePath: "old.jpg",
+      }),
+    );
+    expect(repairIssues.resolve).toHaveBeenCalledWith("op-1", "root-1", "movie.mp4");
+    expect(repairIssues.resolve).not.toHaveBeenCalledWith("op-1", "root-1", "old.jpg");
   });
 });

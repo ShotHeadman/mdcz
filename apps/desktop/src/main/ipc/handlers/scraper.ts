@@ -2,7 +2,7 @@ import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
-import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
+import { confirmUncensoredItems, createUncensoredConfirmDependencies } from "@main/services/scraper/confirmUncensored";
 import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
@@ -101,7 +101,16 @@ export const createScraperHandlers = (
             throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
           }
 
-          return await confirmUncensoredItems(items, config);
+          const state = await context.persistenceService.getState();
+          return await confirmUncensoredItems(
+            items,
+            config,
+            createUncensoredConfirmDependencies({
+              journal: state.repositories.publicationJournal,
+              repairIssues: state.repositories.libraryRepairIssues,
+              roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+            }),
+          );
         }),
       ),
   };

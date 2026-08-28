@@ -7,7 +7,7 @@ import { mediaPathOwnership, toLibraryAssets } from "@mdcz/runtime/library";
 import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { commitAbsolutePublication, commitPublishedMedia, PublicationError } from "@mdcz/runtime/publication";
+import { commitPublishedMedia, commitRegisteredPublication, PublicationError } from "@mdcz/runtime/publication";
 import {
   applyScrapeNetworkPolicy,
   confirmUncensoredOutputs,
@@ -120,6 +120,7 @@ export class ScrapeService {
       this.config,
       this.posterCropService,
       (result) => this.resolveMetadataVideoPath(result),
+      this.persistence,
     );
     this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
     this.workflow = new ScrapeCoordinator(
@@ -346,7 +347,7 @@ export class ScrapeService {
           obsoletePaths,
           replaceExistingArtifacts,
         }) => {
-          await commitAbsolutePublication(
+          await commitRegisteredPublication(
             {
               operationId,
               operationType: "maintenance",
@@ -356,7 +357,11 @@ export class ScrapeService {
               obsoletePaths,
               replaceExistingArtifacts,
             },
-            { journal: state.repositories.publicationJournal, repairIssues: state.repositories.libraryRepairIssues },
+            {
+              journal: state.repositories.publicationJournal,
+              repairIssues: state.repositories.libraryRepairIssues,
+              roots: [...roots.values()],
+            },
           );
         },
       },
@@ -440,7 +445,6 @@ export class ScrapeService {
   }
 
   async deleteFile(input: FileActionInput): Promise<FileActionResponse> {
-    const root = await this.mediaRoots.getActiveRoot(input.rootId);
     const state = await this.persistence.getState();
     const entry = await state.repositories.library
       .getEntry(input.rootId, input.relativePath)
@@ -448,25 +452,23 @@ export class ScrapeService {
         if (error instanceof Error && error.message.startsWith("Library entry not found:")) return null;
         throw error;
       });
-    const obsolete = new Set<string>([resolveRootRelativePath(root, input.relativePath)]);
-    if (entry) {
-      for (const file of entry.files) {
-        const fileRoot = await this.mediaRoots.getActiveRoot(file.rootId);
-        obsolete.add(resolveRootRelativePath(fileRoot, file.rootRelativePath));
-      }
-      for (const asset of entry.assets) {
-        if (!asset.rootId || !asset.relativePath) continue;
-        const assetRoot = await this.mediaRoots.getActiveRoot(asset.rootId);
-        obsolete.add(resolveRootRelativePath(assetRoot, asset.relativePath));
-      }
-    }
-    await commitAbsolutePublication(
+    const obsolete = [
+      { rootId: input.rootId, relativePath: input.relativePath },
+      ...(entry?.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })) ?? []),
+      ...(entry?.assets.flatMap((asset) =>
+        asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
+      ) ?? []),
+    ];
+    await commitPublishedMedia(
       {
         operationId: `delete:${input.rootId}:${input.relativePath}`,
         operationType: "maintenance",
-        obsoletePaths: [...obsolete],
+        artifacts: [],
+        assets: [],
+        obsolete,
       },
       {
+        resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
         journal: state.repositories.publicationJournal,
         commit: () => {
           if (entry) state.repositories.library.deleteEntry(entry.id);

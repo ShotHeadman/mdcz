@@ -224,7 +224,7 @@ describe("ScrapeRunRepository", () => {
 
     expect(repository.summary(finalized)).toEqual({
       runId: run.id,
-      disposition: "completed",
+      disposition: "failed",
       startedAt: new Date("2026-08-24T04:00:00.000Z"),
       completedAt: new Date("2026-08-24T04:10:00.000Z"),
       successCount: 1,
@@ -236,7 +236,7 @@ describe("ScrapeRunRepository", () => {
     });
     await expect(repository.finalize({ runId: run.id, disposition: "completed" })).resolves.toMatchObject({
       id: run.id,
-      disposition: "completed",
+      disposition: "failed",
     });
   });
   it("appends retry attempts to the same run without re-admitting successes", async () => {

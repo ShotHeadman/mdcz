@@ -5,13 +5,15 @@ import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { pathExists } from "@main/utils/file";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
-import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import { commitRegisteredPublication, type RegisteredPublicationContext } from "@mdcz/runtime/publication";
 import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "@mdcz/runtime/scrape";
 import type { UncensoredConfirmItem, UncensoredConfirmResultItem } from "@mdcz/shared/types";
 
 const logger = loggerService.getLogger("ConfirmUncensored");
 
-const defaultDependencies = (): UncensoredConfirmDependencies => ({
+export const createUncensoredConfirmDependencies = (
+  publication: RegisteredPublicationContext,
+): UncensoredConfirmDependencies => ({
   artifactResolver: new MaintenanceArtifactResolver(),
   fileOrganizer,
   localScanService: new LocalScanService(),
@@ -26,22 +28,25 @@ const defaultDependencies = (): UncensoredConfirmDependencies => ({
     obsoletePaths,
     replaceExistingArtifacts,
   }) => {
-    await commitAbsolutePublication({
-      operationId,
-      operationType: "maintenance",
-      sourceVideoPath,
-      targetVideoPath,
-      artifacts,
-      obsoletePaths,
-      replaceExistingArtifacts,
-    });
+    await commitRegisteredPublication(
+      {
+        operationId,
+        operationType: "maintenance",
+        sourceVideoPath,
+        targetVideoPath,
+        artifacts,
+        obsoletePaths,
+        replaceExistingArtifacts,
+      },
+      publication,
+    );
   },
 });
 
 export const confirmUncensoredItems = async (
   items: UncensoredConfirmItem[],
   config: Configuration,
-  dependencies: UncensoredConfirmDependencies = defaultDependencies(),
+  dependencies: UncensoredConfirmDependencies,
 ): Promise<{ updatedCount: number; items: UncensoredConfirmResultItem[] }> => {
   const result = await confirmUncensoredOutputs(items, config, dependencies);
   return {

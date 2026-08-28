@@ -1,6 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
-import { basename, dirname, extname, join, parse } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { type AssetNamingMode, buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import {
   type NormalizedCropRegion,
@@ -8,7 +6,7 @@ import {
   resolvePosterEditorCropRegion,
 } from "@mdcz/shared/posterCrop";
 import sharp from "sharp";
-import { publishAbsoluteFile } from "../publication";
+import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
 import { resolveExistingImageAsset } from "./download/assets/helpers";
 
 const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);
@@ -63,21 +61,23 @@ export class PosterCropService {
     videoPath: string,
     assetNamingMode: AssetNamingMode,
     crop: NormalizedCropRegion,
+    publication: RegisteredPublicationContext,
   ): Promise<PosterCropSession & { revision: string }> {
     const session = await this.prepare(videoPath, assetNamingMode);
     const extension = extname(session.targetPath).toLowerCase() || ".jpg";
     if (!supportedExtensions.has(extension)) throw new Error(`Unsupported poster format: ${extension}`);
     const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
-    const parsed = parse(session.targetPath);
-    const tempPath = join(parsed.dir, `.${parsed.name}.poster-crop.${randomUUID()}${extension}`);
-    await mkdir(parsed.dir, { recursive: true });
-    try {
-      const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
-      await encodePoster(source, extension).toFile(tempPath);
-      await publishAbsoluteFile(tempPath, session.targetPath, `poster-crop:${session.targetPath}`);
-    } finally {
-      await rm(tempPath, { force: true }).catch(() => undefined);
-    }
+    const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
+    const data = await encodePoster(source, extension).toBuffer();
+    await commitRegisteredPublication(
+      {
+        operationId: `poster-crop:${session.targetPath}`,
+        operationType: "maintenance",
+        artifacts: [{ targetPath: session.targetPath, content: { kind: "bytes", data } }],
+        replaceExistingArtifacts: true,
+      },
+      publication,
+    );
     return { ...session, revision: String(Date.now()) };
   }
 }

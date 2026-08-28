@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
-import { deterministicMediaRootId } from "@mdcz/runtime/library";
+import { deterministicMediaRootId, findEnclosingMediaRoot } from "@mdcz/runtime/library";
 import {
   type MediaRootAvailabilityDto,
   type MediaRootCreateInput,
@@ -82,6 +82,26 @@ export class MediaRootService {
       deleted: false,
       updatedAt: now,
     });
+  }
+
+  async ensurePathRoot(hostPath: string): Promise<MediaRoot> {
+    const normalizedPath = await this.validateMountedFilesystemPath(hostPath);
+    const state = await this.persistence.getState();
+    const enclosing = findEnclosingMediaRoot(
+      normalizedPath,
+      await state.repositories.mediaRoots.list({ includeDeleted: true }),
+    );
+    if (enclosing) return enclosing;
+    const now = new Date();
+    return await state.repositories.mediaRoots.upsert(
+      createMediaRoot({
+        id: deterministicMediaRootId(normalizedPath),
+        displayName: path.basename(normalizedPath) || normalizedPath,
+        hostPath: normalizedPath,
+        enabled: true,
+        now,
+      }),
+    );
   }
 
   async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {

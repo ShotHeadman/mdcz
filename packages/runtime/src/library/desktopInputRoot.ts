@@ -24,6 +24,16 @@ const isWithin = (rootPath: string, candidatePath: string): boolean => {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 };
 
+export const findEnclosingMediaRoot = <T extends Pick<MediaRoot, "hostPath">>(
+  hostPath: string,
+  roots: readonly T[],
+): T | undefined => {
+  const normalized = normalizeHostPath(hostPath);
+  return [...roots]
+    .filter((root) => isWithin(root.hostPath, normalized))
+    .sort((left, right) => right.hostPath.length - left.hostPath.length)[0];
+};
+
 export const resolveDesktopInputRootPath = (filePaths: readonly string[], preferredRootPath?: string): string => {
   if (filePaths.length === 0) throw new Error("Cannot create a scrape root without files");
   const preferred = preferredRootPath?.trim();

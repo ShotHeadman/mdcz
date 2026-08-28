@@ -27,7 +27,6 @@ let windowService: WindowService | null = null;
 let serviceContainer: ServiceContainer | null = null;
 const trayService = new TrayService();
 const shortcutService = new ShortcutService();
-let ipcRegistered = false;
 let cleanupPromise: Promise<void> | null = null;
 let disposeShortcutConfigListener: (() => void) | null = null;
 let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) => {
@@ -55,23 +54,28 @@ const toMainWindowCreationOptions = (
   useCustomTitleBar: config.ui.useCustomTitleBar,
 });
 
+const ensureServiceContainer = async (): Promise<ServiceContainer> => {
+  if (serviceContainer) {
+    return serviceContainer;
+  }
+
+  const container = createContainer({
+    windowService: ensureWindowService(),
+    signalService,
+    networkClient: sharedNetworkClient,
+  });
+  // Recovery must finish before IPC and renderer load; getState() can otherwise race the first window requests.
+  await container.persistenceService.initialize();
+  registerIpcHandlers(container);
+  serviceContainer = container;
+  return container;
+};
+
 const ensureMainWindow = async (options: MainWindowCreationOptions): Promise<void> => {
+  await ensureServiceContainer();
   const currentWindowService = ensureWindowService();
   const mainWindow = currentWindowService.createMainWindow(options);
   signalService.setMainWindow(mainWindow);
-
-  if (!ipcRegistered) {
-    const container: ServiceContainer = createContainer({
-      windowService: currentWindowService,
-      signalService,
-      networkClient: sharedNetworkClient,
-    });
-
-    registerIpcHandlers(container);
-    serviceContainer = container;
-    ipcRegistered = true;
-  }
-
   await currentWindowService.loadMainWindow();
 };
 

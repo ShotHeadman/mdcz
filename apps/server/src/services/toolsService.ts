@@ -1,6 +1,7 @@
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import {
   EmbyActorInfoService,
@@ -12,7 +13,7 @@ import {
   probeMediaServer,
 } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import { commitRegisteredPublication } from "@mdcz/runtime/publication";
 import {
   AggregationService,
   getNfoWritePaths,
@@ -37,6 +38,7 @@ import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import { createServerActorSourceProvider } from "../actorSourceFactory";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
+import type { ServerPersistenceService } from "./persistenceService";
 import type { ScrapeService } from "./scrapeService";
 
 const noopMediaServerSignal: MediaServerSignalService = {
@@ -63,6 +65,7 @@ export class ToolsService {
     private readonly config: ServerConfigService,
     private readonly mediaRoots: MediaRootService,
     private readonly scrape: ScrapeService,
+    private readonly persistence: ServerPersistenceService,
     deps: ToolsServiceDependencies = {},
   ) {
     this.networkClient = deps.networkClient ?? new NetworkClient();
@@ -177,10 +180,14 @@ export class ToolsService {
           const items = await scanBatchNfoTranslations(input.directory, config, {
             localScanService: this.localScanService,
           });
+          await this.mediaRoots.ensurePathRoot(input.directory);
           return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个待翻译 NFO`, data: { items } };
         }
         if (input.action === "apply") {
           const items = input.items ?? [];
+          if (items.length > 0) {
+            await this.mediaRoots.ensurePathRoot(resolveDesktopInputRootPath(items.map((item) => item.nfoPath)));
+          }
           const results = await applyBatchNfoTranslations(
             items,
             config,
@@ -196,13 +203,22 @@ export class ToolsService {
                     artifacts.push({ targetPath, content: { kind: "text", data: content } });
                   },
                 });
-                await commitAbsolutePublication({
-                  operationId: `batch-nfo-translation:${writeInput.fileInfo.filePath}`,
-                  operationType: "maintenance",
-                  artifacts,
-                  obsoletePaths: getNfoWritePaths(writeInput.nfoPath, writeInput.config.download.nfoNaming).stalePaths,
-                  replaceExistingArtifacts: true,
-                });
+                const state = await this.persistence.getState();
+                await commitRegisteredPublication(
+                  {
+                    operationId: `batch-nfo-translation:${writeInput.fileInfo.filePath}`,
+                    operationType: "maintenance",
+                    artifacts,
+                    obsoletePaths: getNfoWritePaths(writeInput.nfoPath, writeInput.config.download.nfoNaming)
+                      .stalePaths,
+                    replaceExistingArtifacts: true,
+                  },
+                  {
+                    journal: state.repositories.publicationJournal,
+                    repairIssues: state.repositories.libraryRepairIssues,
+                    roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+                  },
+                );
                 return savedNfoPath;
               },
             },
@@ -243,7 +259,16 @@ export class ToolsService {
           };
         }
         if (input.action === "apply") {
-          const results = await applyAmazonPosters(this.networkClient, input.items ?? []);
+          const items = input.items ?? [];
+          if (items.length > 0) {
+            await this.mediaRoots.ensurePathRoot(resolveDesktopInputRootPath(items.map((item) => item.nfoPath)));
+          }
+          const state = await this.persistence.getState();
+          const results = await applyAmazonPosters(this.networkClient, items, {
+            journal: state.repositories.publicationJournal,
+            repairIssues: state.repositories.libraryRepairIssues,
+            roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+          });
           return {
             toolId: input.toolId,
             ok: results.every((item) => item.success),
@@ -255,6 +280,7 @@ export class ToolsService {
           return { toolId: input.toolId, ok: false, message: "请选择要扫描的目录。" };
         }
         const items = await scanAmazonPosters(input.rootDir);
+        await this.mediaRoots.ensurePathRoot(input.rootDir);
         return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个 NFO 条目`, data: { items } };
       }
     }

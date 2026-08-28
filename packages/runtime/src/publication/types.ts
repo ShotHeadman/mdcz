@@ -22,6 +22,7 @@ export interface PreparedPublicationPlan {
   artifacts: Array<{ targetPath: string; content: Exclude<PublicationContent, { kind: "download" }> }>;
   assets: Array<{ kind: string; targetPath?: string; url?: string }>;
   obsoletePaths: string[];
+  replaceExistingTargetPaths?: string[];
 }
 
 export interface PublicationFileSystem {
@@ -54,9 +55,17 @@ export interface PublicationJournalManifestEntry {
   targetExisted: boolean;
 }
 
+export type PublicationObsoleteObservation =
+  | { exists: false }
+  | { exists: true; size: number; mtimeMs: number; isFile: boolean };
+
+export interface PublicationJournalManifestObsolete extends RootFileRef {
+  observed: PublicationObsoleteObservation;
+}
+
 export interface PublicationJournalManifest {
   entries: PublicationJournalManifestEntry[];
-  obsolete: RootFileRef[];
+  obsolete: PublicationJournalManifestObsolete[];
 }
 
 export type PublicationJournalState = "pending" | "committed";
@@ -77,12 +86,19 @@ export interface PublicationJournalPort {
   listUnfinished(): PublicationJournalRecord[];
 }
 
-export interface PublishMediaOptions<TResult> {
-  resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
+export interface DurablePublicationContext {
   journal: PublicationJournalPort;
+  repairIssues?: PublicationRepairPort;
+}
+
+export interface RegisteredPublicationContext extends DurablePublicationContext {
+  roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+}
+
+export interface PublishMediaOptions<TResult> extends DurablePublicationContext {
+  resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   commit(): TResult;
   download?(url: string): Promise<Uint8Array>;
-  repairIssues?: PublicationRepairPort;
   acquireAll?(refs: readonly RootFileRef[]): () => void;
   fileSystem?: PublicationFileSystem;
 }

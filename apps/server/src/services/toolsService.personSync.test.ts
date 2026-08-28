@@ -4,6 +4,7 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
+import type { ServerPersistenceService } from "./persistenceService";
 import type { ScrapeService } from "./scrapeService";
 import { ToolsService } from "./toolsService";
 
@@ -58,7 +59,7 @@ class FakeActorSourceProvider {
 }
 
 const createTools = (networkClient: FakeNetworkClient, actorSourceProvider: FakeActorSourceProvider) =>
-  new ToolsService(config, {} as MediaRootService, {} as ScrapeService, {
+  new ToolsService(config, {} as MediaRootService, {} as ScrapeService, {} as ServerPersistenceService, {
     networkClient: networkClient as unknown as NetworkClient,
     actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
   });

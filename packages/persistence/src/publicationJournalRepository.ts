@@ -4,11 +4,6 @@ import { type PublicationJournalRow, publicationJournal } from "./schema";
 
 export type PublicationJournalState = "pending" | "committed";
 
-export interface RootFileRef {
-  rootId: string;
-  relativePath: string;
-}
-
 export interface PublicationJournalEntry {
   operationId: string;
   operationType: string;
@@ -17,7 +12,12 @@ export interface PublicationJournalEntry {
   createdAt: Date;
 }
 
-export interface BeginPublicationJournalEntry extends Omit<PublicationJournalEntry, "state"> {}
+export type BeginPublicationJournalEntry = Omit<PublicationJournalEntry, "state">;
+
+interface PublicationPathRef {
+  rootId: string;
+  relativePath: string;
+}
 
 const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
   operationId: row.operationId,
@@ -27,8 +27,8 @@ const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
   createdAt: row.createdAt,
 });
 
-const refsInManifest = (manifest: unknown): RootFileRef[] => {
-  const refs: RootFileRef[] = [];
+const refsInManifest = (manifest: unknown): PublicationPathRef[] => {
+  const refs: PublicationPathRef[] = [];
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
       for (const item of value) visit(item);
@@ -82,7 +82,7 @@ export class PublicationJournalRepository {
     return this.database.db.select().from(publicationJournal).all().map(toEntry);
   }
 
-  conflicts(refs: readonly RootFileRef[]): PublicationJournalEntry | null {
+  conflicts(refs: readonly PublicationPathRef[]): PublicationJournalEntry | null {
     const requested = new Set(refs.map((ref) => `${ref.rootId}\0${ref.relativePath}`));
     return (
       this.listUnfinished().find((entry) =>

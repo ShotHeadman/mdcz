@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat, unlink } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import {
   POSTER_TAG_BADGE_ASPECT_RATIO,
@@ -12,7 +12,6 @@ import {
   type PosterTagBadgePosition,
 } from "@mdcz/shared/posterBadges";
 import sharp from "sharp";
-import { commitAbsolutePublication } from "../publication";
 import type { PosterBadgeDefinition } from "./posterBadges";
 import { resolveWatermarkDirectory } from "./watermarkDirectory";
 
@@ -326,15 +325,10 @@ export class PosterWatermarkService {
       }
 
       await pipeline.toFile(tempPath);
-      await commitAbsolutePublication({
-        operationId: `poster-watermark:${posterPath}`,
-        operationType: "maintenance",
-        sourceVideoPath: tempPath,
-        targetVideoPath: posterPath,
-        replaceExistingTarget: true,
-      });
+      await rm(posterPath, { force: true });
+      await rename(tempPath, posterPath);
     } finally {
-      await unlink(tempPath).catch(() => undefined);
+      await rm(tempPath, { force: true });
     }
   }
 }

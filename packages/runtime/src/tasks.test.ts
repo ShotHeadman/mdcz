@@ -234,6 +234,29 @@ describe("scrape run session", () => {
     expect(observedStatuses.at(-1)).toBe("completed");
   });
 
+  it("fails a mixed-outcome run instead of completing on any success", async () => {
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession({
+      runId: "run-mixed",
+      items,
+      concurrency: 1,
+      admitItem,
+      executeItem: async (item) => terminalResult(item, item.id === "one" ? "success" : "failed"),
+      commitItem: async (_item, result) => result,
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await session.waitForIdle();
+    expect(session.snapshot()).toMatchObject({
+      status: "failed",
+      items: [
+        { id: "one", status: "success" },
+        { id: "two", status: "failed" },
+      ],
+    });
+  });
+
   it.each([
     { concurrency: 1, ids: ["one"] },
     { concurrency: 2, ids: ["one", "two"] },

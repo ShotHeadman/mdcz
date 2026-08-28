@@ -1,12 +1,15 @@
 import { copyFile, mkdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import { normalizeRootRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { removeCommittedObsoleteFiles } from "./preflight";
 import type {
   PublicationFileSystem,
   PublicationJournalManifest,
   PublicationJournalManifestEntry,
+  PublicationJournalManifestObsolete,
   PublicationJournalPort,
   PublicationJournalRecord,
+  PublicationObsoleteObservation,
   PublicationRepairPort,
 } from "./types";
 
@@ -66,6 +69,25 @@ const asManifestEntry = (value: unknown): PublicationJournalManifestEntry | null
   };
 };
 
+const asObsoleteObservation = (value: unknown): PublicationObsoleteObservation | null => {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (record.exists === false) return { exists: false };
+  if (record.exists !== true) return null;
+  if (typeof record.size !== "number" || typeof record.mtimeMs !== "number" || typeof record.isFile !== "boolean") {
+    return null;
+  }
+  return { exists: true, size: record.size, mtimeMs: record.mtimeMs, isFile: record.isFile };
+};
+
+const asObsolete = (value: unknown): PublicationJournalManifestObsolete | null => {
+  const ref = asRootFileRef(value);
+  if (!ref) return null;
+  const observed = asObsoleteObservation((value as { observed?: unknown }).observed);
+  if (!observed) return null;
+  return { ...ref, observed };
+};
+
 const parsePublicationJournalManifest = (value: unknown): PublicationJournalManifest | null => {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -76,9 +98,9 @@ const parsePublicationJournalManifest = (value: unknown): PublicationJournalMani
     if (!entry) return null;
     entries.push(entry);
   }
-  const obsolete: RootFileRef[] = [];
+  const obsolete: PublicationJournalManifestObsolete[] = [];
   for (const item of record.obsolete) {
-    const ref = asRootFileRef(item);
+    const ref = asObsolete(item);
     if (!ref) return null;
     obsolete.push(ref);
   }
@@ -139,6 +161,16 @@ const allRootsAvailable = async (
   return true;
 };
 
+const resolveRepairs = async (
+  options: RecoverPublicationsOptions,
+  entry: PublicationJournalRecord,
+  refs: readonly RootFileRef[],
+): Promise<void> => {
+  for (const item of refs) {
+    await options.repairIssues?.resolve(entry.operationId, item.rootId, item.relativePath);
+  }
+};
+
 const recoverPending = async (
   options: RecoverPublicationsOptions,
   fileSystem: PublicationFileSystem,
@@ -176,6 +208,7 @@ const recoverPending = async (
       return "retain";
     }
   }
+  await resolveRepairs(options, entry, [...manifest.entries, ...manifest.obsolete]);
   options.journal.finish(entry.operationId);
   return "done";
 };
@@ -207,15 +240,28 @@ const recoverCommitted = async (
       return "retain";
     }
   }
-  for (const ref of manifest.obsolete) {
-    try {
-      await fileSystem.rm(await resolve(ref.rootId, ref.relativePath), { force: true });
-    } catch (error) {
-      if (isUnavailableError(error)) return "retain";
-      await recordRepair(options, entry, ref, error);
-      return "retain";
-    }
+  let retainedObsolete: RootFileRef[] = [];
+  try {
+    retainedObsolete = await removeCommittedObsoleteFiles(fileSystem, manifest.obsolete, resolve);
+  } catch (error) {
+    if (isUnavailableError(error)) return "retain";
+    const ref = manifest.obsolete[0] ?? manifest.entries[0];
+    if (ref) await recordRepair(options, entry, ref, error);
+    return "retain";
   }
+  for (const ref of retainedObsolete) {
+    await recordRepair(
+      options,
+      entry,
+      ref,
+      new Error(`Committed publication obsolete path changed: ${ref.rootId}:${ref.relativePath}`),
+    );
+  }
+  const retainedKeys = new Set(retainedObsolete.map((ref) => `${ref.rootId}\0${ref.relativePath}`));
+  await resolveRepairs(options, entry, [
+    ...manifest.entries,
+    ...manifest.obsolete.filter((ref) => !retainedKeys.has(`${ref.rootId}\0${ref.relativePath}`)),
+  ]);
   options.journal.finish(entry.operationId);
   return "done";
 };

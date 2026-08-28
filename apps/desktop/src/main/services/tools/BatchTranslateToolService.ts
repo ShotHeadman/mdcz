@@ -1,8 +1,10 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
+import type { DesktopPersistenceService } from "@main/services/persistence";
+import { createDesktopInputRoot, findEnclosingMediaRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import { commitRegisteredPublication } from "@mdcz/runtime/publication";
 import { getNfoWritePaths, LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   applyBatchNfoTranslations,
@@ -21,6 +23,7 @@ export class BatchTranslateToolService {
 
   constructor(
     private readonly networkClient: NetworkClient,
+    private readonly persistence: DesktopPersistenceService,
     dependencies: {
       localScanService?: NonNullable<BatchNfoTranslatorDependencies["localScanService"]>;
       llmApiClient?: NonNullable<BatchNfoTranslatorDependencies["llmApiClient"]>;
@@ -35,9 +38,15 @@ export class BatchTranslateToolService {
   }
 
   async scan(directory: string, config: Configuration): Promise<BatchTranslateScanItem[]> {
-    return await scanBatchNfoTranslations(directory, config, {
+    const items = await scanBatchNfoTranslations(directory, config, {
       localScanService: this.localScanService,
     });
+    const state = await this.persistence.getState();
+    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+    if (!findEnclosingMediaRoot(directory, roots)) {
+      await state.repositories.mediaRoots.upsert(createDesktopInputRoot(directory));
+    }
+    return items;
   }
 
   async apply(
@@ -46,6 +55,14 @@ export class BatchTranslateToolService {
     options: BatchNfoTranslatorApplyOptions = {},
   ): Promise<BatchTranslateApplyResultItem[]> {
     void this.networkClient;
+    const state = await this.persistence.getState();
+    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+    if (items.length > 0) {
+      const hostPath = resolveDesktopInputRootPath(items.map((item) => item.nfoPath));
+      if (!findEnclosingMediaRoot(hostPath, roots)) {
+        await state.repositories.mediaRoots.upsert(createDesktopInputRoot(hostPath));
+      }
+    }
     return await applyBatchNfoTranslations(
       items,
       config,
@@ -62,13 +79,21 @@ export class BatchTranslateToolService {
               artifacts.push({ targetPath, content: { kind: "text", data: content } });
             },
           });
-          await commitAbsolutePublication({
-            operationId: `batch-nfo-translation:${writeInput.fileInfo.filePath}`,
-            operationType: "maintenance",
-            artifacts,
-            obsoletePaths: getNfoWritePaths(writeInput.nfoPath, writeInput.config.download.nfoNaming).stalePaths,
-            replaceExistingArtifacts: true,
-          });
+          const state = await this.persistence.getState();
+          await commitRegisteredPublication(
+            {
+              operationId: `batch-nfo-translation:${writeInput.fileInfo.filePath}`,
+              operationType: "maintenance",
+              artifacts,
+              obsoletePaths: getNfoWritePaths(writeInput.nfoPath, writeInput.config.download.nfoNaming).stalePaths,
+              replaceExistingArtifacts: true,
+            },
+            {
+              journal: state.repositories.publicationJournal,
+              repairIssues: state.repositories.libraryRepairIssues,
+              roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+            },
+          );
           return savedNfoPath;
         },
       },

@@ -5,7 +5,7 @@ import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
-import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import { commitPublishedMedia } from "@mdcz/runtime/publication";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
   CrawlerDataDto,
@@ -112,28 +112,26 @@ export class DesktopLibraryService {
         state.repositories.library.getEntryById(normalizedId),
       ]);
       const rootMap = new Map(roots.map((root) => [root.id, root]));
-      const filePaths = new Set(
-        entry.files.map((file) => {
-          const root = rootMap.get(file.rootId);
-          if (!root) {
-            throw new Error(`Media root not found: ${file.rootId}`);
-          }
-          return resolveRootRelativePath(root, file.rootRelativePath);
-        }),
-      );
-      for (const asset of entry.assets) {
-        if (!asset.rootId || !asset.relativePath) continue;
-        const root = rootMap.get(asset.rootId);
-        if (!root) throw new Error(`Media root not found: ${asset.rootId}`);
-        filePaths.add(resolveRootRelativePath(root, asset.relativePath));
-      }
-      await commitAbsolutePublication(
+      const obsolete = [
+        ...entry.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+        ...entry.assets.flatMap((asset) =>
+          asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
+        ),
+      ];
+      await commitPublishedMedia(
         {
           operationId: `delete-library-entry:${normalizedId}`,
           operationType: "maintenance",
-          obsoletePaths: [...filePaths],
+          artifacts: [],
+          assets: [],
+          obsolete,
         },
         {
+          resolveRoot: async (rootId) => {
+            const root = rootMap.get(rootId);
+            if (!root) throw new Error(`Media root not found: ${rootId}`);
+            return root;
+          },
           journal: state.repositories.publicationJournal,
           repairIssues: state.repositories.libraryRepairIssues,
           commit: () => {

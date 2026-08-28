@@ -50,5 +50,6 @@ export const createPublicationPlan = (
     })),
     assets,
     obsolete: prepared.obsoletePaths.map(toRef),
+    replaceExistingTargets: prepared.replaceExistingTargetPaths?.map(toRef),
   };
 };

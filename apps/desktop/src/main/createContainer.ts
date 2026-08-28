@@ -119,8 +119,8 @@ export const createContainer = ({
       actorSourceProvider,
     }),
     symlinkService: new SymlinkService({ signalService }),
-    amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
-    batchTranslateToolService: new BatchTranslateToolService(networkClient),
+    amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService, persistenceService),
+    batchTranslateToolService: new BatchTranslateToolService(networkClient, persistenceService),
     shutdown: async () => {
       await Promise.allSettled([scraperService.shutdown(), maintenanceService.shutdown(), crawlerProvider.shutdown()]);
       await persistenceService.close();

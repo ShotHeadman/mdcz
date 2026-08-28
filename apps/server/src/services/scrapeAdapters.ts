@@ -139,6 +139,7 @@ export class ServerPosterCropAdapter {
     private readonly config: ServerConfigService,
     private readonly posterCropService: PosterCropService,
     private readonly resolveMetadataVideoPath: (result: ServerScrapeArtifactRecord) => string,
+    private readonly persistence: ServerPersistenceService,
   ) {}
 
   async session(record: ServerScrapeArtifactRecord) {
@@ -164,10 +165,16 @@ export class ServerPosterCropAdapter {
       this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
+    const state = await this.persistence.getState();
     const result = await this.posterCropService.save(
       resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
       configuration.naming.assetNamingMode,
       input.crop,
+      {
+        journal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
+        roots: [root],
+      },
     );
     return {
       sourceRelativePath: requireRootRelativeAssetPath(root, result.sourcePath),

@@ -6,8 +6,9 @@ import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
+import { createDesktopInputRoot, findEnclosingMediaRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { commitAbsolutePublication } from "@mdcz/runtime/publication";
+import { commitRegisteredPublication } from "@mdcz/runtime/publication";
 import {
   findExistingNfoPath,
   getNfoReadCandidates,
@@ -43,8 +44,22 @@ export const createFileHandlers = (
   | typeof IpcChannel.File_PosterCropSession
   | typeof IpcChannel.File_PosterCropSave
 > => {
-  const { windowService } = context;
+  const { windowService, persistenceService } = context;
   const posterCropService = new PosterCropService();
+  const admitRoot = async (hostPath: string): Promise<void> => {
+    const state = await persistenceService.getState();
+    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+    if (findEnclosingMediaRoot(hostPath, roots)) return;
+    await state.repositories.mediaRoots.upsert(createDesktopInputRoot(hostPath));
+  };
+  const publication = async () => {
+    const state = await persistenceService.getState();
+    return {
+      journal: state.repositories.publicationJournal,
+      repairIssues: state.repositories.libraryRepairIssues,
+      roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+    };
+  };
   const assertDirectory = async (dirPath: string): Promise<void> => {
     try {
       const stats = await stat(dirPath);
@@ -215,25 +230,33 @@ export const createFileHandlers = (
         const result = mainWindow
           ? await dialog.showOpenDialog(mainWindow, options)
           : await dialog.showOpenDialog(options);
+        if (!result.canceled) {
+          for (const selectedPath of result.filePaths) {
+            await admitRoot(type === "directory" ? selectedPath : dirname(selectedPath));
+          }
+        }
         return { paths: result.canceled ? null : result.filePaths };
       }),
     [IpcChannel.File_Delete]: t.procedure
       .input<{ filePaths?: string[] }>()
       .action(async ({ input }): Promise<{ deletedCount: number; failedCount: number }> => {
-        const filePaths = input?.filePaths ?? [];
+        const filePaths = (input?.filePaths ?? []).filter((filePath) => filePath.trim());
+        if (filePaths.length > 0) {
+          await admitRoot(resolveDesktopInputRootPath(filePaths));
+        }
         let deletedCount = 0;
         let failedCount = 0;
 
         for (const filePath of filePaths) {
-          if (!filePath.trim()) {
-            continue;
-          }
           try {
-            await commitAbsolutePublication({
-              operationId: `delete:${filePath}`,
-              operationType: "maintenance",
-              obsoletePaths: [filePath],
-            });
+            await commitRegisteredPublication(
+              {
+                operationId: `delete:${filePath}`,
+                operationType: "maintenance",
+                obsoletePaths: [filePath],
+              },
+              await publication(),
+            );
             deletedCount += 1;
           } catch (error) {
             failedCount += 1;
@@ -275,6 +298,7 @@ export const createFileHandlers = (
           const config = await configManager.getValidated();
           const videoPath = input.videoPath?.trim();
           const plannedNfoPath = resolveFilenameNfoPath(nfoPath, videoPath);
+          await admitRoot(resolveDesktopInputRootPath(videoPath ? [plannedNfoPath, videoPath] : [plannedNfoPath]));
           const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming, pathExists, videoPath);
           const existingXml = existingNfoPath ? await readFile(existingNfoPath, "utf8") : undefined;
           const existingSnapshot = existingXml ? parseNfoSnapshot(existingXml).localState : undefined;
@@ -288,16 +312,19 @@ export const createFileHandlers = (
             ? nfoGenerator.mergeEditableXml(existingXml, data, options)
             : nfoGenerator.buildXml(data, options);
           const paths = getNfoWritePaths(plannedNfoPath, config.download.nfoNaming);
-          await commitAbsolutePublication({
-            operationId: `nfo-write:${plannedNfoPath}`,
-            operationType: "maintenance",
-            artifacts: paths.requiredPaths.map((targetPath) => ({
-              targetPath,
-              content: { kind: "text" as const, data: xml },
-            })),
-            obsoletePaths: paths.stalePaths,
-            replaceExistingArtifacts: true,
-          });
+          await commitRegisteredPublication(
+            {
+              operationId: `nfo-write:${plannedNfoPath}`,
+              operationType: "maintenance",
+              artifacts: paths.requiredPaths.map((targetPath) => ({
+                targetPath,
+                content: { kind: "text" as const, data: xml },
+              })),
+              obsoletePaths: paths.stalePaths,
+              replaceExistingArtifacts: true,
+            },
+            await publication(),
+          );
           return { success: true as const, nfoPath: paths.canonicalPath };
         } catch (error) {
           throw asSerializableIpcError(error);
@@ -321,8 +348,14 @@ export const createFileHandlers = (
           if (!videoPath || !input?.crop) {
             throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Video path and crop are required");
           }
+          await admitRoot(dirname(videoPath));
           const config = await configManager.getValidated();
-          return await posterCropService.save(videoPath, config.naming.assetNamingMode, input.crop);
+          return await posterCropService.save(
+            videoPath,
+            config.naming.assetNamingMode,
+            input.crop,
+            await publication(),
+          );
         } catch (error) {
           throw asSerializableIpcError(error);
         }

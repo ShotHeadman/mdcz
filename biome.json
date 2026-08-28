@@ -238,16 +238,6 @@
           }
         }
       }
-    },
-    {
-      "includes": ["packages/persistence/src/maintenanceExecutionStore.ts"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": "off"
-          }
-        }
-      }
     }
   ]
 }

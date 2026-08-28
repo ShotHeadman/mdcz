@@ -42,6 +42,7 @@ export interface DesktopPersistenceState {
 
 export class DesktopPersistenceService {
   private state: DesktopPersistenceState | null = null;
+  private initializePromise: Promise<DesktopPersistenceState> | null = null;
 
   constructor(
     private readonly databasePath = join(getDesktopUserDataPath(), "mdcz.sqlite"),
@@ -60,7 +61,26 @@ export class DesktopPersistenceService {
     if (this.state) {
       return this.state;
     }
+    if (!this.initializePromise) {
+      this.initializePromise = this.open().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
+    }
+    return await this.initializePromise;
+  }
 
+  async getState(): Promise<DesktopPersistenceState> {
+    return await this.initialize();
+  }
+
+  async close(): Promise<void> {
+    this.state?.database.close();
+    this.state = null;
+    this.initializePromise = null;
+  }
+
+  private async open(): Promise<DesktopPersistenceState> {
     await mkdir(dirname(this.databasePath), { recursive: true });
     const database = createPersistenceDatabase({
       path: this.databasePath,
@@ -95,14 +115,5 @@ export class DesktopPersistenceService {
       database.close();
       throw error;
     }
-  }
-
-  async getState(): Promise<DesktopPersistenceState> {
-    return await this.initialize();
-  }
-
-  async close(): Promise<void> {
-    this.state?.database.close();
-    this.state = null;
   }
 }

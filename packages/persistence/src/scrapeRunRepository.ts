@@ -408,8 +408,17 @@ export class ScrapeRunRepository {
         `Cannot finalize scrape run ${run.id}: ${run.items.length - settledItems} item(s) lack an outcome`,
       );
     }
+    const latest = latestOutcomes(run.outcomes);
+    const projectedDisposition =
+      input.disposition === "interrupted"
+        ? "interrupted"
+        : input.disposition === "stopped"
+          ? "stopped"
+          : latest.some((outcome) => outcome.outcome !== "success")
+            ? "failed"
+            : "completed";
     const outputRootIds = new Set(
-      latestOutcomes(run.outcomes)
+      latest
         .filter((outcome) => outcome.outcome === "success")
         .map((outcome) => outcome.outputRootId)
         .filter((rootId): rootId is string => Boolean(rootId)),
@@ -417,7 +426,7 @@ export class ScrapeRunRepository {
     this.database.db
       .update(scrapeRuns)
       .set({
-        disposition: input.disposition,
+        disposition: projectedDisposition,
         startedAt: input.startedAt ?? null,
         completedAt: input.completedAt ?? new Date(),
         outputRootId: outputRootIds.size === 1 ? [...outputRootIds][0] : null,
