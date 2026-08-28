@@ -8,12 +8,12 @@ import type { DesktopPersistenceService } from "../persistence";
 export class DesktopScrapePublisher {
   constructor(private readonly persistence: DesktopPersistenceService) {}
 
-  async commitItem(runId: string, item: ScrapeRunItem, result: ScrapeResult): Promise<ScrapeResult> {
+  async commitItem(runId: string, item: ScrapeRunItem, result: ScrapeResult, attemptId: string): Promise<ScrapeResult> {
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
     if (result.status === "failed") {
       const outcome = await repository.commitOutcome({
         outcome: "failed",
-        itemId: item.id,
+        attemptId,
         error: result.error?.trim() || "刮削失败",
       });
       return { ...result, resultId: outcome.id, status: "failed" };
@@ -21,7 +21,7 @@ export class DesktopScrapePublisher {
     if (result.status === "skipped") {
       const outcome = await repository.commitOutcome({
         outcome: "skipped",
-        itemId: item.id,
+        attemptId,
         error: result.error?.trim() || null,
       });
       return { ...result, resultId: outcome.id, status: "skipped" };
@@ -31,13 +31,13 @@ export class DesktopScrapePublisher {
     }
 
     try {
-      return await this.commitSuccess(runId, item, result);
+      return await this.commitSuccess(runId, item, result, attemptId);
     } catch (error) {
       const coordinatedError = formatDiskCommitFailure(error);
       try {
         const outcome = await repository.commitOutcome({
           outcome: "failed",
-          itemId: item.id,
+          attemptId,
           error: coordinatedError,
         });
         return { ...result, resultId: outcome.id, status: "failed", error: coordinatedError };
@@ -47,7 +47,12 @@ export class DesktopScrapePublisher {
     }
   }
 
-  private async commitSuccess(runId: string, item: ScrapeRunItem, result: ScrapeResult): Promise<ScrapeResult> {
+  private async commitSuccess(
+    runId: string,
+    item: ScrapeRunItem,
+    result: ScrapeResult,
+    attemptId: string,
+  ): Promise<ScrapeResult> {
     if (!result.crawlerData) throw new Error(`Successful scrape has no crawler data: ${item.relativePath}`);
     const plan = (result as FileScrapeResult).publicationPlan;
     if (!plan?.video) throw new Error(`Successful scrape has no publication plan: ${item.relativePath}`);
@@ -77,7 +82,7 @@ export class DesktopScrapePublisher {
       commit: () =>
         state.repositories.scrapeRuns.commitSuccessOutcome({
           outcome: "success",
-          itemId: item.id,
+          attemptId,
           crawlerDataJson,
           nfoRootId: nfo?.rootId ?? null,
           nfoRelativePath: nfo?.relativePath ?? null,
@@ -105,7 +110,7 @@ export class DesktopScrapePublisher {
     }).catch(async (error) => {
       if (!(error instanceof PublicationError && error.committed)) throw error;
       const run = await state.repositories.scrapeRuns.get(runId);
-      const outcome = run.outcomes.find((candidate) => candidate.itemId === item.id);
+      const outcome = run.outcomes.find((candidate) => candidate.attemptId === attemptId);
       if (!outcome) throw error;
       const entry = await state.repositories.library.getEntryBySourceOutcomeId(outcome.id);
       if (!entry) throw error;

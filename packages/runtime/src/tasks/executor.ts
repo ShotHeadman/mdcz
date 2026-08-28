@@ -11,7 +11,6 @@ export interface TaskExecutorGate<TItem> {
 export class TaskExecutor<TItem, TResult> {
   private pauseRequested = false;
   private stopRequested = false;
-  private admissionStopped = false;
   private activeCount = 0;
   private activeRun: Promise<void> | null = null;
   private controller: AbortController | null = null;
@@ -30,14 +29,13 @@ export class TaskExecutor<TItem, TResult> {
     }
   }
 
-  execute(items: readonly TItem[], executionVersion: number): Promise<void> {
+  execute(items: readonly TItem[], executionVersion: number, signal?: AbortSignal): Promise<void> {
     if (this.activeRun) throw new Error("TaskExecutor is already active");
 
     this.pauseRequested = false;
     this.stopRequested = false;
-    this.admissionStopped = false;
     this.controller = new AbortController();
-    const run = this.run(items, executionVersion);
+    const run = this.run(items, executionVersion, signal);
     this.activeRun = run;
     const clear = () => {
       if (this.activeRun === run) {
@@ -59,10 +57,6 @@ export class TaskExecutor<TItem, TResult> {
     this.controller?.abort();
   }
 
-  stopAdmission(): void {
-    if (this.activeRun) this.admissionStopped = true;
-  }
-
   async waitForIdle(): Promise<void> {
     await this.activeRun;
   }
@@ -75,15 +69,18 @@ export class TaskExecutor<TItem, TResult> {
     return this.activeCount;
   }
 
-  private async run(items: readonly TItem[], executionVersion: number): Promise<void> {
+  private async run(items: readonly TItem[], executionVersion: number, signal?: AbortSignal): Promise<void> {
     const controller = this.controller;
     if (!controller) throw new Error("TaskExecutor controller was not initialized");
 
     let nextIndex = 0;
-    const context: TaskExecutorContext = { executionVersion, signal: controller.signal };
+    const context: TaskExecutorContext = {
+      executionVersion,
+      signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+    };
 
     const worker = async (): Promise<void> => {
-      while (!this.pauseRequested && !this.stopRequested && !this.admissionStopped) {
+      while (!this.pauseRequested && !this.stopRequested) {
         const index = nextIndex;
         if (index >= items.length) return;
         nextIndex += 1;

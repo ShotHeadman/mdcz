@@ -512,8 +512,17 @@ export class ScrapeService {
     const configuration = await this.config.get();
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
+    const repository = (await this.persistence.getState()).repositories.scrapeRuns;
+    const settledAttemptIds = new Set(manifest.outcomes.map((outcome) => outcome.attemptId));
+    const openAttemptByItemId = new Map(
+      manifest.attempts
+        .filter((attempt) => !settledAttemptIds.has(attempt.id))
+        .map((attempt) => [attempt.itemId, attempt.id]),
+    );
+    const records =
+      openAttemptByItemId.size > 0 ? manifest.items.filter((item) => openAttemptByItemId.has(item.id)) : manifest.items;
     return {
-      items: manifest.items.map((item) => {
+      items: records.map((item) => {
         const root = roots.get(item.rootId);
         if (!root) throw new Error(`Scrape root disappeared before session creation: ${item.rootId}`);
         return {
@@ -525,10 +534,17 @@ export class ScrapeService {
         };
       }),
       concurrency: policy.concurrency,
-      executeItem: async (item: ScrapeRunItem<ServerManualScrape>, signal: AbortSignal) =>
-        await this.executeItem(manifest, item, signal, policy.restGate ?? undefined, reporter),
-      commitItem: async (item: ScrapeRunItem<ServerManualScrape>, result: ScrapeResult) =>
-        await this.commitItem(manifest, item, result),
+      admitItem: async (item: ScrapeRunItem<ServerManualScrape>) => {
+        const existing = openAttemptByItemId.get(item.id);
+        if (existing) return existing;
+        const attempt = repository.admitAttempt(item.id);
+        openAttemptByItemId.set(item.id, attempt.id);
+        return attempt.id;
+      },
+      executeItem: async (item: ScrapeRunItem<ServerManualScrape>, signal: AbortSignal, attemptId: string) =>
+        await this.executeItem(manifest, item, signal, attemptId, policy.restGate ?? undefined, reporter),
+      commitItem: async (item: ScrapeRunItem<ServerManualScrape>, result: ScrapeResult, attemptId: string) =>
+        await this.commitItem(manifest, item, result, attemptId),
     };
   }
 
@@ -536,6 +552,7 @@ export class ScrapeService {
     manifest: ScrapeRunManifest,
     item: ScrapeRunItem<ServerManualScrape>,
     signal: AbortSignal,
+    attemptId: string,
     restGate: { waitBeforeStart(signal?: AbortSignal): Promise<void> } | undefined,
     reporter: ScrapeWorkflowReporter,
   ): Promise<ScrapeResult> {
@@ -551,7 +568,7 @@ export class ScrapeService {
         outputRoot,
         relativePath: item.relativePath,
         scrapeSessionId: manifest.id,
-        operationId: `${manifest.id}:${item.id}`,
+        operationId: `${manifest.id}:${attemptId}`,
         publicationRoots: Array.from(
           new Map([root, outputRoot, metadataRoot].map((entry) => [entry.id, entry])).values(),
         ),
@@ -590,6 +607,7 @@ export class ScrapeService {
     manifest: ScrapeRunManifest,
     item: ScrapeRunItem<ServerManualScrape>,
     result: ScrapeResult,
+    attemptId: string,
   ): Promise<ScrapeResult> {
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
     if (result.status === "success") {
@@ -627,7 +645,7 @@ export class ScrapeService {
           commit: () =>
             repository.commitSuccessOutcome({
               outcome: "success",
-              itemId: item.id,
+              attemptId,
               crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
               nfoRootId: nfoRelativePath && metadataRoot.id !== outputRef.rootId ? metadataRoot.id : null,
               nfoRelativePath,
@@ -657,14 +675,14 @@ export class ScrapeService {
       } catch (error) {
         if (error instanceof PublicationError && error.committed) {
           const persisted = await repository.get(manifest.id);
-          const outcome = persisted.outcomes.find((candidate) => candidate.itemId === item.id);
+          const outcome = persisted.outcomes.find((candidate) => candidate.attemptId === attemptId);
           if (!outcome) throw error;
           return { ...result, resultId: outcome.id, status: "success" };
         }
         const coordinatedError = formatDiskCommitFailure(error);
         const failure = await repository.commitOutcome({
           outcome: "failed",
-          itemId: item.id,
+          attemptId,
           error: coordinatedError,
         });
         this.addEvent(manifest.id, "item-failed", `${item.relativePath}: ${coordinatedError}`, item.id);
@@ -683,12 +701,12 @@ export class ScrapeService {
       result.status === "skipped"
         ? await repository.commitOutcome({
             outcome: "skipped",
-            itemId: item.id,
+            attemptId,
             error: message,
           })
         : await repository.commitOutcome({
             outcome: "failed",
-            itemId: item.id,
+            attemptId,
             error: message,
           });
     this.addEvent(

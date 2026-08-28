@@ -8,7 +8,7 @@ import {
   type ScrapeRunStageSnapshot,
 } from "./ScrapeRunSession";
 
-export type ScrapeWorkflowDisposition = "completed" | "failed" | "stopped";
+export type ScrapeWorkflowDisposition = "completed" | "failed" | "stopped" | "interrupted";
 
 export interface ScrapeRunStore<TStart, TRun> {
   create(input: TStart): Promise<TRun>;
@@ -40,8 +40,9 @@ export interface ScrapeWorkflowReporter {
 export interface ScrapeHostExecution<TManualScrape> {
   items: readonly ScrapeRunItem<TManualScrape>[];
   concurrency: number;
-  executeItem(item: ScrapeRunItem<TManualScrape>, signal: AbortSignal): Promise<ScrapeResult>;
-  commitItem(item: ScrapeRunItem<TManualScrape>, result: ScrapeResult): Promise<ScrapeResult>;
+  admitItem(item: ScrapeRunItem<TManualScrape>): Promise<string>;
+  executeItem(item: ScrapeRunItem<TManualScrape>, signal: AbortSignal, attemptId: string): Promise<ScrapeResult>;
+  commitItem(item: ScrapeRunItem<TManualScrape>, result: ScrapeResult, attemptId: string): Promise<ScrapeResult>;
   acquireItem?(item: ScrapeRunItem<TManualScrape>): () => void;
 }
 
@@ -69,6 +70,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
   private readonly scheduler: TaskScheduler<WorkflowEntry<TRun, TManualScrape>>;
   private activeRunId: string | null = null;
   private closing = false;
+  private repairRequired: string | null = null;
   private lastTerminalSnapshot: ScrapeRunSnapshot<TManualScrape> | null = null;
 
   constructor(
@@ -81,6 +83,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
       onExecutionError: async (entry, error) => {
         await this.host.onError?.(entry.id, error);
         await entry.session.abortForShutdown();
+        this.repairRequired = error instanceof Error ? error.message : String(error);
         this.entries.delete(entry.id);
         this.host.onInvalidate();
       },
@@ -89,11 +92,14 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
 
   async start(input: TStart): Promise<ScrapeRunSnapshot<TManualScrape>> {
     if (this.closing) throw new Error("Scrape queue is closing");
+    if (this.repairRequired) throw new Error(`Scrape queue requires repair: ${this.repairRequired}`);
     return await this.enqueue(await this.store.create(input));
   }
 
   async retry(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
     if (this.closing) throw new Error("Scrape queue is closing");
+    if (this.repairRequired) throw new Error(`Scrape queue requires repair: ${this.repairRequired}`);
+    if (this.entries.has(runId)) throw new Error(`Scrape run is already live: ${runId}`);
     return await this.enqueue(await this.store.retry(runId));
   }
 
@@ -168,6 +174,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     const entry = this.requireLive(runId);
     if (entry.state !== "paused") throw new Error(`Cannot resume scrape run in ${entry.state} state: ${runId}`);
     if (this.closing) throw new Error("Scrape queue is closing");
+    if (this.repairRequired) throw new Error(`Scrape queue requires repair: ${this.repairRequired}`);
     entry.state = "queued";
     this.readyRunIds.push(runId);
     this.host.onInvalidate();
@@ -220,6 +227,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
       items: execution.items,
       concurrency: execution.concurrency,
       acquireItem: execution.acquireItem,
+      admitItem: execution.admitItem,
       executeItem: execution.executeItem,
       commitItem: execution.commitItem,
       onSnapshot: () => this.host.onInvalidate(),
@@ -241,7 +249,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
   }
 
   private claimNext(): WorkflowEntry<TRun, TManualScrape> | null {
-    while (!this.closing) {
+    while (!this.closing && !this.repairRequired) {
       const runId = this.readyRunIds.shift();
       if (!runId) return null;
       const entry = this.entries.get(runId);
@@ -264,7 +272,12 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
       await entry.session.waitForIdle();
       if (this.closing) return;
       const snapshot = entry.session.snapshot();
-      if (snapshot.status === "completed" || snapshot.status === "failed" || snapshot.status === "stopped") {
+      if (
+        snapshot.status === "completed" ||
+        snapshot.status === "failed" ||
+        snapshot.status === "stopped" ||
+        snapshot.status === "interrupted"
+      ) {
         await this.settle(entry, snapshot);
       }
     } finally {
@@ -278,7 +291,13 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
   ): Promise<void> {
     entry.settlement ??= (async () => {
       const disposition =
-        snapshot.status === "completed" ? "completed" : snapshot.status === "stopped" ? "stopped" : "failed";
+        snapshot.status === "completed"
+          ? "completed"
+          : snapshot.status === "stopped"
+            ? "stopped"
+            : snapshot.status === "interrupted"
+              ? "interrupted"
+              : "failed";
       const finalized = await this.store.finalize({
         runId: entry.id,
         disposition,
@@ -292,13 +311,24 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     this.lastTerminalSnapshot = snapshot;
     this.entries.delete(entry.id);
     this.removeReady(entry.id);
+    if (snapshot.status === "interrupted") {
+      this.repairRequired = snapshot.error ?? `Scrape run was interrupted: ${entry.id}`;
+    }
     this.host.onInvalidate();
   }
 
   private entrySnapshot(entry: WorkflowEntry<TRun, TManualScrape>): ScrapeRunSnapshot<TManualScrape> {
     const snapshot = entry.session.snapshot();
     if (entry.state === "paused" && snapshot.status === "queued") return { ...snapshot, status: "paused" };
-    if (entry.state === "stopping" && snapshot.status !== "stopped") return { ...snapshot, status: "stopping" };
+    if (
+      entry.state === "stopping" &&
+      snapshot.status !== "completed" &&
+      snapshot.status !== "failed" &&
+      snapshot.status !== "stopped" &&
+      snapshot.status !== "interrupted"
+    ) {
+      return { ...snapshot, status: "stopping" };
+    }
     return snapshot;
   }
 

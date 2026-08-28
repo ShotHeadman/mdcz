@@ -56,7 +56,7 @@ const createCompletedRun = async (
   database.sqlite.transaction(() =>
     scrapeRuns.commitSuccessOutcome({
       outcome: "success",
-      itemId: manifest.items[0].id,
+      attemptId: scrapeRuns.admitAttempt(manifest.items[0].id).id,
       crawlerDataJson: JSON.stringify({ number: input.id }),
       outputRootId: "root-1",
       outputRelativePath: input.outputRelativePath,

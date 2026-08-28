@@ -594,7 +594,7 @@ describe("buildServer scrape integration", () => {
       state.database.sqlite.transaction(() =>
         state.repositories.scrapeRuns.commitSuccessOutcome({
           outcome: "success",
-          itemId: item.id,
+          attemptId: state.repositories.scrapeRuns.admitAttempt(item.id).id,
           crawlerDataJson: JSON.stringify({
             title: item.relativePath,
             number: item.relativePath.replace(".mp4", ""),
@@ -747,7 +747,7 @@ describe("buildServer scrape integration", () => {
     expect(startResponse.json().error.message).toContain("文件不在已注册媒体目录内");
   });
 
-  it("drains an in-flight scrape item when the task is stopped", async () => {
+  it("aborts an in-flight scrape item when the task is stopped", async () => {
     const root = await createTempRoot("scrape-stop-root");
     await writeFile(join(root, "ABC-124.mp4"), "video");
     const imageServer = await startTestImageServer();
@@ -783,7 +783,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: undefined,
     });
-    expect(historyResponse.json().result.data.results[0]?.status).toBe("success");
+    expect(historyResponse.json().result.data.results[0]?.status).toBe("skipped");
   });
 
   it("reads manifest-only runs as interrupted history and removes recovery routes", async () => {
@@ -805,7 +805,7 @@ describe("buildServer scrape integration", () => {
     await state.repositories.scrapeRuns.commitOutcome({
       outcome: "failed",
       id: "failed-outcome",
-      itemId: "failed-item",
+      attemptId: state.repositories.scrapeRuns.admitAttempt("failed-item").id,
       error: "boom",
       completedAt: new Date(1_700_000_001_000),
     });

@@ -76,6 +76,7 @@ describe("DesktopScrapePublisher", () => {
         obsolete: [],
       },
     };
+    const attempt = state.repositories.scrapeRuns.admitAttempt(manifest.items[0].id);
 
     const committed = await publisher.commitItem(
       manifest.id,
@@ -86,6 +87,7 @@ describe("DesktopScrapePublisher", () => {
         sourcePath: inputPath,
       },
       result,
+      attempt.id,
     );
 
     expect(committed).toMatchObject({ status: "success", resultId: expect.any(String) });
@@ -124,6 +126,7 @@ describe("DesktopScrapePublisher", () => {
         obsolete: [],
       },
     };
+    const attempt = state.repositories.scrapeRuns.admitAttempt(manifest.items[0].id);
 
     const committed = await publisher.commitItem(
       manifest.id,
@@ -134,6 +137,7 @@ describe("DesktopScrapePublisher", () => {
         sourcePath: filePath,
       },
       result,
+      attempt.id,
     );
 
     expect(committed).toMatchObject({

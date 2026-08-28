@@ -4,7 +4,15 @@ import { TaskExecutor } from "../executor";
 
 export const MAX_LIVE_SCRAPE_LOGS = 200;
 
-export type ScrapeRunLiveStatus = "queued" | "running" | "paused" | "stopping" | "completed" | "failed" | "stopped";
+export type ScrapeRunLiveStatus =
+  | "queued"
+  | "running"
+  | "paused"
+  | "stopping"
+  | "completed"
+  | "failed"
+  | "stopped"
+  | "interrupted";
 export type ScrapeRunItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 
 export interface ScrapeRunItem<TManualScrape = unknown> {
@@ -58,8 +66,9 @@ export interface ScrapeRunSessionOptions<TManualScrape = unknown> {
   items: readonly ScrapeRunItem<TManualScrape>[];
   concurrency: number;
   acquireItem?: (item: ScrapeRunItem<TManualScrape>) => () => void;
-  executeItem: (item: ScrapeRunItem<TManualScrape>, signal: AbortSignal) => Promise<ScrapeResult>;
-  commitItem: (item: ScrapeRunItem<TManualScrape>, result: ScrapeResult) => Promise<ScrapeResult>;
+  admitItem: (item: ScrapeRunItem<TManualScrape>) => Promise<string>;
+  executeItem: (item: ScrapeRunItem<TManualScrape>, signal: AbortSignal, attemptId: string) => Promise<ScrapeResult>;
+  commitItem: (item: ScrapeRunItem<TManualScrape>, result: ScrapeResult, attemptId: string) => Promise<ScrapeResult>;
   onSnapshot: (snapshot: ScrapeRunSnapshot<TManualScrape>) => void;
 }
 
@@ -102,6 +111,8 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   private latestStage: ScrapeRunStageSnapshot | null = null;
   private error: string | null = null;
   private readonly progressByItemId = new Map<string, number>();
+  private readonly attemptIdByItemId = new Map<string, string>();
+  private readonly shutdownController = new AbortController();
   private executor: TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapeExecution> | null = null;
   private runPromise: Promise<void> | null = null;
 
@@ -152,25 +163,29 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   async stop(): Promise<ScrapeRunSnapshot<TManualScrape>> {
     if (this.isTerminalStatus() || this.status === "stopping") return this.snapshot();
     this.setStatus("stopping");
-    this.executor?.stopAdmission();
+    this.executor?.stop();
     await this.waitForIdle();
     this.generation += 1;
     this.emitSnapshot();
 
-    let firstError: unknown;
     for (const item of this.items) {
       if (isTerminalItemStatus(item.status)) continue;
       try {
-        const result = await this.options.commitItem(item, createSkippedResult(item, "刮削已停止"));
+        const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.options.admitItem(item));
+        this.attemptIdByItemId.set(item.id, attemptId);
+        const result = await this.options.commitItem(item, createSkippedResult(item, "刮削已停止"), attemptId);
         this.applyCommittedResult(item, result);
       } catch (error) {
-        firstError ??= error;
+        const message = error instanceof Error ? error.message : String(error);
+        const terminalError = new AggregateError(
+          [error],
+          `Scrape interrupted because terminal outcome persistence failed: ${message}`,
+        );
+        this.error = terminalError.message;
+        this.recordLog({ level: "error", message: terminalError.message });
+        this.setStatus("interrupted");
+        return this.snapshot();
       }
-    }
-    if (firstError) {
-      this.error = firstError instanceof Error ? firstError.message : String(firstError);
-      this.setStatus("failed");
-      throw firstError;
     }
     this.setStatus("stopped");
     return this.snapshot();
@@ -184,9 +199,10 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     this.setStatus("stopping");
     this.generation += 1;
     this.emitSnapshot();
+    this.shutdownController.abort(new Error("Scrape run interrupted by shutdown"));
     this.executor?.stop();
     await this.waitForIdle();
-    this.setStatus("stopped");
+    this.setStatus("interrupted");
   }
 
   snapshot(): ScrapeRunSnapshot<TManualScrape> {
@@ -287,6 +303,8 @@ export class ScrapeRunSession<TManualScrape = unknown> {
         gate: {
           beforeItem: async (item) => {
             this.assertCurrent(generation, ["running"]);
+            const attemptId = await this.options.admitItem(item);
+            this.attemptIdByItemId.set(item.id, attemptId);
             item.status = "processing";
             item.error = null;
             this.emitSnapshot();
@@ -294,9 +312,11 @@ export class ScrapeRunSession<TManualScrape = unknown> {
           beforeResult: async () => this.assertCurrent(generation, ["running", "paused", "stopping"]),
         },
         runItem: async (item, context) => {
+          const attemptId = this.attemptIdByItemId.get(item.id);
+          if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
           const release = this.options.acquireItem?.(item) ?? (() => undefined);
           try {
-            return { result: await this.options.executeItem(item, context.signal), release };
+            return { result: await this.options.executeItem(item, context.signal, attemptId), release };
           } catch (error) {
             release();
             throw error;
@@ -306,7 +326,9 @@ export class ScrapeRunSession<TManualScrape = unknown> {
         applyResult: async (item, execution) => {
           try {
             this.assertCurrent(generation, ["running", "paused", "stopping"]);
-            const committed = await this.options.commitItem(item, execution.result);
+            const attemptId = this.attemptIdByItemId.get(item.id);
+            if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
+            const committed = await this.options.commitItem(item, execution.result, attemptId);
             this.assertCurrent(generation, ["running", "paused", "stopping"]);
             this.applyCommittedResult(item, committed);
           } finally {
@@ -316,7 +338,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       });
       this.executor = executor;
       try {
-        await executor.execute(pending, generation);
+        await executor.execute(pending, generation, this.shutdownController.signal);
       } finally {
         if (this.executor === executor) this.executor = null;
       }
@@ -350,10 +372,21 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     for (const item of this.items) {
       if (isTerminalItemStatus(item.status)) continue;
       try {
-        const result = await this.options.commitItem(item, createSkippedResult(item, skipMessage));
+        const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.options.admitItem(item));
+        this.attemptIdByItemId.set(item.id, attemptId);
+        const result = await this.options.commitItem(item, createSkippedResult(item, skipMessage), attemptId);
         this.applyCommittedResult(item, result);
-      } catch {
-        // Preserve the manifest-only interrupted state when terminal persistence is unavailable.
+      } catch (commitError) {
+        const commitMessage = commitError instanceof Error ? commitError.message : String(commitError);
+        const originalMessage = error instanceof Error ? error.message : String(error);
+        const terminalError = new AggregateError(
+          [error, commitError],
+          `${originalMessage}; terminal outcome persistence failed: ${commitMessage}`,
+        );
+        this.error = terminalError.message;
+        this.recordLog({ level: "error", message: terminalError.message });
+        this.setStatus("interrupted");
+        return;
       }
     }
     this.setStatus("failed");
@@ -372,7 +405,12 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   }
 
   private isTerminalStatus(): boolean {
-    return this.status === "completed" || this.status === "failed" || this.status === "stopped";
+    return (
+      this.status === "completed" ||
+      this.status === "failed" ||
+      this.status === "stopped" ||
+      this.status === "interrupted"
+    );
   }
 
   private emitSnapshot(): void {

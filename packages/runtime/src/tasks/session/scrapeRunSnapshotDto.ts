@@ -16,7 +16,7 @@ export interface ScrapeSnapshotManifest {
 }
 
 const isTerminalStatus = (status: ScrapeRunSnapshot["status"]): boolean =>
-  status === "completed" || status === "failed" || status === "stopped";
+  status === "completed" || status === "failed" || status === "stopped" || status === "interrupted";
 
 const liveItemToDto = (manifest: ScrapeSnapshotManifest, item: ScrapeRunItemSnapshot): ScrapeLiveItemDto => {
   const manifestItem = manifest.items.find((candidate) => candidate.id === item.id);
@@ -84,11 +84,13 @@ export const toScrapeRunSnapshotDto = (input: {
   const terminal = isTerminalStatus(input.snapshot.status);
   const now = new Date().toISOString();
   const taskStatus =
-    input.snapshot.status === "stopped"
+    input.snapshot.status === "interrupted"
       ? "failed"
-      : input.snapshot.status === "completed"
-        ? "completed"
-        : input.snapshot.status;
+      : input.snapshot.status === "stopped"
+        ? "failed"
+        : input.snapshot.status === "completed"
+          ? "completed"
+          : input.snapshot.status;
   return {
     task: {
       id: input.snapshot.runId,
@@ -104,7 +106,7 @@ export const toScrapeRunSnapshotDto = (input: {
       directoryCount: 0,
       error: input.snapshot.error,
       videos: input.manifest.items.map((item) => item.relativePath),
-      continuity: terminal ? "final" : "live",
+      continuity: input.snapshot.status === "interrupted" ? "interrupted" : terminal ? "final" : "live",
     },
     progress: { ...input.snapshot.progress },
     items: input.snapshot.items.map((item) => liveItemToDto(input.manifest, item)),

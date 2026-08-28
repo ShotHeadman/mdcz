@@ -253,7 +253,15 @@ export class ScraperService {
     const state = await this.persistenceService.getState();
     const root = await state.repositories.mediaRoots.get(manifest.rootId, { includeDeleted: true });
     const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
-    const items: ScrapeRunItem<ManualScrapeOptions>[] = manifest.items.map((item) => ({
+    const settledAttemptIds = new Set(manifest.outcomes.map((outcome) => outcome.attemptId));
+    const openAttemptByItemId = new Map(
+      manifest.attempts
+        .filter((attempt) => !settledAttemptIds.has(attempt.id))
+        .map((attempt) => [attempt.itemId, attempt.id]),
+    );
+    const records =
+      openAttemptByItemId.size > 0 ? manifest.items.filter((item) => openAttemptByItemId.has(item.id)) : manifest.items;
+    const items: ScrapeRunItem<ManualScrapeOptions>[] = records.map((item) => ({
       id: item.id,
       rootId: item.rootId,
       relativePath: item.relativePath,
@@ -270,18 +278,25 @@ export class ScraperService {
     return {
       items,
       concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
-      executeItem: async (item: ScrapeRunItem<ManualScrapeOptions>, signal: AbortSignal) => {
+      admitItem: async (item: ScrapeRunItem<ManualScrapeOptions>) => {
+        const existing = openAttemptByItemId.get(item.id);
+        if (existing) return existing;
+        const attempt = state.repositories.scrapeRuns.admitAttempt(item.id);
+        openAttemptByItemId.set(item.id, attempt.id);
+        return attempt.id;
+      },
+      executeItem: async (item: ScrapeRunItem<ManualScrapeOptions>, signal: AbortSignal, attemptId: string) => {
         await policy.restGate?.waitBeforeStart(signal);
         const progress = { fileIndex: itemIndexById.get(item.id) ?? 1, totalFiles: items.length };
         return await fileScraper.scrapeFile(item.sourcePath, progress, signal, {
           ...(item.manualScrape ? { manualScrape: item.manualScrape } : {}),
           source: { rootId: item.rootId, relativePath: item.relativePath },
           roots,
-          operationId: `${manifest.id}:${item.id}`,
+          operationId: `${manifest.id}:${attemptId}`,
         });
       },
-      commitItem: async (item: ScrapeRunItem<ManualScrapeOptions>, result: ScrapeResult) =>
-        await this.publisher.commitItem(manifest.id, item, result),
+      commitItem: async (item: ScrapeRunItem<ManualScrapeOptions>, result: ScrapeResult, attemptId: string) =>
+        await this.publisher.commitItem(manifest.id, item, result, attemptId),
     };
   }
 

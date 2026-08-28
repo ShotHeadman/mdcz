@@ -42,9 +42,7 @@ const createHost = () => {
     retry: vi.fn(async (id) => {
       const source = runs.find((candidate) => candidate.id === id);
       if (!source) throw new Error(`missing run ${id}`);
-      const retry = { ...source, id: `run-${nextId++}`, createdAt: new Date() };
-      runs.push(retry);
-      return retry;
+      return source;
     }),
     finalize: vi.fn(async ({ runId }) => {
       const run = runs.find((candidate) => candidate.id === runId);
@@ -61,6 +59,7 @@ const createHost = () => {
     createExecution: async (run) => ({
       items: run.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
       concurrency: 1,
+      admitItem: async (item) => `${item.id}:attempt`,
       executeItem: async (item) => resultFor(item),
       commitItem: async (_item, result) => result,
     }),
@@ -78,7 +77,7 @@ describe.each(["desktop", "server"])("scrape host parity: %s", () => {
     await coordinator.waitForIdle();
 
     expect(store.retry).toHaveBeenCalledWith(first.runId);
-    expect(retry.runId).not.toBe(first.runId);
+    expect(retry.runId).toBe(first.runId);
     expect(store.interruptUnfinished).not.toHaveBeenCalled();
 
     await coordinator.abortForShutdown();

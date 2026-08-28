@@ -21,6 +21,7 @@ const manifest: ScrapeRunManifest = {
   completedAt: null,
   disposition: null,
   error: null,
+  attempts: [],
   outcomes: [],
   items: [
     {

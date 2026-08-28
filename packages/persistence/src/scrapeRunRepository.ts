@@ -21,6 +21,13 @@ export interface ScrapeRunItemRecord {
   uncensoredChoice: ScrapeUncensoredChoice | null;
 }
 
+export interface ScrapeAttemptRecord {
+  id: string;
+  itemId: string;
+  attempt: number;
+  admittedAt: Date;
+}
+
 export interface ScrapeItemOutcomeRecord {
   id: string;
   attemptId: string;
@@ -49,6 +56,7 @@ export interface ScrapeRunRecord {
   disposition: ScrapeRunDisposition | null;
   error: string | null;
   items: ScrapeRunItemRecord[];
+  attempts: ScrapeAttemptRecord[];
   outcomes: ScrapeItemOutcomeRecord[];
 }
 
@@ -85,7 +93,7 @@ export interface CreateScrapeRunInput {
 
 type CommitBase = {
   id?: string;
-  itemId: string;
+  attemptId: string;
   completedAt?: Date;
 };
 
@@ -183,6 +191,13 @@ export class ScrapeRunRepository {
       .where(eq(scrapeRunItems.runId, runId))
       .orderBy(asc(scrapeRunItems.ordinal))
       .all();
+    const attempts = this.database.db
+      .select({ attempt: scrapeAttempts })
+      .from(scrapeAttempts)
+      .innerJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
+      .where(eq(scrapeRunItems.runId, runId))
+      .orderBy(asc(scrapeRunItems.ordinal), asc(scrapeAttempts.attempt))
+      .all();
     const outcomes = this.database.db
       .select({ outcome: scrapeItemOutcomes, attempt: scrapeAttempts })
       .from(scrapeItemOutcomes)
@@ -202,6 +217,7 @@ export class ScrapeRunRepository {
       disposition: run.disposition,
       error: run.errorMessage,
       items,
+      attempts: attempts.map(({ attempt }) => attempt),
       outcomes: outcomes.map(({ outcome, attempt }) => ({
         id: outcome.id,
         attemptId: outcome.attemptId,
@@ -230,36 +246,77 @@ export class ScrapeRunRepository {
     return await Promise.all(ids.map(({ id }) => this.get(id)));
   }
 
-  async commitOutcome(
-    input: Extract<CommitScrapeOutcomeInput, { outcome: "failed" | "skipped" }>,
-  ): Promise<ScrapeItemOutcomeRecord> {
+  admitAttempt(itemId: string, admittedAt = new Date()): ScrapeAttemptRecord {
+    const item = this.database.db.select().from(scrapeRunItems).where(eq(scrapeRunItems.id, itemId)).get();
+    if (!item) throw notFound("Scrape item", itemId);
+    const run = this.database.db.select().from(scrapeRuns).where(eq(scrapeRuns.id, item.runId)).get();
+    if (!run) throw notFound("Scrape run", item.runId);
+    if (run.disposition === "interrupted") throw new Error(`Interrupted scrape run cannot admit attempts: ${run.id}`);
+
+    const latest = this.database.db
+      .select()
+      .from(scrapeAttempts)
+      .where(eq(scrapeAttempts.itemId, itemId))
+      .orderBy(desc(scrapeAttempts.attempt))
+      .limit(1)
+      .get();
+    if (latest) {
+      const outcome = this.database.db
+        .select({ id: scrapeItemOutcomes.id })
+        .from(scrapeItemOutcomes)
+        .where(eq(scrapeItemOutcomes.attemptId, latest.id))
+        .get();
+      if (!outcome) throw new Error(`Scrape item already has an unfinished attempt: ${itemId}`);
+    }
+
+    const attempt = {
+      id: randomUUID(),
+      itemId,
+      attempt: (latest?.attempt ?? 0) + 1,
+      admittedAt,
+    };
+    this.database.db.insert(scrapeAttempts).values(attempt).run();
+    return attempt;
+  }
+
+  commitOutcome(input: Extract<CommitScrapeOutcomeInput, { outcome: "failed" | "skipped" }>): ScrapeItemOutcomeRecord {
     const id = input.id ?? randomUUID();
     const completedAt = input.completedAt ?? new Date();
-    const runId = this.database.sqlite.transaction(() => {
-      const { item, attempt } = this.itemAndInitialAttempt(input.itemId, completedAt);
-      this.database.db
-        .insert(scrapeItemOutcomes)
-        .values({
-          id,
-          attemptId: attempt.id,
-          outcome: input.outcome,
-          errorMessage: input.error ?? null,
-          crawlerDataJson: null,
-          nfoRootId: null,
-          nfoRelativePath: null,
-          outputRootId: null,
-          outputRelativePath: null,
-          uncensoredAmbiguous: false,
-          size: 0,
-          modifiedAt: null,
-          completedAt,
-        })
-        .run();
-      return item.runId;
-    })();
-    const outcome = (await this.get(runId)).outcomes.find((candidate) => candidate.id === id);
-    if (!outcome) throw new Error(`Scrape outcome disappeared after insert: ${id}`);
-    return outcome;
+    const { attempt } = this.requireOpenAttempt(input.attemptId);
+    this.database.db
+      .insert(scrapeItemOutcomes)
+      .values({
+        id,
+        attemptId: attempt.id,
+        outcome: input.outcome,
+        errorMessage: input.error ?? null,
+        crawlerDataJson: null,
+        nfoRootId: null,
+        nfoRelativePath: null,
+        outputRootId: null,
+        outputRelativePath: null,
+        uncensoredAmbiguous: false,
+        size: 0,
+        modifiedAt: null,
+        completedAt,
+      })
+      .run();
+    return {
+      id,
+      attemptId: attempt.id,
+      itemId: attempt.itemId,
+      outcome: input.outcome,
+      error: input.error ?? null,
+      crawlerDataJson: null,
+      nfoRootId: null,
+      nfoRelativePath: null,
+      outputRootId: null,
+      outputRelativePath: null,
+      uncensoredAmbiguous: false,
+      size: 0,
+      modifiedAt: null,
+      completedAt,
+    };
   }
 
   commitSuccessOutcome(input: Extract<CommitScrapeOutcomeInput, { outcome: "success" }>): {
@@ -268,7 +325,7 @@ export class ScrapeRunRepository {
   } {
     const id = input.id ?? randomUUID();
     const completedAt = input.completedAt ?? new Date();
-    const { item, attempt } = this.itemAndInitialAttempt(input.itemId, completedAt);
+    const { item, attempt } = this.requireOpenAttempt(input.attemptId);
     this.database.db
       .insert(scrapeItemOutcomes)
       .values({
@@ -340,10 +397,15 @@ export class ScrapeRunRepository {
 
   async finalize(input: FinalizeScrapeRunInput): Promise<ScrapeRunRecord> {
     const run = await this.get(input.runId);
-    if (run.disposition) throw new Error(`Scrape run is already finalized: ${run.id}`);
-    if (input.disposition !== "interrupted" && run.outcomes.length !== run.items.length) {
+    const outcomeByAttemptId = new Map(run.outcomes.map((outcome) => [outcome.attemptId, outcome]));
+    const latestAttemptByItemId = new Map(run.attempts.map((attempt) => [attempt.itemId, attempt]));
+    const settledItems = run.items.filter((item) => {
+      const attempt = latestAttemptByItemId.get(item.id);
+      return attempt && outcomeByAttemptId.has(attempt.id);
+    }).length;
+    if (input.disposition !== "interrupted" && settledItems !== run.items.length) {
       throw new Error(
-        `Cannot finalize scrape run ${run.id}: ${run.items.length - run.outcomes.length} item(s) lack an outcome`,
+        `Cannot finalize scrape run ${run.id}: ${run.items.length - settledItems} item(s) lack an outcome`,
       );
     }
     const outputRootIds = new Set(
@@ -367,39 +429,49 @@ export class ScrapeRunRepository {
   }
 
   interruptUnfinished(interruptedAt = new Date()): void {
-    this.database.db
-      .update(scrapeRuns)
-      .set({ disposition: "interrupted", completedAt: interruptedAt, errorMessage: "Interrupted by shutdown" })
-      .where(isNull(scrapeRuns.disposition))
-      .run();
+    const runIds = new Set(
+      this.database.db
+        .select({ id: scrapeRuns.id })
+        .from(scrapeRuns)
+        .where(isNull(scrapeRuns.disposition))
+        .all()
+        .map(({ id }) => id),
+    );
+    for (const { id } of this.database.db
+      .selectDistinct({ id: scrapeRunItems.runId })
+      .from(scrapeAttempts)
+      .innerJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
+      .leftJoin(scrapeItemOutcomes, eq(scrapeItemOutcomes.attemptId, scrapeAttempts.id))
+      .where(isNull(scrapeItemOutcomes.id))
+      .all()) {
+      runIds.add(id);
+    }
+    this.database.sqlite.transaction(() => {
+      for (const id of runIds) {
+        this.database.db
+          .update(scrapeRuns)
+          .set({ disposition: "interrupted", completedAt: interruptedAt, errorMessage: "Interrupted by shutdown" })
+          .where(eq(scrapeRuns.id, id))
+          .run();
+      }
+    })();
   }
 
-  async retry(runId: string, createdAt = new Date()): Promise<ScrapeRunRecord> {
+  async retry(runId: string, admittedAt = new Date()): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
     if (!run.disposition || run.disposition === "interrupted") {
       throw new Error(`Only completed, failed, or stopped scrape runs can be retried: ${run.id}`);
     }
-    const outcomesByItemId = new Map(run.outcomes.map((outcome) => [outcome.itemId, outcome]));
-    const items = run.items
-      .filter((item) => {
-        const outcome = outcomesByItemId.get(item.id);
-        return outcome?.outcome === "failed" || outcome?.outcome === "skipped";
-      })
-      .map((item, ordinal) => ({
-        ordinal,
-        rootId: item.rootId,
-        relativePath: item.relativePath,
-        manualUrl: item.manualUrl,
-        uncensoredChoice: item.uncensoredChoice,
-      }));
-    if (items.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
-    return await this.create({
-      rootId: run.rootId,
-      outputRootId: run.requestedOutputRootId,
-      executionMode: run.executionMode,
-      createdAt,
-      items,
+    const outcomesByItemId = new Map(latestOutcomes(run.outcomes).map((outcome) => [outcome.itemId, outcome]));
+    const items = run.items.filter((item) => {
+      const outcome = outcomesByItemId.get(item.id);
+      return outcome?.outcome === "failed" || outcome?.outcome === "skipped";
     });
+    if (items.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
+    this.database.sqlite.transaction(() => {
+      for (const item of items) this.admitAttempt(item.id, admittedAt);
+    })();
+    return await this.get(run.id);
   }
 
   summary(run: ScrapeRunRecord): ScrapeRunSummaryRecord | null {
@@ -429,29 +501,17 @@ export class ScrapeRunRepository {
     return latestOutcomes(run.outcomes);
   }
 
-  private itemAndInitialAttempt(itemId: string, admittedAt: Date) {
-    const item = this.database.db.select().from(scrapeRunItems).where(eq(scrapeRunItems.id, itemId)).get();
-    if (!item) throw notFound("Scrape item", itemId);
-    const run = this.database.db.select().from(scrapeRuns).where(eq(scrapeRuns.id, item.runId)).get();
-    if (!run) throw notFound("Scrape run", item.runId);
-    if (run.disposition) throw new Error(`Scrape run is already finalized: ${run.id}`);
-    const attempt = this.database.db
-      .select()
-      .from(scrapeAttempts)
-      .where(eq(scrapeAttempts.itemId, item.id))
-      .limit(1)
+  private requireOpenAttempt(attemptId: string) {
+    const attempt = this.database.db.select().from(scrapeAttempts).where(eq(scrapeAttempts.id, attemptId)).get();
+    if (!attempt) throw notFound("Scrape attempt", attemptId);
+    const item = this.database.db.select().from(scrapeRunItems).where(eq(scrapeRunItems.id, attempt.itemId)).get();
+    if (!item) throw notFound("Scrape item", attempt.itemId);
+    const outcome = this.database.db
+      .select({ id: scrapeItemOutcomes.id })
+      .from(scrapeItemOutcomes)
+      .where(eq(scrapeItemOutcomes.attemptId, attempt.id))
       .get();
-    if (attempt) {
-      const outcome = this.database.db
-        .select({ id: scrapeItemOutcomes.id })
-        .from(scrapeItemOutcomes)
-        .where(eq(scrapeItemOutcomes.attemptId, attempt.id))
-        .get();
-      if (outcome) throw new Error(`Scrape item already has an outcome: ${item.id}`);
-      return { item, attempt };
-    }
-    const id = randomUUID();
-    this.database.db.insert(scrapeAttempts).values({ id, itemId: item.id, attempt: 1, admittedAt }).run();
-    return { item, attempt: { id } };
+    if (outcome) throw new Error(`Scrape attempt already has an outcome: ${attempt.id}`);
+    return { item, attempt };
   }
 }

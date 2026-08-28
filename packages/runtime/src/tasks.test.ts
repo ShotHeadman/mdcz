@@ -142,6 +142,8 @@ const runItem = (id: string) => ({
   sourcePath: `/media/${id}.mp4`,
 });
 
+const admitItem = async (item: { id: string }): Promise<string> => `${item.id}:attempt`;
+
 const terminalResult = (
   item: { id: string; rootId: string; relativePath: string; sourcePath: string },
   status: "success" | "failed" | "skipped",
@@ -167,6 +169,7 @@ describe("scrape run session", () => {
       runId: "run-1",
       items,
       concurrency: 1,
+      admitItem,
       executeItem: async (item) => {
         executed.push(item.id);
         if (item.id === "one") {
@@ -242,6 +245,7 @@ describe("scrape run session", () => {
       runId: `run-resume-${concurrency}`,
       items,
       concurrency,
+      admitItem,
       executeItem: async (item) => {
         const index = ids.indexOf(item.id);
         started[index]?.resolve();
@@ -274,6 +278,7 @@ describe("scrape run session", () => {
       runId: "run-progress",
       items,
       concurrency: 1,
+      admitItem,
       executeItem: async (item) => {
         if (item.id === "one") {
           started.resolve();
@@ -298,9 +303,9 @@ describe("scrape run session", () => {
     expect(session.snapshot().progress.percent).toBe(50);
   });
 
-  it("drains the active outcome and skips work that was not admitted", async () => {
+  it("aborts in-flight work and skips every unsettled item on stop", async () => {
     const started = deferred<void>();
-    const release = deferred<void>();
+    const aborted = deferred<void>();
     const executed: string[] = [];
     const committed: string[] = [];
     const items = [runItem("one"), runItem("two")];
@@ -308,11 +313,21 @@ describe("scrape run session", () => {
       runId: "run-1",
       items,
       concurrency: 1,
-      executeItem: async (item) => {
+      admitItem,
+      executeItem: async (item, signal) => {
         executed.push(item.id);
         started.resolve();
-        await release.promise;
-        return terminalResult(item, "success");
+        await new Promise<void>((resolve) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted.resolve();
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        throw signal.reason;
       },
       commitItem: async (item, result) => {
         committed.push(`${item.id}:${result.status}`);
@@ -324,14 +339,14 @@ describe("scrape run session", () => {
     await session.start();
     await started.promise;
     const stopping = session.stop();
-    release.resolve();
+    await aborted.promise;
     await expect(stopping).resolves.toMatchObject({
       generation: 1,
       status: "stopped",
       progress: { completedItems: 2, totalItems: 2, percent: 100 },
     });
     expect(executed).toEqual(["one"]);
-    expect(committed).toEqual(["one:success", "two:skipped"]);
+    expect(committed).toEqual(["one:skipped", "two:skipped"]);
   });
 
   it("lets an admitted terminal transaction finish before skipping remaining items on stop", async () => {
@@ -343,6 +358,7 @@ describe("scrape run session", () => {
       runId: "run-1",
       items,
       concurrency: 1,
+      admitItem,
       executeItem: async (item) => terminalResult(item, "success"),
       commitItem: async (item, result) => {
         committed.push(`${item.id}:${result.status}`);
@@ -379,6 +395,7 @@ describe("scrape run session", () => {
       runId: "run-1",
       items: [runItem("one"), runItem("two")],
       concurrency: 1,
+      admitItem,
       executeItem: async (item, signal) => {
         started.resolve();
         await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
@@ -398,9 +415,34 @@ describe("scrape run session", () => {
     expect(committed).toEqual([]);
     expect(session.snapshot()).toMatchObject({
       generation: 1,
-      status: "stopped",
+      status: "interrupted",
       progress: { completedItems: 0, totalItems: 2, percent: 0 },
     });
+  });
+
+  it("surfaces terminal persistence failure and interrupts the run", async () => {
+    const session = new ScrapeRunSession({
+      runId: "run-persistence-failure",
+      items: [runItem("one")],
+      concurrency: 1,
+      admitItem,
+      executeItem: async () => {
+        throw new Error("crawler crashed");
+      },
+      commitItem: async () => {
+        throw new Error("database unavailable");
+      },
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await session.waitForIdle();
+
+    expect(session.snapshot()).toMatchObject({
+      status: "interrupted",
+      error: "crawler crashed; terminal outcome persistence failed: database unavailable",
+    });
+    expect(session.snapshot().logs.at(-1)?.message).toContain("database unavailable");
   });
 });
 
