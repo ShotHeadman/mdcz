@@ -74,33 +74,35 @@ export class DesktopScrapePublisher {
       acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
       repairIssues: state.repositories.libraryRepairIssues,
       commit: async () =>
-        await state.repositories.scrapeRuns.commitOutcome({
-          outcome: "success",
-          itemId: item.id,
-          crawlerDataJson,
-          nfoRootId: nfo?.rootId ?? null,
-          nfoRelativePath: nfo?.relativePath ?? null,
-          outputRootId: output.rootId,
-          outputRelativePath: output.relativePath,
-          uncensoredAmbiguous: result.uncensoredAmbiguous ?? false,
-          size: plan.video?.size ?? 0,
-          modifiedAt: null,
-          completedAt,
-          libraryEntry: {
-            mediaIdentity: crawlerData.number || result.fileName,
-            rootId: output.rootId,
-            rootRelativePath: output.relativePath,
-            size: plan.video?.size ?? 0,
-            title: crawlerData.title,
-            number: crawlerData.number || result.fileName,
-            actors: crawlerData.actors,
+        state.database.sqlite.transaction(() =>
+          state.repositories.scrapeRuns.commitSuccessOutcome({
+            outcome: "success",
+            itemId: item.id,
             crawlerDataJson,
-            thumbnailPath,
-            assets: libraryAssets,
-            lastKnownPath: output.relativePath,
-            createdAt: completedAt,
-          },
-        }),
+            nfoRootId: nfo?.rootId ?? null,
+            nfoRelativePath: nfo?.relativePath ?? null,
+            outputRootId: output.rootId,
+            outputRelativePath: output.relativePath,
+            uncensoredAmbiguous: result.uncensoredAmbiguous ?? false,
+            size: plan.video?.size ?? 0,
+            modifiedAt: null,
+            completedAt,
+            libraryEntry: {
+              mediaIdentity: crawlerData.number || result.fileName,
+              rootId: output.rootId,
+              rootRelativePath: output.relativePath,
+              size: plan.video?.size ?? 0,
+              title: crawlerData.title,
+              number: crawlerData.number || result.fileName,
+              actors: crawlerData.actors,
+              crawlerDataJson,
+              thumbnailPath,
+              assets: libraryAssets,
+              lastKnownPath: output.relativePath,
+              createdAt: completedAt,
+            },
+          }),
+        )(),
     }).catch(async (error) => {
       if (!(error instanceof PublicationError && error.committed)) throw error;
       const run = await state.repositories.scrapeRuns.get(runId);
@@ -108,9 +110,8 @@ export class DesktopScrapePublisher {
       if (!outcome) throw error;
       const entry = await state.repositories.library.getEntryBySourceOutcomeId(outcome.id);
       if (!entry) throw error;
-      return { outcome, entry };
+      return { outcomeId: outcome.id, entryId: entry.id };
     });
-    if (!("entry" in committed)) throw new Error(`Successful scrape outcome was not committed: ${item.id}`);
-    return { ...result, resultId: committed.outcome.id };
+    return { ...result, resultId: committed.outcomeId };
   }
 }

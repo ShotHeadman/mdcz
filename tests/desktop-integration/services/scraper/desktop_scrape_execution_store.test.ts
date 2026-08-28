@@ -106,9 +106,9 @@ describe("DesktopScrapePublisher", () => {
       executionMode: "single",
       items: [{ ordinal: 0, rootId: root.id, relativePath: "ABP-001.mp4" }],
     });
-    vi.spyOn(state.repositories.scrapeRuns, "commitOutcome").mockRejectedValueOnce(
-      new Error("library constraint failed"),
-    );
+    vi.spyOn(state.repositories.scrapeRuns, "commitSuccessOutcome").mockImplementationOnce(() => {
+      throw new Error("library constraint failed");
+    });
     const result = {
       ...successResult("ABP-001.mp4"),
       publicationPlan: {

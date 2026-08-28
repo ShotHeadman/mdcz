@@ -93,7 +93,7 @@ describe("LibraryRepository maintenance refresh", () => {
     const targetStat = await stat(targetPath);
     const refreshedAt = new Date("2026-08-24T01:02:03.000Z");
 
-    await library.commitRefresh({
+    const refresh = await library.prepareRefresh({
       librarySource: source ?? undefined,
       sourceAbsolutePath: sourcePath,
       targetAbsolutePath: targetPath,
@@ -104,6 +104,7 @@ describe("LibraryRepository maintenance refresh", () => {
       assets: { poster: posterPath, sceneImages: [], actorPhotos: [actorPhotoPath] },
       refreshedAt,
     });
+    database.sqlite.transaction(() => library.writeRefresh(refresh))();
 
     const updated = await library.getEntryById(original.id);
     expect(updated).toMatchObject({
@@ -138,7 +139,7 @@ describe("LibraryRepository maintenance refresh", () => {
   });
 
   it("finds an existing item across different root IDs and maps assets to the longest containing root", async () => {
-    const { directory, library, root, roots } = await createFixture();
+    const { database, directory, library, root, roots } = await createFixture();
     const nestedPath = path.join(directory.path, "nested");
     await mkdir(nestedPath, { recursive: true });
     const nestedRoot = createMediaRoot({ id: "root-nested", displayName: "Nested", hostPath: nestedPath });
@@ -162,7 +163,7 @@ describe("LibraryRepository maintenance refresh", () => {
     const source = await library.resolveMaintenanceSource(videoPath);
     expect(source).toMatchObject({ libraryItemId: original.id, rootId: root.id });
     const file = await stat(videoPath);
-    await library.commitRefresh({
+    const refresh = await library.prepareRefresh({
       librarySource: source ?? undefined,
       sourceAbsolutePath: videoPath,
       targetAbsolutePath: videoPath,
@@ -173,6 +174,7 @@ describe("LibraryRepository maintenance refresh", () => {
       assets: { poster: posterPath, sceneImages: [], actorPhotos: [] },
       refreshedAt: new Date(),
     });
+    database.sqlite.transaction(() => library.writeRefresh(refresh))();
     const updated = await library.getEntryById(original.id);
     expect(updated.rootId).toBe(root.id);
     expect(updated.thumbnailRootId).toBe(nestedRoot.id);
@@ -184,7 +186,7 @@ describe("LibraryRepository maintenance refresh", () => {
   });
 
   it("rejects a target owned by another item and creates a provenance-free item for an unregistered movie", async () => {
-    const { directory, library, root } = await createFixture();
+    const { database, directory, library, root } = await createFixture();
     const firstPath = path.join(directory.path, "first.mp4");
     const occupiedPath = path.join(directory.path, "occupied.mp4");
     const newPath = path.join(directory.path, "new.mp4");
@@ -202,7 +204,7 @@ describe("LibraryRepository maintenance refresh", () => {
 
     const file = await stat(newPath);
     const refreshedAt = new Date("2026-08-24T02:03:04.000Z");
-    const created = await library.commitRefresh({
+    const refresh = await library.prepareRefresh({
       sourceAbsolutePath: newPath,
       targetAbsolutePath: newPath,
       size: file.size,
@@ -212,6 +214,7 @@ describe("LibraryRepository maintenance refresh", () => {
       assets: { sceneImages: [], actorPhotos: [] },
       refreshedAt,
     });
+    const created = database.sqlite.transaction(() => library.writeRefresh(refresh))();
     expect(await library.getEntryById(created.libraryItemId)).toMatchObject({
       createdAt: refreshedAt,
       sourceRunId: null,

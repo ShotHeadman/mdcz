@@ -6,7 +6,6 @@ import type { ScrapeRunItem } from "./ScrapeRunSession";
 type Run = {
   id: string;
   createdAt: Date;
-  retryOfRunId: string | null;
   items: Array<{ id: string; rootId: string; relativePath: string }>;
 };
 
@@ -33,13 +32,11 @@ describe("ScrapeCoordinator retry", () => {
     const original: Run = {
       id: "run-1",
       createdAt: new Date("2026-08-27T00:00:00.000Z"),
-      retryOfRunId: null,
       items: [{ id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" }],
     };
     const retryRun: Run = {
       id: "run-2",
       createdAt: new Date("2026-08-27T00:01:00.000Z"),
-      retryOfRunId: "run-1",
       items: original.items,
     };
     const store: ScrapeRunStore<string, Run> = {
@@ -81,6 +78,5 @@ describe("ScrapeCoordinator retry", () => {
     expect(store.retry).toHaveBeenCalledWith("run-1");
     expect(store.create).not.toHaveBeenCalled();
     expect(snapshot.runId).toBe("run-2");
-    expect(retryRun.retryOfRunId).toBe("run-1");
   });
 });

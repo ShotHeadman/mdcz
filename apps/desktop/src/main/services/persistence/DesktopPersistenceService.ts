@@ -6,6 +6,7 @@ import {
   LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
+  PublicationJournalRepository,
   runMigrations,
   ScrapeRunRepository,
   TaskRepository,
@@ -28,6 +29,7 @@ export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
   libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
+  publicationJournal: PublicationJournalRepository;
   scrapeRuns: ScrapeRunRepository;
   tasks: TaskRepository;
 }
@@ -74,6 +76,7 @@ export class DesktopPersistenceService {
           library: new LibraryRepository(database),
           libraryRepairIssues: new LibraryRepairIssueRepository(database),
           mediaRoots: new MediaRootRepository(database),
+          publicationJournal: new PublicationJournalRepository(database),
           scrapeRuns,
           tasks: new TaskRepository(database),
         },

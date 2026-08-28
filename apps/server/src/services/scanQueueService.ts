@@ -36,6 +36,7 @@ const toPosixPath = (value: string): string => value.replace(/\\/gu, "/");
 
 export class ScanQueueService {
   private readonly scheduler: TaskScheduler<TaskRecord>;
+  private readonly queuedTaskIds: string[] = [];
 
   constructor(
     private readonly persistence: ServerPersistenceService,
@@ -43,7 +44,7 @@ export class ScanQueueService {
     private readonly taskEvents: TaskEventBus,
   ) {
     this.scheduler = new TaskScheduler({
-      claimNext: async () => await (await this.persistence.getState()).repositories.tasks.claimNext(),
+      claimNext: async () => await this.claimNext(),
       runExecution: async (task) => await this.runTask(task),
     });
   }
@@ -55,7 +56,7 @@ export class ScanQueueService {
     await this.addEvent(task.id, "queued", "扫描任务已排队");
     const queuedTask = await this.toDto(task.id);
     this.publishTask(queuedTask);
-    this.scheduler.drain();
+    this.enqueue(task.id);
     return queuedTask;
   }
 
@@ -96,16 +97,24 @@ export class ScanQueueService {
       throw new Error("Only completed or failed scan tasks can be retried");
     }
     await this.mediaRoots.getActiveRoot(task.rootId);
-    const queued = await state.repositories.tasks.requeue(taskId, {
-      status: ["completed", "failed"],
-      executionVersion: task.executionVersion,
-    });
+    const queued = await state.repositories.tasks.patch(
+      taskId,
+      {
+        status: "queued",
+        startedAt: null,
+        completedAt: null,
+        error: null,
+        videoCount: 0,
+        directoryCount: 0,
+      },
+      { status: ["completed", "failed"] },
+    );
     if (!queued) throw new Error(`Failed to requeue scan task: ${taskId}`);
     await state.repositories.tasks.replaceScanResults({ taskId, rootId: task.rootId, results: [] });
     await this.addEvent(taskId, "queued", "重试扫描已排队");
     const queuedTask = await this.toDto(taskId);
     this.publishTask(queuedTask);
-    this.scheduler.drain();
+    this.enqueue(taskId);
     return queuedTask;
   }
 
@@ -169,15 +178,9 @@ export class ScanQueueService {
     };
   }
 
-  async resumeQueued(): Promise<void> {
-    const state = await this.persistence.getState();
-    await state.repositories.tasks.requeueRunning();
-    this.scheduler.drain();
-  }
-
   private async runTask(task: TaskRecord): Promise<void> {
     const state = await this.persistence.getState();
-    const { id: taskId, rootId, executionVersion } = task;
+    const { id: taskId, rootId } = task;
     await this.addEvent(taskId, "running", "开始扫描媒体目录");
     this.publishTask(await this.toDto(taskId));
 
@@ -187,7 +190,6 @@ export class ScanQueueService {
       const committed = await state.repositories.tasks.completeScanTask({
         taskId,
         rootId,
-        executionVersion,
         results: result.videos,
         directoryCount: result.directoryCount,
       });
@@ -203,7 +205,7 @@ export class ScanQueueService {
       const committed = await state.repositories.tasks.patch(
         taskId,
         { status: "failed", completedAt: new Date(), error: message },
-        { status: "running", executionVersion },
+        { status: "running" },
       );
       if (!committed) return;
       await this.addEvent(taskId, "failed", message);
@@ -233,7 +235,7 @@ export class ScanQueueService {
     const videos = await state.repositories.tasks.listScanResults(taskId);
     return {
       id: task.id,
-      kind: task.kind,
+      kind: "scan",
       rootId: task.rootId,
       rootDisplayName: root?.displayName ?? "未知媒体目录",
       status: task.status,
@@ -259,6 +261,21 @@ export class ScanQueueService {
   private publishTask(task: ScanTaskDto): void {
     this.taskEvents.lifecycle(task);
     this.taskEvents.invalidate("scan");
+  }
+
+  private enqueue(taskId: string): void {
+    this.queuedTaskIds.push(taskId);
+    this.scheduler.drain();
+  }
+
+  private async claimNext(): Promise<TaskRecord | null> {
+    const state = await this.persistence.getState();
+    while (true) {
+      const taskId = this.queuedTaskIds.shift();
+      if (!taskId) return null;
+      const task = await state.repositories.tasks.claim(taskId);
+      if (task) return task;
+    }
   }
 }
 

@@ -90,7 +90,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     await services.config.load();
     await services.config.startWatching();
     await services.persistence.initialize();
-    await services.scans.resumeQueued();
   });
 
   fastify.addHook("onClose", async () => {

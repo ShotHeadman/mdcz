@@ -2,12 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
-import type {
-  LibraryEntryRecord,
-  ScrapeItemOutcomeRecord,
-  ScrapeRunItemRecord,
-  ScrapeRunManifest,
-} from "@mdcz/persistence";
+import type { ScrapeItemOutcomeRecord, ScrapeRunItemRecord, ScrapeRunManifest } from "@mdcz/persistence";
 import { mediaPathOwnership, toLibraryAssets } from "@mdcz/runtime/library";
 import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
@@ -617,7 +612,7 @@ export class ScrapeService {
           ? thumbnail.file.relativePath
           : thumbnail.url
         : null;
-      let committed: { outcome: ScrapeItemOutcomeRecord; entry: LibraryEntryRecord };
+      let committed: { outcomeId: string; entryId: string };
       try {
         const state = await this.persistence.getState();
         committed = await commitPublishedMedia(runtimeResult.plan, {
@@ -625,34 +620,36 @@ export class ScrapeService {
           acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
           repairIssues: state.repositories.libraryRepairIssues,
           commit: async () =>
-            await repository.commitOutcome({
-              outcome: "success",
-              itemId: item.id,
-              crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
-              nfoRootId: nfoRelativePath && metadataRoot.id !== outputRef.rootId ? metadataRoot.id : null,
-              nfoRelativePath,
-              outputRootId: outputRef.rootId,
-              outputRelativePath: outputRef.relativePath,
-              uncensoredAmbiguous: item.manualScrape?.uncensoredChoice
-                ? false
-                : (runtimeResult.result.uncensoredAmbiguous ?? false),
-              size: runtimeResult.size,
-              modifiedAt: runtimeResult.modifiedAt,
-              libraryEntry: {
-                rootId: outputRef.rootId,
-                rootRelativePath: outputRef.relativePath,
-                mediaIdentity: runtimeResult.crawlerData.number,
+            state.database.sqlite.transaction(() =>
+              repository.commitSuccessOutcome({
+                outcome: "success",
+                itemId: item.id,
+                crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
+                nfoRootId: nfoRelativePath && metadataRoot.id !== outputRef.rootId ? metadataRoot.id : null,
+                nfoRelativePath,
+                outputRootId: outputRef.rootId,
+                outputRelativePath: outputRef.relativePath,
+                uncensoredAmbiguous: item.manualScrape?.uncensoredChoice
+                  ? false
+                  : (runtimeResult.result.uncensoredAmbiguous ?? false),
                 size: runtimeResult.size,
                 modifiedAt: runtimeResult.modifiedAt,
-                title: runtimeResult.crawlerData.title,
-                number: runtimeResult.crawlerData.number,
-                actors: runtimeResult.crawlerData.actors,
-                crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
-                thumbnailPath,
-                assets: libraryAssets,
-                lastKnownPath: outputRef.relativePath,
-              },
-            }),
+                libraryEntry: {
+                  rootId: outputRef.rootId,
+                  rootRelativePath: outputRef.relativePath,
+                  mediaIdentity: runtimeResult.crawlerData.number,
+                  size: runtimeResult.size,
+                  modifiedAt: runtimeResult.modifiedAt,
+                  title: runtimeResult.crawlerData.title,
+                  number: runtimeResult.crawlerData.number,
+                  actors: runtimeResult.crawlerData.actors,
+                  crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
+                  thumbnailPath,
+                  assets: libraryAssets,
+                  lastKnownPath: outputRef.relativePath,
+                },
+              }),
+            )(),
         });
       } catch (error) {
         if (error instanceof PublicationError && error.committed) {
@@ -673,7 +670,7 @@ export class ScrapeService {
       this.addEvent(manifest.id, "item-success", `Generated NFO: ${nfoRelativePath ?? "not generated"}`, item.id);
       return {
         ...result,
-        resultId: committed.outcome.id,
+        resultId: committed.outcomeId,
         status: "success",
       };
     }

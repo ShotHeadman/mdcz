@@ -18,6 +18,7 @@ const createPersistenceService = () => {
   const mediaRoots = new MediaRootRepository(database);
   const scrapeRuns = new ScrapeRunRepository(database);
   return {
+    database,
     library,
     mediaRoots,
     scrapeRuns,
@@ -35,6 +36,7 @@ const createPersistenceService = () => {
 };
 
 const createCompletedRun = async (
+  database: PersistenceDatabase,
   scrapeRuns: ScrapeRunRepository,
   input: {
     id: string;
@@ -51,25 +53,27 @@ const createCompletedRun = async (
     executionMode: "single",
     items: [{ id: `${input.id}:item`, ordinal: 0, rootId: "root-1", relativePath: input.outputRelativePath }],
   });
-  await scrapeRuns.commitOutcome({
-    outcome: "success",
-    itemId: manifest.items[0].id,
-    crawlerDataJson: JSON.stringify({ number: input.id }),
-    outputRootId: "root-1",
-    outputRelativePath: input.outputRelativePath,
-    size: input.size,
-    completedAt: input.completedAt,
-    libraryEntry: {
-      mediaIdentity: input.id,
-      rootId: "root-1",
-      rootRelativePath: input.outputRelativePath,
-      size: input.size,
-      number: input.id,
+  database.sqlite.transaction(() =>
+    scrapeRuns.commitSuccessOutcome({
+      outcome: "success",
+      itemId: manifest.items[0].id,
       crawlerDataJson: JSON.stringify({ number: input.id }),
-      lastKnownPath: input.outputRelativePath,
-      createdAt: input.completedAt,
-    },
-  });
+      outputRootId: "root-1",
+      outputRelativePath: input.outputRelativePath,
+      size: input.size,
+      completedAt: input.completedAt,
+      libraryEntry: {
+        mediaIdentity: input.id,
+        rootId: "root-1",
+        rootRelativePath: input.outputRelativePath,
+        size: input.size,
+        number: input.id,
+        crawlerDataJson: JSON.stringify({ number: input.id }),
+        lastKnownPath: input.outputRelativePath,
+        createdAt: input.completedAt,
+      },
+    }),
+  )();
   await scrapeRuns.finalize({
     runId: manifest.id,
     disposition: "completed",
@@ -101,9 +105,9 @@ describe("OutputLibraryScanner", () => {
   });
 
   it("uses the latest persisted scrape run summary and caches until invalidated", async () => {
-    const { mediaRoots, scrapeRuns, service } = createPersistenceService();
+    const { database, mediaRoots, scrapeRuns, service } = createPersistenceService();
     await mediaRoots.upsert(createMediaRoot({ id: "root-1", displayName: "Output", hostPath: "/media/output" }));
-    await createCompletedRun(scrapeRuns, {
+    await createCompletedRun(database, scrapeRuns, {
       id: "run-1",
       outputDirectory: "output-root",
       outputRelativePath: "A.mp4",
@@ -125,7 +129,7 @@ describe("OutputLibraryScanner", () => {
       rootPath: "/media/output",
     });
 
-    await createCompletedRun(scrapeRuns, {
+    await createCompletedRun(database, scrapeRuns, {
       id: "run-2",
       outputDirectory: "next-output",
       outputRelativePath: "B.mp4",

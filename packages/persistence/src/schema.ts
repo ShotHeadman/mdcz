@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { type AnySQLiteColumn, check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable(
   "media_roots",
@@ -20,10 +20,8 @@ export const taskRecords = sqliteTable(
   "task_records",
   {
     id: text("id").primaryKey(),
-    kind: text("kind").$type<"scan">().notNull(),
     rootId: text("root_id").notNull(),
     status: text("status").notNull(),
-    executionVersion: integer("execution_version").notNull().default(0),
     summary: text("summary"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -34,8 +32,8 @@ export const taskRecords = sqliteTable(
     directoryCount: integer("directory_count").notNull().default(0),
   },
   (table) => [
-    index("task_records_queue_idx").on(table.kind, table.status, table.createdAt),
-    index("task_records_kind_created_at_idx").on(table.kind, table.createdAt),
+    index("task_records_queue_idx").on(table.status, table.createdAt),
+    index("task_records_created_at_idx").on(table.createdAt),
   ],
 );
 
@@ -70,7 +68,6 @@ export const scrapeRuns = sqliteTable(
     rootId: text("root_id").notNull(),
     outputRootId: text("output_root_id"),
     executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
-    retryOfRunId: text("retry_of_run_id").references((): AnySQLiteColumn => scrapeRuns.id),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
@@ -84,7 +81,6 @@ export const scrapeRuns = sqliteTable(
       sql`${table.disposition} is null or ${table.disposition} in ('completed', 'failed', 'stopped', 'interrupted')`,
     ),
     index("scrape_runs_created_at_idx").on(table.createdAt),
-    index("scrape_runs_retry_of_run_idx").on(table.retryOfRunId),
   ],
 );
 
@@ -116,9 +112,9 @@ export const scrapeItemOutcomes = sqliteTable(
   "scrape_item_outcomes",
   {
     id: text("id").primaryKey(),
-    itemId: text("item_id")
+    attemptId: text("attempt_id")
       .notNull()
-      .references(() => scrapeRunItems.id),
+      .references(() => scrapeAttempts.id, { onDelete: "cascade" }),
     outcome: text("outcome").$type<"success" | "failed" | "skipped">().notNull(),
     errorMessage: text("error_message"),
     crawlerDataJson: text("crawler_data_json"),
@@ -134,8 +130,36 @@ export const scrapeItemOutcomes = sqliteTable(
   (table) => [
     check("scrape_item_outcomes_outcome_check", sql`${table.outcome} in ('success', 'failed', 'skipped')`),
     check("scrape_item_outcomes_size_check", sql`${table.size} >= 0`),
-    uniqueIndex("scrape_item_outcomes_item_idx").on(table.itemId),
+    uniqueIndex("scrape_item_outcomes_attempt_idx").on(table.attemptId),
   ],
+);
+
+export const scrapeAttempts = sqliteTable(
+  "scrape_attempts",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => scrapeRunItems.id, { onDelete: "cascade" }),
+    attempt: integer("attempt").notNull(),
+    admittedAt: integer("admitted_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    check("scrape_attempts_attempt_check", sql`${table.attempt} >= 1`),
+    uniqueIndex("scrape_attempts_item_attempt_idx").on(table.itemId, table.attempt),
+  ],
+);
+
+export const publicationJournal = sqliteTable(
+  "publication_journal",
+  {
+    operationId: text("operation_id").primaryKey(),
+    operationType: text("operation_type").notNull(),
+    state: text("state").$type<"pending" | "committed">().notNull(),
+    manifestJson: text("manifest_json").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [check("publication_journal_state_check", sql`${table.state} in ('pending', 'committed')`)],
 );
 
 export const libraryItems = sqliteTable(
@@ -163,8 +187,12 @@ export const libraryItemFiles = sqliteTable(
   "library_item_files",
   {
     id: text("id").primaryKey(),
-    itemId: text("item_id").notNull(),
-    rootId: text("root_id").notNull(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => libraryItems.id, { onDelete: "cascade" }),
+    rootId: text("root_id")
+      .notNull()
+      .references(() => mediaRoots.id, { onDelete: "restrict" }),
     rootRelativePath: text("root_relative_path").notNull(),
     fileName: text("file_name").notNull(),
     directory: text("directory").notNull(),
@@ -184,14 +212,19 @@ export const libraryItemAssets = sqliteTable(
   "library_item_assets",
   {
     id: text("id").primaryKey(),
-    itemId: text("item_id").notNull(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => libraryItems.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     uri: text("uri").notNull(),
-    rootId: text("root_id"),
+    rootId: text("root_id").references(() => mediaRoots.id, { onDelete: "restrict" }),
     relativePath: text("relative_path"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("library_item_assets_item_idx").on(table.itemId)],
+  (table) => [
+    check("library_item_assets_root_path_check", sql`(${table.rootId} is null) = (${table.relativePath} is null)`),
+    index("library_item_assets_item_idx").on(table.itemId),
+  ],
 );
 
 export const libraryRepairIssues = sqliteTable(
@@ -221,6 +254,9 @@ export const schema = {
   scanResults,
   scrapeRuns,
   scrapeRunItems,
+  scrapeAttempts,
+  scrapeItemOutcomes,
+  publicationJournal,
   libraryRepairIssues,
   libraryItems,
   libraryItemFiles,
@@ -239,8 +275,12 @@ export type ScrapeRunRow = typeof scrapeRuns.$inferSelect;
 export type InsertScrapeRunRow = typeof scrapeRuns.$inferInsert;
 export type ScrapeRunItemRow = typeof scrapeRunItems.$inferSelect;
 export type InsertScrapeRunItemRow = typeof scrapeRunItems.$inferInsert;
+export type ScrapeAttemptRow = typeof scrapeAttempts.$inferSelect;
+export type InsertScrapeAttemptRow = typeof scrapeAttempts.$inferInsert;
 export type ScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferSelect;
 export type InsertScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferInsert;
+export type PublicationJournalRow = typeof publicationJournal.$inferSelect;
+export type InsertPublicationJournalRow = typeof publicationJournal.$inferInsert;
 export type LibraryItemRow = typeof libraryItems.$inferSelect;
 export type InsertLibraryItemRow = typeof libraryItems.$inferInsert;
 export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;

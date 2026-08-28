@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import {
@@ -11,15 +11,12 @@ import {
   taskRecords,
 } from "./schema";
 
-export type TaskRecordKind = "scan";
 export type TaskRecordStatus = "queued" | "running" | "completed" | "failed" | "paused" | "stopping";
 
 export interface TaskRecord {
   id: string;
-  kind: TaskRecordKind;
   rootId: string;
   status: TaskRecordStatus;
-  executionVersion: number;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -63,7 +60,6 @@ export interface PatchTaskInput {
 
 export interface TaskUpdateGuard {
   status: TaskRecordStatus | readonly TaskRecordStatus[];
-  executionVersion: number;
 }
 
 export interface AddTaskEventInput {
@@ -81,17 +77,14 @@ export interface ReplaceScanResultsInput {
 }
 
 export interface CompleteScanTaskInput extends ReplaceScanResultsInput {
-  executionVersion: number;
   directoryCount: number;
   completedAt?: Date;
 }
 
 const toTaskRecord = (row: TaskRecordRow): TaskRecord => ({
   id: row.id,
-  kind: row.kind,
   rootId: row.rootId,
   status: row.status as TaskRecordStatus,
-  executionVersion: row.executionVersion,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   startedAt: row.startedAt,
@@ -124,10 +117,8 @@ export class TaskRepository {
     const now = input.now ?? new Date();
     const task: TaskRecord = {
       id: input.id ?? randomUUID(),
-      kind: "scan",
       rootId: input.rootId,
       status: "queued",
-      executionVersion: 0,
       createdAt: now,
       updatedAt: now,
       startedAt: null,
@@ -141,10 +132,8 @@ export class TaskRepository {
       .insert(taskRecords)
       .values({
         id: task.id,
-        kind: task.kind,
         rootId: task.rootId,
         status: task.status,
-        executionVersion: task.executionVersion,
         summary: null,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
@@ -178,13 +167,11 @@ export class TaskRepository {
         guard
           ? and(
               eq(taskRecords.id, id),
-              eq(taskRecords.kind, "scan"),
               Array.isArray(guard.status)
                 ? inArray(taskRecords.status, [...guard.status])
                 : eq(taskRecords.status, guard.status as TaskRecordStatus),
-              eq(taskRecords.executionVersion, guard.executionVersion),
             )
-          : and(eq(taskRecords.id, id), eq(taskRecords.kind, "scan")),
+          : eq(taskRecords.id, id),
       )
       .run();
 
@@ -196,118 +183,31 @@ export class TaskRepository {
   }
 
   async list(): Promise<TaskRecord[]> {
-    const rows = this.database.db
-      .select()
-      .from(taskRecords)
-      .where(eq(taskRecords.kind, "scan"))
-      .orderBy(desc(taskRecords.createdAt))
-      .all();
+    const rows = this.database.db.select().from(taskRecords).orderBy(desc(taskRecords.createdAt)).all();
     return rows.map(toTaskRecord);
   }
 
   async get(id: string): Promise<TaskRecord> {
-    const row = this.database.db
-      .select()
-      .from(taskRecords)
-      .where(and(eq(taskRecords.id, id), eq(taskRecords.kind, "scan")))
-      .limit(1)
-      .get();
+    const row = this.database.db.select().from(taskRecords).where(eq(taskRecords.id, id)).limit(1).get();
     if (!row) {
       throw new PersistenceError(persistenceErrorCodes.NotFound, `Task not found: ${id}`);
     }
     return toTaskRecord(row);
   }
 
-  async claimNext(now = new Date()): Promise<TaskRecord | null> {
-    return this.database.db.transaction((tx) => {
-      const queued = tx
-        .select()
-        .from(taskRecords)
-        .where(and(eq(taskRecords.kind, "scan"), eq(taskRecords.status, "queued")))
-        .orderBy(taskRecords.createdAt)
-        .limit(1)
-        .get();
-      if (!queued) return null;
-
-      const claimed = tx
-        .update(taskRecords)
-        .set({
-          status: "running",
-          executionVersion: sql`${taskRecords.executionVersion} + 1`,
-          startedAt: now,
-          completedAt: null,
-          errorMessage: null,
-          updatedAt: now,
-        })
-        .where(and(eq(taskRecords.id, queued.id), eq(taskRecords.status, "queued")))
-        .run();
-      if (claimed.changes === 0) return null;
-
-      const row = tx.select().from(taskRecords).where(eq(taskRecords.id, queued.id)).limit(1).get();
-      return row ? toTaskRecord(row) : null;
-    });
-  }
-
-  async claim(id: string, expectedExecutionVersion: number, now = new Date()): Promise<TaskRecord | null> {
+  async claim(id: string, now = new Date()): Promise<TaskRecord | null> {
     const claimed = this.database.db
       .update(taskRecords)
       .set({
         status: "running",
-        executionVersion: sql`${taskRecords.executionVersion} + 1`,
         startedAt: now,
         completedAt: null,
         errorMessage: null,
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(taskRecords.id, id),
-          eq(taskRecords.kind, "scan"),
-          eq(taskRecords.status, "queued"),
-          eq(taskRecords.executionVersion, expectedExecutionVersion),
-        ),
-      )
+      .where(and(eq(taskRecords.id, id), eq(taskRecords.status, "queued")))
       .run();
     return claimed.changes === 1 ? await this.get(id) : null;
-  }
-
-  async requeue(id: string, guard: TaskUpdateGuard, now = new Date()): Promise<TaskRecord | null> {
-    const statusCondition = Array.isArray(guard.status)
-      ? inArray(taskRecords.status, [...guard.status])
-      : eq(taskRecords.status, guard.status as TaskRecordStatus);
-    const requeued = this.database.db
-      .update(taskRecords)
-      .set({
-        status: "queued",
-        executionVersion: sql`${taskRecords.executionVersion} + 1`,
-        startedAt: null,
-        completedAt: null,
-        errorMessage: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(taskRecords.id, id),
-          eq(taskRecords.kind, "scan"),
-          statusCondition,
-          eq(taskRecords.executionVersion, guard.executionVersion),
-        ),
-      )
-      .run();
-    return requeued.changes === 1 ? await this.get(id) : null;
-  }
-
-  async requeueRunning(): Promise<void> {
-    this.database.db
-      .update(taskRecords)
-      .set({
-        status: "queued",
-        executionVersion: sql`${taskRecords.executionVersion} + 1`,
-        startedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(taskRecords.kind, "scan"), inArray(taskRecords.status, ["running", "stopping"])))
-      .run();
   }
 
   async addEvent(input: AddTaskEventInput): Promise<TaskEventRecord> {
@@ -354,14 +254,7 @@ export class TaskRepository {
       const owned = this.database.db
         .select({ id: taskRecords.id })
         .from(taskRecords)
-        .where(
-          and(
-            eq(taskRecords.id, input.taskId),
-            eq(taskRecords.kind, "scan"),
-            eq(taskRecords.status, "running"),
-            eq(taskRecords.executionVersion, input.executionVersion),
-          ),
-        )
+        .where(and(eq(taskRecords.id, input.taskId), eq(taskRecords.status, "running")))
         .limit(1)
         .get();
       if (!owned) return false;
@@ -378,14 +271,7 @@ export class TaskRepository {
           directoryCount: input.directoryCount,
           errorMessage: null,
         })
-        .where(
-          and(
-            eq(taskRecords.id, input.taskId),
-            eq(taskRecords.kind, "scan"),
-            eq(taskRecords.status, "running"),
-            eq(taskRecords.executionVersion, input.executionVersion),
-          ),
-        )
+        .where(and(eq(taskRecords.id, input.taskId), eq(taskRecords.status, "running")))
         .run();
       return committed.changes === 1;
     });
@@ -414,7 +300,6 @@ export class TaskRepository {
         modifiedAt: scanResults.modifiedAt,
       })
       .from(scanResults)
-      .innerJoin(taskRecords, and(eq(taskRecords.id, scanResults.taskId), eq(taskRecords.kind, "scan")))
       .orderBy(scanResults.relativePath)
       .all();
   }

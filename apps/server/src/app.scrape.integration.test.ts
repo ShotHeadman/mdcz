@@ -591,25 +591,27 @@ describe("buildServer scrape integration", () => {
       })),
     });
     for (const item of manifest.items) {
-      await state.repositories.scrapeRuns.commitOutcome({
-        outcome: "success",
-        itemId: item.id,
-        crawlerDataJson: JSON.stringify({
-          title: item.relativePath,
-          number: item.relativePath.replace(".mp4", ""),
-          actors: [],
-          genres: [],
-          scene_images: [],
+      state.database.sqlite.transaction(() =>
+        state.repositories.scrapeRuns.commitSuccessOutcome({
+          outcome: "success",
+          itemId: item.id,
+          crawlerDataJson: JSON.stringify({
+            title: item.relativePath,
+            number: item.relativePath.replace(".mp4", ""),
+            actors: [],
+            genres: [],
+            scene_images: [],
+          }),
+          outputRootId: rootId,
+          outputRelativePath: item.relativePath,
+          uncensoredAmbiguous: true,
+          size: 1,
+          libraryEntry: {
+            rootId,
+            rootRelativePath: item.relativePath,
+          },
         }),
-        outputRootId: rootId,
-        outputRelativePath: item.relativePath,
-        uncensoredAmbiguous: true,
-        size: 1,
-        libraryEntry: {
-          rootId,
-          rootRelativePath: item.relativePath,
-        },
-      });
+      )();
     }
     await state.repositories.scrapeRuns.finalize({ runId: manifest.id, disposition: "completed" });
 

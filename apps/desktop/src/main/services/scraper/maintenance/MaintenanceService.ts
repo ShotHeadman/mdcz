@@ -101,6 +101,7 @@ export class MaintenanceService {
             await (await this.persistenceService.getState()).repositories.library.preflightMaintenanceRefresh(input),
           publishRefresh: async (input) => {
             const state = await this.persistenceService.getState();
+            const refresh = await state.repositories.library.prepareRefresh(input.refresh);
             const plan = createPublicationPlan(
               input.operationId,
               "maintenance",
@@ -111,7 +112,8 @@ export class MaintenanceService {
               resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
               acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
               repairIssues: state.repositories.libraryRepairIssues,
-              commit: async () => await state.repositories.library.commitRefresh(input.refresh),
+              commit: async () =>
+                state.database.sqlite.transaction(() => state.repositories.library.writeRefresh(refresh))(),
             });
           },
         },

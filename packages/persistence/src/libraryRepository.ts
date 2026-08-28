@@ -175,7 +175,7 @@ export interface MaintenanceDiscoveredAssetsRecord {
   actorPhotos: string[];
 }
 
-type RootPathCandidate = {
+export type RootPathCandidate = {
   hostPath: string;
   rootId: string;
   rootRelativePath: string;
@@ -187,6 +187,12 @@ type MaintenanceAssetInput = {
   rootId: string | null;
   relativePath: string | null;
 };
+
+export interface PreparedMaintenanceRefresh {
+  librarySource: MaintenanceLibrarySourceRecord | undefined;
+  targetCandidates: RootPathCandidate[];
+  libraryEntry: UpsertLibraryEntryInput;
+}
 
 const safeActors = (value: string): string[] => {
   try {
@@ -312,7 +318,7 @@ export class LibraryRepository {
     this.assertNoMaintenanceTargetConflict(candidates, input.librarySource?.libraryItemId);
   }
 
-  async commitRefresh(input: CommitMaintenanceRefreshInput): Promise<{ libraryItemId: string }> {
+  async prepareRefresh(input: CommitMaintenanceRefreshInput): Promise<PreparedMaintenanceRefresh> {
     this.assertMaintenanceSource(input.librarySource);
     const targetCandidates = this.pathCandidates(input.targetAbsolutePath);
     if (targetCandidates.length === 0) {
@@ -334,10 +340,10 @@ export class LibraryRepository {
           .get()
       : null;
     const itemId = input.librarySource?.libraryItemId ?? `${target.rootId}:${target.rootRelativePath}`;
-    const transaction = this.database.sqlite.transaction(() => {
-      this.assertMaintenanceSource(input.librarySource);
-      this.assertNoMaintenanceTargetConflict(targetCandidates, input.librarySource?.libraryItemId);
-      return writeLibraryRows(this.database, {
+    return {
+      librarySource: input.librarySource,
+      targetCandidates,
+      libraryEntry: {
         id: itemId,
         fileId: input.librarySource?.libraryFileId,
         rootId: target.rootId,
@@ -355,9 +361,14 @@ export class LibraryRepository {
         lastKnownPath: target.rootRelativePath,
         createdAt: existingItem?.createdAt ?? input.refreshedAt,
         lastRefreshedAt: input.refreshedAt,
-      });
-    });
-    return { libraryItemId: transaction() };
+      },
+    };
+  }
+
+  writeRefresh(prepared: PreparedMaintenanceRefresh): { libraryItemId: string } {
+    this.assertMaintenanceSource(prepared.librarySource);
+    this.assertNoMaintenanceTargetConflict(prepared.targetCandidates, prepared.librarySource?.libraryItemId);
+    return { libraryItemId: writeLibraryRows(this.database, prepared.libraryEntry) };
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {

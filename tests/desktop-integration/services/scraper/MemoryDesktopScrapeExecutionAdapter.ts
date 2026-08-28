@@ -27,7 +27,6 @@ export class MemoryDesktopScrapeExecutionAdapter {
         rootId: "desktop-input",
         requestedOutputRootId: requestedOutputRoot?.id ?? null,
         executionMode,
-        retryOfRunId: null,
         createdAt,
         startedAt: null,
         completedAt: null,

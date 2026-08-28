@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from "vitest";
 type ContractRun = {
   id: string;
   createdAt: Date;
-  retryOfRunId: string | null;
   items: Array<{ id: string; rootId: string; relativePath: string }>;
 };
 
@@ -29,7 +28,6 @@ const createHost = () => {
       const run = {
         id: `run-${nextId++}`,
         createdAt: new Date(),
-        retryOfRunId: null,
         items: [{ id: `item-${nextId}`, rootId: "root", relativePath: "movie.mp4" }],
       };
       runs.push(run);
@@ -44,7 +42,7 @@ const createHost = () => {
     retry: vi.fn(async (id) => {
       const source = runs.find((candidate) => candidate.id === id);
       if (!source) throw new Error(`missing run ${id}`);
-      const retry = { ...source, id: `run-${nextId++}`, createdAt: new Date(), retryOfRunId: source.id };
+      const retry = { ...source, id: `run-${nextId++}`, createdAt: new Date() };
       runs.push(retry);
       return retry;
     }),

@@ -7,6 +7,7 @@ describe("scrape asset DTO projection", () => {
       toScrapeResultDto(
         {
           id: "outcome",
+          attemptId: "attempt",
           itemId: "item",
           outcome: "success",
           error: null,
