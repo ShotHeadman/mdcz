@@ -5,6 +5,7 @@ import { app, BrowserWindow, nativeImage, nativeTheme } from "electron";
 import windowStateKeeper from "electron-window-state";
 
 import iconPath from "../../../build/icon.png?asset";
+import { isTrustedRendererUrl, resolvePackagedRendererPath } from "../rendererTrust";
 import {
   buildTitleBarOverlay,
   resolveCustomTitleBarWindowOptions,
@@ -25,25 +26,7 @@ export interface MainWindowCreationOptions {
 
 export const denyWindowOpen = (): { action: "deny" } => ({ action: "deny" });
 
-export const isRendererNavigationAllowed = (url: string, rendererUrl = process.env.ELECTRON_RENDERER_URL): boolean => {
-  let next: URL;
-  try {
-    next = new URL(url);
-  } catch {
-    return false;
-  }
-
-  const configured = rendererUrl?.trim();
-  if (configured) {
-    try {
-      return next.origin === new URL(configured).origin;
-    } catch {
-      return false;
-    }
-  }
-
-  return next.protocol === "file:" && next.pathname.toLowerCase().endsWith("/index.html");
-};
+export const isRendererNavigationAllowed = isTrustedRendererUrl;
 
 export const buildRendererContentSecurityPolicy = (rendererUrl = process.env.ELECTRON_RENDERER_URL): string => {
   const configured = rendererUrl?.trim();
@@ -185,7 +168,7 @@ export class WindowService {
       return;
     }
 
-    await mainWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: DEFAULT_RENDERER_ROUTE });
+    await mainWindow.loadFile(resolvePackagedRendererPath(), { hash: DEFAULT_RENDERER_ROUTE });
   }
 
   toggleDevTools(): void {

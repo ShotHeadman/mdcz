@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+import { resolvePackagedRendererPath } from "@main/rendererTrust";
 import type { IpcActionContext } from "@mdcz/shared/ipcTypes";
 
 const allowedSenderUrl = (): string => {
@@ -5,7 +7,7 @@ const allowedSenderUrl = (): string => {
   if (rendererUrl) {
     return new URL("/", rendererUrl).href;
   }
-  return "file:///renderer/index.html";
+  return pathToFileURL(resolvePackagedRendererPath()).href;
 };
 
 export const allowedIpcContext: IpcActionContext = {

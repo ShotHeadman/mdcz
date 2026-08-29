@@ -69,6 +69,13 @@ const createTempDir = async (): Promise<string> => {
   return dirPath;
 };
 
+const createTempFiles = async (...names: string[]): Promise<string[]> => {
+  const root = await createTempDir();
+  const paths = names.map((name) => join(root, name));
+  await Promise.all(paths.map(async (filePath) => await writeFile(filePath, "video")));
+  return paths;
+};
+
 const createScraper = (
   aggregate: ReturnType<typeof vi.fn>,
   overrides: {
@@ -139,13 +146,11 @@ describe("FileScraper multipart aggregation cache", () => {
   it("reuses one aggregation request for same-number multipart files", async () => {
     const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
     const { scraper } = createScraper(aggregate);
-    await writeFile("/tmp/FC2-123456-1.mp4", "video");
-    await writeFile("/tmp/FC2-123456-2.mp4", "video");
-    tempDirs.push("/tmp/FC2-123456-1.mp4", "/tmp/FC2-123456-2.mp4");
+    const [part1Path, part2Path] = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4");
 
     const [part1, part2] = await Promise.all([
-      scraper.scrapeFile("/tmp/FC2-123456-1.mp4", { fileIndex: 1, totalFiles: 2 }),
-      scraper.scrapeFile("/tmp/FC2-123456-2.mp4", { fileIndex: 2, totalFiles: 2 }),
+      scraper.scrapeFile(part1Path, { fileIndex: 1, totalFiles: 2 }),
+      scraper.scrapeFile(part2Path, { fileIndex: 2, totalFiles: 2 }),
     ]);
 
     expect(aggregate).toHaveBeenCalledTimes(1);
@@ -160,13 +165,11 @@ describe("FileScraper multipart aggregation cache", () => {
   it("reuses one aggregation request for alphabetic multipart files", async () => {
     const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "IDBD-905" })));
     const { scraper } = createScraper(aggregate);
-    await writeFile("/tmp/IDBD-905-A.mp4", "video");
-    await writeFile("/tmp/IDBD-905-H.mp4", "video");
-    tempDirs.push("/tmp/IDBD-905-A.mp4", "/tmp/IDBD-905-H.mp4");
+    const [partAPath, partHPath] = await createTempFiles("IDBD-905-A.mp4", "IDBD-905-H.mp4");
 
     const [partA, partH] = await Promise.all([
-      scraper.scrapeFile("/tmp/IDBD-905-A.mp4", { fileIndex: 1, totalFiles: 2 }),
-      scraper.scrapeFile("/tmp/IDBD-905-H.mp4", { fileIndex: 2, totalFiles: 2 }),
+      scraper.scrapeFile(partAPath, { fileIndex: 1, totalFiles: 2 }),
+      scraper.scrapeFile(partHPath, { fileIndex: 2, totalFiles: 2 }),
     ]);
 
     expect(aggregate).toHaveBeenCalledTimes(1);
@@ -184,13 +187,11 @@ describe("FileScraper multipart aggregation cache", () => {
       .mockResolvedValueOnce(createAggregationResult(createCrawlerData({ number: "ABC-123" })))
       .mockResolvedValueOnce(createAggregationResult(createCrawlerData({ number: "XYZ-999" })));
     const { scraper } = createScraper(aggregate);
-    await writeFile("/tmp/ABC-123-1.mp4", "video");
-    await writeFile("/tmp/XYZ-999-1.mp4", "video");
-    tempDirs.push("/tmp/ABC-123-1.mp4", "/tmp/XYZ-999-1.mp4");
+    const [firstPath, secondPath] = await createTempFiles("ABC-123-1.mp4", "XYZ-999-1.mp4");
 
     const [first, second] = await Promise.all([
-      scraper.scrapeFile("/tmp/ABC-123-1.mp4", { fileIndex: 1, totalFiles: 2 }),
-      scraper.scrapeFile("/tmp/XYZ-999-1.mp4", { fileIndex: 2, totalFiles: 2 }),
+      scraper.scrapeFile(firstPath, { fileIndex: 1, totalFiles: 2 }),
+      scraper.scrapeFile(secondPath, { fileIndex: 2, totalFiles: 2 }),
     ]);
 
     expect(aggregate).toHaveBeenCalledTimes(2);
@@ -201,13 +202,11 @@ describe("FileScraper multipart aggregation cache", () => {
   it("propagates shared aggregation failures to each multipart result", async () => {
     const aggregate = vi.fn().mockRejectedValue(new Error("aggregate failed"));
     const { scraper } = createScraper(aggregate);
-    await writeFile("/tmp/FC2-123456-1.mp4", "video");
-    await writeFile("/tmp/FC2-123456-2.mp4", "video");
-    tempDirs.push("/tmp/FC2-123456-1.mp4", "/tmp/FC2-123456-2.mp4");
+    const [part1Path, part2Path] = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4");
 
     const [part1, part2] = await Promise.all([
-      scraper.scrapeFile("/tmp/FC2-123456-1.mp4", { fileIndex: 1, totalFiles: 2 }),
-      scraper.scrapeFile("/tmp/FC2-123456-2.mp4", { fileIndex: 2, totalFiles: 2 }),
+      scraper.scrapeFile(part1Path, { fileIndex: 1, totalFiles: 2 }),
+      scraper.scrapeFile(part2Path, { fileIndex: 2, totalFiles: 2 }),
     ]);
 
     expect(aggregate).toHaveBeenCalledTimes(1);
@@ -238,15 +237,13 @@ describe("FileScraper multipart aggregation cache", () => {
       }
       return plan;
     });
-    await writeFile("/tmp/FC2-123456-1.mp4", "video");
-    await writeFile("/tmp/FC2-123456-2.mp4", "video");
-    tempDirs.push("/tmp/FC2-123456-1.mp4", "/tmp/FC2-123456-2.mp4");
+    const [part1Path, part2Path] = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4");
     const { scraper } = createScraper(aggregate, { resolveOutputPlan });
 
-    const firstPromise = scraper.scrapeFile("/tmp/FC2-123456-1.mp4", { fileIndex: 1, totalFiles: 2 });
+    const firstPromise = scraper.scrapeFile(part1Path, { fileIndex: 1, totalFiles: 2 });
     await firstStarted;
 
-    const secondPromise = scraper.scrapeFile("/tmp/FC2-123456-2.mp4", { fileIndex: 2, totalFiles: 2 });
+    const secondPromise = scraper.scrapeFile(part2Path, { fileIndex: 2, totalFiles: 2 });
     await new Promise((resolve) => {
       setTimeout(resolve, 0);
     });
@@ -270,10 +267,9 @@ describe("FileScraper multipart aggregation cache", () => {
       results.push((result as { status: string }).status);
     });
     const { scraper } = createScraper(aggregate, { signalService });
-    await writeFile("/tmp/ABC-123.mp4", "video");
-    tempDirs.push("/tmp/ABC-123.mp4");
+    const [sourcePath] = await createTempFiles("ABC-123.mp4");
 
-    const terminal = await scraper.scrapeFile("/tmp/ABC-123.mp4");
+    const terminal = await scraper.scrapeFile(sourcePath);
 
     expect(terminal.status).toBe("success");
     expect(results[0]).toBe("processing");

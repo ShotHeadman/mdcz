@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { OutputLibraryScanner } from "@main/services/library/OutputLibraryScanner";
 import { createMediaRoot } from "@mdcz/media-store";
 import {
@@ -106,7 +107,8 @@ describe("OutputLibraryScanner", () => {
 
   it("uses the latest persisted scrape run summary and caches until invalidated", async () => {
     const { database, mediaRoots, scrapeRuns, service } = createPersistenceService();
-    await mediaRoots.upsert(createMediaRoot({ id: "root-1", displayName: "Output", hostPath: "/media/output" }));
+    const outputRootPath = resolve("/media/output");
+    await mediaRoots.upsert(createMediaRoot({ id: "root-1", displayName: "Output", hostPath: outputRootPath }));
     await createCompletedRun(database, scrapeRuns, {
       id: "run-1",
       outputDirectory: "output-root",
@@ -126,7 +128,7 @@ describe("OutputLibraryScanner", () => {
       fileCount: 1,
       totalBytes: 10,
       scannedAt: 1_700_000_000_000,
-      rootPath: "/media/output",
+      rootPath: outputRootPath,
     });
 
     await createCompletedRun(database, scrapeRuns, {
@@ -143,7 +145,7 @@ describe("OutputLibraryScanner", () => {
       fileCount: 1,
       totalBytes: 18,
       scannedAt: 1_700_000_000_100,
-      rootPath: "/media/output",
+      rootPath: outputRootPath,
     });
   });
 

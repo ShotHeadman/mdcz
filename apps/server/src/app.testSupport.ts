@@ -140,21 +140,24 @@ export const waitForScrapeRunStatus = async (
   status: string,
 ): Promise<void> => {
   await expect
-    .poll(async () => {
-      const headers = { authorization: `Bearer ${token}` };
-      const liveResponse = await fastify.inject({ method: "GET", url: "/trpc/scrape.liveRuns", headers });
-      const liveRun = liveResponse
-        .json()
-        .result.data.runs.find((run: { task: { id: string } }) => run.task.id === runId);
-      if (liveRun) return liveRun.task.status;
+    .poll(
+      async () => {
+        const headers = { authorization: `Bearer ${token}` };
+        const liveResponse = await fastify.inject({ method: "GET", url: "/trpc/scrape.liveRuns", headers });
+        const liveRun = liveResponse
+          .json()
+          .result.data.runs.find((run: { task: { id: string } }) => run.task.id === runId);
+        if (liveRun) return liveRun.task.status;
 
-      const historyResponse = await fastify.inject({
-        method: "GET",
-        url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: runId }))}`,
-        headers,
-      });
-      return historyResponse.json().result?.data?.runs[0]?.disposition;
-    })
+        const historyResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: runId }))}`,
+          headers,
+        });
+        return historyResponse.json().result?.data?.runs[0]?.disposition;
+      },
+      { timeout: 10_000 },
+    )
     .toBe(status);
 };
 

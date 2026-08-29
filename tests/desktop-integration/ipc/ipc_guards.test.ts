@@ -6,13 +6,17 @@ import { IpcChannel, requireIpcChannel } from "@mdcz/shared/IpcChannel";
 import { describe, expect, it, vi } from "vitest";
 import { ipcActionArgs } from "../../unit/ipc/ipcActionArgs";
 
+const testUserDataPath = vi.hoisted(
+  () => `${process.env.TEMP ?? process.env.TMPDIR ?? process.cwd()}/mdcz-ipc-guards-${process.pid}`,
+);
+
 vi.mock("electron", () => ({
   app: {
     getVersion: () => "0.0.0-test",
     isPackaged: false,
     relaunch: vi.fn(),
     exit: vi.fn(),
-    getPath: () => "/tmp",
+    getPath: () => testUserDataPath,
     isReady: () => false,
     commandLine: { appendSwitch: vi.fn() },
     setAppUserModelId: vi.fn(),

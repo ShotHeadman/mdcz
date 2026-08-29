@@ -1,4 +1,6 @@
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { resolvePackagedRendererPath } from "../rendererTrust";
 import { buildRendererContentSecurityPolicy, denyWindowOpen, isRendererNavigationAllowed } from "./WindowService";
 
 describe("WindowService isolation", () => {
@@ -9,8 +11,9 @@ describe("WindowService isolation", () => {
   it("denies navigation off the app origin", () => {
     expect(isRendererNavigationAllowed("https://evil.example/", "http://localhost:5173")).toBe(false);
     expect(isRendererNavigationAllowed("http://localhost:5173/library", "http://localhost:5173")).toBe(true);
-    expect(isRendererNavigationAllowed("file:///tmp/renderer/index.html")).toBe(true);
-    expect(isRendererNavigationAllowed("file:///etc/passwd")).toBe(false);
+    expect(isRendererNavigationAllowed(`${pathToFileURL(resolvePackagedRendererPath()).href}#/overview`)).toBe(true);
+    expect(isRendererNavigationAllowed(pathToFileURL("/tmp/renderer/index.html").href)).toBe(false);
+    expect(isRendererNavigationAllowed(pathToFileURL("/etc/passwd").href)).toBe(false);
   });
 
   it("adds only the Vite renderer and websocket origins in development", () => {

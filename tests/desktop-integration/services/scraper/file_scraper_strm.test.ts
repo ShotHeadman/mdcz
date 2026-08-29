@@ -26,6 +26,13 @@ const createTempDir = async (): Promise<string> => {
   return dirPath;
 };
 
+const createTempFile = async (name: string): Promise<string> => {
+  const root = await createTempDir();
+  const filePath = join(root, name);
+  await writeFile(filePath, "video");
+  return filePath;
+};
+
 const createConfig = (downloadOverrides: Partial<typeof defaultConfiguration.download> = {}) =>
   configurationSchema.parse({
     ...defaultConfiguration,
@@ -132,10 +139,9 @@ describe("FileScraper .strm support", () => {
     };
     const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
     const scraper = createScraper({ config, crawlerData, plan, writeNfo });
-    await writeFile("/tmp/ABC-123.strm", "video");
-    tempDirs.push("/tmp/ABC-123.strm");
+    const sourcePath = await createTempFile("ABC-123.strm");
 
-    const result = await scraper.scrapeFile("/tmp/ABC-123.strm", { fileIndex: 1, totalFiles: 1 });
+    const result = await scraper.scrapeFile(sourcePath, { fileIndex: 1, totalFiles: 1 });
 
     expect(result.status).toBe("success");
     expect(result.fileName).toBe("ABC-123");
@@ -172,10 +178,9 @@ describe("FileScraper .strm support", () => {
       };
       const writeNfo = vi.fn().mockResolvedValue(nfoPath);
       const scraper = createScraper({ config, crawlerData, plan, writeNfo });
-      await writeFile("/tmp/ABC-123.strm", "video");
-      tempDirs.push("/tmp/ABC-123.strm");
+      const sourcePath = await createTempFile("ABC-123.strm");
 
-      const result = await scraper.scrapeFile("/tmp/ABC-123.strm", { fileIndex: 1, totalFiles: 1 });
+      const result = await scraper.scrapeFile(sourcePath, { fileIndex: 1, totalFiles: 1 });
 
       expect(writeNfo).not.toHaveBeenCalled();
       expect(result.nfo?.relativePath).toBe(nfoPath);
