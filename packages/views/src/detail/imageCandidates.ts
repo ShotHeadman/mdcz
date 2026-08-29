@@ -1,5 +1,6 @@
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import { resolveImagePath } from "@mdcz/shared/imageSource";
+import { LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { DetailViewItem } from "./types";
 
 const getPathBaseName = (path: string | undefined): string => {
@@ -102,6 +103,9 @@ export interface DetailArtworkCandidates {
 }
 
 export const getDetailLocalAssetRef = (item: DetailViewItem | null | undefined, path: string | undefined) => {
+  if (path?.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
+    return parseLocalFileUrl(path);
+  }
   const normalizedPath = path?.replace(/\\/gu, "/");
   if (!normalizedPath) return undefined;
   const asset = item?.assets?.find(

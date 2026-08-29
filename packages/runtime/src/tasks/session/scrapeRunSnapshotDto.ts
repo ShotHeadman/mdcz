@@ -80,29 +80,22 @@ export const toScrapeRunSnapshotDto = (input: {
   const terminal = isTerminalStatus(input.snapshot.status);
   const completedAt = terminal ? (input.completedAt ?? new Date()) : null;
   const updatedAt = completedAt ?? new Date();
-  const taskStatus =
-    input.snapshot.status === "interrupted"
-      ? "failed"
-      : input.snapshot.status === "stopped"
-        ? "failed"
-        : input.snapshot.status === "completed"
-          ? "completed"
-          : input.snapshot.status;
   return {
     task: {
       id: input.snapshot.runId,
       kind: "scrape",
       rootId: input.manifest.rootId,
       rootDisplayName: input.rootDisplayName,
-      status: taskStatus,
+      status: input.snapshot.status,
       createdAt: input.manifest.createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),
       startedAt: input.startedAt?.toISOString() ?? null,
       completedAt: completedAt?.toISOString() ?? null,
-      videoCount: input.snapshot.items.filter((item) => item.status === "success").length,
-      directoryCount: 0,
+      totalItems: input.snapshot.items.length,
+      successCount: input.snapshot.items.filter((item) => item.status === "success").length,
+      failedCount: input.snapshot.items.filter((item) => item.status === "failed").length,
+      skippedCount: input.snapshot.items.filter((item) => item.status === "skipped").length,
       error: input.snapshot.error,
-      videos: input.manifest.items.map((item) => item.relativePath),
       continuity: input.snapshot.status === "interrupted" ? "interrupted" : terminal ? "final" : "live",
     },
     progress: { ...input.snapshot.progress },

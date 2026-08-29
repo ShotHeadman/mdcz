@@ -30,6 +30,14 @@ const readStreamChunk = async (reader: ReadableStreamDefaultReader<Uint8Array>):
   return textDecoder.decode(chunk.value);
 };
 
+const readStreamUntil = async (reader: ReadableStreamDefaultReader<Uint8Array>, needle: string): Promise<string> => {
+  let buffer = "";
+  while (!buffer.includes(needle)) {
+    buffer += await readStreamChunk(reader);
+  }
+  return buffer;
+};
+
 const isWebhookTaskBody = (
   body: unknown,
   expected: { taskId: string; kind: string; status: string },
@@ -121,7 +129,7 @@ describe("buildServer composition integration", () => {
     const { fastify, services } = await createTestServer();
     await fastify.ready();
     const taskEvents: string[] = [];
-    const unsubscribe = services.taskEvents.subscribe((event) => taskEvents.push(event.event));
+    const unsubscribe = services.taskEvents.subscribe((event) => taskEvents.push(event.kind));
     const current = await services.config.get();
 
     await writeFile(
@@ -992,13 +1000,17 @@ describe("buildServer composition integration", () => {
       throw new Error("Expected SSE response body reader");
     }
 
-    const initialChunk = await readStreamChunk(reader);
-    expect(initialChunk).toContain(": connected\n\n");
+    const readyEvent = formatSseEvent({ kind: "invalidate", resources: ["ready"] });
+    const preamble = await readStreamUntil(reader, readyEvent);
+    expect(preamble).toContain(": connected\n\n");
+    // No `id:` field: the stream has no replay, so a reconnect resyncs via the `ready` invalidation.
+    expect(preamble).not.toMatch(/^id:/mu);
     const listenerCountWithSse = services.taskEvents.listenerCount();
 
-    const event = services.taskEvents.invalidate("scan");
+    services.taskEvents.invalidate("scan");
 
-    expect(await readStreamChunk(reader)).toBe(formatSseEvent(event));
+    const scanEvent = formatSseEvent({ kind: "invalidate", resources: ["scan"] });
+    expect(await readStreamUntil(reader, scanEvent)).toBe(scanEvent);
 
     await reader.cancel();
     abortController.abort();

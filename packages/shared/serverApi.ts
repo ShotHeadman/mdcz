@@ -33,8 +33,8 @@ import type {
   MaintenanceMutationAckDto,
   MaintenanceScanSelectedFilesInput,
   MaintenanceScanSelectedFilesResponse,
+  MaintenanceSessionInput,
   MaintenanceStartInput,
-  MaintenanceTaskInput,
   MaintenanceUpdateDraftInput,
   MediaRootListResponse,
   NetworkCheckCookiesResponse,
@@ -137,13 +137,13 @@ export interface ServerApiContract {
   maintenance: {
     scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse>;
     apply(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto>;
-    pause(input: MaintenanceTaskInput): Promise<MaintenanceMutationAckDto>;
+    pause(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
     getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
     updateDraft(input: MaintenanceUpdateDraftInput): Promise<MaintenanceMutationAckDto>;
     discardSession(input?: MaintenanceDiscardSessionInput): Promise<MaintenanceMutationAckDto>;
-    resume(input: MaintenanceTaskInput): Promise<MaintenanceMutationAckDto>;
+    resume(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
     start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto>;
-    stop(input: MaintenanceTaskInput): Promise<MaintenanceMutationAckDto>;
+    stop(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
   };
   library: {
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;

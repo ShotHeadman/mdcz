@@ -3,30 +3,30 @@ import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyItemResult,
   MaintenanceApplySelection,
+  MaintenanceSessionApplyItemStatus,
+  MaintenanceSessionApplyLog,
   MaintenanceSessionDraft,
-  MaintenanceTaskApplyItemStatus,
-  MaintenanceTaskApplyLog,
-  MaintenanceTaskPreview,
-  MaintenanceTaskProgress,
-  MaintenanceTaskRef,
-  MaintenanceTaskSnapshot,
-  MaintenanceTaskStatus,
+  MaintenanceSessionPreview,
+  MaintenanceSessionProgress,
+  MaintenanceSessionRef,
+  MaintenanceSessionSnapshot,
+  MaintenanceSessionStatus,
 } from "@mdcz/shared/maintenanceTasks";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 
-export const ACTIVE_MAINTENANCE_STATUSES: readonly MaintenanceTaskStatus[] = [
+export const ACTIVE_MAINTENANCE_STATUSES: readonly MaintenanceSessionStatus[] = [
   "queued",
   "running",
   "paused",
   "stopping",
 ];
 
-const TERMINAL_ITEM_STATUSES = new Set<MaintenanceTaskApplyItemStatus>(["success", "failed", "skipped"]);
+const TERMINAL_ITEM_STATUSES = new Set<MaintenanceSessionApplyItemStatus>(["success", "failed", "skipped"]);
 
 export interface MaintenanceBatchItem {
   id: string;
   selection: MaintenanceApplySelection;
-  status: MaintenanceTaskApplyItemStatus;
+  status: MaintenanceSessionApplyItemStatus;
   error: string | null;
   result?: MaintenanceApplyItemResult;
   createdAt: Date;
@@ -40,12 +40,12 @@ export class MaintenanceSession {
   readonly rootId: string;
   readonly presetId: MaintenancePresetId;
   private phaseValue: "preview" | "apply" = "preview";
-  private statusValue: MaintenanceTaskStatus = "queued";
+  private statusValue: MaintenanceSessionStatus = "queued";
   private generationValue: number;
-  private refsValue: MaintenanceTaskRef[];
+  private refsValue: MaintenanceSessionRef[];
   private timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
   private errorValue: string | null = null;
-  private readonly previews = new Map<string, MaintenanceTaskPreview>();
+  private readonly previews = new Map<string, MaintenanceSessionPreview>();
   private currentBatch: { id: string; items: Map<string, MaintenanceBatchItem> } | null = null;
   private readonly draft: MaintenanceSessionDraft = { fieldSelections: {} };
 
@@ -53,7 +53,7 @@ export class MaintenanceSession {
     id: string;
     rootId: string;
     presetId: MaintenancePresetId;
-    refs: readonly MaintenanceTaskRef[];
+    refs: readonly MaintenanceSessionRef[];
     generation: number;
     now?: Date;
   }) {
@@ -70,7 +70,7 @@ export class MaintenanceSession {
     return this.phaseValue;
   }
 
-  get status(): MaintenanceTaskStatus {
+  get status(): MaintenanceSessionStatus {
     return this.statusValue;
   }
 
@@ -78,7 +78,7 @@ export class MaintenanceSession {
     return this.generationValue;
   }
 
-  get refs(): readonly MaintenanceTaskRef[] {
+  get refs(): readonly MaintenanceSessionRef[] {
     return this.refsValue;
   }
 
@@ -90,13 +90,13 @@ export class MaintenanceSession {
     return ACTIVE_MAINTENANCE_STATUSES.includes(this.statusValue);
   }
 
-  assertGeneration(generation: number, statuses?: readonly MaintenanceTaskStatus[]): void {
+  assertGeneration(generation: number, statuses?: readonly MaintenanceSessionStatus[]): void {
     if (this.generationValue !== generation || (statuses && !statuses.includes(this.statusValue))) {
       throw new StaleMaintenanceGenerationError(`Stale maintenance result for ${this.id}`);
     }
   }
 
-  setDiscoveredRefs(refs: readonly MaintenanceTaskRef[], generation: number): void {
+  setDiscoveredRefs(refs: readonly MaintenanceSessionRef[], generation: number): void {
     this.assertGeneration(generation, ["running", "paused"]);
     this.refsValue = refs.map((ref) => ({ ...ref }));
     this.touch();
@@ -187,17 +187,17 @@ export class MaintenanceSession {
 
   addPreview(
     generation: number,
-    preview: Omit<MaintenanceTaskPreview, "id" | "taskId" | "presetId" | "createdAt" | "updatedAt">,
+    preview: Omit<MaintenanceSessionPreview, "id" | "sessionId" | "presetId" | "createdAt" | "updatedAt">,
   ): void {
     this.assertGeneration(generation, ["running", "paused"]);
     if ([...this.previews.values()].some((existing) => existing.relativePath === preview.relativePath)) {
       throw new Error(`维护预览路径重复：${preview.relativePath}`);
     }
     const now = new Date();
-    const item: MaintenanceTaskPreview = {
+    const item: MaintenanceSessionPreview = {
       ...preview,
       id: randomUUID(),
-      taskId: this.id,
+      sessionId: this.id,
       presetId: this.presetId,
       createdAt: now,
       updatedAt: now,
@@ -206,7 +206,7 @@ export class MaintenanceSession {
     this.touch(now);
   }
 
-  preview(previewId: string): MaintenanceTaskPreview | undefined {
+  preview(previewId: string): MaintenanceSessionPreview | undefined {
     const preview = this.previews.get(previewId);
     return preview ? this.clonePreview(preview) : undefined;
   }
@@ -225,7 +225,7 @@ export class MaintenanceSession {
     item: MaintenanceBatchItem,
   ): {
     item: MaintenanceBatchItem;
-    preview?: MaintenanceTaskPreview;
+    preview?: MaintenanceSessionPreview;
   } {
     this.assertGeneration(generation, ["running"]);
     const current = this.currentBatch?.items.get(item.selection.previewId);
@@ -277,14 +277,14 @@ export class MaintenanceSession {
       : [];
   }
 
-  editablePreviews(): MaintenanceTaskPreview[] {
+  editablePreviews(): MaintenanceSessionPreview[] {
     return [...this.previews.values()]
       .filter((preview) => preview.status === "ready" || preview.status === "blocked")
       .sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"))
       .map((preview) => this.clonePreview(preview));
   }
 
-  applyLogs(): MaintenanceTaskApplyLog[] {
+  applyLogs(): MaintenanceSessionApplyLog[] {
     if (!this.currentBatch) return [];
     return [...this.currentBatch.items.values()]
       .filter((item) => TERMINAL_ITEM_STATUSES.has(item.status))
@@ -295,7 +295,7 @@ export class MaintenanceSession {
           ? [
               {
                 id: item.id,
-                taskId: this.id,
+                sessionId: this.id,
                 batchId: this.currentBatch?.id ?? "",
                 previewId: preview.id,
                 rootId: preview.rootId,
@@ -310,7 +310,7 @@ export class MaintenanceSession {
       });
   }
 
-  progress(): MaintenanceTaskProgress {
+  progress(): MaintenanceSessionProgress {
     if (this.phaseValue === "preview") {
       const previews = [...this.previews.values()];
       return {
@@ -330,7 +330,7 @@ export class MaintenanceSession {
     };
   }
 
-  taskSnapshot(): MaintenanceTaskSnapshot {
+  statusSnapshot(): MaintenanceSessionSnapshot {
     return {
       id: this.id,
       rootId: this.rootId,
@@ -380,7 +380,7 @@ export class MaintenanceSession {
     this.timestamps.updatedAt = now;
   }
 
-  private clonePreview(preview: MaintenanceTaskPreview): MaintenanceTaskPreview {
+  private clonePreview(preview: MaintenanceSessionPreview): MaintenanceSessionPreview {
     return structuredClone(preview);
   }
 

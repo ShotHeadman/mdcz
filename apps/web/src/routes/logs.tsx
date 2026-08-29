@@ -24,10 +24,10 @@ import { ErrorBanner } from "../routeCommon";
 export const LogsPage = () => {
   const queryClient = useQueryClient();
   const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
-  const activeMaintenanceTaskId = useMaintenanceStore(selectMaintenanceSessionId);
+  const activeMaintenanceSessionId = useMaintenanceStore(selectMaintenanceSessionId);
   const activeTaskIds = useMemo(() => {
-    return [activeScrapeTaskId, activeMaintenanceTaskId].filter((id) => id.trim().length > 0);
-  }, [activeMaintenanceTaskId, activeScrapeTaskId]);
+    return [activeScrapeTaskId, activeMaintenanceSessionId].filter((id) => id.trim().length > 0);
+  }, [activeMaintenanceSessionId, activeScrapeTaskId]);
   const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
@@ -54,7 +54,13 @@ export const LogsPage = () => {
     () =>
       subscribeTaskNotifications({
         onNotification: (event) => {
-          if (event.kind !== "log") return;
+          if (event.kind === "invalidate") {
+            // Logs are payload events with no replay, so a reconnect refetches the authoritative list.
+            if (event.resources.includes("ready")) {
+              void queryClient.invalidateQueries({ queryKey: logsQueryKey });
+            }
+            return;
+          }
           if (activeTaskIds.length > 0 && event.log.source === "task" && !activeTaskIds.includes(event.log.taskId)) {
             return;
           }

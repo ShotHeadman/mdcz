@@ -1,4 +1,5 @@
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import { LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -121,6 +122,10 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (isRemoteImageCandidate(trimmed)) {
     return trimmed;
   }
+  if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
+    const file = parseLocalFileUrl(trimmed);
+    return getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath }) || trimmed;
+  }
   if (!item) {
     return trimmed;
   }
@@ -226,12 +231,12 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
 });
 
 export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
-  const requireTaskId = () => {
-    const activeTaskId = selectMaintenanceSessionId(useMaintenanceStore.getState());
-    if (!activeTaskId) {
-      throw new Error("当前没有可控制的维护任务");
+  const requireSessionId = () => {
+    const activeSessionId = selectMaintenanceSessionId(useMaintenanceStore.getState());
+    if (!activeSessionId) {
+      throw new Error("当前没有可控制的维护会话");
     }
-    return activeTaskId;
+    return activeSessionId;
   };
 
   return {
@@ -253,11 +258,11 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
     },
     getActiveSession: async () => await api.maintenance.getActiveSession(),
     updateDraft: async (previewId, draft) => {
-      await api.maintenance.updateDraft({ taskId: requireTaskId(), previewId, ...draft });
+      await api.maintenance.updateDraft({ sessionId: requireSessionId(), previewId, ...draft });
     },
     discardSession: async () => {
-      const taskId = selectMaintenanceSessionId(useMaintenanceStore.getState()) || undefined;
-      await api.maintenance.discardSession(taskId ? { taskId } : undefined);
+      const sessionId = selectMaintenanceSessionId(useMaintenanceStore.getState()) || undefined;
+      await api.maintenance.discardSession(sessionId ? { sessionId } : undefined);
       useMaintenanceStore.getState().reset();
     },
     preview: async (entries: LocalScanEntry[], presetId: MaintenancePresetId) => {
@@ -271,22 +276,22 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       return { sessionId };
     },
     execute: async (selections: MaintenanceApplySelection[]) => {
-      const taskId = requireTaskId();
+      const sessionId = requireSessionId();
       await api.maintenance.apply({
-        taskId,
-        confirmationToken: `maintenance:${taskId}`,
+        sessionId,
+        confirmationToken: `maintenance:${sessionId}`,
         previewIds: selections.map((selection) => selection.previewId),
         selections,
       });
     },
     pause: async () => {
-      await api.maintenance.pause({ taskId: requireTaskId() });
+      await api.maintenance.pause({ sessionId: requireSessionId() });
     },
     resume: async () => {
-      await api.maintenance.resume({ taskId: requireTaskId() });
+      await api.maintenance.resume({ sessionId: requireSessionId() });
     },
     stop: async () => {
-      await api.maintenance.stop({ taskId: requireTaskId() });
+      await api.maintenance.stop({ sessionId: requireSessionId() });
     },
   };
 };

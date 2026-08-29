@@ -110,6 +110,18 @@ export type TaskKind = z.infer<typeof taskKindSchema>;
 export const scanStatusSchema = z.enum(["queued", "running", "completed", "failed", "paused", "stopping"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
+export const taskStatusSchema = z.enum([
+  "queued",
+  "running",
+  "paused",
+  "stopping",
+  "completed",
+  "failed",
+  "stopped",
+  "interrupted",
+]);
+export type TaskStatus = z.infer<typeof taskStatusSchema>;
+
 export const crawlerDataSchema = z.object({
   title: z.string(),
   original_title: z.string().optional(),
@@ -178,6 +190,26 @@ export const scanTaskSchema = z.object({
 });
 
 export type ScanTaskDto = z.infer<typeof scanTaskSchema>;
+
+export const scrapeRunTaskSchema = z.object({
+  id: z.string(),
+  kind: z.literal("scrape"),
+  rootId: z.string(),
+  rootDisplayName: z.string(),
+  status: taskStatusSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  totalItems: z.number().int().nonnegative(),
+  successCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  error: z.string().nullable(),
+  continuity: z.enum(["live", "final", "interrupted"]),
+});
+
+export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;
 
 export const scanTaskListResponseSchema = z.object({
   tasks: z.array(scanTaskSchema),
@@ -469,25 +501,25 @@ export interface MaintenanceScanSelectedFilesResponse {
   entries: import("./types").LocalScanEntry[];
 }
 
-export const maintenanceTaskInputSchema = z.object({
-  taskId: z.string().trim().min(1),
+export const maintenanceSessionInputSchema = z.object({
+  sessionId: z.string().trim().min(1),
 });
 
-export type MaintenanceTaskInput = z.infer<typeof maintenanceTaskInputSchema>;
+export type MaintenanceSessionInput = z.infer<typeof maintenanceSessionInputSchema>;
 
-export const maintenanceUpdateDraftInputSchema = maintenanceTaskInputSchema.extend({
+export const maintenanceUpdateDraftInputSchema = maintenanceSessionInputSchema.extend({
   previewId: z.string().min(1),
   fieldSelections: z.record(z.string(), z.enum(["old", "new"])).optional(),
 });
 export type MaintenanceUpdateDraftInput = z.infer<typeof maintenanceUpdateDraftInputSchema>;
 
-export const maintenanceDiscardSessionInputSchema = z.object({ taskId: z.string().min(1).optional() }).optional();
+export const maintenanceDiscardSessionInputSchema = z.object({ sessionId: z.string().min(1).optional() }).optional();
 export type MaintenanceDiscardSessionInput = z.infer<typeof maintenanceDiscardSessionInputSchema>;
 
 export const maintenanceMutationAckSchema = z.object({ sessionId: z.string() });
 export type MaintenanceMutationAckDto = z.infer<typeof maintenanceMutationAckSchema>;
 
-export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
+export const maintenanceApplyInputSchema = maintenanceSessionInputSchema.extend({
   confirmationToken: z.string().trim().min(1).optional(),
   previewIds: z.array(z.string().trim().min(1)).optional(),
   selections: z
@@ -528,7 +560,7 @@ export const logListResponseSchema = z.object({
 export type LogListResponse = z.infer<typeof logListResponseSchema>;
 
 export const scrapeRunSnapshotSchema = z.object({
-  task: scanTaskSchema,
+  task: scrapeRunTaskSchema,
   progress: z.object({
     percent: z.number().min(0).max(100),
     completedItems: z.number().int().nonnegative(),
@@ -577,7 +609,9 @@ export type ScrapePendingUncensoredConfirmationResponse = z.infer<
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
-    resources: z.array(z.enum(["scan", "scrape-live", "scrape-history", "maintenance", "pending-confirmation"])),
+    resources: z.array(
+      z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending-confirmation"]),
+    ),
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),
 ]);
@@ -768,7 +802,7 @@ export type SystemAboutResponse = z.infer<typeof systemAboutResponseSchema>;
 export const automationWebhookEventSchema = z.object({
   taskId: z.string(),
   kind: taskKindSchema,
-  status: scanStatusSchema,
+  status: taskStatusSchema,
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   summary: z.string(),
@@ -819,7 +853,7 @@ export const automationScrapeStartInputSchema = z.object({
 export type AutomationScrapeStartInput = z.infer<typeof automationScrapeStartInputSchema>;
 
 export const automationScrapeStartResponseSchema = z.object({
-  task: scanTaskSchema,
+  task: z.union([scanTaskSchema, scrapeRunTaskSchema]),
   webhook: automationWebhookEventSchema,
 });
 

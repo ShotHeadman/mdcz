@@ -277,6 +277,6 @@ describe("web maintenance action port", () => {
     await createWebMaintenanceActionPort().pause();
 
     expect(selectMaintenanceSessionId(useMaintenanceStore.getState())).toBe("maintenance-task-1");
-    expect(pause).toHaveBeenCalledWith({ taskId: "maintenance-task-1" });
+    expect(pause).toHaveBeenCalledWith({ sessionId: "maintenance-task-1" });
   });
 });

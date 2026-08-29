@@ -378,7 +378,7 @@ const createServerHost = async (mediaRoot: string, gate: Promise<void>, succeed:
         expect((await maintenance.getActiveSession())?.status).toBe("completed");
       });
       await maintenance.apply({
-        taskId: startedMaintenance.sessionId,
+        sessionId: startedMaintenance.sessionId,
         confirmationToken: `maintenance:${startedMaintenance.sessionId}`,
       });
     },

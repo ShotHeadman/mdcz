@@ -17,7 +17,7 @@ import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
-  MaintenanceTaskCoordinator,
+  MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type {
@@ -25,7 +25,7 @@ import type {
   MaintenanceApplyBatch,
   MaintenanceApplySelection,
   MaintenancePreviewBatch,
-  MaintenanceTaskSnapshot,
+  MaintenanceSessionSnapshot,
 } from "@mdcz/shared/maintenanceTasks";
 import type {
   LocalScanEntry,
@@ -44,7 +44,7 @@ export interface MaintenanceServiceDependencies {
   actorSourceProvider?: ActorSourceProvider;
   imageHostCooldownStore?: PersistentCooldownStore;
   runtime?: MaintenanceRuntime;
-  coordinator?: MaintenanceTaskCoordinator;
+  coordinator?: MaintenanceSessionCoordinator;
 }
 
 const idleStatus = (): MaintenanceStatus => ({
@@ -61,7 +61,7 @@ export class MaintenanceService {
   private readonly persistenceService: DesktopPersistenceService;
   private readonly imageHostCooldownStore: PersistentCooldownStore;
   private readonly runtime: MaintenanceRuntime;
-  private readonly coordinator: MaintenanceTaskCoordinator;
+  private readonly coordinator: MaintenanceSessionCoordinator;
   private scanningStatus: MaintenanceStatus | null = null;
   private scanController: AbortController | null = null;
   private scanPromise: Promise<unknown> | null = null;
@@ -83,7 +83,7 @@ export class MaintenanceService {
       });
     this.coordinator =
       deps.coordinator ??
-      new MaintenanceTaskCoordinator({
+      new MaintenanceSessionCoordinator({
         roots: {
           getActiveRoot: async (rootId) => {
             const root = await (await deps.persistenceService.getState()).repositories.mediaRoots.get(rootId);
@@ -110,10 +110,10 @@ export class MaintenanceService {
       });
   }
 
-  async getStatus(taskId?: string): Promise<MaintenanceStatus> {
+  async getStatus(sessionId?: string): Promise<MaintenanceStatus> {
     if (this.scanningStatus) return { ...this.scanningStatus };
     const snapshot = await this.coordinator.getActiveSession();
-    if (!snapshot || (taskId && snapshot.id !== taskId)) return idleStatus();
+    if (!snapshot || (sessionId && snapshot.id !== sessionId)) return idleStatus();
     return {
       state:
         snapshot.status === "paused"
@@ -155,7 +155,7 @@ export class MaintenanceService {
     presetId: MaintenancePresetId,
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (entries.length === 0) throw new Error("No entries to process");
-    if (await this.hasActiveTask()) throw new Error("Maintenance is already running");
+    if (await this.hasActiveSession()) throw new Error("Maintenance is already running");
     const config = await configManager.getValidated();
     const rootPath = resolveDesktopInputRootPath(
       entries.map((entry) => entry.fileInfo.filePath),
@@ -172,12 +172,12 @@ export class MaintenanceService {
     const handle = await this.startPreview(entries, presetId);
     await handle.completion;
     const session = await this.getActiveSession();
-    if (!session || session.id !== handle.task.id) throw new Error("维护会话已变化");
+    if (!session || session.id !== handle.session.id) throw new Error("维护会话已变化");
     return {
       items: session.previews.map((item) => ({
         fileId: item.entry?.fileId ?? item.relativePath,
         previewId: item.id,
-        taskId: item.taskId,
+        sessionId: item.sessionId,
         status: item.status === "ready" ? "ready" : "blocked",
         ...(item.error ? { error: item.error } : {}),
         ...(item.fieldDiffs.length ? { fieldDiffs: item.fieldDiffs } : {}),
@@ -190,13 +190,13 @@ export class MaintenanceService {
   }
 
   async execute(
-    taskId: string,
+    sessionId: string,
     selections: MaintenanceApplySelection[],
     presetId: MaintenancePresetId,
   ): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.coordinator.getActiveSession();
-    if (!session || session.id !== taskId) throw new Error("维护任务不存在");
+    if (!session || session.id !== sessionId) throw new Error("维护任务不存在");
     if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
     if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
@@ -204,38 +204,40 @@ export class MaintenanceService {
       throw new Error("维护项目不属于当前任务");
     }
     this.signalService.resetProgress();
-    const handle = await this.coordinator.beginApply({ taskId, selections });
+    const handle = await this.coordinator.beginApply({ sessionId, selections });
     void handle.completion.catch((error) => this.signalService.showLogText(String(error), "error"));
     return handle;
   }
 
-  async stop(taskId?: string): Promise<void> {
+  async stop(sessionId?: string): Promise<void> {
     if (this.scanController) {
       this.logger.info("Stopping maintenance scan");
       this.scanningStatus = { ...(this.scanningStatus ?? idleStatus()), state: "stopping" };
       this.scanController.abort(createAbortError());
       return;
     }
-    const task = await this.resolveTask(taskId);
+    const task = await this.resolveSession(sessionId);
     if (task) await this.coordinator.stop(task.id);
   }
 
-  async pause(taskId?: string): Promise<void> {
+  async pause(sessionId?: string): Promise<void> {
     if (this.scanController) return;
-    const task = await this.resolveTask(taskId);
+    const task = await this.resolveSession(sessionId);
     if (task) await this.coordinator.pause(task.id);
   }
 
-  async resume(taskId?: string): Promise<void> {
+  async resume(sessionId?: string): Promise<void> {
     if (this.scanController) return;
-    const task = await this.resolveTask(taskId);
+    const task = await this.resolveSession(sessionId);
     if (task) await this.coordinator.resume(task.id);
   }
 
-  async resolveActiveTaskId(preferredTaskId?: string): Promise<string | null> {
-    const preferred = preferredTaskId ? await this.coordinator.getTask(preferredTaskId).catch(() => null) : null;
+  async resolveActiveSessionId(preferredSessionId?: string): Promise<string | null> {
+    const preferred = preferredSessionId
+      ? await this.coordinator.getSession(preferredSessionId).catch(() => null)
+      : null;
     if (preferred) return preferred.id;
-    return (await this.resolveTask())?.id ?? null;
+    return (await this.resolveSession())?.id ?? null;
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
@@ -243,14 +245,14 @@ export class MaintenanceService {
   }
 
   async updateDraft(input: { previewId: string; fieldSelections?: Record<string, "old" | "new"> }): Promise<void> {
-    const taskId = await this.resolveActiveTaskId();
-    if (!taskId) throw new Error("没有活动的维护会话");
-    await this.coordinator.updateDraft({ taskId, ...input });
+    const sessionId = await this.resolveActiveSessionId();
+    if (!sessionId) throw new Error("没有活动的维护会话");
+    await this.coordinator.updateDraft({ sessionId, ...input });
   }
 
   async discardSession(): Promise<void> {
-    const taskId = await this.resolveActiveTaskId();
-    await this.coordinator.discardSession(taskId ?? undefined);
+    const sessionId = await this.resolveActiveSessionId();
+    await this.coordinator.discardSession(sessionId ?? undefined);
   }
 
   async waitForIdle(): Promise<void> {
@@ -295,19 +297,19 @@ export class MaintenanceService {
   }
 
   private async assertAvailableForScan(): Promise<void> {
-    if (this.scanController || (await this.hasActiveTask())) throw new Error("Maintenance is already running");
+    if (this.scanController || (await this.hasActiveSession())) throw new Error("Maintenance is already running");
   }
 
-  private async hasActiveTask(): Promise<boolean> {
-    return (await this.coordinator.listTasks()).some((task) =>
+  private async hasActiveSession(): Promise<boolean> {
+    return (await this.coordinator.listSessions()).some((task) =>
       ["queued", "running", "paused", "stopping"].includes(task.status),
     );
   }
 
-  private async resolveTask(taskId?: string): Promise<MaintenanceTaskSnapshot | null> {
-    if (taskId) return await this.coordinator.getTask(taskId).catch(() => null);
+  private async resolveSession(sessionId?: string): Promise<MaintenanceSessionSnapshot | null> {
+    if (sessionId) return await this.coordinator.getSession(sessionId).catch(() => null);
     return (
-      (await this.coordinator.listTasks()).find((task) =>
+      (await this.coordinator.listSessions()).find((task) =>
         ["queued", "running", "paused", "stopping"].includes(task.status),
       ) ?? null
     );
@@ -318,7 +320,7 @@ export class MaintenanceService {
       case "log":
         this.signalService.showLogText(event.event.message);
         return;
-      case "task-changed":
+      case "session-changed":
         return;
     }
   }

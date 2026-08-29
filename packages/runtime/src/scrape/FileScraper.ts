@@ -327,14 +327,18 @@ export class FileScraper {
       addLocalAsset("fanart", targetAssets.fanart);
       addLocalAsset("trailer", targetAssets.trailer);
       for (const sceneImage of targetAssets.sceneImages) addLocalAsset("scene", sceneImage);
-      const addRemoteAsset = (kind: string, url: string | undefined) => {
-        if (url?.trim()) assetTargets.push({ kind, url });
+      // A download toggled off means the file is not written, not that the artwork is hidden:
+      // the source site's URL still backs the detail preview when no local file was produced.
+      const addRemoteAsset = (kind: string, url: string | undefined, localPath: string | undefined) => {
+        if (!localPath && url?.trim()) assetTargets.push({ kind, url });
       };
-      addRemoteAsset("thumb", crawlerData.thumb_source_url ?? crawlerData.thumb_url);
-      addRemoteAsset("poster", crawlerData.poster_source_url ?? crawlerData.poster_url);
-      addRemoteAsset("fanart", crawlerData.fanart_source_url ?? crawlerData.fanart_url);
-      addRemoteAsset("trailer", crawlerData.trailer_source_url ?? crawlerData.trailer_url);
-      for (const url of crawlerData.scene_images) addRemoteAsset("scene", url);
+      addRemoteAsset("thumb", crawlerData.thumb_source_url ?? crawlerData.thumb_url, targetAssets.thumb);
+      addRemoteAsset("poster", crawlerData.poster_source_url ?? crawlerData.poster_url, targetAssets.poster);
+      addRemoteAsset("fanart", crawlerData.fanart_source_url ?? crawlerData.fanart_url, targetAssets.fanart);
+      addRemoteAsset("trailer", crawlerData.trailer_source_url ?? crawlerData.trailer_url, targetAssets.trailer);
+      if (targetAssets.sceneImages.length === 0) {
+        for (const url of crawlerData.scene_images) addRemoteAsset("scene", url, undefined);
+      }
       this.setProgress(progress, 100);
       const classification = classifyMovie(fileInfo, crawlerData, existingNfoLocalState);
       const preparedPlan: PreparedPublicationPlan = {

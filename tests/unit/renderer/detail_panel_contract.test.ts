@@ -111,19 +111,27 @@ describe("detail panel adapter contract", () => {
       path: "organized/ABC-123/ABC-123.mp4",
       fileRef: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.mp4" },
       nfoRef: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.nfo" },
-      posterUrl: "art/poster.jpg",
-      thumbUrl: "art/thumb.jpg",
-      fanartUrl: "art/fanart.jpg",
-      sceneImages: ["art/scene-1.jpg"],
-      trailerUrl: "art/trailer.mp4",
+      posterUrl: "local-file://metadata-root/art/poster.jpg",
+      thumbUrl: "local-file://metadata-root/art/thumb.jpg",
+      fanartUrl: "local-file://metadata-root/art/fanart.jpg",
+      sceneImages: ["local-file://metadata-root/art/scene-1.jpg"],
+      trailerUrl: "local-file://metadata-root/art/trailer.mp4",
       outputPath: "organized/ABC-123",
       nfoPath: "organized/ABC-123/ABC-123.nfo",
       rating: 4.6,
     });
 
     expect(buildDetailArtworkCandidates(toDetailViewItemFromScrapeResult(payload))).toEqual({
-      poster: ["art/poster.jpg", "organized/ABC-123/ABC-123-poster.jpg", "organized/ABC-123/poster.jpg"],
-      thumb: ["art/thumb.jpg", "organized/ABC-123/ABC-123-thumb.jpg", "organized/ABC-123/thumb.jpg"],
+      poster: [
+        "local-file://metadata-root/art/poster.jpg",
+        "organized/ABC-123/ABC-123-poster.jpg",
+        "organized/ABC-123/poster.jpg",
+      ],
+      thumb: [
+        "local-file://metadata-root/art/thumb.jpg",
+        "organized/ABC-123/ABC-123-thumb.jpg",
+        "organized/ABC-123/thumb.jpg",
+      ],
     });
   });
 
@@ -139,6 +147,25 @@ describe("detail panel adapter contract", () => {
     });
 
     expect(result.sceneImages).toEqual(["https://example.com/remote-scene.jpg"]);
+    expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
+  });
+
+  it("prefers the local file per asset kind when a run mixes downloaded and remote-only assets", () => {
+    const result = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-123.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      assets: [
+        { type: "remote", kind: "poster", url: "https://example.com/remote-poster.jpg" },
+        { type: "local", kind: "poster", file: { rootId: "output", relativePath: "ABC-123/poster.jpg" } },
+        { type: "remote", kind: "trailer", url: "https://example.com/remote-trailer.mp4" },
+      ],
+      crawlerData: createCrawlerData(),
+    });
+
+    expect(result.posterUrl).toBe("local-file://output/ABC-123/poster.jpg");
     expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
   });
 

@@ -249,7 +249,6 @@ export type MaintenancePreviewStatus = "ready" | "blocked";
 export interface MaintenancePreviewItem {
   fileId: FileId;
   previewId?: string;
-  taskId?: string;
   status: MaintenancePreviewStatus;
   error?: string;
   fieldDiffs?: FieldDiff[];

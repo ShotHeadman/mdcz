@@ -114,10 +114,10 @@ export const useWebTaskSync = (): void => {
 
     const unsubscribe = subscribeTaskNotifications({
       onOpen: () => {
+        // The stream's own `ready` invalidation drives the reconnect refresh; reading here would
+        // race the server's first event and could resurrect state the stream is about to correct.
         connectionOpen = true;
         recordDispatch();
-        refreshLiveRuns();
-        refreshMaintenanceSession();
       },
       onError: () => {
         connectionOpen = false;
@@ -131,6 +131,12 @@ export const useWebTaskSync = (): void => {
       onNotification: (payload) => {
         recordDispatch();
         if (payload.kind === "log") return;
+        if (payload.resources.includes("ready")) {
+          refreshLiveRuns();
+          refreshMaintenanceSession();
+          refreshPendingUncensored();
+          return;
+        }
         if (payload.resources.includes("scrape-live")) refreshLiveRuns();
         if (payload.resources.includes("maintenance")) refreshMaintenanceSession();
         if (payload.resources.includes("pending-confirmation")) refreshPendingUncensored();

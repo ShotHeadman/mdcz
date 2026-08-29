@@ -3,7 +3,7 @@ import {
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
-  MaintenanceTaskCoordinator,
+  MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
@@ -12,8 +12,8 @@ import type {
   MaintenanceMutationAckDto,
   MaintenanceScanSelectedFilesInput,
   MaintenanceScanSelectedFilesResponse,
+  MaintenanceSessionInput,
   MaintenanceStartInput,
-  MaintenanceTaskInput,
 } from "@mdcz/shared/serverDtos";
 import { createServerMaintenanceRuntime } from "../maintenanceRuntimeFactory";
 import { toTaskEventDto } from "../taskDto";
@@ -25,7 +25,7 @@ import { decorateTaskLog } from "./runtimeLogService";
 
 export class MaintenanceService {
   private readonly runtime: MaintenanceRuntime;
-  private readonly coordinator: MaintenanceTaskCoordinator;
+  private readonly coordinator: MaintenanceSessionCoordinator;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
@@ -36,7 +36,7 @@ export class MaintenanceService {
     mappingStore?: TranslationMappingStore,
   ) {
     this.runtime = runtime ?? createServerMaintenanceRuntime(config, mappingStore);
-    this.coordinator = new MaintenanceTaskCoordinator({
+    this.coordinator = new MaintenanceSessionCoordinator({
       roots: { getActiveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId) },
       runtime: this.runtime,
       library: createMaintenanceLibraryPort({
@@ -64,7 +64,7 @@ export class MaintenanceService {
     });
     const handle = await this.coordinator.startPreview({ rootId: root.id, presetId: input.presetId, refs });
     void handle.completion.catch(() => undefined);
-    return { sessionId: handle.task.id };
+    return { sessionId: handle.session.id };
   }
 
   async scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse> {
@@ -111,7 +111,7 @@ export class MaintenanceService {
 
   async apply(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto> {
     const session = await this.coordinator.getActiveSession();
-    if (!session || session.id !== input.taskId) throw new Error(`维护会话不存在：${input.taskId}`);
+    if (!session || session.id !== input.sessionId) throw new Error(`维护会话不存在：${input.sessionId}`);
     const previews = session.previews;
     const selectedIds = input.previewIds ? new Set(input.previewIds) : null;
     const selected = selectedIds ? previews.filter((preview) => selectedIds.has(preview.id)) : previews;
@@ -120,7 +120,7 @@ export class MaintenanceService {
     if (selected.length === 0) throw new Error("请选择要应用的维护预览");
     if (
       selected.some((preview) => preview.proposedCrawlerData) &&
-      input.confirmationToken !== `maintenance:${input.taskId}`
+      input.confirmationToken !== `maintenance:${input.sessionId}`
     ) {
       throw new Error("维护应用需要确认令牌");
     }
@@ -129,24 +129,24 @@ export class MaintenanceService {
       previewId: preview.id,
       fieldSelections: fieldsByPreview.get(preview.id),
     }));
-    const handle = await this.coordinator.beginApply({ taskId: input.taskId, selections });
+    const handle = await this.coordinator.beginApply({ sessionId: input.sessionId, selections });
     void handle.completion.catch(() => undefined);
-    return { sessionId: input.taskId };
+    return { sessionId: input.sessionId };
   }
 
-  async pause(input: MaintenanceTaskInput): Promise<MaintenanceMutationAckDto> {
-    const task = await this.coordinator.pause(input.taskId);
-    return { sessionId: task.id };
+  async pause(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto> {
+    const snapshot = await this.coordinator.pause(input.sessionId);
+    return { sessionId: snapshot.id };
   }
 
-  async resume(input: MaintenanceTaskInput): Promise<MaintenanceMutationAckDto> {
-    const task = await this.coordinator.resume(input.taskId);
-    return { sessionId: task.id };
+  async resume(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto> {
+    const snapshot = await this.coordinator.resume(input.sessionId);
+    return { sessionId: snapshot.id };
   }
 
-  async stop(input: MaintenanceTaskInput): Promise<MaintenanceMutationAckDto> {
-    const task = await this.coordinator.stop(input.taskId);
-    return { sessionId: task.id };
+  async stop(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto> {
+    const snapshot = await this.coordinator.stop(input.sessionId);
+    return { sessionId: snapshot.id };
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
@@ -167,17 +167,17 @@ export class MaintenanceService {
   }
 
   async updateDraft(input: {
-    taskId: string;
+    sessionId: string;
     previewId: string;
     fieldSelections?: Record<string, "old" | "new">;
   }): Promise<MaintenanceMutationAckDto> {
     await this.coordinator.updateDraft(input);
-    return { sessionId: input.taskId };
+    return { sessionId: input.sessionId };
   }
 
-  async discardSession(input?: { taskId?: string }): Promise<MaintenanceMutationAckDto> {
-    const sessionId = input?.taskId ?? (await this.coordinator.getActiveSession())?.id ?? "";
-    await this.coordinator.discardSession(input?.taskId);
+  async discardSession(input?: { sessionId?: string }): Promise<MaintenanceMutationAckDto> {
+    const sessionId = input?.sessionId ?? (await this.coordinator.getActiveSession())?.id ?? "";
+    await this.coordinator.discardSession(input?.sessionId);
     return { sessionId };
   }
 
@@ -187,12 +187,12 @@ export class MaintenanceService {
 
   private async publishCoordinatorEvent(event: MaintenanceCoordinatorEvent): Promise<void> {
     switch (event.kind) {
-      case "task-changed":
-        this.taskEvents.lifecycle(await this.toLifecycleEvent(event.task));
+      case "session-changed":
+        this.taskEvents.lifecycle(await this.toLifecycleEvent(event.session));
         this.taskEvents.invalidate("maintenance");
         return;
       case "log": {
-        const dto = toTaskEventDto(event.event);
+        const dto = toTaskEventDto({ ...event.event, taskId: event.sessionId });
         this.taskEvents.log(decorateTaskLog(dto));
         return;
       }

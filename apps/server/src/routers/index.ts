@@ -17,8 +17,8 @@ import {
   maintenanceApplyInputSchema,
   maintenanceDiscardSessionInputSchema,
   maintenanceScanSelectedFilesInputSchema,
+  maintenanceSessionInputSchema,
   maintenanceStartInputSchema,
-  maintenanceTaskInputSchema,
   maintenanceUpdateDraftInputSchema,
   nfoReadInputSchema,
   nfoWriteInputSchema,
@@ -258,7 +258,7 @@ export const appRouter = t.router({
       .input(maintenanceScanSelectedFilesInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.maintenance.scanSelectedFiles(input)),
     pause: protectedProcedure
-      .input(maintenanceTaskInputSchema)
+      .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.pause(input)),
     getActiveSession: protectedProcedure.query(async ({ ctx }) => await ctx.services.maintenance.getActiveSession()),
     updateDraft: protectedProcedure
@@ -268,13 +268,13 @@ export const appRouter = t.router({
       .input(maintenanceDiscardSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.discardSession(input)),
     resume: protectedProcedure
-      .input(maintenanceTaskInputSchema)
+      .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.resume(input)),
     start: protectedProcedure
       .input(maintenanceStartInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.start(input)),
     stop: protectedProcedure
-      .input(maintenanceTaskInputSchema)
+      .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.stop(input)),
   }),
   persistence: t.router({

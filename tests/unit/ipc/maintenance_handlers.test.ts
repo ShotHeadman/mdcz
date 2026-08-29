@@ -34,8 +34,8 @@ const entry: LocalScanEntry = {
   currentDir: "/media",
 };
 
-const task = {
-  id: "task-1",
+const session = {
+  id: "session-1",
   rootId: "root-1",
   status: "completed" as const,
   createdAt: new Date(),
@@ -50,12 +50,12 @@ const task = {
 };
 
 const batch = {
-  task,
+  session,
   items: [
     {
       id: "preview-1",
-      taskId: task.id,
-      rootId: task.rootId,
+      sessionId: session.id,
+      rootId: session.rootId,
       relativePath: "file-1.mp4",
       presetId: "organize_files" as const,
       status: "ready" as const,
@@ -79,12 +79,12 @@ describe("maintenance IPC task adapter", () => {
     const service = {
       scanFiles: vi.fn(async () => [entry]),
       scan: vi.fn(async () => [entry]),
-      startPreview: vi.fn(async () => ({ task, completion: previewCompletion })),
+      startPreview: vi.fn(async () => ({ session, completion: previewCompletion })),
       getActiveSession: vi.fn(async () => ({
-        id: task.id,
+        id: session.id,
       })),
-      resolveActiveTaskId: vi.fn(async (preferred?: string) => preferred ?? task.id),
-      execute: vi.fn(async () => ({ task, completion: Promise.resolve({ ...batch, applied: [] }) })),
+      resolveActiveSessionId: vi.fn(async (preferred?: string) => preferred ?? session.id),
+      execute: vi.fn(async () => ({ session, completion: Promise.resolve({ ...batch, applied: [] }) })),
       stop: vi.fn(async () => undefined),
       pause: vi.fn(async () => undefined),
       resume: vi.fn(async () => undefined),
@@ -111,15 +111,15 @@ describe("maintenance IPC task adapter", () => {
     await expect(handlers[IpcChannel.Maintenance_Pause].action(args)).resolves.toEqual({
       success: true,
     });
-    expect(service.pause).toHaveBeenCalledWith(task.id);
-    await expect(previewResponse).resolves.toEqual({ sessionId: task.id });
+    expect(service.pause).toHaveBeenCalledWith(session.id);
+    await expect(previewResponse).resolves.toEqual({ sessionId: session.id });
     releasePreview();
 
     const selections = [{ previewId: "preview-1", fieldSelections: { title: "old" as const } }];
     await expect(
       handlers[IpcChannel.Maintenance_Apply].action(withInput({ selections, presetId: "organize_files" })),
-    ).resolves.toEqual({ sessionId: task.id });
-    expect(service.execute).toHaveBeenCalledWith(task.id, selections, "organize_files");
+    ).resolves.toEqual({ sessionId: session.id });
+    expect(service.execute).toHaveBeenCalledWith(session.id, selections, "organize_files");
 
     await expect(handlers[IpcChannel.Maintenance_Stop].action(args)).resolves.toEqual({
       success: true,
@@ -127,7 +127,7 @@ describe("maintenance IPC task adapter", () => {
     await expect(handlers[IpcChannel.Maintenance_Resume].action(args)).resolves.toEqual({
       success: true,
     });
-    expect(service.stop).toHaveBeenCalledWith(task.id);
-    expect(service.resume).toHaveBeenCalledWith(task.id);
+    expect(service.stop).toHaveBeenCalledWith(session.id);
+    expect(service.resume).toHaveBeenCalledWith(session.id);
   });
 });

@@ -66,7 +66,6 @@ export const selectMaintenancePreviewResults = (state: MaintenanceState): Record
       const item: MaintenancePreviewItem = {
         fileId: previewFileId(preview),
         previewId: preview.id,
-        taskId: preview.taskId,
         status: preview.status === "ready" ? "ready" : "blocked",
         ...(preview.error ? { error: preview.error } : {}),
         ...(preview.fieldDiffs.length ? { fieldDiffs: preview.fieldDiffs } : {}),

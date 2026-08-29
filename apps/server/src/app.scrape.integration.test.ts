@@ -131,7 +131,7 @@ describe("buildServer scrape integration", () => {
     });
     const taskEvents: unknown[] = [];
     const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
-      taskEvents.push(event.data);
+      taskEvents.push(event);
     });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
@@ -161,7 +161,8 @@ describe("buildServer scrape integration", () => {
       url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    const scrapeResultId = scrapeHistoryResponse.json().result.data.results[0].id;
+    const scrapeResult = scrapeHistoryResponse.json().result.data.results[0];
+    const scrapeResultId = scrapeResult.id;
     const cropSessionResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: scrapeResultId }))}`,
@@ -257,6 +258,19 @@ describe("buildServer scrape integration", () => {
         expect.objectContaining({ kind: "poster", uri: "JAV_output/Actor A/ABC-123/poster.png" }),
       ]),
     );
+    expect(scrapeResult.assets).toEqual(
+      expect.arrayContaining([
+        { type: "local", kind: "poster", file: { rootId, relativePath: "JAV_output/Actor A/ABC-123/poster.png" } },
+        { type: "local", kind: "thumb", file: { rootId, relativePath: "JAV_output/Actor A/ABC-123/thumb.png" } },
+      ]),
+    );
+    // `downloadTrailer: false` skips writing the file and the NFO entry, but the source site's URL
+    // still reaches the detail view as a remote ref.
+    expect(scrapeResult.assets).toContainEqual({
+      type: "remote",
+      kind: "trailer",
+      url: "https://example.com/runtime-trailer-source.mp4",
+    });
     expect(nfoContent).toContain("Runtime Title ABC-123");
     expect(nfoContent).toContain(".actors/Actor A.jpg");
     expect(nfoContent).not.toContain("<director>Runtime Director</director>");

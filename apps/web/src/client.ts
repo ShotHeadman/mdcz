@@ -276,7 +276,7 @@ const taskEventsUrl = (): string => {
   return `${getApiBase()}/events/tasks${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 };
 
-const subscribeTaskEventSource = (handlers: {
+export const subscribeTaskNotifications = (handlers: {
   onNotification?: (payload: TaskNotificationDto) => void;
   onError?: () => void;
   onHeartbeat?: () => void;
@@ -296,13 +296,4 @@ const subscribeTaskEventSource = (handlers: {
     handlers.onNotification?.(JSON.parse(event.data) as TaskNotificationDto);
   });
   return () => eventSource.close();
-};
-
-export const subscribeTaskNotifications = (handlers: {
-  onNotification?: (payload: TaskNotificationDto) => void;
-  onError?: () => void;
-  onHeartbeat?: () => void;
-  onOpen?: () => void;
-}): (() => void) => {
-  return subscribeTaskEventSource(handlers);
 };

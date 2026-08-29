@@ -12,6 +12,7 @@ import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
 
 const MAX_TRACKED_WEBHOOK_TASKS = 1_000;
+const MAX_QUEUED_WEBHOOK_DELIVERIES = 1_000;
 const WEBHOOK_DELIVERY_TIMEOUT_MS = 10_000;
 const WEBHOOK_PHASE_STARTED = 1;
 const WEBHOOK_PHASE_TERMINAL = 2;
@@ -86,7 +87,7 @@ export class AutomationService {
         event: {
           taskId: run.id,
           kind: "scrape" as const,
-          status: run.disposition === "completed" ? ("completed" as const) : ("failed" as const),
+          status: run.disposition,
           startedAt: run.startedAt,
           completedAt: run.completedAt,
           summary: `刮削 ${run.rootDisplayName || run.rootId}: ${run.disposition}`,
@@ -140,7 +141,10 @@ export class AutomationService {
     const phase =
       task.status === "running"
         ? WEBHOOK_PHASE_STARTED
-        : task.status === "completed" || task.status === "failed"
+        : task.status === "completed" ||
+            task.status === "failed" ||
+            task.status === "stopped" ||
+            task.status === "interrupted"
           ? WEBHOOK_PHASE_TERMINAL
           : 0;
     if (phase === 0) {
@@ -152,12 +156,17 @@ export class AutomationService {
       return;
     }
 
-    if (this.#deliveryQueue.length >= MAX_TRACKED_WEBHOOK_TASKS) {
+    if (this.#deliveryQueue.length >= MAX_QUEUED_WEBHOOK_DELIVERIES) {
       this.#deliveryStatus.failed += 1;
       this.#deliveryStatus.lastError = "Webhook delivery queue is full";
       return;
     }
     this.#taskDeliveryPhases.set(task.id, deliveredPhases | phase);
+    // Terminal tombstones are kept until eviction so a repeated terminal event is not delivered twice.
+    if (this.#taskDeliveryPhases.size > MAX_TRACKED_WEBHOOK_TASKS) {
+      const oldestTaskId = this.#taskDeliveryPhases.keys().next().value;
+      if (oldestTaskId !== undefined) this.#taskDeliveryPhases.delete(oldestTaskId);
+    }
     this.#deliveryQueue.push(this.toWebhookEvent(task));
     void this.processWebhookQueue();
   }

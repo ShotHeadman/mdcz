@@ -672,7 +672,7 @@ export class ScrapeService {
     const summary = repository.summary(manifest);
     if (!summary) throw new Error(`Scrape run finalization disappeared after update: ${manifest.id}`);
     const terminalRun = await this.historyRunDto(manifest);
-    const terminalStatus = summary.disposition === "completed" ? "completed" : "failed";
+    const terminalStatus = summary.disposition;
     this.addEvent(
       manifest.id,
       terminalStatus,

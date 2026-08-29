@@ -9,24 +9,24 @@ import type {
   PathDiff,
 } from "./types";
 
-export type MaintenanceTaskStatus = "queued" | "running" | "paused" | "stopping" | "completed" | "failed";
-export type MaintenanceTaskPhase = "preview" | "apply";
+export type MaintenanceSessionStatus = "queued" | "running" | "paused" | "stopping" | "completed" | "failed";
+export type MaintenanceSessionPhase = "preview" | "apply";
 
-export interface MaintenanceTaskRef {
+export interface MaintenanceSessionRef {
   relativePath: string;
 }
 
-export interface MaintenanceTaskProgress {
+export interface MaintenanceSessionProgress {
   totalEntries: number;
   completedEntries: number;
   successCount: number;
   failedCount: number;
 }
 
-export interface MaintenanceTaskSnapshot extends MaintenanceTaskProgress {
+export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
   id: string;
   rootId: string;
-  status: MaintenanceTaskStatus;
+  status: MaintenanceSessionStatus;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -34,15 +34,15 @@ export interface MaintenanceTaskSnapshot extends MaintenanceTaskProgress {
   error: string | null;
 }
 
-export type MaintenanceTaskPreviewStatus = "ready" | "blocked" | "applied" | "failed";
+export type MaintenanceSessionPreviewStatus = "ready" | "blocked" | "applied" | "failed";
 
-export interface MaintenanceTaskPreview {
+export interface MaintenanceSessionPreview {
   id: string;
-  taskId: string;
+  sessionId: string;
   rootId: string;
   relativePath: string;
   presetId: MaintenancePresetId;
-  status: MaintenanceTaskPreviewStatus;
+  status: MaintenanceSessionPreviewStatus;
   error: string | null;
   fieldDiffs: FieldDiff[];
   unchangedFieldDiffs: FieldDiff[];
@@ -55,16 +55,16 @@ export interface MaintenanceTaskPreview {
   updatedAt: Date;
 }
 
-export type MaintenanceTaskApplyItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
+export type MaintenanceSessionApplyItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 
 export interface MaintenanceApplySelection {
   previewId: string;
   fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
 }
 
-export interface MaintenanceTaskApplyLog {
+export interface MaintenanceSessionApplyLog {
   id: string;
-  taskId: string;
+  sessionId: string;
   batchId: string;
   previewId: string;
   rootId: string;
@@ -75,9 +75,9 @@ export interface MaintenanceTaskApplyLog {
   appliedAt: Date;
 }
 
-export interface MaintenanceTaskEvent {
+export interface MaintenanceSessionEvent {
   id: string;
-  taskId: string;
+  sessionId: string;
   type: string;
   message: string;
   createdAt: Date;
@@ -97,15 +97,15 @@ export interface MaintenanceApplyItemResult {
 }
 
 export interface MaintenancePreviewBatch {
-  task: MaintenanceTaskSnapshot;
-  items: MaintenanceTaskPreview[];
+  session: MaintenanceSessionSnapshot;
+  items: MaintenanceSessionPreview[];
 }
 
 export interface MaintenanceApplyBatch {
-  task: MaintenanceTaskSnapshot;
+  session: MaintenanceSessionSnapshot;
   batchId: string;
-  items: MaintenanceTaskPreview[];
-  applied: MaintenanceTaskApplyLog[];
+  items: MaintenanceSessionPreview[];
+  applied: MaintenanceSessionApplyLog[];
 }
 
 export interface MaintenanceLibrarySource {
@@ -119,23 +119,23 @@ export interface MaintenanceSessionDraft {
   fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
 }
 
-export interface MaintenanceActiveSessionSnapshot extends MaintenanceTaskProgress {
+export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProgress {
   id: string;
   rootId: string;
   presetId: MaintenancePresetId;
-  phase: MaintenanceTaskPhase;
-  status: MaintenanceTaskStatus;
+  phase: MaintenanceSessionPhase;
+  status: MaintenanceSessionStatus;
   generation: number;
-  refs: MaintenanceTaskRef[];
+  refs: MaintenanceSessionRef[];
   timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
   error: string | null;
-  previews: MaintenanceTaskPreview[];
+  previews: MaintenanceSessionPreview[];
   currentBatch: {
     id: string;
     items: Array<{
       id: string;
       selection: MaintenanceApplySelection;
-      status: MaintenanceTaskApplyItemStatus;
+      status: MaintenanceSessionApplyItemStatus;
       error: string | null;
       result?: MaintenanceApplyItemResult;
       createdAt: Date;

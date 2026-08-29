@@ -125,7 +125,7 @@ describe("desktop maintenance facade", () => {
       };
     });
     const handle = await fixture.service.execute(
-      previewHandle.task.id,
+      previewHandle.session.id,
       [{ previewId: preview?.id ?? "", fieldSelections: { title: "old" } }],
       "refresh_data",
     );

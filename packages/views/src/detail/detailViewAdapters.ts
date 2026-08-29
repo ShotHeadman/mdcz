@@ -1,4 +1,4 @@
-import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
+import { type AssetRef, type RootFileRef, toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { ScrapeResultDto } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
@@ -11,29 +11,22 @@ import type {
 } from "@mdcz/shared/types";
 import type { DetailViewItem } from "./types";
 
-type DetailLocalAssets = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
-type DetailDownloadedAssets = {
-  poster?: string;
-  thumb?: string;
-  fanart?: string;
-  sceneImages: string[];
-  trailer?: string;
-};
+type DetailAssetSources = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
 
-const assetPath = (assets: readonly AssetRef[], kind: string): string | undefined => {
+const assetSource = (assets: readonly AssetRef[], kind: string): string | undefined => {
   const local = assets.find((asset) => asset.type === "local" && asset.kind === kind);
-  if (local?.type === "local") return local.file.relativePath;
+  if (local?.type === "local") return toLocalFileUrl(local.file);
   const remote = assets.find((asset) => asset.type === "remote" && asset.kind === kind);
   return remote?.type === "remote" ? remote.url : undefined;
 };
 
-const assetsToPathBag = (assets: readonly AssetRef[]): DetailDownloadedAssets => ({
-  poster: assetPath(assets, "poster"),
-  thumb: assetPath(assets, "thumb"),
-  fanart: assetPath(assets, "fanart"),
-  trailer: assetPath(assets, "trailer"),
+const toAssetSources = (assets: readonly AssetRef[]): DetailAssetSources => ({
+  poster: assetSource(assets, "poster"),
+  thumb: assetSource(assets, "thumb"),
+  fanart: assetSource(assets, "fanart"),
+  trailer: assetSource(assets, "trailer"),
   sceneImages: assets.flatMap((asset) =>
-    asset.kind !== "scene" ? [] : [asset.type === "local" ? asset.file.relativePath : asset.url],
+    asset.kind !== "scene" ? [] : [asset.type === "local" ? toLocalFileUrl(asset.file) : asset.url],
   ),
 });
 
@@ -97,10 +90,7 @@ const formatResolution = (
   return fallbackResolution;
 };
 
-const resolveArtworkUrls = (
-  crawlerData: CrawlerData | undefined,
-  assets: DetailLocalAssets | DetailDownloadedAssets | undefined,
-) => ({
+const resolveArtworkUrls = (crawlerData: CrawlerData | undefined, assets: DetailAssetSources | undefined) => ({
   posterUrl: assets?.poster ?? crawlerData?.poster_url,
   thumbUrl: assets?.thumb ?? assets?.fanart ?? crawlerData?.thumb_url ?? crawlerData?.fanart_url,
   fanartUrl: assets?.fanart ?? assets?.thumb ?? crawlerData?.fanart_url ?? crawlerData?.thumb_url,
@@ -121,7 +111,7 @@ const buildDetailViewMetadata = (input: {
   crawlerData?: CrawlerData;
   videoMeta?: VideoMeta;
   resolution?: string;
-  assets?: DetailLocalAssets | DetailDownloadedAssets;
+  assets?: DetailAssetSources;
 }) => {
   const { crawlerData, videoMeta, resolution, assets } = input;
 
@@ -168,20 +158,12 @@ export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailVi
     ...buildDetailViewMetadata({
       crawlerData: result.crawlerData,
       videoMeta: result.videoMeta,
-      assets: assetsToPathBag(result.assets),
+      assets: toAssetSources(result.assets),
     }),
   };
 };
 
 export const toDetailViewItemFromScrapeResultDto = (result: ScrapeResultDto): DetailViewItem => {
-  const localAssets = result.assets.filter((asset) => asset.type === "local");
-  const remoteAssets = result.assets.filter((asset) => asset.type === "remote");
-  const assetPath = (kind: string): string | undefined =>
-    localAssets.find((asset) => asset.kind === kind)?.file.relativePath ??
-    remoteAssets.find((asset) => asset.kind === kind)?.url;
-  const sceneImages = result.assets.flatMap((asset) =>
-    asset.kind !== "scene" ? [] : [asset.type === "local" ? asset.file.relativePath : asset.url],
-  );
   const fileRef: RootFileRef =
     result.outputRootId && result.outputRelativePath
       ? { rootId: result.outputRootId, relativePath: result.outputRelativePath }
@@ -201,12 +183,10 @@ export const toDetailViewItemFromScrapeResultDto = (result: ScrapeResultDto): De
     nfoPath: result.nfoRelativePath ?? undefined,
     outputPath: result.outputRelativePath ? getDirectoryPath(result.outputRelativePath) : undefined,
     errorMessage: result.error ?? undefined,
-    ...buildDetailViewMetadata({ crawlerData: result.crawlerData ?? undefined }),
-    posterUrl: assetPath("poster") ?? result.crawlerData?.poster_url,
-    thumbUrl: assetPath("thumb") ?? assetPath("fanart") ?? result.crawlerData?.thumb_url,
-    fanartUrl: assetPath("fanart") ?? assetPath("thumb") ?? result.crawlerData?.fanart_url,
-    sceneImages: sceneImages.length ? sceneImages : result.crawlerData?.scene_images,
-    trailerUrl: assetPath("trailer") ?? result.crawlerData?.trailer_url,
+    ...buildDetailViewMetadata({
+      crawlerData: result.crawlerData ?? undefined,
+      assets: toAssetSources(result.assets),
+    }),
   };
 };
 

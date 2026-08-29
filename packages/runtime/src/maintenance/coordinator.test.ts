@@ -3,7 +3,7 @@ import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { MediaPathOwnership } from "../library/mediaPathOwnership";
-import { MaintenanceTaskCoordinator } from "./coordinator";
+import { MaintenanceSessionCoordinator } from "./coordinator";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
 
 type PromiseResolvers<T> = {
@@ -69,7 +69,7 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
     preflightRefresh: vi.fn(async () => undefined),
     publishRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
   };
-  const coordinator = new MaintenanceTaskCoordinator({
+  const coordinator = new MaintenanceSessionCoordinator({
     roots: { getActiveRoot: async () => root },
     runtime,
     library,
@@ -84,15 +84,15 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
   return { coordinator, events, library, ownership, runtime };
 };
 
-describe("MaintenanceTaskCoordinator", () => {
+describe("MaintenanceSessionCoordinator", () => {
   it("does not lose a notification issued before waiter registration and uses no timer", async () => {
     vi.useFakeTimers();
     try {
       const { coordinator } = createCoordinator();
       const internals = coordinator as unknown as {
         revision: number;
-        notify(taskId: string): void;
-        waitForChange(taskId: string, since: number): Promise<void>;
+        notify(sessionId: string): void;
+        waitForChange(sessionId: string, since: number): Promise<void>;
       };
       const revision = internals.revision;
       internals.notify("race");
@@ -121,7 +121,7 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     await first.completion;
 
-    await fixture.coordinator.discardSession(first.task.id);
+    await fixture.coordinator.discardSession(first.session.id);
     expect(await fixture.coordinator.getActiveSession()).toBeNull();
 
     const second = await fixture.coordinator.startPreview({
@@ -129,7 +129,7 @@ describe("MaintenanceTaskCoordinator", () => {
       presetId: "refresh_data",
       refs: [{ relativePath: "two.mp4" }],
     });
-    expect(second.task.id).not.toBe(first.task.id);
+    expect(second.session.id).not.toBe(first.session.id);
     await second.completion;
     await fixture.coordinator.close();
   });
@@ -157,7 +157,7 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
-      taskId: preview.task.id,
+      sessionId: preview.session.id,
       selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
     });
     await apply.completion;
@@ -199,7 +199,7 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
-      taskId: preview.task.id,
+      sessionId: preview.session.id,
       selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
     });
     const batch = await apply.completion;
@@ -229,15 +229,15 @@ describe("MaintenanceTaskCoordinator", () => {
       refs: ["one.mp4", "two.mp4", "three.mp4"].map((relativePath) => ({ relativePath })),
     });
     await started;
-    const pausing = fixture.coordinator.pause(handle.task.id);
+    const pausing = fixture.coordinator.pause(handle.session.id);
     releaseFirst();
     await expect(pausing).resolves.toMatchObject({ status: "paused" });
-    expect((await fixture.coordinator.readPreview(handle.task.id)).items).toHaveLength(1);
+    expect((await fixture.coordinator.readPreview(handle.session.id)).items).toHaveLength(1);
     expect(vi.mocked(fixture.runtime.previewEntries)).toHaveBeenCalledTimes(1);
 
-    await expect(fixture.coordinator.resume(handle.task.id)).resolves.toMatchObject({ status: "running" });
+    await expect(fixture.coordinator.resume(handle.session.id)).resolves.toMatchObject({ status: "running" });
     const batch = await handle.completion;
-    expect(batch.task.status).toBe("completed");
+    expect(batch.session.status).toBe("completed");
     expect(batch.items.map((item) => item.relativePath)).toEqual(["one.mp4", "three.mp4", "two.mp4"]);
     expect(vi.mocked(fixture.runtime.previewEntries)).toHaveBeenCalledTimes(3);
     expect(new Set(batch.items.map((item) => item.id)).size).toBe(3);
@@ -268,15 +268,15 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
-      taskId: preview.task.id,
+      sessionId: preview.session.id,
       selections: previewBatch.items.map((item) => ({ previewId: item.id })),
     });
     await started;
-    await fixture.coordinator.stop(preview.task.id);
+    await fixture.coordinator.stop(preview.session.id);
     const batch = await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
 
-    expect(batch.task).toMatchObject({ status: "failed", error: "维护已停止" });
+    expect(batch.session).toMatchObject({ status: "failed", error: "维护已停止" });
     expect(batch.applied).toHaveLength(3);
     expect(new Set(batch.applied.map((item) => item.previewId)).size).toBe(3);
     expect(batch.applied.every((item) => item.status === "skipped")).toBe(true);
@@ -305,11 +305,11 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await previewHandle.completion;
     const applyHandle = await fixture.coordinator.beginApply({
-      taskId: previewHandle.task.id,
+      sessionId: previewHandle.session.id,
       selections: previewBatch.items.map((item) => ({ previewId: item.id })),
     });
     await started;
-    const pausing = fixture.coordinator.pause(previewHandle.task.id);
+    const pausing = fixture.coordinator.pause(previewHandle.session.id);
     releaseFirst();
     await pausing;
 
@@ -317,7 +317,7 @@ describe("MaintenanceTaskCoordinator", () => {
     expect(paused?.currentBatch?.items.filter((item) => item.result)).toHaveLength(1);
     expect(paused?.currentBatch?.items.map((item) => item.status).sort()).toEqual(["failed", "pending"]);
 
-    await fixture.coordinator.resume(previewHandle.task.id);
+    await fixture.coordinator.resume(previewHandle.session.id);
     const applied = await applyHandle.completion;
     expect(applied.applied).toHaveLength(2);
     expect(vi.mocked(fixture.runtime.applyEntry).mock.calls.map(([input]) => input.entry.fileId)).toEqual([
@@ -339,18 +339,18 @@ describe("MaintenanceTaskCoordinator", () => {
     const previewBatch = await previewHandle.completion;
     const [first, second] = previewBatch.items;
     await fixture.coordinator.updateDraft({
-      taskId: previewHandle.task.id,
+      sessionId: previewHandle.session.id,
       previewId: first?.id ?? "",
       fieldSelections: { title: "new" },
     });
     await fixture.coordinator.updateDraft({
-      taskId: previewHandle.task.id,
+      sessionId: previewHandle.session.id,
       previewId: second?.id ?? "",
       fieldSelections: { title: "old" },
     });
 
     const apply = await fixture.coordinator.beginApply({
-      taskId: previewHandle.task.id,
+      sessionId: previewHandle.session.id,
       selections: [{ previewId: first?.id ?? "", fieldSelections: { title: "new" } }],
     });
     await apply.completion;
@@ -385,11 +385,11 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
-      taskId: preview.task.id,
+      sessionId: preview.session.id,
       selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
     });
     await started;
-    const stopping = fixture.coordinator.stop(preview.task.id);
+    const stopping = fixture.coordinator.stop(preview.session.id);
     releaseApply();
     await stopping;
     const batch = await apply.completion;
@@ -416,13 +416,13 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await preview.completion;
     await fixture.coordinator.beginApply({
-      taskId: preview.task.id,
+      sessionId: preview.session.id,
       selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
     });
     await started;
 
     expect(() => fixture.ownership.acquire(root.id, "owned.mp4")).toThrow("Media path is already being modified");
-    await fixture.coordinator.stop(preview.task.id);
+    await fixture.coordinator.stop(preview.session.id);
     const release = fixture.ownership.acquire(root.id, "owned.mp4");
     release();
     await fixture.coordinator.close();
@@ -454,7 +454,7 @@ describe("MaintenanceTaskCoordinator", () => {
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
-      taskId: preview.task.id,
+      sessionId: preview.session.id,
       selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
     });
     await apply.completion;
