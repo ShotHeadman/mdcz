@@ -8,20 +8,23 @@ import type {
   MaintenanceApplySelection,
   MaintenanceLibrarySource,
   MaintenancePreviewBatch,
-  MaintenanceSessionDraft,
-  MaintenanceTaskApplyItemStatus,
-  MaintenanceTaskApplyLog,
   MaintenanceTaskEvent,
   MaintenanceTaskPreview,
-  MaintenanceTaskProgress,
   MaintenanceTaskRef,
   MaintenanceTaskSnapshot,
   MaintenanceTaskStatus,
 } from "@mdcz/shared/maintenanceTasks";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
+import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import type { PreparedPublicationPlan } from "../publication";
 import { isAbortError } from "../scrape/utils/abort";
-import { TaskExecutor } from "../tasks";
+import { TaskExecutor, type TaskExecutorContext } from "../tasks";
+import {
+  type MaintenanceBatchItem,
+  MaintenanceSession,
+  StaleMaintenanceGenerationError,
+} from "../tasks/session/MaintenanceSession";
 import { buildMaintenanceApplyData } from "./applyData";
 import type { MaintenanceRuntime, MaintenanceRuntimePreviewItem } from "./MaintenanceRuntime";
 
@@ -38,6 +41,7 @@ export interface MaintenanceLibraryPort {
   }): Promise<void>;
   publishRefresh(input: {
     operationId: string;
+    ownershipToken: string;
     plan: PreparedPublicationPlan;
     refresh: {
       librarySource?: MaintenanceLibrarySource;
@@ -62,32 +66,6 @@ export interface MaintenanceRunHandle<TResult> {
   completion: Promise<TResult>;
 }
 
-type CurrentBatchItem = {
-  id: string;
-  selection: MaintenanceApplySelection;
-  status: MaintenanceTaskApplyItemStatus;
-  error: string | null;
-  result?: MaintenanceApplyItemResult;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-type Session = {
-  id: string;
-  rootId: string;
-  presetId: MaintenancePresetId;
-  phase: "preview" | "apply";
-  status: MaintenanceTaskStatus;
-  generation: number;
-  refs: MaintenanceTaskRef[];
-  timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
-  error: string | null;
-  previews: Map<string, MaintenanceTaskPreview>;
-  currentBatch: { id: string; items: Map<string, CurrentBatchItem> } | null;
-  draft: MaintenanceSessionDraft;
-  releasePaths: Array<() => void>;
-};
-
 type ActiveExecution = {
   sessionId: string;
   generation: number;
@@ -105,8 +83,6 @@ type ApplyExecutionResult = {
   publication?: Parameters<MaintenanceLibraryPort["publishRefresh"]>[0];
 };
 
-const ACTIVE_STATUSES: readonly MaintenanceTaskStatus[] = ["queued", "running", "paused", "stopping"];
-const TERMINAL_ITEM_STATUSES = new Set<MaintenanceTaskApplyItemStatus>(["success", "failed", "skipped"]);
 const PREVIEW_ALL_FAILED = "维护预览全部失败";
 const APPLY_FAILED = "维护应用失败";
 const STOPPED = "维护已停止";
@@ -126,6 +102,29 @@ const assertUniqueRefs = (refs: readonly MaintenanceTaskRef[]): void => {
     if (seen.has(ref.relativePath)) throw new Error(`维护文件路径重复：${ref.relativePath}`);
     seen.add(ref.relativePath);
   }
+};
+
+const ownedPreviewPaths = (root: MediaRoot, previews: readonly MaintenanceTaskPreview[]): RootFileRef[] => {
+  const paths = new Set<string>();
+  for (const preview of previews) {
+    const entry = preview.entry;
+    for (const absolutePath of [
+      entry?.fileInfo.filePath,
+      preview.pathDiff?.currentVideoPath,
+      preview.pathDiff?.targetVideoPath,
+      entry?.nfoPath,
+      entry?.assets.thumb,
+      entry?.assets.poster,
+      entry?.assets.fanart,
+      entry?.assets.trailer,
+      ...(entry?.assets.sceneImages ?? []),
+      ...(entry?.assets.actorPhotos ?? []),
+    ]) {
+      if (!absolutePath) continue;
+      paths.add(toRootRelativePath(root, absolutePath));
+    }
+  }
+  return [...paths].map((relativePath) => ({ rootId: root.id, relativePath }));
 };
 
 const scanRefs = async (
@@ -154,10 +153,12 @@ const libraryCommitFailure = (error: unknown): MaintenanceApplyItemResult => ({
 });
 
 export class MaintenanceTaskCoordinator {
-  private session: Session | null = null;
+  private session: MaintenanceSession | null = null;
   private active: ActiveExecution | null = null;
   private executionPromise: Promise<void> | null = null;
   private readonly changeWaiters = new Map<string, Set<() => void>>();
+  private revision = 0;
+  private releaseOwnedPaths: (() => void) | null = null;
   private closing = false;
 
   constructor(
@@ -166,6 +167,7 @@ export class MaintenanceTaskCoordinator {
       runtime: MaintenanceRuntime;
       library: MaintenanceLibraryPort;
       events?: { publish(event: MaintenanceCoordinatorEvent): void | Promise<void> };
+      acquireAll?: (refs: readonly RootFileRef[], owner: string) => () => void;
       concurrency: 1;
     },
   ) {
@@ -181,47 +183,39 @@ export class MaintenanceTaskCoordinator {
     const refs = [...(input.refs ?? [])];
     assertUniqueRefs(refs);
     await this.deps.roots.getActiveRoot(input.rootId);
-    if (this.session && ACTIVE_STATUSES.includes(this.session.status)) {
+    if (this.session?.isActive()) {
       throw new Error("已有活动的维护会话，请先完成或停止当前会话");
     }
-    const now = new Date();
     const generation = (this.session?.generation ?? 0) + 1;
-    if (this.session) this.session.generation = generation;
-    this.session = {
+    this.session?.invalidate();
+    this.session = new MaintenanceSession({
       id: randomUUID(),
       rootId: input.rootId,
       presetId: input.presetId,
-      phase: "preview",
-      status: "queued",
       generation,
-      refs: refs.map((ref) => ({ ...ref })),
-      timestamps: { createdAt: now, updatedAt: now, startedAt: null, completedAt: null },
-      error: null,
-      previews: new Map(),
-      currentBatch: null,
-      draft: { fieldSelections: {} },
-      releasePaths: [],
-    };
+      refs,
+    });
     await this.publishStatus(this.session, "queued", `Maintenance task queued. Preset: ${input.presetId}`);
     await this.publishLog(this.session, "preset", `Maintenance preset: ${input.presetId}`);
     await this.startCurrentPhase(this.session.id, generation);
-    return { task: this.task(this.session), completion: this.waitForPreview(this.session.id) };
+    return { task: this.session.taskSnapshot(), completion: this.waitForPreview(this.session.id) };
   }
 
   async readPreview(taskId: string): Promise<MaintenancePreviewBatch> {
     const session = this.require(taskId);
-    return { task: this.task(session), items: this.editablePreviews(session) };
+    return { task: session.taskSnapshot(), items: session.editablePreviews() };
   }
 
   async waitForPreview(taskId: string): Promise<MaintenancePreviewBatch> {
     for (;;) {
+      const revision = this.revision;
       const batch = await this.readPreview(taskId);
       if (batch.task.status === "completed") return batch;
       if (batch.task.status === "failed") {
         if (batch.task.error === PREVIEW_ALL_FAILED) return batch;
         throw new Error(batch.task.error ?? "维护预览失败");
       }
-      await this.waitForChange(taskId);
+      await this.waitForChange(taskId, revision);
     }
   }
 
@@ -232,108 +226,82 @@ export class MaintenanceTaskCoordinator {
     this.assertOpen();
     if (input.selections.length === 0) throw new Error("请选择要应用的维护预览");
     const previewIds = input.selections.map((selection) => selection.previewId);
-    if (new Set(previewIds).size !== previewIds.length) throw new Error("维护预览 ID 重复");
     const session = this.require(input.taskId);
-    if (session.status !== "completed" && session.status !== "failed") {
-      throw new Error("维护预览生成完成后才能应用");
-    }
-    for (const previewId of previewIds) {
-      const preview = session.previews.get(previewId);
-      if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
-        throw new Error("部分维护预览不存在、已提交或不属于当前会话");
-      }
-    }
-    const releasePaths: Array<() => void> = [];
+    const previews = previewIds
+      .map((previewId) => session.preview(previewId))
+      .filter((preview) => preview !== undefined);
+    if (previews.length !== previewIds.length) throw new Error("部分维护预览不存在、已提交或不属于当前会话");
+    const root = await this.deps.roots.getActiveRoot(session.rootId);
+    const refs = ownedPreviewPaths(root, previews);
+    const acquireAll = this.deps.acquireAll ?? ((owned, owner) => mediaPathOwnership.acquireAll(owned, owner));
+    const release = acquireAll(refs, session.id);
+    let apply: { generation: number; batchId: string };
     try {
-      void previewIds;
+      apply = session.beginApply(input.selections);
     } catch (error) {
-      for (const release of releasePaths) release();
+      release();
       throw error;
     }
-    session.releasePaths = releasePaths;
-    const now = new Date();
-    const batchId = randomUUID();
-    const items = new Map<string, CurrentBatchItem>();
-    for (const original of input.selections) {
-      const selection = {
-        previewId: original.previewId,
-        ...(original.fieldSelections ? { fieldSelections: { ...original.fieldSelections } } : {}),
-      };
-      items.set(selection.previewId, {
-        id: randomUUID(),
-        selection,
-        status: "pending",
-        error: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-      if (selection.fieldSelections)
-        session.draft.fieldSelections[selection.previewId] = { ...selection.fieldSelections };
+    this.releaseOwnedPaths = release;
+    try {
+      await this.publishStatus(session, "queued", `Maintenance apply queued. Items: ${input.selections.length}`);
+      await this.startCurrentPhase(session.id, apply.generation);
+    } catch (error) {
+      const message = errorMessage(error);
+      const generation = session.beginStopping(message);
+      session.finish(generation, "failed", message);
+      this.releasePaths();
+      throw error;
     }
-    session.generation += 1;
-    session.phase = "apply";
-    session.status = "queued";
-    session.currentBatch = { id: batchId, items };
-    session.error = null;
-    session.timestamps = { ...session.timestamps, updatedAt: now, startedAt: null, completedAt: null };
-    await this.publishStatus(session, "queued", `Maintenance apply queued. Items: ${items.size}`);
-    await this.startCurrentPhase(session.id, session.generation);
     return {
-      task: this.task(session),
-      completion: this.waitForApply(session.id, batchId, new Set(previewIds)),
+      task: session.taskSnapshot(),
+      completion: this.waitForApply(session.id, apply.batchId, new Set(previewIds)),
     };
   }
 
   async pause(taskId: string): Promise<MaintenanceTaskSnapshot> {
     const session = this.require(taskId);
-    if (session.status !== "queued" && session.status !== "running") return this.task(session);
-    session.status = "paused";
-    session.error = null;
-    this.touch(session);
+    if (!session.pause()) return session.taskSnapshot();
     await this.publishStatus(session, "paused", "Maintenance task paused");
     this.activeFor(session.id, session.generation)?.executor.pause();
     await this.awaitCurrentExecution();
-    return this.task(this.require(taskId));
+    return this.require(taskId).taskSnapshot();
   }
 
   async resume(taskId: string): Promise<MaintenanceTaskSnapshot> {
     const session = this.require(taskId);
-    if (session.status !== "paused") return this.task(session);
+    if (session.status !== "paused") return session.taskSnapshot();
     await this.awaitCurrentExecution();
     const current = this.require(taskId);
-    if (current.status !== "paused") return this.task(current);
+    if (current.status !== "paused") return current.taskSnapshot();
     await this.startCurrentPhase(current.id, current.generation, "Maintenance task resumed");
-    return this.task(current);
+    return current.taskSnapshot();
   }
 
   async stop(taskId: string): Promise<MaintenanceTaskSnapshot> {
     const current = this.require(taskId);
-    if (current.status === "completed" || current.status === "failed") return this.task(current);
-    current.generation += 1;
-    current.status = "stopping";
-    current.error = STOPPED;
-    this.touch(current);
-    const generation = current.generation;
+    if (current.status === "completed" || current.status === "failed") return current.taskSnapshot();
+    const generation = current.beginStopping(STOPPED);
     await this.publishStatus(current, "stopping", "Stopping maintenance task");
     this.active?.executor.stop();
     await this.awaitCurrentExecution();
     const latest = this.require(taskId);
-    if (latest.generation !== generation) return this.task(latest);
+    if (latest.generation !== generation) return latest.taskSnapshot();
     if (latest.phase === "apply") await this.skipOutstanding(latest.id, generation, STOPPED_ITEM);
     await this.finishSession(latest.id, generation, "failed", STOPPED);
-    return this.task(latest);
+    return latest.taskSnapshot();
   }
 
   async getTask(taskId: string): Promise<MaintenanceTaskSnapshot> {
-    return this.task(this.require(taskId));
+    return this.require(taskId).taskSnapshot();
   }
 
   async listTasks(): Promise<MaintenanceTaskSnapshot[]> {
-    return this.session ? [this.task(this.session)] : [];
+    return this.session ? [this.session.taskSnapshot()] : [];
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
-    return this.session ? this.snapshot(this.session) : null;
+    return this.session?.snapshot() ?? null;
   }
 
   async updateDraft(input: {
@@ -342,23 +310,18 @@ export class MaintenanceTaskCoordinator {
     fieldSelections?: Record<string, "old" | "new">;
   }): Promise<MaintenanceActiveSessionSnapshot> {
     const session = this.require(input.taskId);
-    const preview = session.previews.get(input.previewId);
-    if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
-      throw new Error("维护预览不存在或已提交");
-    }
-    if (input.fieldSelections) session.draft.fieldSelections[input.previewId] = { ...input.fieldSelections };
-    this.touch(session);
+    session.updateDraft(input.previewId, input.fieldSelections);
     await this.publishChanged(session);
-    return this.snapshot(session);
+    return session.snapshot();
   }
 
   async discardSession(taskId?: string): Promise<void> {
     if (!this.session) return;
     if (taskId && this.session.id !== taskId) throw new Error("维护会话已变化");
-    if (ACTIVE_STATUSES.includes(this.session.status)) throw new Error("维护会话仍在运行，请先停止后再返回设置");
+    if (this.session.isActive()) throw new Error("维护会话仍在运行，请先停止后再返回设置");
     const id = this.session.id;
-    this.session.generation += 1;
-    this.releasePaths(this.session);
+    this.session.invalidate();
+    this.releasePaths();
     this.session = null;
     this.notify(id);
   }
@@ -371,15 +334,12 @@ export class MaintenanceTaskCoordinator {
     if (this.closing) return;
     this.closing = true;
     const session = this.session;
-    if (!session || !ACTIVE_STATUSES.includes(session.status)) {
-      if (session) session.generation += 1;
+    if (!session?.isActive()) {
+      session?.invalidate();
+      this.releasePaths();
       return;
     }
-    session.generation += 1;
-    session.status = "stopping";
-    session.error = INTERRUPTED;
-    this.touch(session);
-    const generation = session.generation;
+    const generation = session.beginStopping(INTERRUPTED);
     this.active?.executor.stop();
     await this.awaitCurrentExecution();
     if (!this.isCurrent(session.id, generation)) return;
@@ -391,15 +351,7 @@ export class MaintenanceTaskCoordinator {
     const session = this.assertCurrent(sessionId, generation, ["queued", "paused"]);
     if (this.executionPromise) throw new Error("Maintenance coordinator already has an active executor");
     await this.deps.runtime.applyNetworkPolicy?.();
-    const now = new Date();
-    session.status = "running";
-    session.error = null;
-    session.timestamps = {
-      ...session.timestamps,
-      startedAt: session.timestamps.startedAt ?? now,
-      completedAt: null,
-      updatedAt: now,
-    };
+    session.startRunning(generation);
     await this.publishStatus(session, "running", message ?? `Starting maintenance ${session.phase}`);
     const run =
       session.phase === "preview" ? this.runPreview(sessionId, generation) : this.runApply(sessionId, generation);
@@ -429,18 +381,12 @@ export class MaintenanceTaskCoordinator {
       if (persistedRefs.length === 0) {
         const refs = entries.map((entry) => ({ relativePath: relativePath(root, entry) }));
         assertUniqueRefs(refs);
-        current.refs = refs;
-        this.touch(current);
+        current.setDiscoveredRefs(refs, generation);
       }
       if (current.status === "paused") return;
-      const committedPaths = new Set([...current.previews.values()].map((preview) => preview.relativePath));
+      const committedPaths = new Set(current.snapshot().previews.map((preview) => preview.relativePath));
       const pending = entries.filter((entry) => !committedPaths.has(relativePath(root, entry)));
-      const executor = new TaskExecutor<LocalScanEntry, PreviewExecutionResult>({
-        concurrency: 1,
-        gate: {
-          beforeItem: async () => void this.assertCurrent(sessionId, generation, ["running"]),
-          beforeResult: async () => void this.assertCurrent(sessionId, generation, ["running", "paused"]),
-        },
+      await this.executeItems<LocalScanEntry, PreviewExecutionResult>(sessionId, generation, pending, {
         runItem: async (entry, context) => {
           try {
             const active = this.assertCurrent(sessionId, generation, ["running"]);
@@ -476,11 +422,9 @@ export class MaintenanceTaskCoordinator {
           await this.publishChanged(this.require(sessionId));
         },
       });
-      this.active = { sessionId, generation, executor };
-      await executor.execute(pending, generation);
       if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== "running") return;
       current = this.assertCurrent(sessionId, generation, ["running"]);
-      const progress = this.progress(current);
+      const progress = current.progress();
       const allBlocked =
         progress.totalEntries > 0 && progress.successCount === 0 && progress.failedCount >= progress.totalEntries;
       await this.finishSession(
@@ -493,7 +437,8 @@ export class MaintenanceTaskCoordinator {
       if (!this.isCurrent(sessionId, generation) || this.closing) return;
       const current = this.require(sessionId);
       if (current.status === "paused") return;
-      if (isAbortError(error) || current.status === "stopping" || errorMessage(error) === OWNERSHIP_CHANGED) return;
+      if (isAbortError(error) || current.status === "stopping" || error instanceof StaleMaintenanceGenerationError)
+        return;
       await this.failSession(sessionId, generation, errorMessage(error));
     } finally {
       if (this.active?.sessionId === sessionId && this.active.generation === generation) this.active = null;
@@ -505,13 +450,8 @@ export class MaintenanceTaskCoordinator {
     try {
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
       const root = await this.deps.roots.getActiveRoot(initial.rootId);
-      const pending = this.pendingBatchItems(initial);
-      const executor = new TaskExecutor<CurrentBatchItem, ApplyExecutionResult>({
-        concurrency: 1,
-        gate: {
-          beforeItem: async () => void this.assertCurrent(sessionId, generation, ["running"]),
-          beforeResult: async () => void this.assertCurrent(sessionId, generation, ["running", "paused"]),
-        },
+      const pending = initial.pendingBatchItems();
+      await this.executeItems<MaintenanceBatchItem, ApplyExecutionResult>(sessionId, generation, pending, {
         runItem: async (item, context) => {
           const active = this.markApplyProcessing(sessionId, generation, item);
           if (!active.preview) return { result: { status: "failed", error: "维护预览不存在" } };
@@ -536,7 +476,7 @@ export class MaintenanceTaskCoordinator {
               targetAbsolutePath,
             });
             const latest = this.assertCurrent(sessionId, generation, ["running", "paused"]);
-            const progress = this.progress(latest);
+            const progress = latest.progress();
             const applied = await this.deps.runtime.applyEntry({
               root,
               presetId: latest.presetId,
@@ -572,6 +512,7 @@ export class MaintenanceTaskCoordinator {
               },
               publication: {
                 operationId: `${sessionId}:${active.preview.id}`,
+                ownershipToken: sessionId,
                 plan: applied.plan,
                 refresh: {
                   librarySource: active.preview.librarySource,
@@ -607,11 +548,9 @@ export class MaintenanceTaskCoordinator {
           await this.commitItem(sessionId, generation, item, result);
         },
       });
-      this.active = { sessionId, generation, executor };
-      await executor.execute(pending, generation);
       if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== "running") return;
       const current = this.assertCurrent(sessionId, generation, ["running"]);
-      const progress = this.progress(current);
+      const progress = current.progress();
       const failedAll =
         progress.totalEntries > 0 && progress.successCount === 0 && progress.failedCount >= progress.totalEntries;
       await this.finishSession(
@@ -624,7 +563,8 @@ export class MaintenanceTaskCoordinator {
       if (!this.isCurrent(sessionId, generation) || this.closing) return;
       const current = this.require(sessionId);
       if (current.status === "paused") return;
-      if (isAbortError(error) || current.status === "stopping" || errorMessage(error) === OWNERSHIP_CHANGED) return;
+      if (isAbortError(error) || current.status === "stopping" || error instanceof StaleMaintenanceGenerationError)
+        return;
       const message = errorMessage(error);
       await this.skipOutstanding(sessionId, generation, message);
       await this.failSession(sessionId, generation, message);
@@ -634,6 +574,27 @@ export class MaintenanceTaskCoordinator {
     }
   }
 
+  private async executeItems<TItem, TResult>(
+    sessionId: string,
+    generation: number,
+    items: readonly TItem[],
+    execution: {
+      runItem(item: TItem, context: TaskExecutorContext): Promise<TResult>;
+      applyResult(item: TItem, result: TResult, context: TaskExecutorContext): Promise<unknown>;
+    },
+  ): Promise<void> {
+    const executor = new TaskExecutor<TItem, TResult>({
+      concurrency: 1,
+      gate: {
+        beforeItem: async () => void this.assertCurrent(sessionId, generation, ["running"]),
+        beforeResult: async () => void this.assertCurrent(sessionId, generation, ["running", "paused"]),
+      },
+      ...execution,
+    });
+    this.active = { sessionId, generation, executor };
+    await executor.execute(items, generation);
+  }
+
   private commitPreview(
     sessionId: string,
     generation: number,
@@ -641,13 +602,9 @@ export class MaintenanceTaskCoordinator {
     librarySource: MaintenanceLibrarySource | null,
   ): void {
     const session = this.assertCurrent(sessionId, generation, ["running", "paused"]);
-    const now = new Date();
-    const preview: MaintenanceTaskPreview = {
-      id: randomUUID(),
-      taskId: session.id,
+    session.addPreview(generation, {
       rootId: item.rootId,
       relativePath: item.relativePath,
-      presetId: session.presetId,
       status: item.status,
       error: item.error,
       fieldDiffs: item.fieldDiffs,
@@ -657,59 +614,27 @@ export class MaintenanceTaskCoordinator {
       imageAlternatives: item.imageAlternatives,
       entry: item.entry,
       librarySource: librarySource ?? undefined,
-      createdAt: now,
-      updatedAt: now,
-    };
-    if ([...session.previews.values()].some((existing) => existing.relativePath === preview.relativePath)) {
-      throw new Error(`维护预览路径重复：${preview.relativePath}`);
-    }
-    session.previews.set(preview.id, preview);
-    this.touch(session, now);
+    });
   }
 
-  private markApplyProcessing(sessionId: string, generation: number, item: CurrentBatchItem) {
+  private markApplyProcessing(sessionId: string, generation: number, item: MaintenanceBatchItem) {
     const session = this.assertCurrent(sessionId, generation, ["running"]);
-    const current = session.currentBatch?.items.get(item.selection.previewId);
-    if (!current || current.id !== item.id || current.status !== "pending") throw new Error(OWNERSHIP_CHANGED);
-    current.status = "processing";
-    current.error = null;
-    current.updatedAt = new Date();
-    this.touch(session);
-    return { item: current, preview: session.previews.get(item.selection.previewId) };
+    return session.markApplyProcessing(generation, item);
   }
 
   private async commitItem(
     sessionId: string,
     generation: number,
-    item: CurrentBatchItem,
+    item: MaintenanceBatchItem,
     result: MaintenanceApplyItemResult,
   ): Promise<void> {
     const session = this.assertCurrent(sessionId, generation, ["running", "paused", "stopping"]);
-    const current = session.currentBatch?.items.get(item.selection.previewId);
-    if (!current || current.id !== item.id || TERMINAL_ITEM_STATUSES.has(current.status)) return;
-    const preview = session.previews.get(item.selection.previewId);
-    if (!preview) return;
-    const now = new Date();
-    current.status = result.status;
-    current.error = result.error ?? null;
-    current.result = result;
-    current.updatedAt = now;
-    preview.status = result.status === "success" ? "applied" : "failed";
-    preview.error = result.error ?? null;
-    preview.updatedAt = now;
-    delete session.draft.fieldSelections[preview.id];
-    this.touch(session, now);
-    await this.publishChanged(session);
+    if (session.commitItem(generation, item, result)) await this.publishChanged(session);
   }
 
   private async skipOutstanding(sessionId: string, generation: number, error: string): Promise<void> {
     const session = this.assertCurrent(sessionId, generation, ["running", "paused", "stopping"]);
-    const items = session.currentBatch
-      ? [...session.currentBatch.items.values()].filter(
-          (item) => item.status === "pending" || item.status === "processing",
-        )
-      : [];
-    for (const item of items) await this.commitItem(sessionId, generation, item, { status: "skipped", error });
+    if (session.skipOutstanding(generation, error)) await this.publishChanged(session);
   }
 
   private async waitForApply(
@@ -718,17 +643,18 @@ export class MaintenanceTaskCoordinator {
     selectedIds: ReadonlySet<string>,
   ): Promise<MaintenanceApplyBatch> {
     for (;;) {
+      const revision = this.revision;
       const session = this.require(taskId);
       if (session.status === "completed" || session.status === "failed") {
-        if (session.currentBatch?.id !== batchId) throw new Error("维护批次已变化");
+        if (session.snapshot().currentBatch?.id !== batchId) throw new Error("维护批次已变化");
         return {
-          task: this.task(session),
+          task: session.taskSnapshot(),
           batchId,
-          items: this.editablePreviews(session),
-          applied: this.applyLogs(session).filter((log) => selectedIds.has(log.previewId)),
+          items: session.editablePreviews(),
+          applied: session.applyLogs().filter((log) => selectedIds.has(log.previewId)),
         };
       }
-      await this.waitForChange(taskId);
+      await this.waitForChange(taskId, revision);
     }
   }
 
@@ -739,12 +665,9 @@ export class MaintenanceTaskCoordinator {
     error: string | null,
   ): Promise<void> {
     const session = this.assertCurrent(sessionId, generation, ["running", "stopping"]);
-    const now = new Date();
-    session.status = status;
-    session.error = error;
-    session.timestamps = { ...session.timestamps, completedAt: now, updatedAt: now };
-    this.releasePaths(session);
-    const progress = this.progress(session);
+    session.finish(generation, status, error);
+    this.releasePaths();
+    const progress = session.progress();
     const message =
       session.phase === "preview"
         ? status === "failed"
@@ -756,8 +679,9 @@ export class MaintenanceTaskCoordinator {
     await this.publishStatus(session, status, message);
   }
 
-  private releasePaths(session: Session): void {
-    for (const release of session.releasePaths.splice(0)) release();
+  private releasePaths(): void {
+    this.releaseOwnedPaths?.();
+    this.releaseOwnedPaths = null;
   }
 
   private async failSession(sessionId: string, generation: number, error: string): Promise<void> {
@@ -767,115 +691,7 @@ export class MaintenanceTaskCoordinator {
     await this.finishSession(sessionId, generation, "failed", error);
   }
 
-  private progress(session: Session): MaintenanceTaskProgress {
-    if (session.phase === "preview") {
-      const previews = [...session.previews.values()];
-      return {
-        totalEntries: session.refs.length,
-        completedEntries: previews.length,
-        successCount: previews.filter((preview) => preview.status === "ready").length,
-        failedCount: previews.filter((preview) => preview.status === "blocked").length,
-      };
-    }
-    const items = session.currentBatch ? [...session.currentBatch.items.values()] : [];
-    const terminal = items.filter((item) => TERMINAL_ITEM_STATUSES.has(item.status));
-    return {
-      totalEntries: items.length,
-      completedEntries: terminal.length,
-      successCount: terminal.filter((item) => item.status === "success").length,
-      failedCount: terminal.filter((item) => item.status !== "success").length,
-    };
-  }
-
-  private task(session: Session): MaintenanceTaskSnapshot {
-    return {
-      id: session.id,
-      rootId: session.rootId,
-      status: session.status,
-      ...this.progress(session),
-      createdAt: session.timestamps.createdAt,
-      updatedAt: session.timestamps.updatedAt,
-      startedAt: session.timestamps.startedAt,
-      completedAt: session.timestamps.completedAt,
-      error: session.error,
-    };
-  }
-
-  private snapshot(session: Session): MaintenanceActiveSessionSnapshot {
-    return {
-      id: session.id,
-      rootId: session.rootId,
-      presetId: session.presetId,
-      phase: session.phase,
-      status: session.status,
-      generation: session.generation,
-      refs: session.refs.map((ref) => ({ ...ref })),
-      ...this.progress(session),
-      timestamps: { ...session.timestamps },
-      error: session.error,
-      previews: this.editablePreviews(session),
-      currentBatch: session.currentBatch
-        ? {
-            id: session.currentBatch.id,
-            items: [...session.currentBatch.items.values()].map((item) => ({
-              ...item,
-              selection: {
-                ...item.selection,
-                fieldSelections: item.selection.fieldSelections && { ...item.selection.fieldSelections },
-              },
-            })),
-          }
-        : null,
-      draft: {
-        fieldSelections: Object.fromEntries(
-          Object.entries(session.draft.fieldSelections).map(([id, value]) => [id, { ...value }]),
-        ),
-      },
-    };
-  }
-
-  private editablePreviews(session: Session): MaintenanceTaskPreview[] {
-    return [...session.previews.values()]
-      .filter((preview) => preview.status === "ready" || preview.status === "blocked")
-      .sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
-  }
-
-  private applyLogs(session: Session): MaintenanceTaskApplyLog[] {
-    if (!session.currentBatch) return [];
-    const batchId = session.currentBatch.id;
-    return [...session.currentBatch.items.values()]
-      .filter((item) => TERMINAL_ITEM_STATUSES.has(item.status))
-      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
-      .flatMap((item) => {
-        const preview = session.previews.get(item.selection.previewId);
-        return preview
-          ? [
-              {
-                id: item.id,
-                taskId: session.id,
-                batchId,
-                previewId: preview.id,
-                rootId: preview.rootId,
-                relativePath: preview.relativePath,
-                presetId: preview.presetId,
-                status: item.status as "success" | "failed" | "skipped",
-                error: item.error,
-                appliedAt: item.updatedAt,
-              },
-            ]
-          : [];
-      });
-  }
-
-  private pendingBatchItems(session: Session): CurrentBatchItem[] {
-    return session.currentBatch
-      ? [...session.currentBatch.items.values()]
-          .filter((item) => item.status === "pending")
-          .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      : [];
-  }
-
-  private require(taskId: string): Session {
+  private require(taskId: string): MaintenanceSession {
     if (!this.session || this.session.id !== taskId) throw new Error(`Maintenance task not found: ${taskId}`);
     return this.session;
   }
@@ -884,10 +700,14 @@ export class MaintenanceTaskCoordinator {
     return Boolean(this.session && this.session.id === sessionId && this.session.generation === generation);
   }
 
-  private assertCurrent(sessionId: string, generation: number, statuses?: readonly MaintenanceTaskStatus[]): Session {
+  private assertCurrent(
+    sessionId: string,
+    generation: number,
+    statuses?: readonly MaintenanceTaskStatus[],
+  ): MaintenanceSession {
     const session = this.session;
-    if (!session || session.id !== sessionId || session.generation !== generation) throw new Error(OWNERSHIP_CHANGED);
-    if (statuses && !statuses.includes(session.status)) throw new Error(OWNERSHIP_CHANGED);
+    if (!session || session.id !== sessionId) throw new StaleMaintenanceGenerationError(OWNERSHIP_CHANGED);
+    session.assertGeneration(generation, statuses);
     return session;
   }
 
@@ -895,21 +715,17 @@ export class MaintenanceTaskCoordinator {
     return this.active?.sessionId === sessionId && this.active.generation === generation ? this.active : null;
   }
 
-  private touch(session: Session, now = new Date()): void {
-    session.timestamps.updatedAt = now;
-  }
-
-  private async publishStatus(session: Session, type: string, message: string): Promise<void> {
+  private async publishStatus(session: MaintenanceSession, type: string, message: string): Promise<void> {
     await this.publishChanged(session);
     await this.publishLog(session, type, message);
   }
 
-  private async publishChanged(session: Session): Promise<void> {
-    await this.deps.events?.publish({ kind: "task-changed", task: this.task(session) });
+  private async publishChanged(session: MaintenanceSession): Promise<void> {
+    await this.deps.events?.publish({ kind: "task-changed", task: session.taskSnapshot() });
     this.notify(session.id);
   }
 
-  private async publishLog(session: Session, type: string, message: string): Promise<void> {
+  private async publishLog(session: MaintenanceSession, type: string, message: string): Promise<void> {
     await this.deps.events?.publish({
       kind: "log",
       taskId: session.id,
@@ -919,24 +735,19 @@ export class MaintenanceTaskCoordinator {
   }
 
   private notify(taskId: string): void {
+    this.revision += 1;
     const waiters = this.changeWaiters.get(taskId);
     if (!waiters) return;
     this.changeWaiters.delete(taskId);
     for (const waiter of waiters) waiter();
   }
 
-  private async waitForChange(taskId: string): Promise<void> {
-    await new Promise<void>((resolve) => {
+  private waitForChange(taskId: string, since: number): Promise<void> {
+    if (this.revision !== since) return Promise.resolve();
+    return new Promise<void>((resolve) => {
       const waiters = this.changeWaiters.get(taskId) ?? new Set<() => void>();
-      let timer: ReturnType<typeof setTimeout>;
-      const done = () => {
-        clearTimeout(timer);
-        waiters.delete(done);
-        resolve();
-      };
-      waiters.add(done);
+      waiters.add(resolve);
       this.changeWaiters.set(taskId, waiters);
-      timer = setTimeout(done, 50);
     });
   }
 

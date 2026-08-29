@@ -56,7 +56,7 @@ export class MaintenanceService {
           );
           return await commitPublishedMedia(plan, {
             resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
-            acquireAll: (refs) => mediaPathOwnership.acquireAll(refs),
+            acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, input.ownershipToken),
             journal: state.repositories.publicationJournal,
             repairIssues: state.repositories.libraryRepairIssues,
             commit: () => state.repositories.library.writeRefresh(refresh),

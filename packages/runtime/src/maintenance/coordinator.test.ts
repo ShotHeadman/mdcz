@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
+import { MediaPathOwnership } from "../library/mediaPathOwnership";
 import { MaintenanceTaskCoordinator } from "./coordinator";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
 
@@ -62,6 +63,7 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
     ...runtimeOverrides,
   } as unknown as MaintenanceRuntime;
   const events: unknown[] = [];
+  const ownership = new MediaPathOwnership();
   const library = {
     resolveSource: vi.fn(async () => null),
     preflightRefresh: vi.fn(async () => undefined),
@@ -76,12 +78,33 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
         events.push(event);
       },
     },
+    acquireAll: (refs, owner) => ownership.acquireAll(refs, owner),
     concurrency: 1,
   });
-  return { coordinator, events, library, runtime };
+  return { coordinator, events, library, ownership, runtime };
 };
 
 describe("MaintenanceTaskCoordinator", () => {
+  it("does not lose a notification issued before waiter registration and uses no timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const { coordinator } = createCoordinator();
+      const internals = coordinator as unknown as {
+        revision: number;
+        notify(taskId: string): void;
+        waitForChange(taskId: string, since: number): Promise<void>;
+      };
+      const revision = internals.revision;
+      internals.notify("race");
+
+      await expect(internals.waitForChange("race", revision)).resolves.toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+      await coordinator.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("starts with no process-local session", async () => {
     const first = createCoordinator();
     expect(await first.coordinator.getActiveSession()).toBeNull();
@@ -373,6 +396,71 @@ describe("MaintenanceTaskCoordinator", () => {
 
     expect(fixture.library.publishRefresh).not.toHaveBeenCalled();
     expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
+    await fixture.coordinator.close();
+  });
+
+  it("holds media path ownership through apply and releases it on stop", async () => {
+    const { promise: started, resolve: applyStarted } = promiseWithResolvers<void>();
+    const fixture = createCoordinator({
+      applyEntry: vi.fn(async ({ signal }) => {
+        const { promise, reject } = promiseWithResolvers<never>();
+        applyStarted();
+        signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+        return await promise;
+      }),
+    });
+    const preview = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "organize_files",
+      refs: [{ relativePath: "owned.mp4" }],
+    });
+    const previewBatch = await preview.completion;
+    await fixture.coordinator.beginApply({
+      taskId: preview.task.id,
+      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
+    });
+    await started;
+
+    expect(() => fixture.ownership.acquire(root.id, "owned.mp4")).toThrow("Media path is already being modified");
+    await fixture.coordinator.stop(preview.task.id);
+    const release = fixture.ownership.acquire(root.id, "owned.mp4");
+    release();
+    await fixture.coordinator.close();
+  });
+
+  it.each(["completed", "failed"] as const)("releases media path ownership when apply is %s", async (outcome) => {
+    const outputPath = fileURLToPath(import.meta.url);
+    const fixture = createCoordinator({
+      applyEntry: vi.fn(async ({ entry }) =>
+        outcome === "failed"
+          ? { status: "failed" as const, error: "apply failed" }
+          : {
+              status: "success" as const,
+              entry,
+              outputRelativePath: "owned.mp4",
+              plan: {
+                video: { sourcePath: outputPath, targetPath: outputPath, size: 1 },
+                artifacts: [],
+                assets: [],
+                obsoletePaths: [],
+              },
+            },
+      ),
+    });
+    const preview = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "organize_files",
+      refs: [{ relativePath: "owned.mp4" }],
+    });
+    const previewBatch = await preview.completion;
+    const apply = await fixture.coordinator.beginApply({
+      taskId: preview.task.id,
+      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
+    });
+    await apply.completion;
+
+    const release = fixture.ownership.acquire(root.id, "owned.mp4");
+    release();
     await fixture.coordinator.close();
   });
 });

@@ -40,4 +40,22 @@ describe("MediaPathOwnership", () => {
     expect(() => ownership.acquire("root-2", "z.mp4")).toThrow("already being modified");
     releaseAll();
   });
+
+  it("allows one operation to extend its reservation without exposing paths during nested release", () => {
+    const ownership = new MediaPathOwnership();
+    const releaseSession = ownership.acquire("root-1", "video.mp4", "maintenance-1");
+    const releasePublication = ownership.acquireAll(
+      [
+        { rootId: "root-1", relativePath: "video.mp4" },
+        { rootId: "root-1", relativePath: "video.nfo" },
+      ],
+      "maintenance-1",
+    );
+
+    releasePublication();
+    expect(() => ownership.acquire("root-1", "video.mp4")).toThrow("already being modified");
+    expect(() => ownership.acquire("root-1", "video.nfo")).not.toThrow();
+    releaseSession();
+    expect(() => ownership.acquire("root-1", "video.mp4")).not.toThrow();
+  });
 });
