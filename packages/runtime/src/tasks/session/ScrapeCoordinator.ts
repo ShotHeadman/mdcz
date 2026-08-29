@@ -10,10 +10,7 @@ import {
 
 export type ScrapeWorkflowDisposition = "completed" | "failed" | "stopped" | "interrupted";
 
-export interface ScrapeRunStore<TStart, TRun> {
-  create(input: TStart): Promise<TRun>;
-  get(runId: string): Promise<TRun>;
-  list(): Promise<TRun[]>;
+export interface ScrapeRunStore<TRun> {
   retry(runId: string): Promise<TRun>;
   finalize(input: {
     runId: string;
@@ -21,20 +18,12 @@ export interface ScrapeRunStore<TStart, TRun> {
     error?: string | null;
     startedAt?: Date | null;
   }): Promise<TRun>;
-  interruptUnfinished?(interruptedAt?: Date): void | Promise<void>;
-  summary(run: TRun): unknown | null | Promise<unknown | null>;
-  latestOutcomes(run: TRun): readonly unknown[] | Promise<readonly unknown[]>;
+  interruptUnfinished(interruptedAt?: Date): void | Promise<void>;
 }
 
 export interface ScrapeWorkflowReporter {
   progress(itemId: string, percent: number): void;
   stage(stage: Omit<ScrapeRunStageSnapshot, "itemId" | "relativePath"> & { itemId?: string | null }): void;
-  log(
-    entry: Omit<ScrapeRunLogEntry, "timestamp" | "itemId" | "relativePath"> & {
-      timestamp?: Date;
-      itemId?: string | null;
-    },
-  ): void;
 }
 
 export interface ScrapeHostExecution<TManualScrape> {
@@ -46,9 +35,9 @@ export interface ScrapeHostExecution<TManualScrape> {
   acquireItem?(item: ScrapeRunItem<TManualScrape>): () => void;
 }
 
-export interface ScrapeHostPort<TRun, TManualScrape> {
+export interface ScrapeHostPort<TStart, TRun, TManualScrape = unknown> {
+  create(input: TStart): Promise<TRun>;
   runId(run: TRun): string;
-  createdAt(run: TRun): Date;
   createExecution(run: TRun, reporter: ScrapeWorkflowReporter): Promise<ScrapeHostExecution<TManualScrape>>;
   onInvalidate(): void;
   onTerminal?(run: TRun, snapshot: ScrapeRunSnapshot<TManualScrape>): Promise<void> | void;
@@ -71,11 +60,9 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
   private activeRunId: string | null = null;
   private closing = false;
   private repairRequired: string | null = null;
-  private lastTerminalSnapshot: ScrapeRunSnapshot<TManualScrape> | null = null;
-
   constructor(
-    private readonly store: ScrapeRunStore<TStart, TRun>,
-    private readonly host: ScrapeHostPort<TRun, TManualScrape>,
+    private readonly store: ScrapeRunStore<TRun>,
+    private readonly host: ScrapeHostPort<TStart, TRun, TManualScrape>,
   ) {
     this.scheduler = new TaskScheduler({
       claimNext: async () => this.claimNext(),
@@ -93,7 +80,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
   async start(input: TStart): Promise<ScrapeRunSnapshot<TManualScrape>> {
     if (this.closing) throw new Error("Scrape queue is closing");
     if (this.repairRequired) throw new Error(`Scrape queue requires repair: ${this.repairRequired}`);
-    return await this.enqueue(await this.store.create(input));
+    return await this.enqueue(await this.host.create(input));
   }
 
   async retry(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
@@ -103,23 +90,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     return await this.enqueue(await this.store.retry(runId));
   }
 
-  snapshot(runId: string): ScrapeRunSnapshot<TManualScrape> | null {
-    const entry = this.entries.get(runId);
-    return entry
-      ? this.entrySnapshot(entry)
-      : this.lastTerminalSnapshot?.runId === runId
-        ? this.lastTerminalSnapshot
-        : null;
-  }
-
-  snapshots(): ScrapeRunSnapshot<TManualScrape>[] {
-    return this.orderedEntries().map((entry) => this.entrySnapshot(entry));
-  }
-
-  latestSnapshot(): ScrapeRunSnapshot<TManualScrape> | null {
-    const live = this.orderedEntries()[0];
-    return live ? this.entrySnapshot(live) : this.lastTerminalSnapshot;
-  }
   liveRuns(): Array<{
     run: TRun;
     snapshot: ScrapeRunSnapshot<TManualScrape>;
@@ -132,17 +102,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     }));
   }
 
-  recordProgress(runId: string, itemId: string, percent: number): void {
-    this.requireLive(runId).session.recordProgress(itemId, percent);
-  }
-
-  recordStage(
-    runId: string,
-    stage: Omit<ScrapeRunStageSnapshot, "itemId" | "relativePath"> & { itemId?: string | null },
-  ): void {
-    this.requireLive(runId).session.recordStage(stage);
-  }
-
   recordLog(
     runId: string,
     entry: Omit<ScrapeRunLogEntry, "timestamp" | "itemId" | "relativePath"> & {
@@ -151,10 +110,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     },
   ): void {
     this.requireLive(runId).session.recordLog(entry);
-  }
-
-  async history(): Promise<TRun[]> {
-    return await this.store.list();
   }
 
   async pause(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
@@ -204,7 +159,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     this.readyRunIds.length = 0;
     await Promise.all([...this.entries.values()].map(async (entry) => await entry.session.abortForShutdown()));
     await this.scheduler.waitForIdle();
-    await this.store.interruptUnfinished?.();
+    await this.store.interruptUnfinished();
     this.entries.clear();
     this.activeRunId = null;
     this.host.onInvalidate();
@@ -219,7 +174,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     const reporter: ScrapeWorkflowReporter = {
       progress: (itemId, percent) => entry.session.recordProgress(itemId, percent),
       stage: (stage) => entry.session.recordStage(stage),
-      log: (log) => entry.session.recordLog(log),
     };
     const execution = await this.host.createExecution(run, reporter);
     const session = new ScrapeRunSession<TManualScrape>({
@@ -242,7 +196,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     } satisfies WorkflowEntry<TRun, TManualScrape>);
     this.entries.set(id, entry);
     this.readyRunIds.push(id);
-    this.lastTerminalSnapshot = null;
     this.host.onInvalidate();
     this.scheduler.drain();
     return this.entrySnapshot(entry);
@@ -308,7 +261,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     })();
     await entry.settlement;
     if (this.entries.get(entry.id) !== entry) return;
-    this.lastTerminalSnapshot = snapshot;
     this.entries.delete(entry.id);
     this.removeReady(entry.id);
     if (snapshot.status === "interrupted") {

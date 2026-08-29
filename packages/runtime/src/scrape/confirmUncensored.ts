@@ -13,6 +13,7 @@ import type {
 } from "@mdcz/shared/types";
 import type { LocalScanService } from "../maintenance/LocalScanService";
 import type { MaintenanceArtifactResolver } from "../maintenance/MaintenanceArtifactResolver";
+import { buildMovieTags } from "../maintenance/movieTags";
 import type { RuntimeLogger } from "../shared";
 import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
 import { type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
@@ -193,6 +194,7 @@ export const confirmUncensoredOutputs = async (
           nfoNaming: config.download.nfoNaming,
           enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
           nfoTitleTemplate: config.naming.nfoTitleTemplate,
+          buildTags: buildMovieTags,
           writeFile: async (targetPath, content) => {
             nfoArtifacts.set(targetPath, content);
           },

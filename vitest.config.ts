@@ -154,10 +154,14 @@ export default defineConfig({
       },
       {
         extends: true,
+        resolve: {
+          alias: unitRuntimeAliases,
+        },
         test: {
           name: "contract",
           include: ["tests/contracts/**/*.test.ts", "apps/**/*.contract.test.ts", "packages/**/*.contract.test.ts"],
           environment: "node",
+          setupFiles: ["tests/unit/setup.ts"],
         },
       },
       {

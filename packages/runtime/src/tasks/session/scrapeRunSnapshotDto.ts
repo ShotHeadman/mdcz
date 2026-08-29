@@ -1,12 +1,13 @@
 import path from "node:path";
+import type { AssetRef } from "@mdcz/shared/mediaRef";
 import type {
   AmbiguousUncensoredItemDto,
   LogEntryDto,
   ScrapeLiveItemDto,
   ScrapeRunSnapshotDto,
 } from "@mdcz/shared/serverDtos";
-import type { ScrapeResult } from "@mdcz/shared/types";
-import type { ScrapeRunItemSnapshot, ScrapeRunSnapshot } from "./ScrapeRunSession";
+import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
+import type { ScrapeRunItemSnapshot, ScrapeRunLiveStatus, ScrapeRunSnapshot } from "./ScrapeRunSession";
 
 export interface ScrapeSnapshotManifest {
   id: string;
@@ -69,20 +70,16 @@ const liveAmbiguousUncensoredItems = (snapshot: ScrapeRunSnapshot): AmbiguousUnc
       nfoRelativePath: item.result?.nfo?.relativePath ?? null,
     }));
 
-export const scrapeResultPath = (result: Pick<ScrapeResult, "output" | "relativePath">): string =>
-  result.output?.relativePath ?? result.relativePath;
-
-export const scrapeResultNumber = (result: Pick<ScrapeResult, "crawlerData" | "fileName">): string =>
-  result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, "");
-
 export const toScrapeRunSnapshotDto = (input: {
   manifest: ScrapeSnapshotManifest;
   snapshot: ScrapeRunSnapshot;
   startedAt: Date | null;
   rootDisplayName: string;
+  completedAt?: Date | null;
 }): ScrapeRunSnapshotDto => {
   const terminal = isTerminalStatus(input.snapshot.status);
-  const now = new Date().toISOString();
+  const completedAt = terminal ? (input.completedAt ?? new Date()) : null;
+  const updatedAt = completedAt ?? new Date();
   const taskStatus =
     input.snapshot.status === "interrupted"
       ? "failed"
@@ -99,9 +96,9 @@ export const toScrapeRunSnapshotDto = (input: {
       rootDisplayName: input.rootDisplayName,
       status: taskStatus,
       createdAt: input.manifest.createdAt.toISOString(),
-      updatedAt: now,
+      updatedAt: updatedAt.toISOString(),
       startedAt: input.startedAt?.toISOString() ?? null,
-      completedAt: terminal ? now : null,
+      completedAt: completedAt?.toISOString() ?? null,
       videoCount: input.snapshot.items.filter((item) => item.status === "success").length,
       directoryCount: 0,
       error: input.snapshot.error,
@@ -119,5 +116,110 @@ export const toScrapeRunSnapshotDto = (input: {
       : null,
     logs: input.snapshot.logs.map((log, index) => liveLogToDto(input.snapshot.runId, log, index)),
     ambiguousUncensoredItems: liveAmbiguousUncensoredItems(input.snapshot),
+  };
+};
+
+export interface FinalizedScrapeRun {
+  id: string;
+  disposition: Extract<ScrapeRunLiveStatus, "completed" | "failed" | "stopped" | "interrupted">;
+  error: string | null;
+  items: Array<{ id: string; rootId: string; relativePath: string }>;
+  outcomes: Array<{
+    id: string;
+    itemId: string;
+    outcome: "success" | "failed" | "skipped";
+    error: string | null;
+    crawlerDataJson: string | null;
+    nfoRootId: string | null;
+    nfoRelativePath: string | null;
+    outputRootId: string | null;
+    outputRelativePath: string | null;
+    uncensoredAmbiguous: boolean;
+    assets?: Array<{ kind: string; uri: string; rootId: string | null; relativePath: string | null }>;
+  }>;
+}
+
+const latestOutcomeByItem = (
+  outcomes: FinalizedScrapeRun["outcomes"],
+): Map<string, FinalizedScrapeRun["outcomes"][number]> => {
+  const latest = new Map<string, FinalizedScrapeRun["outcomes"][number]>();
+  for (const outcome of outcomes) latest.set(outcome.itemId, outcome);
+  return latest;
+};
+
+const finalizedItemSnapshot = (
+  item: FinalizedScrapeRun["items"][number],
+  outcome: FinalizedScrapeRun["outcomes"][number] | undefined,
+): ScrapeRunItemSnapshot => {
+  if (!outcome) {
+    return {
+      id: item.id,
+      rootId: item.rootId,
+      relativePath: item.relativePath,
+      sourcePath: item.relativePath,
+      status: "pending",
+      error: null,
+    };
+  }
+  const crawlerData = outcome.crawlerDataJson ? (JSON.parse(outcome.crawlerDataJson) as CrawlerData) : undefined;
+  const assets: AssetRef[] = [];
+  for (const asset of outcome.assets ?? []) {
+    if (asset.rootId && asset.relativePath) {
+      assets.push({
+        type: "local",
+        kind: asset.kind,
+        file: { rootId: asset.rootId, relativePath: asset.relativePath },
+      });
+    } else if (asset.uri) {
+      assets.push({ type: "remote", kind: asset.kind, url: asset.uri });
+    }
+  }
+  const nfoRootId = outcome.nfoRootId ?? outcome.outputRootId ?? item.rootId;
+  const result: ScrapeResult = {
+    fileId: item.id,
+    rootId: item.rootId,
+    relativePath: item.relativePath,
+    fileName: path.posix.basename(item.relativePath),
+    status: outcome.outcome,
+    resultId: outcome.id,
+    assets,
+    ...(crawlerData ? { crawlerData } : {}),
+    ...(outcome.error ? { error: outcome.error } : {}),
+    ...(outcome.uncensoredAmbiguous ? { uncensoredAmbiguous: true } : {}),
+    ...(outcome.nfoRelativePath ? { nfo: { rootId: nfoRootId, relativePath: outcome.nfoRelativePath } } : {}),
+    ...(outcome.outputRootId && outcome.outputRelativePath
+      ? { output: { rootId: outcome.outputRootId, relativePath: outcome.outputRelativePath } }
+      : {}),
+  };
+  return {
+    id: item.id,
+    rootId: item.rootId,
+    relativePath: item.relativePath,
+    sourcePath: item.relativePath,
+    status: outcome.outcome,
+    error: outcome.error,
+    result,
+  };
+};
+
+export const toFinalizedScrapeRunSnapshot = (run: FinalizedScrapeRun): ScrapeRunSnapshot => {
+  const latest = latestOutcomeByItem(run.outcomes);
+  const items = run.items.map((item) => finalizedItemSnapshot(item, latest.get(item.id)));
+  const completedItems = items.filter(
+    (item) => item.status === "success" || item.status === "failed" || item.status === "skipped",
+  ).length;
+  return {
+    runId: run.id,
+    generation: 0,
+    status: run.disposition,
+    progress: {
+      completedItems,
+      totalItems: items.length,
+      percent: items.length === 0 ? 0 : Math.round((completedItems / items.length) * 100),
+    },
+    items,
+    latestStage: null,
+    logs: [],
+    error: run.error,
   };
 };

@@ -142,12 +142,11 @@ export class LibraryService {
 
   async overview(): Promise<OverviewSummaryResponse> {
     const state = await this.persistence.getState();
-    const [runs, roots, summary] = await Promise.all([
-      state.repositories.scrapeRuns.list(),
+    const [latestRun, roots, summary] = await Promise.all([
+      state.repositories.scrapeRuns.getLatestFinalized(),
       this.mediaRoots.list(),
       state.repositories.library.getOverviewSummary(8),
     ]);
-    const latestRun = runs.find((run) => run.completedAt);
     const latestOutput = latestRun ? state.repositories.scrapeRuns.summary(latestRun) : null;
     const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
     const entries = summary.recentEntries.filter((entry) => rootMap.has(entry.rootId));

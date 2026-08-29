@@ -3,16 +3,16 @@ import { basename, dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
-import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
 import { createDesktopInputRoot, findEnclosingMediaRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
-import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { commitRegisteredPublication } from "@mdcz/runtime/publication";
 import {
   findExistingNfoPath,
   getNfoReadCandidates,
   getNfoWritePaths,
+  nfoGenerator,
   nfoIgnoreFieldsToEnabledFields,
   PosterCropService,
   resolveFilenameNfoPath,
@@ -307,6 +307,7 @@ export const createFileHandlers = (
             nfoNaming: config.download.nfoNaming,
             enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
             nfoTitleTemplate: config.naming.nfoTitleTemplate,
+            buildTags: buildMovieTags,
           };
           const xml = existingXml
             ? nfoGenerator.mergeEditableXml(existingXml, data, options)

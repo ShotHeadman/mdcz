@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { type LibraryEntryRecord, LibraryRepository, type UpsertLibraryEntryInput } from "./libraryRepository";
@@ -61,6 +61,11 @@ export interface ScrapeRunRecord {
 }
 
 export type ScrapeRunManifest = ScrapeRunRecord;
+
+export type FinalizedScrapeRunRecord = ScrapeRunRecord & {
+  disposition: ScrapeRunDisposition;
+  completedAt: Date;
+};
 
 export interface ScrapeRunSummaryRecord {
   runId: string;
@@ -235,6 +240,22 @@ export class ScrapeRunRepository {
         completedAt: outcome.completedAt,
       })),
     };
+  }
+
+  async getLatestFinalized(): Promise<FinalizedScrapeRunRecord | null> {
+    const row = this.database.db
+      .select({ id: scrapeRuns.id })
+      .from(scrapeRuns)
+      .where(and(isNotNull(scrapeRuns.disposition), isNotNull(scrapeRuns.completedAt)))
+      .orderBy(desc(scrapeRuns.createdAt))
+      .limit(1)
+      .get();
+    if (!row) return null;
+    const run = await this.get(row.id);
+    if (!run.disposition || !run.completedAt) {
+      throw new Error(`Finalized scrape run is missing terminal fields: ${run.id}`);
+    }
+    return { ...run, disposition: run.disposition, completedAt: run.completedAt };
   }
 
   async list(): Promise<ScrapeRunRecord[]> {

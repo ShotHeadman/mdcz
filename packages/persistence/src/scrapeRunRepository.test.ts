@@ -70,6 +70,7 @@ describe("ScrapeRunRepository", () => {
       ],
     });
     expect(await repository.list()).toEqual([run]);
+    expect(await repository.getLatestFinalized()).toBeNull();
     expect(
       database?.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'scrape_%' ORDER BY name")
@@ -80,6 +81,44 @@ describe("ScrapeRunRepository", () => {
       { name: "scrape_run_items" },
       { name: "scrape_runs" },
     ]);
+  });
+
+  it("hydrates only the latest finalized run", async () => {
+    const repository = createRepository();
+    const create = async (id: string, createdAt: Date) =>
+      await repository.create({
+        id,
+        rootId: "root-1",
+        outputRootId: "requested-output",
+        executionMode: "batch",
+        createdAt,
+        items: [
+          { id: `${id}:item-1`, ordinal: 0, rootId: "root-1", relativePath: "ABC-001.mp4" },
+          { id: `${id}:item-2`, ordinal: 1, rootId: "root-2", relativePath: "DEF-002.mp4" },
+        ],
+      });
+    const settleFailed = async (run: Awaited<ReturnType<typeof create>>) => {
+      await repository.commitOutcome({
+        outcome: "failed",
+        attemptId: repository.admitAttempt(run.items[0].id).id,
+        error: "failed",
+      });
+      await repository.commitOutcome({
+        outcome: "skipped",
+        attemptId: repository.admitAttempt(run.items[1].id).id,
+      });
+      await repository.finalize({ runId: run.id, disposition: "failed" });
+    };
+
+    const older = await create("older", new Date("2026-08-24T00:00:00.000Z"));
+    await settleFailed(older);
+    const unfinished = await create("unfinished", new Date("2026-08-25T00:00:00.000Z"));
+    expect(await repository.getLatestFinalized()).toMatchObject({ id: older.id, disposition: "failed" });
+
+    const newer = await create("newer", new Date("2026-08-26T00:00:00.000Z"));
+    await settleFailed(newer);
+    expect(await repository.getLatestFinalized()).toMatchObject({ id: newer.id, disposition: "failed" });
+    expect((await repository.get(unfinished.id)).disposition).toBeNull();
   });
 
   it("stores one final outcome for each admitted attempt", async () => {

@@ -7,10 +7,8 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { AggregationService, TranslateService } from "@mdcz/runtime/scrape";
-import { DownloadManager } from "../DownloadManager";
+import { AggregationService, DownloadManager, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
 import { fileOrganizer } from "../FileScraper";
-import { NfoGenerator } from "../NfoGenerator";
 import { translationMappingStore } from "../translationMappingStore";
 
 export interface DesktopMaintenanceRuntimeOptions {
@@ -33,6 +31,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
     },
     downloadManager: new DownloadManager(options.networkClient, {
       imageHostCooldownStore: options.imageHostCooldownStore,
+      logger: loggerService.getLogger("DownloadManager"),
     }),
     fileOrganizer,
     networkPolicyClient: options.networkClient,

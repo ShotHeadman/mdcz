@@ -1,11 +1,10 @@
 import path from "node:path";
-import { mediaPathOwnership } from "@mdcz/runtime/library";
 import {
+  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceTaskCoordinator,
 } from "@mdcz/runtime/maintenance";
-import { commitPublishedMedia, createPublicationPlan } from "@mdcz/runtime/publication";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
@@ -40,29 +39,18 @@ export class MaintenanceService {
     this.coordinator = new MaintenanceTaskCoordinator({
       roots: { getActiveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId) },
       runtime: this.runtime,
-      library: {
-        resolveSource: async (absolutePath) =>
-          await (await this.persistence.getState()).repositories.library.resolveMaintenanceSource(absolutePath),
-        preflightRefresh: async (input) =>
-          await (await this.persistence.getState()).repositories.library.preflightMaintenanceRefresh(input),
-        publishRefresh: async (input) => {
-          const state = await this.persistence.getState();
-          const refresh = await state.repositories.library.prepareRefresh(input.refresh);
-          const plan = createPublicationPlan(
-            input.operationId,
-            "maintenance",
-            input.plan,
-            await state.repositories.mediaRoots.list(),
-          );
-          return await commitPublishedMedia(plan, {
-            resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
-            acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, input.ownershipToken),
-            journal: state.repositories.publicationJournal,
-            repairIssues: state.repositories.libraryRepairIssues,
-            commit: () => state.repositories.library.writeRefresh(refresh),
-          });
+      library: createMaintenanceLibraryPort({
+        getRepositories: async () => {
+          const { repositories } = await this.persistence.getState();
+          return {
+            library: repositories.library,
+            mediaRoots: repositories.mediaRoots,
+            publicationJournal: repositories.publicationJournal,
+            libraryRepairIssues: repositories.libraryRepairIssues,
+          };
         },
-      },
+        resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
+      }),
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       concurrency: 1,
     });

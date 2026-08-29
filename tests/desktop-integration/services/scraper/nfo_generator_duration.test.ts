@@ -1,9 +1,15 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
-import { findExistingNfoPath, NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { getNfoReadCandidates, resolveFilenameNfoPath } from "@mdcz/runtime/scrape";
+import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import {
+  findExistingNfoPath,
+  getNfoReadCandidates,
+  NfoGenerator,
+  type NfoOptions,
+  resolveFilenameNfoPath,
+} from "@mdcz/runtime/scrape";
+import { pathExists } from "@mdcz/runtime/scrape/utils/filesystem";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
@@ -51,6 +57,9 @@ const createFileInfo = (overrides: Partial<FileInfo> = {}): FileInfo => ({
   ...overrides,
 });
 
+const buildXml = (data: CrawlerData, options?: NfoOptions): string =>
+  new NfoGenerator().buildXml(data, { buildTags: buildMovieTags, ...options });
+
 describe("NfoGenerator", () => {
   afterEach(async () => {
     await Promise.all(
@@ -83,13 +92,13 @@ describe("NfoGenerator", () => {
     ];
 
     for (const { input, options, expectedRuntime } of cases) {
-      const xml = new NfoGenerator().buildXml(input, options);
+      const xml = buildXml(input, options);
       expect(xml).toContain(`<runtime>${expectedRuntime}</runtime>`);
     }
   });
 
   it("prefers local assets and preserves actor photos in the generated XML", () => {
-    const xml = new NfoGenerator().buildXml(
+    const xml = buildXml(
       createCrawlerData({
         actors: ["Actor A"],
         actor_profiles: [
@@ -138,7 +147,7 @@ describe("NfoGenerator", () => {
   });
 
   it("injects classification tags when fileInfo is provided", () => {
-    const uncensoredXml = new NfoGenerator().buildXml(createCrawlerData(), {
+    const uncensoredXml = buildXml(createCrawlerData(), {
       fileInfo: createFileInfo({
         isSubtitled: true,
         subtitleTag: "中文字幕",
@@ -157,14 +166,14 @@ describe("NfoGenerator", () => {
         subtitleTag: "字幕",
       }),
     ]) {
-      const subtitleXml = new NfoGenerator().buildXml(createCrawlerData(), {
+      const subtitleXml = buildXml(createCrawlerData(), {
         fileInfo,
       });
       expect(subtitleXml).toContain("<tag>字幕</tag>");
       expect(subtitleXml).not.toContain("<tag>中文字幕</tag>");
     }
 
-    const umrXml = new NfoGenerator().buildXml(
+    const umrXml = buildXml(
       createCrawlerData({
         title: "高清无码 破解版",
       }),
@@ -175,7 +184,7 @@ describe("NfoGenerator", () => {
     expect(umrXml).toContain("<tag>破解</tag>");
     expect(umrXml).not.toContain("<tag>无码</tag>");
 
-    const leakXml = new NfoGenerator().buildXml(
+    const leakXml = buildXml(
       createCrawlerData({
         genres: ["流出"],
       }),
@@ -188,7 +197,7 @@ describe("NfoGenerator", () => {
   });
 
   it("persists local NFO tags even when fileInfo is unavailable", () => {
-    const xml = new NfoGenerator().buildXml(createCrawlerData(), {
+    const xml = buildXml(createCrawlerData(), {
       localState: {
         uncensoredChoice: "umr",
         tags: ["中文字幕", "自定义标签"],
@@ -201,7 +210,7 @@ describe("NfoGenerator", () => {
   });
 
   it("round-trips release metadata and derives year only when available", () => {
-    const releaseXml = new NfoGenerator().buildXml(
+    const releaseXml = buildXml(
       createCrawlerData({
         series: "Collection",
         release_date: "2024-01-02",
@@ -212,12 +221,12 @@ describe("NfoGenerator", () => {
     expect(releaseParsed.release_date).toBe("2024-01-02");
     expect(releaseXml).toContain("<year>2024</year>");
 
-    const missingYearXml = new NfoGenerator().buildXml(createCrawlerData());
+    const missingYearXml = buildXml(createCrawlerData());
     expect(missingYearXml).not.toContain("<year>");
   });
 
   it("preserves local poster, cover, and trailer references when parsed back", () => {
-    const xml = new NfoGenerator().buildXml(
+    const xml = buildXml(
       createCrawlerData({
         poster_url: "https://remote.example.com/poster.jpg",
         thumb_url: "https://remote.example.com/thumb.jpg",
@@ -248,7 +257,7 @@ describe("NfoGenerator", () => {
   });
 
   it("writes streamdetails when local video metadata is available", () => {
-    const xml = new NfoGenerator().buildXml(
+    const xml = buildXml(
       createCrawlerData({
         durationSeconds: 5400,
       }),
@@ -272,12 +281,12 @@ describe("NfoGenerator", () => {
   });
 
   it("writes a standards-compliant uniqueid attribute for Jellyfin", () => {
-    const xml = new NfoGenerator().buildXml(createCrawlerData());
+    const xml = buildXml(createCrawlerData());
     expect(xml).toContain('<uniqueid type="dmm" default="true">ABC-123</uniqueid>');
   });
 
   it("supports originaltitle in the NFO title template", () => {
-    const xml = new NfoGenerator().buildXml(
+    const xml = buildXml(
       createCrawlerData({
         title: "Original Title",
         title_zh: "中文标题",
@@ -292,7 +301,7 @@ describe("NfoGenerator", () => {
   });
 
   it("uses thumb artwork as fallback fanart and persists sample image urls under mdcz", () => {
-    const xml = new NfoGenerator().buildXml(
+    const xml = buildXml(
       createCrawlerData({
         thumb_url: "https://remote.example.com/thumb.jpg",
         thumb_source_url: "https://remote.example.com/thumb.jpg",
@@ -337,7 +346,7 @@ describe("NfoGenerator", () => {
 
     await writeFile(movieNfoPath, "<movie />", "utf8");
 
-    await expect(findExistingNfoPath(nfoPath, "movie")).resolves.toBe(movieNfoPath);
+    await expect(findExistingNfoPath(nfoPath, "movie", pathExists)).resolves.toBe(movieNfoPath);
   });
   it.each([
     ["POSIX", posix, "/media"],
@@ -552,7 +561,7 @@ describe("NfoGenerator", () => {
   });
 
   it("keeps fanart fallback metadata independent from the thumb field", () => {
-    const xml = new NfoGenerator().buildXml(
+    const xml = buildXml(
       createCrawlerData({
         thumb_url: "thumb.jpg",
         thumb_source_url: "https://example.com/original-thumb.jpg",

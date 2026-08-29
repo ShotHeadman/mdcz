@@ -439,13 +439,27 @@ export class LibraryRepository {
   }
 
   async getEntryBySourceOutcomeId(sourceOutcomeId: string): Promise<LibraryEntryRecord | null> {
-    const item = this.database.db
-      .select({ id: libraryItems.id })
-      .from(libraryItems)
-      .where(eq(libraryItems.sourceOutcomeId, sourceOutcomeId))
-      .limit(1)
-      .get();
-    return item ? await this.getEntryById(item.id) : null;
+    return (await this.getEntriesBySourceOutcomeIds([sourceOutcomeId])).get(sourceOutcomeId) ?? null;
+  }
+
+  async getEntriesBySourceOutcomeIds(sourceOutcomeIds: string[]): Promise<Map<string, LibraryEntryRecord>> {
+    const ids = [...new Set(sourceOutcomeIds.map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) return new Map();
+    const items = this.database.db.select().from(libraryItems).where(inArray(libraryItems.sourceOutcomeId, ids)).all();
+    const itemIds = items.map((item) => item.id);
+    const [filesByItem, assetsByItem] = await Promise.all([
+      this.listFilesForItems(itemIds),
+      this.listAssetsForItems(itemIds),
+    ]);
+    const entries = new Map<string, LibraryEntryRecord>();
+    for (const item of items) {
+      if (!item.sourceOutcomeId) continue;
+      entries.set(
+        item.sourceOutcomeId,
+        toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
+      );
+    }
+    return entries;
   }
 
   async getEntriesByIds(ids: string[]): Promise<LibraryEntryRecord[]> {

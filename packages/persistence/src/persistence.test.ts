@@ -340,6 +340,35 @@ describe("LibraryRepository", () => {
     ]);
   });
 
+  it("loads library entries for source outcome ids in one query", async () => {
+    database = createTestPersistenceDatabase();
+    await addRoots("root-1");
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "A.mp4",
+      sourceOutcomeId: "outcome-1",
+      assets: [{ kind: "poster", uri: "A.jpg", rootId: "root-1", relativePath: "A.jpg" }],
+    });
+    await repository.upsertEntry({
+      id: "entry-2",
+      rootId: "root-1",
+      rootRelativePath: "B.mp4",
+      sourceOutcomeId: "outcome-2",
+    });
+
+    const entries = await repository.getEntriesBySourceOutcomeIds(["outcome-1", "outcome-2", "missing"]);
+    expect([...entries.keys()].sort()).toEqual(["outcome-1", "outcome-2"]);
+    expect(entries.get("outcome-1")).toMatchObject({
+      id: "entry-1",
+      assets: [expect.objectContaining({ kind: "poster", uri: "A.jpg" })],
+    });
+    await expect(repository.getEntryBySourceOutcomeId("outcome-2")).resolves.toMatchObject({ id: "entry-2" });
+    await expect(repository.getEntryBySourceOutcomeId("missing")).resolves.toBeNull();
+    await expect(repository.getEntriesBySourceOutcomeIds([])).resolves.toEqual(new Map());
+  });
+
   it("uses the root-path index for library entry lookup", async () => {
     database = createTestPersistenceDatabase();
     const plan = database.sqlite

@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import {
   ActorSourceProvider,
   ActorSourceRegistry,
@@ -11,6 +10,7 @@ import {
   LocalActorSource,
 } from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { NfoGenerator } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";

@@ -28,7 +28,7 @@ import { canonicalizeCrawlerDataActorAliases } from "./canonicalizeActorAliases"
 import type { DownloadManager } from "./download";
 import { type FileOrganizer, resolveMetadataOutputDir } from "./FileOrganizer";
 import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "./media";
-import type { NfoGenerator } from "./nfo";
+import type { NfoGenerator, NfoOptions } from "./nfo";
 import {
   downloadCrawlerAssets,
   organizePreparedVideo,
@@ -65,6 +65,7 @@ export interface FileScraperDependencies {
   loadExistingNfoLocalState?(filePath: string, configuration: Configuration): Promise<NfoLocalState | undefined>;
   logger: { info(message: string): void; warn(message: string): void; error(message: string): void };
   nfoGenerator: NfoGenerator;
+  buildTags?: NfoOptions["buildTags"];
   postProcessAssets?(input: {
     assets: DownloadedAssets;
     configuration: Configuration;
@@ -278,6 +279,7 @@ export class FileScraper {
         keepExisting: configuration.download.keepNfo,
         localState: existingNfoLocalState,
         nfoGenerator: this.deps.nfoGenerator,
+        buildTags: this.deps.buildTags,
         nfoPath: plan.nfoPath,
         sourceVideoPath: fileInfo.filePath,
         sources: aggregationResult.sources,

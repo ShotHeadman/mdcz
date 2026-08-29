@@ -5,9 +5,14 @@ import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
-import { type AggregationService, FileOrganizer, FileScraper, type TranslateService } from "@mdcz/runtime/scrape";
-import type { DownloadManager } from "./DownloadManager";
-import type { NfoGenerator } from "./NfoGenerator";
+import type { DownloadManager, NfoGenerator } from "@mdcz/runtime/scrape";
+import {
+  type AggregationService,
+  FileOrganizer,
+  FileScraper,
+  type NfoOptions,
+  type TranslateService,
+} from "@mdcz/runtime/scrape";
 import { applyDesktopPosterTagBadges, probeVideoMetadataOrWarn } from "./output";
 
 export const fileOrganizer = new FileOrganizer(loggerService.getLogger("FileOrganizer"));
@@ -16,6 +21,7 @@ export interface FileScraperDependencies {
   aggregationService: AggregationService;
   translateService: TranslateService;
   nfoGenerator: NfoGenerator;
+  buildTags?: NfoOptions["buildTags"];
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
   signalService: Pick<

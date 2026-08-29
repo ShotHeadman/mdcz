@@ -1,12 +1,11 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { fileOrganizer } from "@main/services/scraper/FileScraper";
-import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { pathExists } from "@main/utils/file";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
 import { commitRegisteredPublication, type RegisteredPublicationContext } from "@mdcz/runtime/publication";
-import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "@mdcz/runtime/scrape";
+import { confirmUncensoredOutputs, nfoGenerator, type UncensoredConfirmDependencies } from "@mdcz/runtime/scrape";
 import type { UncensoredConfirmItem, UncensoredConfirmResultItem } from "@mdcz/shared/types";
 
 const logger = loggerService.getLogger("ConfirmUncensored");

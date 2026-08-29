@@ -11,15 +11,15 @@ import { createAbortError } from "@main/utils/abort";
 import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { createDesktopInputRoot, mediaPathOwnership, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { createDesktopInputRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import {
+  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
   MaintenanceTaskCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { commitPublishedMedia, createPublicationPlan } from "@mdcz/runtime/publication";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -92,31 +92,19 @@ export class MaintenanceService {
           },
         },
         runtime: this.runtime,
-        library: {
-          resolveSource: async (absolutePath) =>
-            await (await this.persistenceService.getState()).repositories.library.resolveMaintenanceSource(
-              absolutePath,
-            ),
-          preflightRefresh: async (input) =>
-            await (await this.persistenceService.getState()).repositories.library.preflightMaintenanceRefresh(input),
-          publishRefresh: async (input) => {
-            const state = await this.persistenceService.getState();
-            const refresh = await state.repositories.library.prepareRefresh(input.refresh);
-            const plan = createPublicationPlan(
-              input.operationId,
-              "maintenance",
-              input.plan,
-              await state.repositories.mediaRoots.list(),
-            );
-            return await commitPublishedMedia(plan, {
-              resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
-              acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, input.ownershipToken),
-              journal: state.repositories.publicationJournal,
-              repairIssues: state.repositories.libraryRepairIssues,
-              commit: () => state.repositories.library.writeRefresh(refresh),
-            });
+        library: createMaintenanceLibraryPort({
+          getRepositories: async () => {
+            const { repositories } = await this.persistenceService.getState();
+            return {
+              library: repositories.library,
+              mediaRoots: repositories.mediaRoots,
+              publicationJournal: repositories.publicationJournal,
+              libraryRepairIssues: repositories.libraryRepairIssues,
+            };
           },
-        },
+          resolveRoot: async (rootId) =>
+            await (await this.persistenceService.getState()).repositories.mediaRoots.get(rootId),
+        }),
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
         concurrency: 1,
       });

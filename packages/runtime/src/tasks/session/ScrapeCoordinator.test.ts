@@ -5,7 +5,6 @@ import type { ScrapeRunItem } from "./ScrapeRunSession";
 
 type Run = {
   id: string;
-  createdAt: Date;
   items: Array<{ id: string; rootId: string; relativePath: string }>;
 };
 
@@ -27,44 +26,54 @@ const resultFor = (item: ScrapeRunItem, status: "success" | "failed"): ScrapeRes
   ...(status === "failed" ? { error: "failed" } : {}),
 });
 
-describe("ScrapeCoordinator retry", () => {
+const waitForAbort = async (signal: AbortSignal, gate: Promise<void>): Promise<void> => {
+  if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason));
+  await Promise.race([
+    gate,
+    new Promise<never>((_, reject) => {
+      signal.addEventListener(
+        "abort",
+        () => reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason))),
+        { once: true },
+      );
+    }),
+  ]);
+};
+
+const createStore = (run: Run): ScrapeRunStore<Run> => ({
+  retry: vi.fn(async () => run),
+  finalize: vi.fn(async () => run),
+  interruptUnfinished: vi.fn(),
+});
+
+const createHost = (
+  run: Run,
+  executeItem: (item: ScrapeRunItem, signal: AbortSignal) => Promise<ScrapeResult>,
+): ScrapeHostPort<string, Run, undefined> => ({
+  create: vi.fn(async () => run),
+  runId: (entry) => entry.id,
+  createExecution: async (entry) => ({
+    items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
+    concurrency: 1,
+    admitItem: async (item) => `${item.id}:attempt`,
+    executeItem,
+    commitItem: async (_item, result) => result,
+  }),
+  onInvalidate: () => undefined,
+});
+
+describe("ScrapeCoordinator", () => {
   it("re-enqueues the settled run through retry instead of create()", async () => {
-    const original: Run = {
+    const run: Run = {
       id: "run-1",
-      createdAt: new Date("2026-08-27T00:00:00.000Z"),
       items: [{ id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" }],
     };
-    const store: ScrapeRunStore<string, Run> = {
-      create: vi.fn(async () => original),
-      get: vi.fn(async () => original),
-      list: vi.fn(async () => [original]),
-      retry: vi.fn(async () => original),
-      finalize: vi.fn(async () => original),
-      interruptUnfinished: vi.fn(),
-      summary: vi.fn(() => null),
-      latestOutcomes: vi.fn(() => []),
-    };
+    const store = createStore(run);
     const started = deferred<void>();
-    const host: ScrapeHostPort<Run, undefined> = {
-      runId: (run) => run.id,
-      createdAt: (run) => run.createdAt,
-      createExecution: async (run) => ({
-        items: run.items.map((item) => ({
-          id: item.id,
-          rootId: item.rootId,
-          relativePath: item.relativePath,
-          sourcePath: `/media/${item.relativePath}`,
-        })),
-        concurrency: 1,
-        admitItem: async (item) => `${item.id}:attempt-2`,
-        executeItem: async (item) => {
-          started.resolve();
-          return resultFor(item, "failed");
-        },
-        commitItem: async (_item, result) => result,
-      }),
-      onInvalidate: () => undefined,
-    };
+    const host = createHost(run, async (item) => {
+      started.resolve();
+      return resultFor(item, "failed");
+    });
     const coordinator = new ScrapeCoordinator(store, host);
 
     const snapshot = await coordinator.retry("run-1");
@@ -72,43 +81,23 @@ describe("ScrapeCoordinator retry", () => {
     await coordinator.waitForIdle();
 
     expect(store.retry).toHaveBeenCalledWith("run-1");
-    expect(store.create).not.toHaveBeenCalled();
+    expect(host.create).not.toHaveBeenCalled();
     expect(snapshot.runId).toBe("run-1");
   });
 
   it("rejects retry until the same run has settled", async () => {
     const run: Run = {
       id: "run-1",
-      createdAt: new Date("2026-08-27T00:00:00.000Z"),
       items: [{ id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" }],
     };
-    const store: ScrapeRunStore<string, Run> = {
-      create: vi.fn(async () => run),
-      get: vi.fn(async () => run),
-      list: vi.fn(async () => [run]),
-      retry: vi.fn(async () => run),
-      finalize: vi.fn(async () => run),
-      summary: vi.fn(() => null),
-      latestOutcomes: vi.fn(() => []),
-    };
+    const store = createStore(run);
     const started = deferred<void>();
     const release = deferred<void>();
-    const host: ScrapeHostPort<Run, undefined> = {
-      runId: (entry) => entry.id,
-      createdAt: (entry) => entry.createdAt,
-      createExecution: async (entry) => ({
-        items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
-        concurrency: 1,
-        admitItem: async (item) => `${item.id}:attempt`,
-        executeItem: async (item) => {
-          started.resolve();
-          await release.promise;
-          return resultFor(item, "failed");
-        },
-        commitItem: async (_item, result) => result,
-      }),
-      onInvalidate: () => undefined,
-    };
+    const host = createHost(run, async (item) => {
+      started.resolve();
+      await release.promise;
+      return resultFor(item, "failed");
+    });
     const coordinator = new ScrapeCoordinator(store, host);
 
     await coordinator.start("start");
@@ -122,39 +111,42 @@ describe("ScrapeCoordinator retry", () => {
   it("finalizes mixed item outcomes as failed", async () => {
     const run: Run = {
       id: "run-mixed",
-      createdAt: new Date("2026-08-28T00:00:00.000Z"),
       items: [
         { id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" },
         { id: "item-2", rootId: "root-1", relativePath: "ABC-002.mp4" },
       ],
     };
-    const store: ScrapeRunStore<string, Run> = {
-      create: vi.fn(async () => run),
-      get: vi.fn(async () => run),
-      list: vi.fn(async () => [run]),
-      retry: vi.fn(async () => run),
-      finalize: vi.fn(async () => run),
-      summary: vi.fn(() => null),
-      latestOutcomes: vi.fn(() => []),
-    };
-    const host: ScrapeHostPort<Run, undefined> = {
-      runId: (entry) => entry.id,
-      createdAt: (entry) => entry.createdAt,
-      createExecution: async (entry) => ({
-        items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
-        concurrency: 1,
-        admitItem: async (item) => `${item.id}:attempt`,
-        executeItem: async (item) => resultFor(item, item.id === "item-1" ? "success" : "failed"),
-        commitItem: async (_item, result) => result,
-      }),
-      onInvalidate: () => undefined,
-    };
+    const store = createStore(run);
+    const host = createHost(run, async (item) => resultFor(item, item.id === "item-1" ? "success" : "failed"));
     const coordinator = new ScrapeCoordinator(store, host);
 
     await coordinator.start("start");
     await coordinator.waitForIdle();
 
     expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-mixed", disposition: "failed" }));
-    expect(coordinator.latestSnapshot()?.status).toBe("failed");
+    expect(coordinator.liveRuns()).toEqual([]);
+  });
+
+  it("interrupts unfinished runs on shutdown", async () => {
+    const run: Run = {
+      id: "run-1",
+      items: [{ id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" }],
+    };
+    const store = createStore(run);
+    const started = deferred<void>();
+    const hanging = deferred<void>();
+    const host = createHost(run, async (item, signal) => {
+      started.resolve();
+      await waitForAbort(signal, hanging.promise);
+      return resultFor(item, "failed");
+    });
+    const coordinator = new ScrapeCoordinator(store, host);
+
+    await coordinator.start("start");
+    await started.promise;
+    await coordinator.abortForShutdown();
+
+    expect(store.interruptUnfinished).toHaveBeenCalledOnce();
+    expect(coordinator.liveRuns()).toEqual([]);
   });
 });

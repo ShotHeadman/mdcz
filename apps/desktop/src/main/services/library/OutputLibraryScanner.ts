@@ -67,7 +67,7 @@ export class OutputLibraryScanner {
 
     try {
       const state = await this.persistenceService.getState();
-      const latestRun = (await state.repositories.scrapeRuns.list()).find((run) => run.completedAt);
+      const latestRun = await state.repositories.scrapeRuns.getLatestFinalized();
       const latestSummary = latestRun ? state.repositories.scrapeRuns.summary(latestRun) : null;
       if (latestSummary) {
         const outputRoot = latestSummary.outputRootId
