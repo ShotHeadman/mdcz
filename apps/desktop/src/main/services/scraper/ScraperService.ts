@@ -38,7 +38,6 @@ import {
   type ScrapeRunItem,
   type ScrapeRunSnapshot,
   type ScrapeWorkflowReporter,
-  toFinalizedScrapeRunSnapshot,
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
@@ -107,26 +106,7 @@ export class ScraperService {
 
   async getSnapshot(): Promise<ScrapeRunSnapshotDto | null> {
     const live = this.workflow?.liveRuns()[0];
-    if (live) return this.toSnapshotDto(live.run, live.snapshot, live.startedAt);
-    const state = await this.persistenceService.getState();
-    const last = await state.repositories.scrapeRuns.getLatestFinalized();
-    if (!last) return null;
-    const latestOutcomes = [...new Map(last.outcomes.map((outcome) => [outcome.itemId, outcome])).values()];
-    if (
-      last.disposition !== "failed" &&
-      last.disposition !== "interrupted" &&
-      !latestOutcomes.some((outcome) => outcome.outcome === "failed" || outcome.uncensoredAmbiguous)
-    ) {
-      return null;
-    }
-    const entries = await state.repositories.library.getEntriesBySourceOutcomeIds(
-      last.outcomes.filter((outcome) => outcome.outcome === "success").map((outcome) => outcome.id),
-    );
-    const outcomes = last.outcomes.map((outcome) => ({
-      ...outcome,
-      assets: entries.get(outcome.id)?.assets ?? [],
-    }));
-    return this.toSnapshotDto(last, toFinalizedScrapeRunSnapshot({ ...last, outcomes }), last.startedAt);
+    return live ? this.toSnapshotDto(live.run, live.snapshot, live.startedAt) : null;
   }
 
   async startSingle(paths: string[]): Promise<StartScrapeResult> {

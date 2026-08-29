@@ -2,8 +2,10 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
 import {
+  activateNewScrapeTask,
   buildUncensoredConfirmationItems,
   MaintenanceWorkbenchAdapter,
+  resetScrapeWorkbenchToSetup,
   ScrapeWorkbenchAdapter,
   type SharedWorkbenchPorts,
   startMaintenanceFlow,
@@ -16,6 +18,7 @@ import {
   selectIsScraping,
   selectScrapeResults,
   selectScrapeStatus,
+  selectScrapeTaskId,
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
@@ -99,7 +102,7 @@ function WorkbenchPage() {
       setScrapeStartPending: state.setScrapeStartPending,
     })),
   );
-  const activeScrapeTaskId = hydrationState.activeScrapeTaskId;
+  const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
   const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: queryKeys.config.current, retry: false });
 
   const { isScraping, scrapeStatus, results } = useScrapeStore(
@@ -133,12 +136,14 @@ function WorkbenchPage() {
   }, [hydrationState.shouldOpenUncensoredDialog]);
 
   const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
+    activateNewScrapeTask(filePaths);
     setScrapeStartPending(true);
     try {
       await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
       requestScrapeLiveRunsRefresh();
       toast.success("已启动选中文件刮削");
     } catch (error) {
+      resetScrapeWorkbenchToSetup();
       toast.error(`启动失败: ${toErrorMessage(error)}`);
     } finally {
       setScrapeStartPending(false);

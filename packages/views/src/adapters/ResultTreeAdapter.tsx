@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import type { MediaBrowserFilter } from "../common";
 import { getScrapeResultTitle, type ResultTreeManualUrlTarget, ResultTreeView } from "../detail";
 import type { ActionAvailability, ScrapeActionPort } from "./ports";
-import { activateRetryScrapeTask } from "./workbenchSession";
+import { activateRetryScrapeTask, resetScrapeWorkbenchToSetup } from "./workbenchSession";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
@@ -199,7 +199,6 @@ function buildMenuContent(
 export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
   const results = useScrapeStore(selectScrapeResults);
   const scrapeStatus = useScrapeStore(selectScrapeStatus);
-  const clearResults = useScrapeStore((state) => state.clearVisibleResults);
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
   const [manualUrlTarget, setManualUrlTarget] = useState<ResultTreeManualUrlTarget | null>(null);
@@ -239,7 +238,7 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
       ]}
       manualUrlTarget={manualUrlTarget}
       scrapeStatus={scrapeStatus}
-      onClearResults={clearResults}
+      onClearResults={resetScrapeWorkbenchToSetup}
       onManualUrlDialogOpenChange={(open) => {
         if (!open) {
           setManualUrlTarget(null);

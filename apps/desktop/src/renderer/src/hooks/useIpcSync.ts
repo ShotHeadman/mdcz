@@ -28,7 +28,9 @@ export const useIpcSync = (queryClient: QueryClient) => {
     };
     const scrape = createRefreshCoordinator({
       read: ipc.scraper.getStatus,
-      apply: (snapshot) => useScrapeStore.getState().setSnapshot(snapshot),
+      apply: (snapshot) => {
+        if (snapshot) useScrapeStore.getState().setSnapshot(snapshot);
+      },
       onError: (error) => reportError("scrape", error),
     });
     const maintenance = createRefreshCoordinator({

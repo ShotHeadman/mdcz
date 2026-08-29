@@ -1,5 +1,6 @@
 import type { LocalFileTarget } from "@mdcz/shared/mediaRef";
 import type { CrawlerData } from "@mdcz/shared/types";
+import { selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { ipc } from "@/client/ipc";
 
 export interface NfoResponse {
@@ -93,9 +94,14 @@ export const updateNfo = async (path: LocalFileTarget, crawlerData: CrawlerData,
 };
 
 export const retryScrapeSelection = async (_path: string | string[], _options: unknown = {}) => {
-  const snapshot = await ipc.scraper.getStatus();
+  const snapshot = selectScrapeSnapshot(useScrapeStore.getState());
   if (!snapshot) throw new Error("没有可重试的刮削任务");
-  if (snapshot.task.status === "running" || snapshot.task.status === "paused" || snapshot.task.status === "stopping") {
+  if (
+    snapshot.task.status === "queued" ||
+    snapshot.task.status === "running" ||
+    snapshot.task.status === "paused" ||
+    snapshot.task.status === "stopping"
+  ) {
     throw new Error("当前刮削任务仍在进行，请等待任务结束后再重试");
   }
   return { data: await ipc.scraper.retry(snapshot.task.id) };

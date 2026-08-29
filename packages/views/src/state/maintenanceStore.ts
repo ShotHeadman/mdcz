@@ -132,6 +132,7 @@ export const selectMaintenanceFieldSelections = (state: MaintenanceState) => {
 };
 
 export const selectMaintenanceHasWork = (state: MaintenanceState): boolean => Boolean(state.snapshot) || state.pending;
+export const selectMaintenanceSessionId = (state: MaintenanceState): string => state.snapshot?.id ?? "";
 
 export const useMaintenanceStore = create<MaintenanceState>()((set) => ({
   ...initialState(),

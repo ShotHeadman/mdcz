@@ -29,13 +29,8 @@ export const hydratePendingUncensoredConfirmation = async (): Promise<void> => {
   store.setHydrationState(applyPendingUncensoredConfirmation(response, store.hydrationState));
 };
 
-const applyActiveMaintenanceSession = (session: MaintenanceActiveSessionSnapshot | null): void => {
-  applyMaintenanceSessionSnapshot(session);
-  useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(session?.id ?? "");
-};
-
 export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
-  applyActiveMaintenanceSession(await api.maintenance.getActiveSession());
+  applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
 };
 
 export const useWebTaskSync = (): void => {
@@ -68,8 +63,7 @@ export const useWebTaskSync = (): void => {
       read: async () => await api.scrape.liveRuns(),
       apply: (response) => {
         if (closed) return;
-        const store = useWorkbenchTaskStore.getState();
-        store.setHydrationState(applyScrapeLiveRunsSnapshot(response.runs, store.hydrationState));
+        applyScrapeLiveRunsSnapshot(response.runs);
       },
       onError: (error) => updateRefreshError("scrape", error),
       onSuccess: () => {
@@ -81,7 +75,7 @@ export const useWebTaskSync = (): void => {
       read: async () => await api.maintenance.getActiveSession(),
       apply: (session) => {
         if (closed) return;
-        applyActiveMaintenanceSession(session);
+        applyMaintenanceSessionSnapshot(session);
       },
       onError: (error) => updateRefreshError("maintenance", error),
       onSuccess: () => updateRefreshError("maintenance", null),

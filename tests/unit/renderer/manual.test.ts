@@ -1,7 +1,9 @@
 import { Website } from "@mdcz/shared/enums";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readNfo, resolveNfoWritePath, retryScrapeSelection, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
+import { buildFailedScrapeSnapshot, buildScrapeSnapshot } from "./scrapeTestSupport";
 
 vi.mock("@/client/ipc", () => ({
   ipc: {
@@ -10,7 +12,6 @@ vi.mock("@/client/ipc", () => ({
       nfoWrite: vi.fn(),
     },
     scraper: {
-      getStatus: vi.fn(),
       retry: vi.fn(),
     },
   },
@@ -18,7 +19,6 @@ vi.mock("@/client/ipc", () => ({
 
 const nfoRead = vi.mocked(ipc.file.nfoRead);
 const nfoWrite = vi.mocked(ipc.file.nfoWrite);
-const getStatus = vi.mocked(ipc.scraper.getStatus);
 const retry = vi.mocked(ipc.scraper.retry);
 
 describe("readNfo", () => {
@@ -34,7 +34,6 @@ describe("readNfo", () => {
   beforeEach(() => {
     nfoRead.mockReset();
     nfoWrite.mockReset();
-    getStatus.mockReset();
     retry.mockReset();
   });
 
@@ -86,32 +85,16 @@ describe("updateNfo", () => {
 
 describe("retryScrapeSelection", () => {
   beforeEach(() => {
-    getStatus.mockReset();
     retry.mockReset();
+    useScrapeStore.getState().reset();
   });
 
-  it("retries the authoritative terminal run", async () => {
-    getStatus.mockResolvedValue({
-      task: {
-        id: "original",
-        kind: "scrape",
-        rootId: "root",
-        rootDisplayName: "root",
-        status: "failed",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        startedAt: null,
-        completedAt: null,
-        videoCount: 0,
-        directoryCount: 0,
-        error: null,
-      },
-      progress: { percent: 100, completedItems: 2, totalItems: 2 },
-      items: [],
-      latestStage: null,
-      logs: [],
-      ambiguousUncensoredItems: [],
-    });
+  it("retries this session's finished run id", async () => {
+    useScrapeStore.getState().setSnapshot(
+      buildFailedScrapeSnapshot({
+        task: { ...buildFailedScrapeSnapshot().task, id: "original" },
+      }),
+    );
     retry.mockResolvedValue({
       taskId: "task-1",
       totalFiles: 2,
@@ -132,31 +115,22 @@ describe("retryScrapeSelection", () => {
   });
 
   it("requires a terminal run", async () => {
-    getStatus.mockResolvedValue({
-      task: {
-        id: "running",
-        kind: "scrape",
-        rootId: "root",
-        rootDisplayName: "root",
-        status: "running",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        startedAt: null,
-        completedAt: null,
-        videoCount: 0,
-        directoryCount: 0,
-        error: null,
-      },
-      progress: { percent: 0, completedItems: 0, totalItems: 1 },
-      items: [],
-      latestStage: null,
-      logs: [],
-      ambiguousUncensoredItems: [],
-    });
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...buildScrapeSnapshot().task, id: "running", status: "running", completedAt: null },
+      }),
+    );
     await expect(retryScrapeSelection("/media/ABC-123.mp4", { scrapeStatus: "running" })).rejects.toThrow(
       "当前刮削任务仍在进行",
     );
 
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("requires a run in the scrape store", async () => {
+    await expect(retryScrapeSelection("/media/ABC-123.mp4", { scrapeStatus: "idle" })).rejects.toThrow(
+      "没有可重试的刮削任务",
+    );
     expect(retry).not.toHaveBeenCalled();
   });
 });

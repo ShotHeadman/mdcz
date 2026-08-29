@@ -7,6 +7,7 @@ import {
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import {
   activateNewScrapeTask,
+  activateRetryScrapeTask,
   applyScrapeTaskStatus,
   MaintenanceWorkbenchAdapter,
   resetScrapeWorkbenchToSetup,
@@ -194,10 +195,6 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
   };
 
-  const resetForNewTask = () => {
-    activateNewScrapeTask();
-  };
-
   const handleRetryFailed = async () => {
     if (failedPaths.length === 0) {
       toast.info("当前没有可重试的失败项目");
@@ -212,7 +209,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       const result = await retryScrapeSelection(failedPaths, {
         scrapeStatus,
       });
-      resetForNewTask();
+      activateRetryScrapeTask(failedPaths);
       toast.success(result.data.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);

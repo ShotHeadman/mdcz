@@ -7,7 +7,12 @@ import type {
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
-import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
+import {
+  applyMaintenanceSessionSnapshot,
+  selectMaintenanceSessionId,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
+import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc } from "../client";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 
@@ -192,7 +197,7 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
   retrySelection: async (targets, options) => {
     void targets;
     void options;
-    const runId = useWorkbenchTaskStore.getState().hydrationState.activeScrapeTaskId;
+    const runId = selectScrapeTaskId(useScrapeStore.getState());
     if (!runId) throw new Error("没有可重试的刮削任务");
     const retry = await api.scrape.retry({ taskId: runId });
     requestScrapeLiveRunsRefresh();
@@ -222,7 +227,7 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
 
 export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   const requireTaskId = () => {
-    const activeTaskId = useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId;
+    const activeTaskId = selectMaintenanceSessionId(useMaintenanceStore.getState());
     if (!activeTaskId) {
       throw new Error("当前没有可控制的维护任务");
     }
@@ -251,9 +256,9 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       await api.maintenance.updateDraft({ taskId: requireTaskId(), previewId, ...draft });
     },
     discardSession: async () => {
-      const taskId = useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId || undefined;
+      const taskId = selectMaintenanceSessionId(useMaintenanceStore.getState()) || undefined;
       await api.maintenance.discardSession(taskId ? { taskId } : undefined);
-      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId("");
+      useMaintenanceStore.getState().reset();
     },
     preview: async (entries: LocalScanEntry[], presetId: MaintenancePresetId) => {
       const refs = entries.map((entry) => ({
@@ -262,12 +267,11 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       }));
       const rootId = refs[0]?.rootId ?? "";
       const { sessionId } = await api.maintenance.start({ rootId, presetId, refs });
-      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(sessionId);
+      applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
       return { sessionId };
     },
     execute: async (selections: MaintenanceApplySelection[]) => {
       const taskId = requireTaskId();
-      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(taskId);
       await api.maintenance.apply({
         taskId,
         confirmationToken: `maintenance:${taskId}`,

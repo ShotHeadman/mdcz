@@ -1,5 +1,5 @@
 import type { ScrapePendingUncensoredConfirmationResponse, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
-import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeResults, selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
@@ -26,48 +26,17 @@ export const selectActiveLiveScrapeRun = (
  * Applies one complete `scrape.liveRuns()` response.  No SSE payload and no
  * mutation acknowledgement can enter the live scrape stores directly.
  */
-export const applyScrapeLiveRunsSnapshot = (
-  runs: ScrapeRunSnapshotDto[],
-  previous: TaskHydrationState,
-): TaskHydrationState => {
-  const liveScrapeRunsById = Object.fromEntries(runs.map((run) => [run.task.id, run])) as Record<
-    string,
-    ScrapeRunSnapshotDto
-  >;
-  const selected = selectActiveLiveScrapeRun(runs, previous.activeScrapeTaskId);
+export const applyScrapeLiveRunsSnapshot = (runs: ScrapeRunSnapshotDto[]): void => {
+  const selected = selectActiveLiveScrapeRun(runs, selectScrapeTaskId(useScrapeStore.getState()));
+  if (!selected) return;
+
   const scrapeStore = useScrapeStore.getState();
-  const uiStore = useUIStore.getState();
-
-  if (!selected) {
-    scrapeStore.setSnapshot(null);
-    if (uiStore.selectedResultId) uiStore.setSelectedResultId(null);
-    return {
-      ...previous,
-      activeScrapeTaskId: "",
-      liveScrapeRunsById,
-      latestScrapeStage: null,
-    };
-  }
-
   scrapeStore.setSnapshot(selected);
   const results = selectScrapeResults(useScrapeStore.getState());
+  const uiStore = useUIStore.getState();
   if (uiStore.selectedResultId && !results.some((result) => result.fileId === uiStore.selectedResultId)) {
     uiStore.setSelectedResultId(null);
   }
-
-  return {
-    ...previous,
-    activeScrapeTaskId: selected.task.id,
-    liveScrapeRunsById,
-    latestScrapeStage: selected.latestStage
-      ? {
-          taskId: selected.task.id,
-          stage: selected.latestStage.stage,
-          message: selected.latestStage.message,
-          ...(selected.latestStage.relativePath ? { relativePath: selected.latestStage.relativePath } : {}),
-        }
-      : null,
-  };
 };
 
 export const applyPendingUncensoredConfirmation = (
@@ -80,9 +49,10 @@ export const applyPendingUncensoredConfirmation = (
     items.push(item);
     byTask.set(item.taskId, items);
   }
+  const scrapeTaskId = selectScrapeTaskId(useScrapeStore.getState());
   const taskId =
     (previous.uncensoredTaskId && byTask.has(previous.uncensoredTaskId) ? previous.uncensoredTaskId : "") ||
-    (previous.activeScrapeTaskId && byTask.has(previous.activeScrapeTaskId) ? previous.activeScrapeTaskId : "") ||
+    (scrapeTaskId && byTask.has(scrapeTaskId) ? scrapeTaskId : "") ||
     response.items[0]?.taskId ||
     "";
   const items = taskId ? (byTask.get(taskId) ?? []) : [];

@@ -97,10 +97,9 @@ export const useWorkbenchSessionSnapshot = (
 };
 
 export const activateNewScrapeTask = (filePaths?: string[]): void => {
-  const scrapeStore = useScrapeStore.getState();
   void filePaths;
-  scrapeStore.clearVisibleResults();
-  scrapeStore.setPending(true);
+  useScrapeStore.getState().reset();
+  useScrapeStore.getState().setPending(true);
   useUIStore.getState().setSelectedResultId(null);
 };
 
@@ -137,7 +136,7 @@ export const buildUncensoredConfirmationItems = (
 export const resetScrapeWorkbenchToSetup = (): void => {
   useUIStore.getState().setSelectedResultId(null);
   useWorkbenchTaskStore.getState().reset();
-  useScrapeStore.getState().clearVisibleResults();
+  useScrapeStore.getState().reset();
 };
 
 export const getFailedScrapeTargets = () =>

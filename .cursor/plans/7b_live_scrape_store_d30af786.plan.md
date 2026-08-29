@@ -4,19 +4,19 @@ overview: "First pass of architecture 07: one UI store for the scrape that is ru
 todos:
   - id: scrape-store-session
     content: Keep finished results in the scrape store until reset; do not hide a successful scrape; remove hiddenRunId
-    status: pending
+    status: completed
   - id: getSnapshot-live-only
     content: Desktop scrape status returns only a run that is still in this process; stop loading the last finished run from SQLite into the workbench
-    status: pending
+    status: completed
   - id: 7b-workbench-task-store
     content: Remove duplicate scrape fields from the workbench task store; read the active scrape id from the scrape store
-    status: pending
+    status: completed
   - id: hydrate-and-retry
     content: A null live status must not erase this session’s results; retry uses the store’s run id
-    status: pending
+    status: completed
   - id: call-sites-reset
     content: Return to setup, clear list, and start a new scrape all call reset(); add tests for session vs reopen
-    status: pending
+    status: completed
 isProject: false
 ---
 

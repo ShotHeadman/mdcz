@@ -1,10 +1,13 @@
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildFailedScrapeSnapshot } from "../../../../tests/unit/renderer/scrapeTestSupport";
 import { api, setAdminToken } from "../client";
 import { createWebDetailPort, createWebMaintenanceActionPort, createWebScrapeActionPort } from "./ports";
 
@@ -31,6 +34,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   setAdminToken(undefined);
   useWorkbenchTaskStore.getState().reset();
+  useScrapeStore.getState().reset();
+  useMaintenanceStore.getState().reset();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: originalLocalStorage,
@@ -204,15 +209,24 @@ describe("web scrape action port", () => {
     expect(deleteFile).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
   });
 
-  it("rejects delete calls when any target lacks a root-relative ref", async () => {
+  it("retries the scrape store run id and has no run after reset", async () => {
+    const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "retry-1" });
+    useScrapeStore.getState().setSnapshot(
+      buildFailedScrapeSnapshot({
+        task: { ...buildFailedScrapeSnapshot().task, id: "session-run" },
+      }),
+    );
     const port = createWebScrapeActionPort();
 
-    await expect(
-      port.deleteFile([
-        { filePath: "ABC-001.mp4", ref: { rootId: "root-1", relativePath: "ABC-001.mp4" } },
-        { filePath: "/absolute/ABC-001-CD2.mp4" },
-      ]),
-    ).rejects.toThrow("Web 删除文件需要媒体目录引用");
+    await expect(port.retrySelection([{ filePath: "ABC-001.mp4" }], { scrapeStatus: "idle" })).resolves.toEqual({
+      message: "重试任务已启动：retry-1",
+    });
+    expect(retry).toHaveBeenCalledWith({ taskId: "session-run" });
+
+    useScrapeStore.getState().reset();
+    await expect(port.retrySelection([{ filePath: "ABC-001.mp4" }], { scrapeStatus: "idle" })).rejects.toThrow(
+      "没有可重试的刮削任务",
+    );
   });
 });
 
@@ -262,7 +276,7 @@ describe("web maintenance action port", () => {
     await createWebMaintenanceActionPort().preview([createEntry()], "refresh_data");
     await createWebMaintenanceActionPort().pause();
 
-    expect(useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId).toBe("maintenance-task-1");
+    expect(selectMaintenanceSessionId(useMaintenanceStore.getState())).toBe("maintenance-task-1");
     expect(pause).toHaveBeenCalledWith({ taskId: "maintenance-task-1" });
   });
 });

@@ -11,7 +11,8 @@ import {
   DialogTitle,
 } from "@mdcz/ui";
 import { LogsPanelView } from "@mdcz/views/logs";
-import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
+import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
@@ -22,7 +23,8 @@ import { ErrorBanner } from "../routeCommon";
 
 export const LogsPage = () => {
   const queryClient = useQueryClient();
-  const { activeMaintenanceTaskId, activeScrapeTaskId } = useWorkbenchTaskStore((state) => state.hydrationState);
+  const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
+  const activeMaintenanceTaskId = useMaintenanceStore(selectMaintenanceSessionId);
   const activeTaskIds = useMemo(() => {
     return [activeScrapeTaskId, activeMaintenanceTaskId].filter((id) => id.trim().length > 0);
   }, [activeMaintenanceTaskId, activeScrapeTaskId]);

@@ -1,4 +1,9 @@
-import { selectScrapeHasWork, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  selectScrapeHasWork,
+  selectScrapeResults,
+  selectScrapeTaskId,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildFailedScrapeSnapshot, buildScrapeLiveItem, buildScrapeSnapshot } from "./scrapeTestSupport";
 
@@ -27,40 +32,54 @@ describe("scrape store contract", () => {
     expect(selectScrapeResults(activeState)).toBe(selectScrapeResults(activeState));
   });
 
-  it("does not keep a completed scrape as workbench work unless it needs follow-up", () => {
+  it("keeps a completed scrape as workbench work until reset", () => {
     useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
-    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(false);
-    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
+    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(true);
+    expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
 
-    useScrapeStore.getState().setSnapshot(buildFailedScrapeSnapshot());
+    useScrapeStore.getState().setSnapshot(null);
     expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(true);
     expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
   });
 
-  it("keeps a hidden failed run hidden when the same snapshot is applied again", () => {
+  it("does not erase this session's results when live status is null", () => {
     const snapshot = buildFailedScrapeSnapshot();
     useScrapeStore.getState().setSnapshot(snapshot);
-    expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
+    useScrapeStore.getState().setSnapshot(null);
 
-    useScrapeStore.getState().clearVisibleResults();
-    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
-
-    useScrapeStore.getState().setSnapshot(snapshot);
-    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
-    expect(useScrapeStore.getState().selection.hiddenRunId).toBe("task-1");
+    expect(useScrapeStore.getState().snapshot).toBe(snapshot);
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("task-1");
   });
 
-  it("shows a newly started scrape even if a previous run was hidden", () => {
+  it("returns to an empty session after reset", () => {
     useScrapeStore.getState().setSnapshot(buildFailedScrapeSnapshot());
-    useScrapeStore.getState().clearVisibleResults();
+    useScrapeStore.getState().reset();
 
-    const next = buildScrapeSnapshot({
-      task: { ...buildScrapeSnapshot().task, id: "task-2", status: "running", completedAt: null },
-      items: [buildScrapeLiveItem({ id: "item-2", resultId: null, status: "processing" })],
-    });
-    useScrapeStore.getState().setSnapshot(next);
+    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(false);
+    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
+  });
 
-    expect(useScrapeStore.getState().selection.hiddenRunId).toBeNull();
-    expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
+  it("exposes the current scrape task id from the store", () => {
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
+
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...buildScrapeSnapshot().task, id: "running-1", status: "running", completedAt: null },
+        items: [buildScrapeLiveItem({ status: "processing" })],
+      }),
+    );
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("running-1");
+
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...buildScrapeSnapshot().task, id: "paused-1", status: "paused", completedAt: null },
+        items: [buildScrapeLiveItem({ status: "processing" })],
+      }),
+    );
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("paused-1");
+
+    useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("task-1");
   });
 });

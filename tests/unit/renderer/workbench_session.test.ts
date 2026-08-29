@@ -15,9 +15,10 @@ describe("workbench session scrape setup", () => {
     useUIStore.getState().setWorkbenchMode("scrape");
   });
 
-  it("returns to setup after a completed scrape that has no failures", () => {
+  it("keeps the processing queue after a scrape completes in this window", () => {
     useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
-    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(false);
+    expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
   });
 
   it("keeps the processing queue when the last scrape has failures", () => {
@@ -26,7 +27,7 @@ describe("workbench session scrape setup", () => {
     expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
   });
 
-  it("stays on setup after confirming return even if the failed snapshot is applied again", () => {
+  it("stays on setup after return even if live status is refreshed with null", () => {
     const snapshot = buildFailedScrapeSnapshot();
     useScrapeStore.getState().setSnapshot(snapshot);
     useUIStore.getState().setSelectedResultId("root-1:ABC-001.mp4");
@@ -35,7 +36,12 @@ describe("workbench session scrape setup", () => {
     expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
     expect(useUIStore.getState().selectedResultId).toBeNull();
 
-    useScrapeStore.getState().setSnapshot(snapshot);
+    useScrapeStore.getState().setSnapshot(null);
+    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
+  });
+
+  it("shows the start page when the renderer store is empty", () => {
     expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
     expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
   });

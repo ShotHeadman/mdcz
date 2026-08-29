@@ -4,7 +4,7 @@ import {
   buildScrapeResultGroupActionContext,
   findScrapeResultGroup,
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
-import { activateRetryScrapeTask } from "@mdcz/views/adapters";
+import { activateNewScrapeTask, activateRetryScrapeTask } from "@mdcz/views/adapters";
 import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import {
   selectIsScraping,
@@ -153,9 +153,7 @@ export function ShortcutHandler() {
                 },
               });
 
-              scrapeState.clearVisibleResults();
-              uiState.setSelectedResultId(null);
-              scrapeState.setPending(true);
+              activateNewScrapeTask(workbenchSetupState.selectedPaths);
               const response = await startSelectedScrape(workbenchSetupState.selectedPaths);
               await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
               toast.success(response.data.message);
