@@ -3,6 +3,7 @@ import { createMaintenanceHandlers } from "@main/ipc/handlers/maintenance";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
+import { ipcActionArgs } from "./ipcActionArgs";
 
 vi.mock("@egoist/tipc/main", () => {
   type MockProcedure = {
@@ -96,18 +97,18 @@ describe("maintenance IPC task adapter", () => {
       })),
     };
     const handlers = createMaintenanceHandlers({ maintenanceService: service } as unknown as ServiceContainer);
-    const args = { context: { sender: {} as never } };
+    const args = ipcActionArgs(undefined);
+    const withInput = <T>(input: T) => ipcActionArgs(input);
 
     await expect(
-      handlers[IpcChannel.Maintenance_Scan].action({ ...args, input: { filePaths: [entry.fileInfo.filePath] } }),
+      handlers[IpcChannel.Maintenance_Scan].action(withInput({ filePaths: [entry.fileInfo.filePath] })),
     ).resolves.toEqual({ entries: [entry] });
 
-    const previewResponse = handlers[IpcChannel.Maintenance_StartPreview].action({
-      ...args,
-      input: { entries: [entry], presetId: "organize_files" },
-    });
+    const previewResponse = handlers[IpcChannel.Maintenance_StartPreview].action(
+      withInput({ entries: [entry], presetId: "organize_files" }),
+    );
     await vi.waitFor(() => expect(service.startPreview).toHaveBeenCalledOnce());
-    await expect(handlers[IpcChannel.Maintenance_Pause].action({ ...args, input: undefined })).resolves.toEqual({
+    await expect(handlers[IpcChannel.Maintenance_Pause].action(args)).resolves.toEqual({
       success: true,
     });
     expect(service.pause).toHaveBeenCalledWith(task.id);
@@ -116,17 +117,14 @@ describe("maintenance IPC task adapter", () => {
 
     const selections = [{ previewId: "preview-1", fieldSelections: { title: "old" as const } }];
     await expect(
-      handlers[IpcChannel.Maintenance_Apply].action({
-        ...args,
-        input: { selections, presetId: "organize_files" },
-      }),
+      handlers[IpcChannel.Maintenance_Apply].action(withInput({ selections, presetId: "organize_files" })),
     ).resolves.toEqual({ sessionId: task.id });
     expect(service.execute).toHaveBeenCalledWith(task.id, selections, "organize_files");
 
-    await expect(handlers[IpcChannel.Maintenance_Stop].action({ ...args, input: undefined })).resolves.toEqual({
+    await expect(handlers[IpcChannel.Maintenance_Stop].action(args)).resolves.toEqual({
       success: true,
     });
-    await expect(handlers[IpcChannel.Maintenance_Resume].action({ ...args, input: undefined })).resolves.toEqual({
+    await expect(handlers[IpcChannel.Maintenance_Resume].action(args)).resolves.toEqual({
       success: true,
     });
     expect(service.stop).toHaveBeenCalledWith(task.id);

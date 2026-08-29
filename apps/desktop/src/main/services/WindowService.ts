@@ -23,6 +23,78 @@ export interface MainWindowCreationOptions {
   useCustomTitleBar: boolean;
 }
 
+export const denyWindowOpen = (): { action: "deny" } => ({ action: "deny" });
+
+export const isRendererNavigationAllowed = (url: string, rendererUrl = process.env.ELECTRON_RENDERER_URL): boolean => {
+  let next: URL;
+  try {
+    next = new URL(url);
+  } catch {
+    return false;
+  }
+
+  const configured = rendererUrl?.trim();
+  if (configured) {
+    try {
+      return next.origin === new URL(configured).origin;
+    } catch {
+      return false;
+    }
+  }
+
+  return next.protocol === "file:" && next.pathname.toLowerCase().endsWith("/index.html");
+};
+
+export const buildRendererContentSecurityPolicy = (rendererUrl = process.env.ELECTRON_RENDERER_URL): string => {
+  const configured = rendererUrl?.trim();
+  const scriptSources = ["'self'"];
+  const connectSources = ["'self'"];
+  if (configured) {
+    const origin = new URL(configured).origin;
+    const wsOrigin = origin.replace(/^http/u, "ws");
+    scriptSources.push(origin);
+    connectSources.push(origin, wsOrigin);
+  }
+
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    `script-src ${scriptSources.join(" ")}`,
+    `connect-src ${connectSources.join(" ")}`,
+    "img-src 'self' local-file: data: blob: http: https:",
+    "media-src 'self' local-file: blob: http: https:",
+  ].join("; ");
+};
+
+const installRendererIsolation = (mainWindow: BrowserWindow): void => {
+  const { webContents } = mainWindow;
+  webContents.setWindowOpenHandler(denyWindowOpen);
+  webContents.on("will-navigate", (event, url) => {
+    if (!isRendererNavigationAllowed(url)) {
+      event.preventDefault();
+    }
+  });
+  const csp = buildRendererContentSecurityPolicy();
+  webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    if (details.resourceType !== "mainFrame") {
+      callback({});
+      return;
+    }
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [csp],
+      },
+    });
+  });
+};
+
 const resolvePreloadPath = (): string => {
   const candidates = ["../preload/index.js", "../preload/index.cjs", "../preload/index.mjs"];
 
@@ -74,6 +146,8 @@ export class WindowService {
         nodeIntegration: false,
       },
     });
+
+    installRendererIsolation(mainWindow);
 
     mainWindow.setMenuBarVisibility(false);
     if (process.platform !== "darwin") {

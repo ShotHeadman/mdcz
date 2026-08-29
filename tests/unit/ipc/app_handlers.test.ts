@@ -5,10 +5,13 @@ import { createAppHandlers } from "@main/ipc/handlers/app";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockExit, mockOpenPath, mockRelaunch, mockUserDataPath } = vi.hoisted(() => ({
+import { ipcActionArgs } from "./ipcActionArgs";
+
+const { mockExit, mockOpenPath, mockRelaunch, mockShowItemInFolder, mockUserDataPath } = vi.hoisted(() => ({
   mockExit: vi.fn(),
   mockOpenPath: vi.fn(),
   mockRelaunch: vi.fn(),
+  mockShowItemInFolder: vi.fn(),
   mockUserDataPath: `${process.cwd()}/.tmp/mdcz-vitest-app-handlers-${process.pid}`,
 }));
 
@@ -28,6 +31,7 @@ vi.mock("electron", () => {
     shell: {
       openExternal: vi.fn(),
       openPath: mockOpenPath,
+      showItemInFolder: mockShowItemInFolder,
     },
     ipcMain: {
       handle: vi.fn(),
@@ -58,12 +62,18 @@ vi.mock("@egoist/tipc/main", () => {
   };
 });
 
-const actionArgs = { context: { sender: {} as never }, input: undefined };
+const actionArgs = ipcActionArgs(undefined);
 
-const createContext = (syncTitleBarOverlay = vi.fn()): ServiceContainer =>
+const createContext = (
+  syncTitleBarOverlay = vi.fn(),
+  roots: Array<{ id: string; hostPath: string }> = [],
+): ServiceContainer =>
   ({
     windowService: {
       syncTitleBarOverlay,
+    },
+    persistenceService: {
+      getState: async () => ({ repositories: { mediaRoots: { list: async () => roots } } }),
     },
   }) as unknown as ServiceContainer;
 
@@ -73,6 +83,7 @@ describe("createAppHandlers", () => {
     mockOpenPath.mockReset();
     mockOpenPath.mockResolvedValue("");
     mockRelaunch.mockClear();
+    mockShowItemInFolder.mockClear();
   });
 
   it("ensures and opens the app-managed watermark directory", async () => {
@@ -104,10 +115,31 @@ describe("createAppHandlers", () => {
 
     await expect(
       handlers[IpcChannel.App_SyncTitleBarTheme].action({
-        ...actionArgs,
-        input: { isDark: true },
+        ...ipcActionArgs({ isDark: true }),
       }),
     ).resolves.toEqual({ success: true });
     expect(syncTitleBarOverlay).toHaveBeenCalledWith(true);
+  });
+
+  it("resolves a root-scoped file before showing it in the system file manager", async () => {
+    const rootPath = join(mockUserDataPath, "library");
+    const handlers = createAppHandlers(createContext(vi.fn(), [{ id: "media", hostPath: rootPath }]));
+
+    await expect(
+      handlers[IpcChannel.App_ShowItemInFolder].action(
+        ipcActionArgs({ path: { rootId: "media", relativePath: "ABC-123/ABC-123.mp4" } }),
+      ),
+    ).resolves.toEqual({ success: true });
+    expect(mockShowItemInFolder).toHaveBeenCalledWith(join(rootPath, "ABC-123", "ABC-123.mp4"));
+  });
+
+  it("rejects non-http schemes for openExternal", async () => {
+    const handlers = createAppHandlers(createContext());
+    await expect(
+      handlers[IpcChannel.App_OpenExternal].action(ipcActionArgs({ url: "javascript:alert(1)" })),
+    ).rejects.toThrow("Unsupported external URL scheme");
+    await expect(
+      handlers[IpcChannel.App_OpenExternal].action(ipcActionArgs({ url: "file:///etc/passwd" })),
+    ).rejects.toThrow("Unsupported external URL scheme");
   });
 });

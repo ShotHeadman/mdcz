@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { mapWithConcurrency } from "@main/utils/async";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath } from "@mdcz/media-store";
+import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
 import { commitPublishedMedia } from "@mdcz/runtime/publication";
@@ -188,9 +188,14 @@ export class DesktopLibraryService {
       number: entry.number,
       actors: entry.actors,
       crawlerData: parseCrawlerData(entry.crawlerDataJson),
-      thumbnailPath: resolveAssetDisplayPath(rootMap, entry.thumbnailRootId ?? entry.rootId, entry.thumbnailPath),
+      thumbnailPath: resolveAssetDisplayPath(
+        rootMap,
+        entry.thumbnailRootId ?? entry.rootId,
+        entry.thumbnailPath,
+        "relative",
+      ),
       thumbnailRootId: entry.thumbnailRootId,
-      lastKnownPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.lastKnownPath),
+      lastKnownPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.lastKnownPath, "absolute"),
       createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
       hiddenFromRecentAt: toIso(entry.hiddenFromRecentAt),
@@ -249,17 +254,34 @@ const resolveAssetDisplayPath = (
   rootMap: ReadonlyMap<string, MediaRoot>,
   rootId: string,
   value: string | null | undefined,
+  mode: "relative" | "absolute",
 ): string | null => {
   const trimmed = value?.trim();
   if (!trimmed) {
     return null;
   }
-  if (isRemotePath(trimmed) || isAbsoluteLocalPath(trimmed)) {
+  if (isRemotePath(trimmed)) {
     return trimmed;
   }
 
   const root = rootMap.get(rootId);
-  return root ? resolveRootRelativePath(root, trimmed) : trimmed;
+  if (isAbsoluteLocalPath(trimmed)) {
+    if (mode === "absolute") {
+      return trimmed;
+    }
+    if (!root) {
+      return null;
+    }
+    try {
+      return toRootRelativePath(root, trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (mode === "absolute") {
+    return root ? resolveRootRelativePath(root, trimmed) : trimmed;
+  }
+  return trimmed;
 };
 
 const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>

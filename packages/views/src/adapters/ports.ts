@@ -43,20 +43,25 @@ export interface PosterCropEditSession {
   initialCrop: NormalizedCropRegion;
 }
 
+export interface ScrapeActionTarget {
+  filePath: string;
+  ref?: ScrapeFileRefDto;
+}
+
 export interface ScrapeActionPort {
   capabilities?: NativeActionCapabilities;
-  getDeleteFileAvailability?(targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>): ActionAvailability;
+  getDeleteFileAvailability?(targets: ScrapeActionTarget[]): ActionAvailability;
   retrySelection(
-    targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>,
+    targets: ScrapeActionTarget[],
     options: {
       scrapeStatus: "idle" | "running" | "stopping" | "paused";
       manualUrl?: string;
     },
   ): Promise<{ message: string }>;
-  deleteFile(targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>): Promise<void>;
+  deleteFile(targets: ScrapeActionTarget[]): Promise<void>;
   deleteFileAndFolder(filePath: string): Promise<void>;
-  openFolder(filePath: string): Promise<void> | void;
-  play(filePath: string): Promise<void> | void;
+  openFolder(target: ScrapeActionTarget): Promise<void> | void;
+  play(target: ScrapeActionTarget): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
 }
 

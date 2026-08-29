@@ -1,6 +1,7 @@
 export type IpcActionContext = {
   // biome-ignore lint/suspicious/noExplicitAny: keep shared IPC contracts structurally compatible with tipc without importing desktop/Electron types.
   sender: any;
+  senderFrame?: { url?: string } | null;
 };
 
 export interface IpcProcedure<TInput = unknown, TOutput = unknown> {

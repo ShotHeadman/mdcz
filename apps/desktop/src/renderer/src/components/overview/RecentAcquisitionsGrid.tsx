@@ -17,7 +17,7 @@ export function RecentAcquisitionsGrid() {
   return (
     <>
       <SharedRecentAcquisitionsGrid
-        getImageSrc={getImageSrc}
+        getImageSrc={(path, item) => getImageSrc(path, item.thumbnailRootId ?? item.rootId)}
         isError={recentQ.isError}
         isLoading={recentQ.isLoading}
         items={items}

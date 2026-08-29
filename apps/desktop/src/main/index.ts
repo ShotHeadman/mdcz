@@ -66,6 +66,13 @@ const ensureServiceContainer = async (): Promise<ServiceContainer> => {
   });
   // Recovery must finish before IPC and renderer load; getState() can otherwise race the first window requests.
   await container.persistenceService.initialize();
+  registerLocalFileHandler({
+    getRoot: async (rootId) => {
+      const state = await container.persistenceService.getState();
+      const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+      return roots.find((root) => root.id === rootId) ?? null;
+    },
+  });
   registerIpcHandlers(container);
   serviceContainer = container;
   return container;
@@ -124,7 +131,6 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       await bootstrap();
-      registerLocalFileHandler();
       const initialConfig = await configManager.getValidated();
       await configManager.startWatching();
       await ensureMainWindow(toMainWindowCreationOptions(initialConfig));

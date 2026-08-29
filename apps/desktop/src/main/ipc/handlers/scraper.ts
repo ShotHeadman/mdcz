@@ -6,9 +6,9 @@ import { confirmUncensoredItems, createUncensoredConfirmDependencies } from "@ma
 import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { UncensoredConfirmItem } from "@mdcz/shared/types";
 import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError, IpcErrorCode } from "../errors";
+import { scraperConfirmUncensoredInputSchema, scraperRetryInputSchema, scraperStartInputSchema } from "../payloads";
 import { t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
@@ -39,23 +39,21 @@ export const createScraperHandlers = (
     [IpcChannel.Scraper_GetStatus]: t.procedure.action(async () => {
       return scraperService.getSnapshot();
     }),
-    [IpcChannel.Scraper_Start]: t.procedure
-      .input<{ mode?: "single" | "selection"; paths?: string[] }>()
-      .action(({ input }) =>
-        withIpcErrorHandling(
-          "start scraper",
-          async () => {
-            const mode = input?.mode ?? "single";
-            const paths = input?.paths ?? [];
-            if (mode === "selection") {
-              return withLaunchMessage(await scraperService.startSelectedFiles(paths), "已启动选中文件刮削");
-            }
+    [IpcChannel.Scraper_Start]: t.procedure.input(scraperStartInputSchema).action(({ input }) =>
+      withIpcErrorHandling(
+        "start scraper",
+        async () => {
+          const mode = input?.mode ?? "single";
+          const paths = input?.paths ?? [];
+          if (mode === "selection") {
+            return withLaunchMessage(await scraperService.startSelectedFiles(paths), "已启动选中文件刮削");
+          }
 
-            return withLaunchMessage(await scraperService.startSingle(paths), "单文件刮削任务已启动");
-          },
-          { mapError: toScraperServiceIpcError },
-        ),
+          return withLaunchMessage(await scraperService.startSingle(paths), "单文件刮削任务已启动");
+        },
+        { mapError: toScraperServiceIpcError },
       ),
+    ),
     [IpcChannel.Scraper_Stop]: t.procedure.action(() =>
       withIpcErrorHandling("stop scraper", async () => {
         return {
@@ -76,7 +74,7 @@ export const createScraperHandlers = (
         return { success: true as const };
       }),
     ),
-    [IpcChannel.Scraper_Retry]: t.procedure.input<{ runId: string }>().action(({ input }) =>
+    [IpcChannel.Scraper_Retry]: t.procedure.input(scraperRetryInputSchema).action(({ input }) =>
       withIpcErrorHandling(
         "retry files",
         async () => {
@@ -86,32 +84,30 @@ export const createScraperHandlers = (
         { mapError: toScraperServiceIpcError },
       ),
     ),
-    [IpcChannel.Scraper_ConfirmUncensored]: t.procedure
-      .input<{ items?: UncensoredConfirmItem[] }>()
-      .action(({ input }) =>
-        withIpcErrorHandling("confirm uncensored items", async () => {
-          const items = input?.items ?? [];
-          if (items.length === 0) {
-            return { updatedCount: 0, items: [] };
-          }
+    [IpcChannel.Scraper_ConfirmUncensored]: t.procedure.input(scraperConfirmUncensoredInputSchema).action(({ input }) =>
+      withIpcErrorHandling("confirm uncensored items", async () => {
+        const items = input?.items ?? [];
+        if (items.length === 0) {
+          return { updatedCount: 0, items: [] };
+        }
 
-          const config = await configManager.getValidated();
-          if (!config.download.generateNfo) {
-            logger.warn("Rejecting uncensored confirm because NFO generation is disabled");
-            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
-          }
+        const config = await configManager.getValidated();
+        if (!config.download.generateNfo) {
+          logger.warn("Rejecting uncensored confirm because NFO generation is disabled");
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
+        }
 
-          const state = await context.persistenceService.getState();
-          return await confirmUncensoredItems(
-            items,
-            config,
-            createUncensoredConfirmDependencies({
-              journal: state.repositories.publicationJournal,
-              repairIssues: state.repositories.libraryRepairIssues,
-              roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
-            }),
-          );
-        }),
-      ),
+        const state = await context.persistenceService.getState();
+        return await confirmUncensoredItems(
+          items,
+          config,
+          createUncensoredConfirmDependencies({
+            journal: state.repositories.publicationJournal,
+            repairIssues: state.repositories.libraryRepairIssues,
+            roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+          }),
+        );
+      }),
+    ),
   };
 };

@@ -28,18 +28,36 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
   setSnapshot: (snapshot) =>
     set((state) => ({
       snapshot,
-      selection: snapshot?.task.id === state.selection.hiddenRunId ? state.selection : { hiddenRunId: null },
+      selection:
+        snapshot == null || snapshot.task.id === state.selection.hiddenRunId ? state.selection : { hiddenRunId: null },
       pending: false,
       error: null,
     })),
   setPending: (pending) => set({ pending }),
   setError: (error) => set({ error, pending: false }),
-  clearVisibleResults: () => set((state) => ({ selection: { hiddenRunId: state.snapshot?.task.id ?? null } })),
+  clearVisibleResults: () =>
+    set((state) => ({
+      selection: { hiddenRunId: state.snapshot?.task.id ?? null },
+      pending: false,
+      error: null,
+    })),
   reset: () => set(initialState()),
 }));
 
+const LIVE_TASK_STATUSES = new Set(["queued", "running", "paused", "stopping"]);
+
+const snapshotHasWorkbenchFollowUp = (snapshot: ScrapeRunSnapshotDto): boolean =>
+  LIVE_TASK_STATUSES.has(snapshot.task.status) ||
+  snapshot.task.continuity === "interrupted" ||
+  snapshot.items.some((item) => item.status === "failed" || item.uncensoredAmbiguous) ||
+  snapshot.ambiguousUncensoredItems.length > 0;
+
 const isVisible = (state: ScrapeState): boolean =>
-  Boolean(state.snapshot && state.snapshot.task.id !== state.selection.hiddenRunId);
+  Boolean(
+    state.snapshot &&
+      state.snapshot.task.id !== state.selection.hiddenRunId &&
+      snapshotHasWorkbenchFollowUp(state.snapshot),
+  );
 
 const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
   ...(item.resultId ? { resultId: item.resultId } : {}),
@@ -62,11 +80,23 @@ const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
   uncensoredAmbiguous: item.uncensoredAmbiguous,
 });
 
+const EMPTY_SCRAPE_RESULTS: ScrapeResult[] = [];
+const scrapeResultsBySnapshot = new WeakMap<ScrapeRunSnapshotDto, ScrapeResult[]>();
+
 export const selectScrapeSnapshot = (state: ScrapeState): ScrapeRunSnapshotDto | null =>
   isVisible(state) ? state.snapshot : null;
 
-export const selectScrapeResults = (state: ScrapeState): ScrapeResult[] =>
-  selectScrapeSnapshot(state)?.items.map(liveItemToScrapeResult) ?? [];
+export const selectScrapeResults = (state: ScrapeState): ScrapeResult[] => {
+  const snapshot = selectScrapeSnapshot(state);
+  if (!snapshot) return EMPTY_SCRAPE_RESULTS;
+
+  const cached = scrapeResultsBySnapshot.get(snapshot);
+  if (cached) return cached;
+
+  const results = snapshot.items.map(liveItemToScrapeResult);
+  scrapeResultsBySnapshot.set(snapshot, results);
+  return results;
+};
 
 export const selectScrapeStatus = (state: ScrapeState): ScrapeStatus => {
   const status = selectScrapeSnapshot(state)?.task.status;
@@ -75,6 +105,8 @@ export const selectScrapeStatus = (state: ScrapeState): ScrapeStatus => {
 };
 
 export const selectIsScraping = (state: ScrapeState): boolean => selectScrapeStatus(state) !== "idle";
+export const selectScrapeHasWork = (state: ScrapeState): boolean =>
+  selectIsScraping(state) || selectScrapeResults(state).length > 0;
 export const selectScrapeProgress = (state: ScrapeState): number => selectScrapeSnapshot(state)?.progress.percent ?? 0;
 export const selectFailedCount = (state: ScrapeState): number =>
   selectScrapeSnapshot(state)?.items.filter((item) => item.status === "failed").length ?? 0;

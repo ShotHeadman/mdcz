@@ -1,4 +1,5 @@
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
+import { resolveImagePath } from "@mdcz/shared/imageSource";
 import type { DetailViewItem } from "./types";
 
 const getPathBaseName = (path: string | undefined): string => {
@@ -72,95 +73,6 @@ const buildLocalImageCandidate = (
   return "";
 };
 
-const normalizeImageSourcePath = (rawPath: string): string => {
-  const value = rawPath.trim();
-  if (!value) {
-    return "";
-  }
-
-  try {
-    const parsed = new URL(value, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-    if (parsed.pathname.endsWith("/api/v1/files/image") || parsed.pathname.endsWith("/api/v1/crop/image")) {
-      const path = parsed.searchParams.get("path");
-      if (path) {
-        return path;
-      }
-    }
-
-    if (parsed.protocol === "file:" || parsed.protocol === "local-file:") {
-      if (parsed.host) {
-        return `//${parsed.host}${decodeURIComponent(parsed.pathname)}`;
-      }
-
-      const pathname = decodeURIComponent(parsed.pathname);
-      if (/^\/[A-Za-z]:\//u.test(pathname)) {
-        return pathname.slice(1);
-      }
-      return pathname;
-    }
-  } catch {
-    // Plain local path.
-  }
-
-  return value;
-};
-
-const isSupportedRemoteImageScheme = (value: string): boolean =>
-  value.startsWith("http://") ||
-  value.startsWith("https://") ||
-  value.startsWith("data:") ||
-  value.startsWith("blob:") ||
-  value.startsWith("local-file://") ||
-  value.startsWith("file://");
-
-const hasExplicitUnsupportedScheme = (value: string): boolean => {
-  if (/^[a-z]:[\\/]/iu.test(value)) {
-    return false;
-  }
-
-  if (isSupportedRemoteImageScheme(value)) {
-    return false;
-  }
-
-  return /^[a-z][a-z\d+.-]*:/iu.test(value);
-};
-
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
-
-const joinRelativePath = (baseDir: string, relativePath: string): string => {
-  const separator = baseDir.lastIndexOf("\\") > baseDir.lastIndexOf("/") ? "\\" : "/";
-  const normalizedBase = baseDir.replace(/[\\/]+$/u, "");
-  const normalizedRelative = relativePath.replace(/^[\\/]+/u, "");
-
-  if (!normalizedBase) {
-    return normalizedRelative;
-  }
-
-  if (!normalizedRelative) {
-    return normalizedBase;
-  }
-
-  return `${normalizedBase}${separator}${normalizedRelative}`;
-};
-
-const resolveImagePath = (rawPath: string | undefined, baseDir?: string): string => {
-  if (!rawPath) {
-    return "";
-  }
-
-  const path = normalizeImageSourcePath(rawPath);
-  if (!path) {
-    return "";
-  }
-
-  if (isSupportedRemoteImageScheme(path) || isAbsoluteLocalPath(path) || hasExplicitUnsupportedScheme(path)) {
-    return path;
-  }
-
-  return baseDir ? joinRelativePath(baseDir, path) : path;
-};
-
 interface ImageSourceCandidatesInput {
   remotePath?: string;
   filePath?: string;
@@ -189,6 +101,15 @@ export interface DetailArtworkCandidates {
   thumb: string[];
 }
 
+export const getDetailLocalAssetRef = (item: DetailViewItem | null | undefined, path: string | undefined) => {
+  const normalizedPath = path?.replace(/\\/gu, "/");
+  if (!normalizedPath) return undefined;
+  const asset = item?.assets?.find(
+    (candidate) => candidate.type === "local" && candidate.file.relativePath.replace(/\\/gu, "/") === normalizedPath,
+  );
+  return asset?.type === "local" ? asset.file : undefined;
+};
+
 export const buildDetailArtworkCandidates = (item: DetailViewItem | null | undefined): DetailArtworkCandidates => {
   if (!item) {
     return { poster: [], thumb: [] };
@@ -208,6 +129,14 @@ export const buildDetailArtworkCandidates = (item: DetailViewItem | null | undef
     outputPath: item.outputPath,
     fileName: "thumb.jpg",
   });
+  const posterSource = item.posterUrl;
+  if (posterSource && getDetailLocalAssetRef(item, posterSource)) {
+    posterCandidates.primary = posterSource;
+  }
+  const thumbSource = item.thumbUrl ?? item.fanartUrl;
+  if (thumbSource && getDetailLocalAssetRef(item, thumbSource)) {
+    thumbCandidates.primary = thumbSource;
+  }
 
   return {
     poster: dedupeCandidates([

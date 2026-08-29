@@ -42,7 +42,6 @@ test.describe
 
     test("exposes the preload bridge and completes a typed main-process IPC round trip", async () => {
       const bridge = await session.page.evaluate(() => ({
-        electronOpenPath: typeof window.electron?.openPath,
         invoke: typeof window.api?.invoke,
         on: typeof window.api?.on,
       }));
@@ -51,7 +50,7 @@ test.describe
         "app:info",
       );
 
-      expect(bridge).toEqual({ electronOpenPath: "function", invoke: "function", on: "function" });
+      expect(bridge).toEqual({ invoke: "function", on: "function" });
       expect(appInfo).toMatchObject({ isPackaged: false, platform: process.platform });
       expect(appInfo.version).toMatch(/^\d+\.\d+\.\d+/u);
       expect(session.pageErrors).toEqual([]);

@@ -5,7 +5,7 @@ import { LlmApiClient } from "@mdcz/runtime/scrape";
 import { testLlmConnectivity } from "@mdcz/runtime/translate";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import { translateTestLlmInputSchema } from "../payloads";
 import { t } from "../shared";
 
 const logger = loggerService.getLogger("TranslateTestLlm");
@@ -16,7 +16,7 @@ export const createTranslateHandlers = (
   const llmApiClient = new LlmApiClient(context.networkClient);
 
   return {
-    [IpcChannel.Translate_TestLlm]: t.procedure.input<TranslateTestLlmInput>().action(async ({ input }) => {
+    [IpcChannel.Translate_TestLlm]: t.procedure.input(translateTestLlmInputSchema).action(async ({ input }) => {
       const config = await configManager.getValidated();
       return await testLlmConnectivity(input, config, llmApiClient, logger);
     }),

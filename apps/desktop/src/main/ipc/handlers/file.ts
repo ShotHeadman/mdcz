@@ -1,6 +1,7 @@
 import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
+import { localFileUrlForHostPath } from "@main/localFileProtocol";
 import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
@@ -21,11 +22,23 @@ import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
-import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { CrawlerData, MediaCandidate } from "@mdcz/shared/types";
+import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
+import type { MediaCandidate } from "@mdcz/shared/types";
 import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { dialog } from "electron";
 import { createIpcError, IpcErrorCode } from "../errors";
+import { resolveLocalFileTarget } from "../localFileTarget";
+import {
+  fileBrowseInputSchema,
+  fileDeleteInputSchema,
+  fileDirPathInputSchema,
+  fileExistsInputSchema,
+  fileListMediaCandidatesInputSchema,
+  fileNfoReadInputSchema,
+  fileNfoWriteInputSchema,
+  filePosterCropSaveInputSchema,
+  filePosterCropSessionInputSchema,
+} from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
@@ -72,7 +85,7 @@ export const createFileHandlers = (
   };
 
   return {
-    [IpcChannel.File_ListEntries]: t.procedure.input<{ dirPath?: string }>().action(
+    [IpcChannel.File_ListEntries]: t.procedure.input(fileDirPathInputSchema).action(
       async ({
         input,
       }): Promise<{
@@ -134,7 +147,7 @@ export const createFileHandlers = (
         }
       },
     ),
-    [IpcChannel.File_ListMediaCandidates]: t.procedure.input<{ dirPath?: string; excludeDirPaths?: string[] }>().action(
+    [IpcChannel.File_ListMediaCandidates]: t.procedure.input(fileListMediaCandidatesInputSchema).action(
       async ({
         input,
       }): Promise<{
@@ -202,43 +215,47 @@ export const createFileHandlers = (
         }
       },
     ),
-    [IpcChannel.File_Exists]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
-      const targetPath = input?.path?.trim();
-      if (!targetPath) {
-        return { exists: false };
-      }
-
+    [IpcChannel.File_Exists]: t.procedure.input(fileExistsInputSchema).action(async ({ input }) => {
       try {
+        const target = await resolveLocalFileTarget(context, input.path);
+        const targetPath = target.hostPath;
         const stats = await stat(targetPath);
-        return { exists: stats.isFile() };
+        if (!stats.isFile()) {
+          return { exists: false };
+        }
+        if (target.ref) {
+          return { exists: true, url: toLocalFileUrl(target.ref) };
+        }
+        const state = await persistenceService.getState();
+        const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+        const url = localFileUrlForHostPath(targetPath, roots);
+        return url ? { exists: true, url } : { exists: true };
       } catch {
         return { exists: false };
       }
     }),
-    [IpcChannel.File_Browse]: t.procedure
-      .input<{ type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> }>()
-      .action(async ({ input }) => {
-        const mainWindow = windowService.getMainWindow();
-        const type = input?.type;
-        const properties = type === "directory" ? (["openDirectory"] as const) : (["openFile"] as const);
-        const options = {
-          properties: [...properties, "multiSelections"] as Array<
-            "openFile" | "openDirectory" | "multiSelections" | "showHiddenFiles" | "createDirectory" | "promptToCreate"
-          >,
-          filters: input?.filters,
-        };
-        const result = mainWindow
-          ? await dialog.showOpenDialog(mainWindow, options)
-          : await dialog.showOpenDialog(options);
-        if (!result.canceled) {
-          for (const selectedPath of result.filePaths) {
-            await admitRoot(type === "directory" ? selectedPath : dirname(selectedPath));
-          }
+    [IpcChannel.File_Browse]: t.procedure.input(fileBrowseInputSchema).action(async ({ input }) => {
+      const mainWindow = windowService.getMainWindow();
+      const type = input?.type;
+      const properties = type === "directory" ? (["openDirectory"] as const) : (["openFile"] as const);
+      const options = {
+        properties: [...properties, "multiSelections"] as Array<
+          "openFile" | "openDirectory" | "multiSelections" | "showHiddenFiles" | "createDirectory" | "promptToCreate"
+        >,
+        filters: input?.filters,
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (!result.canceled) {
+        for (const selectedPath of result.filePaths) {
+          await admitRoot(type === "directory" ? selectedPath : dirname(selectedPath));
         }
-        return { paths: result.canceled ? null : result.filePaths };
-      }),
+      }
+      return { paths: result.canceled ? null : result.filePaths };
+    }),
     [IpcChannel.File_Delete]: t.procedure
-      .input<{ filePaths?: string[] }>()
+      .input(fileDeleteInputSchema)
       .action(async ({ input }): Promise<{ deletedCount: number; failedCount: number }> => {
         const filePaths = (input?.filePaths ?? []).filter((filePath) => filePath.trim());
         if (filePaths.length > 0) {
@@ -266,37 +283,37 @@ export const createFileHandlers = (
 
         return { deletedCount, failedCount };
       }),
-    [IpcChannel.File_NfoRead]: t.procedure
-      .input<{ nfoPath?: string; videoPath?: string }>()
-      .action(async ({ input }) => {
-        try {
-          const nfoPath = input?.nfoPath?.trim();
-          if (!nfoPath) {
-            throw createIpcError(IpcErrorCode.PARSE_ERROR, "NFO path is required");
-          }
-          const config = await configManager.getValidated();
-          const candidates = getNfoReadCandidates(nfoPath, config.download.nfoNaming, input.videoPath?.trim());
-          for (const candidate of candidates) {
-            if (!(await pathExists(candidate))) continue;
-            const content = await readFile(candidate, "utf8");
-            return { data: parseNfoSnapshot(content).crawlerData, nfoPath: candidate };
-          }
-          throw Object.assign(new Error(`NFO not found: ${nfoPath}`), { code: "ENOENT" });
-        } catch (error) {
-          throw asSerializableIpcError(error);
+    [IpcChannel.File_NfoRead]: t.procedure.input(fileNfoReadInputSchema).action(async ({ input }) => {
+      try {
+        const { hostPath: nfoPath } = await resolveLocalFileTarget(context, input.nfoPath);
+        const videoPath = input.videoPath
+          ? (await resolveLocalFileTarget(context, input.videoPath)).hostPath
+          : undefined;
+        const config = await configManager.getValidated();
+        const candidates = getNfoReadCandidates(nfoPath, config.download.nfoNaming, videoPath);
+        for (const candidate of candidates) {
+          if (!(await pathExists(candidate))) continue;
+          const content = await readFile(candidate, "utf8");
+          return { data: parseNfoSnapshot(content).crawlerData, nfoPath: candidate };
         }
-      }),
+        throw Object.assign(new Error(`NFO not found: ${nfoPath}`), { code: "ENOENT" });
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
     [IpcChannel.File_NfoWrite]: t.procedure
-      .input<{ nfoPath?: string; videoPath?: string; data?: CrawlerData }>()
+      .input(fileNfoWriteInputSchema)
       .action(async ({ input }): Promise<{ success: true; nfoPath: string }> => {
         try {
-          const nfoPath = input?.nfoPath?.trim();
+          const { hostPath: nfoPath } = await resolveLocalFileTarget(context, input.nfoPath);
           const data = input?.data;
-          if (!nfoPath || !data) {
-            throw createIpcError(IpcErrorCode.FILE_WRITE_ERROR, "NFO path and data are required");
+          if (!data) {
+            throw createIpcError(IpcErrorCode.FILE_WRITE_ERROR, "NFO data is required");
           }
           const config = await configManager.getValidated();
-          const videoPath = input.videoPath?.trim();
+          const videoPath = input.videoPath
+            ? (await resolveLocalFileTarget(context, input.videoPath)).hostPath
+            : undefined;
           const plannedNfoPath = resolveFilenameNfoPath(nfoPath, videoPath);
           await admitRoot(resolveDesktopInputRootPath(videoPath ? [plannedNfoPath, videoPath] : [plannedNfoPath]));
           const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming, pathExists, videoPath);
@@ -331,35 +348,29 @@ export const createFileHandlers = (
           throw asSerializableIpcError(error);
         }
       }),
-    [IpcChannel.File_PosterCropSession]: t.procedure.input<{ videoPath?: string }>().action(async ({ input }) => {
-      try {
-        const videoPath = input?.videoPath?.trim();
-        if (!videoPath) throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Video path is required");
-        const config = await configManager.getValidated();
-        return await posterCropService.prepare(videoPath, config.naming.assetNamingMode);
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
-    [IpcChannel.File_PosterCropSave]: t.procedure
-      .input<{ videoPath?: string; crop?: NormalizedCropRegion }>()
+    [IpcChannel.File_PosterCropSession]: t.procedure
+      .input(filePosterCropSessionInputSchema)
       .action(async ({ input }) => {
         try {
-          const videoPath = input?.videoPath?.trim();
-          if (!videoPath || !input?.crop) {
-            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Video path and crop are required");
-          }
-          await admitRoot(dirname(videoPath));
+          const { hostPath: videoPath } = await resolveLocalFileTarget(context, input.videoPath);
           const config = await configManager.getValidated();
-          return await posterCropService.save(
-            videoPath,
-            config.naming.assetNamingMode,
-            input.crop,
-            await publication(),
-          );
+          return await posterCropService.prepare(videoPath, config.naming.assetNamingMode);
         } catch (error) {
           throw asSerializableIpcError(error);
         }
       }),
+    [IpcChannel.File_PosterCropSave]: t.procedure.input(filePosterCropSaveInputSchema).action(async ({ input }) => {
+      try {
+        const { hostPath: videoPath } = await resolveLocalFileTarget(context, input.videoPath);
+        if (!input?.crop) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Crop is required");
+        }
+        await admitRoot(dirname(videoPath));
+        const config = await configManager.getValidated();
+        return await posterCropService.save(videoPath, config.naming.assetNamingMode, input.crop, await publication());
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
   };
 };

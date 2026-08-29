@@ -78,6 +78,9 @@ export function ShortcutHandler() {
         const selectedPath = selectedItem
           ? (selectedItem.output?.relativePath ?? selectedItem.relativePath)
           : undefined;
+        const selectedRef = selectedItem
+          ? (selectedItem.output ?? { rootId: selectedItem.rootId, relativePath: selectedItem.relativePath })
+          : undefined;
         const selectedNumber = selectedItem
           ? (selectedItem.crawlerData?.number ?? selectedItem.fileName.replace(/\.[^.]+$/u, ""))
           : undefined;
@@ -218,13 +221,9 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            if (!window.electron?.openPath) {
-              toast.info("仅桌面客户端支持打开目录");
-              return;
-            }
             const slash = Math.max(selectedPath.lastIndexOf("/"), selectedPath.lastIndexOf("\\"));
             const dir = slash > 0 ? selectedPath.slice(0, slash) : selectedPath;
-            void window.electron.openPath(dir);
+            void ipc.app.showItemInFolder(selectedRef ?? dir);
             return;
           }
 
@@ -233,7 +232,7 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            await playMediaPath(selectedPath, "仅桌面客户端支持播放");
+            await playMediaPath(selectedRef ?? selectedPath, "仅桌面客户端支持播放");
             return;
           }
 

@@ -8,8 +8,6 @@ import { useEffect, useState } from "react";
 import { overviewKeys } from "@/api/overview";
 import { ipc } from "@/client/ipc";
 
-const POLL_INTERVAL_MS = 2000;
-
 export const useIpcSync = (queryClient: QueryClient) => {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -52,7 +50,6 @@ export const useIpcSync = (queryClient: QueryClient) => {
         }
       }),
     ];
-    const poll = window.setInterval(() => void refreshAll(), POLL_INTERVAL_MS);
 
     void refreshAll().then(() => {
       if (!disposed) setRuntimeReady(true);
@@ -60,7 +57,6 @@ export const useIpcSync = (queryClient: QueryClient) => {
 
     return () => {
       disposed = true;
-      window.clearInterval(poll);
       scrape.dispose();
       maintenance.dispose();
       for (const unsubscribe of unsubscribers) unsubscribe();

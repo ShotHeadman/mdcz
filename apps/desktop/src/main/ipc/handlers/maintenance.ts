@@ -3,7 +3,13 @@ import { loggerService } from "@main/services/LoggerService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
-import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
+import type { LocalScanEntry } from "@mdcz/shared/types";
+import {
+  maintenanceApplyInputSchema,
+  maintenanceScanInputSchema,
+  maintenanceStartPreviewInputSchema,
+  maintenanceUpdateDraftInputSchema,
+} from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:maintenance");
@@ -24,30 +30,28 @@ export const createMaintenanceHandlers = (
 > => {
   const { maintenanceService } = context;
   return {
-    [IpcChannel.Maintenance_Scan]: t.procedure
-      .input<{ dirPath?: string; filePaths?: string[] }>()
-      .action(async ({ input }) => {
-        try {
-          const filePaths = input?.filePaths?.map((filePath) => filePath.trim()).filter(Boolean) ?? [];
-          if (filePaths.length > 0) {
-            const entries = await maintenanceService.scanFiles(filePaths);
-            return { entries };
-          }
-
-          const dirPath = input?.dirPath?.trim();
-          if (!dirPath) {
-            throw new Error("dirPath or filePaths is required");
-          }
-          const entries = await maintenanceService.scan(dirPath);
+    [IpcChannel.Maintenance_Scan]: t.procedure.input(maintenanceScanInputSchema).action(async ({ input }) => {
+      try {
+        const filePaths = input?.filePaths?.map((filePath) => filePath.trim()).filter(Boolean) ?? [];
+        if (filePaths.length > 0) {
+          const entries = await maintenanceService.scanFiles(filePaths);
           return { entries };
-        } catch (error) {
-          logger.error("Maintenance scan failed");
-          throw asSerializableIpcError(error);
         }
-      }),
+
+        const dirPath = input?.dirPath?.trim();
+        if (!dirPath) {
+          throw new Error("dirPath or filePaths is required");
+        }
+        const entries = await maintenanceService.scan(dirPath);
+        return { entries };
+      } catch (error) {
+        logger.error("Maintenance scan failed");
+        throw asSerializableIpcError(error);
+      }
+    }),
 
     [IpcChannel.Maintenance_StartPreview]: t.procedure
-      .input<{ entries?: LocalScanEntry[]; presetId?: MaintenancePresetId }>()
+      .input(maintenanceStartPreviewInputSchema)
       .action(async ({ input }) => {
         try {
           const entries = input?.entries;
@@ -59,7 +63,7 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          const handle = await maintenanceService.startPreview(entries, presetId);
+          const handle = await maintenanceService.startPreview(entries as unknown as LocalScanEntry[], presetId);
           void handle.completion.catch(() => undefined);
           return { sessionId: handle.task.id };
         } catch (error) {
@@ -68,29 +72,27 @@ export const createMaintenanceHandlers = (
         }
       }),
 
-    [IpcChannel.Maintenance_Apply]: t.procedure
-      .input<{ selections?: MaintenanceApplySelection[]; presetId?: MaintenancePresetId }>()
-      .action(async ({ input }) => {
-        try {
-          const selections = input?.selections;
-          const presetId = input?.presetId;
-          if (!selections || !Array.isArray(selections) || selections.length === 0) {
-            throw new Error("selections is required and must be non-empty");
-          }
-          if (!presetId) {
-            throw new Error("presetId is required");
-          }
-
-          const taskId = await maintenanceService.resolveActiveTaskId();
-          if (!taskId) throw new Error("没有活动的维护预览任务");
-          await maintenanceService.execute(taskId, selections, presetId);
-
-          return { sessionId: taskId };
-        } catch (error) {
-          logger.error("Maintenance execute failed");
-          throw asSerializableIpcError(error);
+    [IpcChannel.Maintenance_Apply]: t.procedure.input(maintenanceApplyInputSchema).action(async ({ input }) => {
+      try {
+        const selections = input?.selections;
+        const presetId = input?.presetId;
+        if (!selections || !Array.isArray(selections) || selections.length === 0) {
+          throw new Error("selections is required and must be non-empty");
         }
-      }),
+        if (!presetId) {
+          throw new Error("presetId is required");
+        }
+
+        const taskId = await maintenanceService.resolveActiveTaskId();
+        if (!taskId) throw new Error("没有活动的维护预览任务");
+        await maintenanceService.execute(taskId, selections as MaintenanceApplySelection[], presetId);
+
+        return { sessionId: taskId };
+      } catch (error) {
+        logger.error("Maintenance execute failed");
+        throw asSerializableIpcError(error);
+      }
+    }),
 
     [IpcChannel.Maintenance_Stop]: t.procedure.action(async () => {
       try {
@@ -125,10 +127,7 @@ export const createMaintenanceHandlers = (
     [IpcChannel.Maintenance_ReadSnapshot]: t.procedure.action(async () => await maintenanceService.getActiveSession()),
 
     [IpcChannel.Maintenance_UpdateDraft]: t.procedure
-      .input<{
-        previewId: string;
-        fieldSelections?: Record<string, "old" | "new">;
-      }>()
+      .input(maintenanceUpdateDraftInputSchema)
       .action(async ({ input }) => {
         try {
           await maintenanceService.updateDraft(input);

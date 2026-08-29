@@ -36,6 +36,10 @@ function buildMenuContent(
   const nfoPath = actionContext.nfoPath ?? resultPath;
   const groupedTargets = actionContext.targets;
   const groupedVideoPaths = groupedTargets.map((target) => target.filePath);
+  const resultTarget = {
+    filePath: resultPath,
+    ref: result.output ?? { rootId: result.rootId, relativePath: result.relativePath },
+  };
   const deleteFileAvailability = port.getDeleteFileAvailability?.(groupedTargets) ?? port.capabilities?.deleteFile;
   const deleteFileAndFolderAvailability = port.capabilities?.deleteFileAndFolder;
 
@@ -100,13 +104,13 @@ function buildMenuContent(
     }
 
     try {
-      await port.openFolder(filePath);
+      await port.openFolder(resultTarget);
     } catch (error) {
       toast.error(`打开目录失败: ${toErrorMessage(error)}`);
     }
   };
 
-  const handlePlay = () => void port.play(resultPath);
+  const handlePlay = () => void port.play(resultTarget);
 
   const handleOpenNfo = () => {
     void port.openNfo(nfoPath);

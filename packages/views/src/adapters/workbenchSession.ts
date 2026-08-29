@@ -6,7 +6,12 @@ import {
   selectMaintenanceHasWork,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import { selectIsScraping, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  selectIsScraping,
+  selectScrapeHasWork,
+  selectScrapeResults,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import type { MaintenanceActionPort } from "./ports";
@@ -50,7 +55,7 @@ export const getWorkbenchSessionSnapshot = (
   const scrapeStore = useScrapeStore.getState();
   const maintenanceStore = useMaintenanceStore.getState();
   const isScraping = selectIsScraping(scrapeStore);
-  const scrapeHasWork = isScraping || selectScrapeResults(scrapeStore).length > 0;
+  const scrapeHasWork = selectScrapeHasWork(scrapeStore);
   const maintenanceHasWork = selectMaintenanceHasWork(maintenanceStore);
   const workbenchMode = resolveWorkbenchMode({
     currentMode,
@@ -72,7 +77,7 @@ export const useWorkbenchSessionSnapshot = (
   currentMode: WorkbenchMode,
   routeIntent?: WorkbenchRouteIntent,
 ): WorkbenchSessionSnapshot => {
-  const scrapeHasWork = useScrapeStore((state) => selectIsScraping(state) || selectScrapeResults(state).length > 0);
+  const scrapeHasWork = useScrapeStore(selectScrapeHasWork);
   const isScraping = useScrapeStore(selectIsScraping);
   const maintenanceHasWork = useMaintenanceStore(selectMaintenanceHasWork);
   const workbenchMode = resolveWorkbenchMode({
@@ -132,7 +137,7 @@ export const buildUncensoredConfirmationItems = (
 export const resetScrapeWorkbenchToSetup = (): void => {
   useUIStore.getState().setSelectedResultId(null);
   useWorkbenchTaskStore.getState().reset();
-  useScrapeStore.getState().reset();
+  useScrapeStore.getState().clearVisibleResults();
 };
 
 export const getFailedScrapeTargets = () =>

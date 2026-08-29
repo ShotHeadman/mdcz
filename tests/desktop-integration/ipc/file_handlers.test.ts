@@ -8,7 +8,9 @@ import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memory
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
+import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ipcActionArgs } from "../../unit/ipc/ipcActionArgs";
 
 vi.mock("@egoist/tipc/main", () => {
   type MockProcedure = {
@@ -55,7 +57,7 @@ vi.mock("electron", () => {
   };
 });
 
-const actionArgs = <TInput>(input: TInput) => ({ context: { sender: {} as never }, input });
+const actionArgs = ipcActionArgs;
 
 const createContext = (mediaRoots?: {
   list?: () => Promise<Array<{ id: string; hostPath: string }>>;
@@ -316,8 +318,15 @@ describe("createFileHandlers", () => {
       thumbPath,
       '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500"><rect width="100%" height="100%" fill="#c84630"/></svg>',
     );
-    const handlers = createFileHandlers(createContext());
-    const session = await handlers[IpcChannel.File_PosterCropSession].action(actionArgs({ videoPath }));
+    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+    const videoRef = { rootId: "media", relativePath: "ABC-123.mp4" };
+    const thumbRef = { rootId: "media", relativePath: "thumb.jpg" };
+    await expect(handlers[IpcChannel.File_Exists].action(actionArgs({ path: thumbRef }))).resolves.toEqual({
+      exists: true,
+      url: toLocalFileUrl(thumbRef),
+    });
+
+    const session = await handlers[IpcChannel.File_PosterCropSession].action(actionArgs({ videoPath: videoRef }));
     expect(session).toMatchObject({
       sourcePath: thumbPath,
       targetPath: join(root, "poster.jpg"),
@@ -326,7 +335,7 @@ describe("createFileHandlers", () => {
     });
 
     const saved = await handlers[IpcChannel.File_PosterCropSave].action(
-      actionArgs({ videoPath, crop: session.initialCrop }),
+      actionArgs({ videoPath: videoRef, crop: session.initialCrop }),
     );
     expect(saved.revision).toEqual(expect.any(String));
     expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);

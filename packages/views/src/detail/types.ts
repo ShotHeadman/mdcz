@@ -8,7 +8,8 @@ export interface DetailViewItem {
   minimalErrorView?: boolean;
   title?: string;
   path?: string;
-  nfoRootId?: string;
+  fileRef?: RootFileRef;
+  nfoRef?: RootFileRef;
   assets?: AssetRef[];
   nfoPath?: string;
   actors?: string[];
@@ -32,4 +33,4 @@ export interface DetailViewItem {
   errorMessage?: string;
 }
 
-import type { AssetRef } from "@mdcz/shared/mediaRef";
+import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";

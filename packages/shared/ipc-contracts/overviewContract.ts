@@ -4,10 +4,12 @@ import type { LibraryDetailInput } from "../serverDtos";
 
 export interface OverviewRecentAcquisitionItem {
   id: string;
+  rootId: string;
   number: string;
   title: string | null;
   actors: string[];
   thumbnailPath: string | null;
+  thumbnailRootId: string | null;
   lastKnownPath: string | null;
   completedAt: number;
 }

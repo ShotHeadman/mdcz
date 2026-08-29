@@ -9,6 +9,7 @@ export interface RecentAcquisitionViewItem {
   id?: string;
   number: string;
   rootId?: string;
+  thumbnailRootId?: string | null;
   title: string | null;
   thumbnailPath: string | null;
 }

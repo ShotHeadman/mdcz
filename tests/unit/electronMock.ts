@@ -26,15 +26,12 @@ export const ipcMain = {
 export const shell = {
   openExternal: async () => "",
   openPath: async () => "",
+  showItemInFolder: () => {},
 };
 
 export const dialog = {
   showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
   showSaveDialog: async () => ({ canceled: true, filePath: undefined }),
-};
-
-export const BrowserWindow = {
-  getAllWindows: () => [],
 };
 
 export const nativeImage = {
@@ -44,6 +41,43 @@ export const nativeImage = {
 export const nativeTheme = {
   shouldUseDarkColors: false,
 };
+
+export const session = {
+  webRequest: {
+    onHeadersReceived: () => {},
+  },
+};
+
+export class BrowserWindow {
+  webContents = {
+    session,
+    setWindowOpenHandler: () => {},
+    on: () => {},
+    isDestroyed: () => false,
+    isDevToolsOpened: () => false,
+    closeDevTools: () => {},
+    openDevTools: () => {},
+  };
+
+  static getAllWindows(): unknown[] {
+    return [];
+  }
+
+  isDestroyed(): boolean {
+    return false;
+  }
+
+  setMenuBarVisibility(): void {}
+  removeMenu(): void {}
+  once(): void {}
+  on(): void {}
+  show(): void {}
+  focus(): void {}
+  restore(): void {}
+  isMinimized(): boolean {
+    return false;
+  }
+}
 
 export const Menu = {
   buildFromTemplate: () => ({}),
@@ -72,4 +106,5 @@ export const ipcRenderer = {
   invoke: async () => undefined,
   on: () => {},
   off: () => {},
+  removeListener: () => {},
 };

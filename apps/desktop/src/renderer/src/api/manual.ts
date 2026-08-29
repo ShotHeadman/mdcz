@@ -1,3 +1,4 @@
+import type { LocalFileTarget } from "@mdcz/shared/mediaRef";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { ipc } from "@/client/ipc";
 
@@ -17,6 +18,9 @@ const asNfoPath = (path: string): string => {
   }
   return `${path}.nfo`;
 };
+
+const asNfoTarget = (target: LocalFileTarget): LocalFileTarget =>
+  typeof target === "string" ? asNfoPath(target) : { ...target, relativePath: asNfoPath(target.relativePath) };
 
 export const stopScrape = async () => {
   const data = await ipc.scraper.stop();
@@ -56,8 +60,8 @@ export const deleteFileAndFolder = async (path: string) => {
   return { data };
 };
 
-export const readNfo = async (path: string, videoPath?: string) => {
-  const response = await ipc.file.nfoRead(asNfoPath(path), videoPath);
+export const readNfo = async (path: LocalFileTarget, videoPath?: LocalFileTarget) => {
+  const response = await ipc.file.nfoRead(asNfoTarget(path), videoPath);
   const data: NfoResponse = {
     path: response.nfoPath,
     crawlerData: response.data,
@@ -79,8 +83,11 @@ export const resolveNfoWritePath = (path: string, videoPath?: string): string =>
   return asNfoPath(normalizedVideoPath);
 };
 
-export const updateNfo = async (path: string, crawlerData: CrawlerData, videoPath?: string) => {
-  const nfoPath = resolveNfoWritePath(path, videoPath);
+export const updateNfo = async (path: LocalFileTarget, crawlerData: CrawlerData, videoPath?: LocalFileTarget) => {
+  const nfoPath =
+    typeof path === "string"
+      ? resolveNfoWritePath(path, typeof videoPath === "string" ? videoPath : undefined)
+      : asNfoTarget(path);
   const data = await ipc.file.nfoWrite(nfoPath, crawlerData, videoPath);
   return { data };
 };

@@ -82,3 +82,14 @@ export enum IpcChannel {
   Maintenance_UpdateDraft = "maintenance:update-draft",
   Maintenance_DiscardSession = "maintenance:discard-session",
 }
+
+const IPC_CHANNEL_SET = new Set<string>(Object.values(IpcChannel));
+
+export const isIpcChannel = (channel: string): channel is IpcChannel => IPC_CHANNEL_SET.has(channel);
+
+export const requireIpcChannel = (channel: string): IpcChannel => {
+  if (!isIpcChannel(channel)) {
+    throw new Error(`Unsupported IPC channel: ${channel}`);
+  }
+  return channel;
+};

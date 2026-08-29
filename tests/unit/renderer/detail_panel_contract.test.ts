@@ -88,14 +88,14 @@ describe("detail panel adapter contract", () => {
         bitrate: 12_500_000,
       },
       assets: [
-        { type: "local", kind: "poster", file: { rootId: "metadata-root", relativePath: "/art/poster.jpg" } },
-        { type: "local", kind: "thumb", file: { rootId: "metadata-root", relativePath: "/art/thumb.jpg" } },
-        { type: "local", kind: "fanart", file: { rootId: "metadata-root", relativePath: "/art/fanart.jpg" } },
-        { type: "local", kind: "scene", file: { rootId: "metadata-root", relativePath: "/art/scene-1.jpg" } },
-        { type: "local", kind: "trailer", file: { rootId: "metadata-root", relativePath: "/art/trailer.mp4" } },
+        { type: "local", kind: "poster", file: { rootId: "metadata-root", relativePath: "art/poster.jpg" } },
+        { type: "local", kind: "thumb", file: { rootId: "metadata-root", relativePath: "art/thumb.jpg" } },
+        { type: "local", kind: "fanart", file: { rootId: "metadata-root", relativePath: "art/fanart.jpg" } },
+        { type: "local", kind: "scene", file: { rootId: "metadata-root", relativePath: "art/scene-1.jpg" } },
+        { type: "local", kind: "trailer", file: { rootId: "metadata-root", relativePath: "art/trailer.mp4" } },
       ],
-      output: { rootId: "output", relativePath: "/output/ABC-123" },
-      nfo: { rootId: "output", relativePath: "/output/ABC-123/ABC-123.nfo" },
+      output: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.mp4" },
+      nfo: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.nfo" },
       uncensoredAmbiguous: true,
     };
 
@@ -108,14 +108,22 @@ describe("detail panel adapter contract", () => {
       durationSeconds: 3661,
       resolution: "1920x1080",
       bitrate: 12_500_000,
-      posterUrl: "/art/poster.jpg",
-      thumbUrl: "/art/thumb.jpg",
-      fanartUrl: "/art/fanart.jpg",
-      sceneImages: ["/art/scene-1.jpg"],
-      trailerUrl: "/art/trailer.mp4",
-      outputPath: "/output/ABC-123",
-      nfoPath: "/output/ABC-123/ABC-123.nfo",
+      path: "organized/ABC-123/ABC-123.mp4",
+      fileRef: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.mp4" },
+      nfoRef: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.nfo" },
+      posterUrl: "art/poster.jpg",
+      thumbUrl: "art/thumb.jpg",
+      fanartUrl: "art/fanart.jpg",
+      sceneImages: ["art/scene-1.jpg"],
+      trailerUrl: "art/trailer.mp4",
+      outputPath: "organized/ABC-123",
+      nfoPath: "organized/ABC-123/ABC-123.nfo",
       rating: 4.6,
+    });
+
+    expect(buildDetailArtworkCandidates(toDetailViewItemFromScrapeResult(payload))).toEqual({
+      poster: ["art/poster.jpg", "organized/ABC-123/ABC-123-poster.jpg", "organized/ABC-123/poster.jpg"],
+      thumb: ["art/thumb.jpg", "organized/ABC-123/ABC-123-thumb.jpg", "organized/ABC-123/thumb.jpg"],
     });
   });
 

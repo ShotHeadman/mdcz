@@ -111,6 +111,14 @@ export class ScraperService {
     const state = await this.persistenceService.getState();
     const last = await state.repositories.scrapeRuns.getLatestFinalized();
     if (!last) return null;
+    const latestOutcomes = [...new Map(last.outcomes.map((outcome) => [outcome.itemId, outcome])).values()];
+    if (
+      last.disposition !== "failed" &&
+      last.disposition !== "interrupted" &&
+      !latestOutcomes.some((outcome) => outcome.outcome === "failed" || outcome.uncensoredAmbiguous)
+    ) {
+      return null;
+    }
     const entries = await state.repositories.library.getEntriesBySourceOutcomeIds(
       last.outcomes.filter((outcome) => outcome.outcome === "success").map((outcome) => outcome.id),
     );

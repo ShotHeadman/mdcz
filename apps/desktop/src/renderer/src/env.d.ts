@@ -4,10 +4,6 @@ import type { EventChannel, EventPayloadByChannel } from "@mdcz/shared/ipcEvents
 
 type Unsubscribe = () => void;
 
-interface ElectronBridge {
-  openPath: (path: string) => Promise<string>;
-}
-
 interface WindowApi {
   invoke: (channel: IpcChannel, payload?: unknown) => Promise<unknown>;
   on: <TChannel extends EventChannel>(
@@ -19,6 +15,5 @@ interface WindowApi {
 declare global {
   interface Window {
     api: WindowApi;
-    electron?: ElectronBridge;
   }
 }

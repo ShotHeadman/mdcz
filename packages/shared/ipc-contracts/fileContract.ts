@@ -1,5 +1,6 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
+import type { LocalFileTarget } from "../mediaRef";
 import type { NormalizedCropRegion } from "../posterCrop";
 import type { CrawlerData, MediaCandidate } from "../types";
 
@@ -23,22 +24,22 @@ export type FileIpcContract = {
       supportedExtensions: string[];
     }
   >;
-  [IpcChannel.File_Exists]: IpcProcedure<{ path?: string }, { exists: boolean }>;
+  [IpcChannel.File_Exists]: IpcProcedure<{ path: LocalFileTarget }, { exists: boolean; url?: string }>;
   [IpcChannel.File_Browse]: IpcProcedure<
     { type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> },
     { paths: string[] | null }
   >;
   [IpcChannel.File_Delete]: IpcProcedure<{ filePaths?: string[] }, { deletedCount: number; failedCount: number }>;
   [IpcChannel.File_NfoRead]: IpcProcedure<
-    { nfoPath?: string; videoPath?: string },
+    { nfoPath: LocalFileTarget; videoPath?: LocalFileTarget },
     { data: CrawlerData; nfoPath: string }
   >;
   [IpcChannel.File_NfoWrite]: IpcProcedure<
-    { nfoPath?: string; videoPath?: string; data?: CrawlerData },
+    { nfoPath: LocalFileTarget; videoPath?: LocalFileTarget; data?: CrawlerData },
     { success: true; nfoPath: string }
   >;
   [IpcChannel.File_PosterCropSession]: IpcProcedure<
-    { videoPath?: string },
+    { videoPath: LocalFileTarget },
     {
       sourcePath: string;
       targetPath: string;
@@ -48,7 +49,7 @@ export type FileIpcContract = {
     }
   >;
   [IpcChannel.File_PosterCropSave]: IpcProcedure<
-    { videoPath?: string; crop?: NormalizedCropRegion },
+    { videoPath: LocalFileTarget; crop?: NormalizedCropRegion },
     {
       sourcePath: string;
       targetPath: string;

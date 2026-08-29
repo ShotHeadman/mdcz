@@ -6,6 +6,7 @@ import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { InvalidatePayload, LogPayload, ShortcutPayload } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import type { LocalFileTarget } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { LibraryListInput } from "@mdcz/shared/serverDtos";
 import type {
@@ -26,8 +27,8 @@ export const ipc = {
   app: {
     info: () => client[IpcChannel.App_Info](undefined),
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
-    playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
-    showItemInFolder: (path: string) => client[IpcChannel.App_ShowItemInFolder]({ path }),
+    playMedia: (path: LocalFileTarget) => client[IpcChannel.App_PlayMedia]({ path }),
+    showItemInFolder: (path: LocalFileTarget) => client[IpcChannel.App_ShowItemInFolder]({ path }),
     ensureWatermarkDirectory: () => client[IpcChannel.App_EnsureWatermarkDirectory](undefined),
     openWatermarkDirectory: () => client[IpcChannel.App_OpenWatermarkDirectory](undefined),
     relaunch: () => client[IpcChannel.App_Relaunch](undefined),
@@ -88,15 +89,17 @@ export const ipc = {
         candidates: MediaCandidate[];
         supportedExtensions: string[];
       }>,
-    exists: (path: string) => client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean }>,
+    exists: (path: LocalFileTarget) =>
+      client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean; url?: string }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),
-    nfoRead: (nfoPath: string, videoPath?: string) => client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
-    nfoWrite: (nfoPath: string, data: CrawlerData, videoPath?: string) =>
+    nfoRead: (nfoPath: LocalFileTarget, videoPath?: LocalFileTarget) =>
+      client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
+    nfoWrite: (nfoPath: LocalFileTarget, data: CrawlerData, videoPath?: LocalFileTarget) =>
       client[IpcChannel.File_NfoWrite]({ nfoPath, videoPath, data }),
-    posterCropSession: (videoPath: string) => client[IpcChannel.File_PosterCropSession]({ videoPath }),
-    posterCropSave: (videoPath: string, crop: NormalizedCropRegion) =>
+    posterCropSession: (videoPath: LocalFileTarget) => client[IpcChannel.File_PosterCropSession]({ videoPath }),
+    posterCropSave: (videoPath: LocalFileTarget, crop: NormalizedCropRegion) =>
       client[IpcChannel.File_PosterCropSave]({ videoPath, crop }),
   },
   tool: {

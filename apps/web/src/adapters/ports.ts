@@ -38,6 +38,9 @@ const joinPath = (left: string, right: string): string => {
 };
 
 const getRootRelativeItemPath = (item: DetailViewItem): string => {
+  if (item.fileRef) {
+    return item.fileRef.relativePath.replace(/\\/gu, "/");
+  }
   const [_rootId, ...relativeParts] = item.id.split(":");
   return relativeParts.join(":").replace(/\\/gu, "/");
 };
@@ -77,8 +80,8 @@ const toRelativePath = (item: DetailViewItem, path: string): string => {
   return normalizedPath;
 };
 
-const getRootId = (item: DetailViewItem): string => item.id.split(":")[0] || "";
-const getMetadataRootId = (item: DetailViewItem): string => item.nfoRootId ?? getRootId(item);
+const getRootId = (item: DetailViewItem): string => item.fileRef?.rootId ?? item.id.split(":")[0] ?? "";
+const getMetadataRootId = (item: DetailViewItem): string => item.nfoRef?.rootId ?? getRootId(item);
 
 const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
