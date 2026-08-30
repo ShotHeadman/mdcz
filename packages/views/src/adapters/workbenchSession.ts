@@ -1,6 +1,5 @@
 import type { AmbiguousUncensoredItemDto, ScanTaskDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
-import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
-import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
+import type { MaintenancePresetId, MediaCandidate, UncensoredChoice } from "@mdcz/shared/types";
 import {
   changeMaintenancePreset,
   selectMaintenanceHasWork,
@@ -145,8 +144,7 @@ export const getFailedScrapeTargets = () =>
     .map((result) => ({ filePath: result.output?.relativePath ?? result.relativePath }));
 
 export interface StartMaintenanceFlowOptions {
-  filePaths: string[];
-  scanDir: string;
+  candidates: MediaCandidate[];
   presetId: MaintenancePresetId;
   port: MaintenanceActionPort;
   isScraping: boolean;
@@ -174,10 +172,8 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     changeMaintenancePreset(options.presetId);
     executionStore.setPending(true);
 
-    const scan = await options.port.scanFiles(options.filePaths, {
-      scanDir: options.scanDir,
-    });
-    if (scan.entries.length === 0) {
+    const refs = options.candidates.map((candidate) => candidate.ref);
+    if (refs.length === 0) {
       executionStore.setPending(false);
       options.toast.info("未发现可维护项目");
       await options.onRefreshConfig?.();
@@ -185,13 +181,13 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     }
 
     if (options.presetId === "read_local") {
-      await options.port.preview(scan.entries, options.presetId);
-      options.toast.success(`本地读取已启动，共 ${countMaintenanceDisplayItems(scan.entries)} 项`);
+      await options.port.preview(refs, options.presetId);
+      options.toast.success(`本地读取已启动，共 ${options.candidates.length} 项`);
       await options.onRefreshConfig?.();
       return;
     }
 
-    await options.port.preview(scan.entries, options.presetId);
+    await options.port.preview(refs, options.presetId);
     await options.onRefreshConfig?.();
     options.toast.success("维护预览已生成");
   } catch (error) {

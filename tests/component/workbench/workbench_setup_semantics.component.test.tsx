@@ -73,8 +73,7 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
             size: 1,
             lastModified: null,
             extension: ".mp4",
-            relativePath: "/media/ABC-123.mp4",
-            relativeDirectory: "",
+            ref: { rootId: "test-root", relativePath: "ABC-123.mp4" },
           },
         ]}
         selectedPaths={["/media/ABC-123.mp4"]}

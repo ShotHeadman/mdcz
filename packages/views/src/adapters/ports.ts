@@ -3,9 +3,10 @@ import type {
   MaintenanceApplySelection,
   MaintenanceFieldSelectionSide,
 } from "@mdcz/shared/maintenanceTasks";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
-import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
+import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type { DetailViewItem } from "../detail";
 
 export type ActionAvailability = "enabled" | "disabled" | "hidden";
@@ -70,7 +71,6 @@ export interface MaintenanceActionPort {
   openFolder(filePath: string): Promise<void> | void;
   play(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
-  scanFiles(filePaths: string[], context?: { scanDir?: string }): Promise<{ entries: LocalScanEntry[] }>;
   getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
   updateDraft(
     previewId: string,
@@ -79,7 +79,7 @@ export interface MaintenanceActionPort {
     },
   ): Promise<void>;
   discardSession(): Promise<void>;
-  preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<{ sessionId: string }>;
+  preview(refs: RootFileRef[], presetId: MaintenancePresetId): Promise<{ sessionId: string }>;
   execute(selections: MaintenanceApplySelection[], presetId: MaintenancePresetId): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;

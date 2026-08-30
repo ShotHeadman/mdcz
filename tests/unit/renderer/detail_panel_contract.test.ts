@@ -23,6 +23,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 
 const createEntry = (crawlerData?: CrawlerData): LocalScanEntry => ({
   fileId: "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   nfoPath: "/media/ABC-123.nfo",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",

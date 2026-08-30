@@ -31,6 +31,7 @@ type EntryOverrides = Omit<Partial<LocalScanEntry>, "assets" | "crawlerData" | "
 
 const createEntry = (overrides: EntryOverrides = {}): LocalScanEntry => ({
   fileId: "file-id",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: {
     filePath: "/library/ABC-123.mp4",
     fileName: "ABC-123.mp4",

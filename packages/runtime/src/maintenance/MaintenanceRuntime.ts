@@ -49,7 +49,6 @@ export interface MaintenanceRuntimeDependencies {
   nfoGenerator: NfoGenerator;
   signalService: MaintenanceSignalService;
   translateService: TranslateService;
-  useRootHostPathAsMediaPath?: boolean;
 }
 
 export interface MaintenanceRuntimePreviewInput {
@@ -166,7 +165,7 @@ export class MaintenanceRuntime {
 
   async scan(input: { root: MediaRoot; signal?: AbortSignal }): Promise<LocalScanEntry[]> {
     const config = await this.getPresetConfig("read_local", input.root);
-    return await this.localScanService.scan(input.root.hostPath, config.paths.sceneImagesFolder, input.signal);
+    return await this.localScanService.scan(input.root, config.paths.sceneImagesFolder, input.signal);
   }
 
   async scanRefs(input: {
@@ -176,20 +175,7 @@ export class MaintenanceRuntime {
   }): Promise<LocalScanEntry[]> {
     const config = await this.getPresetConfig("read_local", input.root);
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
-    return await this.localScanService.scanFiles(filePaths, config.paths.sceneImagesFolder, input.signal);
-  }
-
-  async scanFilePaths(input: {
-    filePaths: string[];
-    sceneImagesFolder?: string;
-    signal?: AbortSignal;
-  }): Promise<LocalScanEntry[]> {
-    const config = await this.deps.config.get();
-    return await this.localScanService.scanFiles(
-      input.filePaths,
-      input.sceneImagesFolder ?? config.paths.sceneImagesFolder,
-      input.signal,
-    );
+    return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal);
   }
 
   async preview(input: MaintenanceRuntimePreviewInput): Promise<MaintenanceRuntimePreviewItem[]> {
@@ -368,13 +354,12 @@ export class MaintenanceRuntime {
   private async getPresetConfig(presetId: MaintenancePresetId, root: MediaRoot): Promise<Configuration> {
     const preset = getMaintenancePreset(presetId);
     const baseConfig = await this.deps.config.get();
-    const mediaPath = this.deps.useRootHostPathAsMediaPath === false ? baseConfig.paths.mediaPath : root.hostPath;
     return mergeDeep(
       {
         ...baseConfig,
         paths: {
           ...baseConfig.paths,
-          mediaPath,
+          mediaPath: root.hostPath,
         },
       },
       preset.configOverrides,

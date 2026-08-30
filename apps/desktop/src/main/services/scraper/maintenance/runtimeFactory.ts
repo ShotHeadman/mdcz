@@ -41,6 +41,5 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
       logger: loggerService.getLogger("TranslateService"),
       mappingStore: translationMappingStore,
     }),
-    useRootHostPathAsMediaPath: false,
   });
 };

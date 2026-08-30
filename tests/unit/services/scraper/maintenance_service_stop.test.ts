@@ -5,7 +5,6 @@ import { configManager, defaultConfiguration } from "@main/services/config";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
-import { createAbortError } from "@main/utils/abort";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -19,6 +18,7 @@ const fixtureCleanups: Array<() => Promise<void>> = [];
 
 const createEntry = (filePath: string, fileId = "ABP-123"): LocalScanEntry => ({
   fileId,
+  ref: { rootId: "test-root", relativePath: path.basename(filePath) },
   fileInfo: {
     filePath,
     fileName: path.basename(filePath),
@@ -80,6 +80,8 @@ const createFixture = async () => {
   const signalService = new CaptureSignalService(null);
   const networkClient = new NetworkClient();
   const persistenceService = new DesktopPersistenceService(path.join(directory, "mdcz.sqlite"), null);
+  const root = await (await persistenceService.initialize()).repositories.mediaRoots.ensurePath(directory);
+  entry.ref = { rootId: root.id, relativePath: path.basename(filePath) };
   const service = new MaintenanceService({
     signalService,
     networkClient,
@@ -107,7 +109,7 @@ describe("desktop maintenance facade", () => {
 
   it("returns execute acknowledgement timing before deferred apply settles and maps committed fields", async () => {
     const fixture = await createFixture();
-    const previewHandle = await fixture.service.startPreview([fixture.entry], "refresh_data");
+    const previewHandle = await fixture.service.startPreview([fixture.entry.ref], "refresh_data");
     const preview = (await previewHandle.completion).items[0];
     expect(preview).toBeDefined();
 
@@ -134,27 +136,5 @@ describe("desktop maintenance facade", () => {
     release();
     await handle.completion;
     expect(vi.mocked(fixture.runtime.applyEntry).mock.calls[0]?.[0].committed?.crawlerData?.title).toBe("old title");
-  });
-
-  it("aborts scanning without creating a task", async () => {
-    const fixture = await createFixture();
-    vi.mocked(fixture.runtime.scan).mockImplementation(
-      async ({ signal }) =>
-        await new Promise((_resolve, reject) => {
-          signal?.addEventListener("abort", () => reject(createAbortError()), { once: true });
-        }),
-    );
-    const scan = fixture.service.scan(fixture.directory);
-    await vi.waitFor(async () => expect((await fixture.service.getStatus()).state).toBe("scanning"));
-    await fixture.service.stop();
-    await expect(scan).rejects.toThrow("Operation aborted");
-    expect(await fixture.service.getStatus()).toEqual({
-      state: "idle",
-      totalEntries: 0,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
-    });
-    expect(await fixture.service.getActiveSession()).toBeNull();
   });
 });

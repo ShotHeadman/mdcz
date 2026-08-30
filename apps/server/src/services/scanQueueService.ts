@@ -110,13 +110,11 @@ export class ScanQueueService {
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
     const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
-    const registeredRoots = (await this.mediaRoots.list()).roots;
+    const rootDto = await this.mediaRoots.ensurePath({ hostPath });
     const root: MediaRoot = {
-      id: "adhoc-scan",
-      displayName: path.basename(hostPath) || hostPath,
-      hostPath,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      ...rootDto,
+      createdAt: new Date(rootDto.createdAt),
+      updatedAt: new Date(rootDto.updatedAt),
     };
     const supported = new Set(
       (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
@@ -140,23 +138,13 @@ export class ScanQueueService {
           if (stats?.isSymbolicLink()) {
             return null;
           }
-          const registeredRoot = registeredRoots.find((candidate) =>
-            isHostPathWithinDirectory(absolutePath, candidate.hostPath),
-          );
-          const rootRelativePath = registeredRoot
-            ? toPosixPath(path.relative(registeredRoot.hostPath, absolutePath))
-            : undefined;
           return {
             path: absolutePath,
             name: path.basename(file.relativePath),
             size: file.size,
             lastModified: file.modifiedAt?.toISOString() ?? null,
             extension: path.extname(file.relativePath).replace(/^\./u, "").toLowerCase(),
-            relativePath: file.relativePath,
-            relativeDirectory:
-              path.posix.dirname(file.relativePath) === "." ? "" : path.posix.dirname(file.relativePath),
-            rootId: registeredRoot?.id,
-            rootRelativePath,
+            ref: { rootId: root.id, relativePath: toPosixPath(file.relativePath) },
           };
         }),
     );

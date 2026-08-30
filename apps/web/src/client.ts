@@ -198,7 +198,6 @@ export const api: ServerApiContract = {
     clearRuntime: () => trpcMutation("logs.clearRuntime"),
   },
   maintenance: {
-    scanSelectedFiles: (input) => trpcQuery("maintenance.scanSelectedFiles", input),
     apply: (input) => trpcMutation("maintenance.execute", input),
     pause: (input) => trpcMutation("maintenance.pause", input),
     getActiveSession: () => trpcQuery("maintenance.getActiveSession"),
@@ -223,6 +222,7 @@ export const api: ServerApiContract = {
     removeRecentAcquisition: (input) => trpcMutation("overview.removeRecentAcquisition", input),
   },
   mediaRoots: {
+    ensurePath: (input) => trpcMutation("mediaRoots.ensurePath", input),
     list: () => trpcQuery("mediaRoots.list"),
   },
   persistence: {
@@ -243,7 +243,6 @@ export const api: ServerApiContract = {
   scrape: {
     liveRuns: () => trpcQuery("scrape.liveRuns"),
     pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
-    startSelectedFiles: (input) => trpcMutation("scrape.startSelectedFiles", input),
     deleteFile: (input) => trpcMutation("scrape.deleteFile", input),
     history: (input) => trpcQuery("scrape.history", input),
     nfoRead: (input) => trpcQuery("scrape.nfoRead", input),

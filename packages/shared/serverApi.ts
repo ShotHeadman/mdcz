@@ -31,11 +31,11 @@ import type {
   MaintenanceApplyInput,
   MaintenanceDiscardSessionInput,
   MaintenanceMutationAckDto,
-  MaintenanceScanSelectedFilesInput,
-  MaintenanceScanSelectedFilesResponse,
   MaintenanceSessionInput,
   MaintenanceStartInput,
   MaintenanceUpdateDraftInput,
+  MediaRootDto,
+  MediaRootEnsurePathInput,
   MediaRootListResponse,
   NetworkCheckCookiesResponse,
   NfoReadInput,
@@ -63,7 +63,6 @@ import type {
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeStartInput,
-  ScrapeStartSelectedFilesInput,
   ScrapeTaskControlInput,
   ServerPathSuggestInput,
   ServerPathSuggestResponse,
@@ -135,7 +134,6 @@ export interface ServerApiContract {
     clearRuntime(): Promise<{ ok: true; cleared: number }>;
   };
   maintenance: {
-    scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse>;
     apply(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto>;
     pause(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
     getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
@@ -160,6 +158,7 @@ export interface ServerApiContract {
     removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   mediaRoots: {
+    ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootDto>;
     list(): Promise<MediaRootListResponse>;
   };
   persistence: {
@@ -180,7 +179,6 @@ export interface ServerApiContract {
   scrape: {
     liveRuns(): Promise<ScrapeLiveRunsResponse>;
     pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
-    startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScrapeMutationAckDto>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;

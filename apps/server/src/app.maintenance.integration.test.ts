@@ -184,7 +184,7 @@ describe("buildServer maintenance integration", () => {
         );
         const previewEntries = runtime.previewEntries.bind(runtime);
         runtime.previewEntries = async (input) => {
-          previewedPaths.push(input.entries[0]?.rootRef?.relativePath ?? input.entries[0]?.fileInfo.fileName ?? "");
+          previewedPaths.push(input.entries[0]?.ref.relativePath ?? input.entries[0]?.fileInfo.fileName ?? "");
           if (previewedPaths.length === 1) {
             firstCallStarted();
             await blocked;
@@ -252,7 +252,7 @@ describe("buildServer maintenance integration", () => {
     expect(scanResponse.statusCode).toBe(200);
     expect(scanResponse.json().result.data.entries[0]).toMatchObject({
       fileId: `${rootId}:ABC-225.mp4`,
-      rootRef: { rootId, relativePath: "ABC-225.mp4" },
+      ref: { rootId, relativePath: "ABC-225.mp4" },
       crawlerData: { number: "ABC-225", title: "Local Title ABC-225" },
     });
   });

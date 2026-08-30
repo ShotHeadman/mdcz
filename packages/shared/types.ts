@@ -155,10 +155,7 @@ export interface MediaCandidate {
   size: number;
   lastModified: string | null;
   extension: string;
-  relativePath: string;
-  relativeDirectory: string;
-  rootId?: string;
-  rootRelativePath?: string;
+  ref: RootFileRef;
 }
 
 export interface IpcError {
@@ -184,10 +181,7 @@ export interface DiscoveredAssets {
 /** A single video entry produced by local directory scanning. */
 export interface LocalScanEntry {
   fileId: FileId;
-  rootRef?: {
-    rootId: string;
-    relativePath: string;
-  };
+  ref: RootFileRef;
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;

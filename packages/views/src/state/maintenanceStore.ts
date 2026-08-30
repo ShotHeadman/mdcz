@@ -43,9 +43,7 @@ const initialState = () => ({
 });
 
 const previewFileId = (preview: MaintenanceActiveSessionSnapshot["previews"][number]): string =>
-  preview.entry?.rootRef
-    ? `${preview.rootId}:${preview.relativePath}`
-    : (preview.entry?.fileId ?? preview.relativePath);
+  preview.entry ? `${preview.rootId}:${preview.relativePath}` : preview.relativePath;
 
 export const selectMaintenanceEntries = (state: MaintenanceState): LocalScanEntry[] =>
   state.snapshot?.previews.flatMap((preview) =>
@@ -54,7 +52,7 @@ export const selectMaintenanceEntries = (state: MaintenanceState): LocalScanEntr
           {
             ...preview.entry,
             fileId: previewFileId(preview),
-            rootRef: { rootId: preview.rootId, relativePath: preview.relativePath },
+            ref: { rootId: preview.rootId, relativePath: preview.relativePath },
           },
         ]
       : [],

@@ -14,6 +14,7 @@ const createTempDir = async (): Promise<string> => {
 
 const createEntry = (root: string, nfoFileName = "ABC-123.nfo") => ({
   fileId: "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   videoPath: join(root, "ABC-123.mp4"),
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),

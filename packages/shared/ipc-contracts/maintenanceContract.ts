@@ -1,15 +1,12 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "../maintenanceTasks";
-import type { LocalScanEntry, MaintenancePresetId } from "../types";
+import type { RootFileRef } from "../mediaRef";
+import type { MaintenancePresetId } from "../types";
 
 export type MaintenanceIpcContract = {
-  [IpcChannel.Maintenance_Scan]: IpcProcedure<
-    { dirPath?: string; filePaths?: string[] },
-    { entries: LocalScanEntry[] }
-  >;
   [IpcChannel.Maintenance_StartPreview]: IpcProcedure<
-    { entries?: LocalScanEntry[]; presetId?: MaintenancePresetId },
+    { refs?: RootFileRef[]; presetId?: MaintenancePresetId },
     { sessionId: string }
   >;
   [IpcChannel.Maintenance_Apply]: IpcProcedure<

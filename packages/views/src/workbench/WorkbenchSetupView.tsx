@@ -143,8 +143,10 @@ function MediaRow({
       <label htmlFor={checkboxId} className="contents">
         <div className="min-w-0 space-y-0.5">
           <div className="truncate text-sm font-bold leading-5 tracking-tight text-foreground">{candidate.name}</div>
-          {candidate.relativeDirectory ? (
-            <div className="truncate font-mono text-[10px]/4 text-muted-foreground">{candidate.relativeDirectory}</div>
+          {candidate.ref.relativePath.includes("/") ? (
+            <div className="truncate font-mono text-[10px]/4 text-muted-foreground">
+              {candidate.ref.relativePath.slice(0, candidate.ref.relativePath.lastIndexOf("/"))}
+            </div>
           ) : null}
         </div>
         <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension}</div>

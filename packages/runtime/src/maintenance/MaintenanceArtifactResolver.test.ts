@@ -17,6 +17,7 @@ const createRoot = async (): Promise<string> => {
 
 const createEntry = (root: string, assets: Partial<LocalScanEntry["assets"]> = {}): LocalScanEntry => ({
   fileId: "file-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: {
     filePath: join(root, "source", "movie.mp4"),
     fileName: "movie",

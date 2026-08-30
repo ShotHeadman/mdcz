@@ -23,6 +23,7 @@ vi.mock("@egoist/tipc/main", () => {
 
 const entry: LocalScanEntry = {
   fileId: "file-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: {
     filePath: "/media/file-1.mp4",
     fileName: "file-1.mp4",
@@ -100,12 +101,8 @@ describe("maintenance IPC task adapter", () => {
     const args = ipcActionArgs(undefined);
     const withInput = <T>(input: T) => ipcActionArgs(input);
 
-    await expect(
-      handlers[IpcChannel.Maintenance_Scan].action(withInput({ filePaths: [entry.fileInfo.filePath] })),
-    ).resolves.toEqual({ entries: [entry] });
-
     const previewResponse = handlers[IpcChannel.Maintenance_StartPreview].action(
-      withInput({ entries: [entry], presetId: "organize_files" }),
+      withInput({ refs: [entry.ref], presetId: "organize_files" }),
     );
     await vi.waitFor(() => expect(service.startPreview).toHaveBeenCalledOnce());
     await expect(handlers[IpcChannel.Maintenance_Pause].action(args)).resolves.toEqual({

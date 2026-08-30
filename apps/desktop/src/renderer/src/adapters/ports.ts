@@ -159,7 +159,6 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
-  scanFiles: (filePaths) => ipc.maintenance.scanFiles(filePaths),
   getActiveSession: () => ipc.maintenance.getActiveSession(),
   updateDraft: async (previewId, draft) => {
     await ipc.maintenance.updateDraft({ previewId, ...draft });
@@ -167,7 +166,7 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
   discardSession: async () => {
     await ipc.maintenance.discardSession();
   },
-  preview: (entries, presetId) => ipc.maintenance.preview(entries, presetId),
+  preview: (refs, presetId) => ipc.maintenance.preview(refs, presetId),
   execute: async (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) => {
     await ipc.maintenance.execute(selections, presetId);
   },

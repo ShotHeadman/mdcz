@@ -232,7 +232,7 @@ describe("web scrape action port", () => {
 
 const createEntry = (): LocalScanEntry => ({
   fileId: "root-1:ABC-001.mp4",
-  rootRef: { rootId: "root-1", relativePath: "ABC-001.mp4" },
+  ref: { rootId: "root-1", relativePath: "ABC-001.mp4" },
   fileInfo: {
     filePath: "ABC-001.mp4",
     fileName: "ABC-001.mp4",
@@ -273,7 +273,7 @@ describe("web maintenance action port", () => {
     vi.spyOn(api.maintenance, "getActiveSession").mockResolvedValue(session);
     const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({ sessionId: session.id });
 
-    await createWebMaintenanceActionPort().preview([createEntry()], "refresh_data");
+    await createWebMaintenanceActionPort().preview([createEntry().ref], "refresh_data");
     await createWebMaintenanceActionPort().pause();
 
     expect(selectMaintenanceSessionId(useMaintenanceStore.getState())).toBe("maintenance-task-1");

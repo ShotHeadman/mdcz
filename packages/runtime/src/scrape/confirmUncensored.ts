@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+import type { MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type {
@@ -107,8 +108,17 @@ export const confirmUncensoredOutputs = async (
         continue;
       }
 
+      const scanPath = item.metadataVideoPath?.trim() || videoPath;
+      const root: MediaRoot = {
+        id: item.fileId,
+        displayName: dirname(scanPath),
+        hostPath: dirname(scanPath),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
       const scannedEntry = await dependencies.localScanService.scanVideo(
-        item.metadataVideoPath?.trim() || videoPath,
+        root,
+        scanPath,
         config.paths.sceneImagesFolder,
       );
       const effectiveNfoPath = scannedEntry.nfoPath ?? nfoPath;

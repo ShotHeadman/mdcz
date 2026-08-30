@@ -1,14 +1,10 @@
 import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
-import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
-import { createAbortError } from "@main/utils/abort";
-import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import {
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
@@ -23,14 +19,9 @@ import type {
   MaintenanceApplyBatch,
   MaintenanceApplySelection,
   MaintenancePreviewBatch,
-  MaintenanceSessionSnapshot,
 } from "@mdcz/shared/maintenanceTasks";
-import type {
-  LocalScanEntry,
-  MaintenancePresetId,
-  MaintenancePreviewResult,
-  MaintenanceStatus,
-} from "@mdcz/shared/types";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
+import type { MaintenancePresetId, MaintenanceStatus } from "@mdcz/shared/types";
 import { createDesktopMaintenanceRuntime } from "./runtimeFactory";
 
 export interface MaintenanceServiceDependencies {
@@ -60,9 +51,6 @@ export class MaintenanceService {
   private readonly imageHostCooldownStore: PersistentCooldownStore;
   private readonly runtime: MaintenanceRuntime;
   private readonly coordinator: MaintenanceSessionCoordinator;
-  private scanningStatus: MaintenanceStatus | null = null;
-  private scanController: AbortController | null = null;
-  private scanPromise: Promise<unknown> | null = null;
 
   constructor(deps: MaintenanceServiceDependencies) {
     this.signalService = deps.signalService;
@@ -119,7 +107,6 @@ export class MaintenanceService {
   }
 
   async getStatus(sessionId?: string): Promise<MaintenanceStatus> {
-    if (this.scanningStatus) return { ...this.scanningStatus };
     const snapshot = await this.coordinator.getActiveSession();
     if (!snapshot || (sessionId && snapshot.id !== sessionId)) return idleStatus();
     return {
@@ -140,60 +127,15 @@ export class MaintenanceService {
     };
   }
 
-  async scan(dirPath: string): Promise<LocalScanEntry[]> {
-    await this.assertAvailableForScan();
-    return await this.runScan("Scanning maintenance directories", async (signal) => {
-      const root = await (await this.persistenceService.getState()).repositories.mediaRoots.ensurePath(dirPath);
-      return await this.runtime.scan({ root, signal });
-    });
-  }
-
-  async scanFiles(filePaths: string[]): Promise<LocalScanEntry[]> {
-    await this.assertAvailableForScan();
-    const selectedPaths = filePaths.map((filePath) => filePath.trim()).filter(Boolean);
-    if (selectedPaths.length === 0) throw new Error("No files selected");
-    return await this.runScan(
-      "Scanning selected maintenance files",
-      async (signal) => await this.runtime.scanFilePaths({ filePaths: selectedPaths, signal }),
-    );
-  }
-
   async startPreview(
-    entries: LocalScanEntry[],
+    refs: RootFileRef[],
     presetId: MaintenancePresetId,
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
-    if (entries.length === 0) throw new Error("No entries to process");
-    if (await this.hasActiveSession()) throw new Error("Maintenance is already running");
-    const config = await configManager.getValidated();
-    const rootPath = resolveDesktopInputRootPath(
-      entries.map((entry) => entry.fileInfo.filePath),
-      config.paths.mediaPath,
-    );
-    const root = await (await this.persistenceService.getState()).repositories.mediaRoots.ensurePath(rootPath);
-    const refs = entries.map((entry) => ({ relativePath: toRootRelativePath(root, entry.fileInfo.filePath) }));
+    if (refs.length === 0) throw new Error("No files selected");
+    const rootId = refs[0]?.rootId;
+    if (!rootId || refs.some((ref) => ref.rootId !== rootId)) throw new Error("维护任务只能包含同一个媒体目录下的文件");
     this.signalService.resetProgress();
-    return await this.coordinator.startPreview({ rootId: root.id, presetId, refs });
-  }
-
-  async preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<MaintenancePreviewResult> {
-    const handle = await this.startPreview(entries, presetId);
-    await handle.completion;
-    const session = await this.getActiveSession();
-    if (!session || session.id !== handle.session.id) throw new Error("维护会话已变化");
-    return {
-      items: session.previews.map((item) => ({
-        fileId: item.entry?.fileId ?? item.relativePath,
-        previewId: item.id,
-        sessionId: item.sessionId,
-        status: item.status === "ready" ? "ready" : "blocked",
-        ...(item.error ? { error: item.error } : {}),
-        ...(item.fieldDiffs.length ? { fieldDiffs: item.fieldDiffs } : {}),
-        ...(item.unchangedFieldDiffs.length ? { unchangedFieldDiffs: item.unchangedFieldDiffs } : {}),
-        ...(item.pathDiff ? { pathDiff: item.pathDiff } : {}),
-        ...(item.proposedCrawlerData ? { proposedCrawlerData: item.proposedCrawlerData } : {}),
-        ...(item.imageAlternatives ? { imageAlternatives: item.imageAlternatives } : {}),
-      })),
-    };
+    return await this.coordinator.startPreview({ rootId, presetId, refs });
   }
 
   async execute(
@@ -217,34 +159,22 @@ export class MaintenanceService {
   }
 
   async stop(sessionId?: string): Promise<void> {
-    if (this.scanController) {
-      this.logger.info("Stopping maintenance scan");
-      this.scanningStatus = { ...(this.scanningStatus ?? idleStatus()), state: "stopping" };
-      this.scanController.abort(createAbortError());
-      return;
-    }
-    const task = await this.resolveSession(sessionId);
-    if (task) await this.coordinator.stop(task.id);
+    const task = await this.requireActiveSession(sessionId);
+    await this.coordinator.stop(task.id);
   }
 
   async pause(sessionId?: string): Promise<void> {
-    if (this.scanController) return;
-    const task = await this.resolveSession(sessionId);
-    if (task) await this.coordinator.pause(task.id);
+    const task = await this.requireActiveSession(sessionId);
+    await this.coordinator.pause(task.id);
   }
 
   async resume(sessionId?: string): Promise<void> {
-    if (this.scanController) return;
-    const task = await this.resolveSession(sessionId);
-    if (task) await this.coordinator.resume(task.id);
+    const task = await this.requireActiveSession(sessionId);
+    await this.coordinator.resume(task.id);
   }
 
   async resolveActiveSessionId(preferredSessionId?: string): Promise<string | null> {
-    const preferred = preferredSessionId
-      ? await this.coordinator.getSession(preferredSessionId).catch(() => null)
-      : null;
-    if (preferred) return preferred.id;
-    return (await this.resolveSession())?.id ?? null;
+    return (await this.requireActiveSession(preferredSessionId)).id;
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
@@ -252,74 +182,27 @@ export class MaintenanceService {
   }
 
   async updateDraft(input: { previewId: string; fieldSelections?: Record<string, "old" | "new"> }): Promise<void> {
-    const sessionId = await this.resolveActiveSessionId();
-    if (!sessionId) throw new Error("没有活动的维护会话");
-    await this.coordinator.updateDraft({ sessionId, ...input });
+    const session = await this.requireActiveSession();
+    await this.coordinator.updateDraft({ sessionId: session.id, ...input });
   }
 
   async discardSession(): Promise<void> {
-    const sessionId = await this.resolveActiveSessionId();
-    await this.coordinator.discardSession(sessionId ?? undefined);
+    await this.coordinator.discardSession((await this.getActiveSession())?.id);
   }
 
   async waitForIdle(): Promise<void> {
-    await (this.scanPromise ?? Promise.resolve());
     await this.coordinator.waitForIdle();
   }
 
   async shutdown(_options: { timeoutMs?: number } = {}): Promise<void> {
-    this.scanController?.abort(createAbortError());
-    await (this.scanPromise ?? Promise.resolve()).catch(() => undefined);
     await this.coordinator.close();
     await this.imageHostCooldownStore.flush();
   }
 
-  private async runScan(
-    message: string,
-    operation: (signal: AbortSignal) => Promise<LocalScanEntry[]>,
-  ): Promise<LocalScanEntry[]> {
-    const controller = new AbortController();
-    this.scanController = controller;
-    this.scanningStatus = { ...idleStatus(), state: "scanning" };
-    this.signalService.showLogText(message);
-    this.signalService.resetProgress();
-    const operationPromise = operation(controller.signal).then((entries) => {
-      this.signalService.showLogText(`Maintenance scan completed. Found ${entries.length} item(s).`);
-      return entries;
-    });
-    const tracked = operationPromise.finally(() => {
-      if (this.scanController === controller) this.scanController = null;
-      this.scanningStatus = null;
-    });
-    this.scanPromise = tracked.then(
-      () => undefined,
-      () => undefined,
-    );
-    try {
-      return await tracked;
-    } finally {
-      if (this.scanPromise) await this.scanPromise;
-      this.scanPromise = null;
-    }
-  }
-
-  private async assertAvailableForScan(): Promise<void> {
-    if (this.scanController || (await this.hasActiveSession())) throw new Error("Maintenance is already running");
-  }
-
-  private async hasActiveSession(): Promise<boolean> {
-    return (await this.coordinator.listSessions()).some((task) =>
-      ["queued", "running", "paused", "stopping"].includes(task.status),
-    );
-  }
-
-  private async resolveSession(sessionId?: string): Promise<MaintenanceSessionSnapshot | null> {
-    if (sessionId) return await this.coordinator.getSession(sessionId).catch(() => null);
-    return (
-      (await this.coordinator.listSessions()).find((task) =>
-        ["queued", "running", "paused", "stopping"].includes(task.status),
-      ) ?? null
-    );
+  private async requireActiveSession(sessionId?: string): Promise<MaintenanceActiveSessionSnapshot> {
+    const session = await this.coordinator.getActiveSession();
+    if (!session || (sessionId && session.id !== sessionId)) throw new Error("维护会话不存在或已过期");
+    return session;
   }
 
   private async publishCoordinatorEvent(event: MaintenanceCoordinatorEvent): Promise<void> {

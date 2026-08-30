@@ -22,7 +22,7 @@ const root = createMediaRoot({ id: "root-1", displayName: "Media", hostPath: pro
 
 const createEntry = (relativePath: string): LocalScanEntry => ({
   fileId: relativePath,
-  rootRef: { rootId: root.id, relativePath },
+  ref: { rootId: root.id, relativePath },
   fileInfo: {
     filePath: resolveRootRelativePath(root, relativePath),
     fileName: relativePath,
@@ -37,7 +37,7 @@ const createEntry = (relativePath: string): LocalScanEntry => ({
 const toRuntimePreview = (entry: LocalScanEntry) => ({
   entry,
   rootId: root.id,
-  relativePath: entry.rootRef?.relativePath ?? entry.fileInfo.fileName,
+  relativePath: entry.ref.relativePath ?? entry.fileInfo.fileName,
   status: "ready" as const,
   error: null,
   fieldDiffs: [],

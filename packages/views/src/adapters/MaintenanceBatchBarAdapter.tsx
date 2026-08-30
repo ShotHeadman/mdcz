@@ -109,7 +109,10 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
     useMaintenanceStore.getState().setPending(true);
     try {
-      await port.preview(selectedEntries, presetId);
+      await port.preview(
+        selectedEntries.map((entry) => entry.ref),
+        presetId,
+      );
       toast.info("维护预览已启动");
     } catch (error) {
       useMaintenanceStore.getState().setPending(false);

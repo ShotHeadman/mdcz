@@ -54,7 +54,6 @@ import {
   type ScrapeResultDto,
   type ScrapeRunSnapshotDto,
   type ScrapeStartInput,
-  type ScrapeStartSelectedFilesInput,
   type ScrapeTaskControlInput,
   type TaskEventDto,
 } from "@mdcz/shared/serverDtos";
@@ -155,35 +154,6 @@ export class ScrapeService {
     if (!live) throw new Error(`Scrape run disappeared after start: ${snapshot.runId}`);
     this.addEvent(snapshot.runId, "queued", "Scrape task queued");
     return await this.liveRunSnapshotDto(live.run, live.snapshot, live.startedAt);
-  }
-
-  async startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScrapeRunSnapshotDto> {
-    if (!input.scanDir) throw new Error("scanDir is required when starting selected host files");
-    const normalizedScanDir = path.resolve(input.scanDir);
-    const configuredMediaPath = (await this.config.get()).paths.mediaPath.trim();
-    if (!configuredMediaPath) throw new Error("媒体目录未配置");
-    const configuredRoot = await this.mediaRoots.ensurePath({
-      displayName: path.basename(path.resolve(configuredMediaPath)) || path.resolve(configuredMediaPath),
-      hostPath: configuredMediaPath,
-    });
-    const refs: ScrapeStartInput["refs"] = [];
-    for (const filePath of input.filePaths) {
-      const resolvedPath = path.resolve(filePath);
-      const relativeToScan = path.relative(normalizedScanDir, resolvedPath);
-      if (!relativeToScan || relativeToScan.startsWith("..") || path.isAbsolute(relativeToScan)) {
-        throw new Error(`文件不在扫描目录内：${filePath}`);
-      }
-      const relativeToRoot = path.relative(configuredRoot.hostPath, resolvedPath);
-      if (!relativeToRoot || relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
-        throw new Error(`文件不在已注册媒体目录内：${filePath}`);
-      }
-      refs.push({ rootId: configuredRoot.id, relativePath: relativeToRoot.replace(/\\/gu, "/") });
-    }
-    return await this.start({
-      refs,
-      manualUrl: input.manualUrl,
-      uncensoredConfirmed: input.uncensoredConfirmed,
-    });
   }
 
   /**

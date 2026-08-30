@@ -162,6 +162,7 @@ export const createFileHandlers = (
 
           await assertDirectory(dirPath);
           const configuration = await configManager.getValidated();
+          const root = await (await persistenceService.getState()).repositories.mediaRoots.ensurePath(dirPath);
 
           const discoveredPaths = await listVideoFiles(
             dirPath,
@@ -188,8 +189,7 @@ export const createFileHandlers = (
                 continue;
               }
 
-              const relativePath = relative(dirPath, filePath);
-              const relativeDirectory = dirname(relativePath);
+              const relativePath = relative(root.hostPath, filePath).replace(/\\/gu, "/");
               const name = filePath.split(/[\\/]+/u).at(-1) ?? filePath;
 
               candidates.push({
@@ -198,15 +198,14 @@ export const createFileHandlers = (
                 size: stats.size,
                 lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
                 extension: extname(filePath).toLowerCase(),
-                relativePath,
-                relativeDirectory: relativeDirectory === "." ? "" : relativeDirectory,
+                ref: { rootId: root.id, relativePath },
               });
             } catch {
               // Skip inaccessible entries and keep scanning.
             }
           }
 
-          candidates.sort((a, b) => a.relativePath.localeCompare(b.relativePath, "zh-CN"));
+          candidates.sort((a, b) => a.ref.relativePath.localeCompare(b.ref.relativePath, "zh-CN"));
           return { candidates, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
         } catch (error) {
           throw asSerializableIpcError(error);

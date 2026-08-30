@@ -40,6 +40,13 @@ export const mediaRootCreateInputSchema = z.object({
 
 export type MediaRootCreateInput = z.infer<typeof mediaRootCreateInputSchema>;
 
+export const mediaRootEnsurePathInputSchema = z.object({
+  displayName: z.string().trim().min(1).optional(),
+  hostPath: z.string().trim().min(1),
+});
+
+export type MediaRootEnsurePathInput = z.infer<typeof mediaRootEnsurePathInputSchema>;
+
 export const rootBrowserInputSchema = z.object({
   rootId: z.string().trim().min(1),
   relativePath: z.string().optional().default(""),
@@ -263,16 +270,6 @@ export const scrapeStartInputSchema = z.object({
 
 export type ScrapeStartInput = z.infer<typeof scrapeStartInputSchema>;
 
-export const scrapeStartSelectedFilesInputSchema = z.object({
-  filePaths: z.array(z.string().trim().min(1)).min(1),
-  scanDir: z.string().trim().min(1).optional(),
-  targetDir: z.string().trim().min(1).optional(),
-  manualUrl: z.string().trim().min(1).optional(),
-  uncensoredConfirmed: z.boolean().optional(),
-});
-
-export type ScrapeStartSelectedFilesInput = z.infer<typeof scrapeStartSelectedFilesInputSchema>;
-
 export const scrapeTaskControlInputSchema = z.object({
   taskId: z.string().trim().min(1),
 });
@@ -485,17 +482,6 @@ export const maintenanceStartInputSchema = z.object({
 });
 
 export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
-
-export const maintenanceScanSelectedFilesInputSchema = z.object({
-  filePaths: z.array(z.string().trim().min(1)).min(1),
-  scanDir: z.string().trim().min(1),
-});
-
-export type MaintenanceScanSelectedFilesInput = z.infer<typeof maintenanceScanSelectedFilesInputSchema>;
-
-export interface MaintenanceScanSelectedFilesResponse {
-  entries: import("./types").LocalScanEntry[];
-}
 
 export const maintenanceSessionInputSchema = z.object({
   sessionId: z.string().trim().min(1),

@@ -123,16 +123,14 @@ describe("createFileHandlers", () => {
         path: rootVideo,
         name: "ABC-123.mp4",
         extension: ".mp4",
-        relativePath: "ABC-123.mp4",
-        relativeDirectory: "",
+        ref: expect.objectContaining({ relativePath: expect.stringMatching(/ABC-123\.mp4$/u) }),
         size: 7,
       }),
       expect.objectContaining({
         path: nestedVideo,
         name: "DEF-456.mkv",
         extension: ".mkv",
-        relativePath: join("nested", "DEF-456.mkv"),
-        relativeDirectory: "nested",
+        ref: expect.objectContaining({ relativePath: expect.stringMatching(/nested\/DEF-456\.mkv$/u) }),
         size: 7,
       }),
     ]);
@@ -181,7 +179,7 @@ describe("createFileHandlers", () => {
     expect(result.candidates[0]).toEqual(
       expect.objectContaining({
         path: keepVideo,
-        relativePath: join("library", "ABC-123.mp4"),
+        ref: expect.objectContaining({ relativePath: expect.stringMatching(/library\/ABC-123\.mp4$/u) }),
       }),
     );
   });

@@ -3,10 +3,8 @@ import { loggerService } from "@main/services/LoggerService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
-import type { LocalScanEntry } from "@mdcz/shared/types";
 import {
   maintenanceApplyInputSchema,
-  maintenanceScanInputSchema,
   maintenanceStartPreviewInputSchema,
   maintenanceUpdateDraftInputSchema,
 } from "../payloads";
@@ -18,7 +16,6 @@ export const createMaintenanceHandlers = (
   context: ServiceContainer,
 ): Pick<
   IpcRouterContract,
-  | typeof IpcChannel.Maintenance_Scan
   | typeof IpcChannel.Maintenance_StartPreview
   | typeof IpcChannel.Maintenance_Apply
   | typeof IpcChannel.Maintenance_Stop
@@ -30,40 +27,20 @@ export const createMaintenanceHandlers = (
 > => {
   const { maintenanceService } = context;
   return {
-    [IpcChannel.Maintenance_Scan]: t.procedure.input(maintenanceScanInputSchema).action(async ({ input }) => {
-      try {
-        const filePaths = input?.filePaths?.map((filePath) => filePath.trim()).filter(Boolean) ?? [];
-        if (filePaths.length > 0) {
-          const entries = await maintenanceService.scanFiles(filePaths);
-          return { entries };
-        }
-
-        const dirPath = input?.dirPath?.trim();
-        if (!dirPath) {
-          throw new Error("dirPath or filePaths is required");
-        }
-        const entries = await maintenanceService.scan(dirPath);
-        return { entries };
-      } catch (error) {
-        logger.error("Maintenance scan failed");
-        throw asSerializableIpcError(error);
-      }
-    }),
-
     [IpcChannel.Maintenance_StartPreview]: t.procedure
       .input(maintenanceStartPreviewInputSchema)
       .action(async ({ input }) => {
         try {
-          const entries = input?.entries;
+          const refs = input?.refs;
           const presetId = input?.presetId;
-          if (!entries || !Array.isArray(entries) || entries.length === 0) {
-            throw new Error("entries is required and must be non-empty");
+          if (!refs || !Array.isArray(refs) || refs.length === 0) {
+            throw new Error("refs is required and must be non-empty");
           }
           if (!presetId) {
             throw new Error("presetId is required");
           }
 
-          const handle = await maintenanceService.startPreview(entries as unknown as LocalScanEntry[], presetId);
+          const handle = await maintenanceService.startPreview(refs, presetId);
           void handle.completion.catch(() => undefined);
           return { sessionId: handle.session.id };
         } catch (error) {

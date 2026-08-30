@@ -92,8 +92,7 @@ const OWNERSHIP_CHANGED = "Maintenance execution ownership changed";
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const relativePath = (root: MediaRoot, entry: LocalScanEntry): string =>
-  entry.rootRef?.rootId === root.id ? entry.rootRef.relativePath : toRootRelativePath(root, entry.fileInfo.filePath);
+const relativePath = (_root: MediaRoot, entry: LocalScanEntry): string => entry.ref.relativePath;
 
 const assertUniqueRefs = (refs: readonly MaintenanceSessionRef[]): void => {
   const seen = new Set<string>();

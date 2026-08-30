@@ -1,5 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
-import { localFileTargetSchema } from "@mdcz/shared/mediaRef";
+import { localFileTargetSchema, rootFileRefSchema } from "@mdcz/shared/mediaRef";
 import { normalizedCropRegionSchema } from "@mdcz/shared/posterCrop";
 import {
   configPathInputSchema,
@@ -127,12 +127,8 @@ export const toolBatchTranslateApplyInputSchema = z.object({
 });
 export const toolMediaServerModeInputSchema = z.object({ mode: z.enum(["all", "missing"]).optional() });
 
-export const maintenanceScanInputSchema = z.object({
-  dirPath: optionalString,
-  filePaths: optionalPathList,
-});
 export const maintenanceStartPreviewInputSchema = z.object({
-  entries: z.array(z.object({ fileId: z.string() }).passthrough()).optional(),
+  refs: z.array(rootFileRefSchema).optional(),
   presetId: maintenancePresetIdSchema.optional(),
 });
 export const maintenanceApplyInputSchema = z.object({

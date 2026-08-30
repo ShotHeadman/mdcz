@@ -16,10 +16,10 @@ import {
   logListInputSchema,
   maintenanceApplyInputSchema,
   maintenanceDiscardSessionInputSchema,
-  maintenanceScanSelectedFilesInputSchema,
   maintenanceSessionInputSchema,
   maintenanceStartInputSchema,
   maintenanceUpdateDraftInputSchema,
+  mediaRootEnsurePathInputSchema,
   nfoReadInputSchema,
   nfoWriteInputSchema,
   posterCropSaveInputSchema,
@@ -30,7 +30,6 @@ import {
   scrapeConfirmUncensoredInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
-  scrapeStartSelectedFilesInputSchema,
   scrapeTaskControlInputSchema,
   serverPathSuggestInputSchema,
   setupCompleteInputSchema,
@@ -247,15 +246,15 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.tools.execute(input)),
   }),
   mediaRoots: t.router({
+    ensurePath: protectedProcedure
+      .input(mediaRootEnsurePathInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.ensurePath(input)),
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.mediaRoots.list()),
   }),
   maintenance: t.router({
     execute: protectedProcedure
       .input(maintenanceApplyInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.apply(input)),
-    scanSelectedFiles: protectedProcedure
-      .input(maintenanceScanSelectedFilesInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.maintenance.scanSelectedFiles(input)),
     pause: protectedProcedure
       .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.pause(input)),
@@ -349,9 +348,6 @@ export const appRouter = t.router({
     start: protectedProcedure
       .input(scrapeStartInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.start(input)).task.id })),
-    startSelectedFiles: protectedProcedure
-      .input(scrapeStartSelectedFilesInputSchema)
-      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.startSelectedFiles(input)).task.id })),
     stop: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: await ctx.services.scrape.stop(input) })),

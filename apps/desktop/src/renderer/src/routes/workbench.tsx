@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   buildAmbiguousUncensoredScrapeGroups,
   buildUncensoredConfirmItemsForScrapeGroups,
@@ -110,9 +110,8 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
   };
 
-  const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
-    void scanDir;
-    void targetDir;
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], _targetDir: string) => {
+    const filePaths = candidates.map((candidate) => candidate.path);
     if (maintenanceBusy) {
       toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
       return;
@@ -140,20 +139,14 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
   };
 
-  const handleStartSelectedMaintenance = async (
-    filePaths: string[],
-    scanDir: string,
-    _targetDir: string,
-    presetId: MaintenancePresetId,
-  ) => {
+  const handleStartSelectedMaintenance = async (candidates: MediaCandidate[], presetId: MaintenancePresetId) => {
     if (isScraping) {
       toast.warning("正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。");
       return;
     }
 
     await startMaintenanceFlow({
-      filePaths,
-      scanDir,
+      candidates,
       presetId,
       port: workbenchPorts.maintenance,
       isScraping,

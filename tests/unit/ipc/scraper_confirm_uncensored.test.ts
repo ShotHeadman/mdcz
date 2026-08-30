@@ -35,6 +35,7 @@ const createAssets = (): DiscoveredAssets => ({
 
 const createEntry = (overrides: Partial<LocalScanEntry>): LocalScanEntry => ({
   fileId: overrides.fileId ?? "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: overrides.fileInfo ?? {
     filePath: "/library/FC2-123456-cd1.mp4",
     fileName: "FC2-123456-cd1",
@@ -58,6 +59,7 @@ describe("confirmUncensoredItems", () => {
   it("writes one shared NFO for multipart files that share the same source NFO", async () => {
     const firstEntry = createEntry({
       fileId: "part-1",
+      ref: { rootId: "test-root", relativePath: "test.mp4" },
       fileInfo: {
         filePath: "/library/FC2-123456-cd1.mp4",
         fileName: "FC2-123456-cd1",
@@ -72,6 +74,7 @@ describe("confirmUncensoredItems", () => {
     });
     const secondEntry = createEntry({
       fileId: "part-2",
+      ref: { rootId: "test-root", relativePath: "test.mp4" },
       fileInfo: {
         filePath: "/library/FC2-123456-cd2.mp4",
         fileName: "FC2-123456-cd2",

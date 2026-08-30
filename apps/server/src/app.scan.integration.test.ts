@@ -168,14 +168,12 @@ describe("buildServer scan integration", () => {
     expect(response.json().result.data.candidates).toEqual([
       expect.objectContaining({
         name: "done.mp4",
-        relativePath: "JAV_output/done.mp4",
-        rootId,
+        ref: { relativePath: "JAV_output/done.mp4", rootId },
         rootRelativePath: "JAV_output/done.mp4",
       }),
       expect.objectContaining({
         name: "movie.mp4",
-        relativePath: "nested/movie.mp4",
-        rootId,
+        ref: { relativePath: "nested/movie.mp4", rootId },
         rootRelativePath: "nested/movie.mp4",
       }),
     ]);

@@ -14,6 +14,7 @@ export const createMaintenanceCrawlerData = (overrides: Partial<CrawlerData> = {
 
 export const createMaintenanceEntry = (crawlerData?: CrawlerData): LocalScanEntry => ({
   fileId: "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
     fileName: "ABC-123.mp4",

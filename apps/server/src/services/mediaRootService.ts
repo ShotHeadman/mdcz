@@ -3,9 +3,9 @@ import path from "node:path";
 import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
 import {
   type MediaRootAvailabilityDto,
-  type MediaRootCreateInput,
   type MediaRootDto,
-  mediaRootCreateInputSchema,
+  type MediaRootEnsurePathInput,
+  mediaRootEnsurePathInputSchema,
 } from "@mdcz/shared/serverDtos";
 import type { ServerPersistenceService } from "./persistenceService";
 
@@ -33,15 +33,15 @@ export class MediaRootService {
     return { roots: roots.map(toMediaRootDto) };
   }
 
-  async ensurePath(input: MediaRootCreateInput): Promise<MediaRootDto>;
+  async ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootDto>;
   async ensurePath(hostPath: string): Promise<MediaRoot>;
-  async ensurePath(input: MediaRootCreateInput | string): Promise<MediaRootDto | MediaRoot> {
+  async ensurePath(input: MediaRootEnsurePathInput | string): Promise<MediaRootDto | MediaRoot> {
     if (typeof input === "string") {
       const normalizedPath = await this.validateMountedFilesystemPath(input);
       const state = await this.persistence.getState();
       return await state.repositories.mediaRoots.ensurePath(normalizedPath);
     }
-    const parsed = mediaRootCreateInputSchema.parse(input);
+    const parsed = mediaRootEnsurePathInputSchema.parse(input);
     const normalizedPath = await this.validateMountedFilesystemPath(parsed.hostPath);
     const state = await this.persistence.getState();
     return toMediaRootDto(await state.repositories.mediaRoots.ensurePath(normalizedPath, parsed.displayName));

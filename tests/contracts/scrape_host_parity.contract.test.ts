@@ -130,13 +130,12 @@ const waitForAbort = async (signal: AbortSignal | undefined, gate: Promise<void>
 const mockMaintenanceRuntime = (): MaintenanceRuntime =>
   ({
     scan: vi.fn(async () => []),
-    scanFilePaths: vi.fn(async () => []),
     scanRefs: vi.fn(
       async ({ root, refs }: { root: { id: string; hostPath: string }; refs: Array<{ relativePath: string }> }) =>
         refs.map(
           (ref): LocalScanEntry => ({
             fileId: ref.relativePath,
-            rootRef: { rootId: root.id, relativePath: ref.relativePath },
+            ref: { rootId: root.id, relativePath: ref.relativePath },
             fileInfo: {
               filePath: path.join(root.hostPath, ref.relativePath),
               fileName: path.basename(ref.relativePath),
@@ -153,7 +152,7 @@ const mockMaintenanceRuntime = (): MaintenanceRuntime =>
       entries.map((entry) => ({
         entry,
         rootId: root.id,
-        relativePath: entry.rootRef?.relativePath ?? path.basename(entry.fileInfo.filePath),
+        relativePath: entry.ref.relativePath,
         status: "ready" as const,
         error: null,
         fieldDiffs: [],
@@ -240,8 +239,11 @@ const createDesktopHost = async (mediaRoot: string, gate: Promise<void>, succeed
       (await state.repositories.library.listEntries()).map((entry) => ({ rootRelativePath: entry.rootRelativePath })),
     applyMaintenance: async (relativePath) => {
       const filePath = path.join(mediaRoot, relativePath);
+      const root = (await state.repositories.mediaRoots.list()).find((candidate) => candidate.hostPath === mediaRoot);
+      if (!root) throw new Error("media root not registered");
       const entry: LocalScanEntry = {
         fileId: relativePath,
+        ref: { rootId: root.id, relativePath },
         fileInfo: {
           filePath,
           fileName: path.basename(relativePath),
@@ -252,7 +254,7 @@ const createDesktopHost = async (mediaRoot: string, gate: Promise<void>, succeed
         assets: { sceneImages: [], actorPhotos: [] },
         currentDir: mediaRoot,
       };
-      const preview = await maintenance.startPreview([entry], "refresh_data");
+      const preview = await maintenance.startPreview([entry.ref], "refresh_data");
       await preview.completion;
       const session = await maintenance.getActiveSession();
       const item = session?.previews[0];

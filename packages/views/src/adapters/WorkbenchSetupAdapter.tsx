@@ -25,7 +25,6 @@ export interface CandidateScanResult {
 export interface WorkbenchSetupPort {
   browseDirectory(kind: "scan" | "target", currentPath: string): Promise<string | null>;
   scanCandidates(scanDir: string, excludeDirPaths?: readonly string[]): Promise<CandidateScanResult>;
-  savePaths(scanDir: string, targetDir: string): Promise<void>;
   isServer?: boolean;
   suggestDirectory?: (input: { kind: "scan" | "target"; path: string }) => Promise<ServerPathSuggestResponse>;
 }
@@ -35,13 +34,8 @@ export interface WorkbenchSetupAdapterProps {
   config?: Configuration;
   configLoading?: boolean;
   port: WorkbenchSetupPort;
-  onStartScrape: (filePaths: string[], scanDir: string, targetDir: string) => Promise<void>;
-  onStartMaintenance: (
-    filePaths: string[],
-    scanDir: string,
-    targetDir: string,
-    presetId: MaintenancePresetId,
-  ) => Promise<void>;
+  onStartScrape: (candidates: MediaCandidate[], targetDir: string) => Promise<void>;
+  onStartMaintenance: (candidates: MediaCandidate[], presetId: MaintenancePresetId) => Promise<void>;
 }
 
 const toPathAutocompleteResult = (result: ServerPathSuggestResponse): PathAutocompleteResult => ({
@@ -235,11 +229,10 @@ export function WorkbenchSetupAdapter({
 
     setStartPending(true);
     try {
-      await port.savePaths(scanDir, targetDir);
       if (mode === "maintenance") {
-        await onStartMaintenance(selectedPaths, scanDir, targetDir, presetId);
+        await onStartMaintenance(selectedCandidates, presetId);
       } else {
-        await onStartScrape(selectedPaths, scanDir, targetDir);
+        await onStartScrape(selectedCandidates, targetDir);
       }
     } finally {
       setStartPending(false);

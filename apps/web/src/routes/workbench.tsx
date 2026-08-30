@@ -1,6 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
-import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate, ScrapeResult } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
   buildUncensoredConfirmationItems,
@@ -61,14 +61,6 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
       candidates: result.candidates,
       supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
     };
-  },
-  savePaths: async (scanDir, targetDir) => {
-    await api.config.save({
-      paths: {
-        mediaPath: scanDir,
-        successOutputFolder: targetDir,
-      },
-    });
   },
 });
 
@@ -134,10 +126,11 @@ function WorkbenchPage() {
     }
   }, [hydrationState.shouldOpenUncensoredDialog]);
 
-  const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
-    activateNewScrapeTask(filePaths);
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
+    activateNewScrapeTask(candidates.map((candidate) => candidate.path));
     try {
-      await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
+      const outputRoot = targetDir.trim() ? await api.mediaRoots.ensurePath({ hostPath: targetDir }) : undefined;
+      await api.scrape.start({ refs: candidates.map((candidate) => candidate.ref), outputRootId: outputRoot?.id });
       requestScrapeLiveRunsRefresh();
       toast.success("已启动选中文件刮削");
     } catch (error) {
@@ -146,15 +139,9 @@ function WorkbenchPage() {
     }
   };
 
-  const handleStartSelectedMaintenance = async (
-    filePaths: string[],
-    scanDir: string,
-    _targetDir: string,
-    presetId: MaintenancePresetId,
-  ) => {
+  const handleStartSelectedMaintenance = async (candidates: MediaCandidate[], presetId: MaintenancePresetId) => {
     await startMaintenanceFlow({
-      filePaths,
-      scanDir,
+      candidates,
       presetId,
       port: ports.maintenance,
       isScraping,

@@ -6,16 +6,10 @@ import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { InvalidatePayload, LogPayload, ShortcutPayload } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
-import type { LocalFileTarget } from "@mdcz/shared/mediaRef";
+import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { LibraryListInput } from "@mdcz/shared/serverDtos";
-import type {
-  CrawlerData,
-  LocalScanEntry,
-  MaintenancePresetId,
-  MediaCandidate,
-  UncensoredConfirmItem,
-} from "@mdcz/shared/types";
+import type { CrawlerData, MaintenancePresetId, MediaCandidate, UncensoredConfirmItem } from "@mdcz/shared/types";
 
 type Unsubscribe = () => void;
 
@@ -127,10 +121,8 @@ export const ipc = {
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
   maintenance: {
-    scan: (dirPath: string) => client[IpcChannel.Maintenance_Scan]({ dirPath }),
-    scanFiles: (filePaths: string[]) => client[IpcChannel.Maintenance_Scan]({ filePaths }),
-    preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_StartPreview]({ entries, presetId }),
+    preview: (refs: RootFileRef[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_StartPreview]({ refs, presetId }),
     execute: (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) =>
       client[IpcChannel.Maintenance_Apply]({ selections, presetId }),
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),

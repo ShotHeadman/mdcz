@@ -1,6 +1,6 @@
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import { LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
-import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
+import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
@@ -250,12 +250,6 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
     },
-    scanFiles: async (filePaths, context) => {
-      if (!context?.scanDir) {
-        throw new Error("Web 维护扫描需要扫描目录");
-      }
-      return await api.maintenance.scanSelectedFiles({ filePaths, scanDir: context.scanDir });
-    },
     getActiveSession: async () => await api.maintenance.getActiveSession(),
     updateDraft: async (previewId, draft) => {
       await api.maintenance.updateDraft({ sessionId: requireSessionId(), previewId, ...draft });
@@ -265,12 +259,11 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       await api.maintenance.discardSession(sessionId ? { sessionId } : undefined);
       useMaintenanceStore.getState().reset();
     },
-    preview: async (entries: LocalScanEntry[], presetId: MaintenancePresetId) => {
-      const refs = entries.map((entry) => ({
-        rootId: entry.rootRef?.rootId ?? entry.fileId.split(":")[0] ?? "",
-        relativePath: entry.rootRef?.relativePath ?? entry.fileInfo.filePath,
-      }));
+    preview: async (refs, presetId: MaintenancePresetId) => {
       const rootId = refs[0]?.rootId ?? "";
+      if (!rootId || refs.some((ref) => ref.rootId !== rootId)) {
+        throw new Error("维护任务只能包含同一个媒体目录下的文件");
+      }
       const { sessionId } = await api.maintenance.start({ rootId, presetId, refs });
       applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
       return { sessionId };

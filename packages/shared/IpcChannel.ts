@@ -72,7 +72,6 @@ export enum IpcChannel {
   Tool_BatchTranslateApply = "tool:batch-translate-apply",
   Tool_ToggleDevTools = "tool:toggle-devtools",
 
-  Maintenance_Scan = "maintenance:scan",
   Maintenance_StartPreview = "maintenance:start-preview",
   Maintenance_Apply = "maintenance:apply",
   Maintenance_Stop = "maintenance:stop",
