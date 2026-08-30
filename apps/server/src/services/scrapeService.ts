@@ -162,10 +162,9 @@ export class ScrapeService {
     const normalizedScanDir = path.resolve(input.scanDir);
     const configuredMediaPath = (await this.config.get()).paths.mediaPath.trim();
     if (!configuredMediaPath) throw new Error("媒体目录未配置");
-    const configuredRoot = await this.mediaRoots.setPrimaryMediaRoot({
+    const configuredRoot = await this.mediaRoots.ensurePath({
       displayName: path.basename(path.resolve(configuredMediaPath)) || path.resolve(configuredMediaPath),
       hostPath: configuredMediaPath,
-      enabled: true,
     });
     const refs: ScrapeStartInput["refs"] = [];
     for (const filePath of input.filePaths) {
@@ -298,7 +297,7 @@ export class ScrapeService {
     for (const { outcome } of selected) {
       const rootIds = [outcome.outputRootId, outcome.nfoRootId ?? outcome.outputRootId];
       for (const rootId of rootIds) {
-        if (rootId && !roots.has(rootId)) roots.set(rootId, await this.mediaRoots.getActiveRoot(rootId));
+        if (rootId && !roots.has(rootId)) roots.set(rootId, await this.mediaRoots.get(rootId));
       }
     }
     const resolvedSelected = selected.map(({ selection, item, outcome }) => {
@@ -470,7 +469,7 @@ export class ScrapeService {
         obsolete,
       },
       {
-        resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
+        resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
         journal: state.repositories.publicationJournal,
         commit: () => {
           if (entry) state.repositories.library.deleteEntry(entry.id);
@@ -500,8 +499,8 @@ export class ScrapeService {
 
   private async createRun(input: ScrapeStartInput): Promise<ScrapeRunManifest> {
     if (input.refs.length === 0) throw new Error("Scrape run requires at least one file");
-    for (const ref of input.refs) await this.mediaRoots.getActiveRoot(ref.rootId);
-    if (input.outputRootId) await this.mediaRoots.getActiveRoot(input.outputRootId);
+    for (const ref of input.refs) await this.mediaRoots.get(ref.rootId);
+    if (input.outputRootId) await this.mediaRoots.get(input.outputRootId);
     return await (await this.persistence.getState()).repositories.scrapeRuns.create({
       rootId: input.refs[0]?.rootId ?? "",
       outputRootId: input.outputRootId ?? null,
@@ -519,9 +518,9 @@ export class ScrapeService {
   private async createExecution(manifest: ScrapeRunManifest, reporter: ScrapeWorkflowReporter) {
     const roots = new Map<string, MediaRoot>();
     for (const item of manifest.items) {
-      if (!roots.has(item.rootId)) roots.set(item.rootId, await this.mediaRoots.getActiveRoot(item.rootId));
+      if (!roots.has(item.rootId)) roots.set(item.rootId, await this.mediaRoots.get(item.rootId));
     }
-    if (manifest.requestedOutputRootId) await this.mediaRoots.getActiveRoot(manifest.requestedOutputRootId);
+    if (manifest.requestedOutputRootId) await this.mediaRoots.get(manifest.requestedOutputRootId);
     const configuration = await this.config.get();
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
@@ -573,9 +572,9 @@ export class ScrapeService {
   ): Promise<ScrapeResult> {
     try {
       await restGate?.waitBeforeStart(signal);
-      const root = await this.mediaRoots.getActiveRoot(item.rootId);
+      const root = await this.mediaRoots.get(item.rootId);
       const outputRoot = manifest.requestedOutputRootId
-        ? await this.mediaRoots.getActiveRoot(manifest.requestedOutputRootId)
+        ? await this.mediaRoots.get(manifest.requestedOutputRootId)
         : root;
       const metadataRoot = await this.resolveMetadataRoot(outputRoot);
       const runtimeResult = await this.runtime.scrape({
@@ -632,7 +631,7 @@ export class ScrapeService {
       if (!publication) throw new Error(`Missing successful scrape publication for item ${item.id}`);
       const outputRef = publication.plan.video?.target;
       if (!outputRef) throw new Error(`Successful scrape has no video publication target: ${item.id}`);
-      const metadataRoot = await this.resolveMetadataRoot(await this.mediaRoots.getActiveRoot(outputRef.rootId));
+      const metadataRoot = await this.resolveMetadataRoot(await this.mediaRoots.get(outputRef.rootId));
       nfoRelativePath = publication.nfoPath ? toRootRelativePath(metadataRoot, publication.nfoPath) : null;
       success = {
         plan: publication.plan,
@@ -652,7 +651,7 @@ export class ScrapeService {
       itemPath: item.relativePath,
       success,
       scrapeRuns: state.repositories.scrapeRuns,
-      resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
+      resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
       acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, item.id),
       journal: state.repositories.publicationJournal,
       repairIssues: state.repositories.libraryRepairIssues,
@@ -847,9 +846,7 @@ export class ScrapeService {
   }
 
   private async getRootDisplayName(rootId: string): Promise<string> {
-    const root = await (await this.persistence.getState()).repositories.mediaRoots
-      .get(rootId, { includeDeleted: true })
-      .catch(() => null);
+    const root = await (await this.persistence.getState()).repositories.mediaRoots.get(rootId).catch(() => null);
     return root?.displayName ?? "未知媒体目录";
   }
 

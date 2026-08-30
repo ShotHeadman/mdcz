@@ -69,7 +69,7 @@ const ensureServiceContainer = async (): Promise<ServiceContainer> => {
   registerLocalFileHandler({
     getRoot: async (rootId) => {
       const state = await container.persistenceService.getState();
-      const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+      const roots = await state.repositories.mediaRoots.list();
       return roots.find((root) => root.id === rootId) ?? null;
     },
   });

@@ -1,28 +1,20 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const mediaRoots = sqliteTable(
-  "media_roots",
-  {
-    id: text("id").primaryKey(),
-    displayName: text("display_name").notNull(),
-    hostPath: text("host_path").notNull(),
-    rootType: text("root_type").notNull(),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    deleted: integer("deleted", { mode: "boolean" }).notNull().default(false),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [index("media_roots_state_idx").on(table.deleted, table.enabled)],
-);
+export const mediaRoots = sqliteTable("media_roots", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  hostPath: text("host_path").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
 
-export const taskRecords = sqliteTable(
-  "task_records",
+export const scanTasks = sqliteTable(
+  "scan_tasks",
   {
     id: text("id").primaryKey(),
     rootId: text("root_id").notNull(),
     status: text("status").notNull(),
-    summary: text("summary"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
@@ -32,13 +24,13 @@ export const taskRecords = sqliteTable(
     directoryCount: integer("directory_count").notNull().default(0),
   },
   (table) => [
-    index("task_records_queue_idx").on(table.status, table.createdAt),
-    index("task_records_created_at_idx").on(table.createdAt),
+    index("scan_tasks_queue_idx").on(table.status, table.createdAt),
+    index("scan_tasks_created_at_idx").on(table.createdAt),
   ],
 );
 
-export const taskEvents = sqliteTable(
-  "task_events",
+export const scanTaskEvents = sqliteTable(
+  "scan_task_events",
   {
     id: text("id").primaryKey(),
     taskId: text("task_id").notNull(),
@@ -46,7 +38,7 @@ export const taskEvents = sqliteTable(
     message: text("message").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("task_events_task_created_at_idx").on(table.taskId, table.createdAt)],
+  (table) => [index("scan_task_events_task_created_at_idx").on(table.taskId, table.createdAt)],
 );
 
 export const scanResults = sqliteTable(
@@ -249,8 +241,8 @@ export const libraryRepairIssues = sqliteTable(
 
 export const schema = {
   mediaRoots,
-  taskRecords,
-  taskEvents,
+  scanTasks,
+  scanTaskEvents,
   scanResults,
   scrapeRuns,
   scrapeRunItems,
@@ -265,10 +257,10 @@ export const schema = {
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;
 export type InsertMediaRootRow = typeof mediaRoots.$inferInsert;
-export type TaskRecordRow = typeof taskRecords.$inferSelect;
-export type InsertTaskRecordRow = typeof taskRecords.$inferInsert;
-export type TaskEventRow = typeof taskEvents.$inferSelect;
-export type InsertTaskEventRow = typeof taskEvents.$inferInsert;
+export type ScanTaskRow = typeof scanTasks.$inferSelect;
+export type InsertScanTaskRow = typeof scanTasks.$inferInsert;
+export type ScanTaskEventRow = typeof scanTaskEvents.$inferSelect;
+export type InsertScanTaskEventRow = typeof scanTaskEvents.$inferInsert;
 export type ScanResultRow = typeof scanResults.$inferSelect;
 export type InsertScanResultRow = typeof scanResults.$inferInsert;
 export type ScrapeRunRow = typeof scrapeRuns.$inferSelect;

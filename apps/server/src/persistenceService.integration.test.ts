@@ -34,7 +34,7 @@ describe("ServerPersistenceService", () => {
         .map((row) => (row as { name: string }).name);
 
       expect(harness.service.initialized).toBe(true);
-      expect(tables).toEqual(expect.arrayContaining(["__drizzle_migrations", "media_roots", "task_records"]));
+      expect(tables).toEqual(expect.arrayContaining(["__drizzle_migrations", "media_roots", "scan_tasks"]));
       await expect(readFile(harness.databasePath)).resolves.toBeInstanceOf(Buffer);
     } finally {
       await harness.cleanup();

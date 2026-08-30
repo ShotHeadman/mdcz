@@ -13,7 +13,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { StorageError, storageErrorCodes, toStorageError } from "./errors";
+import { toStorageError } from "./errors";
 import type { MediaRoot } from "./mediaRoot";
 import { normalizeRootRelativePath, type RootRelativePath, resolveRootRelativePath } from "./rootRelativePath";
 
@@ -26,7 +26,6 @@ export interface StorageEntry {
 }
 
 export const statRootPath = async (root: MediaRoot, relativePath: string): Promise<StorageEntry> => {
-  assertStorageRootEnabled(root);
   const normalizedRelativePath = normalizeRootRelativePath(relativePath);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
@@ -45,7 +44,6 @@ export const statRootPath = async (root: MediaRoot, relativePath: string): Promi
 };
 
 export const readRootFile = async (root: MediaRoot, relativePath: string): Promise<Buffer> => {
-  assertStorageRootEnabled(root);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
   try {
@@ -56,7 +54,6 @@ export const readRootFile = async (root: MediaRoot, relativePath: string): Promi
 };
 
 export const listRootDirectory = async (root: MediaRoot, relativePath = ""): Promise<StorageEntry[]> => {
-  assertStorageRootEnabled(root);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
   try {
@@ -159,7 +156,6 @@ export const listRootFiles = async (
   relativePath = "",
   recursive = false,
 ): Promise<RootFileWalkEntry[]> => {
-  assertStorageRootEnabled(root);
   const normalizedRelativePath = normalizeRootRelativePath(relativePath);
 
   try {
@@ -170,7 +166,6 @@ export const listRootFiles = async (
 };
 
 export const mkdirpRootPath = async (root: MediaRoot, relativePath: string): Promise<void> => {
-  assertStorageRootEnabled(root);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
   try {
@@ -247,12 +242,5 @@ export const atomicWriteRootFile = async (
   relativePath: string,
   content: string | Uint8Array,
 ): Promise<void> => {
-  assertStorageRootEnabled(root);
   await atomicWriteFile(resolveRootRelativePath(root, relativePath), content);
-};
-
-export const assertStorageRootEnabled = (root: MediaRoot): void => {
-  if (!root.enabled) {
-    throw new StorageError(storageErrorCodes.UnsupportedOperation, `Media root is disabled: ${root.id}`);
-  }
 };

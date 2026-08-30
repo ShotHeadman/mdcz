@@ -53,7 +53,7 @@ export function SingleFileScraperDetail({
   const [rootId, setRootId] = useState("");
   const [relativePath, setRelativePath] = useState("");
   const [manualUrl, setManualUrl] = useState("");
-  const enabledRoots = roots.filter((root) => root.enabled);
+  const enabledRoots = roots;
   const files = browserEntries.filter((entry) => entry.type === "file");
 
   return (

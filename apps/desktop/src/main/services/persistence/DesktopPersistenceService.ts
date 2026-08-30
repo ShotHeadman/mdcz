@@ -8,8 +8,8 @@ import {
   type PersistenceDatabase,
   PublicationJournalRepository,
   runMigrations,
+  ScanTaskRepository,
   ScrapeRunRepository,
-  TaskRepository,
 } from "@mdcz/persistence";
 import { recoverPublications } from "@mdcz/runtime/publication";
 import { app } from "electron";
@@ -32,7 +32,7 @@ export interface DesktopPersistenceRepositories {
   mediaRoots: MediaRootRepository;
   publicationJournal: PublicationJournalRepository;
   scrapeRuns: ScrapeRunRepository;
-  tasks: TaskRepository;
+  scanTasks: ScanTaskRepository;
 }
 
 export interface DesktopPersistenceState {
@@ -97,7 +97,7 @@ export class DesktopPersistenceService {
       await recoverPublications({
         journal: publicationJournal,
         repairIssues: libraryRepairIssues,
-        resolveRoot: async (rootId) => await mediaRoots.get(rootId, { includeDeleted: true }),
+        resolveRoot: async (rootId) => await mediaRoots.get(rootId),
       });
       this.state = {
         database,
@@ -107,7 +107,7 @@ export class DesktopPersistenceService {
           mediaRoots,
           publicationJournal,
           scrapeRuns,
-          tasks: new TaskRepository(database),
+          scanTasks: new ScanTaskRepository(database),
         },
       };
       return this.state;

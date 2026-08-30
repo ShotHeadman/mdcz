@@ -10,12 +10,7 @@ import type { ScrapeRunManifest } from "@mdcz/persistence";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import {
-  createDesktopInputRoot,
-  createDesktopOutputRoot,
-  mediaPathOwnership,
-  resolveDesktopInputRootPath,
-} from "@mdcz/runtime/library";
+import { createDesktopOutputRoot, mediaPathOwnership, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitScrapeTerminalResult } from "@mdcz/runtime/publication";
@@ -231,16 +226,13 @@ export class ScraperService {
     const state = await this.persistenceService.getState();
     const startedAt = new Date();
     const configuredMediaPath = input.configuration.paths.mediaPath.trim();
-    const inputRoot = createDesktopInputRoot(
+    const inputRoot = await state.repositories.mediaRoots.ensurePath(
       resolveDesktopInputRootPath(input.files, configuredMediaPath || undefined),
-      startedAt,
     );
     const outputRoot = createDesktopOutputRoot(input.configuration, startedAt);
-    const metadataRoot = input.configuration.paths.metadataPath.trim()
-      ? createDesktopInputRoot(input.configuration.paths.metadataPath, startedAt)
-      : null;
-    for (const root of [inputRoot, outputRoot, metadataRoot].filter((root) => root !== null)) {
-      await state.repositories.mediaRoots.upsert(root);
+    if (outputRoot) await state.repositories.mediaRoots.upsert(outputRoot);
+    if (input.configuration.paths.metadataPath.trim()) {
+      await state.repositories.mediaRoots.ensurePath(input.configuration.paths.metadataPath);
     }
     return await state.repositories.scrapeRuns.create({
       rootId: inputRoot.id,
@@ -259,8 +251,8 @@ export class ScraperService {
     this.configureRuntimeSettings(configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
     const state = await this.persistenceService.getState();
-    const root = await state.repositories.mediaRoots.get(manifest.rootId, { includeDeleted: true });
-    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+    const root = await state.repositories.mediaRoots.get(manifest.rootId);
+    const roots = await state.repositories.mediaRoots.list();
     const settledAttemptIds = new Set(manifest.outcomes.map((outcome) => outcome.attemptId));
     const openAttemptByItemId = new Map(
       manifest.attempts

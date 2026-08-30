@@ -32,7 +32,7 @@ export class MaintenanceService {
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
-      roots: { getActiveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId) },
+      roots: { get: async (rootId) => await this.mediaRoots.get(rootId) },
       runtime: this.runtime,
       library: createMaintenanceLibraryPort({
         getRepositories: async () => {
@@ -44,7 +44,7 @@ export class MaintenanceService {
             libraryRepairIssues: repositories.libraryRepairIssues,
           };
         },
-        resolveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId),
+        resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
       }),
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       concurrency: 1,
@@ -52,7 +52,7 @@ export class MaintenanceService {
   }
 
   async start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto> {
-    const root = await this.mediaRoots.getActiveRoot(input.rootId);
+    const root = await this.mediaRoots.get(input.rootId);
     const refs = input.refs?.map((ref) => {
       if (ref.rootId !== input.rootId) throw new Error("维护任务只能包含同一个媒体目录下的文件");
       return { relativePath: ref.relativePath };
@@ -64,7 +64,7 @@ export class MaintenanceService {
 
   async scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse> {
     const normalizedScanDir = path.resolve(input.scanDir);
-    const roots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
+    const roots = (await this.mediaRoots.list()).roots;
     const refsByRootId = new Map<string, Array<{ relativePath: string }>>();
 
     for (const filePath of input.filePaths) {
@@ -85,7 +85,7 @@ export class MaintenanceService {
     const entries = (
       await Promise.all(
         [...refsByRootId.entries()].map(async ([rootId, refs]) => {
-          const root = await this.mediaRoots.getActiveRoot(rootId);
+          const root = await this.mediaRoots.get(rootId);
           const scannedEntries = await this.runtime.scanRefs({ root, refs });
           const relativePathByAbsolutePath = new Map(
             refs.map((ref) => [path.resolve(root.hostPath, ref.relativePath), ref.relativePath]),

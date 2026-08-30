@@ -60,11 +60,13 @@ vi.mock("electron", () => {
 const actionArgs = ipcActionArgs;
 
 const createContext = (mediaRoots?: {
+  ensurePath?: (hostPath: string) => Promise<unknown>;
   list?: () => Promise<Array<{ id: string; hostPath: string }>>;
   upsert?: (root: unknown) => Promise<unknown>;
 }): ServiceContainer => {
   const upsert = mediaRoots?.upsert ?? (async () => undefined);
   const list = mediaRoots?.list ?? (async () => [{ id: "tmp", hostPath: tmpdir() }]);
+  const ensurePath = mediaRoots?.ensurePath ?? (async () => ({ id: "tmp", hostPath: tmpdir() }));
   return {
     windowService: {
       getMainWindow: () => null,
@@ -73,7 +75,7 @@ const createContext = (mediaRoots?: {
       getState: async () => ({
         repositories: {
           publicationJournal: createMemoryPublicationJournal(),
-          mediaRoots: { list, upsert },
+          mediaRoots: { ensurePath, list, upsert },
         },
       }),
     },
@@ -359,15 +361,10 @@ describe("createFileHandlers", () => {
   it("admits one enclosing root at the NFO write boundary", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "ABC-123.nfo");
-    const roots: Array<{ id: string; hostPath: string }> = [];
-    const upsert = vi.fn(async (rootRecord: unknown) => {
-      const record = rootRecord as { id: string; hostPath: string };
-      roots.push(record);
-    });
+    const ensurePath = vi.fn(async (hostPath: string) => ({ id: "root", hostPath }));
     const handlers = createFileHandlers(
       createContext({
-        list: async () => roots,
-        upsert,
+        ensurePath,
       }),
     );
 
@@ -385,6 +382,6 @@ describe("createFileHandlers", () => {
       }),
     );
 
-    expect(upsert).toHaveBeenCalledOnce();
+    expect(ensurePath).toHaveBeenCalledOnce();
   });
 });

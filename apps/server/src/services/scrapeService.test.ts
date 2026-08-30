@@ -43,7 +43,7 @@ const createService = () => {
   const persistence = {
     getState: vi.fn(async () => ({ repositories: { scrapeRuns } })),
   };
-  const roots = { getActiveRoot: vi.fn(async () => root) };
+  const roots = { get: vi.fn(async () => root) };
   const config = { get: vi.fn(async () => defaultConfiguration) };
   const service = new ScrapeService(
     persistence as unknown as ServerPersistenceService,

@@ -78,15 +78,12 @@ describe("storage root-relative paths", () => {
         id: "root-1",
         displayName: "  Movies  ",
         hostPath: path.join(directory.path, "."),
-        enabled: false,
         now: new Date("2026-04-28T00:00:00.000Z"),
       }),
     ).toEqual({
       id: "root-1",
       displayName: "Movies",
       hostPath: path.resolve(directory.path),
-      rootType: "mounted-filesystem",
-      enabled: false,
       createdAt: new Date("2026-04-28T00:00:00.000Z"),
       updatedAt: new Date("2026-04-28T00:00:00.000Z"),
     });
@@ -226,15 +223,6 @@ describe("mounted filesystem helpers", () => {
         expect.objectContaining({ relativePath: "movie.mkv" }),
         expect.objectContaining({ relativePath: "links/linked-dir/target.mp4" }),
       ]),
-    );
-  });
-
-  it("rejects disabled roots with a stable unsupported-operation error", async () => {
-    const root = await createTempRoot();
-    const disabledRoot = { ...root, enabled: false };
-
-    await expect(readRootFile(disabledRoot, "movie.nfo")).rejects.toEqual(
-      expect.objectContaining({ code: storageErrorCodes.UnsupportedOperation }),
     );
   });
 

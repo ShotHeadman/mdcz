@@ -1,7 +1,7 @@
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { listRootFiles, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
-import type { TaskRecord } from "@mdcz/persistence";
+import type { ScanTask } from "@mdcz/persistence";
 import { TaskScheduler } from "@mdcz/runtime/tasks";
 import { isHostPathWithinDirectory } from "@mdcz/shared/mediaCandidate";
 import type {
@@ -36,7 +36,7 @@ const toIso = (value: Date | null): string | null => value?.toISOString() ?? nul
 const toPosixPath = (value: string): string => value.replace(/\\/gu, "/");
 
 export class ScanQueueService {
-  private readonly scheduler: TaskScheduler<TaskRecord>;
+  private readonly scheduler: TaskScheduler<ScanTask>;
   private readonly queuedTaskIds: string[] = [];
 
   constructor(
@@ -51,9 +51,9 @@ export class ScanQueueService {
   }
 
   async start(rootId: string): Promise<ScanTaskDto> {
-    await this.mediaRoots.getActiveRoot(rootId);
+    await this.mediaRoots.get(rootId);
     const state = await this.persistence.getState();
-    const task = await state.repositories.tasks.createScanTask({ rootId });
+    const task = await state.repositories.scanTasks.create({ rootId });
     await this.addEvent(task.id, "queued", "扫描任务已排队");
     const queuedTask = await this.toDto(task.id);
     this.publishTask(queuedTask);
@@ -63,7 +63,7 @@ export class ScanQueueService {
 
   async list(): Promise<ScanTaskListResponse> {
     const state = await this.persistence.getState();
-    const tasks = await state.repositories.tasks.list();
+    const tasks = await state.repositories.scanTasks.list();
     return { tasks: await Promise.all(tasks.map((task) => this.toDto(task.id))) };
   }
 
@@ -76,14 +76,14 @@ export class ScanQueueService {
 
   async events(taskId: string): Promise<TaskEventListResponse> {
     const state = await this.persistence.getState();
-    const events = await state.repositories.tasks.listEvents(taskId);
+    const events = await state.repositories.scanTasks.listEvents(taskId);
     return { events: events.map(toTaskEventDto) };
   }
 
   async logs(): Promise<LogListResponse> {
     const state = await this.persistence.getState();
-    const tasks = await state.repositories.tasks.list();
-    const events = await Promise.all(tasks.map((task) => state.repositories.tasks.listEvents(task.id)));
+    const tasks = await state.repositories.scanTasks.list();
+    const events = await Promise.all(tasks.map((task) => state.repositories.scanTasks.listEvents(task.id)));
     const logs = events
       .flat()
       .map((event) => ({ ...toTaskEventDto(event), source: "task" as const }))
@@ -93,25 +93,13 @@ export class ScanQueueService {
 
   async retry(taskId: string): Promise<ScanTaskDto> {
     const state = await this.persistence.getState();
-    const task = await state.repositories.tasks.get(taskId);
+    const task = await state.repositories.scanTasks.get(taskId);
     if (task.status === "running" || task.status === "queued") {
       throw new Error("Only completed or failed scan tasks can be retried");
     }
-    await this.mediaRoots.getActiveRoot(task.rootId);
-    const queued = await state.repositories.tasks.patch(
-      taskId,
-      {
-        status: "queued",
-        startedAt: null,
-        completedAt: null,
-        error: null,
-        videoCount: 0,
-        directoryCount: 0,
-      },
-      { status: ["completed", "failed"] },
-    );
+    await this.mediaRoots.get(task.rootId);
+    const queued = await state.repositories.scanTasks.requeue(taskId);
     if (!queued) throw new Error(`Failed to requeue scan task: ${taskId}`);
-    await state.repositories.tasks.replaceScanResults({ taskId, rootId: task.rootId, results: [] });
     await this.addEvent(taskId, "queued", "重试扫描已排队");
     const queuedTask = await this.toDto(taskId);
     this.publishTask(queuedTask);
@@ -122,13 +110,11 @@ export class ScanQueueService {
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
     const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
-    const registeredRoots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
+    const registeredRoots = (await this.mediaRoots.list()).roots;
     const root: MediaRoot = {
       id: "adhoc-scan",
       displayName: path.basename(hostPath) || hostPath,
       hostPath,
-      rootType: "mounted-filesystem",
-      enabled: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -179,16 +165,16 @@ export class ScanQueueService {
     };
   }
 
-  private async runTask(task: TaskRecord): Promise<void> {
+  private async runTask(task: ScanTask): Promise<void> {
     const state = await this.persistence.getState();
     const { id: taskId, rootId } = task;
     await this.addEvent(taskId, "running", "开始扫描媒体目录");
     this.publishTask(await this.toDto(taskId));
 
     try {
-      const root = await this.mediaRoots.getActiveRoot(rootId);
+      const root = await this.mediaRoots.get(rootId);
       const result = await this.scanDirectory(root);
-      const committed = await state.repositories.tasks.completeScanTask({
+      const committed = await state.repositories.scanTasks.complete({
         taskId,
         rootId,
         results: result.videos,
@@ -203,11 +189,7 @@ export class ScanQueueService {
       this.publishTask(await this.toDto(taskId));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const committed = await state.repositories.tasks.patch(
-        taskId,
-        { status: "failed", completedAt: new Date(), error: message },
-        { status: "running" },
-      );
+      const committed = await state.repositories.scanTasks.fail(taskId, message);
       if (!committed) return;
       await this.addEvent(taskId, "failed", message);
       this.publishTask(await this.toDto(taskId));
@@ -231,9 +213,9 @@ export class ScanQueueService {
 
   private async toDto(taskId: string): Promise<ScanTaskDto> {
     const state = await this.persistence.getState();
-    const task = await state.repositories.tasks.get(taskId);
-    const root = await state.repositories.mediaRoots.get(task.rootId, { includeDeleted: true }).catch(() => null);
-    const videos = await state.repositories.tasks.listScanResults(taskId);
+    const task = await state.repositories.scanTasks.get(taskId);
+    const root = await state.repositories.mediaRoots.get(task.rootId).catch(() => null);
+    const videos = await state.repositories.scanTasks.listScanResults(taskId);
     return {
       id: task.id,
       kind: "scan",
@@ -253,7 +235,7 @@ export class ScanQueueService {
 
   private async addEvent(taskId: string, type: string, message: string): Promise<TaskEventDto> {
     const state = await this.persistence.getState();
-    const event = await state.repositories.tasks.addEvent({ taskId, type, message });
+    const event = await state.repositories.scanTasks.addEvent({ taskId, type, message });
     const dto = toTaskEventDto(event);
     this.taskEvents.log(decorateTaskLog(dto));
     return dto;
@@ -269,12 +251,12 @@ export class ScanQueueService {
     this.scheduler.drain();
   }
 
-  private async claimNext(): Promise<TaskRecord | null> {
+  private async claimNext(): Promise<ScanTask | null> {
     const state = await this.persistence.getState();
     while (true) {
       const taskId = this.queuedTaskIds.shift();
       if (!taskId) return null;
-      const task = await state.repositories.tasks.claim(taskId);
+      const task = await state.repositories.scanTasks.claim(taskId);
       if (task) return task;
     }
   }

@@ -71,7 +71,7 @@ export class OutputLibraryScanner {
       const latestSummary = latestRun ? state.repositories.scrapeRuns.summary(latestRun) : null;
       if (latestSummary) {
         const outputRoot = latestSummary.outputRootId
-          ? await state.repositories.mediaRoots.get(latestSummary.outputRootId, { includeDeleted: true })
+          ? await state.repositories.mediaRoots.get(latestSummary.outputRootId)
           : null;
         return createOutputLibrarySummaryFromScrapeOutput(
           {

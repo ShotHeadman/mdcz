@@ -52,10 +52,9 @@ const syncMediaRootFromConfig = async (
   if (!mediaPath) {
     return;
   }
-  await services.mediaRoots.setPrimaryMediaRoot({
+  await services.mediaRoots.ensurePath({
     displayName: options.displayName?.trim() || pathDisplayName(mediaPath),
     hostPath: mediaPath,
-    enabled: true,
   });
 };
 

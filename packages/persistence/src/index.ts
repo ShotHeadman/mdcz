@@ -5,5 +5,5 @@ export * from "./libraryRepository";
 export * from "./mediaRootRepository";
 export * from "./migrate";
 export * from "./publicationJournalRepository";
+export * from "./scanTaskRepository";
 export * from "./scrapeRunRepository";
-export * from "./taskRepository";

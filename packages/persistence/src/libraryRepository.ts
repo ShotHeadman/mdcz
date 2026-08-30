@@ -633,7 +633,6 @@ export class LibraryRepository {
     return this.database.db
       .select()
       .from(mediaRoots)
-      .where(eq(mediaRoots.deleted, false))
       .all()
       .flatMap((root): RootPathCandidate[] => {
         const resolvedRootPath = path.resolve(root.hostPath);
@@ -812,22 +811,6 @@ const chooseRootCandidate = (candidates: readonly RootPathCandidate[], preferred
 
 const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
   const filters: SQL[] = [];
-  const activeRootExists = sql`(
-    EXISTS (
-      SELECT 1
-      FROM library_item_files AS active_root_file
-      INNER JOIN media_roots AS active_root ON active_root.id = active_root_file.root_id
-      WHERE active_root_file.item_id = ${libraryItems.id}
-        AND active_root.deleted = 0
-    )
-    OR NOT EXISTS (
-      SELECT 1
-      FROM library_item_files AS root_presence
-      INNER JOIN media_roots AS any_root ON any_root.id = root_presence.root_id
-      WHERE root_presence.item_id = ${libraryItems.id}
-    )
-  )`;
-  filters.push(activeRootExists);
   const rootId = input.rootId?.trim();
   if (rootId) {
     filters.push(
@@ -837,7 +820,6 @@ const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "r
         LEFT JOIN media_roots AS root ON root.id = root_file.root_id
         WHERE root_file.item_id = ${libraryItems.id}
           AND root_file.root_id = ${rootId}
-          AND (root.id IS NULL OR root.deleted = 0)
       )`,
     );
   }
@@ -866,7 +848,6 @@ const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "r
           FROM library_item_files AS display_file
           INNER JOIN media_roots AS display_root ON display_root.id = display_file.root_id
           WHERE display_file.item_id = ${libraryItems.id}
-            AND display_root.deleted = 0
             AND lower(display_root.display_name) LIKE ${pattern} ${escapeClause}
         )
       )`,

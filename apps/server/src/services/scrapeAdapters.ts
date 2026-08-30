@@ -65,7 +65,7 @@ export class ServerNfoAdapter {
   ) {}
 
   async read(input: NfoReadInput): Promise<NfoReadResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
+    const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
     const candidates = getNfoReadCandidates(
       input.relativePath,
       configuration.download.nfoNaming,
@@ -83,7 +83,7 @@ export class ServerNfoAdapter {
   }
 
   async write(input: NfoWriteInput): Promise<NfoWriteResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
+    const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
     const plannedRelativePath = resolveFilenameNfoPath(input.relativePath, input.videoRelativePath);
     const candidates = getNfoReadCandidates(
       input.relativePath,
@@ -144,7 +144,7 @@ export class ServerPosterCropAdapter {
 
   async session(record: ServerScrapeArtifactRecord) {
     const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.outputRootId ?? record.rootId),
+      this.mediaRoots.get(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
     const session = await this.posterCropService.prepare(
@@ -162,7 +162,7 @@ export class ServerPosterCropAdapter {
 
   async save(record: ServerScrapeArtifactRecord, input: PosterCropSaveInput) {
     const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.outputRootId ?? record.rootId),
+      this.mediaRoots.get(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
     const state = await this.persistence.getState();

@@ -1,8 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { toRootRelativePath } from "@mdcz/media-store";
-import { findEnclosingMediaRoot } from "@mdcz/runtime/library";
+import { findEnclosingMediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { LOCAL_FILE_SCHEME, parseLocalFileUrl, toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import { net, protocol } from "electron";
 

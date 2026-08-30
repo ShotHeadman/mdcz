@@ -104,7 +104,7 @@ export const createScraperHandlers = (
           createUncensoredConfirmDependencies({
             journal: state.repositories.publicationJournal,
             repairIssues: state.repositories.libraryRepairIssues,
-            roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+            roots: await state.repositories.mediaRoots.list(),
           }),
         );
       }),

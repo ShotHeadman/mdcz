@@ -70,7 +70,7 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
     publishRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
   };
   const coordinator = new MaintenanceSessionCoordinator({
-    roots: { getActiveRoot: async () => root },
+    roots: { get: async () => root },
     runtime,
     library,
     events: {

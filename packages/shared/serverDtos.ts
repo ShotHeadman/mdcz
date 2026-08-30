@@ -20,9 +20,6 @@ export const mediaRootSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   hostPath: z.string(),
-  rootType: z.literal("mounted-filesystem"),
-  enabled: z.boolean(),
-  deleted: z.boolean(),
   availability: mediaRootAvailabilitySchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -39,7 +36,6 @@ export type MediaRootListResponse = z.infer<typeof mediaRootListResponseSchema>;
 export const mediaRootCreateInputSchema = z.object({
   displayName: z.string().trim().min(1),
   hostPath: z.string().trim().min(1),
-  enabled: z.boolean().optional(),
 });
 
 export type MediaRootCreateInput = z.infer<typeof mediaRootCreateInputSchema>;

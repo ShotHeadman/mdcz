@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { PersistenceDatabase } from "./database";
 import { PublicationJournalRepository } from "./publicationJournalRepository";
-import { taskRecords } from "./schema";
+import { scanTasks } from "./schema";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 let database: PersistenceDatabase | undefined;
@@ -37,7 +37,7 @@ describe("PublicationJournalRepository", () => {
     expect(() =>
       repository.commit("missing", () => {
         database?.db
-          .insert(taskRecords)
+          .insert(scanTasks)
           .values({
             id: "task-1",
             rootId: "root-1",
@@ -50,7 +50,7 @@ describe("PublicationJournalRepository", () => {
           .run();
       }),
     ).toThrow("not pending");
-    expect(database.sqlite.prepare("SELECT id FROM task_records").all()).toEqual([]);
+    expect(database.sqlite.prepare("SELECT id FROM scan_tasks").all()).toEqual([]);
   });
 
   it("matches unfinished operations on any overlapping root file ref", () => {

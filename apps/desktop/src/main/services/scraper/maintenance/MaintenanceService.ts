@@ -8,7 +8,7 @@ import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { createDesktopInputRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import {
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
@@ -94,9 +94,8 @@ export class MaintenanceService {
       deps.coordinator ??
       new MaintenanceSessionCoordinator({
         roots: {
-          getActiveRoot: async (rootId) => {
+          get: async (rootId) => {
             const root = await (await deps.persistenceService.getState()).repositories.mediaRoots.get(rootId);
-            if (!root.enabled || root.deleted) throw new Error(`Media root is not active: ${rootId}`);
             return root;
           },
         },
@@ -144,7 +143,7 @@ export class MaintenanceService {
   async scan(dirPath: string): Promise<LocalScanEntry[]> {
     await this.assertAvailableForScan();
     return await this.runScan("Scanning maintenance directories", async (signal) => {
-      const root = createDesktopInputRoot(dirPath);
+      const root = await (await this.persistenceService.getState()).repositories.mediaRoots.ensurePath(dirPath);
       return await this.runtime.scan({ root, signal });
     });
   }
@@ -170,8 +169,7 @@ export class MaintenanceService {
       entries.map((entry) => entry.fileInfo.filePath),
       config.paths.mediaPath,
     );
-    const root = createDesktopInputRoot(rootPath);
-    await (await this.persistenceService.getState()).repositories.mediaRoots.upsert(root);
+    const root = await (await this.persistenceService.getState()).repositories.mediaRoots.ensurePath(rootPath);
     const refs = entries.map((entry) => ({ relativePath: toRootRelativePath(root, entry.fileInfo.filePath) }));
     this.signalService.resetProgress();
     return await this.coordinator.startPreview({ rootId: root.id, presetId, refs });

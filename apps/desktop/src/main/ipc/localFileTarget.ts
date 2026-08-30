@@ -11,7 +11,7 @@ export const resolveLocalFileTarget = async (
   }
 
   const state = await context.persistenceService.getState();
-  const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+  const roots = await state.repositories.mediaRoots.list();
   const root = roots.find((candidate) => candidate.id === target.rootId);
   if (!root) {
     throw new Error(`Media root not found: ${target.rootId}`);

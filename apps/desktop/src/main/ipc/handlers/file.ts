@@ -6,7 +6,7 @@ import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
-import { createDesktopInputRoot, findEnclosingMediaRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { commitRegisteredPublication } from "@mdcz/runtime/publication";
 import {
@@ -59,18 +59,16 @@ export const createFileHandlers = (
 > => {
   const { windowService, persistenceService } = context;
   const posterCropService = new PosterCropService();
-  const admitRoot = async (hostPath: string): Promise<void> => {
+  const ensurePath = async (hostPath: string): Promise<void> => {
     const state = await persistenceService.getState();
-    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
-    if (findEnclosingMediaRoot(hostPath, roots)) return;
-    await state.repositories.mediaRoots.upsert(createDesktopInputRoot(hostPath));
+    await state.repositories.mediaRoots.ensurePath(hostPath);
   };
   const publication = async () => {
     const state = await persistenceService.getState();
     return {
       journal: state.repositories.publicationJournal,
       repairIssues: state.repositories.libraryRepairIssues,
-      roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+      roots: await state.repositories.mediaRoots.list(),
     };
   };
   const assertDirectory = async (dirPath: string): Promise<void> => {
@@ -227,7 +225,7 @@ export const createFileHandlers = (
           return { exists: true, url: toLocalFileUrl(target.ref) };
         }
         const state = await persistenceService.getState();
-        const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
+        const roots = await state.repositories.mediaRoots.list();
         const url = localFileUrlForHostPath(targetPath, roots);
         return url ? { exists: true, url } : { exists: true };
       } catch {
@@ -249,7 +247,7 @@ export const createFileHandlers = (
         : await dialog.showOpenDialog(options);
       if (!result.canceled) {
         for (const selectedPath of result.filePaths) {
-          await admitRoot(type === "directory" ? selectedPath : dirname(selectedPath));
+          await ensurePath(type === "directory" ? selectedPath : dirname(selectedPath));
         }
       }
       return { paths: result.canceled ? null : result.filePaths };
@@ -259,7 +257,7 @@ export const createFileHandlers = (
       .action(async ({ input }): Promise<{ deletedCount: number; failedCount: number }> => {
         const filePaths = (input?.filePaths ?? []).filter((filePath) => filePath.trim());
         if (filePaths.length > 0) {
-          await admitRoot(resolveDesktopInputRootPath(filePaths));
+          await ensurePath(resolveDesktopInputRootPath(filePaths));
         }
         let deletedCount = 0;
         let failedCount = 0;
@@ -315,7 +313,7 @@ export const createFileHandlers = (
             ? (await resolveLocalFileTarget(context, input.videoPath)).hostPath
             : undefined;
           const plannedNfoPath = resolveFilenameNfoPath(nfoPath, videoPath);
-          await admitRoot(resolveDesktopInputRootPath(videoPath ? [plannedNfoPath, videoPath] : [plannedNfoPath]));
+          await ensurePath(resolveDesktopInputRootPath(videoPath ? [plannedNfoPath, videoPath] : [plannedNfoPath]));
           const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming, pathExists, videoPath);
           const existingXml = existingNfoPath ? await readFile(existingNfoPath, "utf8") : undefined;
           const existingSnapshot = existingXml ? parseNfoSnapshot(existingXml).localState : undefined;
@@ -365,7 +363,7 @@ export const createFileHandlers = (
         if (!input?.crop) {
           throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Crop is required");
         }
-        await admitRoot(dirname(videoPath));
+        await ensurePath(dirname(videoPath));
         const config = await configManager.getValidated();
         return await posterCropService.save(videoPath, config.naming.assetNamingMode, input.crop, await publication());
       } catch (error) {

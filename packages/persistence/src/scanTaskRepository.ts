@@ -4,19 +4,19 @@ import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import {
   type ScanResultRow,
+  type ScanTaskEventRow,
+  type ScanTaskRow,
   scanResults,
-  type TaskEventRow,
-  type TaskRecordRow,
-  taskEvents,
-  taskRecords,
+  scanTaskEvents,
+  scanTasks,
 } from "./schema";
 
-export type TaskRecordStatus = "queued" | "running" | "completed" | "failed" | "paused" | "stopping";
+export type ScanTaskStatus = "queued" | "running" | "completed" | "failed" | "paused" | "stopping";
 
-export interface TaskRecord {
+export interface ScanTask {
   id: string;
   rootId: string;
-  status: TaskRecordStatus;
+  status: ScanTaskStatus;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
@@ -26,7 +26,7 @@ export interface TaskRecord {
   error: string | null;
 }
 
-export interface TaskEventRecord {
+export interface ScanTaskEvent {
   id: string;
   taskId: string;
   type: string;
@@ -48,20 +48,6 @@ export interface CreateScanTaskInput {
   now?: Date;
 }
 
-export interface PatchTaskInput {
-  status?: TaskRecordStatus;
-  startedAt?: Date | null;
-  completedAt?: Date | null;
-  videoCount?: number;
-  directoryCount?: number;
-  error?: string | null;
-  updatedAt?: Date;
-}
-
-export interface TaskUpdateGuard {
-  status: TaskRecordStatus | readonly TaskRecordStatus[];
-}
-
 export interface AddTaskEventInput {
   id?: string;
   taskId: string;
@@ -81,10 +67,10 @@ export interface CompleteScanTaskInput extends ReplaceScanResultsInput {
   completedAt?: Date;
 }
 
-const toTaskRecord = (row: TaskRecordRow): TaskRecord => ({
+const toScanTask = (row: ScanTaskRow): ScanTask => ({
   id: row.id,
   rootId: row.rootId,
-  status: row.status as TaskRecordStatus,
+  status: row.status as ScanTaskStatus,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   startedAt: row.startedAt,
@@ -94,7 +80,7 @@ const toTaskRecord = (row: TaskRecordRow): TaskRecord => ({
   error: row.errorMessage,
 });
 
-const toTaskEventRecord = (row: TaskEventRow): TaskEventRecord => ({
+const toScanTaskEvent = (row: ScanTaskEventRow): ScanTaskEvent => ({
   id: row.id,
   taskId: row.taskId,
   type: row.type,
@@ -110,12 +96,12 @@ const toScanResultRecord = (row: ScanResultRow): ScanResultRecord => ({
   modifiedAt: row.modifiedAt,
 });
 
-export class TaskRepository {
+export class ScanTaskRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
-  async createScanTask(input: CreateScanTaskInput): Promise<TaskRecord> {
+  async create(input: CreateScanTaskInput): Promise<ScanTask> {
     const now = input.now ?? new Date();
-    const task: TaskRecord = {
+    const task: ScanTask = {
       id: input.id ?? randomUUID(),
       rootId: input.rootId,
       status: "queued",
@@ -129,12 +115,11 @@ export class TaskRepository {
     };
 
     this.database.db
-      .insert(taskRecords)
+      .insert(scanTasks)
       .values({
         id: task.id,
         rootId: task.rootId,
         status: task.status,
-        summary: null,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
         startedAt: task.startedAt,
@@ -148,56 +133,22 @@ export class TaskRepository {
     return task;
   }
 
-  async patch(id: string, patch: PatchTaskInput): Promise<TaskRecord>;
-  async patch(id: string, patch: PatchTaskInput, guard: TaskUpdateGuard): Promise<TaskRecord | null>;
-  async patch(id: string, patch: PatchTaskInput, guard?: TaskUpdateGuard): Promise<TaskRecord | null> {
-    const updatedAt = patch.updatedAt ?? new Date();
-    const result = this.database.db
-      .update(taskRecords)
-      .set({
-        status: patch.status,
-        updatedAt,
-        startedAt: patch.startedAt,
-        completedAt: patch.completedAt,
-        errorMessage: patch.error,
-        videoCount: patch.videoCount,
-        directoryCount: patch.directoryCount,
-      })
-      .where(
-        guard
-          ? and(
-              eq(taskRecords.id, id),
-              Array.isArray(guard.status)
-                ? inArray(taskRecords.status, [...guard.status])
-                : eq(taskRecords.status, guard.status as TaskRecordStatus),
-            )
-          : eq(taskRecords.id, id),
-      )
-      .run();
-
-    if (result.changes === 0) {
-      if (guard) return null;
-      await this.get(id);
-    }
-    return await this.get(id);
+  async list(): Promise<ScanTask[]> {
+    const rows = this.database.db.select().from(scanTasks).orderBy(desc(scanTasks.createdAt)).all();
+    return rows.map(toScanTask);
   }
 
-  async list(): Promise<TaskRecord[]> {
-    const rows = this.database.db.select().from(taskRecords).orderBy(desc(taskRecords.createdAt)).all();
-    return rows.map(toTaskRecord);
-  }
-
-  async get(id: string): Promise<TaskRecord> {
-    const row = this.database.db.select().from(taskRecords).where(eq(taskRecords.id, id)).limit(1).get();
+  async get(id: string): Promise<ScanTask> {
+    const row = this.database.db.select().from(scanTasks).where(eq(scanTasks.id, id)).limit(1).get();
     if (!row) {
       throw new PersistenceError(persistenceErrorCodes.NotFound, `Task not found: ${id}`);
     }
-    return toTaskRecord(row);
+    return toScanTask(row);
   }
 
-  async claim(id: string, now = new Date()): Promise<TaskRecord | null> {
+  async claim(id: string, now = new Date()): Promise<ScanTask | null> {
     const claimed = this.database.db
-      .update(taskRecords)
+      .update(scanTasks)
       .set({
         status: "running",
         startedAt: now,
@@ -205,56 +156,74 @@ export class TaskRepository {
         errorMessage: null,
         updatedAt: now,
       })
-      .where(and(eq(taskRecords.id, id), eq(taskRecords.status, "queued")))
+      .where(and(eq(scanTasks.id, id), eq(scanTasks.status, "queued")))
       .run();
     return claimed.changes === 1 ? await this.get(id) : null;
   }
 
-  async addEvent(input: AddTaskEventInput): Promise<TaskEventRecord> {
+  async requeue(id: string, now = new Date()): Promise<ScanTask | null> {
+    const transaction = this.database.sqlite.transaction(() => {
+      const requeued = this.database.db
+        .update(scanTasks)
+        .set({
+          status: "queued",
+          startedAt: null,
+          completedAt: null,
+          errorMessage: null,
+          videoCount: 0,
+          directoryCount: 0,
+          updatedAt: now,
+        })
+        .where(and(eq(scanTasks.id, id), inArray(scanTasks.status, ["completed", "failed"])))
+        .run();
+      if (requeued.changes === 0) return false;
+      this.database.db.delete(scanResults).where(eq(scanResults.taskId, id)).run();
+      return true;
+    });
+    return transaction() ? await this.get(id) : null;
+  }
+
+  async fail(id: string, error: string, completedAt = new Date()): Promise<ScanTask | null> {
+    const failed = this.database.db
+      .update(scanTasks)
+      .set({ status: "failed", completedAt, errorMessage: error, updatedAt: completedAt })
+      .where(and(eq(scanTasks.id, id), eq(scanTasks.status, "running")))
+      .run();
+    return failed.changes === 1 ? await this.get(id) : null;
+  }
+
+  async addEvent(input: AddTaskEventInput): Promise<ScanTaskEvent> {
     await this.get(input.taskId);
-    const event: TaskEventRecord = {
+    const event: ScanTaskEvent = {
       id: input.id ?? randomUUID(),
       taskId: input.taskId,
       type: input.type,
       message: input.message,
       createdAt: input.createdAt ?? new Date(),
     };
-    this.database.db.insert(taskEvents).values(event).run();
+    this.database.db.insert(scanTaskEvents).values(event).run();
     return event;
   }
 
-  async listEvents(taskId: string): Promise<TaskEventRecord[]> {
+  async listEvents(taskId: string): Promise<ScanTaskEvent[]> {
     await this.get(taskId);
     const rows = this.database.db
       .select()
-      .from(taskEvents)
-      .where(eq(taskEvents.taskId, taskId))
-      .orderBy(taskEvents.createdAt)
+      .from(scanTaskEvents)
+      .where(eq(scanTaskEvents.taskId, taskId))
+      .orderBy(scanTaskEvents.createdAt)
       .all();
-    return rows.map(toTaskEventRecord);
+    return rows.map(toScanTaskEvent);
   }
 
-  async replaceScanResults(input: ReplaceScanResultsInput): Promise<void> {
-    const values = this.toScanResultValues(input);
-    await this.get(input.taskId);
-
-    const transaction = this.database.sqlite.transaction(() => {
-      this.database.db.delete(scanResults).where(eq(scanResults.taskId, input.taskId)).run();
-      if (values.length > 0) {
-        this.database.db.insert(scanResults).values(values).run();
-      }
-    });
-    transaction();
-  }
-
-  async completeScanTask(input: CompleteScanTaskInput): Promise<TaskRecord | null> {
+  async complete(input: CompleteScanTaskInput): Promise<ScanTask | null> {
     const values = this.toScanResultValues(input);
     const completedAt = input.completedAt ?? new Date();
     const transaction = this.database.sqlite.transaction(() => {
       const owned = this.database.db
-        .select({ id: taskRecords.id })
-        .from(taskRecords)
-        .where(and(eq(taskRecords.id, input.taskId), eq(taskRecords.status, "running")))
+        .select({ id: scanTasks.id })
+        .from(scanTasks)
+        .where(and(eq(scanTasks.id, input.taskId), eq(scanTasks.status, "running")))
         .limit(1)
         .get();
       if (!owned) return false;
@@ -262,7 +231,7 @@ export class TaskRepository {
       this.database.db.delete(scanResults).where(eq(scanResults.taskId, input.taskId)).run();
       if (values.length > 0) this.database.db.insert(scanResults).values(values).run();
       const committed = this.database.db
-        .update(taskRecords)
+        .update(scanTasks)
         .set({
           status: "completed",
           completedAt,
@@ -271,7 +240,7 @@ export class TaskRepository {
           directoryCount: input.directoryCount,
           errorMessage: null,
         })
-        .where(and(eq(taskRecords.id, input.taskId), eq(taskRecords.status, "running")))
+        .where(and(eq(scanTasks.id, input.taskId), eq(scanTasks.status, "running")))
         .run();
       return committed.changes === 1;
     });

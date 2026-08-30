@@ -68,6 +68,7 @@ const createService = (options?: {
           publicationJournal: createMemoryPublicationJournal(),
           mediaRoots: {
             list: async () => [{ id: "tmp", hostPath: tmpdir() }],
+            ensurePath: async (hostPath: string) => ({ id: "tmp", hostPath }),
             upsert: async () => undefined,
           },
         },

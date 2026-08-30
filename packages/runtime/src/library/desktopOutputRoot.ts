@@ -30,7 +30,6 @@ export const createDesktopOutputRoot = (configuration: Configuration, now = new 
     id: DESKTOP_OUTPUT_ROOT_ID,
     displayName: DESKTOP_OUTPUT_ROOT_DISPLAY_NAME,
     hostPath,
-    enabled: true,
     now,
   });
 };

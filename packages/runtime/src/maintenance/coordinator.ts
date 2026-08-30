@@ -29,7 +29,7 @@ import { buildMaintenanceApplyData } from "./applyData";
 import type { MaintenanceRuntime, MaintenanceRuntimePreviewItem } from "./MaintenanceRuntime";
 
 export interface MaintenanceRootPort {
-  getActiveRoot(rootId: string): Promise<MediaRoot>;
+  get(rootId: string): Promise<MediaRoot>;
 }
 
 export interface MaintenanceLibraryPort {
@@ -182,7 +182,7 @@ export class MaintenanceSessionCoordinator {
     this.assertOpen();
     const refs = [...(input.refs ?? [])];
     assertUniqueRefs(refs);
-    await this.deps.roots.getActiveRoot(input.rootId);
+    await this.deps.roots.get(input.rootId);
     if (this.session?.isActive()) {
       throw new Error("已有活动的维护会话，请先完成或停止当前会话");
     }
@@ -231,7 +231,7 @@ export class MaintenanceSessionCoordinator {
       .map((previewId) => session.preview(previewId))
       .filter((preview) => preview !== undefined);
     if (previews.length !== previewIds.length) throw new Error("部分维护预览不存在、已提交或不属于当前会话");
-    const root = await this.deps.roots.getActiveRoot(session.rootId);
+    const root = await this.deps.roots.get(session.rootId);
     const refs = ownedPreviewPaths(root, previews);
     const acquireAll = this.deps.acquireAll ?? ((owned, owner) => mediaPathOwnership.acquireAll(owned, owner));
     const release = acquireAll(refs, session.id);
@@ -369,7 +369,7 @@ export class MaintenanceSessionCoordinator {
     this.active = { sessionId, generation, executor: { pause: () => undefined, stop: () => scanController.abort() } };
     try {
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
-      const root = await this.deps.roots.getActiveRoot(initial.rootId);
+      const root = await this.deps.roots.get(initial.rootId);
       const persistedRefs = [...initial.refs];
       const entries =
         persistedRefs.length > 0
@@ -449,7 +449,7 @@ export class MaintenanceSessionCoordinator {
   private async runApply(sessionId: string, generation: number): Promise<void> {
     try {
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
-      const root = await this.deps.roots.getActiveRoot(initial.rootId);
+      const root = await this.deps.roots.get(initial.rootId);
       const pending = initial.pendingBatchItems();
       await this.executeItems<MaintenanceBatchItem, ApplyExecutionResult>(sessionId, generation, pending, {
         runItem: async (item, context) => {

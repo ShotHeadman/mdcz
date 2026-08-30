@@ -67,7 +67,7 @@ export class LibraryService {
   }
 
   async relink(input: { id: string; rootId: string; relativePath: string }): Promise<LibraryDetailResponse> {
-    await this.mediaRoots.getActiveRoot(input.rootId);
+    await this.mediaRoots.get(input.rootId);
     const state = await this.persistence.getState();
     const entry = await state.repositories.library.relinkEntry({
       id: input.id,
@@ -292,13 +292,7 @@ export class LibraryService {
     return new Map(roots.roots.map((root) => [root.id, root]));
   }
 
-  private async checkAvailability(
-    root: { hostPath: string; enabled: boolean },
-    relativePath: string,
-  ): Promise<boolean> {
-    if (!root.enabled) {
-      return false;
-    }
+  private async checkAvailability(root: { hostPath: string }, relativePath: string): Promise<boolean> {
     const key = availabilityKey(root, relativePath);
     const cached = this.availabilityCache.get(key);
     if (cached && cached.expiresAt > Date.now()) {

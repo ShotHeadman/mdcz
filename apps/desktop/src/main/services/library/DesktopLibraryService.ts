@@ -108,7 +108,7 @@ export class DesktopLibraryService {
     const state = await this.persistenceService.getState();
     if (options.deleteMediaFiles) {
       const [roots, entry] = await Promise.all([
-        state.repositories.mediaRoots.list({ includeDeleted: true }),
+        state.repositories.mediaRoots.list(),
         state.repositories.library.getEntryById(normalizedId),
       ]);
       const rootMap = new Map(roots.map((root) => [root.id, root]));
@@ -211,13 +211,7 @@ export class DesktopLibraryService {
     };
   }
 
-  private async checkAvailability(
-    root: { hostPath: string; enabled: boolean },
-    relativePath: string,
-  ): Promise<boolean> {
-    if (!root.enabled) {
-      return false;
-    }
+  private async checkAvailability(root: { hostPath: string }, relativePath: string): Promise<boolean> {
     const key = availabilityKey(root, relativePath);
     const cached = this.availabilityCache.get(key);
     if (cached && cached.expiresAt > Date.now()) {

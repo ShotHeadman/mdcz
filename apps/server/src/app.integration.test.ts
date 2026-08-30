@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { deterministicMediaRootId } from "@mdcz/runtime/library";
+import { deterministicMediaRootId } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
@@ -153,13 +153,13 @@ describe("buildServer composition integration", () => {
     const completeResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/setup.complete",
-      payload: { password: "changed-password", mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+      payload: { password: "changed-password", mediaRoot: { displayName: "Media", hostPath: root } },
     });
     const statusResponse = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
     const repeatResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/setup.complete",
-      payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root, enabled: true } },
+      payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root } },
     });
     const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
     const config = await services.config.get();
@@ -177,7 +177,7 @@ describe("buildServer composition integration", () => {
     });
     expect(config.paths.mediaPath).toBe(root);
     expect(roots.roots).toHaveLength(1);
-    expect(roots.roots[0]).toMatchObject({ displayName: "Media", hostPath: root, enabled: true });
+    expect(roots.roots[0]).toMatchObject({ displayName: "Media", hostPath: root });
     expect(state).toEqual({ setupCompleted: true, adminPassword: "changed-password" });
     expect(repeatResponse.statusCode).toBe(403);
   });
@@ -381,7 +381,7 @@ describe("buildServer composition integration", () => {
     });
   });
 
-  it("syncs the single enabled media root from paths.mediaPath", async () => {
+  it("adds configured media roots without disabling earlier roots", async () => {
     const firstRoot = await createTempRoot("config-media-root-a");
     const secondRoot = await createTempRoot("config-media-root-b");
     const { fastify } = await createTestServer();
@@ -408,12 +408,10 @@ describe("buildServer composition integration", () => {
     const roots = rootsResponse.json().result.data.roots;
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
-    expect(roots.filter((root: { enabled: boolean }) => root.enabled)).toEqual([
-      expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
-    ]);
     expect(roots).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot, enabled: false }),
+        expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot }),
+        expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
       ]),
     );
   });
@@ -423,13 +421,13 @@ describe("buildServer composition integration", () => {
     const { services } = await createTestServer();
 
     const roots = await Promise.all([
-      services.mediaRoots.setPrimaryMediaRoot({ displayName: "First", hostPath: mediaPath, enabled: true }),
-      services.mediaRoots.setPrimaryMediaRoot({ displayName: "Second", hostPath: mediaPath, enabled: true }),
+      services.mediaRoots.ensurePath({ displayName: "First", hostPath: mediaPath }),
+      services.mediaRoots.ensurePath({ displayName: "Second", hostPath: mediaPath }),
     ]);
 
     expect(new Set(roots.map((root) => root.id))).toEqual(new Set([deterministicMediaRootId(mediaPath)]));
     await expect(services.mediaRoots.list()).resolves.toMatchObject({
-      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath, enabled: true })],
+      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath })],
     });
   });
 
@@ -512,7 +510,7 @@ describe("buildServer composition integration", () => {
       method: "POST",
       url: "/trpc/mediaRoots.create",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { displayName: "Media", hostPath: root },
     });
     const availabilityResponse = await fastify.inject({
       method: "GET",
@@ -531,8 +529,6 @@ describe("buildServer composition integration", () => {
       expect.objectContaining({
         id: rootId,
         hostPath: root,
-        enabled: true,
-        rootType: "mounted-filesystem",
       }),
     ]);
     expect(createResponse.statusCode).toBe(404);

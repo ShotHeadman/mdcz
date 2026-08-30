@@ -16,7 +16,6 @@ describe("shared server DTO contracts", () => {
     expect(mediaRootSchema.parse(fixture)).toEqual(fixture);
     expect(mediaRootSchema.parse(buildMediaRootDto({ id: "factory-root" }))).toMatchObject({
       id: "factory-root",
-      rootType: "mounted-filesystem",
     });
   });
 

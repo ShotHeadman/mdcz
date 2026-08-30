@@ -1,7 +1,7 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { DesktopPersistenceService } from "@main/services/persistence";
-import { createDesktopInputRoot, findEnclosingMediaRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitRegisteredPublication } from "@mdcz/runtime/publication";
@@ -42,10 +42,7 @@ export class BatchTranslateToolService {
       localScanService: this.localScanService,
     });
     const state = await this.persistence.getState();
-    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
-    if (!findEnclosingMediaRoot(directory, roots)) {
-      await state.repositories.mediaRoots.upsert(createDesktopInputRoot(directory));
-    }
+    await state.repositories.mediaRoots.ensurePath(directory);
     return items;
   }
 
@@ -56,12 +53,9 @@ export class BatchTranslateToolService {
   ): Promise<BatchTranslateApplyResultItem[]> {
     void this.networkClient;
     const state = await this.persistence.getState();
-    const roots = await state.repositories.mediaRoots.list({ includeDeleted: true });
     if (items.length > 0) {
       const hostPath = resolveDesktopInputRootPath(items.map((item) => item.nfoPath));
-      if (!findEnclosingMediaRoot(hostPath, roots)) {
-        await state.repositories.mediaRoots.upsert(createDesktopInputRoot(hostPath));
-      }
+      await state.repositories.mediaRoots.ensurePath(hostPath);
     }
     return await applyBatchNfoTranslations(
       items,
@@ -91,7 +85,7 @@ export class BatchTranslateToolService {
             {
               journal: state.repositories.publicationJournal,
               repairIssues: state.repositories.libraryRepairIssues,
-              roots: await state.repositories.mediaRoots.list({ includeDeleted: true }),
+              roots: await state.repositories.mediaRoots.list(),
             },
           );
           return savedNfoPath;

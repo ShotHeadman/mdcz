@@ -8,8 +8,8 @@ import {
   type PersistenceDatabase,
   PublicationJournalRepository,
   runMigrations,
+  ScanTaskRepository,
   ScrapeRunRepository,
-  TaskRepository,
 } from "@mdcz/persistence";
 import { recoverPublications } from "@mdcz/runtime/publication";
 
@@ -21,7 +21,7 @@ export interface ServerPersistenceRepositories {
   mediaRoots: MediaRootRepository;
   publicationJournal: PublicationJournalRepository;
   scrapeRuns: ScrapeRunRepository;
-  tasks: TaskRepository;
+  scanTasks: ScanTaskRepository;
 }
 
 export interface ServerPersistenceState {
@@ -64,7 +64,7 @@ export class ServerPersistenceService {
       await recoverPublications({
         journal: publicationJournal,
         repairIssues: libraryRepairIssues,
-        resolveRoot: async (rootId) => await mediaRoots.get(rootId, { includeDeleted: true }),
+        resolveRoot: async (rootId) => await mediaRoots.get(rootId),
       });
       this.state = {
         database,
@@ -74,7 +74,7 @@ export class ServerPersistenceService {
           mediaRoots,
           publicationJournal,
           scrapeRuns,
-          tasks: new TaskRepository(database),
+          scanTasks: new ScanTaskRepository(database),
         },
       };
       return this.state;

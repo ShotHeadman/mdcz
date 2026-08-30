@@ -7,7 +7,7 @@ import { defaultMigrationsFolder } from "./migrate";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 const baselineChecksum = "5ac9842c4940bfb7571562f68b5ad978000534f89b67bf6525907baf098f40ff";
-const migrationFile = "0001_publication_journal_and_scrape_attempts.sql";
+const migrationFile = "0001_additive_roots_and_scan_tasks.sql";
 
 describe("Persistence migration baseline", () => {
   it("keeps the released baseline byte-for-byte intact", async () => {
@@ -23,7 +23,7 @@ describe("Persistence migration baseline", () => {
 
     expect(journal.entries).toEqual([
       expect.objectContaining({ idx: 0, when: 0, tag: "0000_initial" }),
-      expect.objectContaining({ idx: 1, when: 1_787_875_200_000, tag: "0001_publication_journal_and_scrape_attempts" }),
+      expect.objectContaining({ idx: 1, when: 1_787_875_200_000, tag: "0001_additive_roots_and_scan_tasks" }),
     ]);
     expect(files).toEqual(["0000_initial.sql", migrationFile]);
   });
@@ -45,7 +45,7 @@ describe("Persistence migration baseline", () => {
           .all()
           .map((row) => (row as { name: string }).name);
       expect(columns("scrape_runs")).not.toContain("retry_of_run_id");
-      expect(columns("task_records")).not.toEqual(expect.arrayContaining(["kind", "execution_version"]));
+      expect(columns("scan_tasks")).not.toEqual(expect.arrayContaining(["kind", "summary", "execution_version"]));
       expect(columns("scrape_item_outcomes")).toContain("attempt_id");
       expect(columns("scrape_item_outcomes")).not.toContain("item_id");
 
@@ -110,7 +110,7 @@ describe("Persistence migration baseline", () => {
 
       database.sqlite.exec(await readFile(join(defaultMigrationsFolder, migrationFile), "utf8"));
 
-      expect(database.sqlite.prepare("SELECT id, root_id, status FROM task_records").all()).toEqual([
+      expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
       expect(database.sqlite.prepare("SELECT relative_path, size FROM scan_results").all()).toEqual([

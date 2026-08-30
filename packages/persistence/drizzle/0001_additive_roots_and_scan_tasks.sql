@@ -36,17 +36,31 @@ WHERE EXISTS (
     )
 );
 --> statement-breakpoint
+CREATE TABLE `media_roots_new` (
+  `id` text PRIMARY KEY NOT NULL,
+  `display_name` text NOT NULL,
+  `host_path` text NOT NULL,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+INSERT INTO `media_roots_new` (`id`, `display_name`, `host_path`, `created_at`, `updated_at`)
+SELECT `id`, `display_name`, `host_path`, `created_at`, `updated_at` FROM `media_roots`;
+--> statement-breakpoint
+DROP TABLE `media_roots`;
+--> statement-breakpoint
+ALTER TABLE `media_roots_new` RENAME TO `media_roots`;
+--> statement-breakpoint
 ALTER TABLE `library_items` RENAME COLUMN `source_task_id` TO `source_run_id`;
 --> statement-breakpoint
 ALTER TABLE `library_items` RENAME COLUMN `scrape_output_id` TO `source_outcome_id`;
 --> statement-breakpoint
 UPDATE `library_items` SET `source_run_id` = NULL, `source_outcome_id` = NULL;
 --> statement-breakpoint
-CREATE TABLE `task_records_new` (
+CREATE TABLE `scan_tasks_new` (
   `id` text PRIMARY KEY NOT NULL,
   `root_id` text NOT NULL,
   `status` text NOT NULL,
-  `summary` text,
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL,
   `started_at` integer,
@@ -56,16 +70,18 @@ CREATE TABLE `task_records_new` (
   `directory_count` integer NOT NULL DEFAULT 0
 );
 --> statement-breakpoint
-INSERT INTO `task_records_new` (
-  `id`, `root_id`, `status`, `summary`, `created_at`, `updated_at`, `started_at`, `completed_at`, `error_message`, `video_count`, `directory_count`
+INSERT INTO `scan_tasks_new` (
+  `id`, `root_id`, `status`, `created_at`, `updated_at`, `started_at`, `completed_at`, `error_message`, `video_count`, `directory_count`
 )
 SELECT
-  `id`, `root_id`, `status`, `summary`, `created_at`, `updated_at`, `started_at`, `completed_at`, `error_message`, `video_count`, `directory_count`
+  `id`, `root_id`, `status`, `created_at`, `updated_at`, `started_at`, `completed_at`, `error_message`, `video_count`, `directory_count`
 FROM `task_records`;
 --> statement-breakpoint
 DROP TABLE `task_records`;
 --> statement-breakpoint
-ALTER TABLE `task_records_new` RENAME TO `task_records`;
+ALTER TABLE `scan_tasks_new` RENAME TO `scan_tasks`;
+--> statement-breakpoint
+ALTER TABLE `task_events` RENAME TO `scan_task_events`;
 --> statement-breakpoint
 CREATE TABLE `scrape_runs` (
   `id` text PRIMARY KEY NOT NULL,
@@ -211,11 +227,11 @@ ALTER TABLE `library_item_assets_new` RENAME TO `library_item_assets`;
 --> statement-breakpoint
 CREATE UNIQUE INDEX `scan_results_task_root_path_idx` ON `scan_results` (`task_id`, `root_id`, `relative_path`);
 --> statement-breakpoint
-CREATE INDEX `task_records_queue_idx` ON `task_records` (`status`, `created_at`);
+CREATE INDEX `scan_tasks_queue_idx` ON `scan_tasks` (`status`, `created_at`);
 --> statement-breakpoint
-CREATE INDEX `task_records_created_at_idx` ON `task_records` (`created_at`);
+CREATE INDEX `scan_tasks_created_at_idx` ON `scan_tasks` (`created_at`);
 --> statement-breakpoint
-CREATE INDEX `task_events_task_created_at_idx` ON `task_events` (`task_id`, `created_at`);
+CREATE INDEX `scan_task_events_task_created_at_idx` ON `scan_task_events` (`task_id`, `created_at`);
 --> statement-breakpoint
 CREATE INDEX `library_items_source_run_idx` ON `library_items` (`source_run_id`);
 --> statement-breakpoint
@@ -226,8 +242,6 @@ CREATE UNIQUE INDEX `library_item_files_root_path_idx` ON `library_item_files` (
 CREATE INDEX `library_item_files_item_idx` ON `library_item_files` (`item_id`);
 --> statement-breakpoint
 CREATE INDEX `library_item_assets_item_idx` ON `library_item_assets` (`item_id`);
---> statement-breakpoint
-CREATE INDEX `media_roots_state_idx` ON `media_roots` (`deleted`, `enabled`);
 --> statement-breakpoint
 CREATE INDEX `library_repair_issues_unresolved_idx` ON `library_repair_issues` (`resolved_at`, `detected_at`);
 --> statement-breakpoint

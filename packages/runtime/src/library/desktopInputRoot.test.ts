@@ -1,16 +1,20 @@
 import path from "node:path";
+import { createMediaRoot, deterministicMediaRootId, findEnclosingMediaRoot } from "@mdcz/media-store";
 import { describe, expect, it } from "vitest";
-import {
-  createDesktopInputRoot,
-  deterministicMediaRootId,
-  findEnclosingMediaRoot,
-  resolveDesktopInputRootPath,
-} from "./desktopInputRoot";
+import { resolveDesktopInputRootPath } from "./desktopInputRoot";
 
 describe("desktop input root", () => {
   it("derives a stable id from the normalized host path", () => {
-    const first = createDesktopInputRoot("/media/library/../library");
-    const second = createDesktopInputRoot("/media/library");
+    const first = createMediaRoot({
+      id: deterministicMediaRootId("/media/library/../library"),
+      displayName: "library",
+      hostPath: "/media/library/../library",
+    });
+    const second = createMediaRoot({
+      id: deterministicMediaRootId("/media/library"),
+      displayName: "library",
+      hostPath: "/media/library",
+    });
     expect(first.id).toBe(second.id);
     expect(deterministicMediaRootId(first.hostPath)).toBe(first.id);
   });
@@ -28,9 +32,9 @@ describe("desktop input root", () => {
   });
 
   it("reuses the longest enclosing root and ignores unrelated paths", () => {
-    const library = createDesktopInputRoot("/media/library");
-    const nested = createDesktopInputRoot("/media/library/shows");
-    const other = createDesktopInputRoot("/media/other");
+    const library = createMediaRoot({ displayName: "library", hostPath: "/media/library" });
+    const nested = createMediaRoot({ displayName: "shows", hostPath: "/media/library/shows" });
+    const other = createMediaRoot({ displayName: "other", hostPath: "/media/other" });
     expect(findEnclosingMediaRoot("/media/library/shows/S01/episode.mp4", [library, nested, other])).toBe(nested);
     expect(findEnclosingMediaRoot("/media/library/movie.mp4", [library, other])).toBe(library);
     expect(findEnclosingMediaRoot("/tmp/outside.mp4", [library, other])).toBeUndefined();
