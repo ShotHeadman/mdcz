@@ -110,17 +110,19 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
   };
 
-  const handleStartSelectedScrape = async (candidates: MediaCandidate[], _targetDir: string) => {
-    const filePaths = candidates.map((candidate) => candidate.path);
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
     if (maintenanceBusy) {
       toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
       return;
     }
 
     try {
-      activateNewScrapeTask(filePaths);
-      const response = await startSelectedScrape(filePaths);
-      await refreshCurrentConfig();
+      const outputRoot = targetDir.trim() ? await ipc.mediaRoots.ensurePath({ hostPath: targetDir }) : undefined;
+      activateNewScrapeTask(candidates.map((candidate) => candidate.path));
+      const response = await startSelectedScrape(
+        candidates.map((candidate) => candidate.ref),
+        outputRoot?.id,
+      );
       toast.success(response.data.message);
     } catch (error) {
       const errorMessage = toErrorMessage(error);

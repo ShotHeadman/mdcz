@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
 import { type Configuration, configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
@@ -10,7 +11,7 @@ import type { ScrapeRunManifest } from "@mdcz/persistence";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { createDesktopOutputRoot, mediaPathOwnership, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { createDesktopOutputRoot, mediaPathOwnership } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitScrapeTerminalResult } from "@mdcz/runtime/publication";
@@ -33,15 +34,12 @@ import {
   type ScrapeWorkflowReporter,
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { createFileScraper, fileOrganizer } from "./FileScraper";
 import type { ManualScrapeOptions } from "./manualScrape";
-import {
-  resolveSelectedFilePaths as resolveSelectedFilePathsForScrape,
-  resolveSingleFilePaths as resolveSingleFilePathsForScrape,
-  uniquePaths,
-} from "./pathResolver";
+import { resolveSingleFilePaths } from "./pathResolver";
 import { ScraperServiceError } from "./ScraperServiceError";
 import { translationMappingStore } from "./translationMappingStore";
 
@@ -52,10 +50,10 @@ export interface StartScrapeResult {
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 interface DesktopScrapeStart {
-  files: string[];
+  refs: RootFileRef[];
   mode: ScrapeExecutionMode;
   configuration: Configuration;
-  concurrency?: number;
+  outputRootId?: string;
   manualScrape?: ManualScrapeOptions;
 }
 
@@ -113,18 +111,24 @@ export class ScraperService {
     return live ? this.toSnapshotDto(live.run, live.snapshot, live.startedAt) : null;
   }
 
-  async startSingle(paths: string[]): Promise<StartScrapeResult> {
+  async start(refs: RootFileRef[], outputRootId?: string): Promise<StartScrapeResult> {
     const configuration = await configManager.getValidated();
-    const files = await resolveSingleFilePathsForScrape(uniquePaths(paths));
-    if (files.length === 0) throw new ScraperServiceError("NO_FILES", "No files selected");
-    return await this.start({ files, mode: "single", configuration, concurrency: 1 });
+    if (refs.length === 0) throw new ScraperServiceError("NO_FILES", "No files selected");
+    return await this.begin({ refs, mode: "batch", configuration, outputRootId });
   }
 
-  async startSelectedFiles(paths: string[]): Promise<StartScrapeResult> {
+  async startSingle(ref: RootFileRef): Promise<StartScrapeResult> {
     const configuration = await configManager.getValidated();
-    const files = await resolveSelectedFilePathsForScrape(uniquePaths(paths));
-    if (files.length === 0) throw new ScraperServiceError("NO_FILES", "No files selected");
-    return await this.start({ files, mode: "batch", configuration });
+    return await this.begin({ refs: [ref], mode: "single", configuration });
+  }
+
+  async startFromNativePath(nativePath: string): Promise<StartScrapeResult> {
+    const files = await resolveSingleFilePaths([nativePath]);
+    const filePath = files[0];
+    if (!filePath) throw new ScraperServiceError("NO_FILES", "No files selected");
+    const state = await this.persistenceService.getState();
+    const root = await state.repositories.mediaRoots.ensurePath(dirname(filePath));
+    return await this.startSingle({ rootId: root.id, relativePath: toRootRelativePath(root, filePath) });
   }
 
   async stop(): Promise<{ pendingCount: number }> {
@@ -173,7 +177,7 @@ export class ScraperService {
     return { taskId: snapshot.runId, totalFiles: snapshot.items.length };
   }
 
-  private async start(input: DesktopScrapeStart): Promise<StartScrapeResult> {
+  private async begin(input: DesktopScrapeStart): Promise<StartScrapeResult> {
     this.configureRuntimeSettings(input.configuration);
     const snapshot = await (await this.coordinator()).start(input);
     this.signalService.setButtonStatus(false, true);
@@ -223,25 +227,29 @@ export class ScraperService {
   }
 
   private async createRun(input: DesktopScrapeStart): Promise<ScrapeRunManifest> {
+    const rootId = input.refs[0]?.rootId;
+    if (!rootId || input.refs.some((ref) => ref.rootId !== rootId)) {
+      throw new ScraperServiceError("MIXED_ROOTS", "刮削任务只能包含同一个媒体目录下的文件");
+    }
+
     const state = await this.persistenceService.getState();
-    const startedAt = new Date();
-    const configuredMediaPath = input.configuration.paths.mediaPath.trim();
-    const inputRoot = await state.repositories.mediaRoots.ensurePath(
-      resolveDesktopInputRootPath(input.files, configuredMediaPath || undefined),
-    );
-    const outputRoot = createDesktopOutputRoot(input.configuration, startedAt);
-    if (outputRoot) await state.repositories.mediaRoots.upsert(outputRoot);
+    await state.repositories.mediaRoots.get(rootId);
+    if (input.outputRootId) await state.repositories.mediaRoots.get(input.outputRootId);
+    const outputRoot =
+      input.outputRootId === undefined
+        ? await createDesktopOutputRoot(state.repositories.mediaRoots, input.configuration)
+        : null;
     if (input.configuration.paths.metadataPath.trim()) {
       await state.repositories.mediaRoots.ensurePath(input.configuration.paths.metadataPath);
     }
     return await state.repositories.scrapeRuns.create({
-      rootId: inputRoot.id,
-      outputRootId: outputRoot?.id ?? null,
+      rootId,
+      outputRootId: input.outputRootId ?? outputRoot?.id ?? null,
       executionMode: input.mode,
-      items: input.files.map((sourcePath, ordinal) => ({
+      items: input.refs.map((ref, ordinal) => ({
         ordinal,
-        rootId: inputRoot.id,
-        relativePath: toRootRelativePath(inputRoot, sourcePath),
+        rootId: ref.rootId,
+        relativePath: ref.relativePath,
       })),
     });
   }

@@ -1,4 +1,4 @@
-import type { LocalFileTarget } from "@mdcz/shared/mediaRef";
+import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { ipc } from "@/client/ipc";
@@ -38,13 +38,12 @@ export const resumeScrape = async () => {
   return { data };
 };
 
-export const startSelectedScrape = async (filePaths: string[]) => {
-  const selectedPaths = filePaths.map((filePath) => filePath.trim()).filter(Boolean);
-  if (selectedPaths.length === 0) {
+export const startSelectedScrape = async (refs: RootFileRef[], outputRootId?: string) => {
+  if (refs.length === 0) {
     throw new Error("No files selected");
   }
 
-  const data = await ipc.scraper.start("selection", selectedPaths);
+  const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId });
   return { data };
 };
 

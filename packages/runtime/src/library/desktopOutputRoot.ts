@@ -1,5 +1,5 @@
 import path from "node:path";
-import { createMediaRoot, type MediaRoot } from "@mdcz/media-store";
+import type { MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 
 export const DESKTOP_OUTPUT_ROOT_ID = "desktop-output";
@@ -20,16 +20,14 @@ export const resolveDesktopOutputRootPath = (configuration: Configuration): stri
   return path.resolve(mediaRoot, successFolder);
 };
 
-export const createDesktopOutputRoot = (configuration: Configuration, now = new Date()): MediaRoot | null => {
+export const createDesktopOutputRoot = async (
+  mediaRoots: { ensurePath: (hostPath: string, displayName?: string) => Promise<MediaRoot> },
+  configuration: Configuration,
+): Promise<MediaRoot | null> => {
   const hostPath = resolveDesktopOutputRootPath(configuration);
   if (!hostPath) {
     return null;
   }
 
-  return createMediaRoot({
-    id: DESKTOP_OUTPUT_ROOT_ID,
-    displayName: DESKTOP_OUTPUT_ROOT_DISPLAY_NAME,
-    hostPath,
-    now,
-  });
+  return await mediaRoots.ensurePath(hostPath, DESKTOP_OUTPUT_ROOT_DISPLAY_NAME);
 };

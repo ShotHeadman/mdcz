@@ -8,7 +8,12 @@ import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError, IpcErrorCode } from "../errors";
-import { scraperConfirmUncensoredInputSchema, scraperRetryInputSchema, scraperStartInputSchema } from "../payloads";
+import {
+  scraperConfirmUncensoredInputSchema,
+  scraperRetryInputSchema,
+  scraperStartInputSchema,
+  scraperStartSinglePathInputSchema,
+} from "../payloads";
 import { t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
@@ -27,6 +32,7 @@ export const createScraperHandlers = (
   IpcRouterContract,
   | typeof IpcChannel.Scraper_GetStatus
   | typeof IpcChannel.Scraper_Start
+  | typeof IpcChannel.Scraper_StartSinglePath
   | typeof IpcChannel.Scraper_Stop
   | typeof IpcChannel.Scraper_Pause
   | typeof IpcChannel.Scraper_Resume
@@ -43,17 +49,24 @@ export const createScraperHandlers = (
       withIpcErrorHandling(
         "start scraper",
         async () => {
-          const mode = input?.mode ?? "single";
-          const paths = input?.paths ?? [];
-          if (mode === "selection") {
-            return withLaunchMessage(await scraperService.startSelectedFiles(paths), "已启动选中文件刮削");
+          if (input.mode === "selection") {
+            return withLaunchMessage(await scraperService.start(input.refs, input.outputRootId), "已启动选中文件刮削");
           }
 
-          return withLaunchMessage(await scraperService.startSingle(paths), "单文件刮削任务已启动");
+          return withLaunchMessage(await scraperService.startSingle(input.ref), "单文件刮削任务已启动");
         },
         { mapError: toScraperServiceIpcError },
       ),
     ),
+    [IpcChannel.Scraper_StartSinglePath]: t.procedure
+      .input(scraperStartSinglePathInputSchema)
+      .action(({ input }) =>
+        withIpcErrorHandling(
+          "start single-file scraper",
+          async () => withLaunchMessage(await scraperService.startFromNativePath(input.path), "单文件刮削任务已启动"),
+          { mapError: toScraperServiceIpcError },
+        ),
+      ),
     [IpcChannel.Scraper_Stop]: t.procedure.action(() =>
       withIpcErrorHandling("stop scraper", async () => {
         return {

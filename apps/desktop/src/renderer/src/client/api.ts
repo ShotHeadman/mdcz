@@ -21,7 +21,7 @@ export const scrapeSingleFile = async (options: { body: ScrapeFileBody } & Throw
   if (!path) {
     throw new Error("Path is required");
   }
-  const data = await ipc.scraper.start("single", [path]);
+  const data = await ipc.scraper.startSinglePath(path);
   return { data };
 };
 

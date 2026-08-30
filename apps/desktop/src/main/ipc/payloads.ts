@@ -8,6 +8,7 @@ import {
   libraryDetailInputSchema,
   libraryListInputSchema,
   maintenancePresetIdSchema,
+  mediaRootEnsurePathInputSchema,
 } from "@mdcz/shared/serverDtos";
 import { z } from "zod";
 
@@ -31,10 +32,18 @@ export const configImportProfileInputSchema = z.object({
   overwrite: z.boolean().optional(),
 });
 
-export const scraperStartInputSchema = z.object({
-  mode: z.enum(["single", "selection"]).optional(),
-  paths: optionalPathList,
-});
+export const scraperStartInputSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("selection"),
+    refs: z.array(rootFileRefSchema).min(1),
+    outputRootId: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    mode: z.literal("single"),
+    ref: rootFileRefSchema,
+  }),
+]);
+export const scraperStartSinglePathInputSchema = z.object({ path: z.string().trim().min(1) });
 export const scraperRetryInputSchema = z.object({ runId: z.string().min(1) });
 export const scraperConfirmUncensoredInputSchema = z.object({
   items: z
@@ -95,7 +104,13 @@ export const libraryDeleteInputSchema = z.object({
   deleteMediaFiles: z.boolean().optional(),
 });
 
-export { configPathInputSchema, libraryAvailabilityInputSchema, libraryDetailInputSchema, libraryListInputSchema };
+export {
+  configPathInputSchema,
+  libraryAvailabilityInputSchema,
+  libraryDetailInputSchema,
+  libraryListInputSchema,
+  mediaRootEnsurePathInputSchema,
+};
 
 export const toolCreateSymlinkInputSchema = z.object({
   sourceDir: optionalString,

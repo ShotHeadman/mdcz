@@ -2,13 +2,14 @@ import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
+import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { InvalidatePayload, LogPayload, ShortcutPayload } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { LibraryListInput } from "@mdcz/shared/serverDtos";
+import type { LibraryListInput, MediaRootDto, MediaRootEnsurePathInput } from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId, MediaCandidate, UncensoredConfirmItem } from "@mdcz/shared/types";
 
 type Unsubscribe = () => void;
@@ -38,6 +39,10 @@ export const ipc = {
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
     delete: (input: { deleteMediaFiles?: boolean; id: string }) => client[IpcChannel.Library_Delete](input),
   },
+  mediaRoots: {
+    ensurePath: (input: MediaRootEnsurePathInput) =>
+      client[IpcChannel.MediaRoots_EnsurePath](input) as Promise<MediaRootDto>,
+  },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
     getDefaults: () => client[IpcChannel.Config_GetDefaults](undefined),
@@ -54,7 +59,8 @@ export const ipc = {
       client[IpcChannel.Config_ImportProfile]({ filePath, name, overwrite }),
   },
   scraper: {
-    start: (mode: "single" | "selection", paths: string[]) => client[IpcChannel.Scraper_Start]({ mode, paths }),
+    start: (input: ScraperStartInput) => client[IpcChannel.Scraper_Start](input),
+    startSinglePath: (path: string) => client[IpcChannel.Scraper_StartSinglePath]({ path }),
     stop: () => client[IpcChannel.Scraper_Stop](undefined),
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),

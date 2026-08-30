@@ -8,7 +8,6 @@ import { MaintenanceService } from "@main/services/scraper/maintenance/Maintenan
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { PublicationPlan } from "@mdcz/runtime/publication";
@@ -87,9 +86,7 @@ const successPlan = (source: { rootId: string; relativePath: string }, outputRoo
 
 const desktopSuccessResult = (options: FileScrapeOptions, filePath: string): FileScrapeResult => {
   const source = options.source ?? { rootId: "local", relativePath: path.basename(filePath) };
-  const outputRootId = options.roots?.some((root) => root.id === DESKTOP_OUTPUT_ROOT_ID)
-    ? DESKTOP_OUTPUT_ROOT_ID
-    : source.rootId;
+  const outputRootId = options.roots?.find((root) => root.id !== source.rootId)?.id ?? source.rootId;
   const plan = successPlan(source, outputRootId);
   const data = crawlerData(plan.video?.target.relativePath.split("/")[0] ?? "ONE");
   return {
@@ -220,9 +217,7 @@ const createDesktopHost = async (mediaRoot: string, gate: Promise<void>, succeed
   });
   return {
     start: async (relativePaths) => {
-      const result = await service.startSelectedFiles(
-        relativePaths.map((relativePath) => path.join(mediaRoot, relativePath)),
-      );
+      const result = await service.start(relativePaths.map((relativePath) => ({ rootId: root.id, relativePath })));
       return { runId: result.taskId };
     },
     retry: async (runId) => ({ runId: (await service.retry(runId)).taskId }),

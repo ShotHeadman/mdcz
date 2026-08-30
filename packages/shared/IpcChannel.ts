@@ -13,6 +13,7 @@ export enum IpcChannel {
   Config_ImportProfile = "config:import-profile",
 
   Scraper_Start = "scraper:start",
+  Scraper_StartSinglePath = "scraper:start-single-path",
   Scraper_Stop = "scraper:stop",
   Scraper_Pause = "scraper:pause",
   Scraper_Resume = "scraper:resume",
@@ -57,6 +58,8 @@ export enum IpcChannel {
   Library_List = "library:list",
   Library_Availability = "library:availability",
   Library_Delete = "library:delete",
+
+  MediaRoots_EnsurePath = "mediaRoots:ensurePath",
 
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",

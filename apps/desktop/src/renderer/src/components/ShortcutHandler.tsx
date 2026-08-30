@@ -14,14 +14,11 @@ import {
 } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
-import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
-import type { ConfigOutput } from "@/client/types";
-import { CURRENT_CONFIG_QUERY_KEY } from "@/hooks/configQueries";
 import { playMediaPath } from "@/utils/playback";
 
 const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([
@@ -48,7 +45,6 @@ const isEditingText = () => {
 export function ShortcutHandler() {
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
   const pathname = location.pathname;
 
   useEffect(() => {
@@ -144,18 +140,22 @@ export function ShortcutHandler() {
                 return;
               }
 
-              const currentConfig = (await ipc.config.get()) as ConfigOutput;
-              await ipc.config.save({
-                paths: {
-                  ...currentConfig.paths,
-                  mediaPath: workbenchSetupState.scanDir,
-                  successOutputFolder: workbenchSetupState.targetDir || currentConfig.paths.successOutputFolder,
-                },
-              });
+              const selectedCandidates = workbenchSetupState.candidates.filter((candidate) =>
+                workbenchSetupState.selectedPaths.includes(candidate.path),
+              );
+              if (selectedCandidates.length === 0) {
+                toast.info("请先选择至少一个文件");
+                return;
+              }
 
-              activateNewScrapeTask(workbenchSetupState.selectedPaths);
-              const response = await startSelectedScrape(workbenchSetupState.selectedPaths);
-              await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
+              const outputRoot = workbenchSetupState.targetDir.trim()
+                ? await ipc.mediaRoots.ensurePath({ hostPath: workbenchSetupState.targetDir })
+                : undefined;
+              activateNewScrapeTask(selectedCandidates.map((candidate) => candidate.path));
+              const response = await startSelectedScrape(
+                selectedCandidates.map((candidate) => candidate.ref),
+                outputRoot?.id,
+              );
               toast.success(response.data.message);
             } catch (error) {
               const errorMessage = toErrorMessage(error);
@@ -255,7 +255,7 @@ export function ShortcutHandler() {
     });
 
     return unsubscribe;
-  }, [navigate, pathname, queryClient]);
+  }, [navigate, pathname]);
 
   return null;
 }
