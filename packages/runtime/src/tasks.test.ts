@@ -29,52 +29,13 @@ describe("task executor", () => {
       },
     });
 
-    const run = executor.execute([1, 2, 3], 1);
+    const run = executor.execute([1, 2, 3]);
     await firstStarted;
     executor.pause();
-
-    expect(executor.activeItems).toBe(1);
-    expect(executor.isIdle).toBe(false);
     releaseFirst();
     await expect(run).resolves.toBeUndefined();
     expect(started).toEqual([1]);
     expect(applied).toEqual([1]);
-  });
-
-  it("uses a deterministic result gate to reject an obsolete execution version", async () => {
-    let releaseResult!: () => void;
-    let signalResult!: () => void;
-    const resultBlocked = new Promise<void>((resolve) => {
-      releaseResult = resolve;
-    });
-    const resultReached = new Promise<void>((resolve) => {
-      signalResult = resolve;
-    });
-    let ownedExecutionVersion = 1;
-    const summaries: number[] = [];
-    const executor = new TaskExecutor<string, number>({
-      concurrency: 1,
-      runItem: async () => 42,
-      gate: {
-        beforeResult: async () => {
-          signalResult();
-          await resultBlocked;
-        },
-      },
-      applyResult: async (_item, result, context) => {
-        if (context.executionVersion !== ownedExecutionVersion) return false;
-        summaries.push(result);
-        return true;
-      },
-    });
-
-    const run = executor.execute(["item-1"], 1);
-    await resultReached;
-    ownedExecutionVersion = 2;
-    releaseResult();
-    await run;
-
-    expect(summaries).toEqual([]);
   });
 
   it("aborts in-flight work and never starts pending items after stop", async () => {
@@ -94,7 +55,7 @@ describe("task executor", () => {
       applyResult: async () => undefined,
     });
 
-    const run = executor.execute([1, 2], 1);
+    const run = executor.execute([1, 2]);
     await started;
     executor.stop();
     await expect(run).resolves.toBeUndefined();
@@ -115,7 +76,7 @@ describe("task executor", () => {
       applyResult: async () => undefined,
     });
 
-    const run = executor.execute([1, 2], 1).finally(() => {
+    const run = executor.execute([1, 2]).finally(() => {
       settled = true;
     });
     await siblingStarted.promise;
@@ -123,7 +84,6 @@ describe("task executor", () => {
     expect(settled).toBe(false);
     releaseSibling.resolve();
     await expect(run).rejects.toThrow("worker failed");
-    expect(executor.activeItems).toBe(0);
   });
 });
 

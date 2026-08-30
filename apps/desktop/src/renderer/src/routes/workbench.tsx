@@ -118,7 +118,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
     try {
       const outputRoot = targetDir.trim() ? await ipc.mediaRoots.ensurePath({ hostPath: targetDir }) : undefined;
-      activateNewScrapeTask(candidates.map((candidate) => candidate.path));
+      activateNewScrapeTask();
       const response = await startSelectedScrape(
         candidates.map((candidate) => candidate.ref),
         outputRoot?.id,
@@ -163,7 +163,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     if (!window.confirm("确定要停止刮削吗？")) return;
     try {
       await stopScrape();
-      applyScrapeTaskStatus("stopping");
+      applyScrapeTaskStatus();
       toast.info("正在停止...");
     } catch (_error) {
       toast.error("停止失败");
@@ -173,7 +173,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handlePauseScrape = async () => {
     try {
       await pauseScrape();
-      applyScrapeTaskStatus("paused");
+      applyScrapeTaskStatus();
       toast.info("任务已暂停");
     } catch (_error) {
       toast.error("暂停失败");
@@ -183,7 +183,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleResumeScrape = async () => {
     try {
       await resumeScrape();
-      applyScrapeTaskStatus("running");
+      applyScrapeTaskStatus();
       toast.success("任务已恢复");
     } catch (_error) {
       toast.error("恢复失败");
@@ -201,10 +201,8 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
 
     try {
-      const result = await retryScrapeSelection(failedPaths, {
-        scrapeStatus,
-      });
-      activateRetryScrapeTask(failedPaths);
+      const result = await retryScrapeSelection();
+      activateRetryScrapeTask();
       toast.success(result.data.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);

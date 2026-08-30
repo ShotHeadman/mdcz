@@ -22,8 +22,8 @@ export function LibraryPage() {
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
   const libraryQ = useInfiniteQuery({
-    queryKey: queryKeys.library.search(query),
-    queryFn: ({ pageParam }) => api.library.search({ cursor: pageParam, query, limit: 100 }),
+    queryKey: queryKeys.library.list(query),
+    queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100 }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     retry: false,
@@ -32,7 +32,7 @@ export function LibraryPage() {
   const availabilityQs = useQueries({
     queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
       chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
-        queryKey: [...queryKeys.library.search(query), "availability", ids],
+        queryKey: [...queryKeys.library.list(query), "availability", ids],
         queryFn: async () => await api.library.availability({ ids }),
         retry: false,
         staleTime: 30_000,
@@ -65,7 +65,7 @@ export function LibraryPage() {
         }}
         onQueryChange={setQuery}
         onRefresh={() => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.library.search(query) });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.library.list(query) });
         }}
         query={query}
         total={libraryQ.data?.pages[0]?.total ?? 0}

@@ -178,7 +178,7 @@ describe("buildServer scrape integration", () => {
 
     const libraryResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/library.search",
+      url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
       payload: { query: "ABC-123", limit: 20 },
     });
@@ -475,7 +475,7 @@ describe("buildServer scrape integration", () => {
     expect(nfoResponse.json().result.data.data).toMatchObject({ number: "ABC-123" });
   });
 
-  it("starts scrape tasks from selected host files inside scan and media roots", async () => {
+  it("starts scrape tasks from selected files in a registered media root", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const selectedPath = join(root, "ABC-128.mp4");
     await writeFile(selectedPath, "video");
@@ -488,9 +488,9 @@ describe("buildServer scrape integration", () => {
 
     const startResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.startSelectedFiles",
+      url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+      payload: { refs: [{ rootId, relativePath: "ABC-128.mp4" }], uncensoredConfirmed: true },
     });
 
     expect(startResponse.statusCode).toBe(200);
@@ -711,54 +711,51 @@ describe("buildServer scrape integration", () => {
     expect(confirmResponse.json().error.message).toContain("Scrape run not found");
   });
 
-  it("rejects selected scrape files outside the requested scan directory", async () => {
+  it("rejects scrape refs that span multiple media roots", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const otherRoot = await createTempRoot("selected-scrape-other");
-    const selectedPath = join(otherRoot, "ABC-129.mp4");
-    await writeFile(selectedPath, "video");
+    await writeFile(join(root, "ABC-129.mp4"), "video");
+    await writeFile(join(otherRoot, "ABC-129.mp4"), "video");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: otherRoot } },
-    });
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const otherRootId = await syncMediaRootFromConfig(fastify, token, otherRoot);
 
     const startResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.startSelectedFiles",
+      url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+      payload: {
+        refs: [
+          { rootId, relativePath: "ABC-129.mp4" },
+          { rootId: otherRootId, relativePath: "ABC-129.mp4" },
+        ],
+        uncensoredConfirmed: true,
+      },
     });
 
     expect(startResponse.statusCode).toBe(500);
-    expect(startResponse.json().error.message).toContain("文件不在扫描目录内");
+    expect(startResponse.json().error.message).toContain("刮削任务只能包含同一个媒体目录下的文件");
   });
 
-  it("rejects selected scrape files outside configured media path", async () => {
+  it("rejects scrape refs for an unregistered media root", async () => {
     const root = await createTempRoot("selected-unregistered-root");
-    const configuredRoot = await createTempRoot("configured-media-root");
-    const selectedPath = join(root, "ABC-130.mp4");
-    await writeFile(selectedPath, "video");
+    await writeFile(join(root, "ABC-130.mp4"), "video");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: configuredRoot } },
-    });
 
     const startResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.startSelectedFiles",
+      url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+      payload: {
+        refs: [{ rootId: "missing-root", relativePath: "ABC-130.mp4" }],
+        uncensoredConfirmed: true,
+      },
     });
 
     expect(startResponse.statusCode).toBe(500);
-    expect(startResponse.json().error.message).toContain("文件不在已注册媒体目录内");
+    expect(startResponse.json().error.message).toContain("Media root not found");
   });
 
   it("aborts an in-flight scrape item when the task is stopped", async () => {

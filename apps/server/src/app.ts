@@ -18,7 +18,7 @@ import { registerLibraryAssets } from "./http/libraryAssets";
 import { writeTaskEventsStream } from "./http/sse";
 import { defaultWebStaticDir, registerStaticWeb } from "./http/staticWeb";
 import { createServerMaintenanceRuntime } from "./maintenanceRuntimeFactory";
-import { appRouter } from "./router";
+import { appRouter } from "./routers";
 import { createServerScrapeRuntime } from "./scrapeRuntimeFactory";
 import type { ServerServiceOptions, ServerServices } from "./services";
 import { AuthService } from "./services/authService";

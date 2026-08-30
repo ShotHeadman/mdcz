@@ -11,7 +11,8 @@ import {
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { recoverPublications } from "@mdcz/runtime/publication";
+import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
+import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
 import { app } from "electron";
 import { getDesktopUserDataPath } from "../../appIdentity";
 
@@ -30,7 +31,7 @@ export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
   libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
-  publicationJournal: PublicationJournalRepository;
+  publicationJournal: PublicationJournalPort;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
 }
@@ -93,7 +94,7 @@ export class DesktopPersistenceService {
       scrapeRuns.interruptUnfinished();
       const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
-      const publicationJournal = new PublicationJournalRepository(database);
+      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
       await recoverPublications({
         journal: publicationJournal,
         repairIssues: libraryRepairIssues,

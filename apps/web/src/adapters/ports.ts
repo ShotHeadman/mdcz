@@ -144,17 +144,9 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
-  capabilities: {
-    play: "hidden",
-    openFolder: "hidden",
-    openNfo: "enabled",
-    editPoster: "enabled",
-  },
   showFilePath: false,
   resolveImageCandidates: async (candidates, baseDir, item) =>
     dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
-  play: () => undefined,
-  openFolder: () => undefined,
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
@@ -192,39 +184,18 @@ export const createWebDetailPort = (): DetailActionPort => ({
 });
 
 export const createWebScrapeActionPort = (): ScrapeActionPort => ({
-  capabilities: {
-    deleteFile: "enabled",
-    deleteFileAndFolder: "hidden",
-    openFolder: "hidden",
-    play: "hidden",
-    openNfo: "enabled",
-  },
-  retrySelection: async (targets, options) => {
-    void targets;
-    void options;
+  retryFailed: async () => {
     const runId = selectScrapeTaskId(useScrapeStore.getState());
     if (!runId) throw new Error("没有可重试的刮削任务");
     const retry = await api.scrape.retry({ taskId: runId });
     requestScrapeLiveRunsRefresh();
     return { message: `重试任务已启动：${retry.runId}` };
   },
-  getDeleteFileAvailability: (targets) =>
-    targets.length > 0 && targets.every((target) => target.ref) ? "enabled" : "hidden",
   deleteFile: async (targets) => {
-    const refs = targets.map((target) => target.ref);
-    if (refs.some((ref) => !ref)) {
-      throw new Error("Web 删除文件需要媒体目录引用，请从工作台重新扫描后再试。");
-    }
-    for (const ref of refs as NonNullable<(typeof refs)[number]>[]) {
-      await api.scrape.deleteFile(ref);
+    for (const target of targets) {
+      await api.scrape.deleteFile(target.ref);
     }
   },
-  deleteFileAndFolder: async (filePath) => {
-    void filePath;
-    throw new Error("Web 端不支持删除服务器主机文件夹");
-  },
-  openFolder: () => undefined,
-  play: () => undefined,
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
@@ -240,13 +211,6 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   };
 
   return {
-    capabilities: {
-      openFolder: "hidden",
-      play: "hidden",
-      openNfo: "enabled",
-    },
-    openFolder: () => undefined,
-    play: () => undefined,
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
     },
@@ -270,7 +234,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
     },
     execute: async (selections: MaintenanceApplySelection[]) => {
       const sessionId = requireSessionId();
-      await api.maintenance.apply({
+      await api.maintenance.execute({
         sessionId,
         confirmationToken: `maintenance:${sessionId}`,
         previewIds: selections.map((selection) => selection.previewId),

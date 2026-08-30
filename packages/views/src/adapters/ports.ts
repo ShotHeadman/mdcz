@@ -9,28 +9,16 @@ import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type { DetailViewItem } from "../detail";
 
-export type ActionAvailability = "enabled" | "disabled" | "hidden";
-
-export interface NativeActionCapabilities {
-  play?: ActionAvailability;
-  openFolder?: ActionAvailability;
-  openNfo?: ActionAvailability;
-  editPoster?: ActionAvailability;
-  deleteFile?: ActionAvailability;
-  deleteFileAndFolder?: ActionAvailability;
-}
-
 export interface DetailNfoReadResponse {
   path: string;
   crawlerData: CrawlerData | null;
 }
 
 export interface DetailActionPort {
-  capabilities?: Pick<NativeActionCapabilities, "play" | "openFolder" | "openNfo" | "editPoster">;
   showFilePath: boolean;
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
-  play(item: DetailViewItem): Promise<void> | void;
-  openFolder(item: DetailViewItem): Promise<void> | void;
+  play?(item: DetailViewItem): Promise<void> | void;
+  openFolder?(item: DetailViewItem): Promise<void> | void;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
   preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
@@ -46,30 +34,21 @@ export interface PosterCropEditSession {
 
 export interface ScrapeActionTarget {
   filePath: string;
-  ref?: ScrapeFileRefDto;
+  ref: ScrapeFileRefDto;
 }
 
 export interface ScrapeActionPort {
-  capabilities?: NativeActionCapabilities;
-  getDeleteFileAvailability?(targets: ScrapeActionTarget[]): ActionAvailability;
-  retrySelection(
-    targets: ScrapeActionTarget[],
-    options: {
-      scrapeStatus: "idle" | "running" | "stopping" | "paused";
-      manualUrl?: string;
-    },
-  ): Promise<{ message: string }>;
+  retryFailed(): Promise<{ message: string }>;
   deleteFile(targets: ScrapeActionTarget[]): Promise<void>;
-  deleteFileAndFolder(filePath: string): Promise<void>;
-  openFolder(target: ScrapeActionTarget): Promise<void> | void;
-  play(target: ScrapeActionTarget): Promise<void> | void;
+  deleteFileAndFolder?(filePath: string): Promise<void>;
+  openFolder?(target: ScrapeActionTarget): Promise<void> | void;
+  play?(target: ScrapeActionTarget): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
 }
 
 export interface MaintenanceActionPort {
-  capabilities?: Pick<NativeActionCapabilities, "play" | "openFolder" | "openNfo">;
-  openFolder(filePath: string): Promise<void> | void;
-  play(filePath: string): Promise<void> | void;
+  openFolder?(filePath: string): Promise<void> | void;
+  play?(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
   getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
   updateDraft(

@@ -109,11 +109,10 @@ export interface ServerApiContract {
     defaults(): Promise<Configuration>;
     export(): Promise<string>;
     import(input: ConfigImportInput): Promise<Configuration>;
-    read(input?: ConfigPathInput): Promise<Configuration>;
+    read(): Promise<Configuration>;
     previewNaming(input: ConfigPreviewInput): Promise<{ items: NamingPreviewItem[] }>;
-    reset(input?: ConfigPathInput): Promise<Configuration>;
+    reset(input?: Exclude<ConfigPathInput, undefined>): Promise<Configuration>;
     update(input: ConfigUpdateInput): Promise<Configuration>;
-    save(input: ConfigUpdateInput): Promise<Configuration>;
     profiles: {
       list(): Promise<ConfigProfileListResponse>;
       create(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
@@ -134,7 +133,7 @@ export interface ServerApiContract {
     clearRuntime(): Promise<{ ok: true; cleared: number }>;
   };
   maintenance: {
-    apply(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto>;
+    execute(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto>;
     pause(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
     getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
     updateDraft(input: MaintenanceUpdateDraftInput): Promise<MaintenanceMutationAckDto>;
@@ -146,7 +145,6 @@ export interface ServerApiContract {
   library: {
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
-    search(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;

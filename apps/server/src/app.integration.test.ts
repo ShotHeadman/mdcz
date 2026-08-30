@@ -339,11 +339,11 @@ describe("buildServer composition integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { network: { timeout: 25 }, scrape: { threadNumber: 4 } },
     });
-    const readPathResponse = await fastify.inject({
+    const readResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/config.read",
       headers: { authorization: `Bearer ${token}` },
-      payload: { path: "network.timeout" },
+      payload: {},
     });
     const resetPathResponse = await fastify.inject({
       method: "POST",
@@ -368,7 +368,7 @@ describe("buildServer composition integration", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().result.data.network.timeout).toBe(25);
     expect(response.json().result.data.scrape.threadNumber).toBe(4);
-    expect(readPathResponse.json().result.data).toBe(25);
+    expect(readResponse.json().result.data.network.timeout).toBe(25);
     expect(resetPathResponse.json().result.data.network.timeout).toBe(
       defaultsResponse.json().result.data.network.timeout,
     );

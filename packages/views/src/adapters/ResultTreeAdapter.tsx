@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { MediaBrowserFilter } from "../common";
 import { getScrapeResultTitle, type ResultTreeManualUrlTarget, ResultTreeView } from "../detail";
-import type { ActionAvailability, ScrapeActionPort } from "./ports";
+import type { ScrapeActionPort } from "./ports";
 import { activateRetryScrapeTask, resetScrapeWorkbenchToSetup } from "./workbenchSession";
 
 function getFileNameFromPath(filePath: string) {
@@ -20,12 +20,9 @@ function getFileNameFromPath(filePath: string) {
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
 
-const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
-
 function buildMenuContent(
   group: ScrapeResultGroup,
   selectedResultId: string | null,
-  scrapeStatus: "idle" | "running" | "stopping" | "paused",
   port: ScrapeActionPort,
   onManualUrlRescrape: (target: ResultTreeManualUrlTarget) => void,
 ) {
@@ -40,8 +37,9 @@ function buildMenuContent(
     filePath: resultPath,
     ref: result.output ?? { rootId: result.rootId, relativePath: result.relativePath },
   };
-  const deleteFileAvailability = port.getDeleteFileAvailability?.(groupedTargets) ?? port.capabilities?.deleteFile;
-  const deleteFileAndFolderAvailability = port.capabilities?.deleteFileAndFolder;
+  const canDeleteFolder = typeof port.deleteFileAndFolder === "function";
+  const canOpenFolder = typeof port.openFolder === "function";
+  const canPlay = typeof port.play === "function";
 
   const handleCopyNumber = async () => {
     if (!resultNumber) {
@@ -58,10 +56,8 @@ function buildMenuContent(
 
   const handleRetryScrape = async () => {
     try {
-      const response = await port.retrySelection(groupedTargets, {
-        scrapeStatus,
-      });
-      activateRetryScrapeTask(groupedTargets.map((target) => target.filePath));
+      const response = await port.retryFailed();
+      activateRetryScrapeTask();
       toast.success(response.message);
     } catch (error) {
       toast.error(toErrorMessage(error, "重新刮削失败"));
@@ -89,7 +85,7 @@ function buildMenuContent(
   const handleDeleteFolder = async () => {
     if (!window.confirm(`确定删除文件和所在文件夹吗？\n${resultPath}`)) return;
     try {
-      await port.deleteFileAndFolder(resultPath);
+      await port.deleteFileAndFolder?.(resultPath);
       toast.success("已删除文件夹");
     } catch {
       toast.error("删除文件夹失败");
@@ -104,13 +100,13 @@ function buildMenuContent(
     }
 
     try {
-      await port.openFolder(resultTarget);
+      await port.openFolder?.(resultTarget);
     } catch (error) {
       toast.error(`打开目录失败: ${toErrorMessage(error)}`);
     }
   };
 
-  const handlePlay = () => void port.play(resultTarget);
+  const handlePlay = () => void port.play?.(resultTarget);
 
   const handleOpenNfo = () => {
     void port.openNfo(nfoPath);
@@ -140,57 +136,35 @@ function buildMenuContent(
           <Link2 className="h-3.5 w-3.5" />
         </ContextMenuShortcut>
       </ContextMenuItem>
-      {isActionVisible(deleteFileAvailability) || isActionVisible(deleteFileAndFolderAvailability) ? (
-        <>
-          <ContextMenuSeparator />
-          {isActionVisible(deleteFileAvailability) ? (
-            <ContextMenuItem
-              onClick={handleDeleteFile}
-              disabled={deleteFileAvailability === "disabled"}
-              className="text-destructive focus:text-destructive"
-            >
-              删除文件
-              <ContextMenuShortcut>D</ContextMenuShortcut>
-            </ContextMenuItem>
-          ) : null}
-          {isActionVisible(deleteFileAndFolderAvailability) ? (
-            <ContextMenuItem
-              onClick={handleDeleteFolder}
-              disabled={deleteFileAndFolderAvailability === "disabled"}
-              className="text-destructive focus:text-destructive"
-            >
-              删除文件及所在文件夹
-              <ContextMenuShortcut>A</ContextMenuShortcut>
-            </ContextMenuItem>
-          ) : null}
-        </>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
+        删除文件
+        <ContextMenuShortcut>D</ContextMenuShortcut>
+      </ContextMenuItem>
+      {canDeleteFolder ? (
+        <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
+          删除文件及所在文件夹
+          <ContextMenuShortcut>A</ContextMenuShortcut>
+        </ContextMenuItem>
       ) : null}
-      {isActionVisible(port.capabilities?.openFolder) ||
-      isActionVisible(port.capabilities?.openNfo) ||
-      isActionVisible(port.capabilities?.play) ? (
-        <>
-          <ContextMenuSeparator />
-          {isActionVisible(port.capabilities?.openFolder) ? (
-            <ContextMenuItem onClick={handleOpenFolder}>
-              打开目录
-              <ContextMenuShortcut>F</ContextMenuShortcut>
-            </ContextMenuItem>
-          ) : null}
-          {isActionVisible(port.capabilities?.openNfo) ? (
-            <ContextMenuItem onClick={handleOpenNfo}>
-              编辑 NFO
-              <ContextMenuShortcut>
-                <FileText className="h-3.5 w-3.5" />
-              </ContextMenuShortcut>
-            </ContextMenuItem>
-          ) : null}
-          {isActionVisible(port.capabilities?.play) ? (
-            <ContextMenuItem onClick={handlePlay}>
-              播放
-              <ContextMenuShortcut>P</ContextMenuShortcut>
-            </ContextMenuItem>
-          ) : null}
-        </>
+      <ContextMenuSeparator />
+      {canOpenFolder ? (
+        <ContextMenuItem onClick={handleOpenFolder}>
+          打开目录
+          <ContextMenuShortcut>F</ContextMenuShortcut>
+        </ContextMenuItem>
+      ) : null}
+      <ContextMenuItem onClick={handleOpenNfo}>
+        编辑 NFO
+        <ContextMenuShortcut>
+          <FileText className="h-3.5 w-3.5" />
+        </ContextMenuShortcut>
+      </ContextMenuItem>
+      {canPlay ? (
+        <ContextMenuItem onClick={handlePlay}>
+          播放
+          <ContextMenuShortcut>P</ContextMenuShortcut>
+        </ContextMenuItem>
       ) : null}
     </>
   );
@@ -221,9 +195,9 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
           setSelectedResultId(
             group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,
           ),
-        menuContent: buildMenuContent(group, selectedResultId, scrapeStatus, port, setManualUrlTarget),
+        menuContent: buildMenuContent(group, selectedResultId, port, setManualUrlTarget),
       })),
-    [port, resultGroups, scrapeStatus, selectedResultId, setSelectedResultId],
+    [port, resultGroups, selectedResultId, setSelectedResultId],
   );
 
   return (
@@ -244,13 +218,10 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
           setManualUrlTarget(null);
         }
       }}
-      onManualUrlSubmit={async (target, manualUrl) => {
+      onManualUrlSubmit={async () => {
         try {
-          const response = await port.retrySelection(target.targets, {
-            scrapeStatus,
-            manualUrl,
-          });
-          activateRetryScrapeTask(target.targets.map((item) => item.filePath));
+          const response = await port.retryFailed();
+          activateRetryScrapeTask();
           toast.success(response.message);
         } catch (error) {
           toast.error(toErrorMessage(error, "按 URL 重新刮削失败"));

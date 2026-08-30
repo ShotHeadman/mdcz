@@ -1,4 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   authLoginInputSchema,
   configImportInputSchema,
@@ -109,12 +110,7 @@ export const appRouter = t.router({
   config: t.router({
     defaults: protectedProcedure.query(({ ctx }) => ctx.services.config.defaults()),
     export: protectedProcedure.query(async ({ ctx }) => await ctx.services.config.export()),
-    read: protectedProcedure.input(configPathInputSchema).query(async ({ ctx, input }) => {
-      if (input?.path) {
-        return await ctx.services.config.get(input.path);
-      }
-      return await ctx.services.config.get();
-    }),
+    read: protectedProcedure.query(async ({ ctx }) => await ctx.services.config.get()),
     import: protectedProcedure.input(configImportInputSchema).mutation(async ({ ctx, input }) => {
       try {
         return await ctx.services.config.import(input.content);
@@ -133,15 +129,6 @@ export const appRouter = t.router({
       .input(configPathInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.config.reset(input?.path)),
     update: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
-      try {
-        const config = await ctx.services.config.update(input);
-        await syncMediaRootFromConfig(ctx.services, config);
-        return config;
-      } catch (error) {
-        return mapConfigError(error);
-      }
-    }),
-    save: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
       try {
         const config = await ctx.services.config.update(input);
         await syncMediaRootFromConfig(ctx.services, config);
@@ -174,7 +161,7 @@ export const appRouter = t.router({
     }),
   }),
   health: t.router({
-    read: t.procedure.query(() => createHealthPayload()),
+    read: t.procedure.query((): HealthResponse => createHealthPayload()),
   }),
   system: t.router({
     about: protectedProcedure.query(async ({ ctx }) => await ctx.services.system.about()),
@@ -211,9 +198,6 @@ export const appRouter = t.router({
       .input(libraryAvailabilityInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.availability(input)),
     list: protectedProcedure
-      .input(libraryListInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
-    search: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
     detail: protectedProcedure
@@ -254,7 +238,7 @@ export const appRouter = t.router({
   maintenance: t.router({
     execute: protectedProcedure
       .input(maintenanceApplyInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.apply(input)),
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.execute(input)),
     pause: protectedProcedure
       .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.pause(input)),

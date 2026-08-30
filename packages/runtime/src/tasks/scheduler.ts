@@ -18,14 +18,6 @@ export class TaskScheduler<TExecution extends SchedulableExecution> {
     void this.drainAsync();
   }
 
-  drainAsync(): Promise<void> {
-    if (this.stopRequested) return Promise.resolve();
-    if (this.activeDrain) return this.activeDrain;
-
-    this.activeDrain = this.runDrain();
-    return this.activeDrain;
-  }
-
   async waitForIdle(): Promise<void> {
     await this.activeDrain;
   }
@@ -34,8 +26,12 @@ export class TaskScheduler<TExecution extends SchedulableExecution> {
     this.stopRequested = true;
   }
 
-  get isRunning(): boolean {
-    return this.activeDrain !== null;
+  private drainAsync(): Promise<void> {
+    if (this.stopRequested) return Promise.resolve();
+    if (this.activeDrain) return this.activeDrain;
+
+    this.activeDrain = this.runDrain();
+    return this.activeDrain;
   }
 
   private async runDrain(): Promise<void> {

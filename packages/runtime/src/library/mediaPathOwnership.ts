@@ -1,4 +1,4 @@
-import { normalizeRootRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
 
 export class MediaPathOwnership {
   readonly #owners = new Map<string, { owner: string | symbol; count: number }>();
@@ -11,7 +11,7 @@ export class MediaPathOwnership {
     const keys = refs
       .map(({ rootId, relativePath }) => {
         if (!rootId.trim()) throw new Error("Media root ID is required");
-        return `${rootId}\0${normalizeRootRelativePath(relativePath)}`;
+        return `${rootId}\0${parseWireRelativePath(relativePath)}`;
       })
       .sort();
     if (new Set(keys).size !== keys.length) throw new Error("Duplicate media path ownership request");

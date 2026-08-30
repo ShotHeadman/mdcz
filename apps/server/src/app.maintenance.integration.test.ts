@@ -218,7 +218,7 @@ describe("buildServer maintenance integration", () => {
     releaseFirstCall();
     const pauseResponse = await pauseResponsePromise;
     expect(pauseResponse.statusCode).toBe(200);
-    expect(previewedPaths).toEqual(["ABC-211"]);
+    expect(previewedPaths).toEqual(["ABC-211.mp4"]);
 
     const resumeResponse = await fastify.inject({
       method: "POST",
@@ -231,29 +231,34 @@ describe("buildServer maintenance integration", () => {
     const items = completed.previews;
     expect(items.map((item) => item.relativePath)).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
     expect(new Set(items.map((item) => item.id)).size).toBe(2);
-    expect(previewedPaths).toEqual(["ABC-211", "ABC-212"]);
+    expect(previewedPaths).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
   });
 
-  it("scans selected maintenance files through read_local semantics without preview or execute", async () => {
+  it("starts a read_local preview from selected files", async () => {
     const root = await createTempRoot("maintenance-selected-root");
     await writeMaintenanceInput(root, "ABC-225", "Local Title ABC-225");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
-    const scanResponse = await fastify.inject({
-      method: "GET",
-      url: `/trpc/maintenance.scanSelectedFiles?input=${encodeURIComponent(
-        JSON.stringify({ filePaths: [join(root, "ABC-225.mp4")], scanDir: root }),
-      )}`,
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
       headers: { authorization: `Bearer ${token}` },
+      payload: {
+        rootId,
+        presetId: "read_local",
+        refs: [{ rootId, relativePath: "ABC-225.mp4" }],
+      },
     });
+    expect(startResponse.statusCode).toBe(200);
+    const sessionId = startResponse.json().result.data.sessionId as string;
+    const session = await waitForMaintenanceSession(fastify, token, sessionId, "preview", "completed");
 
-    expect(scanResponse.statusCode).toBe(200);
-    expect(scanResponse.json().result.data.entries[0]).toMatchObject({
-      fileId: `${rootId}:ABC-225.mp4`,
-      ref: { rootId, relativePath: "ABC-225.mp4" },
-      crawlerData: { number: "ABC-225", title: "Local Title ABC-225" },
+    expect(session.previews).toHaveLength(1);
+    expect(session.previews[0]).toMatchObject({
+      relativePath: "ABC-225.mp4",
+      proposedCrawlerData: { number: "ABC-225", title: "Local Title ABC-225" },
     });
   });
 
@@ -275,7 +280,7 @@ describe("buildServer maintenance integration", () => {
     const appliedSession = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
     const libraryResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/library.search",
+      url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
       payload: { query: "ABC-125", limit: 20 },
     });

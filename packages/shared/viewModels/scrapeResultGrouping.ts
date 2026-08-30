@@ -20,7 +20,7 @@ export type ScrapeResultGroup = RendererGroup<ScrapeResult, ScrapeResult, Render
 export interface ScrapeResultGroupActionContext {
   selectedItem: ScrapeResult;
   nfoPath?: string;
-  targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>;
+  targets: Array<{ filePath: string; ref: ScrapeFileRefDto }>;
   videoPaths: string[];
 }
 
@@ -161,8 +161,8 @@ export const getScrapeResultGroupVideoPaths = (group: ScrapeResultGroup): string
 
 export const getScrapeResultGroupTargets = (
   group: ScrapeResultGroup,
-): Array<{ filePath: string; ref?: ScrapeFileRefDto }> => {
-  const targets = new Map<string, { filePath: string; ref?: ScrapeFileRefDto }>();
+): Array<{ filePath: string; ref: ScrapeFileRefDto }> => {
+  const targets = new Map<string, { filePath: string; ref: ScrapeFileRefDto }>();
   for (const item of group.items) {
     const filePath = scrapeResultPath(item);
     if (!filePath) continue;

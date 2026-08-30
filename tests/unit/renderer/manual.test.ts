@@ -101,9 +101,7 @@ describe("retryScrapeSelection", () => {
       message: "重试任务已启动，共 2 个文件",
     });
 
-    await expect(
-      retryScrapeSelection(["/media/ABC-123.mp4", "/media/ABC-123-CD2.mp4"], { scrapeStatus: "idle" }),
-    ).resolves.toEqual({
+    await expect(retryScrapeSelection()).resolves.toEqual({
       data: {
         taskId: "task-1",
         totalFiles: 2,
@@ -120,17 +118,13 @@ describe("retryScrapeSelection", () => {
         task: { ...buildScrapeSnapshot().task, id: "running", status: "running", completedAt: null },
       }),
     );
-    await expect(retryScrapeSelection("/media/ABC-123.mp4", { scrapeStatus: "running" })).rejects.toThrow(
-      "当前刮削任务仍在进行",
-    );
+    await expect(retryScrapeSelection()).rejects.toThrow("当前刮削任务仍在进行");
 
     expect(retry).not.toHaveBeenCalled();
   });
 
   it("requires a run in the scrape store", async () => {
-    await expect(retryScrapeSelection("/media/ABC-123.mp4", { scrapeStatus: "idle" })).rejects.toThrow(
-      "没有可重试的刮削任务",
-    );
+    await expect(retryScrapeSelection()).rejects.toThrow("没有可重试的刮削任务");
     expect(retry).not.toHaveBeenCalled();
   });
 });

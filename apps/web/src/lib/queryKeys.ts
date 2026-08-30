@@ -17,7 +17,7 @@ export const queryKeys = {
   },
   library: {
     all: ["library"] as const,
-    search: (query: string) => ["library", "search", query] as const,
+    list: (query: string) => ["library", "list", query] as const,
   },
   logs: {
     all: ["logs"] as const,

@@ -188,7 +188,7 @@ describe("web detail action port", () => {
 });
 
 describe("web scrape action port", () => {
-  it("enables file deletion only for root-relative targets and calls safe server delete", async () => {
+  it("calls safe server delete for root-relative targets", async () => {
     const deleteFile = vi.spyOn(api.scrape, "deleteFile").mockResolvedValue({
       ok: true,
       rootId: "root-1",
@@ -199,9 +199,6 @@ describe("web scrape action port", () => {
       { filePath: "ABC-001.mp4", ref: { rootId: "root-1", relativePath: "ABC-001.mp4" } },
       { filePath: "ABC-001-CD2.mp4", ref: { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" } },
     ];
-
-    expect(port.getDeleteFileAvailability?.([{ filePath: "/absolute/ABC-001.mp4" }])).toBe("hidden");
-    expect(port.getDeleteFileAvailability?.(safeTargets)).toBe("enabled");
 
     await port.deleteFile(safeTargets);
 
@@ -218,15 +215,13 @@ describe("web scrape action port", () => {
     );
     const port = createWebScrapeActionPort();
 
-    await expect(port.retrySelection([{ filePath: "ABC-001.mp4" }], { scrapeStatus: "idle" })).resolves.toEqual({
+    await expect(port.retryFailed()).resolves.toEqual({
       message: "重试任务已启动：retry-1",
     });
     expect(retry).toHaveBeenCalledWith({ taskId: "session-run" });
 
     useScrapeStore.getState().reset();
-    await expect(port.retrySelection([{ filePath: "ABC-001.mp4" }], { scrapeStatus: "idle" })).rejects.toThrow(
-      "没有可重试的刮削任务",
-    );
+    await expect(port.retryFailed()).rejects.toThrow("没有可重试的刮削任务");
   });
 });
 

@@ -17,11 +17,9 @@ import {
   serializeEditableNfoData,
   validateEditableNfoData,
 } from "../nfo";
-import type { ActionAvailability, DetailActionPort, PosterCropEditSession } from "./ports";
+import type { DetailActionPort, PosterCropEditSession } from "./ports";
 
 const EMPTY_RESULTS: ReturnType<typeof selectScrapeResults> = [];
-
-const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
 
 const getDirFromPath = (path: string): string => {
   const normalized = path.replace(/[\\/]+$/u, "");
@@ -140,7 +138,7 @@ export function DetailPanelAdapter({
     setPosterOverride("");
     setPosterCropSession(null);
     setPosterCrop(null);
-    if (!item || item.status !== "success" || !isActionVisible(port.capabilities?.editPoster)) return;
+    if (!item || item.status !== "success") return;
     void port
       .preparePosterCrop(item)
       .then((session) => {
@@ -152,7 +150,7 @@ export function DetailPanelAdapter({
     return () => {
       cancelled = true;
     };
-  }, [item, port, port.capabilities?.editPoster]);
+  }, [item, port]);
 
   const openNfoEditor = useCallback(
     async (path: string) => {
@@ -220,7 +218,7 @@ export function DetailPanelAdapter({
       toast.info("请先选择一个项目");
       return;
     }
-    void port.play(item);
+    void port.play?.(item);
   }, [item, port]);
 
   const handleOpenFolder = useCallback(() => {
@@ -228,7 +226,7 @@ export function DetailPanelAdapter({
       toast.info("请先选择一个项目");
       return;
     }
-    void port.openFolder(item);
+    void port.openFolder?.(item);
   }, [item, port]);
 
   const handleOpenNfo = useCallback(async () => {
@@ -283,18 +281,11 @@ export function DetailPanelAdapter({
 
   const actions = useMemo(
     () => ({
-      play: isActionVisible(port.capabilities?.play) ? handlePlay : undefined,
-      openFolder: isActionVisible(port.capabilities?.openFolder) ? handleOpenFolder : undefined,
-      openNfo: isActionVisible(port.capabilities?.openNfo) ? handleOpenNfo : undefined,
+      play: typeof port.play === "function" ? handlePlay : undefined,
+      openFolder: typeof port.openFolder === "function" ? handleOpenFolder : undefined,
+      openNfo: handleOpenNfo,
     }),
-    [
-      handleOpenFolder,
-      handleOpenNfo,
-      handlePlay,
-      port.capabilities?.openFolder,
-      port.capabilities?.openNfo,
-      port.capabilities?.play,
-    ],
+    [handleOpenFolder, handleOpenNfo, handlePlay, port.openFolder, port.play],
   );
 
   useEffect(() => {

@@ -173,11 +173,10 @@ export const api: ServerApiContract = {
     defaults: () => trpcQuery("config.defaults"),
     export: () => trpcQuery("config.export"),
     import: (input) => trpcMutation("config.import", input),
-    read: async () => await trpcQuery<Configuration>("config.read", {}),
+    read: () => trpcQuery<Configuration>("config.read"),
     previewNaming: (input) => trpcMutation("config.previewNaming", input),
     reset: (input) => trpcMutation("config.reset", input ?? {}),
     update: (input) => trpcMutation("config.update", input),
-    save: (input) => trpcMutation("config.save", input),
     profiles: {
       list: () => trpcQuery("config.profiles.list"),
       create: (input) => trpcMutation("config.profiles.create", input),
@@ -198,7 +197,7 @@ export const api: ServerApiContract = {
     clearRuntime: () => trpcMutation("logs.clearRuntime"),
   },
   maintenance: {
-    apply: (input) => trpcMutation("maintenance.execute", input),
+    execute: (input) => trpcMutation("maintenance.execute", input),
     pause: (input) => trpcMutation("maintenance.pause", input),
     getActiveSession: () => trpcQuery("maintenance.getActiveSession"),
     updateDraft: (input) => trpcMutation("maintenance.updateDraft", input),
@@ -210,7 +209,6 @@ export const api: ServerApiContract = {
   library: {
     availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),
-    search: (input) => trpcQuery("library.search", input),
     detail: (input) => trpcQuery("library.detail", input),
     refresh: (input) => trpcMutation("library.refresh", input),
     rescan: (input) => trpcMutation("library.rescan", input),

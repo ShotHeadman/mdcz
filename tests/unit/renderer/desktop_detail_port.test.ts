@@ -43,7 +43,9 @@ describe("desktop detail image resolution", () => {
   });
 
   it("opens the folder through the root-scoped video reference", async () => {
-    await createDesktopDetailPort().openFolder(item);
+    const { openFolder } = createDesktopDetailPort();
+    expect(openFolder).toEqual(expect.any(Function));
+    await openFolder?.(item);
     expect(showItemInFolder).toHaveBeenCalledWith(item.fileRef);
   });
 });

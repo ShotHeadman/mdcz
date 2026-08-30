@@ -1,6 +1,6 @@
 import path from "node:path";
 import { resolveRootRelativePath } from "@mdcz/media-store";
-import { normalizeRootRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   PublicationFileSystem,
   PublicationJournalManifestObsolete,
@@ -19,7 +19,7 @@ export interface ResolvedPublicationPlan {
   observed: ObservedPublicationFile[];
 }
 
-const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${normalizeRootRelativePath(ref.relativePath)}`;
+const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${parseWireRelativePath(ref.relativePath)}`;
 
 export const observePublicationFile = async (
   fileSystem: PublicationFileSystem,
@@ -106,7 +106,7 @@ export const preflightPublication = async (
   const resolve = (ref: RootFileRef): string => {
     const root = roots.get(ref.rootId);
     if (!root) throw new Error(`Publication root not resolved: ${ref.rootId}`);
-    return resolveRootRelativePath(root, normalizeRootRelativePath(ref.relativePath));
+    return resolveRootRelativePath(root, parseWireRelativePath(ref.relativePath));
   };
   if (previous) {
     for (const fact of previous) {

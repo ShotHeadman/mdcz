@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const normalizeRootRelativePath = (relativePath: string): string => {
+export const parseWireRelativePath = (relativePath: string): string => {
   const normalized = relativePath.replace(/\\/gu, "/").replace(/^\.\//u, "");
   if (
     !normalized ||
@@ -16,7 +16,7 @@ export const normalizeRootRelativePath = (relativePath: string): string => {
 export const rootFileRefSchema = z
   .object({
     rootId: z.string().trim().min(1),
-    relativePath: z.string().transform(normalizeRootRelativePath),
+    relativePath: z.string().transform(parseWireRelativePath),
   })
   .strict();
 
@@ -48,7 +48,7 @@ export type AssetRef = z.infer<typeof assetRefSchema>;
 export const LOCAL_FILE_SCHEME = "local-file";
 
 export const toLocalFileUrl = (ref: RootFileRef, query?: Record<string, string>): string => {
-  const relativePath = normalizeRootRelativePath(ref.relativePath);
+  const relativePath = parseWireRelativePath(ref.relativePath);
   const encodedPath = relativePath.split("/").map(encodeURIComponent).join("/");
   const url = `${LOCAL_FILE_SCHEME}://${encodeURIComponent(ref.rootId)}/${encodedPath}`;
   const params = Object.entries(query ?? {}).filter(([, value]) => value.length > 0);

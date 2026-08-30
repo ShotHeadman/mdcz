@@ -1,16 +1,11 @@
-import type { AmbiguousUncensoredItemDto, ScanTaskDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
+import type { AmbiguousUncensoredItemDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate, UncensoredChoice } from "@mdcz/shared/types";
 import {
   changeMaintenancePreset,
   selectMaintenanceHasWork,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import {
-  selectIsScraping,
-  selectScrapeHasWork,
-  selectScrapeResults,
-  useScrapeStore,
-} from "@mdcz/views/state/scrapeStore";
+import { selectIsScraping, selectScrapeHasWork, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import type { MaintenanceActionPort } from "./ports";
@@ -95,8 +90,7 @@ export const useWorkbenchSessionSnapshot = (
   };
 };
 
-export const activateNewScrapeTask = (filePaths?: string[]): void => {
-  void filePaths;
+export const activateNewScrapeTask = (): void => {
   useScrapeStore.getState().reset();
   useScrapeStore.getState().setPending(true);
   useUIStore.getState().setSelectedResultId(null);
@@ -106,13 +100,11 @@ export const activateNewScrapeTask = (filePaths?: string[]): void => {
  * Activates a retry that the backend runs as its own task, without discarding the results
  * already in the queue. Only the retried entries are reset to `processing`.
  */
-export const activateRetryScrapeTask = (filePaths: string[]): void => {
-  void filePaths;
+export const activateRetryScrapeTask = (): void => {
   useScrapeStore.getState().setPending(true);
 };
 
-export const applyScrapeTaskStatus = (status: ScanTaskDto["status"]): void => {
-  void status;
+export const applyScrapeTaskStatus = (): void => {
   useScrapeStore.getState().setPending(true);
 };
 
@@ -137,11 +129,6 @@ export const resetScrapeWorkbenchToSetup = (): void => {
   useWorkbenchTaskStore.getState().reset();
   useScrapeStore.getState().reset();
 };
-
-export const getFailedScrapeTargets = () =>
-  selectScrapeResults(useScrapeStore.getState())
-    .filter((result) => result.status === "failed")
-    .map((result) => ({ filePath: result.output?.relativePath ?? result.relativePath }));
 
 export interface StartMaintenanceFlowOptions {
   candidates: MediaCandidate[];

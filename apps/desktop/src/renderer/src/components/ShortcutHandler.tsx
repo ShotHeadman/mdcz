@@ -6,12 +6,7 @@ import {
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { activateNewScrapeTask, activateRetryScrapeTask } from "@mdcz/views/adapters";
 import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
-import {
-  selectIsScraping,
-  selectScrapeResults,
-  selectScrapeStatus,
-  useScrapeStore,
-} from "@mdcz/views/state/scrapeStore";
+import { selectIsScraping, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -63,7 +58,6 @@ export function ShortcutHandler() {
       void (async () => {
         const scrapeState = useScrapeStore.getState();
         const results = selectScrapeResults(scrapeState);
-        const scrapeStatus = selectScrapeStatus(scrapeState);
         const selectedGroup = findScrapeResultGroup(results, uiState.selectedResultId);
         const actionContext = selectedGroup
           ? buildScrapeResultGroupActionContext(selectedGroup, uiState.selectedResultId)
@@ -87,11 +81,9 @@ export function ShortcutHandler() {
           }
 
           try {
-            const response = await retryScrapeSelection(groupedVideoPaths, {
-              scrapeStatus,
-            });
+            const response = await retryScrapeSelection();
 
-            activateRetryScrapeTask(groupedVideoPaths);
+            activateRetryScrapeTask();
 
             toast.success(response.data.message);
           } catch (error) {
@@ -151,7 +143,7 @@ export function ShortcutHandler() {
               const outputRoot = workbenchSetupState.targetDir.trim()
                 ? await ipc.mediaRoots.ensurePath({ hostPath: workbenchSetupState.targetDir })
                 : undefined;
-              activateNewScrapeTask(selectedCandidates.map((candidate) => candidate.path));
+              activateNewScrapeTask();
               const response = await startSelectedScrape(
                 selectedCandidates.map((candidate) => candidate.ref),
                 outputRoot?.id,

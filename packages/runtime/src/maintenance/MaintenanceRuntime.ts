@@ -51,13 +51,6 @@ export interface MaintenanceRuntimeDependencies {
   translateService: TranslateService;
 }
 
-export interface MaintenanceRuntimePreviewInput {
-  root: MediaRoot;
-  presetId: MaintenancePresetId;
-  refs?: Array<{ relativePath: string }>;
-  signal?: AbortSignal;
-}
-
 export interface MaintenanceRuntimePreviewEntriesInput {
   root: MediaRoot;
   presetId: MaintenancePresetId;
@@ -76,21 +69,6 @@ export interface MaintenanceRuntimePreviewItem {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
-}
-
-export interface MaintenanceRuntimeApplyInput {
-  root: MediaRoot;
-  presetId: MaintenancePresetId;
-  preview: {
-    relativePath: string;
-    proposedCrawlerData: CrawlerData | null;
-    fieldDiffs?: FieldDiff[];
-    fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-    imageAlternatives?: MaintenanceImageAlternatives;
-  };
-  progress?: { fileIndex: number; totalFiles: number };
-  signalService?: MaintenanceSignalService;
-  signal?: AbortSignal;
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
@@ -178,14 +156,6 @@ export class MaintenanceRuntime {
     return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal);
   }
 
-  async preview(input: MaintenanceRuntimePreviewInput): Promise<MaintenanceRuntimePreviewItem[]> {
-    const entries = input.refs?.length
-      ? await this.scanRefs({ root: input.root, refs: input.refs, signal: input.signal })
-      : await this.scan({ root: input.root, signal: input.signal });
-
-    return await this.previewEntries({ ...input, entries });
-  }
-
   async previewEntries(input: MaintenanceRuntimePreviewEntriesInput): Promise<MaintenanceRuntimePreviewItem[]> {
     const preset = getMaintenancePreset(input.presetId);
     const config = await this.getPresetConfig(input.presetId, input.root);
@@ -216,38 +186,6 @@ export class MaintenanceRuntime {
 
     items.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
     return items;
-  }
-
-  async apply(input: MaintenanceRuntimeApplyInput): Promise<MaintenanceRuntimeApplyResult> {
-    const preset = getMaintenancePreset(input.presetId);
-    if (!supportsMaintenanceExecution(preset)) {
-      return {
-        status: "success",
-        entry: (await this.scanRefs({ root: input.root, refs: [input.preview] }))[0],
-        outputRelativePath: input.preview.relativePath,
-      };
-    }
-
-    const entries = await this.scanRefs({ root: input.root, refs: [input.preview], signal: input.signal });
-    const entry = entries[0];
-    if (!entry) {
-      return { status: "failed", error: `维护文件不存在：${input.preview.relativePath}` };
-    }
-
-    return await this.applyEntry({
-      root: input.root,
-      presetId: input.presetId,
-      entry,
-      committed: {
-        fieldDiffs: input.preview.fieldDiffs,
-        fieldSelections: input.preview.fieldSelections,
-        imageAlternatives: input.preview.imageAlternatives,
-        crawlerData: input.preview.proposedCrawlerData ?? undefined,
-      },
-      signal: input.signal,
-      progress: input.progress,
-      signalService: input.signalService,
-    });
   }
 
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOCAL_FILE_SCHEME, parseLocalFileUrl, toLocalFileUrl } from "./mediaRef";
+import { LOCAL_FILE_SCHEME, parseLocalFileUrl, parseWireRelativePath, toLocalFileUrl } from "./mediaRef";
 
 describe("local-file URL encoding", () => {
   it("round-trips a RootFileRef", () => {
@@ -19,5 +19,11 @@ describe("local-file URL encoding", () => {
       "Invalid media relative path",
     );
     expect(() => parseLocalFileUrl("local-file://root-1/foo/../secret.txt")).toThrow("Invalid media relative path");
+  });
+});
+
+describe("parseWireRelativePath", () => {
+  it("rejects traversal that the filesystem contract would normalize", () => {
+    expect(() => parseWireRelativePath("a/../b")).toThrow("Invalid media relative path");
   });
 });

@@ -372,7 +372,7 @@ const createServerHost = async (mediaRoot: string, gate: Promise<void>, succeed:
       await vi.waitFor(async () => {
         expect((await maintenance.getActiveSession())?.status).toBe("completed");
       });
-      await maintenance.apply({
+      await maintenance.execute({
         sessionId: startedMaintenance.sessionId,
         confirmationToken: `maintenance:${startedMaintenance.sessionId}`,
       });

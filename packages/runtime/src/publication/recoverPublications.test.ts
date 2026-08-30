@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { adaptPublicationJournal } from "./journalAdapter";
 import { createMemoryPublicationJournal } from "./memoryJournal";
 import { commitPublishedMedia } from "./publishMedia";
 import { recoverPublications } from "./recoverPublications";
@@ -278,5 +279,39 @@ describe("recoverPublications", () => {
     );
     expect(repairIssues.resolve).toHaveBeenCalledWith("op-1", "root-1", "movie.mp4");
     expect(repairIssues.resolve).not.toHaveBeenCalledWith("op-1", "root-1", "old.jpg");
+  });
+
+  it("records a repair issue for a malformed stored manifest", async () => {
+    const journal = adaptPublicationJournal({
+      begin() {},
+      commit(_operationId, write) {
+        return write();
+      },
+      finish() {},
+      listUnfinished: () => [
+        {
+          operationId: "op-bad",
+          operationType: "scrape",
+          state: "pending",
+          manifest: { not: "a manifest" },
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const repairIssues = { record: vi.fn(() => undefined), resolve: vi.fn(() => undefined) };
+
+    await recoverPublications({
+      journal,
+      repairIssues,
+      resolveRoot: async () => ({ id: "root-1", hostPath: "/tmp" }),
+    });
+
+    expect(repairIssues.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: "op-bad",
+        errorMessage: "Publication journal manifest is invalid",
+      }),
+    );
+    expect(journal.listUnfinished()).toEqual([]);
   });
 });

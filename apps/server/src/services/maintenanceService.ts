@@ -44,7 +44,6 @@ export class MaintenanceService {
         resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
       }),
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
-      concurrency: 1,
     });
   }
 
@@ -59,7 +58,7 @@ export class MaintenanceService {
     return { sessionId: handle.session.id };
   }
 
-  async apply(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto> {
+  async execute(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto> {
     const session = await this.coordinator.getActiveSession();
     if (!session || session.id !== input.sessionId) throw new Error(`维护会话不存在：${input.sessionId}`);
     const previews = session.previews;

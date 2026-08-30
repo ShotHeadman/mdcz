@@ -25,7 +25,7 @@ describe("commitRegisteredPublication", () => {
     let begunRootId: string | undefined;
     const originalBegin = journal.begin.bind(journal);
     journal.begin = (entry) => {
-      begunRootId = (entry.manifest as { entries: Array<{ rootId: string }> }).entries[0]?.rootId;
+      begunRootId = entry.manifest.entries[0]?.rootId;
       originalBegin(entry);
     };
 

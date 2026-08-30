@@ -52,7 +52,7 @@ export const rootBrowserInputSchema = z.object({
   relativePath: z.string().optional().default(""),
 });
 
-export type RootBrowserInput = z.infer<typeof rootBrowserInputSchema>;
+export type RootBrowserInput = z.input<typeof rootBrowserInputSchema>;
 
 export type { RootFileRef } from "./mediaRef";
 
@@ -523,15 +523,12 @@ export const logEntrySchema = taskEventSchema.extend({
 
 export type LogEntryDto = z.infer<typeof logEntrySchema>;
 
-export const logListInputSchema = z.preprocess(
-  (input) => (input === null ? undefined : input),
-  z
-    .object({
-      kind: z.enum(["all", "task", "runtime"]).optional().default("all"),
-      taskIds: z.array(z.string().trim().min(1)).optional(),
-    })
-    .optional(),
-);
+export const logListInputSchema = z
+  .object({
+    kind: z.enum(["all", "task", "runtime"]).optional(),
+    taskIds: z.array(z.string().trim().min(1)).optional(),
+  })
+  .nullish();
 
 export type LogListInput = z.infer<typeof logListInputSchema>;
 
@@ -1106,7 +1103,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
   }),
 ]);
 
-export type ToolExecuteInput = z.infer<typeof toolExecuteInputSchema>;
+export type ToolExecuteInput = z.input<typeof toolExecuteInputSchema>;
 
 export const toolExecuteResponseSchema = z.object({
   toolId: z.string(),

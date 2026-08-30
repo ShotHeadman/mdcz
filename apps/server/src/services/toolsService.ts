@@ -120,14 +120,16 @@ export class ToolsService {
         };
       }
       case "media-library-tools": {
-        const server = input.server as MediaServerKey;
-        if (input.action === "sync-info" || input.action === "sync-photo") {
+        const server = input.server ?? "jellyfin";
+        const action = input.action ?? "check";
+        const mode = input.mode ?? "missing";
+        if (action === "sync-info" || action === "sync-photo") {
           const config = await this.config.get();
           const result =
-            input.action === "sync-info"
-              ? await this.createActorInfoService(server).run(config, input.mode)
-              : await this.createActorPhotoService(server).run(config, input.mode);
-          const label = input.action === "sync-info" ? "人物简介同步完成" : "人物头像同步完成";
+            action === "sync-info"
+              ? await this.createActorInfoService(server).run(config, mode)
+              : await this.createActorPhotoService(server).run(config, mode);
+          const label = action === "sync-info" ? "人物简介同步完成" : "人物头像同步完成";
           return {
             toolId: input.toolId,
             ok: result.failedCount === 0,
@@ -136,7 +138,7 @@ export class ToolsService {
           };
         }
         const config = await this.config.get();
-        const check = await probeMediaServer(this.networkClient, config, input.server);
+        const check = await probeMediaServer(this.networkClient, config, server);
         return { toolId: input.toolId, ok: check.ok, message: check.message, data: check };
       }
       case "symlink-manager": {

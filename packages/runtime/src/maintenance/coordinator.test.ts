@@ -79,7 +79,6 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
       },
     },
     acquireAll: (refs, owner) => ownership.acquireAll(refs, owner),
-    concurrency: 1,
   });
   return { coordinator, events, library, ownership, runtime };
 };

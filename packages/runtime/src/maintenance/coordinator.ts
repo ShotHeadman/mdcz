@@ -167,11 +167,8 @@ export class MaintenanceSessionCoordinator {
       library: MaintenanceLibraryPort;
       events?: { publish(event: MaintenanceCoordinatorEvent): void | Promise<void> };
       acquireAll?: (refs: readonly RootFileRef[], owner: string) => () => void;
-      concurrency: 1;
     },
-  ) {
-    if (deps.concurrency !== 1) throw new Error("Maintenance coordinator concurrency must be 1");
-  }
+  ) {}
 
   async startPreview(input: {
     rootId: string;
@@ -591,7 +588,7 @@ export class MaintenanceSessionCoordinator {
       ...execution,
     });
     this.active = { sessionId, generation, executor };
-    await executor.execute(items, generation);
+    await executor.execute(items);
   }
 
   private commitPreview(

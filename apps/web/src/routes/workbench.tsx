@@ -1,6 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
-import type { MaintenancePresetId, MediaCandidate, ScrapeResult } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
   buildUncensoredConfirmationItems,
@@ -17,7 +17,6 @@ import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/
 import {
   selectIsScraping,
   selectScrapeResults,
-  selectScrapeStatus,
   selectScrapeTaskId,
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
@@ -67,19 +66,6 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
 const STOP_SCRAPE_CONFIRM_MESSAGE = "确定要停止刮削吗？";
 const getRetryFailedConfirmMessage = (failedCount: number): string => `确定要批量重试 ${failedCount} 个失败项目吗？`;
 
-type WebScrapeRetryTarget = Parameters<SharedWorkbenchPorts["scrape"]["retrySelection"]>[0][number];
-
-const scrapeResultToWebRetryRef = (result: ScrapeResult): WebScrapeRetryTarget["ref"] =>
-  result.rootId && result.relativePath ? { rootId: result.rootId, relativePath: result.relativePath } : undefined;
-
-const scrapeResultsToWebRetryTargets = (results: ScrapeResult[]): WebScrapeRetryTarget[] =>
-  results
-    .filter((result) => result.status === "failed")
-    .map((result) => ({
-      filePath: result.output?.relativePath ?? result.relativePath,
-      ref: scrapeResultToWebRetryRef(result),
-    }));
-
 function WorkbenchPage() {
   const search = Route.useSearch();
   const queryClient = useQueryClient();
@@ -96,10 +82,9 @@ function WorkbenchPage() {
   const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
   const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: queryKeys.config.current, retry: false });
 
-  const { isScraping, scrapeStatus, results } = useScrapeStore(
+  const { isScraping, results } = useScrapeStore(
     useShallow((state) => ({
       isScraping: selectIsScraping(state),
-      scrapeStatus: selectScrapeStatus(state),
       results: selectScrapeResults(state),
     })),
   );
@@ -112,7 +97,7 @@ function WorkbenchPage() {
 
   const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, search.intent);
   const showSetup = sessionSnapshot.showSetup;
-  const failedTargets = useMemo(() => scrapeResultsToWebRetryTargets(results), [results]);
+  const failedCount = useMemo(() => results.filter((result) => result.status === "failed").length, [results]);
 
   useEffect(() => {
     if (sessionSnapshot.workbenchMode !== workbenchMode) {
@@ -127,7 +112,7 @@ function WorkbenchPage() {
   }, [hydrationState.shouldOpenUncensoredDialog]);
 
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
-    activateNewScrapeTask(candidates.map((candidate) => candidate.path));
+    activateNewScrapeTask();
     try {
       const outputRoot = targetDir.trim() ? await api.mediaRoots.ensurePath({ hostPath: targetDir }) : undefined;
       await api.scrape.start({ refs: candidates.map((candidate) => candidate.ref), outputRootId: outputRoot?.id });
@@ -200,16 +185,15 @@ function WorkbenchPage() {
   };
 
   const handleRetryFailed = async () => {
-    const targets = scrapeResultsToWebRetryTargets(selectScrapeResults(useScrapeStore.getState()));
-    if (targets.length === 0) {
+    if (failedCount === 0) {
       toast.info("当前没有可重试的失败项目");
       return;
     }
-    if (!window.confirm(getRetryFailedConfirmMessage(targets.length))) {
+    if (!window.confirm(getRetryFailedConfirmMessage(failedCount))) {
       return;
     }
     try {
-      const result = await ports.scrape.retrySelection(targets, { scrapeStatus });
+      const result = await ports.scrape.retryFailed();
       toast.success(result.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);
@@ -246,7 +230,7 @@ function WorkbenchPage() {
         ) : workbenchMode === "scrape" ? (
           <ScrapeWorkbenchAdapter
             ports={ports}
-            failedCount={failedTargets.length}
+            failedCount={failedCount}
             onPauseScrape={() => void handlePauseScrape()}
             onResumeScrape={() => void handleResumeScrape()}
             onRetryFailed={() => void handleRetryFailed()}
@@ -268,6 +252,5 @@ function WorkbenchPage() {
 
 export const __workbenchTestHooks = {
   getRetryFailedConfirmMessage,
-  scrapeResultsToWebRetryTargets,
   STOP_SCRAPE_CONFIRM_MESSAGE,
 };

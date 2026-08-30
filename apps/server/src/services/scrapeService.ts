@@ -469,6 +469,10 @@ export class ScrapeService {
 
   private async createRun(input: ScrapeStartInput): Promise<ScrapeRunManifest> {
     if (input.refs.length === 0) throw new Error("Scrape run requires at least one file");
+    const rootId = input.refs[0]?.rootId;
+    if (!rootId || input.refs.some((ref) => ref.rootId !== rootId)) {
+      throw new Error("刮削任务只能包含同一个媒体目录下的文件");
+    }
     for (const ref of input.refs) await this.mediaRoots.get(ref.rootId);
     if (input.outputRootId) await this.mediaRoots.get(input.outputRootId);
     return await (await this.persistence.getState()).repositories.scrapeRuns.create({

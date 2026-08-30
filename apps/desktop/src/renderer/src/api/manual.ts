@@ -92,7 +92,7 @@ export const updateNfo = async (path: LocalFileTarget, crawlerData: CrawlerData,
   return { data };
 };
 
-export const retryScrapeSelection = async (_path: string | string[], _options: unknown = {}) => {
+export const retryScrapeSelection = async () => {
   const snapshot = selectScrapeSnapshot(useScrapeStore.getState());
   if (!snapshot) throw new Error("没有可重试的刮削任务");
   if (

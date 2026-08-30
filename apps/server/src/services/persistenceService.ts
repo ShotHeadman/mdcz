@@ -11,7 +11,8 @@ import {
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { recoverPublications } from "@mdcz/runtime/publication";
+import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
+import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
 
 import type { ServerRuntimePaths } from "./configService";
 
@@ -19,7 +20,7 @@ export interface ServerPersistenceRepositories {
   library: LibraryRepository;
   libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
-  publicationJournal: PublicationJournalRepository;
+  publicationJournal: PublicationJournalPort;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
 }
@@ -60,7 +61,7 @@ export class ServerPersistenceService {
       scrapeRuns.interruptUnfinished();
       const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
-      const publicationJournal = new PublicationJournalRepository(database);
+      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
       await recoverPublications({
         journal: publicationJournal,
         repairIssues: libraryRepairIssues,

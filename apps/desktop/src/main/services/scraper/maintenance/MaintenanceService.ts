@@ -102,7 +102,6 @@ export class MaintenanceService {
             await (await this.persistenceService.getState()).repositories.mediaRoots.get(rootId),
         }),
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
-        concurrency: 1,
       });
   }
 

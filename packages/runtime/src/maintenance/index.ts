@@ -8,10 +8,8 @@ export * from "./LocalScanService";
 export * from "./libraryPort";
 export type {
   MaintenanceRuntimeApplyEntryInput,
-  MaintenanceRuntimeApplyInput,
   MaintenanceRuntimeApplyResult,
   MaintenanceRuntimePreviewEntriesInput,
-  MaintenanceRuntimePreviewInput,
   MaintenanceRuntimePreviewItem,
 } from "./MaintenanceRuntime";
 export { MaintenanceRuntime } from "./MaintenanceRuntime";

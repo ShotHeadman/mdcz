@@ -28,20 +28,19 @@ const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
 });
 
 const refsInManifest = (manifest: unknown): PublicationPathRef[] => {
+  if (!manifest || typeof manifest !== "object") return [];
+  const record = manifest as { entries?: unknown; obsolete?: unknown };
   const refs: PublicationPathRef[] = [];
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
+  for (const list of [record.entries, record.obsolete]) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!item || typeof item !== "object") continue;
+      const candidate = item as { rootId?: unknown; relativePath?: unknown };
+      if (typeof candidate.rootId === "string" && typeof candidate.relativePath === "string") {
+        refs.push({ rootId: candidate.rootId, relativePath: candidate.relativePath });
+      }
     }
-    if (!value || typeof value !== "object") return;
-    const record = value as Record<string, unknown>;
-    if (typeof record.rootId === "string" && typeof record.relativePath === "string") {
-      refs.push({ rootId: record.rootId, relativePath: record.relativePath });
-    }
-    for (const item of Object.values(record)) visit(item);
-  };
-  visit(manifest);
+  }
   return refs;
 };
 

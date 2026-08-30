@@ -8,7 +8,10 @@ export const normalizeImageSourcePath = (rawPath: string): string => {
   if (!value) return "";
 
   try {
-    const parsed = new URL(value, typeof window === "undefined" ? "http://localhost" : window.location.origin);
+    const parsed = new URL(
+      value,
+      (globalThis as { location?: { origin?: string } }).location?.origin ?? "http://localhost",
+    );
     if (parsed.pathname.endsWith("/api/v1/files/image") || parsed.pathname.endsWith("/api/v1/crop/image")) {
       return parsed.searchParams.get("path") ?? value;
     }

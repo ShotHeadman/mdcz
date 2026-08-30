@@ -74,12 +74,17 @@ export interface PublicationJournalRecord {
   operationId: string;
   operationType: string;
   state: PublicationJournalState;
-  manifest: unknown;
+  manifest: PublicationJournalManifest;
   createdAt: Date;
 }
 
 export interface PublicationJournalPort {
-  begin(entry: { operationId: string; operationType: string; manifest: unknown; createdAt: Date }): void;
+  begin(entry: {
+    operationId: string;
+    operationType: string;
+    manifest: PublicationJournalManifest;
+    createdAt: Date;
+  }): void;
   commit<T>(operationId: string, write: () => T): T;
   finish(operationId: string): void;
   conflicts(refs: readonly RootFileRef[]): { operationId: string } | null;

@@ -1,5 +1,5 @@
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
-import { type LocalFileTarget, normalizeRootRelativePath } from "@mdcz/shared/mediaRef";
+import { type LocalFileTarget, parseWireRelativePath } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -28,7 +28,7 @@ const toDesktopFileTarget = (path: string, item?: DetailViewItem | null): LocalF
   }
 
   try {
-    return { rootId: item.fileRef.rootId, relativePath: normalizeRootRelativePath(normalizedPath) };
+    return { rootId: item.fileRef.rootId, relativePath: parseWireRelativePath(normalizedPath) };
   } catch {
     return path;
   }
@@ -65,12 +65,6 @@ export const resolveDesktopImageCandidates = async (
   );
 
 export const createDesktopDetailPort = (): DetailActionPort => ({
-  capabilities: {
-    play: "enabled",
-    openFolder: "enabled",
-    openNfo: "enabled",
-    editPoster: "enabled",
-  },
   showFilePath: true,
   resolveImageCandidates: resolveDesktopImageCandidates,
   play: (item) => {
@@ -116,16 +110,8 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
 });
 
 export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
-  capabilities: {
-    deleteFile: "enabled",
-    deleteFileAndFolder: "enabled",
-    openFolder: "enabled",
-    play: "enabled",
-    openNfo: "enabled",
-  },
-  retrySelection: async (targets, options) => {
-    const filePaths = targets.map((target) => target.filePath);
-    const response = await retryScrapeSelection(filePaths, options);
+  retryFailed: async () => {
+    const response = await retryScrapeSelection();
     return {
       message: response.data.message,
     };
@@ -147,11 +133,6 @@ export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
 });
 
 export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => ({
-  capabilities: {
-    openFolder: "enabled",
-    play: "enabled",
-    openNfo: "enabled",
-  },
   openFolder: async (filePath) => {
     await ipc.app.showItemInFolder(filePath);
   },

@@ -1,15 +1,13 @@
 import { copyFile, mkdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
-import { normalizeRootRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { PublicationJournalAdapter } from "./journalAdapter";
 import { removeCommittedObsoleteFiles } from "./preflight";
 import type {
   PublicationFileSystem,
   PublicationJournalManifest,
-  PublicationJournalManifestEntry,
-  PublicationJournalManifestObsolete,
   PublicationJournalPort,
   PublicationJournalRecord,
-  PublicationObsoleteObservation,
   PublicationRepairPort,
 } from "./types";
 
@@ -46,67 +44,6 @@ const exists = async (fileSystem: PublicationFileSystem, filePath: string): Prom
   }
 };
 
-const asRootFileRef = (value: unknown): RootFileRef | null => {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  if (typeof record.rootId !== "string" || typeof record.relativePath !== "string") return null;
-  return { rootId: record.rootId, relativePath: record.relativePath };
-};
-
-const asManifestEntry = (value: unknown): PublicationJournalManifestEntry | null => {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  if (typeof record.rootId !== "string" || typeof record.relativePath !== "string") return null;
-  if (typeof record.temporaryPath !== "string") return null;
-  if (record.backupPath !== null && typeof record.backupPath !== "string") return null;
-  if (typeof record.targetExisted !== "boolean") return null;
-  return {
-    rootId: record.rootId,
-    relativePath: record.relativePath,
-    temporaryPath: record.temporaryPath,
-    backupPath: record.backupPath,
-    targetExisted: record.targetExisted,
-  };
-};
-
-const asObsoleteObservation = (value: unknown): PublicationObsoleteObservation | null => {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  if (record.exists === false) return { exists: false };
-  if (record.exists !== true) return null;
-  if (typeof record.size !== "number" || typeof record.mtimeMs !== "number" || typeof record.isFile !== "boolean") {
-    return null;
-  }
-  return { exists: true, size: record.size, mtimeMs: record.mtimeMs, isFile: record.isFile };
-};
-
-const asObsolete = (value: unknown): PublicationJournalManifestObsolete | null => {
-  const ref = asRootFileRef(value);
-  if (!ref) return null;
-  const observed = asObsoleteObservation((value as { observed?: unknown }).observed);
-  if (!observed) return null;
-  return { ...ref, observed };
-};
-
-const parsePublicationJournalManifest = (value: unknown): PublicationJournalManifest | null => {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  if (!Array.isArray(record.entries) || !Array.isArray(record.obsolete)) return null;
-  const entries: PublicationJournalManifestEntry[] = [];
-  for (const item of record.entries) {
-    const entry = asManifestEntry(item);
-    if (!entry) return null;
-    entries.push(entry);
-  }
-  const obsolete: PublicationJournalManifestObsolete[] = [];
-  for (const item of record.obsolete) {
-    const ref = asObsolete(item);
-    if (!ref) return null;
-    obsolete.push(ref);
-  }
-  return { entries, obsolete };
-};
-
 const repairType = (operationType: string): "scrape" | "maintenance" =>
   operationType === "scrape" ? "scrape" : "maintenance";
 
@@ -119,7 +56,7 @@ export interface RecoverPublicationsOptions {
 
 const recordRepair = async (
   options: RecoverPublicationsOptions,
-  entry: PublicationJournalRecord,
+  entry: Pick<PublicationJournalRecord, "operationId" | "operationType">,
   ref: RootFileRef,
   error: unknown,
 ): Promise<void> => {
@@ -142,7 +79,7 @@ const resolveAbsolute = async (
   relativePath: string,
 ): Promise<string> => {
   const root = await options.resolveRoot(rootId);
-  return resolveRootRelativePath(root, normalizeRootRelativePath(relativePath));
+  return resolveRootRelativePath(root, parseWireRelativePath(relativePath));
 };
 
 const allRootsAvailable = async (
@@ -268,17 +205,19 @@ const recoverCommitted = async (
 
 export const recoverPublications = async (options: RecoverPublicationsOptions): Promise<void> => {
   const fileSystem = options.fileSystem ?? defaultFileSystem;
-  for (const entry of options.journal.listUnfinished()) {
-    const manifest = parsePublicationJournalManifest(entry.manifest);
-    if (!manifest) {
+  const unfinished = options.journal.listUnfinished();
+  if (options.journal instanceof PublicationJournalAdapter) {
+    for (const invalid of options.journal.invalidManifests()) {
       await recordRepair(
         options,
-        entry,
-        { rootId: "unknown", relativePath: entry.operationId },
+        invalid,
+        { rootId: "unknown", relativePath: invalid.operationId },
         new Error("Publication journal manifest is invalid"),
       );
-      continue;
     }
+  }
+  for (const entry of unfinished) {
+    const manifest = entry.manifest;
     if (!(await allRootsAvailable(options, fileSystem, manifest))) continue;
     const resolve = async (rootId: string, relativePath: string) =>
       await resolveAbsolute(options, rootId, relativePath);

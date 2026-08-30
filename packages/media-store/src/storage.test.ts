@@ -92,6 +92,7 @@ describe("storage root-relative paths", () => {
   it("normalizes portable root-relative paths", () => {
     expect(normalizeRootRelativePath("folder//movie.mkv")).toBe("folder/movie.mkv");
     expect(normalizeRootRelativePath("./folder/../movie.mkv")).toBe("movie.mkv");
+    expect(normalizeRootRelativePath("a/../b")).toBe("b");
   });
 
   it("rejects absolute and parent-relative paths", () => {

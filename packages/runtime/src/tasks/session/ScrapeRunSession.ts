@@ -338,7 +338,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       });
       this.executor = executor;
       try {
-        await executor.execute(pending, generation, this.shutdownController.signal);
+        await executor.execute(pending, this.shutdownController.signal);
       } finally {
         if (this.executor === executor) this.executor = null;
       }
