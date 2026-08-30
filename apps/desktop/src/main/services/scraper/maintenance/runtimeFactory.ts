@@ -1,12 +1,12 @@
-import type { ActorImageService } from "@main/services/ActorImageService";
 import { configManager } from "@main/services/config";
-import type { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { AggregationService, DownloadManager, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
 import { fileOrganizer } from "../FileScraper";
 import { translationMappingStore } from "../translationMappingStore";

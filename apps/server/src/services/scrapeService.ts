@@ -3,10 +3,11 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeItemOutcomeRecord, ScrapeRunItemRecord, ScrapeRunManifest } from "@mdcz/persistence";
+import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { mediaPathOwnership, toLibraryAssets } from "@mdcz/runtime/library";
 import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
-import { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   commitPublishedMedia,
   commitRegisteredPublication,
@@ -32,7 +33,6 @@ import {
   type ScrapeWorkflowReporter,
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
-import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import {
   type AmbiguousUncensoredItemDto,
@@ -59,9 +59,7 @@ import {
   type TaskEventDto,
 } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult, UncensoredChoice } from "@mdcz/shared/types";
-import { getServerImageHostCooldownStore } from "../imageHostCooldownStore";
 import { toScrapeResultDto } from "../scrapeDtos";
-import { createServerScrapeRuntime } from "../scrapeRuntimeFactory";
 import type { TaskEventBus } from "../taskEvents";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
@@ -86,6 +84,12 @@ type OutcomeContext = {
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+export interface ScrapeServiceResources {
+  networkClient: NetworkClient;
+  runtime: MountedRootScrapeRuntime;
+  imageHostCooldownStore: Pick<PersistentCooldownStore, "clear">;
+}
+
 const createFailedResult = (
   item: ScrapeRunItem<ServerManualScrape>,
   error: string,
@@ -101,13 +105,14 @@ const createFailedResult = (
 });
 
 export class ScrapeService {
-  private readonly networkClient = new NetworkClient();
+  private readonly networkClient: NetworkClient;
   private readonly fileOrganizer = new FileOrganizer();
   private readonly nfoGenerator = new NfoGenerator();
   private readonly posterCropService = new PosterCropService();
   private readonly nfoAdapter: ServerNfoAdapter;
   private readonly posterCropAdapter: ServerPosterCropAdapter;
   private readonly runtime: MountedRootScrapeRuntime;
+  private readonly imageHostCooldownStore: Pick<PersistentCooldownStore, "clear">;
   private workflow: ScrapeCoordinator<ScrapeStartInput, ScrapeRunManifest, ServerManualScrape> | null = null;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -118,9 +123,11 @@ export class ScrapeService {
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-    runtime?: MountedRootScrapeRuntime,
-    mappingStore?: TranslationMappingStore,
+    resources: ScrapeServiceResources,
   ) {
+    this.networkClient = resources.networkClient;
+    this.runtime = resources.runtime;
+    this.imageHostCooldownStore = resources.imageHostCooldownStore;
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, this.nfoGenerator, this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,
@@ -129,7 +136,6 @@ export class ScrapeService {
       (result) => this.resolveMetadataVideoPath(result),
       this.persistence,
     );
-    this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient, mappingStore);
     this.host = {
       create: async (input) => await this.createRun(input),
       runId: (run) => run.id,
@@ -254,7 +260,7 @@ export class ScrapeService {
   }
 
   async retry(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto> {
-    getServerImageHostCooldownStore(this.config).clear();
+    this.imageHostCooldownStore.clear();
     runtimeLoggerService.getLogger("ScrapeService").info("Cleared image host cooldowns for user-initiated retry");
     const workflow = await this.coordinator();
     const snapshot = await workflow.retry(input.taskId);

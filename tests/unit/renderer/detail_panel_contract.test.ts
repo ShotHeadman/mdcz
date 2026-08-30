@@ -1,14 +1,14 @@
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@mdcz/shared/types";
-import { buildDetailArtworkCandidates } from "@mdcz/views/detail";
-import { describe, expect, it } from "vitest";
 import {
+  buildDetailArtworkCandidates,
   formatBitrate,
   formatDuration,
   normalizeDetailOutlineText,
   toDetailViewItemFromMaintenanceEntry,
   toDetailViewItemFromScrapeResult,
-} from "@/components/detail/detailViewAdapters";
+} from "@mdcz/views/detail";
+import { describe, expect, it } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",

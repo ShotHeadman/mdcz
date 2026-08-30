@@ -36,7 +36,15 @@ describe("createServerActorSourceProvider", () => {
   });
 
   it("satisfies the photo and info sync ports and looks up without throwing", async () => {
-    const provider = createServerActorSourceProvider(fakeConfig, new FakeNetworkClient() as never);
+    const provider = createServerActorSourceProvider(
+      new FakeNetworkClient() as never,
+      {
+        cacheRoot: serverActorImageCacheRoot(fakeConfig),
+        resolveLocalImage: async () => undefined,
+        materializeForMovie: async () => undefined,
+        prepareActorProfilesForMovie: async () => undefined,
+      } as never,
+    );
     const photoPort: RuntimePhotoActorSourceProvider = provider;
     const infoPort: RuntimeInfoActorSourceProvider = provider;
     const configuration = configurationSchema.parse({

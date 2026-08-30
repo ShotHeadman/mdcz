@@ -15,18 +15,15 @@ export const createTaskHydrationState = (): TaskHydrationState => ({
 
 interface WorkbenchTaskState {
   hydrationState: TaskHydrationState;
-  scrapeStartPending: boolean;
   refreshError: string | null;
   setHydrationState: (state: TaskHydrationState) => void;
   clearUncensoredConfirmation: () => void;
   setRefreshError: (error: string | null) => void;
-  setScrapeStartPending: (pending: boolean) => void;
   reset: () => void;
 }
 
 export const useWorkbenchTaskStore = create<WorkbenchTaskState>((set) => ({
   hydrationState: createTaskHydrationState(),
-  scrapeStartPending: false,
   refreshError: null,
   setHydrationState: (hydrationState) => set({ hydrationState }),
   clearUncensoredConfirmation: () =>
@@ -39,11 +36,9 @@ export const useWorkbenchTaskStore = create<WorkbenchTaskState>((set) => ({
       },
     })),
   setRefreshError: (refreshError) => set({ refreshError }),
-  setScrapeStartPending: (scrapeStartPending) => set({ scrapeStartPending }),
   reset: () =>
     set({
       hydrationState: createTaskHydrationState(),
-      scrapeStartPending: false,
       refreshError: null,
     }),
 }));

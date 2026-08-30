@@ -1,15 +1,12 @@
-import { ActorImageService } from "@main/services/ActorImageService";
+import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
 import { configManager } from "@main/services/config";
-import {
-  createImageHostCooldownStore,
-  type PersistentCooldownStore,
-} from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import { createAbortError } from "@main/utils/abort";
 import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { createDesktopInputRoot, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import {
@@ -20,6 +17,7 @@ import {
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { ActorImageService } from "@mdcz/runtime/scrape";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -69,8 +67,19 @@ export class MaintenanceService {
   constructor(deps: MaintenanceServiceDependencies) {
     this.signalService = deps.signalService;
     this.persistenceService = deps.persistenceService;
-    this.imageHostCooldownStore = deps.imageHostCooldownStore ?? createImageHostCooldownStore();
-    const actorImageService = deps.actorImageService ?? new ActorImageService();
+    this.imageHostCooldownStore =
+      deps.imageHostCooldownStore ??
+      new PersistentCooldownStore({
+        filePath: resolveDesktopDataFile("image-host-cooldowns.json"),
+        logger: loggerService.getLogger("ImageHostCooldownStore"),
+      });
+    const actorImageService =
+      deps.actorImageService ??
+      new ActorImageService({
+        cacheRoot: getActorImageCacheDirectory(),
+        logger: this.logger,
+        networkClient: deps.networkClient,
+      });
     this.runtime =
       deps.runtime ??
       createDesktopMaintenanceRuntime({

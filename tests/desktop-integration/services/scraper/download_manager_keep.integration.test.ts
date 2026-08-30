@@ -1,8 +1,8 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { DownloadManager, downloadCrawlerAssets } from "@mdcz/runtime/scrape";
 import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
 import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
@@ -120,7 +120,6 @@ const createSubject = async (
     options.imageHostCooldownStore ??
     new PersistentCooldownStore({
       filePath: join(root, "image-host-cooldowns.json"),
-      loggerName: "DownloadManagerTestStore",
     });
   const manager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
     imageHostCooldownStore,
@@ -953,7 +952,6 @@ describe("DownloadManager keep flags", () => {
     const storePath = join(storeRoot, "image-host-cooldowns.json");
     const hostStore = new PersistentCooldownStore({
       filePath: storePath,
-      loggerName: "DownloadManagerHostCooldownTestStore",
     });
     const { root, manager, networkClient } = await createSubject({}, { imageHostCooldownStore: hostStore });
     mockValid();
@@ -982,7 +980,6 @@ describe("DownloadManager keep flags", () => {
     const reloadedManager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
       imageHostCooldownStore: new PersistentCooldownStore({
         filePath: storePath,
-        loggerName: "DownloadManagerHostCooldownTestStoreReloaded",
       }),
     });
     const before = networkClient.download.mock.calls.length;

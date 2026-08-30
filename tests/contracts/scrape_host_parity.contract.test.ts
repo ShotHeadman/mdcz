@@ -320,14 +320,12 @@ const createServerHost = async (mediaRoot: string, gate: Promise<void>, succeed:
     },
   } as MountedRootScrapeRuntime;
   const taskEvents = new TaskEventBus();
-  const service = new ScrapeService(persistence, mediaRoots, config, taskEvents, runtime);
-  const maintenance = new ServerMaintenanceService(
-    persistence,
-    mediaRoots,
-    config,
-    taskEvents,
-    mockMaintenanceRuntime(),
-  );
+  const service = new ScrapeService(persistence, mediaRoots, config, taskEvents, {
+    networkClient: new NetworkClient(),
+    runtime,
+    imageHostCooldownStore: { clear: () => undefined },
+  });
+  const maintenance = new ServerMaintenanceService(persistence, mediaRoots, taskEvents, mockMaintenanceRuntime());
   cleanups.push(async () => {
     try {
       await service.close();

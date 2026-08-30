@@ -1,6 +1,6 @@
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
-import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import {
@@ -12,7 +12,7 @@ import {
   type MediaServerSignalService,
   probeMediaServer,
 } from "@mdcz/runtime/mediaserver";
-import { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitRegisteredPublication } from "@mdcz/runtime/publication";
 import {
   AggregationService,
@@ -35,7 +35,6 @@ import {
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import type { ToolCatalogResponse, ToolExecuteInput, ToolExecuteResponse } from "@mdcz/shared/serverDtos";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
-import { createServerActorSourceProvider } from "../actorSourceFactory";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -48,8 +47,9 @@ const noopMediaServerSignal: MediaServerSignalService = {
 };
 
 export interface ToolsServiceDependencies {
-  networkClient?: NetworkClient;
-  actorSourceProvider?: ActorSourceProvider;
+  networkClient: NetworkClient;
+  crawlerProvider: CrawlerProvider;
+  actorSourceProvider: ActorSourceProvider;
 }
 
 export class ToolsService {
@@ -66,18 +66,13 @@ export class ToolsService {
     private readonly mediaRoots: MediaRootService,
     private readonly scrape: ScrapeService,
     private readonly persistence: ServerPersistenceService,
-    deps: ToolsServiceDependencies = {},
+    deps: ToolsServiceDependencies,
   ) {
-    this.networkClient = deps.networkClient ?? new NetworkClient();
-    this.actorSourceProvider = deps.actorSourceProvider ?? createServerActorSourceProvider(config, this.networkClient);
-    this.aggregation = new AggregationService(
-      new CrawlerProvider({
-        fetchGateway: new FetchGateway(this.networkClient),
-        siteRequestConfigRegistrar: this.networkClient,
-      }),
-    );
-    this.translate = new TranslateService(this.networkClient);
-    this.llmApiClient = new LlmApiClient(this.networkClient);
+    this.networkClient = deps.networkClient;
+    this.actorSourceProvider = deps.actorSourceProvider;
+    this.aggregation = new AggregationService(deps.crawlerProvider);
+    this.translate = new TranslateService(deps.networkClient);
+    this.llmApiClient = new LlmApiClient(deps.networkClient);
   }
 
   catalog(): ToolCatalogResponse {

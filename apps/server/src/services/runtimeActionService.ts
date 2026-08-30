@@ -1,5 +1,5 @@
-import { CrawlerProvider, FetchGateway, probeSiteConnectivity } from "@mdcz/runtime/crawler";
-import { checkConfiguredSiteCookies, NetworkClient } from "@mdcz/runtime/network";
+import { type CrawlerProvider, probeSiteConnectivity } from "@mdcz/runtime/crawler";
+import { checkConfiguredSiteCookies, type NetworkClient } from "@mdcz/runtime/network";
 import { ensureWatermarkDirectory, LlmApiClient } from "@mdcz/runtime/scrape";
 import { testLlmConnectivity } from "@mdcz/runtime/translate";
 import type {
@@ -14,14 +14,15 @@ import type {
 import type { ServerConfigService } from "./configService";
 
 export class RuntimeActionService {
-  private readonly networkClient = new NetworkClient();
-  private readonly crawlerProvider = new CrawlerProvider({
-    fetchGateway: new FetchGateway(this.networkClient),
-    siteRequestConfigRegistrar: this.networkClient,
-  });
-  private readonly llmApiClient = new LlmApiClient(this.networkClient);
+  private readonly llmApiClient: LlmApiClient;
 
-  constructor(private readonly config: ServerConfigService) {}
+  constructor(
+    private readonly config: ServerConfigService,
+    private readonly networkClient: NetworkClient,
+    private readonly crawlerProvider: CrawlerProvider,
+  ) {
+    this.llmApiClient = new LlmApiClient(networkClient);
+  }
 
   async ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse> {
     return {

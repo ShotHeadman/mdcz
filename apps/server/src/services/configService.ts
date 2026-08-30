@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import path from "node:path";
 import {
+  buildComputedConfiguration,
+  type ComputedConfiguration,
   type RuntimeConfigChangeEvent,
   type RuntimeConfigDiagnosticEvent,
   RuntimeConfigProfileStore,
@@ -119,6 +121,10 @@ export class ServerConfigService {
   async get(propertyPath: string): Promise<unknown>;
   async get(propertyPath?: string): Promise<Configuration | unknown> {
     return propertyPath ? await this.config.get(propertyPath) : await this.config.get();
+  }
+
+  getComputed(): ComputedConfiguration {
+    return buildComputedConfiguration(this.config.current());
   }
 
   async save(configuration: Configuration): Promise<Configuration> {

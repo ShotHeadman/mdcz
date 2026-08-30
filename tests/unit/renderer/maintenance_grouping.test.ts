@@ -1,12 +1,12 @@
 import type { LocalScanEntry } from "@mdcz/shared/types";
-import { describe, expect, it } from "vitest";
 import {
   buildMaintenanceEntryGroups,
   buildMaintenanceEntryViewModel,
   countMaintenanceDisplayItems,
   formatMaintenanceIdleStatusText,
   summarizeMaintenanceExecutionGroups,
-} from "@/lib/maintenanceGrouping";
+} from "@mdcz/shared/viewModels/maintenanceGrouping";
+import { describe, expect, it } from "vitest";
 import {
   createMaintenanceCrawlerData,
   createMaintenanceEntry,

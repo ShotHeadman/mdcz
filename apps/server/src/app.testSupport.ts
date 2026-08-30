@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { NetworkClient } from "@mdcz/runtime/network";
 import {
   type AggregationResult,
   type MountedRootScrapeAggregationService,
@@ -64,11 +66,20 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const persistence = new ServerPersistenceService(paths);
   const mediaRoots = new MediaRootService(persistence);
   const taskEvents = createTaskEventBus();
+  const networkClient = new NetworkClient({
+    getProxyUrl: () => config.getComputed().proxyUrl,
+    getTimeoutMs: () => config.getComputed().networkTimeoutMs,
+    getRetryCount: () => config.getComputed().networkRetryCount,
+  });
+  const imageHostCooldownStore = new PersistentCooldownStore({
+    filePath: join(paths.dataDir, "image-host-cooldowns.json"),
+  });
   const app = buildServer({
     serviceOptions: {
       automationWebhook: options.automationWebhook,
     },
     webStaticDir: options.webStaticDir ?? false,
+    resources: { networkClient, imageHostCooldownStore },
     services: {
       auth:
         options.environmentPassword === undefined
@@ -80,16 +91,18 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       runtimeActions: options.runtimeActions,
       taskEvents,
       scrape: options.scrapeAggregation
-        ? new ScrapeService(
-            persistence,
-            mediaRoots,
-            config,
-            taskEvents,
-            new MountedRootScrapeRuntime(config, options.scrapeAggregation),
-          )
+        ? new ScrapeService(persistence, mediaRoots, config, taskEvents, {
+            networkClient,
+            runtime: new MountedRootScrapeRuntime({
+              config,
+              aggregationService: options.scrapeAggregation,
+              networkClient,
+            }),
+            imageHostCooldownStore,
+          })
         : undefined,
       maintenance: options.createMaintenanceRuntime
-        ? new MaintenanceService(persistence, mediaRoots, config, taskEvents, options.createMaintenanceRuntime(config))
+        ? new MaintenanceService(persistence, mediaRoots, taskEvents, options.createMaintenanceRuntime(config))
         : undefined,
     },
   });

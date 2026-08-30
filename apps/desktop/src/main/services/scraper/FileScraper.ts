@@ -1,4 +1,4 @@
-import { ActorImageService } from "@main/services/ActorImageService";
+import { getActorImageCacheDirectory } from "@main/appIdentity";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
@@ -7,6 +7,7 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import type { DownloadManager, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
+  ActorImageService,
   type AggregationService,
   FileOrganizer,
   FileScraper,
@@ -38,7 +39,12 @@ export const createFileScraper = (
   options: { mode?: "single" | "batch"; scrapeSessionId?: string } = {},
 ): FileScraper => {
   const logger = loggerService.getLogger("FileScraper");
-  const actorImageService = deps.actorImageService ?? new ActorImageService();
+  const actorImageService =
+    deps.actorImageService ??
+    new ActorImageService({
+      cacheRoot: getActorImageCacheDirectory(),
+      logger,
+    });
   const localScanService = deps.localScanService ?? new LocalScanService();
   return new FileScraper(
     {

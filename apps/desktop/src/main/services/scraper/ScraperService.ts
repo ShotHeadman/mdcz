@@ -1,9 +1,5 @@
-import { ActorImageService } from "@main/services/ActorImageService";
+import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
 import { type Configuration, configManager } from "@main/services/config";
-import {
-  createImageHostCooldownStore,
-  type PersistentCooldownStore,
-} from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import { OutputLibraryScanner } from "@main/services/library";
 import { DesktopPersistenceService } from "@main/services/persistence";
@@ -12,6 +8,7 @@ import { didPromiseTimeout } from "@main/utils/async";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeRunManifest } from "@mdcz/persistence";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import {
   createDesktopInputRoot,
@@ -24,6 +21,7 @@ import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitScrapeTerminalResult } from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
+  ActorImageService,
   AggregationService,
   applyScrapeNetworkPolicy,
   createScrapeExecutionPolicy,
@@ -87,11 +85,22 @@ export class ScraperService {
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
   ) {
-    this.actorImageService = actorImageService ?? new ActorImageService();
+    this.actorImageService =
+      actorImageService ??
+      new ActorImageService({
+        cacheRoot: getActorImageCacheDirectory(),
+        logger: this.logger,
+        networkClient,
+      });
     this.actorSourceProvider = actorSourceProvider;
     this.sharedNetworkClient = networkClient;
     this.aggregationService = new AggregationService(crawlerProvider, { logger: this.logger });
-    this.imageHostCooldownStore = imageHostCooldownStore ?? createImageHostCooldownStore();
+    this.imageHostCooldownStore =
+      imageHostCooldownStore ??
+      new PersistentCooldownStore({
+        filePath: resolveDesktopDataFile("image-host-cooldowns.json"),
+        logger: loggerService.getLogger("ImageHostCooldownStore"),
+      });
     this.host = {
       create: async (input) => await this.createRun(input),
       runId: (run) => run.id,

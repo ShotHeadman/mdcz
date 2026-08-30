@@ -19,6 +19,7 @@ import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { NamingEngine } from "../scrape/organize/NamingEngine";
 import { profileFileName, RuntimeProfileWatcher } from "./profileWatcher";
 
+export { buildComputedConfiguration, type ComputedConfiguration } from "./computed";
 export { RuntimeProfileWatcher } from "./profileWatcher";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
@@ -251,6 +252,10 @@ export class RuntimeConfigService {
 
   get configDirectory(): string {
     return this.store.configDirectory;
+  }
+
+  current(): Configuration {
+    return this.configuration ?? defaultConfiguration;
   }
 
   replaceStore(store: RuntimeConfigProfileStore): void {

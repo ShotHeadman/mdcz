@@ -5,7 +5,6 @@ import {
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
-import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
   MaintenanceApplyInput,
@@ -15,10 +14,8 @@ import type {
   MaintenanceSessionInput,
   MaintenanceStartInput,
 } from "@mdcz/shared/serverDtos";
-import { createServerMaintenanceRuntime } from "../maintenanceRuntimeFactory";
 import { toTaskEventDto } from "../taskDto";
 import type { TaskEventBus, TaskLifecycleEvent } from "../taskEvents";
-import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
@@ -30,12 +27,10 @@ export class MaintenanceService {
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
-    config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-    runtime?: MaintenanceRuntime,
-    mappingStore?: TranslationMappingStore,
+    runtime: MaintenanceRuntime,
   ) {
-    this.runtime = runtime ?? createServerMaintenanceRuntime(config, mappingStore);
+    this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
       roots: { getActiveRoot: async (rootId) => await this.mediaRoots.getActiveRoot(rootId) },
       runtime: this.runtime,

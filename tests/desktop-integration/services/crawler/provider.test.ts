@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse, SiteAdapter } from "@mdcz/runtime/crawler/base/types";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -67,7 +67,6 @@ describe("CrawlerProvider cooldowns", () => {
     const storePath = join(root, "crawler-site-cooldowns.json");
     const store = new PersistentCooldownStore({
       filePath: storePath,
-      loggerName: "CrawlerProviderTestStore",
     });
     const provider = new StubCrawlerProvider(
       [
@@ -91,7 +90,6 @@ describe("CrawlerProvider cooldowns", () => {
 
     const reloadedStore = new PersistentCooldownStore({
       filePath: storePath,
-      loggerName: "CrawlerProviderTestStoreReloaded",
     });
     const reloadedProvider = new StubCrawlerProvider([], reloadedStore);
 
@@ -113,7 +111,6 @@ describe("CrawlerProvider cooldowns", () => {
     const root = await createTempDir();
     const store = new PersistentCooldownStore({
       filePath: join(root, "crawler-site-cooldowns.json"),
-      loggerName: "CrawlerProviderTransientStore",
     });
     const provider = new StubCrawlerProvider(
       [

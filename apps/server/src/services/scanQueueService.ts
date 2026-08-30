@@ -15,6 +15,7 @@ import type {
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
 import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
+import { toTaskEventDto } from "../taskDto";
 import type { TaskEventBus } from "../taskEvents";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -278,17 +279,3 @@ export class ScanQueueService {
     }
   }
 }
-
-const toTaskEventDto = (event: {
-  id: string;
-  taskId: string;
-  type: string;
-  message: string;
-  createdAt: Date;
-}): TaskEventDto => ({
-  id: event.id,
-  taskId: event.taskId,
-  type: event.type,
-  message: event.message,
-  createdAt: event.createdAt.toISOString(),
-});

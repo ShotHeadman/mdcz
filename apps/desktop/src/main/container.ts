@@ -1,7 +1,4 @@
-import type { ActorImageService } from "@main/services/ActorImageService";
 import type { DesktopLibraryService, OutputLibraryScanner } from "@main/services/library";
-import type { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
-import type { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import type { ScraperService } from "@main/services/scraper";
@@ -10,7 +7,14 @@ import type { AmazonPosterToolService, BatchTranslateToolService, SymlinkService
 import type { WindowService } from "@main/services/WindowService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type {
+  EmbyActorInfoService,
+  EmbyActorPhotoService,
+  JellyfinActorInfoService,
+  JellyfinActorPhotoService,
+} from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import type { ActorImageService } from "@mdcz/runtime/scrape";
 
 /**
  * Centralized service container for the main process.

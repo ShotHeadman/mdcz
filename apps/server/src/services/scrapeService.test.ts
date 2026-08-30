@@ -50,7 +50,11 @@ const createService = () => {
     roots as unknown as MediaRootService,
     config as unknown as ServerConfigService,
     new TaskEventBus(),
-    {} as MountedRootScrapeRuntime,
+    {
+      networkClient: { setDomainInterval: vi.fn() } as never,
+      runtime: {} as MountedRootScrapeRuntime,
+      imageHostCooldownStore: { clear: vi.fn() },
+    },
   );
   return { service, scrapeRuns };
 };

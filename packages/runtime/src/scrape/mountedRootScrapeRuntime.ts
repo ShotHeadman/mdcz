@@ -3,7 +3,7 @@ import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
-import { NetworkClient, type RuntimeDownloadNetworkClient } from "../network";
+import type { RuntimeDownloadNetworkClient } from "../network";
 import type { PublicationPlan } from "../publication";
 import { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
@@ -122,61 +122,68 @@ class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
   }
 }
 
+export interface MountedRootScrapeRuntimeDependencies {
+  config: MountedRootScrapeRuntimeConfig;
+  aggregationService: MountedRootScrapeAggregationService;
+  networkClient: RuntimeDownloadNetworkClient;
+  logger?: MountedRootScrapeLogger;
+  mappingStore?: TranslationMappingStore;
+  imageHostCooldownStore?: ImageHostCooldownStore;
+  actorSourceProvider?: RuntimeActorSourceProvider;
+  actorImageService?: ActorImageService;
+}
+
 export class MountedRootScrapeRuntime {
-  constructor(
-    private readonly config: MountedRootScrapeRuntimeConfig,
-    private readonly aggregationService: MountedRootScrapeAggregationService,
-    private readonly logger: MountedRootScrapeLogger = console,
-    private readonly networkClient?: RuntimeDownloadNetworkClient,
-    private readonly mappingStore?: TranslationMappingStore,
-    private readonly imageHostCooldownStore?: ImageHostCooldownStore,
-    private readonly actorSourceProvider?: RuntimeActorSourceProvider,
-  ) {}
+  constructor(private readonly deps: MountedRootScrapeRuntimeDependencies) {}
 
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
     const signalService = new MountedRootScrapeSignalService(input);
-    const networkClient = this.networkClient ?? new NetworkClient();
-    const runtimeLogger = toRuntimeLogger(this.logger);
+    const { config, aggregationService, networkClient, mappingStore, imageHostCooldownStore, actorSourceProvider } =
+      this.deps;
+    const logger = this.deps.logger ?? console;
+    const runtimeLogger = toRuntimeLogger(logger);
     const fileOrganizer = new FileOrganizer(runtimeLogger);
-    const actorImageService = new ActorImageService({
-      cacheRoot: path.join(this.config.runtimePaths.dataDir, "actor-image-cache"),
-      logger: runtimeLogger,
-      networkClient,
-    });
+    const actorImageService =
+      this.deps.actorImageService ??
+      new ActorImageService({
+        cacheRoot: path.join(config.runtimePaths.dataDir, "actor-image-cache"),
+        logger: runtimeLogger,
+        networkClient,
+      });
     const scraper = new FileScraper({
       actorImageService,
-      actorSourceProvider: this.actorSourceProvider,
-      aggregationService: this.aggregationService,
+      actorSourceProvider,
+      aggregationService,
       downloadManager: new DownloadManager(networkClient, {
-        imageHostCooldownStore: this.imageHostCooldownStore ?? new MemoryImageHostCooldownStore(),
+        imageHostCooldownStore: imageHostCooldownStore ?? new MemoryImageHostCooldownStore(),
         logger: runtimeLogger,
       }),
       fileOrganizer,
       getConfiguration: async () => {
-        const configuration = await this.config.get();
+        const configuration = await config.get();
         return {
           ...configuration,
           paths: { ...configuration.paths, mediaPath: (input.outputRoot ?? input.root).hostPath },
         };
       },
       loadExistingNfoLocalState: async () => input.localState,
-      logger: this.logger,
+      logger,
       nfoGenerator: new NfoGenerator(),
       postProcessAssets: async ({ assets, configuration, crawlerData, fileInfo, localState, signal }) =>
         await applyPosterTagBadgesIfNeeded({
           assets,
           config: configuration,
           crawlerData,
-          dataDir: this.config.runtimePaths.dataDir,
+          dataDir: config.runtimePaths.dataDir,
           fileInfo,
           localState,
-          logger: this.logger,
+          logger,
           signal,
           signalService,
-          watermarkService: new PosterWatermarkService({ dataDir: this.config.runtimePaths.dataDir }),
+          watermarkService: new PosterWatermarkService({ dataDir: config.runtimePaths.dataDir }),
         }),
       signalService,
-      translateService: new TranslateService(networkClient, { logger: runtimeLogger, mappingStore: this.mappingStore }),
+      translateService: new TranslateService(networkClient, { logger: runtimeLogger, mappingStore }),
     });
 
     try {

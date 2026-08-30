@@ -94,12 +94,11 @@ function WorkbenchPage() {
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const { hydrationState, clearUncensoredConfirmation, refreshError, setScrapeStartPending } = useWorkbenchTaskStore(
+  const { hydrationState, clearUncensoredConfirmation, refreshError } = useWorkbenchTaskStore(
     useShallow((state) => ({
       hydrationState: state.hydrationState,
       clearUncensoredConfirmation: state.clearUncensoredConfirmation,
       refreshError: state.refreshError,
-      setScrapeStartPending: state.setScrapeStartPending,
     })),
   );
   const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
@@ -137,7 +136,6 @@ function WorkbenchPage() {
 
   const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
     activateNewScrapeTask(filePaths);
-    setScrapeStartPending(true);
     try {
       await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
       requestScrapeLiveRunsRefresh();
@@ -145,8 +143,6 @@ function WorkbenchPage() {
     } catch (error) {
       resetScrapeWorkbenchToSetup();
       toast.error(`启动失败: ${toErrorMessage(error)}`);
-    } finally {
-      setScrapeStartPending(false);
     }
   };
 

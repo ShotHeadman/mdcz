@@ -1,8 +1,8 @@
-import type { ActorImageService } from "@main/services/ActorImageService";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type {
+  ActorImageService,
   AggregationService,
   DownloadManager,
   FileOrganizer,
