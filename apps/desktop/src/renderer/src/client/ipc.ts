@@ -9,7 +9,7 @@ import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shar
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { LibraryListInput, MediaRootDto, MediaRootEnsurePathInput } from "@mdcz/shared/serverDtos";
+import type { LibraryListInput, MediaRootEnsurePathInput, MediaRootEnsurePathResponse } from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId, MediaCandidate, UncensoredConfirmItem } from "@mdcz/shared/types";
 
 type Unsubscribe = () => void;
@@ -41,7 +41,9 @@ export const ipc = {
   },
   mediaRoots: {
     ensurePath: (input: MediaRootEnsurePathInput) =>
-      client[IpcChannel.MediaRoots_EnsurePath](input) as Promise<MediaRootDto>,
+      client[IpcChannel.MediaRoots_EnsurePath](input) as Promise<MediaRootEnsurePathResponse>,
+    prepareOutputDirectory: (input: MediaRootEnsurePathInput) =>
+      client[IpcChannel.MediaRoots_PrepareOutputDirectory](input) as Promise<MediaRootEnsurePathResponse>,
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
@@ -93,7 +95,8 @@ export const ipc = {
       client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean; url?: string }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
-    delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),
+    delete: (targets: RootFileRef[], containingFolder?: boolean) =>
+      client[IpcChannel.File_Delete]({ targets, containingFolder }),
     nfoRead: (nfoPath: LocalFileTarget, videoPath?: LocalFileTarget) =>
       client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
     nfoWrite: (nfoPath: LocalFileTarget, data: CrawlerData, videoPath?: LocalFileTarget) =>

@@ -52,26 +52,4 @@ describe("PublicationJournalRepository", () => {
     ).toThrow("not pending");
     expect(database.sqlite.prepare("SELECT id FROM scan_tasks").all()).toEqual([]);
   });
-
-  it("matches unfinished operations on any overlapping root file ref", () => {
-    database = createTestPersistenceDatabase();
-    const repository = new PublicationJournalRepository(database);
-    begin(repository, "operation-1", {
-      entries: [
-        { rootId: "root-1", relativePath: "one.mp4" },
-        { rootId: "root-2", relativePath: "two.mp4" },
-      ],
-    });
-    begin(repository, "operation-2", { obsolete: [{ rootId: "root-3", relativePath: "three.mp4" }] });
-
-    expect(repository.conflicts([{ rootId: "root-2", relativePath: "two.mp4" }])).toMatchObject({
-      operationId: "operation-1",
-    });
-    expect(repository.conflicts([{ rootId: "root-3", relativePath: "three.mp4" }])).toMatchObject({
-      operationId: "operation-2",
-    });
-    repository.finish("operation-1");
-    repository.finish("operation-2");
-    expect(repository.conflicts([{ rootId: "root-1", relativePath: "one.mp4" }])).toBeNull();
-  });
 });

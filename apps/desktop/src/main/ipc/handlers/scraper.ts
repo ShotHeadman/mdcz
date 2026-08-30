@@ -50,7 +50,10 @@ export const createScraperHandlers = (
         "start scraper",
         async () => {
           if (input.mode === "selection") {
-            return withLaunchMessage(await scraperService.start(input.refs, input.outputRootId), "已启动选中文件刮削");
+            return withLaunchMessage(
+              await scraperService.start(input.refs, input.outputRootId, input.outputRelativeDirectory),
+              "已启动选中文件刮削",
+            );
           }
 
           return withLaunchMessage(await scraperService.startSingle(input.ref), "单文件刮削任务已启动");

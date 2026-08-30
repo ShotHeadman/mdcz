@@ -180,7 +180,12 @@ export const confirmUncensoredOutputs = async (
           : await dependencies.fileOrganizer.ensureOutputReady(rawPlan, prepared.entry.fileInfo.filePath);
         const outputVideoPath = dependencies.publish
           ? plan.targetVideoPath
-          : await dependencies.fileOrganizer.organizeVideo(prepared.entry.fileInfo, plan, config);
+          : await dependencies.fileOrganizer.organizeVideo(
+              prepared.entry.fileInfo,
+              plan,
+              config,
+              config.paths.mediaPath?.trim() || dirname(prepared.entry.fileInfo.filePath),
+            );
         processedItems.push({ ...prepared, outputVideoPath, plan });
       } catch (error) {
         fail(prepared.item, `Failed to reorganize ${prepared.item.videoPath}: ${toErrorMessage(error)}`);

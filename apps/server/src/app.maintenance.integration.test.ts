@@ -60,12 +60,13 @@ const startMaintenancePreview = async (
   token: string,
   rootId: string,
   presetId: MaintenancePresetId,
+  relativePaths: string[],
 ) => {
   const startResponse = await fastify.inject({
     method: "POST",
     url: "/trpc/maintenance.start",
     headers: { authorization: `Bearer ${token}` },
-    payload: { rootId, presetId },
+    payload: { rootId, presetId, refs: relativePaths.map((relativePath) => ({ rootId, relativePath })) },
   });
   expect(startResponse.statusCode).toBe(200);
   const sessionId = startResponse.json().result.data.sessionId as string;
@@ -148,6 +149,12 @@ describe("buildServer maintenance integration", () => {
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const emptySelection = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { rootId, presetId: "organize_files", refs: [] },
+    });
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.start",
@@ -160,6 +167,7 @@ describe("buildServer maintenance integration", () => {
     });
     const sessionId = startResponse.json().result.data.sessionId as string;
     const session = await waitForMaintenanceSession(fastify, token, sessionId, "preview", "completed");
+    expect(emptySelection.statusCode).toBe(400);
     expect(session.previews.map((item) => item.relativePath)).toEqual(["ABC-201.mp4", "ABC-203.mp4"]);
   });
 
@@ -270,7 +278,9 @@ describe("buildServer maintenance integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     await configureOrganizedOutput(fastify, token, root);
-    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "organize_files");
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "organize_files", [
+      "ABC-125.mp4",
+    ]);
     const applyResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.execute",
@@ -332,7 +342,9 @@ describe("buildServer maintenance integration", () => {
       },
       translate: { enableTranslation: false },
     });
-    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all");
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all", [
+      "ABC-300.mp4",
+    ]);
     expect(session.previews[0]).toMatchObject({
       presetId: "rebuild_all",
       relativePath: "ABC-300.mp4",
@@ -383,7 +395,7 @@ describe("buildServer maintenance integration", () => {
       translate: { enableTranslation: false },
       download: { downloadSceneImages: false, downloadTrailer: false },
     });
-    const { session } = await startMaintenancePreview(fastify, token, rootId, "refresh_data");
+    const { session } = await startMaintenancePreview(fastify, token, rootId, "refresh_data", ["ABC-400.mp4"]);
     expect(session.previews[0].pathDiff).toBeFalsy();
   });
 });

@@ -37,3 +37,15 @@
   - In development and test phases, let errors throw loudly. **DO NOT** silently swallow exceptions with empty catch blocks or hidden defaults.
 - **Decision Escalation**:
   - If a architectural or design choice involves notable trade-offs, concisely present the top 2 alternatives with pros/cons and let the user decide.
+
+## 5. Testing Policy
+When fixing bugs, ensure regression coverage without automatically adding new tests.
+
+- Prefer extending existing tests over creating new test functions or files.
+- Organize tests around behaviors and invariants, not individual bugs or issue IDs.
+- Use parameterized/table-driven tests when multiple cases exercise the same behavior.
+- Add a new test only when the bug exposes a genuinely new behavioral contract.
+- Before adding a test, search for existing coverage that can be extended or consolidated.
+- Avoid duplicate, overlapping, implementation-detail, and low-value tests.
+- Test suites should be refactored and reduced when coverage can be preserved with fewer tests.
+- Passing tests are evidence, not proof that the fix is correct; verify the root cause and related assumptions.

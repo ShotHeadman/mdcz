@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LocalScanEntry } from "@mdcz/shared/types";
@@ -19,24 +20,25 @@ const promiseConstructor = Promise as unknown as {
 const promiseWithResolvers = <T>(): PromiseResolvers<T> => promiseConstructor.withResolvers<T>();
 
 const root = createMediaRoot({ id: "root-1", displayName: "Media", hostPath: process.cwd() });
+const ref = (relativePath: string) => ({ rootId: root.id, relativePath });
 
-const createEntry = (relativePath: string): LocalScanEntry => ({
+const createEntry = (relativePath: string, mediaRoot = root): LocalScanEntry => ({
   fileId: relativePath,
-  ref: { rootId: root.id, relativePath },
+  ref: { rootId: mediaRoot.id, relativePath },
   fileInfo: {
-    filePath: resolveRootRelativePath(root, relativePath),
+    filePath: resolveRootRelativePath(mediaRoot, relativePath),
     fileName: relativePath,
     extension: ".mp4",
     number: relativePath.replace(/\.mp4$/u, ""),
     isSubtitled: false,
   },
   assets: { sceneImages: [], actorPhotos: [] },
-  currentDir: root.hostPath,
+  currentDir: mediaRoot.hostPath,
 });
 
 const toRuntimePreview = (entry: LocalScanEntry) => ({
   entry,
-  rootId: root.id,
+  rootId: entry.ref.rootId,
   relativePath: entry.ref.relativePath ?? entry.fileInfo.fileName,
   status: "ready" as const,
   error: null,
@@ -52,11 +54,10 @@ const toRuntimePreview = (entry: LocalScanEntry) => ({
   },
 });
 
-const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) => {
+const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}, roots = [root]) => {
   const runtime = {
-    scan: vi.fn(async () => []),
-    scanRefs: vi.fn(async ({ refs }: { refs: Array<{ relativePath: string }> }) =>
-      refs.map((ref) => createEntry(ref.relativePath)),
+    scanRefs: vi.fn(async ({ root: scanRoot, refs }: { root: typeof root; refs: Array<{ relativePath: string }> }) =>
+      refs.map((ref) => createEntry(ref.relativePath, scanRoot)),
     ),
     previewEntries: vi.fn(async ({ entries }: { entries: LocalScanEntry[] }) => entries.map(toRuntimePreview)),
     applyEntry: vi.fn(),
@@ -70,7 +71,14 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}) =
     publishRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
   };
   const coordinator = new MaintenanceSessionCoordinator({
-    roots: { get: async () => root },
+    roots: {
+      get: async (rootId) => {
+        const selected = roots.find((candidate) => candidate.id === rootId);
+        if (!selected) throw new Error(`Unknown root: ${rootId}`);
+        return selected;
+      },
+      list: async () => roots,
+    },
     runtime,
     library,
     events: {
@@ -116,7 +124,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const first = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "refresh_data",
-      refs: [{ relativePath: "one.mp4" }],
+      refs: [ref("one.mp4")],
     });
     await first.completion;
 
@@ -126,10 +134,58 @@ describe("MaintenanceSessionCoordinator", () => {
     const second = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "refresh_data",
-      refs: [{ relativePath: "two.mp4" }],
+      refs: [ref("two.mp4")],
     });
     expect(second.session.id).not.toBe(first.session.id);
     await second.completion;
+    await fixture.coordinator.close();
+  });
+
+  it("scans selected refs exactly once when starting a preview", async () => {
+    const scanRefs = vi.fn(async () => [createEntry("one.mp4")]);
+    const fixture = createCoordinator({ scanRefs });
+
+    const handle = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "read_local",
+      refs: [ref("one.mp4")],
+    });
+    const batch = await handle.completion;
+
+    expect(scanRefs).toHaveBeenCalledTimes(1);
+    expect(batch.items.map((item) => item.relativePath)).toEqual(["one.mp4"]);
+    await fixture.coordinator.close();
+  });
+
+  it("canonicalizes overlapping-root refs before preview and apply", async () => {
+    const nestedRoot = createMediaRoot({
+      id: "root-2",
+      displayName: "Nested",
+      hostPath: join(root.hostPath, "nested"),
+    });
+    const fixture = createCoordinator(
+      { applyEntry: vi.fn(async ({ entry }) => ({ status: "failed" as const, error: entry.fileId })) },
+      [root, nestedRoot],
+    );
+    const preview = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "organize_files",
+      refs: [ref("one.mp4"), ref("nested/two.mp4")],
+    });
+    const previewBatch = await preview.completion;
+    const apply = await fixture.coordinator.beginApply({
+      sessionId: preview.session.id,
+      selections: previewBatch.items.map((item) => ({ previewId: item.id })),
+    });
+    await apply.completion;
+
+    expect(previewBatch.items.map((item) => item.rootId).sort()).toEqual([root.id, nestedRoot.id]);
+    expect(
+      vi
+        .mocked(fixture.runtime.applyEntry)
+        .mock.calls.map(([input]) => input.root.id)
+        .sort(),
+    ).toEqual([root.id, nestedRoot.id]);
     await fixture.coordinator.close();
   });
 
@@ -152,7 +208,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "one.mp4" }],
+      refs: [ref("one.mp4")],
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
@@ -194,7 +250,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "one.mp4" }],
+      refs: [ref("one.mp4")],
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
@@ -225,7 +281,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const handle = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "refresh_data",
-      refs: ["one.mp4", "two.mp4", "three.mp4"].map((relativePath) => ({ relativePath })),
+      refs: ["one.mp4", "two.mp4", "three.mp4"].map(ref),
     });
     await started;
     const pausing = fixture.coordinator.pause(handle.session.id);
@@ -263,7 +319,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: ["one.mp4", "two.mp4", "three.mp4"].map((relativePath) => ({ relativePath })),
+      refs: ["one.mp4", "two.mp4", "three.mp4"].map(ref),
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
@@ -300,7 +356,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const previewHandle = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "one.mp4" }, { relativePath: "two.mp4" }],
+      refs: [ref("one.mp4"), ref("two.mp4")],
     });
     const previewBatch = await previewHandle.completion;
     const applyHandle = await fixture.coordinator.beginApply({
@@ -333,7 +389,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const previewHandle = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "one.mp4" }, { relativePath: "two.mp4" }],
+      refs: [ref("one.mp4"), ref("two.mp4")],
     });
     const previewBatch = await previewHandle.completion;
     const [first, second] = previewBatch.items;
@@ -380,7 +436,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "one.mp4" }],
+      refs: [ref("one.mp4")],
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
@@ -411,7 +467,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "owned.mp4" }],
+      refs: [ref("owned.mp4")],
     });
     const previewBatch = await preview.completion;
     await fixture.coordinator.beginApply({
@@ -449,7 +505,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
       presetId: "organize_files",
-      refs: [{ relativePath: "owned.mp4" }],
+      refs: [ref("owned.mp4")],
     });
     const previewBatch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({

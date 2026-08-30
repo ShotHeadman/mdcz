@@ -13,6 +13,11 @@ export const parseWireRelativePath = (relativePath: string): string => {
   return normalized;
 };
 
+export const parseWireRelativeDirectory = (relativeDirectory: string): string => {
+  const normalized = relativeDirectory.replace(/\\/gu, "/").replace(/^\/+|\/+$/gu, "");
+  return normalized ? parseWireRelativePath(normalized) : "";
+};
+
 export const rootFileRefSchema = z
   .object({
     rootId: z.string().trim().min(1),

@@ -47,15 +47,19 @@ export class MediaRootRepository {
 
   async ensurePath(hostPath: string, displayName?: string): Promise<PersistedMediaRoot> {
     const normalizedPath = normalizeHostPath(hostPath);
-    const enclosing = findEnclosingMediaRoot(normalizedPath, await this.list());
-    if (enclosing) return enclosing;
-    return await this.upsert(
-      createMediaRoot({
+    const transaction = this.database.sqlite.transaction(() => {
+      const roots = this.database.db.select().from(mediaRoots).all().map(toMediaRoot);
+      const enclosing = findEnclosingMediaRoot(normalizedPath, roots);
+      if (enclosing) return enclosing;
+      const root = createMediaRoot({
         id: deterministicMediaRootId(normalizedPath),
         displayName: displayName ?? (path.basename(normalizedPath) || normalizedPath),
         hostPath: normalizedPath,
-      }),
-    );
+      });
+      writeMediaRoot(this.database, root);
+      return root;
+    });
+    return transaction();
   }
 
   async list(): Promise<PersistedMediaRoot[]> {

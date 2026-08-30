@@ -5,7 +5,7 @@ import type { ScrapeRunSnapshotDto } from "../serverDtos";
 import type { UncensoredConfirmItem, UncensoredConfirmResponse } from "../types";
 
 export type ScraperStartInput =
-  | { mode: "selection"; refs: RootFileRef[]; outputRootId?: string }
+  | { mode: "selection"; refs: RootFileRef[]; outputRootId: string; outputRelativeDirectory?: string }
   | { mode: "single"; ref: RootFileRef };
 
 export type ScraperIpcContract = {

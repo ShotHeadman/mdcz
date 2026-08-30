@@ -1,7 +1,9 @@
 import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
 import type { ServiceContainer } from "@main/container";
+import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { DesktopLibraryService, OutputLibraryScanner } from "@main/services/library";
+import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { createElectronCookieResolver } from "@main/services/network";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
@@ -55,6 +57,18 @@ export const createContainer = ({
     logger: loggerService.getLogger("ImageHostCooldownStore"),
   });
   const persistenceService = new DesktopPersistenceService();
+  const mediaRoots = createDesktopMediaRootService(persistenceService);
+  configManager.setBeforeActiveConfigurationCommit(async (next, { source }) => {
+    await mediaRoots.synchronizeConfiguredRoots(next, {
+      strict: source !== "load" && source !== "watch",
+      onUnavailable: (hostPath, error) => {
+        configManager.reportDiagnostic(
+          "read-error",
+          new Error(`Configured media root unavailable: ${hostPath}: ${String(error)}`),
+        );
+      },
+    });
+  });
   const outputLibraryScanner = new OutputLibraryScanner({ persistenceService });
   const desktopLibraryService = new DesktopLibraryService(persistenceService);
   const amazonJpImageService = new AmazonJpImageService(networkClient, loggerService.getLogger("AmazonJpImageService"));
@@ -86,6 +100,7 @@ export const createContainer = ({
     imageHostCooldownStore,
     outputLibraryScanner,
     persistenceService,
+    mediaRoots,
   );
   const maintenanceService = new MaintenanceService({
     signalService,
@@ -95,6 +110,7 @@ export const createContainer = ({
     actorImageService,
     actorSourceProvider,
     imageHostCooldownStore,
+    mediaRoots,
   });
 
   return {
@@ -105,6 +121,7 @@ export const createContainer = ({
     outputLibraryScanner,
     desktopLibraryService,
     persistenceService,
+    mediaRoots,
     scraperService,
     maintenanceService,
     crawlerProvider,
@@ -135,11 +152,32 @@ export const createContainer = ({
       logger: loggerService.getLogger("EmbyActorInfo"),
     }),
     symlinkService: new SymlinkService({ signalService }),
-    amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService, persistenceService),
-    batchTranslateToolService: new BatchTranslateToolService(networkClient, persistenceService),
+    amazonPosterToolService: new AmazonPosterToolService(
+      networkClient,
+      amazonJpImageService,
+      persistenceService,
+      mediaRoots,
+    ),
+    batchTranslateToolService: new BatchTranslateToolService(networkClient, persistenceService, {}, mediaRoots),
     shutdown: async () => {
-      await Promise.allSettled([scraperService.shutdown(), maintenanceService.shutdown(), crawlerProvider.shutdown()]);
-      await persistenceService.close();
+      let firstError: unknown;
+      for (const shutdown of [
+        async () => await scraperService.shutdown(),
+        async () => await maintenanceService.shutdown(),
+        async () => await crawlerProvider.shutdown(),
+      ]) {
+        try {
+          await shutdown();
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+      try {
+        await persistenceService.close();
+      } catch (error) {
+        firstError ??= error;
+      }
+      if (firstError) throw firstError;
     },
   };
 };

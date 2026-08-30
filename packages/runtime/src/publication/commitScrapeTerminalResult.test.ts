@@ -39,6 +39,8 @@ const scrapeRuns = () => ({
   commitSuccessOutcome: vi.fn(() => ({ outcomeId: "success-outcome", entryId: "entry-1" })),
 });
 
+const noFileTransitions = () => ({ failed: vi.fn(async () => undefined), succeeded: vi.fn(async () => undefined) });
+
 const fixture = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "mdcz-scrape-commit-"));
   directories.push(directory);
@@ -83,6 +85,7 @@ const fixture = async () => {
 describe("commitScrapeTerminalResult", () => {
   it("persists failed and skipped outcomes without publication", async () => {
     const store = scrapeRuns();
+    const failedTransition = vi.fn(async () => undefined);
     const failed = await commitScrapeTerminalResult({
       result: { ...baseResult("failed"), error: "  boom  " },
       attemptId: "attempt-1",
@@ -90,6 +93,7 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: async () => ({ id: "input", hostPath: "/tmp" }),
       journal: createMemoryPublicationJournal(),
+      fileTransitions: { failed: failedTransition, succeeded: vi.fn() },
     });
     const skipped = await commitScrapeTerminalResult({
       result: baseResult("skipped"),
@@ -98,6 +102,7 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: async () => ({ id: "input", hostPath: "/tmp" }),
       journal: createMemoryPublicationJournal(),
+      fileTransitions: noFileTransitions(),
     });
 
     expect(failed).toMatchObject({ status: "failed", resultId: "failed-outcome", error: "boom" });
@@ -113,11 +118,15 @@ describe("commitScrapeTerminalResult", () => {
       error: null,
     });
     expect(store.commitSuccessOutcome).not.toHaveBeenCalled();
+    expect(failedTransition).toHaveBeenCalledOnce();
   });
 
   it("publishes a successful item and records nfo as null when it shares the output root", async () => {
     const test = await fixture();
     const store = scrapeRuns();
+    const succeededTransition = vi.fn(async () => {
+      expect(store.commitSuccessOutcome).toHaveBeenCalledOnce();
+    });
     const committed = await commitScrapeTerminalResult({
       result: { ...baseResult("success"), crawlerData: crawlerData() },
       attemptId: "attempt-1",
@@ -134,6 +143,7 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
+      fileTransitions: { failed: vi.fn(), succeeded: succeededTransition },
     });
 
     expect(committed).toMatchObject({ status: "success", resultId: "success-outcome" });
@@ -155,6 +165,7 @@ describe("commitScrapeTerminalResult", () => {
       }),
     );
     await expect(readFile(test.target, "utf8")).resolves.toBe("video");
+    expect(succeededTransition).toHaveBeenCalledOnce();
   });
 
   it("treats committed-but-cleanup-failed publication as success", async () => {
@@ -192,6 +203,7 @@ describe("commitScrapeTerminalResult", () => {
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
       fileSystem,
+      fileTransitions: noFileTransitions(),
     });
 
     expect(committed).toMatchObject({ status: "success", resultId: "success-outcome" });
@@ -206,6 +218,7 @@ describe("commitScrapeTerminalResult", () => {
     store.commitSuccessOutcome.mockImplementation(() => {
       throw new Error("library constraint failed");
     });
+    const failedTransition = vi.fn(async () => undefined);
 
     const committed = await commitScrapeTerminalResult({
       result: { ...baseResult("success"), crawlerData: crawlerData() },
@@ -223,6 +236,7 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
+      fileTransitions: { failed: failedTransition, succeeded: vi.fn() },
     });
 
     expect(committed.status).toBe("failed");
@@ -230,6 +244,7 @@ describe("commitScrapeTerminalResult", () => {
     expect(store.commitOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", attemptId: "attempt-1" }),
     );
+    expect(failedTransition).toHaveBeenCalledOnce();
   });
 
   it("aggregates publication and fallback-write failures", async () => {
@@ -259,6 +274,7 @@ describe("commitScrapeTerminalResult", () => {
         scrapeRuns: store,
         resolveRoot: test.resolveRoot,
         journal: createMemoryPublicationJournal(),
+        fileTransitions: noFileTransitions(),
       }),
     ).rejects.toMatchObject({
       name: "AggregateError",

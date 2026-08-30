@@ -1,5 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
-import { localFileTargetSchema, rootFileRefSchema } from "@mdcz/shared/mediaRef";
+import { localFileTargetSchema, parseWireRelativeDirectory, rootFileRefSchema } from "@mdcz/shared/mediaRef";
 import { normalizedCropRegionSchema } from "@mdcz/shared/posterCrop";
 import {
   configPathInputSchema,
@@ -36,7 +36,8 @@ export const scraperStartInputSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("selection"),
     refs: z.array(rootFileRefSchema).min(1),
-    outputRootId: z.string().trim().min(1).optional(),
+    outputRootId: z.string().trim().min(1),
+    outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
   }),
   z.object({
     mode: z.literal("single"),
@@ -83,7 +84,10 @@ export const fileBrowseInputSchema = z.object({
   type: z.enum(["file", "directory"]).optional(),
   filters: z.array(z.object({ name: z.string(), extensions: z.array(z.string()) })).optional(),
 });
-export const fileDeleteInputSchema = z.object({ filePaths: optionalPathList });
+export const fileDeleteInputSchema = z.object({
+  targets: z.array(rootFileRefSchema).min(1),
+  containingFolder: z.boolean().optional(),
+});
 export const fileNfoReadInputSchema = z.object({
   nfoPath: localFileTargetSchema,
   videoPath: localFileTargetSchema.optional(),

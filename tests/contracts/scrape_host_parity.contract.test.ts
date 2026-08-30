@@ -7,12 +7,13 @@ import { SignalService } from "@main/services/SignalService";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { PublicationPlan } from "@mdcz/runtime/publication";
 import type { FileScrapeOptions, FileScrapeResult, MountedRootScrapeRuntime } from "@mdcz/runtime/scrape";
-import { FileScraper } from "@mdcz/runtime/scrape";
+import { ActorImageService, FileScraper } from "@mdcz/runtime/scrape";
 import type { CrawlerData, LocalScanEntry, ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServerConfigService } from "../../apps/server/src/services/configService";
@@ -126,7 +127,6 @@ const waitForAbort = async (signal: AbortSignal | undefined, gate: Promise<void>
 
 const mockMaintenanceRuntime = (): MaintenanceRuntime =>
   ({
-    scan: vi.fn(async () => []),
     scanRefs: vi.fn(
       async ({ root, refs }: { root: { id: string; hostPath: string }; refs: Array<{ relativePath: string }> }) =>
         refs.map(
@@ -189,13 +189,17 @@ const createDesktopHost = async (mediaRoot: string, gate: Promise<void>, succeed
   const signalService = new SignalService(null);
   const networkClient = new NetworkClient();
   const crawlerProvider = new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) });
+  const actorImageService = new ActorImageService({ cacheRoot: path.join(mediaRoot, ".actors"), networkClient });
+  const imageHostCooldownStore = new PersistentCooldownStore({
+    filePath: path.join(mediaRoot, ".image-host-cooldowns.json"),
+  });
   const service = new ScraperService(
     signalService,
     networkClient,
     crawlerProvider,
+    actorImageService,
     undefined,
-    undefined,
-    undefined,
+    imageHostCooldownStore,
     undefined,
     persistence,
   );
@@ -204,6 +208,8 @@ const createDesktopHost = async (mediaRoot: string, gate: Promise<void>, succeed
     networkClient,
     crawlerProvider,
     persistenceService: persistence,
+    actorImageService,
+    imageHostCooldownStore,
     runtime: mockMaintenanceRuntime(),
   });
   cleanups.push(async () => {
@@ -217,7 +223,10 @@ const createDesktopHost = async (mediaRoot: string, gate: Promise<void>, succeed
   });
   return {
     start: async (relativePaths) => {
-      const result = await service.start(relativePaths.map((relativePath) => ({ rootId: root.id, relativePath })));
+      const result = await service.start(
+        relativePaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+        root.id,
+      );
       return { runId: result.taskId };
     },
     retry: async (runId) => ({ runId: (await service.retry(runId)).taskId }),
@@ -335,6 +344,8 @@ const createServerHost = async (mediaRoot: string, gate: Promise<void>, succeed:
     start: async (relativePaths) => {
       const snapshot = await service.start({
         refs: relativePaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+        executionMode: "batch",
+        outputRootId: root.id,
       });
       return { runId: snapshot.task.id };
     },

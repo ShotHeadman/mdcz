@@ -49,6 +49,7 @@ export interface ScrapeRunRecord {
   id: string;
   rootId: string;
   requestedOutputRootId: string | null;
+  requestedOutputRelativeDirectory: string | null;
   executionMode: ScrapeExecutionMode;
   createdAt: Date;
   startedAt: Date | null;
@@ -84,6 +85,7 @@ export interface CreateScrapeRunInput {
   id?: string;
   rootId: string;
   outputRootId?: string | null;
+  outputRelativeDirectory?: string | null;
   executionMode: ScrapeExecutionMode;
   createdAt?: Date;
   items: Array<{
@@ -165,6 +167,7 @@ export class ScrapeRunRepository {
           id,
           rootId: input.rootId,
           outputRootId: input.outputRootId ?? null,
+          outputRelativeDirectory: input.outputRelativeDirectory || null,
           executionMode: input.executionMode,
           createdAt,
         })
@@ -215,6 +218,7 @@ export class ScrapeRunRepository {
       id: run.id,
       rootId: run.rootId,
       requestedOutputRootId: run.outputRootId,
+      requestedOutputRelativeDirectory: run.outputRelativeDirectory,
       executionMode: run.executionMode,
       createdAt: run.createdAt,
       startedAt: run.startedAt,
@@ -438,19 +442,12 @@ export class ScrapeRunRepository {
           : latest.some((outcome) => outcome.outcome !== "success")
             ? "failed"
             : "completed";
-    const outputRootIds = new Set(
-      latest
-        .filter((outcome) => outcome.outcome === "success")
-        .map((outcome) => outcome.outputRootId)
-        .filter((rootId): rootId is string => Boolean(rootId)),
-    );
     this.database.db
       .update(scrapeRuns)
       .set({
         disposition: projectedDisposition,
         startedAt: input.startedAt ?? null,
         completedAt: input.completedAt ?? new Date(),
-        outputRootId: outputRootIds.size === 1 ? [...outputRootIds][0] : null,
         errorMessage: input.error ?? null,
       })
       .where(eq(scrapeRuns.id, run.id))

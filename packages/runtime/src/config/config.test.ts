@@ -136,6 +136,34 @@ describe("runtime config helpers", () => {
 });
 
 describe("RuntimeConfigService profile watcher", () => {
+  it("validates an active profile import before replacing its file", async () => {
+    const configDir = await createTempDir();
+    const profilePath = join(configDir, "default.toml");
+    const sourcePath = join(configDir, "incoming.toml");
+    const service = new RuntimeConfigService({
+      store: new RuntimeConfigProfileStore({ configDir }),
+      onBeforeCommit: (configuration) => {
+        if (configuration.paths.mediaPath) throw new Error("media path unavailable");
+      },
+    });
+    await service.load();
+    const original = await readFile(profilePath, "utf8");
+    await writeFile(
+      sourcePath,
+      serializeConfiguration({
+        ...defaultConfiguration,
+        paths: { ...defaultConfiguration.paths, mediaPath: "/offline/media" },
+      }),
+      "utf8",
+    );
+
+    await expect(service.importProfileFromFile({ sourcePath, name: "default", overwrite: true })).rejects.toThrow(
+      "media path unavailable",
+    );
+    await expect(readFile(profilePath, "utf8")).resolves.toBe(original);
+    await expect(service.get()).resolves.toMatchObject({ paths: { mediaPath: "" } });
+  });
+
   it("reloads valid edits and keeps the last-known-good value for invalid edits", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });

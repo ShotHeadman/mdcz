@@ -36,6 +36,85 @@ WHERE EXISTS (
     )
 );
 --> statement-breakpoint
+CREATE TEMP TABLE `media_root_mapping` AS
+SELECT duplicate.`id` AS `duplicate_id`, canonical.`id` AS `canonical_id`
+FROM `media_roots` AS duplicate
+JOIN `media_roots` AS canonical
+  ON canonical.`host_path` = duplicate.`host_path`
+ AND canonical.rowid = (
+   SELECT MIN(candidate.rowid)
+   FROM `media_roots` AS candidate
+   WHERE candidate.`host_path` = duplicate.`host_path`
+ );
+--> statement-breakpoint
+UPDATE `task_records`
+SET `root_id` = (SELECT `canonical_id` FROM `media_root_mapping` WHERE `duplicate_id` = `task_records`.`root_id`)
+WHERE `root_id` IN (SELECT `duplicate_id` FROM `media_root_mapping` WHERE `duplicate_id` <> `canonical_id`);
+--> statement-breakpoint
+UPDATE `scan_results`
+SET `root_id` = (SELECT `canonical_id` FROM `media_root_mapping` WHERE `duplicate_id` = `scan_results`.`root_id`)
+WHERE `root_id` IN (SELECT `duplicate_id` FROM `media_root_mapping` WHERE `duplicate_id` <> `canonical_id`);
+--> statement-breakpoint
+DELETE FROM `library_item_files`
+WHERE rowid IN (
+  SELECT duplicate.rowid
+  FROM `library_item_files` AS duplicate
+  JOIN `library_item_files` AS canonical
+    ON canonical.`item_id` = duplicate.`item_id`
+   AND canonical.`root_relative_path` = duplicate.`root_relative_path`
+   AND COALESCE(
+         (SELECT `canonical_id` FROM `media_root_mapping` WHERE `duplicate_id` = canonical.`root_id`),
+         canonical.`root_id`
+       ) = COALESCE(
+         (SELECT `canonical_id` FROM `media_root_mapping` WHERE `duplicate_id` = duplicate.`root_id`),
+         duplicate.`root_id`
+       )
+   AND (
+     canonical.`updated_at` > duplicate.`updated_at`
+     OR (canonical.`updated_at` = duplicate.`updated_at` AND canonical.rowid > duplicate.rowid)
+   )
+);
+--> statement-breakpoint
+UPDATE `library_item_files`
+SET `root_id` = (SELECT `canonical_id` FROM `media_root_mapping` WHERE `duplicate_id` = `library_item_files`.`root_id`)
+WHERE `root_id` IN (SELECT `duplicate_id` FROM `media_root_mapping` WHERE `duplicate_id` <> `canonical_id`);
+--> statement-breakpoint
+UPDATE `library_item_assets`
+SET `root_id` = (SELECT `canonical_id` FROM `media_root_mapping` WHERE `duplicate_id` = `library_item_assets`.`root_id`)
+WHERE `root_id` IN (SELECT `duplicate_id` FROM `media_root_mapping` WHERE `duplicate_id` <> `canonical_id`);
+--> statement-breakpoint
+DELETE FROM `scan_results`
+WHERE rowid IN (
+  SELECT duplicate.rowid
+  FROM `scan_results` AS duplicate
+  JOIN `scan_results` AS canonical
+    ON canonical.`task_id` = duplicate.`task_id`
+   AND canonical.`root_id` = duplicate.`root_id`
+   AND canonical.`relative_path` = duplicate.`relative_path`
+   AND (
+     COALESCE(canonical.`modified_at`, -1) > COALESCE(duplicate.`modified_at`, -1)
+     OR (
+       COALESCE(canonical.`modified_at`, -1) = COALESCE(duplicate.`modified_at`, -1)
+       AND canonical.rowid > duplicate.rowid
+     )
+   )
+);
+--> statement-breakpoint
+DELETE FROM `library_item_files`
+WHERE rowid IN (
+  SELECT duplicate.rowid
+  FROM `library_item_files` AS duplicate
+  JOIN `library_item_files` AS canonical
+    ON canonical.`root_id` = duplicate.`root_id`
+   AND canonical.`root_relative_path` = duplicate.`root_relative_path`
+   AND (
+     canonical.`updated_at` > duplicate.`updated_at`
+     OR (canonical.`updated_at` = duplicate.`updated_at` AND canonical.rowid > duplicate.rowid)
+   )
+);
+--> statement-breakpoint
+DROP TABLE `media_root_mapping`;
+--> statement-breakpoint
 CREATE TABLE `media_roots_new` (
   `id` text PRIMARY KEY NOT NULL,
   `display_name` text NOT NULL,
@@ -45,11 +124,19 @@ CREATE TABLE `media_roots_new` (
 );
 --> statement-breakpoint
 INSERT INTO `media_roots_new` (`id`, `display_name`, `host_path`, `created_at`, `updated_at`)
-SELECT `id`, `display_name`, `host_path`, `created_at`, `updated_at` FROM `media_roots`;
+SELECT `id`, `display_name`, `host_path`, `created_at`, `updated_at`
+FROM `media_roots` AS source
+WHERE source.rowid = (
+  SELECT MIN(candidate.rowid)
+  FROM `media_roots` AS candidate
+  WHERE candidate.`host_path` = source.`host_path`
+);
 --> statement-breakpoint
 DROP TABLE `media_roots`;
 --> statement-breakpoint
 ALTER TABLE `media_roots_new` RENAME TO `media_roots`;
+--> statement-breakpoint
+CREATE UNIQUE INDEX `media_roots_host_path_idx` ON `media_roots` (`host_path`);
 --> statement-breakpoint
 ALTER TABLE `library_items` RENAME COLUMN `source_task_id` TO `source_run_id`;
 --> statement-breakpoint
@@ -87,6 +174,7 @@ CREATE TABLE `scrape_runs` (
   `id` text PRIMARY KEY NOT NULL,
   `root_id` text NOT NULL,
   `output_root_id` text,
+  `output_relative_directory` text,
   `execution_mode` text NOT NULL CHECK (`execution_mode` IN ('single', 'batch')),
   `created_at` integer NOT NULL,
   `started_at` integer,

@@ -60,6 +60,7 @@ export enum IpcChannel {
   Library_Delete = "library:delete",
 
   MediaRoots_EnsurePath = "mediaRoots:ensurePath",
+  MediaRoots_PrepareOutputDirectory = "mediaRoots:prepare-output-directory",
 
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",

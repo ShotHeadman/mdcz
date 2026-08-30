@@ -1,4 +1,3 @@
-import type { Configuration } from "@mdcz/shared/config";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   authLoginInputSchema,
@@ -39,29 +38,8 @@ import {
 } from "@mdcz/shared/serverDtos";
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
-import type { ServerServices } from "../services";
 import { decorateTaskLog } from "../services/runtimeLogService";
 import { mapConfigError, protectedProcedure, setupProcedure, t } from "./context";
-
-const syncMediaRootFromConfig = async (
-  services: ServerServices,
-  config: Configuration,
-  options: { displayName?: string } = {},
-) => {
-  const mediaPath = config.paths.mediaPath.trim();
-  if (!mediaPath) {
-    return;
-  }
-  await services.mediaRoots.ensurePath({
-    displayName: options.displayName?.trim() || pathDisplayName(mediaPath),
-    hostPath: mediaPath,
-  });
-};
-
-const pathDisplayName = (hostPath: string): string => {
-  const normalized = hostPath.replace(/[\\/]+$/u, "");
-  return normalized.split(/[\\/]+/u).at(-1) || normalized || "媒体库";
-};
 
 export const appRouter = t.router({
   auth: t.router({
@@ -130,9 +108,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.config.reset(input?.path)),
     update: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        const config = await ctx.services.config.update(input);
-        await syncMediaRootFromConfig(ctx.services, config);
-        return config;
+        return await ctx.services.config.update(input);
       } catch (error) {
         return mapConfigError(error);
       }
@@ -233,6 +209,9 @@ export const appRouter = t.router({
     ensurePath: protectedProcedure
       .input(mediaRootEnsurePathInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.ensurePath(input)),
+    prepareOutputDirectory: protectedProcedure
+      .input(mediaRootEnsurePathInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.prepareOutputDirectory(input)),
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.mediaRoots.list()),
   }),
   maintenance: t.router({
@@ -339,8 +318,11 @@ export const appRouter = t.router({
   setup: t.router({
     complete: setupProcedure.input(setupCompleteInputSchema).mutation(async ({ ctx, input }) => {
       ctx.services.auth.assertValidSetupPassword(input.password);
-      const config = await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
-      await syncMediaRootFromConfig(ctx.services, config, { displayName: input.mediaRoot.displayName });
+      await ctx.services.mediaRoots.ensurePath({
+        displayName: input.mediaRoot.displayName,
+        hostPath: input.mediaRoot.hostPath,
+      });
+      await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
       return await ctx.services.auth.completeSetup(input.password);
     }),
     status: t.procedure.query(async ({ ctx }) => {

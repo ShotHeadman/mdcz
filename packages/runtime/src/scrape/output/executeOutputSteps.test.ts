@@ -4,7 +4,7 @@ import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeActorImageService } from "../actorOutput";
 import type { DownloadCallbacks, DownloadManager } from "../download";
-import type { FileOrganizer, OrganizePlan } from "../FileOrganizer";
+import type { OrganizePlan } from "../FileOrganizer";
 import type { NfoGenerator, NfoOptions } from "../nfo";
 import {
   downloadCrawlerAssets,
@@ -173,18 +173,9 @@ describe("shared output steps", () => {
       outputDir: "/output",
       targetVideoPath: "/output/ABC-123.mp4",
     };
-    const organizeVideo = vi.fn().mockResolvedValue(plan.targetVideoPath);
-    const fileOrganizer = { organizeVideo } as unknown as FileOrganizer;
 
-    await expect(organizePreparedVideo({ config, enabled: false, fileInfo, fileOrganizer, plan })).resolves.toBe(
-      fileInfo.filePath,
-    );
-    await expect(organizePreparedVideo({ config, enabled: true, fileInfo, fileOrganizer })).resolves.toBe(
-      fileInfo.filePath,
-    );
-    await expect(organizePreparedVideo({ config, enabled: true, fileInfo, fileOrganizer, plan })).resolves.toBe(
-      plan.targetVideoPath,
-    );
-    expect(organizeVideo).not.toHaveBeenCalled();
+    await expect(organizePreparedVideo({ enabled: false, fileInfo, plan })).resolves.toBe(fileInfo.filePath);
+    await expect(organizePreparedVideo({ enabled: true, fileInfo })).resolves.toBe(fileInfo.filePath);
+    await expect(organizePreparedVideo({ enabled: true, fileInfo, plan })).resolves.toBe(plan.targetVideoPath);
   });
 });

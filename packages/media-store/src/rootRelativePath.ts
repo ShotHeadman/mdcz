@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { StorageError, storageErrorCodes } from "./errors";
-import type { MediaRoot } from "./mediaRoot";
+import { findEnclosingMediaRoot, type MediaRoot } from "./mediaRoot";
 
 export type RootRelativePath = string & { readonly __rootRelativePath: unique symbol };
 
@@ -43,4 +43,15 @@ export const toRootRelativePath = (root: Pick<MediaRoot, "hostPath">, candidateP
   assertInsideRoot(root, candidatePath);
   const relative = path.relative(path.resolve(root.hostPath), path.resolve(candidatePath));
   return normalizeRootRelativePath(toPortableSeparators(relative));
+};
+
+export const resolveRootFile = <T extends Pick<MediaRoot, "id" | "hostPath">>(
+  roots: readonly T[],
+  candidatePath: string,
+): { root: T; relativePath: RootRelativePath } => {
+  const root = findEnclosingMediaRoot(candidatePath, roots);
+  if (!root) {
+    throw new StorageError(storageErrorCodes.OutsideRoot, `Path is outside registered roots: ${candidatePath}`);
+  }
+  return { root, relativePath: toRootRelativePath(root, candidatePath) };
 };

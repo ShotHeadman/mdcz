@@ -1,6 +1,12 @@
 import { lstat } from "node:fs/promises";
 import path from "node:path";
-import { listRootFiles, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
+import {
+  listRootFiles,
+  type MediaRoot,
+  normalizeHostPath,
+  resolveRootFile,
+  toRootRelativePath,
+} from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
 import { TaskScheduler } from "@mdcz/runtime/tasks";
 import { isHostPathWithinDirectory } from "@mdcz/shared/mediaCandidate";
@@ -32,12 +38,15 @@ interface ScanDirectoryResult {
   directoryCount: number;
 }
 
-const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
-const toPosixPath = (value: string): string => value.replace(/\\/gu, "/");
+const SCAN_BACKEND_INTERRUPTED_MESSAGE = "扫描后端已重启，任务已中断；请重试扫描";
+const SCAN_SERVICE_CLOSED_MESSAGE = "扫描服务已关闭，任务已中断；请重试扫描";
 
+const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 export class ScanQueueService {
   private readonly scheduler: TaskScheduler<ScanTask>;
   private readonly queuedTaskIds: string[] = [];
+  private activeScan: { taskId: string; controller: AbortController } | null = null;
+  private closing = false;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
@@ -51,6 +60,7 @@ export class ScanQueueService {
   }
 
   async start(rootId: string): Promise<ScanTaskDto> {
+    if (this.closing) throw new Error("Scan queue is closing");
     await this.mediaRoots.get(rootId);
     const state = await this.persistence.getState();
     const task = await state.repositories.scanTasks.create({ rootId });
@@ -92,6 +102,7 @@ export class ScanQueueService {
   }
 
   async retry(taskId: string): Promise<ScanTaskDto> {
+    if (this.closing) throw new Error("Scan queue is closing");
     const state = await this.persistence.getState();
     const task = await state.repositories.scanTasks.get(taskId);
     if (task.status === "running" || task.status === "queued") {
@@ -108,24 +119,20 @@ export class ScanQueueService {
   }
 
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
+    if (this.closing) throw new Error("Scan queue is closing");
     const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
-    const rootDto = await this.mediaRoots.ensurePath({ hostPath });
-    const root: MediaRoot = {
-      ...rootDto,
-      createdAt: new Date(rootDto.createdAt),
-      updatedAt: new Date(rootDto.updatedAt),
-    };
+    const roots = await this.mediaRoots.listRoots();
+    const root = resolveRootFile(roots, hostPath).root;
     const supported = new Set(
       (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
     );
-    const files = await listRootFiles(root, "", true);
+    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), true);
     const candidates = await Promise.all(
       files
         .filter((file) => {
           const extension = path.extname(file.relativePath).replace(/^\./u, "").toLowerCase();
-          const absolutePath = path.resolve(hostPath, file.relativePath);
-          if (excludeDirPaths.some((directoryPath) => isHostPathWithinDirectory(absolutePath, directoryPath))) {
+          if (excludeDirPaths.some((directoryPath) => isHostPathWithinDirectory(file.absolutePath, directoryPath))) {
             return false;
           }
           return supported.size > 0
@@ -133,18 +140,18 @@ export class ScanQueueService {
             : isPrimaryVideoFileName(path.basename(file.relativePath));
         })
         .map(async (file) => {
-          const absolutePath = path.resolve(hostPath, file.relativePath);
-          const stats = await lstat(absolutePath).catch(() => null);
+          const stats = await lstat(file.absolutePath).catch(() => null);
           if (stats?.isSymbolicLink()) {
             return null;
           }
+          const resolved = resolveRootFile(roots, file.absolutePath);
           return {
-            path: absolutePath,
+            path: file.absolutePath,
             name: path.basename(file.relativePath),
             size: file.size,
             lastModified: file.modifiedAt?.toISOString() ?? null,
             extension: path.extname(file.relativePath).replace(/^\./u, "").toLowerCase(),
-            ref: { rootId: root.id, relativePath: toPosixPath(file.relativePath) },
+            ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
           };
         }),
     );
@@ -156,12 +163,15 @@ export class ScanQueueService {
   private async runTask(task: ScanTask): Promise<void> {
     const state = await this.persistence.getState();
     const { id: taskId, rootId } = task;
+    const controller = new AbortController();
+    this.activeScan = { taskId, controller };
     await this.addEvent(taskId, "running", "开始扫描媒体目录");
     this.publishTask(await this.toDto(taskId));
 
     try {
       const root = await this.mediaRoots.get(rootId);
-      const result = await this.scanDirectory(root);
+      const result = await this.scanDirectory(root, controller.signal);
+      controller.signal.throwIfAborted();
       const committed = await state.repositories.scanTasks.complete({
         taskId,
         rootId,
@@ -176,16 +186,23 @@ export class ScanQueueService {
       );
       this.publishTask(await this.toDto(taskId));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        this.closing && controller.signal.aborted
+          ? SCAN_SERVICE_CLOSED_MESSAGE
+          : error instanceof Error
+            ? error.message
+            : String(error);
       const committed = await state.repositories.scanTasks.fail(taskId, message);
       if (!committed) return;
       await this.addEvent(taskId, "failed", message);
       this.publishTask(await this.toDto(taskId));
+    } finally {
+      if (this.activeScan?.taskId === taskId) this.activeScan = null;
     }
   }
 
-  private async scanDirectory(root: MediaRoot): Promise<ScanDirectoryResult> {
-    const files = await listRootFiles(root, "", true);
+  private async scanDirectory(root: MediaRoot, signal?: AbortSignal): Promise<ScanDirectoryResult> {
+    const files = await listRootFiles(root, "", true, signal);
     const videos = files
       .filter((file) => isPrimaryVideoFileName(path.basename(file.relativePath)))
       .map((file) => ({
@@ -246,6 +263,29 @@ export class ScanQueueService {
       if (!taskId) return null;
       const task = await state.repositories.scanTasks.claim(taskId);
       if (task) return task;
+    }
+  }
+
+  async recoverInterrupted(): Promise<void> {
+    await this.interruptUnfinished(SCAN_BACKEND_INTERRUPTED_MESSAGE);
+  }
+
+  async close(): Promise<void> {
+    if (this.closing) return;
+    this.closing = true;
+    this.queuedTaskIds.length = 0;
+    this.scheduler.requestStop();
+    this.activeScan?.controller.abort();
+    await this.scheduler.waitForIdle();
+    await this.interruptUnfinished(SCAN_SERVICE_CLOSED_MESSAGE);
+  }
+
+  private async interruptUnfinished(message: string): Promise<void> {
+    const state = await this.persistence.getState();
+    const interrupted = await state.repositories.scanTasks.interruptUnfinished(message);
+    for (const task of interrupted) {
+      await this.addEvent(task.id, "failed", message);
+      this.publishTask(await this.toDto(task.id));
     }
   }
 }

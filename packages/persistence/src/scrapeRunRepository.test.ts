@@ -59,6 +59,7 @@ describe("ScrapeRunRepository", () => {
       id: "run-1",
       rootId: "root-1",
       requestedOutputRootId: "requested-output",
+      requestedOutputRelativeDirectory: null,
       disposition: null,
       outcomes: [],
       items: [
@@ -270,6 +271,7 @@ describe("ScrapeRunRepository", () => {
       outputRootId: "actual-output",
       error: null,
     });
+    expect(finalized.requestedOutputRootId).toBe("requested-output");
     await expect(repository.finalize({ runId: run.id, disposition: "completed" })).resolves.toMatchObject({
       id: run.id,
       disposition: "failed",

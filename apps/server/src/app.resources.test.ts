@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import { ProxyType, Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
@@ -8,8 +9,13 @@ import { buildServer, type ServerApp } from "./app";
 import { ServerConfigService } from "./services/configService";
 import type { ServerPersistenceService } from "./services/persistenceService";
 
+const fakePersistenceState = {
+  database: {},
+  repositories: { scanTasks: { interruptUnfinished: async () => [] } },
+};
 const fakePersistence = {
-  initialize: async () => ({ database: {}, repositories: {} }),
+  initialize: async () => fakePersistenceState,
+  getState: async () => fakePersistenceState,
   close: async () => undefined,
   get initialized() {
     return true;
@@ -24,7 +30,7 @@ describe("server resource graph", () => {
     await Promise.all(apps.splice(0).map(async (app) => await app.fastify.close()));
   });
 
-  it("exposes live proxy, timeout, and retry values after config changes", async () => {
+  it("applies live proxy, timeout, and retry values to requests after config changes", async () => {
     const directory = await createTempDirectory("server-live-network");
     const paths = {
       configDir: join(directory.path, "config"),
@@ -39,7 +45,16 @@ describe("server resource graph", () => {
     });
     apps.push(app);
     await app.fastify.ready();
-    const before = app.services.config.getComputed();
+    const fetch = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response("unavailable", { status: 429, headers: { "retry-after": "1" } }),
+    );
+    const constructorSpy = vi.fn();
+    (
+      globalThis as typeof globalThis & {
+        __mdczImpitMock?: { fetch: typeof fetch; constructorSpy: typeof constructorSpy };
+      }
+    ).__mdczImpitMock = { fetch, constructorSpy };
 
     await app.services.config.update({
       network: {
@@ -51,12 +66,21 @@ describe("server resource graph", () => {
       },
     });
 
-    expect(app.services.config.getComputed()).toMatchObject({
-      proxyUrl: "http://127.0.0.1:9",
-      networkTimeoutMs: 7_000,
-      networkRetryCount: 3,
-    });
-    expect(before.networkTimeoutMs).not.toBe(7_000);
+    const networkClient = (app.services.runtimeActions as unknown as { networkClient: NetworkClient }).networkClient;
+    vi.useFakeTimers();
+    const request = networkClient.getText("https://example.com/live-network").catch(() => undefined);
+    for (let retry = 0; retry < 4; retry += 1) {
+      await vi.runAllTimersAsync();
+    }
+    await request;
+
+    expect(constructorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ proxyUrl: "http://127.0.0.1:9", timeout: 7_000 }),
+    );
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ timeout: 7_000 });
+    vi.useRealTimers();
+    delete (globalThis as typeof globalThis & { __mdczImpitMock?: unknown }).__mdczImpitMock;
     await directory.cleanup();
   });
 

@@ -64,6 +64,7 @@ export function ShortcutHandler() {
           : undefined;
         const selectedItem = actionContext?.selectedItem;
         const selectedNfoPath = actionContext?.nfoPath;
+        const groupedTargets = actionContext?.targets ?? [];
         const groupedVideoPaths = actionContext?.videoPaths ?? [];
         const selectedPath = selectedItem
           ? (selectedItem.output?.relativePath ?? selectedItem.relativePath)
@@ -140,13 +141,18 @@ export function ShortcutHandler() {
                 return;
               }
 
-              const outputRoot = workbenchSetupState.targetDir.trim()
-                ? await ipc.mediaRoots.ensurePath({ hostPath: workbenchSetupState.targetDir })
-                : undefined;
+              if (!workbenchSetupState.targetDir.trim()) {
+                toast.info("请先选择输出目录");
+                return;
+              }
+              const outputRoot = await ipc.mediaRoots.prepareOutputDirectory({
+                hostPath: workbenchSetupState.targetDir,
+              });
               activateNewScrapeTask();
               const response = await startSelectedScrape(
                 selectedCandidates.map((candidate) => candidate.ref),
-                outputRoot?.id,
+                outputRoot.id,
+                outputRoot.relativeDirectory,
               );
               toast.success(response.data.message);
             } catch (error) {
@@ -181,7 +187,7 @@ export function ShortcutHandler() {
               return;
             }
             try {
-              await deleteFile(groupedVideoPaths);
+              await deleteFile(groupedTargets.map((target) => target.ref));
               toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "文件已删除");
             } catch (error) {
               toast.error(`删除失败: ${toErrorMessage(error)}`);
@@ -190,7 +196,7 @@ export function ShortcutHandler() {
           }
 
           case "delete-file-and-folder": {
-            if (!selectedPath) {
+            if (!selectedPath || !selectedRef) {
               toast.info("请先选择一个结果项");
               return;
             }
@@ -198,7 +204,7 @@ export function ShortcutHandler() {
               return;
             }
             try {
-              await deleteFileAndFolder(selectedPath);
+              await deleteFileAndFolder(selectedRef);
               toast.success("文件和文件夹已删除");
             } catch (error) {
               toast.error(`删除失败: ${toErrorMessage(error)}`);

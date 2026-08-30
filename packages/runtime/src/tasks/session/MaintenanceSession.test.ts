@@ -6,7 +6,10 @@ const createSession = () =>
     id: "maintenance-1",
     rootId: "root-1",
     presetId: "organize_files",
-    refs: [{ relativePath: "one.mp4" }, { relativePath: "two.mp4" }],
+    refs: [
+      { rootId: "root-1", relativePath: "one.mp4" },
+      { rootId: "root-1", relativePath: "two.mp4" },
+    ],
     generation: 1,
     now: new Date("2026-01-01T00:00:00.000Z"),
   });
@@ -32,7 +35,7 @@ describe("MaintenanceSession", () => {
     if (!firstRef || !firstPreview) throw new Error("Expected preview snapshot");
     firstRef.relativePath = "mutated.mp4";
     firstPreview.status = "failed";
-    expect(session.snapshot().refs[0]).toEqual({ relativePath: "one.mp4" });
+    expect(session.snapshot().refs[0]).toEqual({ rootId: "root-1", relativePath: "one.mp4" });
     expect(session.snapshot().successCount).toBe(1);
 
     session.finish(1, "completed", null);

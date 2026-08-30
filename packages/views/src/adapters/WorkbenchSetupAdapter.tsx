@@ -110,7 +110,12 @@ export function WorkbenchSetupAdapter({
   );
   const scanning = scanStatus === "scanning";
   const primaryDisabled =
-    startPending || scanning || scanStatus === "error" || candidates.length === 0 || selectedPaths.length === 0;
+    startPending ||
+    scanning ||
+    scanStatus === "error" ||
+    candidates.length === 0 ||
+    selectedPaths.length === 0 ||
+    (mode === "scrape" && !targetDir.trim());
   const runSummary =
     candidates.length > 0
       ? `${candidates.length} 个文件 · ${formatBytes(totalSize, { trimTrailingZeros: true })} · ${extensionCount} 种类型 · ${
@@ -179,11 +184,11 @@ export function WorkbenchSetupAdapter({
     if (nextScanDir && !scanDir) {
       setScanDir(nextScanDir);
     }
-    if (nextTargetDir && !targetDir) {
+    if (mode === "scrape" && nextTargetDir && !targetDir) {
       setTargetDir(nextTargetDir);
     }
     initializedRef.current = true;
-  }, [config, scanDir, setScanDir, setTargetDir, targetDir]);
+  }, [config, mode, scanDir, setScanDir, setTargetDir, targetDir]);
 
   useEffect(() => {
     const expectedPlanKey = resolveMediaCandidateScanPlan(mode, scanDir, config).scanKey;
@@ -202,7 +207,7 @@ export function WorkbenchSetupAdapter({
         return;
       }
       setScanDir(selectedPath);
-      if (!targetDir) {
+      if (mode === "scrape" && !targetDir) {
         setTargetDir(resolveSuccessTargetDir(selectedPath, config?.paths?.successOutputFolder));
       }
     } catch (error) {
@@ -244,7 +249,7 @@ export function WorkbenchSetupAdapter({
       mode={mode}
       configLoading={configLoading}
       scanDir={scanDir}
-      targetDir={targetDir}
+      targetDir={mode === "scrape" ? targetDir : undefined}
       candidates={candidates}
       selectedPaths={selectedPaths}
       selectedSize={selectedSize}
@@ -265,20 +270,20 @@ export function WorkbenchSetupAdapter({
           : undefined
       }
       onSuggestTargetDir={
-        suggestDirectory
+        mode === "scrape" && suggestDirectory
           ? async (input) => toPathAutocompleteResult(await suggestDirectory({ kind: "target", path: input.path }))
           : undefined
       }
       formatBytes={formatBytes}
       onBrowseScanDir={handleChooseScanDir}
-      onBrowseTargetDir={handleChooseTargetDir}
+      onBrowseTargetDir={mode === "scrape" ? handleChooseTargetDir : undefined}
       onScanDirChange={(value) => {
         setScanDir(value);
-        if (!targetDir) {
+        if (mode === "scrape" && !targetDir) {
           setTargetDir(resolveSuccessTargetDir(value, config?.paths?.successOutputFolder));
         }
       }}
-      onTargetDirChange={setTargetDir}
+      onTargetDirChange={mode === "scrape" ? setTargetDir : undefined}
       onRefreshScan={() => runScan(scanDir)}
       onPresetChange={changeMaintenancePreset}
       onStart={handleStart}

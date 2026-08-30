@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import {
   type FileCleanerCandidateView,
   type FileCleanerScanInput,
@@ -13,6 +14,7 @@ import { useToast } from "@/contexts/ToastProvider";
 import { browseDirectoryPath } from "./toolUtils";
 
 const CLEANUP_MAX_SCANNED_DIRECTORIES = 50000;
+type CleanupCandidate = FileCleanerCandidateView & { ref: RootFileRef };
 
 function toVisitedDirectoryKey(dirPath: string) {
   const trimmed = dirPath.trim();
@@ -44,7 +46,7 @@ export function FileCleaner() {
   const [cleanupScanning, setCleanupScanning] = useState(false);
   const [cleanupDeleting, setCleanupDeleting] = useState(false);
   const [cleanupProgress, setCleanupProgress] = useState(0);
-  const [cleanupCandidates, setCleanupCandidates] = useState<FileCleanerCandidateView[]>([]);
+  const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([]);
   const scanCleanupCandidates = async ({ targetPath, extensions, includeSubdirs }: FileCleanerScanInput) => {
     const cleanPath = targetPath.trim();
     if (!cleanPath) {
@@ -61,7 +63,7 @@ export function FileCleaner() {
     setCleanupProgress(0);
 
     const extensionSet = new Set(extensions.map(normalizeExtension).filter(Boolean));
-    const found: FileCleanerCandidateView[] = [];
+    const found: CleanupCandidate[] = [];
     const queue: string[] = [cleanPath];
     const visited = new Set<string>();
 
@@ -87,6 +89,7 @@ export function FileCleaner() {
           if (!shouldKeepForCleanup(item, extensionSet)) continue;
           found.push({
             path: item.path,
+            ref: item.ref,
             ext: extensionFromName(item.name),
             size: item.size ?? 0,
             lastModified: item.last_modified ?? null,
@@ -123,7 +126,7 @@ export function FileCleaner() {
     try {
       for (const [index, candidate] of cleanupCandidates.entries()) {
         try {
-          await deleteFile(candidate.path);
+          await deleteFile(candidate.ref);
           successCount += 1;
         } catch {
           failedPaths.add(candidate.path);

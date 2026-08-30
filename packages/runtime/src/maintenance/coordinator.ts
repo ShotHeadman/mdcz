@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
-import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
+import { type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -30,6 +30,7 @@ import type { MaintenanceRuntime, MaintenanceRuntimePreviewItem } from "./Mainte
 
 export interface MaintenanceRootPort {
   get(rootId: string): Promise<MediaRoot>;
+  list(): Promise<MediaRoot[]>;
 }
 
 export interface MaintenanceLibraryPort {
@@ -92,19 +93,39 @@ const OWNERSHIP_CHANGED = "Maintenance execution ownership changed";
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const relativePath = (_root: MediaRoot, entry: LocalScanEntry): string => entry.ref.relativePath;
+const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${ref.relativePath}`;
 
 const assertUniqueRefs = (refs: readonly MaintenanceSessionRef[]): void => {
   const seen = new Set<string>();
   for (const ref of refs) {
     if (!ref.relativePath.trim()) throw new Error("维护文件相对路径不能为空");
-    if (seen.has(ref.relativePath)) throw new Error(`维护文件路径重复：${ref.relativePath}`);
-    seen.add(ref.relativePath);
+    const key = refKey(ref);
+    if (seen.has(key)) throw new Error(`维护文件路径重复：${ref.rootId}:${ref.relativePath}`);
+    seen.add(key);
   }
 };
 
-const ownedPreviewPaths = (root: MediaRoot, previews: readonly MaintenanceSessionPreview[]): RootFileRef[] => {
-  const paths = new Set<string>();
+const canonicalizeRefs = async (
+  roots: MaintenanceRootPort,
+  refs: readonly MaintenanceSessionRef[],
+): Promise<MaintenanceSessionRef[]> => {
+  const registeredRoots = await roots.list();
+  const rootsById = new Map(registeredRoots.map((root) => [root.id, root]));
+  const canonical = refs.map((ref) => {
+    const referencedRoot = rootsById.get(ref.rootId);
+    if (!referencedRoot) throw new Error(`Media root not found: ${ref.rootId}`);
+    const resolved = resolveRootFile(registeredRoots, resolveRootRelativePath(referencedRoot, ref.relativePath));
+    return { rootId: resolved.root.id, relativePath: resolved.relativePath };
+  });
+  assertUniqueRefs(canonical);
+  return canonical;
+};
+
+const ownedPreviewPaths = (
+  roots: readonly MediaRoot[],
+  previews: readonly MaintenanceSessionPreview[],
+): RootFileRef[] => {
+  const paths = new Map<string, RootFileRef>();
   for (const preview of previews) {
     const entry = preview.entry;
     for (const absolutePath of [
@@ -120,30 +141,46 @@ const ownedPreviewPaths = (root: MediaRoot, previews: readonly MaintenanceSessio
       ...(entry?.assets.actorPhotos ?? []),
     ]) {
       if (!absolutePath) continue;
-      paths.add(toRootRelativePath(root, absolutePath));
+      const resolved = resolveRootFile(roots, absolutePath);
+      const ref = { rootId: resolved.root.id, relativePath: resolved.relativePath };
+      paths.set(refKey(ref), ref);
     }
   }
-  return [...paths].map((relativePath) => ({ rootId: root.id, relativePath }));
+  return [...paths.values()];
 };
 
 const scanRefs = async (
   runtime: MaintenanceRuntime,
-  root: MediaRoot,
+  roots: MaintenanceRootPort,
   refs: readonly MaintenanceSessionRef[],
   signal?: AbortSignal,
 ): Promise<LocalScanEntry[]> => {
   assertUniqueRefs(refs);
-  const entries = await runtime.scanRefs({ root, refs: refs.map((ref) => ({ ...ref })), signal });
-  const byPath = new Map<string, LocalScanEntry>();
-  for (const entry of entries) {
-    const path = relativePath(root, entry);
-    if (byPath.has(path)) throw new Error(`维护扫描结果路径重复：${path}`);
-    byPath.set(path, entry);
+  const refsByRoot = new Map<string, MaintenanceSessionRef[]>();
+  for (const ref of refs) {
+    const group = refsByRoot.get(ref.rootId) ?? [];
+    group.push(ref);
+    refsByRoot.set(ref.rootId, group);
   }
-  if (byPath.size !== refs.length || refs.some((ref) => !byPath.has(ref.relativePath))) {
+  const byRef = new Map<string, LocalScanEntry>();
+  for (const [rootId, group] of refsByRoot) {
+    const root = await roots.get(rootId);
+    const entries = await runtime.scanRefs({
+      root,
+      refs: group.map(({ relativePath }) => ({ relativePath })),
+      signal,
+    });
+    for (const entry of entries) {
+      const ref = { rootId, relativePath: entry.ref.relativePath };
+      const key = refKey(ref);
+      if (byRef.has(key)) throw new Error(`维护扫描结果路径重复：${rootId}:${entry.ref.relativePath}`);
+      byRef.set(key, { ...entry, ref });
+    }
+  }
+  if (byRef.size !== refs.length || refs.some((ref) => !byRef.has(refKey(ref)))) {
     throw new Error("维护扫描结果与请求文件不一致");
   }
-  return refs.map((ref) => byPath.get(ref.relativePath) as LocalScanEntry);
+  return refs.map((ref) => byRef.get(refKey(ref)) as LocalScanEntry);
 };
 
 const libraryCommitFailure = (error: unknown): MaintenanceApplyItemResult => ({
@@ -173,12 +210,13 @@ export class MaintenanceSessionCoordinator {
   async startPreview(input: {
     rootId: string;
     presetId: MaintenancePresetId;
-    refs?: readonly MaintenanceSessionRef[];
+    refs: readonly MaintenanceSessionRef[];
   }): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     this.assertOpen();
-    const refs = [...(input.refs ?? [])];
-    assertUniqueRefs(refs);
+    if (input.refs.length === 0) throw new Error("维护文件不能为空");
+    const refs = await canonicalizeRefs(this.deps.roots, input.refs);
     await this.deps.roots.get(input.rootId);
+    for (const rootId of new Set(refs.map((ref) => ref.rootId))) await this.deps.roots.get(rootId);
     if (this.session?.isActive()) {
       throw new Error("已有活动的维护会话，请先完成或停止当前会话");
     }
@@ -227,8 +265,7 @@ export class MaintenanceSessionCoordinator {
       .map((previewId) => session.preview(previewId))
       .filter((preview) => preview !== undefined);
     if (previews.length !== previewIds.length) throw new Error("部分维护预览不存在、已提交或不属于当前会话");
-    const root = await this.deps.roots.get(session.rootId);
-    const refs = ownedPreviewPaths(root, previews);
+    const refs = ownedPreviewPaths(await this.deps.roots.list(), previews);
     const acquireAll = this.deps.acquireAll ?? ((owned, owner) => mediaPathOwnership.acquireAll(owned, owner));
     const release = acquireAll(refs, session.id);
     let apply: { generation: number; batchId: string };
@@ -288,14 +325,6 @@ export class MaintenanceSessionCoordinator {
     return latest.statusSnapshot();
   }
 
-  async getSession(sessionId: string): Promise<MaintenanceSessionSnapshot> {
-    return this.require(sessionId).statusSnapshot();
-  }
-
-  async listSessions(): Promise<MaintenanceSessionSnapshot[]> {
-    return this.session ? [this.session.statusSnapshot()] : [];
-  }
-
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
     return this.session?.snapshot() ?? null;
   }
@@ -345,10 +374,13 @@ export class MaintenanceSessionCoordinator {
 
   private async startCurrentPhase(sessionId: string, generation: number, message?: string): Promise<void> {
     const session = this.assertCurrent(sessionId, generation, ["queued", "paused"]);
+    const expectedStatus = session.status;
     if (this.executionPromise) throw new Error("Maintenance coordinator already has an active executor");
     await this.deps.runtime.applyNetworkPolicy?.();
+    if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== expectedStatus) return;
     session.startRunning(generation);
     await this.publishStatus(session, "running", message ?? `Starting maintenance ${session.phase}`);
+    if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== "running") return;
     const run =
       session.phase === "preview" ? this.runPreview(sessionId, generation) : this.runApply(sessionId, generation);
     let tracked: Promise<void>;
@@ -365,25 +397,17 @@ export class MaintenanceSessionCoordinator {
     this.active = { sessionId, generation, executor: { pause: () => undefined, stop: () => scanController.abort() } };
     try {
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
-      const root = await this.deps.roots.get(initial.rootId);
       const persistedRefs = [...initial.refs];
-      const entries =
-        persistedRefs.length > 0
-          ? await scanRefs(this.deps.runtime, root, persistedRefs, scanController.signal)
-          : [...(await this.deps.runtime.scan({ root, signal: scanController.signal }))].sort((left, right) =>
-              relativePath(root, left).localeCompare(relativePath(root, right), "zh-CN"),
-            );
+      const entries = (await scanRefs(this.deps.runtime, this.deps.roots, persistedRefs, scanController.signal)).sort(
+        (left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
+      );
       let current = this.assertCurrent(sessionId, generation, ["running", "paused"]);
-      if (persistedRefs.length === 0) {
-        const refs = entries.map((entry) => ({ relativePath: relativePath(root, entry) }));
-        assertUniqueRefs(refs);
-        current.setDiscoveredRefs(refs, generation);
-      }
       if (current.status === "paused") return;
-      const committedPaths = new Set(current.snapshot().previews.map((preview) => preview.relativePath));
-      const pending = entries.filter((entry) => !committedPaths.has(relativePath(root, entry)));
+      const committedPaths = new Set(current.snapshot().previews.map(refKey));
+      const pending = entries.filter((entry) => !committedPaths.has(refKey(entry.ref)));
       await this.executeItems<LocalScanEntry, PreviewExecutionResult>(sessionId, generation, pending, {
         runItem: async (entry, context) => {
+          const root = await this.deps.roots.get(entry.ref.rootId);
           try {
             const active = this.assertCurrent(sessionId, generation, ["running"]);
             const [item] = await this.deps.runtime.previewEntries({
@@ -400,8 +424,8 @@ export class MaintenanceSessionCoordinator {
               entry,
               item: {
                 entry,
-                rootId: root.id,
-                relativePath: relativePath(root, entry),
+                rootId: entry.ref.rootId,
+                relativePath: entry.ref.relativePath,
                 status: "blocked",
                 error: errorMessage(error),
                 fieldDiffs: [],
@@ -445,7 +469,6 @@ export class MaintenanceSessionCoordinator {
   private async runApply(sessionId: string, generation: number): Promise<void> {
     try {
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
-      const root = await this.deps.roots.get(initial.rootId);
       const pending = initial.pendingBatchItems();
       await this.executeItems<MaintenanceBatchItem, ApplyExecutionResult>(sessionId, generation, pending, {
         runItem: async (item, context) => {
@@ -455,10 +478,11 @@ export class MaintenanceSessionCoordinator {
             return { result: { status: "skipped", error: active.preview.error ?? "维护预览不可应用" } };
           }
           try {
+            const root = await this.deps.roots.get(active.preview.rootId);
             const [entry] = await scanRefs(
               this.deps.runtime,
-              root,
-              [{ relativePath: active.preview.relativePath }],
+              this.deps.roots,
+              [{ rootId: active.preview.rootId, relativePath: active.preview.relativePath }],
               context.signal,
             );
             if (!entry)

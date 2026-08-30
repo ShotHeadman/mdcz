@@ -1,15 +1,14 @@
-import path from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import type { RuntimeDownloadNetworkClient } from "../network";
 import type { PublicationPlan } from "../publication";
-import { ActorImageService } from "./ActorImageService";
+import type { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
-import { DownloadManager, type ImageHostCooldownStore, MemoryImageHostCooldownStore } from "./download";
-import { FileOrganizer } from "./FileOrganizer";
+import { DownloadManager, type ImageHostCooldownStore } from "./download";
+import { FileOrganizer, type ScrapeExecutionMode } from "./FileOrganizer";
 import { FileScraper, type RuntimeScrapeSignalService } from "./FileScraper";
 import { NfoGenerator } from "./nfo";
 import { applyPosterTagBadgesIfNeeded } from "./output/applyPosterTagBadges";
@@ -49,6 +48,8 @@ export interface MountedRootScrapeAggregationService {
 export interface MountedRootScrapeRuntimeItemInput {
   root: MediaRoot;
   outputRoot?: MediaRoot;
+  outputRelativeDirectory?: string;
+  executionMode: ScrapeExecutionMode;
   relativePath: string;
   scrapeSessionId?: string;
   manualScrape?: ManualScrapeOptions;
@@ -128,9 +129,9 @@ export interface MountedRootScrapeRuntimeDependencies {
   networkClient: RuntimeDownloadNetworkClient;
   logger?: MountedRootScrapeLogger;
   mappingStore?: TranslationMappingStore;
-  imageHostCooldownStore?: ImageHostCooldownStore;
+  imageHostCooldownStore: ImageHostCooldownStore;
   actorSourceProvider?: RuntimeActorSourceProvider;
-  actorImageService?: ActorImageService;
+  actorImageService: ActorImageService;
 }
 
 export class MountedRootScrapeRuntime {
@@ -143,48 +144,49 @@ export class MountedRootScrapeRuntime {
     const logger = this.deps.logger ?? console;
     const runtimeLogger = toRuntimeLogger(logger);
     const fileOrganizer = new FileOrganizer(runtimeLogger);
-    const actorImageService =
-      this.deps.actorImageService ??
-      new ActorImageService({
-        cacheRoot: path.join(config.runtimePaths.dataDir, "actor-image-cache"),
-        logger: runtimeLogger,
-        networkClient,
-      });
-    const scraper = new FileScraper({
-      actorImageService,
-      actorSourceProvider,
-      aggregationService,
-      downloadManager: new DownloadManager(networkClient, {
-        imageHostCooldownStore: imageHostCooldownStore ?? new MemoryImageHostCooldownStore(),
-        logger: runtimeLogger,
-      }),
-      fileOrganizer,
-      getConfiguration: async () => {
-        const configuration = await config.get();
-        return {
-          ...configuration,
-          paths: { ...configuration.paths, mediaPath: (input.outputRoot ?? input.root).hostPath },
-        };
-      },
-      loadExistingNfoLocalState: async () => input.localState,
-      logger,
-      nfoGenerator: new NfoGenerator(),
-      postProcessAssets: async ({ assets, configuration, crawlerData, fileInfo, localState, signal }) =>
-        await applyPosterTagBadgesIfNeeded({
-          assets,
-          config: configuration,
-          crawlerData,
-          dataDir: config.runtimePaths.dataDir,
-          fileInfo,
-          localState,
-          logger,
-          signal,
-          signalService,
-          watermarkService: new PosterWatermarkService({ dataDir: config.runtimePaths.dataDir }),
+    const { actorImageService } = this.deps;
+    const scraper = new FileScraper(
+      {
+        actorImageService,
+        actorSourceProvider,
+        aggregationService,
+        downloadManager: new DownloadManager(networkClient, {
+          imageHostCooldownStore,
+          logger: runtimeLogger,
         }),
-      signalService,
-      translateService: new TranslateService(networkClient, { logger: runtimeLogger, mappingStore }),
-    });
+        fileOrganizer,
+        getConfiguration: async () => {
+          const configuration = await config.get();
+          return {
+            ...configuration,
+            paths: {
+              ...configuration.paths,
+              mediaPath: (input.outputRoot ?? input.root).hostPath,
+              ...(input.outputRoot ? { successOutputFolder: input.outputRelativeDirectory ?? "" } : {}),
+            },
+          };
+        },
+        loadExistingNfoLocalState: async () => input.localState,
+        logger,
+        nfoGenerator: new NfoGenerator(),
+        postProcessAssets: async ({ assets, configuration, crawlerData, fileInfo, localState, signal }) =>
+          await applyPosterTagBadgesIfNeeded({
+            assets,
+            config: configuration,
+            crawlerData,
+            dataDir: config.runtimePaths.dataDir,
+            fileInfo,
+            localState,
+            logger,
+            signal,
+            signalService,
+            watermarkService: new PosterWatermarkService({ dataDir: config.runtimePaths.dataDir }),
+          }),
+        signalService,
+        translateService: new TranslateService(networkClient, { logger: runtimeLogger, mappingStore }),
+      },
+      { mode: input.executionMode, scrapeSessionId: input.scrapeSessionId },
+    );
 
     try {
       const roots = input.publicationRoots?.length

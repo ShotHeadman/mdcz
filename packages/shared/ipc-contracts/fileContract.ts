@@ -1,6 +1,6 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
-import type { LocalFileTarget } from "../mediaRef";
+import type { LocalFileTarget, RootFileRef } from "../mediaRef";
 import type { NormalizedCropRegion } from "../posterCrop";
 import type { CrawlerData, MediaCandidate } from "../types";
 
@@ -11,6 +11,7 @@ export type FileIpcContract = {
       entries: Array<{
         type: "file" | "directory";
         path: string;
+        ref: RootFileRef;
         name: string;
         size?: number;
         lastModified?: string | null;
@@ -29,7 +30,10 @@ export type FileIpcContract = {
     { type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> },
     { paths: string[] | null }
   >;
-  [IpcChannel.File_Delete]: IpcProcedure<{ filePaths?: string[] }, { deletedCount: number; failedCount: number }>;
+  [IpcChannel.File_Delete]: IpcProcedure<
+    { targets: RootFileRef[]; containingFolder?: boolean },
+    { deletedCount: number; failedCount: number }
+  >;
   [IpcChannel.File_NfoRead]: IpcProcedure<
     { nfoPath: LocalFileTarget; videoPath?: LocalFileTarget },
     { data: CrawlerData; nfoPath: string }

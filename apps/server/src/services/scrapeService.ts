@@ -12,6 +12,7 @@ import {
   commitPublishedMedia,
   commitRegisteredPublication,
   commitScrapeTerminalResult,
+  type ScrapeFileTransitions,
   type ScrapeSuccessPublicationFacts,
 } from "@mdcz/runtime/publication";
 import {
@@ -33,6 +34,7 @@ import {
   type ScrapeWorkflowReporter,
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
+import type { Configuration } from "@mdcz/shared/config";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import {
   type AmbiguousUncensoredItemDto,
@@ -416,15 +418,17 @@ export class ScrapeService {
   }
 
   async deleteFile(input: FileActionInput): Promise<FileActionResponse> {
+    const [target] = await this.mediaRoots.canonicalizeFileRefs([input]);
+    if (!target) throw new Error("File ref is required");
     const state = await this.persistence.getState();
     const entry = await state.repositories.library
-      .getEntry(input.rootId, input.relativePath)
+      .getEntry(target.rootId, target.relativePath)
       .catch((error: unknown) => {
         if (error instanceof Error && error.message.startsWith("Library entry not found:")) return null;
         throw error;
       });
     const obsolete = [
-      { rootId: input.rootId, relativePath: input.relativePath },
+      target,
       ...(entry?.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })) ?? []),
       ...(entry?.assets.flatMap((asset) =>
         asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
@@ -432,7 +436,7 @@ export class ScrapeService {
     ];
     await commitPublishedMedia(
       {
-        operationId: `delete:${input.rootId}:${input.relativePath}`,
+        operationId: `delete:${target.rootId}:${target.relativePath}`,
         operationType: "maintenance",
         artifacts: [],
         assets: [],
@@ -447,7 +451,7 @@ export class ScrapeService {
         repairIssues: state.repositories.libraryRepairIssues,
       },
     );
-    return { ok: true, rootId: input.rootId, relativePath: input.relativePath };
+    return { ok: true, ...target };
   }
 
   async close(): Promise<void> {
@@ -469,17 +473,20 @@ export class ScrapeService {
 
   private async createRun(input: ScrapeStartInput): Promise<ScrapeRunManifest> {
     if (input.refs.length === 0) throw new Error("Scrape run requires at least one file");
-    const rootId = input.refs[0]?.rootId;
-    if (!rootId || input.refs.some((ref) => ref.rootId !== rootId)) {
-      throw new Error("刮削任务只能包含同一个媒体目录下的文件");
+    if (input.executionMode === "batch" && !input.outputRootId) {
+      throw new Error("Batch scrapes require outputRootId");
     }
-    for (const ref of input.refs) await this.mediaRoots.get(ref.rootId);
+    if (!input.executionMode) throw new Error("Scrape executionMode is required");
+    const refs = await this.mediaRoots.canonicalizeFileRefs(input.refs);
+    const rootId = refs[0]?.rootId;
+    if (!rootId) throw new Error("Scrape run requires at least one file");
     if (input.outputRootId) await this.mediaRoots.get(input.outputRootId);
     return await (await this.persistence.getState()).repositories.scrapeRuns.create({
-      rootId: input.refs[0]?.rootId ?? "",
+      rootId,
       outputRootId: input.outputRootId ?? null,
-      executionMode: input.refs.length === 1 ? "single" : "batch",
-      items: input.refs.map((ref, ordinal) => ({
+      outputRelativeDirectory: input.outputRelativeDirectory || null,
+      executionMode: input.executionMode,
+      items: refs.map((ref, ordinal) => ({
         ordinal,
         rootId: ref.rootId,
         relativePath: ref.relativePath,
@@ -494,7 +501,10 @@ export class ScrapeService {
     for (const item of manifest.items) {
       if (!roots.has(item.rootId)) roots.set(item.rootId, await this.mediaRoots.get(item.rootId));
     }
-    if (manifest.requestedOutputRootId) await this.mediaRoots.get(manifest.requestedOutputRootId);
+    const requestedOutputRoot = manifest.requestedOutputRootId
+      ? await this.mediaRoots.get(manifest.requestedOutputRootId)
+      : undefined;
+    if (requestedOutputRoot) roots.set(requestedOutputRoot.id, requestedOutputRoot);
     const configuration = await this.config.get();
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
@@ -519,7 +529,7 @@ export class ScrapeService {
           manualScrape: { manualUrl: item.manualUrl, uncensoredChoice: item.uncensoredChoice },
         };
       }),
-      concurrency: policy.concurrency,
+      concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
       admitItem: async (item: ScrapeRunItem<ServerManualScrape>) => {
         const existing = openAttemptByItemId.get(item.id);
         if (existing) return existing;
@@ -531,8 +541,31 @@ export class ScrapeService {
         mediaPathOwnership.acquire(item.rootId, item.relativePath, item.id),
       executeItem: async (item: ScrapeRunItem<ServerManualScrape>, signal: AbortSignal, attemptId: string) =>
         await this.executeItem(manifest, item, signal, attemptId, policy.restGate ?? undefined, reporter),
-      commitItem: async (item: ScrapeRunItem<ServerManualScrape>, result: ScrapeResult, attemptId: string) =>
-        await this.commitItem(manifest, item, result, attemptId),
+      commitItem: async (item: ScrapeRunItem<ServerManualScrape>, result: ScrapeResult, attemptId: string) => {
+        const sourceRoot = roots.get(item.rootId);
+        if (!sourceRoot) throw new Error(`Scrape root disappeared before item commit: ${item.rootId}`);
+        const outputRoot = requestedOutputRoot ?? sourceRoot;
+        const runConfiguration: Configuration = {
+          ...configuration,
+          paths: {
+            ...configuration.paths,
+            mediaPath: outputRoot.hostPath,
+            ...(requestedOutputRoot ? { successOutputFolder: manifest.requestedOutputRelativeDirectory ?? "" } : {}),
+          },
+        };
+        return await this.commitItem(
+          manifest,
+          item,
+          result,
+          attemptId,
+          this.fileOrganizer.createScrapeFileTransitions({
+            configuration: runConfiguration,
+            failureRootPath: outputRoot.hostPath,
+            sourcePath: item.sourcePath,
+            sourceRootPath: sourceRoot.hostPath,
+          }),
+        );
+      },
     };
   }
 
@@ -550,10 +583,13 @@ export class ScrapeService {
       const outputRoot = manifest.requestedOutputRootId
         ? await this.mediaRoots.get(manifest.requestedOutputRootId)
         : root;
-      const metadataRoot = await this.resolveMetadataRoot(outputRoot);
+      const metadataRoot =
+        manifest.executionMode === "single" ? outputRoot : await this.resolveMetadataRoot(outputRoot);
       const runtimeResult = await this.runtime.scrape({
         root,
-        outputRoot,
+        outputRoot: manifest.requestedOutputRootId ? outputRoot : undefined,
+        outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? undefined,
+        executionMode: manifest.executionMode,
         relativePath: item.relativePath,
         scrapeSessionId: manifest.id,
         operationId: `${manifest.id}:${attemptId}`,
@@ -596,6 +632,7 @@ export class ScrapeService {
     item: ScrapeRunItem<ServerManualScrape>,
     result: ScrapeResult,
     attemptId: string,
+    fileTransitions: ScrapeFileTransitions,
   ): Promise<ScrapeResult> {
     const state = await this.persistence.getState();
     const publication = (result as PlannedScrapeResult).publication;
@@ -605,7 +642,9 @@ export class ScrapeService {
       if (!publication) throw new Error(`Missing successful scrape publication for item ${item.id}`);
       const outputRef = publication.plan.video?.target;
       if (!outputRef) throw new Error(`Successful scrape has no video publication target: ${item.id}`);
-      const metadataRoot = await this.resolveMetadataRoot(await this.mediaRoots.get(outputRef.rootId));
+      const outputRoot = await this.mediaRoots.get(outputRef.rootId);
+      const metadataRoot =
+        manifest.executionMode === "single" ? outputRoot : await this.resolveMetadataRoot(outputRoot);
       nfoRelativePath = publication.nfoPath ? toRootRelativePath(metadataRoot, publication.nfoPath) : null;
       success = {
         plan: publication.plan,
@@ -629,6 +668,7 @@ export class ScrapeService {
       acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, item.id),
       journal: state.repositories.publicationJournal,
       repairIssues: state.repositories.libraryRepairIssues,
+      fileTransitions,
     });
     this.addEvent(
       manifest.id,
@@ -806,7 +846,7 @@ export class ScrapeService {
 
   private async resolveMetadataRoot(primaryRoot: MediaRoot): Promise<MediaRoot> {
     const metadataPath = (await this.config.get()).paths.metadataPath.trim();
-    return metadataPath ? await this.mediaRoots.ensureMetadataRoot(metadataPath) : primaryRoot;
+    return metadataPath ? await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath }) : primaryRoot;
   }
 
   private resolveMetadataVideoPath(result: ServerScrapeArtifactRecord): string {

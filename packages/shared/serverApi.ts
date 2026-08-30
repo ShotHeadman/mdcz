@@ -34,8 +34,8 @@ import type {
   MaintenanceSessionInput,
   MaintenanceStartInput,
   MaintenanceUpdateDraftInput,
-  MediaRootDto,
   MediaRootEnsurePathInput,
+  MediaRootEnsurePathResponse,
   MediaRootListResponse,
   NetworkCheckCookiesResponse,
   NfoReadInput,
@@ -156,7 +156,8 @@ export interface ServerApiContract {
     removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   mediaRoots: {
-    ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootDto>;
+    ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
+    prepareOutputDirectory(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
     list(): Promise<MediaRootListResponse>;
   };
   persistence: {

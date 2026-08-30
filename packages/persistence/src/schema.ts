@@ -1,13 +1,17 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const mediaRoots = sqliteTable("media_roots", {
-  id: text("id").primaryKey(),
-  displayName: text("display_name").notNull(),
-  hostPath: text("host_path").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+export const mediaRoots = sqliteTable(
+  "media_roots",
+  {
+    id: text("id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    hostPath: text("host_path").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [uniqueIndex("media_roots_host_path_idx").on(table.hostPath)],
+);
 
 export const scanTasks = sqliteTable(
   "scan_tasks",
@@ -59,6 +63,7 @@ export const scrapeRuns = sqliteTable(
     id: text("id").primaryKey(),
     rootId: text("root_id").notNull(),
     outputRootId: text("output_root_id"),
+    outputRelativeDirectory: text("output_relative_directory"),
     executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),

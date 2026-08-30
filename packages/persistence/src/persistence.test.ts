@@ -244,7 +244,7 @@ describe("MediaRootRepository", () => {
     await expect(repository.list()).resolves.toEqual([root]);
   });
 
-  it("reuses an enclosing root when ensuring a path", async () => {
+  it("reuses the enclosing root for a nested path", async () => {
     database = createTestPersistenceDatabase();
     const repository = new MediaRootRepository(database);
     const root = createMediaRoot({

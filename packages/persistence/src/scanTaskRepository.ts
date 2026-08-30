@@ -192,6 +192,25 @@ export class ScanTaskRepository {
     return failed.changes === 1 ? await this.get(id) : null;
   }
 
+  async interruptUnfinished(error: string, completedAt = new Date()): Promise<ScanTask[]> {
+    const transaction = this.database.sqlite.transaction(() => {
+      const ids = this.database.db
+        .select({ id: scanTasks.id })
+        .from(scanTasks)
+        .where(inArray(scanTasks.status, ["queued", "running"]))
+        .all()
+        .map(({ id }) => id);
+      if (ids.length === 0) return ids;
+      this.database.db
+        .update(scanTasks)
+        .set({ status: "failed", completedAt, errorMessage: error, updatedAt: completedAt })
+        .where(inArray(scanTasks.id, ids))
+        .run();
+      return ids;
+    });
+    return await Promise.all(transaction().map(async (id) => await this.get(id)));
+  }
+
   async addEvent(input: AddTaskEventInput): Promise<ScanTaskEvent> {
     await this.get(input.taskId);
     const event: ScanTaskEvent = {

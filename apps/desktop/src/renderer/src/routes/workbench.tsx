@@ -117,11 +117,12 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
 
     try {
-      const outputRoot = targetDir.trim() ? await ipc.mediaRoots.ensurePath({ hostPath: targetDir }) : undefined;
+      const outputRoot = await ipc.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
       activateNewScrapeTask();
       const response = await startSelectedScrape(
         candidates.map((candidate) => candidate.ref),
-        outputRoot?.id,
+        outputRoot.id,
+        outputRoot.relativeDirectory,
       );
       toast.success(response.data.message);
     } catch (error) {

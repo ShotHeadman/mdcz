@@ -138,18 +138,12 @@ describe("LibraryRepository maintenance refresh", () => {
     await expect(library.getEntry(root.id, "old.mp4")).rejects.toThrow("Library entry not found");
   });
 
-  it("finds an existing item across different root IDs and maps assets to the longest containing root", async () => {
+  it("keeps the existing item root and maps assets to the longest containing root", async () => {
     const { database, directory, library, root, roots } = await createFixture();
     const nestedPath = path.join(directory.path, "nested");
     await mkdir(nestedPath, { recursive: true });
     const nestedRoot = createMediaRoot({ id: "root-nested", displayName: "Nested", hostPath: nestedPath });
-    const duplicateInputRoot = createMediaRoot({
-      id: "path-desktop-input",
-      displayName: "Input",
-      hostPath: root.hostPath,
-    });
     await roots.upsert(nestedRoot);
-    await roots.upsert(duplicateInputRoot);
     const videoPath = path.join(directory.path, "movie.mp4");
     const posterPath = path.join(nestedPath, "poster.jpg");
     await writeFile(videoPath, "video");

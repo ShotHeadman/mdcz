@@ -5,8 +5,10 @@ import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
+import { ActorImageService } from "@mdcz/runtime/scrape";
 import type { ScrapeRunSnapshot } from "@mdcz/runtime/tasks";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -18,13 +20,14 @@ const createHarness = async () => {
   directories.push(directory);
   const persistence = new DesktopPersistenceService(join(directory, "mdcz.sqlite"), null);
   persistenceServices.push(persistence);
+  const networkClient = new NetworkClient();
   const service = new ScraperService(
     new SignalService(null),
-    new NetworkClient(),
-    new CrawlerProvider({ fetchGateway: new FetchGateway(new NetworkClient()) }),
+    networkClient,
+    new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
+    new ActorImageService({ cacheRoot: join(directory, "actors"), networkClient }),
     undefined,
-    undefined,
-    undefined,
+    new PersistentCooldownStore({ filePath: join(directory, "image-host-cooldowns.json") }),
     undefined,
     persistence,
   );

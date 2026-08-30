@@ -225,9 +225,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
     },
     preview: async (refs, presetId: MaintenancePresetId) => {
       const rootId = refs[0]?.rootId ?? "";
-      if (!rootId || refs.some((ref) => ref.rootId !== rootId)) {
-        throw new Error("维护任务只能包含同一个媒体目录下的文件");
-      }
+      if (!rootId) throw new Error("请选择要维护的文件");
       const { sessionId } = await api.maintenance.start({ rootId, presetId, refs });
       applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
       return { sessionId };

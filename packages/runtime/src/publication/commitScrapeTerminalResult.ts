@@ -79,6 +79,11 @@ export interface ScrapeTerminalCommitStore {
   }): { outcomeId: string; entryId: string };
 }
 
+export interface ScrapeFileTransitions {
+  failed(): Promise<void>;
+  succeeded(): Promise<void>;
+}
+
 export const commitScrapeTerminalResult = async (input: {
   result: ScrapeResult;
   attemptId: string;
@@ -91,12 +96,34 @@ export const commitScrapeTerminalResult = async (input: {
   repairIssues?: PublicationRepairPort;
   fileSystem?: PublicationFileSystem;
   download?(url: string): Promise<Uint8Array>;
+  fileTransitions: ScrapeFileTransitions;
 }): Promise<ScrapeResult> => {
   const { result, attemptId, scrapeRuns } = input;
-  if (result.status === "failed" || result.status === "skipped") {
-    const error = result.status === "failed" ? result.error?.trim() || "刮削失败" : result.error?.trim() || null;
-    const outcome = scrapeRuns.commitOutcome({ outcome: result.status, attemptId, error });
-    return { ...result, resultId: outcome.id, status: result.status, error: error ?? undefined };
+  const commitFailure = async (error: string, causes: unknown[] = []): Promise<ScrapeResult> => {
+    let terminalError = error;
+    try {
+      await input.fileTransitions.failed();
+    } catch (transitionError) {
+      causes.push(transitionError);
+      terminalError = `${terminalError}；失败文件移动失败：${errorMessage(transitionError)}`;
+    }
+
+    try {
+      const outcome = scrapeRuns.commitOutcome({ outcome: "failed", attemptId, error: terminalError });
+      return { ...result, resultId: outcome.id, status: "failed", error: terminalError };
+    } catch (outcomeError) {
+      if (causes.length === 0) throw outcomeError;
+      throw new AggregateError([...causes, outcomeError], terminalError);
+    }
+  };
+
+  if (result.status === "failed") {
+    return await commitFailure(result.error?.trim() || "刮削失败");
+  }
+  if (result.status === "skipped") {
+    const error = result.error?.trim() || null;
+    const outcome = scrapeRuns.commitOutcome({ outcome: "skipped", attemptId, error });
+    return { ...result, resultId: outcome.id, status: "skipped", error: error ?? undefined };
   }
   if (result.status !== "success") {
     throw new Error(`Cannot commit non-terminal scrape result: ${result.status}`);
@@ -114,8 +141,9 @@ export const commitScrapeTerminalResult = async (input: {
   const crawlerDataJson = JSON.stringify(crawlerData);
   const identity = success.identity.trim() || crawlerData.number;
   const nfoRootId = success.nfo && success.nfo.rootId !== output.rootId ? success.nfo.rootId : null;
+  let committed: { outcomeId: string; entryId: string };
   try {
-    const committed = await commitPublishedMediaResult(success.plan, {
+    committed = await commitPublishedMediaResult(success.plan, {
       resolveRoot: input.resolveRoot,
       acquireAll: input.acquireAll,
       journal: input.journal,
@@ -149,14 +177,10 @@ export const commitScrapeTerminalResult = async (input: {
           },
         }),
     });
-    return { ...result, resultId: committed.outcomeId, status: "success" };
   } catch (error) {
     const coordinatedError = formatCommitFailure(error);
-    try {
-      const outcome = scrapeRuns.commitOutcome({ outcome: "failed", attemptId, error: coordinatedError });
-      return { ...result, resultId: outcome.id, status: "failed", error: coordinatedError };
-    } catch (failureError) {
-      throw new AggregateError([error, failureError], coordinatedError);
-    }
+    return await commitFailure(coordinatedError, [error]);
   }
+  await input.fileTransitions.succeeded();
+  return { ...result, resultId: committed.outcomeId, status: "success" };
 };

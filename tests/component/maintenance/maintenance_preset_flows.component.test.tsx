@@ -44,7 +44,6 @@ function PresetSelectionHarness() {
       <WorkbenchSetupView
         mode="maintenance"
         scanDir="/media"
-        targetDir="/media/JAV_output"
         candidates={[]}
         selectedPaths={[]}
         selectedSize={0}
@@ -59,7 +58,6 @@ function PresetSelectionHarness() {
         primaryDisabled
         formatBytes={() => "0 B"}
         onBrowseScanDir={() => undefined}
-        onBrowseTargetDir={() => undefined}
         onRefreshScan={() => undefined}
         onPresetChange={setPresetId}
         onStart={() => undefined}

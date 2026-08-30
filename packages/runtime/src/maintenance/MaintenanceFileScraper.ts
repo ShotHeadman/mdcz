@@ -181,10 +181,8 @@ export class MaintenanceFileScraper {
       this.setProgress(progress, 80);
 
       const outputVideoPath = await organizePreparedVideo({
-        config,
         enabled: this.preset.steps.organize,
         fileInfo,
-        fileOrganizer: this.deps.fileOrganizer,
         plan,
         onLog: (message) => this.deps.signalService.showLogText(message),
         startLogLabel: `[${fileInfo.number}] Organizing files...`,

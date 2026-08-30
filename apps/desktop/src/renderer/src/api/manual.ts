@@ -38,25 +38,28 @@ export const resumeScrape = async () => {
   return { data };
 };
 
-export const startSelectedScrape = async (refs: RootFileRef[], outputRootId?: string) => {
+export const startSelectedScrape = async (
+  refs: RootFileRef[],
+  outputRootId: string,
+  outputRelativeDirectory?: string,
+) => {
   if (refs.length === 0) {
     throw new Error("No files selected");
   }
 
-  const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId });
+  const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId, outputRelativeDirectory });
   return { data };
 };
 
-export const deleteFile = async (path: string | string[]) => {
-  const filePaths = Array.isArray(path) ? path : [path];
-  const data = await ipc.file.delete(filePaths);
+export const deleteFile = async (target: RootFileRef | RootFileRef[]) => {
+  const data = await ipc.file.delete(Array.isArray(target) ? target : [target]);
+  if (data.failedCount > 0) throw new Error(`删除失败：${data.failedCount} 个文件未删除`);
   return { data };
 };
 
-export const deleteFileAndFolder = async (path: string) => {
-  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  const dir = slash > 0 ? path.slice(0, slash) : path;
-  const data = await ipc.file.delete([path, dir]);
+export const deleteFileAndFolder = async (target: RootFileRef) => {
+  const data = await ipc.file.delete([target], true);
+  if (data.failedCount > 0) throw new Error("删除文件夹失败");
   return { data };
 };
 

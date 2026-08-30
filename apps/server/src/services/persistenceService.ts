@@ -32,6 +32,7 @@ export interface ServerPersistenceState {
 
 export class ServerPersistenceService {
   private state: ServerPersistenceState | null = null;
+  private initializePromise: Promise<ServerPersistenceState> | null = null;
   private closed = false;
 
   constructor(private readonly paths: Pick<ServerRuntimePaths, "databasePath">) {}
@@ -52,6 +53,16 @@ export class ServerPersistenceService {
       return this.state;
     }
 
+    if (!this.initializePromise) {
+      this.initializePromise = this.open().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
+    }
+    return await this.initializePromise;
+  }
+
+  private async open(): Promise<ServerPersistenceState> {
     await mkdir(dirname(this.paths.databasePath), { recursive: true });
     const database = createPersistenceDatabase({ path: this.paths.databasePath });
 
@@ -93,5 +104,6 @@ export class ServerPersistenceService {
     this.closed = true;
     this.state?.database.close();
     this.state = null;
+    this.initializePromise = null;
   }
 }

@@ -114,8 +114,13 @@ function WorkbenchPage() {
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
     activateNewScrapeTask();
     try {
-      const outputRoot = targetDir.trim() ? await api.mediaRoots.ensurePath({ hostPath: targetDir }) : undefined;
-      await api.scrape.start({ refs: candidates.map((candidate) => candidate.ref), outputRootId: outputRoot?.id });
+      const outputRoot = await api.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
+      await api.scrape.start({
+        refs: candidates.map((candidate) => candidate.ref),
+        executionMode: "batch",
+        outputRootId: outputRoot.id,
+        outputRelativeDirectory: outputRoot.relativeDirectory,
+      });
       requestScrapeLiveRunsRefresh();
       toast.success("已启动选中文件刮削");
     } catch (error) {

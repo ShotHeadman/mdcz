@@ -7,6 +7,7 @@ import type { AmazonPosterToolService, BatchTranslateToolService, SymlinkService
 import type { WindowService } from "@main/services/WindowService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import type {
   EmbyActorInfoService,
   EmbyActorPhotoService,
@@ -32,6 +33,7 @@ export interface ServiceContainer {
   outputLibraryScanner: OutputLibraryScanner;
   desktopLibraryService: DesktopLibraryService;
   persistenceService: DesktopPersistenceService;
+  mediaRoots: ConfiguredMediaRootService;
   scraperService: ScraperService;
   maintenanceService: MaintenanceService;
   crawlerProvider: CrawlerProvider;

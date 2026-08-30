@@ -3,7 +3,7 @@ import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta 
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../actorOutput";
 import type { ImageAlternatives, SourceMap } from "../aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../download";
-import type { FileOrganizer, OrganizePlan } from "../FileOrganizer";
+import type { OrganizePlan } from "../FileOrganizer";
 import { type NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields, reconcileExistingNfoFiles } from "../nfo";
 import { pathExists } from "../utils/filesystem";
 import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
@@ -147,10 +147,8 @@ export const writePreparedNfo = async (input: {
 };
 
 export const organizePreparedVideo = async (input: {
-  config: Configuration;
   enabled: boolean;
   fileInfo: FileInfo;
-  fileOrganizer: FileOrganizer;
   plan?: OrganizePlan;
   onLog?: (message: string) => void;
   startLogLabel?: string;

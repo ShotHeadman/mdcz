@@ -1,7 +1,8 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
+import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
-import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { type ConfiguredMediaRootService, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitRegisteredPublication } from "@mdcz/runtime/publication";
@@ -20,6 +21,7 @@ export class BatchTranslateToolService {
   private readonly llmApiClient: NonNullable<BatchNfoTranslatorDependencies["llmApiClient"]>;
   private readonly nfoGenerator: NfoGenerator;
   private readonly writeNfo: typeof writePreparedNfo;
+  private readonly mediaRoots: ConfiguredMediaRootService;
 
   constructor(
     private readonly networkClient: NetworkClient,
@@ -30,20 +32,19 @@ export class BatchTranslateToolService {
       nfoGenerator?: NfoGenerator;
       writeNfo?: typeof writePreparedNfo;
     } = {},
+    mediaRoots?: ConfiguredMediaRootService,
   ) {
     this.localScanService = dependencies.localScanService ?? new LocalScanService();
     this.llmApiClient = dependencies.llmApiClient ?? new LlmApiClient(networkClient);
     this.nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
     this.writeNfo = dependencies.writeNfo ?? writePreparedNfo;
+    this.mediaRoots = mediaRoots ?? createDesktopMediaRootService(persistence);
   }
 
   async scan(directory: string, config: Configuration): Promise<BatchTranslateScanItem[]> {
-    const items = await scanBatchNfoTranslations(directory, config, {
+    return await scanBatchNfoTranslations(directory, config, {
       localScanService: this.localScanService,
     });
-    const state = await this.persistence.getState();
-    await state.repositories.mediaRoots.ensurePath(directory);
-    return items;
   }
 
   async apply(
@@ -52,10 +53,9 @@ export class BatchTranslateToolService {
     options: BatchNfoTranslatorApplyOptions = {},
   ): Promise<BatchTranslateApplyResultItem[]> {
     void this.networkClient;
-    const state = await this.persistence.getState();
     if (items.length > 0) {
       const hostPath = resolveDesktopInputRootPath(items.map((item) => item.nfoPath));
-      await state.repositories.mediaRoots.ensurePath(hostPath);
+      await this.mediaRoots.ensurePathRecord({ hostPath });
     }
     return await applyBatchNfoTranslations(
       items,
@@ -85,7 +85,7 @@ export class BatchTranslateToolService {
             {
               journal: state.repositories.publicationJournal,
               repairIssues: state.repositories.libraryRepairIssues,
-              roots: await state.repositories.mediaRoots.list(),
+              roots: await this.mediaRoots.listRoots(),
             },
           );
           return savedNfoPath;

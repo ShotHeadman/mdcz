@@ -62,11 +62,19 @@ const actionArgs = ipcActionArgs;
 const createContext = (mediaRoots?: {
   ensurePath?: (hostPath: string) => Promise<unknown>;
   list?: () => Promise<Array<{ id: string; hostPath: string }>>;
+  get?: (rootId: string) => Promise<{ id: string; hostPath: string }>;
   upsert?: (root: unknown) => Promise<unknown>;
 }): ServiceContainer => {
   const upsert = mediaRoots?.upsert ?? (async () => undefined);
   const list = mediaRoots?.list ?? (async () => [{ id: "tmp", hostPath: tmpdir() }]);
   const ensurePath = mediaRoots?.ensurePath ?? (async () => ({ id: "tmp", hostPath: tmpdir() }));
+  const get =
+    mediaRoots?.get ??
+    (async (rootId: string) => {
+      const root = (await list()).find((candidate) => candidate.id === rootId);
+      if (!root) throw new Error(`Unknown root: ${rootId}`);
+      return root;
+    });
   return {
     windowService: {
       getMainWindow: () => null,
@@ -75,7 +83,7 @@ const createContext = (mediaRoots?: {
       getState: async () => ({
         repositories: {
           publicationJournal: createMemoryPublicationJournal(),
-          mediaRoots: { ensurePath, list, upsert },
+          mediaRoots: { ensurePath, get, list, upsert },
         },
       }),
     },
@@ -201,6 +209,25 @@ describe("createFileHandlers", () => {
         path: videoPath,
       }),
     );
+  });
+
+  it("deletes a containing folder from its media root ref", async () => {
+    const root = await createTempDir();
+    const folder = join(root, "nested");
+    await mkdir(folder);
+    await writeFile(join(folder, "movie.mp4"), "video");
+    await writeFile(join(folder, "movie.nfo"), "metadata");
+    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+
+    await expect(
+      handlers[IpcChannel.File_Delete].action(
+        actionArgs({
+          targets: [{ rootId: "media", relativePath: "nested/movie.mp4" }],
+          containingFolder: true,
+        }),
+      ),
+    ).resolves.toEqual({ deletedCount: 2, failedCount: 0 });
+    await expect(readFile(join(folder, "movie.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
   });
   it("applies configured NFO fields when manually saving metadata", async () => {
     const root = await createTempDir();

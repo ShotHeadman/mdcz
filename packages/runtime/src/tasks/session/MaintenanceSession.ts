@@ -96,12 +96,6 @@ export class MaintenanceSession {
     }
   }
 
-  setDiscoveredRefs(refs: readonly MaintenanceSessionRef[], generation: number): void {
-    this.assertGeneration(generation, ["running", "paused"]);
-    this.refsValue = refs.map((ref) => ({ ...ref }));
-    this.touch();
-  }
-
   startRunning(generation: number): void {
     this.assertGeneration(generation, ["queued", "paused"]);
     const now = new Date();
@@ -190,8 +184,12 @@ export class MaintenanceSession {
     preview: Omit<MaintenanceSessionPreview, "id" | "sessionId" | "presetId" | "createdAt" | "updatedAt">,
   ): void {
     this.assertGeneration(generation, ["running", "paused"]);
-    if ([...this.previews.values()].some((existing) => existing.relativePath === preview.relativePath)) {
-      throw new Error(`维护预览路径重复：${preview.relativePath}`);
+    if (
+      [...this.previews.values()].some(
+        (existing) => existing.rootId === preview.rootId && existing.relativePath === preview.relativePath,
+      )
+    ) {
+      throw new Error(`维护预览路径重复：${preview.rootId}:${preview.relativePath}`);
     }
     const now = new Date();
     const item: MaintenanceSessionPreview = {
@@ -280,7 +278,9 @@ export class MaintenanceSession {
   editablePreviews(): MaintenanceSessionPreview[] {
     return [...this.previews.values()]
       .filter((preview) => preview.status === "ready" || preview.status === "blocked")
-      .sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"))
+      .sort((left, right) =>
+        `${left.rootId}\0${left.relativePath}`.localeCompare(`${right.rootId}\0${right.relativePath}`, "zh-CN"),
+      )
       .map((preview) => this.clonePreview(preview));
   }
 

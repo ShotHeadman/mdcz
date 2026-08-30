@@ -6,7 +6,6 @@ import { expect, test } from "vitest";
 import { render } from "vitest-browser-react";
 
 const rootDir = "/media";
-const successDir = "/media/JAV_output";
 
 test("server workbench setup hides browse buttons and keeps path autocomplete", async () => {
   const screen = await render(
@@ -65,7 +64,6 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
       <WorkbenchSetupView
         mode="maintenance"
         scanDir={rootDir}
-        targetDir={successDir}
         candidates={[
           {
             path: "/media/ABC-123.mp4",
@@ -90,14 +88,12 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
         isServer={false}
         formatBytes={() => "1 B"}
         onBrowseScanDir={() => undefined}
-        onBrowseTargetDir={() => undefined}
         onRefreshScan={() => undefined}
         onPresetChange={() => undefined}
         onStart={() => undefined}
         onToggleCandidate={() => undefined}
         onToggleAll={() => undefined}
         onScanDirChange={() => undefined}
-        onTargetDirChange={() => undefined}
       />,
     );
 
@@ -113,6 +109,9 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
     await expect.element(screen.getByText("维护预设")).toBeVisible();
     await expect.element(screen.getByText(option.label)).toBeVisible();
     await expect.element(screen.getByText(option.description)).toBeVisible();
+    if (option.id === "read_local") {
+      await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
+    }
     await screen.unmount();
   }
 });

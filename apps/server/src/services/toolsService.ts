@@ -88,6 +88,7 @@ export class ToolsService {
       case "single-file-scraper": {
         const task = await this.scrape.start({
           refs: [{ rootId: input.rootId, relativePath: input.relativePath }],
+          executionMode: "single",
           manualUrl: input.manualUrl,
           uncensoredConfirmed: true,
         });
@@ -177,13 +178,14 @@ export class ToolsService {
           const items = await scanBatchNfoTranslations(input.directory, config, {
             localScanService: this.localScanService,
           });
-          await this.mediaRoots.ensurePath(input.directory);
           return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个待翻译 NFO`, data: { items } };
         }
         if (input.action === "apply") {
           const items = input.items ?? [];
           if (items.length > 0) {
-            await this.mediaRoots.ensurePath(resolveDesktopInputRootPath(items.map((item) => item.nfoPath)));
+            await this.mediaRoots.ensurePathRecord({
+              hostPath: resolveDesktopInputRootPath(items.map((item) => item.nfoPath)),
+            });
           }
           const results = await applyBatchNfoTranslations(
             items,
@@ -213,7 +215,7 @@ export class ToolsService {
                   {
                     journal: state.repositories.publicationJournal,
                     repairIssues: state.repositories.libraryRepairIssues,
-                    roots: await state.repositories.mediaRoots.list(),
+                    roots: await this.mediaRoots.listRoots(),
                   },
                 );
                 return savedNfoPath;
@@ -258,13 +260,15 @@ export class ToolsService {
         if (input.action === "apply") {
           const items = input.items ?? [];
           if (items.length > 0) {
-            await this.mediaRoots.ensurePath(resolveDesktopInputRootPath(items.map((item) => item.nfoPath)));
+            await this.mediaRoots.ensurePathRecord({
+              hostPath: resolveDesktopInputRootPath(items.map((item) => item.nfoPath)),
+            });
           }
           const state = await this.persistence.getState();
           const results = await applyAmazonPosters(this.networkClient, items, {
             journal: state.repositories.publicationJournal,
             repairIssues: state.repositories.libraryRepairIssues,
-            roots: await state.repositories.mediaRoots.list(),
+            roots: await this.mediaRoots.listRoots(),
           });
           return {
             toolId: input.toolId,
@@ -277,7 +281,6 @@ export class ToolsService {
           return { toolId: input.toolId, ok: false, message: "请选择要扫描的目录。" };
         }
         const items = await scanAmazonPosters(input.rootDir);
-        await this.mediaRoots.ensurePath(input.rootDir);
         return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个 NFO 条目`, data: { items } };
       }
     }

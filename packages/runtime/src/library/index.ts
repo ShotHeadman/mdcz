@@ -5,6 +5,7 @@ import type { DownloadedAssets } from "@mdcz/shared/types";
 export * from "./desktopInputRoot";
 export * from "./desktopOutputRoot";
 export * from "./mediaPathOwnership";
+export * from "./mediaRootService";
 
 export interface RuntimeLibraryAsset {
   kind: string;

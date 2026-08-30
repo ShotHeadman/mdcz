@@ -141,11 +141,6 @@ export class MaintenanceRuntime {
     applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
   }
 
-  async scan(input: { root: MediaRoot; signal?: AbortSignal }): Promise<LocalScanEntry[]> {
-    const config = await this.getPresetConfig("read_local", input.root);
-    return await this.localScanService.scan(input.root, config.paths.sceneImagesFolder, input.signal);
-  }
-
   async scanRefs(input: {
     root: MediaRoot;
     refs: Array<{ relativePath: string }>;

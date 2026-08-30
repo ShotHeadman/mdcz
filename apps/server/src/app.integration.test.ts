@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -414,6 +414,70 @@ describe("buildServer composition integration", () => {
         expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
       ]),
     );
+  });
+
+  it("prepares a missing output directory before registering its root", async () => {
+    const parent = await createTempRoot("workbench-output-parent");
+    const outputPath = join(parent, "nested", "JAV_output");
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.prepareOutputDirectory",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { hostPath: outputPath },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data).toMatchObject({
+      id: deterministicMediaRootId(outputPath),
+      hostPath: outputPath,
+      relativeDirectory: "",
+    });
+    const outputStats = await stat(outputPath);
+    expect(outputStats.isDirectory()).toBe(true);
+  });
+
+  it("rejects batch scrape requests without an explicit output root", async () => {
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId: "root", relativePath: "movie.mp4" }],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toContain("outputRootId");
+  });
+
+  it("rejects an unavailable media path without committing unrelated configuration changes", async () => {
+    const root = await createTempRoot("config-media-root-rollback");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    await expect(services.config.update({ paths: { mediaPath: root } })).resolves.toMatchObject({
+      paths: { mediaPath: root },
+    });
+
+    const previous = await services.config.get();
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { mediaPath: join(root, "offline") }, network: { timeout: 37 } },
+    });
+
+    expect(response.statusCode).toBe(500);
+    await expect(services.config.get()).resolves.toMatchObject({
+      paths: { mediaPath: previous.paths.mediaPath },
+      network: { timeout: previous.network.timeout },
+    });
   });
 
   it("coalesces concurrent media root synchronization by deterministic id", async () => {

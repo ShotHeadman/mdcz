@@ -99,7 +99,9 @@ const walkRootDirectory = async (
   visitedDirs: Set<string>,
   ancestorDirs: Set<string>,
   allowVisitedTarget = false,
+  signal?: AbortSignal,
 ): Promise<RootFileWalkEntry[]> => {
+  signal?.throwIfAborted();
   const absolutePath = resolveRootRelativePath(root, relativePath);
   const dirKey = await resolveDirectoryKey(absolutePath);
   if (ancestorDirs.has(dirKey) || (!allowVisitedTarget && visitedDirs.has(dirKey))) {
@@ -112,13 +114,16 @@ const walkRootDirectory = async (
   const files: RootFileWalkEntry[] = [];
 
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const entryRelativePath = normalizeRootRelativePath(path.posix.join(relativePath, entry.name));
     const entryAbsolutePath = resolveRootRelativePath(root, entryRelativePath);
 
     try {
       if (entry.isDirectory()) {
         if (recursive) {
-          files.push(...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs)));
+          files.push(
+            ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, false, signal)),
+          );
         }
         continue;
       }
@@ -128,7 +133,7 @@ const walkRootDirectory = async (
         if (stats.isDirectory()) {
           if (recursive) {
             files.push(
-              ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, true)),
+              ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, true, signal)),
             );
           }
           continue;
@@ -144,10 +149,12 @@ const walkRootDirectory = async (
         }
       }
     } catch {
+      signal?.throwIfAborted();
       // Keep mounted filesystem scans resilient to inaccessible entries.
     }
   }
 
+  signal?.throwIfAborted();
   return files;
 };
 
@@ -155,11 +162,20 @@ export const listRootFiles = async (
   root: MediaRoot,
   relativePath = "",
   recursive = false,
+  signal?: AbortSignal,
 ): Promise<RootFileWalkEntry[]> => {
   const normalizedRelativePath = normalizeRootRelativePath(relativePath);
 
   try {
-    return await walkRootDirectory(root, normalizedRelativePath, recursive, new Set<string>(), new Set<string>());
+    return await walkRootDirectory(
+      root,
+      normalizedRelativePath,
+      recursive,
+      new Set<string>(),
+      new Set<string>(),
+      false,
+      signal,
+    );
   } catch (error) {
     throw toStorageError(error, relativePath);
   }

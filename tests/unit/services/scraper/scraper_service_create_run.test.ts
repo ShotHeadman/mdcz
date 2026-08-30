@@ -6,9 +6,10 @@ import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { FileScraper } from "@mdcz/runtime/scrape";
+import { ActorImageService, FileScraper } from "@mdcz/runtime/scrape";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "../../../helpers/scraper";
 
@@ -21,13 +22,14 @@ const createHarness = async () => {
   directories.push(directory);
   const persistence = new DesktopPersistenceService(join(directory, "mdcz.sqlite"), null);
   persistenceServices.push(persistence);
+  const networkClient = new NetworkClient();
   const service = new ScraperService(
     new SignalService(null),
-    new NetworkClient(),
-    new CrawlerProvider({ fetchGateway: new FetchGateway(new NetworkClient()) }),
+    networkClient,
+    new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
+    new ActorImageService({ cacheRoot: join(directory, "actors"), networkClient }),
     undefined,
-    undefined,
-    undefined,
+    new PersistentCooldownStore({ filePath: join(directory, "image-host-cooldowns.json") }),
     undefined,
     persistence,
   );
@@ -64,13 +66,13 @@ describe("ScraperService ref-native start", () => {
     await mkdir(scanRootPath, { recursive: true });
     const state = await persistence.getState();
     const scanRoot = await state.repositories.mediaRoots.ensurePath(scanRootPath);
-    const result = await service.start([{ rootId: scanRoot.id, relativePath: "ABC-001.mp4" }]);
+    const result = await service.start([{ rootId: scanRoot.id, relativePath: "ABC-001.mp4" }], scanRoot.id);
     const run = await state.repositories.scrapeRuns.get(result.taskId);
     expect(run.rootId).toBe(scanRoot.id);
     expect(run.items).toEqual([expect.objectContaining({ rootId: scanRoot.id, relativePath: "ABC-001.mp4" })]);
   });
 
-  it("rejects mixed-root refs", async () => {
+  it("persists refs from distinct registered roots in one run", async () => {
     const { directory, persistence, service } = await createHarness();
     const state = await persistence.getState();
     const first = await state.repositories.mediaRoots.upsert(
@@ -79,15 +81,21 @@ describe("ScraperService ref-native start", () => {
     const second = await state.repositories.mediaRoots.upsert(
       createMediaRoot({ id: "root-b", displayName: "B", hostPath: join(directory, "b") }),
     );
-    await expect(
-      service.start([
+    const result = await service.start(
+      [
         { rootId: first.id, relativePath: "one.mp4" },
         { rootId: second.id, relativePath: "two.mp4" },
+      ],
+      first.id,
+    );
+    const run = await state.repositories.scrapeRuns.get(result.taskId);
+    expect(run.rootId).toBe(first.id);
+    expect(run.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rootId: first.id, relativePath: "one.mp4" }),
+        expect.objectContaining({ rootId: second.id, relativePath: "two.mp4" }),
       ]),
-    ).rejects.toMatchObject({
-      code: "MIXED_ROOTS",
-      message: "刮削任务只能包含同一个媒体目录下的文件",
-    });
+    );
   });
 
   it("uses a caller-supplied outputRootId instead of the configured desktop output root", async () => {
@@ -103,6 +111,83 @@ describe("ScraperService ref-native start", () => {
     const run = await state.repositories.scrapeRuns.get(result.taskId);
     expect(run.requestedOutputRootId).toBe(outputRoot.id);
     expect(run.rootId).toBe(scanRoot.id);
+  });
+
+  it("stores the nested output offset when the requested directory is inside an existing root", async () => {
+    const { directory, persistence, service } = await createHarness();
+    const scanRootPath = join(directory, "library");
+    const outputRootPath = join(scanRootPath, "JAV_output");
+    await mkdir(outputRootPath, { recursive: true });
+    const state = await persistence.getState();
+    const scanRoot = await state.repositories.mediaRoots.ensurePath(scanRootPath);
+    const outputRoot = await state.repositories.mediaRoots.ensurePath(outputRootPath);
+    expect(outputRoot.id).toBe(scanRoot.id);
+    const result = await service.start(
+      [{ rootId: scanRoot.id, relativePath: "ABC-001.mp4" }],
+      outputRoot.id,
+      "JAV_output",
+    );
+    const run = await state.repositories.scrapeRuns.get(result.taskId);
+    expect(run.requestedOutputRootId).toBe(scanRoot.id);
+    expect(run.requestedOutputRelativeDirectory).toBe("JAV_output");
+  });
+
+  it("uses only the source root for single-file video and metadata output", async () => {
+    const { directory, persistence, service } = await createHarness();
+    const sourcePath = join(directory, "picked");
+    const metadataPath = join(directory, "metadata");
+    await Promise.all([mkdir(sourcePath, { recursive: true }), mkdir(metadataPath, { recursive: true })]);
+    mockConfigManager({
+      ...defaultConfiguration,
+      paths: {
+        ...defaultConfiguration.paths,
+        mediaPath: join(directory, "unrelated-global-output"),
+        metadataPath,
+      },
+    });
+    const state = await persistence.getState();
+    const sourceRoot = await state.repositories.mediaRoots.ensurePath(sourcePath);
+
+    const result = await service.startSingle({ rootId: sourceRoot.id, relativePath: "ABC-001.mp4" });
+    await service.waitForIdle();
+
+    const run = await state.repositories.scrapeRuns.get(result.taskId);
+    expect(run.requestedOutputRootId).toBe(sourceRoot.id);
+    expect(run.requestedOutputRelativeDirectory).toBeNull();
+    const options = vi.mocked(FileScraper.prototype.scrapeFile).mock.calls.at(-1)?.[3];
+    expect(options?.roots).toEqual([expect.objectContaining({ id: sourceRoot.id, hostPath: sourcePath })]);
+    await expect(state.repositories.mediaRoots.list()).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ hostPath: metadataPath })]),
+    );
+  });
+
+  it("includes a separate metadata root for batch publication planning", async () => {
+    const { directory, persistence, service } = await createHarness();
+    const sourcePath = join(directory, "source");
+    const outputPath = join(directory, "output");
+    const metadataPath = join(directory, "metadata");
+    await Promise.all(
+      [sourcePath, outputPath, metadataPath].map(async (target) => await mkdir(target, { recursive: true })),
+    );
+    mockConfigManager({
+      ...defaultConfiguration,
+      paths: { ...defaultConfiguration.paths, mediaPath: outputPath, metadataPath },
+    });
+    const state = await persistence.getState();
+    const sourceRoot = await state.repositories.mediaRoots.ensurePath(sourcePath);
+    const outputRoot = await state.repositories.mediaRoots.ensurePath(outputPath);
+
+    await service.start([{ rootId: sourceRoot.id, relativePath: "ABC-001.mp4" }], outputRoot.id);
+    await service.waitForIdle();
+
+    const options = vi.mocked(FileScraper.prototype.scrapeFile).mock.calls.at(-1)?.[3];
+    expect(options?.roots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: sourceRoot.id, hostPath: sourcePath }),
+        expect.objectContaining({ id: outputRoot.id, hostPath: outputPath }),
+        expect.objectContaining({ hostPath: metadataPath }),
+      ]),
+    );
   });
 
   it("rejects a native directory pick that contains multiple media files", async () => {

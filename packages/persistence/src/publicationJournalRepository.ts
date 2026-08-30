@@ -14,11 +14,6 @@ export interface PublicationJournalEntry {
 
 export type BeginPublicationJournalEntry = Omit<PublicationJournalEntry, "state">;
 
-interface PublicationPathRef {
-  rootId: string;
-  relativePath: string;
-}
-
 const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
   operationId: row.operationId,
   operationType: row.operationType,
@@ -26,23 +21,6 @@ const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
   manifest: JSON.parse(row.manifestJson),
   createdAt: row.createdAt,
 });
-
-const refsInManifest = (manifest: unknown): PublicationPathRef[] => {
-  if (!manifest || typeof manifest !== "object") return [];
-  const record = manifest as { entries?: unknown; obsolete?: unknown };
-  const refs: PublicationPathRef[] = [];
-  for (const list of [record.entries, record.obsolete]) {
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      if (!item || typeof item !== "object") continue;
-      const candidate = item as { rootId?: unknown; relativePath?: unknown };
-      if (typeof candidate.rootId === "string" && typeof candidate.relativePath === "string") {
-        refs.push({ rootId: candidate.rootId, relativePath: candidate.relativePath });
-      }
-    }
-  }
-  return refs;
-};
 
 export class PublicationJournalRepository {
   constructor(private readonly database: PersistenceDatabase) {}
@@ -79,14 +57,5 @@ export class PublicationJournalRepository {
 
   listUnfinished(): PublicationJournalEntry[] {
     return this.database.db.select().from(publicationJournal).all().map(toEntry);
-  }
-
-  conflicts(refs: readonly PublicationPathRef[]): PublicationJournalEntry | null {
-    const requested = new Set(refs.map((ref) => `${ref.rootId}\0${ref.relativePath}`));
-    return (
-      this.listUnfinished().find((entry) =>
-        refsInManifest(entry.manifest).some((ref) => requested.has(`${ref.rootId}\0${ref.relativePath}`)),
-      ) ?? null
-    );
   }
 }

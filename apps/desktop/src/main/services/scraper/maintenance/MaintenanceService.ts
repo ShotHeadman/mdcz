@@ -1,10 +1,10 @@
-import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
-import { loggerService } from "@main/services/LoggerService";
+import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
-import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
+import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
+import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import {
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
@@ -13,7 +13,7 @@ import {
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService } from "@mdcz/runtime/scrape";
+import type { ActorImageService } from "@mdcz/runtime/scrape";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -29,9 +29,10 @@ export interface MaintenanceServiceDependencies {
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
   persistenceService: DesktopPersistenceService;
-  actorImageService?: ActorImageService;
+  actorImageService: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
-  imageHostCooldownStore?: PersistentCooldownStore;
+  imageHostCooldownStore: PersistentCooldownStore;
+  mediaRoots?: ConfiguredMediaRootService;
   runtime?: MaintenanceRuntime;
   coordinator?: MaintenanceSessionCoordinator;
 }
@@ -45,7 +46,6 @@ const idleStatus = (): MaintenanceStatus => ({
 });
 
 export class MaintenanceService {
-  private readonly logger = loggerService.getLogger("MaintenanceService");
   private readonly signalService: SignalService;
   private readonly persistenceService: DesktopPersistenceService;
   private readonly imageHostCooldownStore: PersistentCooldownStore;
@@ -55,23 +55,12 @@ export class MaintenanceService {
   constructor(deps: MaintenanceServiceDependencies) {
     this.signalService = deps.signalService;
     this.persistenceService = deps.persistenceService;
-    this.imageHostCooldownStore =
-      deps.imageHostCooldownStore ??
-      new PersistentCooldownStore({
-        filePath: resolveDesktopDataFile("image-host-cooldowns.json"),
-        logger: loggerService.getLogger("ImageHostCooldownStore"),
-      });
-    const actorImageService =
-      deps.actorImageService ??
-      new ActorImageService({
-        cacheRoot: getActorImageCacheDirectory(),
-        logger: this.logger,
-        networkClient: deps.networkClient,
-      });
+    this.imageHostCooldownStore = deps.imageHostCooldownStore;
+    const mediaRoots = deps.mediaRoots ?? createDesktopMediaRootService(deps.persistenceService);
     this.runtime =
       deps.runtime ??
       createDesktopMaintenanceRuntime({
-        actorImageService,
+        actorImageService: deps.actorImageService,
         actorSourceProvider: deps.actorSourceProvider,
         crawlerProvider: deps.crawlerProvider,
         imageHostCooldownStore: this.imageHostCooldownStore,
@@ -83,9 +72,9 @@ export class MaintenanceService {
       new MaintenanceSessionCoordinator({
         roots: {
           get: async (rootId) => {
-            const root = await (await deps.persistenceService.getState()).repositories.mediaRoots.get(rootId);
-            return root;
+            return await mediaRoots.get(rootId);
           },
+          list: async () => await mediaRoots.listRoots(),
         },
         runtime: this.runtime,
         library: createMaintenanceLibraryPort({
@@ -98,8 +87,7 @@ export class MaintenanceService {
               libraryRepairIssues: repositories.libraryRepairIssues,
             };
           },
-          resolveRoot: async (rootId) =>
-            await (await this.persistenceService.getState()).repositories.mediaRoots.get(rootId),
+          resolveRoot: async (rootId) => await mediaRoots.get(rootId),
         }),
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       });
@@ -132,7 +120,7 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (refs.length === 0) throw new Error("No files selected");
     const rootId = refs[0]?.rootId;
-    if (!rootId || refs.some((ref) => ref.rootId !== rootId)) throw new Error("维护任务只能包含同一个媒体目录下的文件");
+    if (!rootId) throw new Error("维护文件缺少媒体目录");
     this.signalService.resetProgress();
     return await this.coordinator.startPreview({ rootId, presetId, refs });
   }

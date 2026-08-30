@@ -78,8 +78,6 @@ describe("maintenance IPC task adapter", () => {
       releasePreview = () => resolve(batch);
     });
     const service = {
-      scanFiles: vi.fn(async () => [entry]),
-      scan: vi.fn(async () => [entry]),
       startPreview: vi.fn(async () => ({ session, completion: previewCompletion })),
       getActiveSession: vi.fn(async () => ({
         id: session.id,

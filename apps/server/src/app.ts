@@ -67,6 +67,17 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const taskEvents = options.services?.taskEvents ?? createTaskEventBus();
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
+  config.setBeforeActiveConfigurationCommit(async (next, { source }) => {
+    await mediaRoots.synchronizeConfiguredRoots(next, {
+      strict: source !== "load" && source !== "watch",
+      onUnavailable: (hostPath, error) => {
+        config.reportDiagnostic(
+          "read-error",
+          new Error(`Configured media root unavailable: ${hostPath}: ${String(error)}`),
+        );
+      },
+    });
+  });
   config.onDiagnostic((event) => {
     runtimeLogs
       .getLogger("config")
@@ -172,18 +183,20 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     await services.config.load();
     await services.config.startWatching();
     await services.persistence.initialize();
+    await services.scans.recoverInterrupted();
   });
 
   let closed = false;
   fastify.addHook("onClose", async () => {
     if (closed) return;
     closed = true;
+    await services.config.stopWatching();
+    await services.scans.close();
     await services.scrape.close();
     await services.maintenance.close();
     await crawlerProvider.shutdown();
     await imageHostCooldownStore.flush();
     await services.persistence.close();
-    await services.config.stopWatching();
   });
 
   fastify.addHook("onRequest", async (request, reply) => {

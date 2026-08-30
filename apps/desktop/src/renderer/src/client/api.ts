@@ -54,6 +54,7 @@ export const listEntries = async (options: { query: { path: string } } & ThrowOp
         (entry): FileItem => ({
           type: entry.type,
           path: entry.path,
+          ref: entry.ref,
           name: entry.name,
           size: entry.size,
           last_modified: entry.lastModified ?? null,

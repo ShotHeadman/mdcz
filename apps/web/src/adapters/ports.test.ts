@@ -248,7 +248,7 @@ describe("web maintenance action port", () => {
       phase: "preview",
       status: "running",
       generation: 1,
-      refs: [{ relativePath: "ABC-001.mp4" }],
+      refs: [{ rootId: "root-1", relativePath: "ABC-001.mp4" }],
       timestamps: {
         createdAt: new Date("2026-05-12T00:00:00.000Z"),
         updatedAt: new Date("2026-05-12T00:00:00.000Z"),

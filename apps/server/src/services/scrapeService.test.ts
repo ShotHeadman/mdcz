@@ -15,6 +15,7 @@ const manifest: ScrapeRunManifest = {
   id: "unsubmitted-run",
   rootId: root.id,
   requestedOutputRootId: null,
+  requestedOutputRelativeDirectory: null,
   executionMode: "single",
   createdAt: new Date("2026-08-25T00:00:00.000Z"),
   startedAt: null,
@@ -64,9 +65,9 @@ describe("ScrapeService queue admission", () => {
     const { service, scrapeRuns } = createService();
     await service.close();
 
-    await expect(service.start({ refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }] })).rejects.toThrow(
-      "Scrape queue is closing",
-    );
+    await expect(
+      service.start({ executionMode: "single", refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }] }),
+    ).rejects.toThrow("Scrape queue is closing");
 
     expect(scrapeRuns.create).not.toHaveBeenCalled();
   });

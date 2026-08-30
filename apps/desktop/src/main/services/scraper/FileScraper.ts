@@ -1,5 +1,5 @@
 import { getActorImageCacheDirectory } from "@main/appIdentity";
-import { configManager } from "@main/services/config";
+import { type Configuration, configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
@@ -32,6 +32,7 @@ export interface FileScraperDependencies {
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
   localScanService?: Pick<LocalScanService, "scanVideo">;
+  getConfiguration?: () => Promise<Configuration>;
 }
 
 export const createFileScraper = (
@@ -50,7 +51,7 @@ export const createFileScraper = (
     {
       ...deps,
       actorImageService,
-      getConfiguration: async () => await configManager.getValidated(),
+      getConfiguration: deps.getConfiguration ?? (async () => await configManager.getValidated()),
       logger,
       loadExistingNfoLocalState: async (filePath, configuration) => {
         if (!configuration.download.generateNfo || !configuration.download.keepNfo) return undefined;

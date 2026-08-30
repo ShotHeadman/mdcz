@@ -221,6 +221,7 @@ export const api: ServerApiContract = {
   },
   mediaRoots: {
     ensurePath: (input) => trpcMutation("mediaRoots.ensurePath", input),
+    prepareOutputDirectory: (input) => trpcMutation("mediaRoots.prepareOutputDirectory", input),
     list: () => trpcQuery("mediaRoots.list"),
   },
   persistence: {

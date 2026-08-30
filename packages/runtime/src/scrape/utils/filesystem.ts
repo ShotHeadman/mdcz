@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { copyFile, mkdir, readdir, realpath, rename, rm, stat, statfs } from "node:fs/promises";
-import { dirname, extname, join, parse, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { SUPPORTED_MEDIA_EXTENSIONS_WITH_DOT } from "@mdcz/shared/mediaExtensions";
 import { throwIfAborted } from "./abort";
 
@@ -14,6 +14,16 @@ export const pathExists = async (path: string): Promise<boolean> => {
   } catch {
     return false;
   }
+};
+
+export const isPathInside = (rootPath: string, candidatePath: string): boolean => {
+  const candidateRelativePath = relative(resolve(rootPath), resolve(candidatePath));
+  return (
+    candidateRelativePath === "" ||
+    (!candidateRelativePath.startsWith(`..${sep}`) &&
+      candidateRelativePath !== ".." &&
+      !isAbsolute(candidateRelativePath))
+  );
 };
 
 const resolveDirectoryKey = async (dirPath: string): Promise<string> => {

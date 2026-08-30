@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
-import { assetRefSchema, type RootFileRef, rootFileRefSchema } from "./mediaRef";
+import { assetRefSchema, parseWireRelativeDirectory, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
@@ -46,6 +46,12 @@ export const mediaRootEnsurePathInputSchema = z.object({
 });
 
 export type MediaRootEnsurePathInput = z.infer<typeof mediaRootEnsurePathInputSchema>;
+
+export const mediaRootEnsurePathResponseSchema = mediaRootSchema.extend({
+  relativeDirectory: z.string(),
+});
+
+export type MediaRootEnsurePathResponse = z.infer<typeof mediaRootEnsurePathResponseSchema>;
 
 export const rootBrowserInputSchema = z.object({
   rootId: z.string().trim().min(1),
@@ -260,15 +266,32 @@ export const ambiguousUncensoredItemSchema = z.object({
 
 export type AmbiguousUncensoredItemDto = z.infer<typeof ambiguousUncensoredItemSchema>;
 
-export const scrapeStartInputSchema = z.object({
-  outputRootId: z.string().trim().min(1).optional(),
+const scrapeBatchStartInputSchema = z.object({
+  executionMode: z.literal("batch"),
+  outputRootId: z.string().trim().min(1),
+  outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
   refs: z.array(scrapeFileRefSchema).min(1),
   maintenancePreset: maintenancePresetIdSchema.optional(),
   uncensoredConfirmed: z.boolean().optional(),
   manualUrl: z.string().trim().min(1).optional(),
 });
 
-export type ScrapeStartInput = z.infer<typeof scrapeStartInputSchema>;
+const scrapeSingleStartInputSchema = z.object({
+  executionMode: z.literal("single"),
+  outputRootId: z.string().trim().min(1).optional(),
+  outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
+  refs: z.array(scrapeFileRefSchema).length(1),
+  maintenancePreset: maintenancePresetIdSchema.optional(),
+  uncensoredConfirmed: z.boolean().optional(),
+  manualUrl: z.string().trim().min(1).optional(),
+});
+
+export const scrapeStartInputSchema = z.discriminatedUnion("executionMode", [
+  scrapeBatchStartInputSchema,
+  scrapeSingleStartInputSchema,
+]);
+
+export type ScrapeStartInput = z.output<typeof scrapeStartInputSchema>;
 
 export const scrapeTaskControlInputSchema = z.object({
   taskId: z.string().trim().min(1),
@@ -478,7 +501,7 @@ export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
 export const maintenanceStartInputSchema = z.object({
   rootId: z.string().trim().min(1),
   presetId: maintenancePresetIdSchema,
-  refs: z.array(scrapeFileRefSchema).optional(),
+  refs: z.array(scrapeFileRefSchema).min(1),
 });
 
 export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
@@ -821,13 +844,25 @@ export const automationWebhookDeliveryStatusResponseSchema = z.object({
 
 export type AutomationWebhookDeliveryStatusResponse = z.infer<typeof automationWebhookDeliveryStatusResponseSchema>;
 
-export const automationScrapeStartInputSchema = z.object({
-  refs: z.array(scrapeFileRefSchema).min(1).optional(),
-  rootId: z.string().trim().min(1).optional(),
-  outputRootId: z.string().trim().min(1).optional(),
-  manualUrl: z.string().trim().min(1).optional(),
-  uncensoredConfirmed: z.boolean().optional(),
-});
+export const automationScrapeStartInputSchema = z
+  .object({
+    refs: z.array(scrapeFileRefSchema).min(1).optional(),
+    rootId: z.string().trim().min(1).optional(),
+    outputRootId: z.string().trim().min(1).optional(),
+    outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
+    executionMode: z.enum(["single", "batch"]).default("batch"),
+    manualUrl: z.string().trim().min(1).optional(),
+    uncensoredConfirmed: z.boolean().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.refs?.length && value.executionMode === "batch" && !value.outputRootId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["outputRootId"],
+        message: "Batch scrapes require outputRootId",
+      });
+    }
+  });
 
 export type AutomationScrapeStartInput = z.infer<typeof automationScrapeStartInputSchema>;
 

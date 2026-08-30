@@ -1,5 +1,4 @@
-export type MaintenanceFieldSelectionSide = "old" | "new";
-
+import type { RootFileRef } from "./mediaRef";
 import type {
   CrawlerData,
   FieldDiff,
@@ -9,12 +8,12 @@ import type {
   PathDiff,
 } from "./types";
 
+export type MaintenanceFieldSelectionSide = "old" | "new";
+
 export type MaintenanceSessionStatus = "queued" | "running" | "paused" | "stopping" | "completed" | "failed";
 export type MaintenanceSessionPhase = "preview" | "apply";
 
-export interface MaintenanceSessionRef {
-  relativePath: string;
-}
+export type MaintenanceSessionRef = RootFileRef;
 
 export interface MaintenanceSessionProgress {
   totalEntries: number;

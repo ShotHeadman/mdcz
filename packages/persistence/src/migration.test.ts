@@ -124,6 +124,53 @@ describe("Persistence migration baseline", () => {
     }
   });
 
+  it("deduplicates legacy roots and remaps retained references before enforcing uniqueness", async () => {
+    const database = createPersistenceDatabase({ path: ":memory:" });
+    try {
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0000_initial.sql"), "utf8"));
+      const insertRoot = database.sqlite.prepare(
+        "INSERT INTO media_roots (id, display_name, host_path, root_type, enabled, deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      insertRoot.run("root-1", "Primary", "/media", "mounted-filesystem", 1, 0, 1, 1);
+      insertRoot.run("root-2", "Duplicate", "/media", "mounted-filesystem", 1, 0, 2, 2);
+      database.sqlite
+        .prepare(
+          "INSERT INTO task_records (id, kind, root_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("scan-1", "scan", "root-2", "completed", 3, 3);
+      database.sqlite
+        .prepare("INSERT INTO scan_results (task_id, root_id, relative_path, size) VALUES (?, ?, ?, ?)")
+        .run("scan-1", "root-2", "movie.mp4", 10);
+      database.sqlite
+        .prepare("INSERT INTO scan_results (task_id, root_id, relative_path, size) VALUES (?, ?, ?, ?)")
+        .run("scan-1", "root-1", "movie.mp4", 20);
+      database.sqlite
+        .prepare("INSERT INTO library_items (id, actors_json, created_at) VALUES (?, ?, ?)")
+        .run("item-1", "[]", 4);
+      database.sqlite
+        .prepare(
+          "INSERT INTO library_item_files (id, item_id, root_id, root_relative_path, file_name, directory, size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run("file-1", "item-1", "root-2", "movie.mp4", "movie.mp4", "", 10, 4, 4);
+      database.sqlite
+        .prepare(
+          "INSERT INTO library_item_files (id, item_id, root_id, root_relative_path, file_name, directory, size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run("file-2", "item-1", "root-1", "movie.mp4", "movie.mp4", "", 20, 5, 5);
+
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, migrationFile), "utf8"));
+
+      expect(database.sqlite.prepare("SELECT id, host_path FROM media_roots").all()).toEqual([
+        { id: "root-1", host_path: "/media" },
+      ]);
+      expect(database.sqlite.prepare("SELECT root_id FROM scan_tasks").get()).toEqual({ root_id: "root-1" });
+      expect(database.sqlite.prepare("SELECT root_id FROM scan_results").get()).toEqual({ root_id: "root-1" });
+      expect(database.sqlite.prepare("SELECT root_id FROM library_item_files").get()).toEqual({ root_id: "root-1" });
+    } finally {
+      database.close();
+    }
+  });
+
   it("rolls back a failed migration without changing the baseline", async () => {
     const database = createPersistenceDatabase({ path: ":memory:" });
     try {

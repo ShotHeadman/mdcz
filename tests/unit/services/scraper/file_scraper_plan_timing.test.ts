@@ -104,6 +104,10 @@ describe("FileScraper plan timing", () => {
       fileOrganizer,
       signalService: new SignalService(null),
       actorImageService,
+      getConfiguration: async () => ({
+        ...config,
+        paths: { ...config.paths, mediaPath: "/selected-output" },
+      }),
     });
 
     await scraper.scrapeFile("/tmp/ABC-123.mp4", { fileIndex: 1, totalFiles: 1 });
@@ -113,7 +117,7 @@ describe("FileScraper plan timing", () => {
         number: "ABC-123",
       }),
       translatedData,
-      expect.any(Object),
+      expect.objectContaining({ paths: expect.objectContaining({ mediaPath: "/selected-output" }) }),
       undefined,
       {
         executionMode: "batch",

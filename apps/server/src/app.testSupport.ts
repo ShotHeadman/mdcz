@@ -4,6 +4,7 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import {
+  ActorImageService,
   type AggregationResult,
   type MountedRootScrapeAggregationService,
   MountedRootScrapeRuntime,
@@ -74,6 +75,10 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const imageHostCooldownStore = new PersistentCooldownStore({
     filePath: join(paths.dataDir, "image-host-cooldowns.json"),
   });
+  const actorImageService = new ActorImageService({
+    cacheRoot: join(paths.dataDir, "actor-image-cache"),
+    networkClient,
+  });
   const app = buildServer({
     serviceOptions: {
       automationWebhook: options.automationWebhook,
@@ -97,6 +102,8 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
               config,
               aggregationService: options.scrapeAggregation,
               networkClient,
+              imageHostCooldownStore,
+              actorImageService,
             }),
             imageHostCooldownStore,
           })

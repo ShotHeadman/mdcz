@@ -177,6 +177,32 @@ describe("buildServer scan integration", () => {
     ]);
   });
 
+  it("reuses the enclosing root for a nested scan directory so candidates cannot escape it", async () => {
+    mediaDirectory = await createTempDirectory("server-subdirectory-candidates");
+    const selectedDirectory = join(mediaDirectory.path, "selected");
+    await mkdir(selectedDirectory);
+    await writeFile(join(selectedDirectory, "inside.mp4"), "video");
+    await writeFile(join(mediaDirectory.path, "outside.mp4"), "video");
+
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const parentRootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
+    const response = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ scanDir: selectedDirectory }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data.candidates).toEqual([
+      expect.objectContaining({
+        name: "inside.mp4",
+        path: join(selectedDirectory, "inside.mp4"),
+        ref: { rootId: parentRootId, relativePath: "selected/inside.mp4" },
+      }),
+    ]);
+  });
+
   it("returns no scan candidates for an empty configured directory", async () => {
     mediaDirectory = await createTempDirectory("server-empty-scan");
     const { fastify } = await createTestServer();

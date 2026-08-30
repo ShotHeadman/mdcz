@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type AggregationResult,
@@ -149,7 +149,12 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+        outputRootId: rootId,
+        outputRelativeDirectory: "JAV_output",
+      },
     });
     const taskId = startResponse.json().result.data.runId;
     expect(startResponse.json().result.data).toEqual({ runId: taskId });
@@ -162,6 +167,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     const scrapeResult = scrapeHistoryResponse.json().result.data.results[0];
+    expect(scrapeHistoryResponse.json().result.data.runs[0].executionMode).toBe("batch");
     const scrapeResultId = scrapeResult.id;
     const cropSessionResponse = await fastify.inject({
       method: "GET",
@@ -316,6 +322,55 @@ describe("buildServer scrape integration", () => {
     unsubscribeTaskEvents();
   });
 
+  it("writes an explicit nested output root directly instead of applying the global output folder again", async () => {
+    const root = await createTempRoot("scrape-explicit-output-root");
+    const outputPath = join(root, "custom-output");
+    await writeFile(join(root, "ABC-456.mp4"), "video");
+    await mkdir(outputPath);
+    const imageServer = await startTestImageServer();
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const outputRoot = await services.mediaRoots.ensurePath({ hostPath: outputPath });
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        paths: { successOutputFolder: "legacy-output" },
+        download: { downloadSceneImages: false, downloadTrailer: false },
+      },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-456.mp4" }],
+        outputRootId: outputRoot.id,
+        outputRelativeDirectory: outputRoot.relativeDirectory,
+      },
+    });
+    const taskId = startResponse.json().result.data.runId;
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+
+    const historyResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const result = historyResponse.json().result.data.results[0];
+    expect(outputRoot.id).toBe(rootId);
+    expect(outputRoot.relativeDirectory).toBe("custom-output");
+    expect(result.outputRootId).toBe(rootId);
+    expect(result.outputRelativePath).toMatch(/^custom-output\/Actor A\/ABC-456\/ABC-456\.mp4$/u);
+    await expect(readFile(join(root, result.outputRelativePath))).resolves.toEqual(Buffer.from("video"));
+  });
+
   it("applies configured poster tag badges with the same runtime rendering used by desktop", async () => {
     const root = await createTempRoot("scrape-runtime-watermark");
     await writeFile(join(root, "ABC-123.mp4"), "video");
@@ -357,7 +412,12 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+        outputRootId: rootId,
+        outputRelativeDirectory: "JAV_output",
+      },
     });
     await waitForScrapeRunStatus(fastify, token, startResponse.json().result.data.runId, "completed");
 
@@ -391,6 +451,7 @@ describe("buildServer scrape integration", () => {
   it("keeps organized video on the media root while serving metadata from a local mirror root", async () => {
     const mediaRoot = await createTempRoot("separate-metadata-media");
     const metadataRoot = await createTempRoot("separate-metadata-local");
+    const nextMetadataRoot = await createTempRoot("separate-metadata-local-next");
     await writeFile(join(mediaRoot, "ABC-123.mp4"), "video");
     const imageServer = await startTestImageServer();
     const { fastify } = await createTestServer({
@@ -412,7 +473,12 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+        outputRootId: rootId,
+        outputRelativeDirectory: "JAV_output",
+      },
     });
     const taskId = startResponse.json().result.data.runId;
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
@@ -450,8 +516,27 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/mediaRoots.list",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(rootsResponse.json().result.data.roots.map((root: { id: string }) => root.id)).not.toContain(
-      result.nfoRootId,
+    expect(rootsResponse.json().result.data.roots.map((root: { id: string }) => root.id)).toContain(result.nfoRootId);
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { metadataPath: nextMetadataRoot } },
+    });
+    const nextMetadataRootRecord = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.ensurePath",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { hostPath: nextMetadataRoot },
+    });
+    const rootsAfterMetadataChange = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(nextMetadataRootRecord.json().result.data.id).not.toBe(result.nfoRootId);
+    expect(rootsAfterMetadataChange.json().result.data.roots.map((root: { id: string }) => root.id)).toEqual(
+      expect.arrayContaining([result.nfoRootId, nextMetadataRootRecord.json().result.data.id]),
     );
 
     const assetResponse = await fastify.inject({
@@ -490,7 +575,12 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-128.mp4" }], uncensoredConfirmed: true },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-128.mp4" }],
+        outputRootId: rootId,
+        uncensoredConfirmed: true,
+      },
     });
 
     expect(startResponse.statusCode).toBe(200);
@@ -530,7 +620,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABP-999-U.mp4" }] },
+      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABP-999-U.mp4" }], outputRootId: rootId },
     });
     const taskId = startResponse.json().result.data.runId;
 
@@ -670,7 +760,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-001.mp4" }] },
+      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABC-001.mp4" }], outputRootId: rootId },
     });
     const taskId = startResponse.json().result.data.runId;
     await fastify.inject({
@@ -711,12 +801,12 @@ describe("buildServer scrape integration", () => {
     expect(confirmResponse.json().error.message).toContain("Scrape run not found");
   });
 
-  it("rejects scrape refs that span multiple media roots", async () => {
+  it("accepts scrape refs that span multiple registered media roots", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const otherRoot = await createTempRoot("selected-scrape-other");
     await writeFile(join(root, "ABC-129.mp4"), "video");
     await writeFile(join(otherRoot, "ABC-129.mp4"), "video");
-    const { fastify } = await createTestServer();
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const otherRootId = await syncMediaRootFromConfig(fastify, token, otherRoot);
@@ -726,16 +816,26 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        executionMode: "batch",
         refs: [
           { rootId, relativePath: "ABC-129.mp4" },
           { rootId: otherRootId, relativePath: "ABC-129.mp4" },
         ],
+        outputRootId: rootId,
         uncensoredConfirmed: true,
       },
     });
 
-    expect(startResponse.statusCode).toBe(500);
-    expect(startResponse.json().error.message).toContain("刮削任务只能包含同一个媒体目录下的文件");
+    expect(startResponse.statusCode).toBe(200);
+    const manifest = await (await services.persistence.getState()).repositories.scrapeRuns.get(
+      startResponse.json().result.data.runId,
+    );
+    expect(manifest.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rootId, relativePath: "ABC-129.mp4" }),
+        expect.objectContaining({ rootId: otherRootId, relativePath: "ABC-129.mp4" }),
+      ]),
+    );
   });
 
   it("rejects scrape refs for an unregistered media root", async () => {
@@ -749,7 +849,9 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        executionMode: "batch",
         refs: [{ rootId: "missing-root", relativePath: "ABC-130.mp4" }],
+        outputRootId: "missing-root",
         uncensoredConfirmed: true,
       },
     });
@@ -771,7 +873,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-124.mp4" }] },
+      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABC-124.mp4" }], outputRootId: rootId },
     });
     const taskId = startResponse.json().result.data.runId;
     await control.firstCallStarted;
@@ -897,10 +999,12 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        executionMode: "batch",
         refs: [
           { rootId, relativePath: "ABC-123.mp4" },
           { rootId, relativePath: "ABC-456.mp4" },
         ],
+        outputRootId: rootId,
       },
     });
     const taskId = startResponse.json().result.data.runId;

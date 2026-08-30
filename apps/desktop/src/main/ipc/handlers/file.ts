@@ -1,14 +1,16 @@
-import { lstat, readdir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, relative } from "node:path";
+import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
+import { basename, dirname, extname, join, posix } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { localFileUrlForHostPath } from "@main/localFileProtocol";
 import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
+import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
+import { listRootFiles, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { commitRegisteredPublication } from "@mdcz/runtime/publication";
+import { commitPublishedMedia, commitRegisteredPublication } from "@mdcz/runtime/publication";
 import {
   findExistingNfoPath,
   getNfoReadCandidates,
@@ -59,16 +61,16 @@ export const createFileHandlers = (
 > => {
   const { windowService, persistenceService } = context;
   const posterCropService = new PosterCropService();
+  const mediaRoots = context.mediaRoots ?? createDesktopMediaRootService(persistenceService);
   const ensurePath = async (hostPath: string): Promise<void> => {
-    const state = await persistenceService.getState();
-    await state.repositories.mediaRoots.ensurePath(hostPath);
+    await mediaRoots.ensurePathRecord({ hostPath });
   };
   const publication = async () => {
     const state = await persistenceService.getState();
     return {
       journal: state.repositories.publicationJournal,
       repairIssues: state.repositories.libraryRepairIssues,
-      roots: await state.repositories.mediaRoots.list(),
+      roots: await mediaRoots.listRoots(),
     };
   };
   const assertDirectory = async (dirPath: string): Promise<void> => {
@@ -93,6 +95,7 @@ export const createFileHandlers = (
           name: string;
           size?: number;
           lastModified?: string | null;
+          ref: { rootId: string; relativePath: string };
         }>;
       }> => {
         try {
@@ -104,9 +107,11 @@ export const createFileHandlers = (
           await assertDirectory(dirPath);
 
           const entries = await readdir(dirPath, { withFileTypes: true });
+          const roots = await mediaRoots.listRoots();
           const normalizedEntries: Array<{
             type: "file" | "directory";
             path: string;
+            ref: { rootId: string; relativePath: string };
             name: string;
             size?: number;
             lastModified?: string | null;
@@ -125,10 +130,12 @@ export const createFileHandlers = (
               if (!type) {
                 continue;
               }
+              const resolved = resolveRootFile(roots, entryPath);
 
               normalizedEntries.push({
                 type,
                 path: entryPath,
+                ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
                 name: entry.name,
                 size: type === "file" ? stats.size : undefined,
                 lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
@@ -162,7 +169,7 @@ export const createFileHandlers = (
 
           await assertDirectory(dirPath);
           const configuration = await configManager.getValidated();
-          const root = await (await persistenceService.getState()).repositories.mediaRoots.ensurePath(dirPath);
+          const registeredRoots = await mediaRoots.listRoots();
 
           const discoveredPaths = await listVideoFiles(
             dirPath,
@@ -189,8 +196,8 @@ export const createFileHandlers = (
                 continue;
               }
 
-              const relativePath = relative(root.hostPath, filePath).replace(/\\/gu, "/");
               const name = filePath.split(/[\\/]+/u).at(-1) ?? filePath;
+              const resolved = resolveRootFile(registeredRoots, filePath);
 
               candidates.push({
                 path: filePath,
@@ -198,7 +205,7 @@ export const createFileHandlers = (
                 size: stats.size,
                 lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
                 extension: extname(filePath).toLowerCase(),
-                ref: { rootId: root.id, relativePath },
+                ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
               });
             } catch {
               // Skip inaccessible entries and keep scanning.
@@ -223,8 +230,7 @@ export const createFileHandlers = (
         if (target.ref) {
           return { exists: true, url: toLocalFileUrl(target.ref) };
         }
-        const state = await persistenceService.getState();
-        const roots = await state.repositories.mediaRoots.list();
+        const roots = await mediaRoots.listRoots();
         const url = localFileUrlForHostPath(targetPath, roots);
         return url ? { exists: true, url } : { exists: true };
       } catch {
@@ -244,37 +250,69 @@ export const createFileHandlers = (
       const result = mainWindow
         ? await dialog.showOpenDialog(mainWindow, options)
         : await dialog.showOpenDialog(options);
-      if (!result.canceled) {
-        for (const selectedPath of result.filePaths) {
-          await ensurePath(type === "directory" ? selectedPath : dirname(selectedPath));
-        }
-      }
       return { paths: result.canceled ? null : result.filePaths };
     }),
     [IpcChannel.File_Delete]: t.procedure
       .input(fileDeleteInputSchema)
       .action(async ({ input }): Promise<{ deletedCount: number; failedCount: number }> => {
-        const filePaths = (input?.filePaths ?? []).filter((filePath) => filePath.trim());
-        if (filePaths.length > 0) {
-          await ensurePath(resolveDesktopInputRootPath(filePaths));
+        if (input.containingFolder && input.targets.length !== 1) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Deleting a containing folder requires one file");
         }
+        const state = await persistenceService.getState();
+        const roots = await mediaRoots.listRoots();
+        const canonicalizeRef = (ref: (typeof input.targets)[number]) => {
+          const referencedRoot = roots.find((root) => root.id === ref.rootId);
+          if (!referencedRoot) throw new Error(`Media root not found: ${ref.rootId}`);
+          const resolved = resolveRootFile(roots, resolveRootRelativePath(referencedRoot, ref.relativePath));
+          return { rootId: resolved.root.id, relativePath: resolved.relativePath };
+        };
+        const publishDeletion = async (refs: Array<{ rootId: string; relativePath: string }>, operationId: string) => {
+          await commitPublishedMedia(
+            {
+              operationId,
+              operationType: "maintenance",
+              artifacts: [],
+              assets: [],
+              obsolete: refs,
+            },
+            {
+              resolveRoot: async (rootId) => await mediaRoots.get(rootId),
+              journal: state.repositories.publicationJournal,
+              repairIssues: state.repositories.libraryRepairIssues,
+              commit: () => undefined,
+            },
+          );
+        };
+
+        if (input.containingFolder) {
+          const target = input.targets[0];
+          if (!target) throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "File target is required");
+          const ref = canonicalizeRef(target);
+          const parentPath = posix.dirname(ref.relativePath);
+          if (parentPath === "." || parentPath === "") {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Cannot delete a media root directory");
+          }
+          const root = await mediaRoots.get(ref.rootId);
+          const files = await listRootFiles(root, parentPath, true);
+          await publishDeletion(
+            files.map((file) => ({ rootId: root.id, relativePath: file.relativePath })),
+            `delete-folder:${root.id}:${parentPath}`,
+          );
+          await rm(resolveRootRelativePath(root, parentPath), { force: true, recursive: true });
+          return { deletedCount: files.length, failedCount: 0 };
+        }
+
         let deletedCount = 0;
         let failedCount = 0;
 
-        for (const filePath of filePaths) {
+        for (const target of input.targets) {
           try {
-            await commitRegisteredPublication(
-              {
-                operationId: `delete:${filePath}`,
-                operationType: "maintenance",
-                obsoletePaths: [filePath],
-              },
-              await publication(),
-            );
+            const ref = canonicalizeRef(target);
+            await publishDeletion([ref], `delete:${ref.rootId}:${ref.relativePath}`);
             deletedCount += 1;
           } catch (error) {
             failedCount += 1;
-            logger.warn(`Failed to delete file '${filePath}': ${toErrorMessage(error)}`);
+            logger.warn(`Failed to delete file: ${toErrorMessage(error)}`);
           }
         }
 

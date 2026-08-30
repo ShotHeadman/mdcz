@@ -40,7 +40,7 @@ export interface ScrapeActionTarget {
 export interface ScrapeActionPort {
   retryFailed(): Promise<{ message: string }>;
   deleteFile(targets: ScrapeActionTarget[]): Promise<void>;
-  deleteFileAndFolder?(filePath: string): Promise<void>;
+  deleteFileAndFolder?(target: ScrapeActionTarget): Promise<void>;
   openFolder?(target: ScrapeActionTarget): Promise<void> | void;
   play?(target: ScrapeActionTarget): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;

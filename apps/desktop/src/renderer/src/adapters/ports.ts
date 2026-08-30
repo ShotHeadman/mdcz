@@ -117,11 +117,10 @@ export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
     };
   },
   deleteFile: async (targets) => {
-    const filePaths = targets.map((target) => target.filePath);
-    await deleteFile(filePaths);
+    await deleteFile(targets.map((target) => target.ref));
   },
-  deleteFileAndFolder: async (filePath) => {
-    await deleteFileAndFolder(filePath);
+  deleteFileAndFolder: async (target) => {
+    await deleteFileAndFolder(target.ref);
   },
   openFolder: async (target) => {
     await ipc.app.showItemInFolder(target.ref ?? target.filePath);

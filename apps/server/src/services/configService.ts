@@ -4,6 +4,7 @@ import {
   buildComputedConfiguration,
   type ComputedConfiguration,
   type RuntimeConfigChangeEvent,
+  type RuntimeConfigChangeSource,
   type RuntimeConfigDiagnosticEvent,
   RuntimeConfigProfileStore,
   RuntimeConfigService,
@@ -74,6 +75,12 @@ export class ServerConfigService {
   private readonly config: RuntimeConfigService;
   private readonly changeListeners = new Set<(event: RuntimeConfigChangeEvent) => void>();
   private readonly diagnosticListeners = new Set<(event: RuntimeConfigDiagnosticEvent) => void>();
+  private beforeActiveConfigurationCommit:
+    | ((
+        configuration: Configuration,
+        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+      ) => Promise<void> | void)
+    | undefined;
 
   constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {
     this.config = new RuntimeConfigService({
@@ -82,6 +89,7 @@ export class ServerConfigService {
         dataDir: paths.dataDir,
       }),
       mapValidationError: (error) => new ServerConfigValidationError(error.message, error.fields, error.fieldErrors),
+      onBeforeCommit: (configuration, context) => this.beforeActiveConfigurationCommit?.(configuration, context),
     });
     this.config.onChange((event) => {
       for (const listener of this.changeListeners) listener(event);
@@ -93,6 +101,15 @@ export class ServerConfigService {
 
   get runtimePaths(): ServerRuntimePaths {
     return this.paths;
+  }
+
+  setBeforeActiveConfigurationCommit(
+    callback: (
+      configuration: Configuration,
+      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+    ) => Promise<void> | void,
+  ): void {
+    this.beforeActiveConfigurationCommit = callback;
   }
 
   async load(): Promise<Configuration> {
@@ -107,6 +124,10 @@ export class ServerConfigService {
   onDiagnostic(listener: (event: RuntimeConfigDiagnosticEvent) => void): () => void {
     this.diagnosticListeners.add(listener);
     return () => this.diagnosticListeners.delete(listener);
+  }
+
+  reportDiagnostic(kind: RuntimeConfigDiagnosticEvent["kind"], error: unknown): void {
+    this.config.reportDiagnostic(kind, error);
   }
 
   async startWatching(): Promise<void> {

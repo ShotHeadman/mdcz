@@ -85,7 +85,7 @@ function buildMenuContent(
   const handleDeleteFolder = async () => {
     if (!window.confirm(`确定删除文件和所在文件夹吗？\n${resultPath}`)) return;
     try {
-      await port.deleteFileAndFolder?.(resultPath);
+      await port.deleteFileAndFolder?.(resultTarget);
       toast.success("已删除文件夹");
     } catch {
       toast.error("删除文件夹失败");

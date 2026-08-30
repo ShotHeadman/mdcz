@@ -6,7 +6,12 @@ import { getDesktopUserDataPath } from "@main/appIdentity";
 import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
-import { RuntimeConfigProfileStore, RuntimeConfigService, RuntimeConfigValidationError } from "@mdcz/runtime/config";
+import {
+  type RuntimeConfigChangeSource,
+  RuntimeConfigProfileStore,
+  RuntimeConfigService,
+  RuntimeConfigValidationError,
+} from "@mdcz/runtime/config";
 import { type Configuration, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { toConfigValidationDomainError } from "@mdcz/shared/error";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
@@ -31,6 +36,7 @@ export class ConfigManager extends EventEmitter {
   private readonly computedConfig = new ComputedConfig(() => this.configuration);
 
   private initializePromise: Promise<void> | null = null;
+  private skipBeforeActiveConfigurationCommit = false;
 
   private configDirectory = DEFAULT_CONFIG_DIRECTORY;
   private saveSnapshot: {
@@ -41,6 +47,10 @@ export class ConfigManager extends EventEmitter {
 
   private readonly config = new RuntimeConfigService({
     store: this.createStore(),
+    onBeforeCommit: (configuration, context) => {
+      if (this.skipBeforeActiveConfigurationCommit) return;
+      return this.beforeActiveConfigurationCommit?.(configuration, context);
+    },
     onBeforeSave: (configuration) => {
       this.saveSnapshot = {
         configuration: this.configuration,
@@ -77,6 +87,12 @@ export class ConfigManager extends EventEmitter {
   });
 
   private activeProfileName: string | undefined;
+  private beforeActiveConfigurationCommit:
+    | ((
+        configuration: Configuration,
+        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+      ) => Promise<void> | void)
+    | undefined;
 
   constructor() {
     super();
@@ -89,6 +105,20 @@ export class ConfigManager extends EventEmitter {
     this.config.onDiagnostic((event) => {
       this.logger.warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
     });
+  }
+
+  setBeforeActiveConfigurationCommit(
+    callback: (
+      configuration: Configuration,
+      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+    ) => Promise<void> | void,
+  ): void {
+    this.beforeActiveConfigurationCommit = callback;
+  }
+
+  async synchronizeConfiguredRoots(): Promise<void> {
+    await this.ensureLoaded();
+    await this.beforeActiveConfigurationCommit?.(this.configuration, { source: "load", previous: null });
   }
 
   async ensureLoaded(): Promise<void> {
@@ -150,6 +180,10 @@ export class ConfigManager extends EventEmitter {
     return () => {
       this.off("change", listener);
     };
+  }
+
+  reportDiagnostic(kind: Parameters<RuntimeConfigService["reportDiagnostic"]>[0], error: unknown): void {
+    this.config.reportDiagnostic(kind, error);
   }
 
   list(): { configPath: string; dataDir: string } {
@@ -287,7 +321,12 @@ export class ConfigManager extends EventEmitter {
       await this.config.load();
       this.syncConfigDirectoryFromConfiguration();
       this.config.replaceStore(this.createStore());
-      await this.config.saveFull(this.configuration);
+      this.skipBeforeActiveConfigurationCommit = true;
+      try {
+        await this.config.saveFull(this.configuration);
+      } finally {
+        this.skipBeforeActiveConfigurationCommit = false;
+      }
     } catch (error) {
       const message = toErrorMessage(error);
       this.logger.warn(`Failed to load config; using in-memory defaults: ${message}`);

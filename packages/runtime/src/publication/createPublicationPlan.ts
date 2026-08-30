@@ -1,5 +1,4 @@
-import type { MediaRoot } from "@mdcz/media-store";
-import { toRootRelativePath } from "@mdcz/media-store";
+import { type MediaRoot, resolveRootFile } from "@mdcz/media-store";
 import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { PreparedPublicationPlan, PublicationPlan } from "./types";
 
@@ -7,17 +6,8 @@ export const toRootFileRef = (
   absolutePath: string,
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[],
 ): RootFileRef => {
-  const candidates = roots.flatMap((root) => {
-    try {
-      return [{ root, relativePath: toRootRelativePath(root, absolutePath) }];
-    } catch {
-      return [];
-    }
-  });
-  candidates.sort((left, right) => right.root.hostPath.length - left.root.hostPath.length);
-  const candidate = candidates[0];
-  if (!candidate) throw new Error(`Publication path is outside registered roots: ${absolutePath}`);
-  return { rootId: candidate.root.id, relativePath: candidate.relativePath };
+  const resolved = resolveRootFile(roots, absolutePath);
+  return { rootId: resolved.root.id, relativePath: resolved.relativePath };
 };
 
 export const createPublicationPlan = (

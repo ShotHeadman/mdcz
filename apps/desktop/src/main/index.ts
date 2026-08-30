@@ -14,7 +14,7 @@ import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { app, BrowserWindow } from "electron";
 
-const QUIT_FORCE_EXIT_TIMEOUT_MS = 3_000;
+const QUIT_FORCE_EXIT_TIMEOUT_MS = 15_000;
 
 const signalService = new SignalService();
 const sharedNetworkClient = new NetworkClient({
@@ -66,6 +66,7 @@ const ensureServiceContainer = async (): Promise<ServiceContainer> => {
   });
   // Recovery must finish before IPC and renderer load; getState() can otherwise race the first window requests.
   await container.persistenceService.initialize();
+  await configManager.synchronizeConfiguredRoots();
   registerLocalFileHandler({
     getRoot: async (rootId) => {
       const state = await container.persistenceService.getState();

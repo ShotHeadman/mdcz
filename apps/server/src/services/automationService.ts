@@ -53,12 +53,22 @@ export class AutomationService {
 
   async scrapeStart(input: AutomationScrapeStartInput): Promise<AutomationScrapeStartResponse> {
     if (input.refs?.length) {
+      const common = {
+        refs: input.refs,
+        manualUrl: input.manualUrl,
+        uncensoredConfirmed: input.uncensoredConfirmed,
+      };
+      if (input.executionMode === "single") {
+        const task = (await this.scrape.start({ ...common, executionMode: "single" })).task;
+        return { task, webhook: this.toWebhookEvent(task) };
+      }
+      if (!input.outputRootId) throw new Error("Batch scrapes require outputRootId");
       const task = (
         await this.scrape.start({
-          refs: input.refs,
+          ...common,
+          executionMode: "batch",
           outputRootId: input.outputRootId,
-          manualUrl: input.manualUrl,
-          uncensoredConfirmed: input.uncensoredConfirmed,
+          outputRelativeDirectory: input.outputRelativeDirectory,
         })
       ).task;
       return { task, webhook: this.toWebhookEvent(task) };

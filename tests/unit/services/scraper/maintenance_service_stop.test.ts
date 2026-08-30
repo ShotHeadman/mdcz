@@ -5,9 +5,11 @@ import { configManager, defaultConfiguration } from "@main/services/config";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
+import { ActorImageService } from "@mdcz/runtime/scrape";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -44,8 +46,6 @@ const createFixture = async () => {
   await writeFile(filePath, "video");
   const entry = createEntry(filePath);
   const runtime = {
-    scan: vi.fn(async () => [entry]),
-    scanFilePaths: vi.fn(async () => [entry]),
     scanRefs: vi.fn(async () => [entry]),
     previewEntries: vi.fn(async ({ root }: { root: { id: string } }) => [
       {
@@ -87,6 +87,10 @@ const createFixture = async () => {
     networkClient,
     crawlerProvider: new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
     persistenceService,
+    actorImageService: new ActorImageService({ cacheRoot: path.join(directory, "actors"), networkClient }),
+    imageHostCooldownStore: new PersistentCooldownStore({
+      filePath: path.join(directory, "image-host-cooldowns.json"),
+    }),
     runtime,
   });
   vi.spyOn(configManager, "getValidated").mockResolvedValue({

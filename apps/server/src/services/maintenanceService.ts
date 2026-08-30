@@ -29,7 +29,10 @@ export class MaintenanceService {
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
-      roots: { get: async (rootId) => await this.mediaRoots.get(rootId) },
+      roots: {
+        get: async (rootId) => await this.mediaRoots.get(rootId),
+        list: async () => await this.mediaRoots.listRoots(),
+      },
       runtime: this.runtime,
       library: createMaintenanceLibraryPort({
         getRepositories: async () => {
@@ -49,11 +52,7 @@ export class MaintenanceService {
 
   async start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto> {
     const root = await this.mediaRoots.get(input.rootId);
-    const refs = input.refs?.map((ref) => {
-      if (ref.rootId !== input.rootId) throw new Error("维护任务只能包含同一个媒体目录下的文件");
-      return { relativePath: ref.relativePath };
-    });
-    const handle = await this.coordinator.startPreview({ rootId: root.id, presetId: input.presetId, refs });
+    const handle = await this.coordinator.startPreview({ rootId: root.id, presetId: input.presetId, refs: input.refs });
     void handle.completion.catch(() => undefined);
     return { sessionId: handle.session.id };
   }

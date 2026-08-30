@@ -293,10 +293,8 @@ export class FileScraper {
       this.deps.signalService.showLogText(`[${fileInfo.number}] Organizing files...`);
       throwIfAborted(signal);
       const outputVideoPath = await organizePreparedVideo({
-        config: configuration,
         enabled: true,
         fileInfo,
-        fileOrganizer: this.deps.fileOrganizer,
         plan,
       });
       const sourceStats = await stat(fileInfo.filePath);
