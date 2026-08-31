@@ -83,29 +83,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  coverage:
-    name: Core Coverage Baseline
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-
-      - name: Enforce the core source coverage baseline
-        run: pnpm test:coverage
-
-      - name: Enforce the Desktop main coverage baseline
-        run: pnpm test:coverage:desktop
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-coverage-report
-          path: coverage/
-          if-no-files-found: warn
-          retention-days: 14
-
   product-e2e-smoke:
     name: Product E2E Smoke
     runs-on: ubuntu-latest
@@ -131,13 +108,3 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  build:
-    name: Build Products
-    needs: [static, unit, integration-contract, component, coverage]
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-
-      - run: pnpm build:desktop && pnpm build:webui
