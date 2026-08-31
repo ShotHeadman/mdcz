@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
+import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import type { LlmApiClient } from "@mdcz/runtime/scrape";
@@ -84,6 +85,18 @@ const createService = (
     vi.fn(async ({ nfoPath }: { nfoPath?: string }) => {
       return nfoPath;
     });
+  const mediaRoot = {
+    id: "library",
+    displayName: "library",
+    hostPath: "/library",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  };
+  const ensurePathRecord = vi.fn(async () => mediaRoot);
+  const mediaRoots = {
+    ensurePathRecord,
+    listRoots: async () => [mediaRoot],
+  } as unknown as ConfiguredMediaRootService;
 
   const service = new BatchTranslateToolService(
     {} as NetworkClient,
@@ -92,8 +105,8 @@ const createService = (
         repositories: {
           publicationJournal: createMemoryPublicationJournal(),
           mediaRoots: {
-            list: async () => [{ id: "library", hostPath: "/library" }],
-            ensurePath: async (hostPath: string) => ({ id: "library", hostPath }),
+            list: async () => [mediaRoot],
+            ensurePath: async () => mediaRoot,
             upsert: async () => undefined,
           },
         },
@@ -104,6 +117,7 @@ const createService = (
       llmApiClient,
       writeNfo: writeNfo as never,
     },
+    mediaRoots,
   );
 
   return {
@@ -111,6 +125,7 @@ const createService = (
     localScanService,
     llmApiClient,
     writeNfo,
+    ensurePathRecord,
   };
 };
 
@@ -214,7 +229,7 @@ describe("BatchTranslateToolService", () => {
       ],
     ]);
 
-    const { service, localScanService } = createService({
+    const { service, localScanService, ensurePathRecord } = createService({
       scanVideo: async (videoPath) => {
         const matched = entriesByPath.get(videoPath);
         if (!matched) {
@@ -249,6 +264,8 @@ describe("BatchTranslateToolService", () => {
     );
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
+    expect(ensurePathRecord).toHaveBeenCalledOnce();
+    expect(ensurePathRecord).toHaveBeenCalledWith({ hostPath: "/library" });
     expect(generateText).toHaveBeenCalledTimes(1);
     expect(generateText).toHaveBeenCalledWith(
       expect.objectContaining({
