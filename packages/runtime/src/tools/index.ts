@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readdir, rm, stat, symlink, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readdir, stat, symlink, unlink } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { inspectStrmTarget } from "../scrape/utils/strm";
 import { SUBTITLE_EXTENSIONS } from "../scrape/utils/subtitles";
@@ -197,39 +197,4 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
   }
 
   return result;
-};
-
-export interface CleanFilesInput {
-  rootDir: string;
-  extensions: string[];
-  dryRun?: boolean;
-  recursive?: boolean;
-}
-
-export interface CleanFilesResult {
-  matched: number;
-  deleted: number;
-  files: string[];
-}
-
-export const cleanFilesByExtension = async (input: CleanFilesInput): Promise<CleanFilesResult> => {
-  const rootDir = resolve(input.rootDir);
-  const stats = await stat(rootDir);
-  if (!stats.isDirectory()) {
-    throw new Error(`Directory not found: ${rootDir}`);
-  }
-
-  const extensions = new Set(input.extensions.map(normalizeExtension).filter(Boolean));
-  const files = (await listAllFiles(rootDir, undefined, input.recursive ?? true)).filter((file) =>
-    extensions.has(normalizeExtension(extname(file))),
-  );
-  let deleted = 0;
-  if (!input.dryRun) {
-    for (const file of files) {
-      await rm(file, { force: true });
-      deleted += 1;
-    }
-  }
-
-  return { matched: files.length, deleted, files };
 };

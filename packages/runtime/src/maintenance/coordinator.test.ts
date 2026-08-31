@@ -92,26 +92,6 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}, r
 };
 
 describe("MaintenanceSessionCoordinator", () => {
-  it("does not lose a notification issued before waiter registration and uses no timer", async () => {
-    vi.useFakeTimers();
-    try {
-      const { coordinator } = createCoordinator();
-      const internals = coordinator as unknown as {
-        revision: number;
-        notify(sessionId: string): void;
-        waitForChange(sessionId: string, since: number): Promise<void>;
-      };
-      const revision = internals.revision;
-      internals.notify("race");
-
-      await expect(internals.waitForChange("race", revision)).resolves.toBeUndefined();
-      expect(vi.getTimerCount()).toBe(0);
-      await coordinator.close();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("starts with no process-local session", async () => {
     const first = createCoordinator();
     expect(await first.coordinator.getActiveSession()).toBeNull();

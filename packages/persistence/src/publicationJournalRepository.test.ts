@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { PersistenceDatabase } from "./database";
 import { PublicationJournalRepository } from "./publicationJournalRepository";
-import { scanTasks } from "./schema";
+import { publicationJournal, scanTasks } from "./schema";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 let database: PersistenceDatabase | undefined;
@@ -51,5 +51,24 @@ describe("PublicationJournalRepository", () => {
       }),
     ).toThrow("not pending");
     expect(database.sqlite.prepare("SELECT id FROM scan_tasks").all()).toEqual([]);
+  });
+
+  it("keeps malformed manifest JSON recoverable", () => {
+    database = createTestPersistenceDatabase();
+    const repository = new PublicationJournalRepository(database);
+    database.db
+      .insert(publicationJournal)
+      .values({
+        operationId: "corrupt-operation",
+        operationType: "scrape",
+        state: "pending",
+        manifestJson: "{",
+        createdAt: new Date("2026-08-28T00:00:00.000Z"),
+      })
+      .run();
+
+    expect(repository.listUnfinished()).toEqual([
+      expect.objectContaining({ operationId: "corrupt-operation", manifest: undefined }),
+    ]);
   });
 });

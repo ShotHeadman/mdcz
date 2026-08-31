@@ -74,7 +74,6 @@ export const translateTestLlmInputSchema = z.object({
   llmTimeout: z.number().optional(),
 });
 
-export const fileDirPathInputSchema = z.object({ dirPath: optionalString });
 export const fileListMediaCandidatesInputSchema = z.object({
   dirPath: optionalString,
   excludeDirPaths: optionalPathList,

@@ -4,7 +4,6 @@ export type ToolId =
   | "amazon-poster"
   | "media-library-tools"
   | "symlink-manager"
-  | "file-cleaner"
   | "batch-nfo-translator";
 
 export type ToolOverviewLayout = "featuredThird" | "standardHalf" | "compactHalf" | "compactFull";
@@ -16,7 +15,7 @@ export interface ToolDefinition {
   detailTitle: string;
   detailDescription: string;
   overviewLayout: ToolOverviewLayout;
-  overviewIcon: "file" | "bug" | "amazon" | "folder" | "link" | "trash" | "translate" | "search";
+  overviewIcon: "file" | "bug" | "amazon" | "folder" | "link" | "translate" | "search";
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -64,15 +63,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     detailDescription: "在不同目录间建立文件组织结构映射，适合分离原始存储与媒体展示目录。",
     overviewLayout: "standardHalf",
     overviewIcon: "link",
-  },
-  {
-    id: "file-cleaner",
-    title: "文件清理",
-    description: "扫描并删除无用附件、临时文件和冗余产物。",
-    detailTitle: "文件清理",
-    detailDescription: "根据扩展名扫描目标目录，先预览待删文件，再批量确认清理。",
-    overviewLayout: "standardHalf",
-    overviewIcon: "trash",
   },
   {
     id: "batch-nfo-translator",

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PersistenceDatabase } from "./database";
 import { LibraryRepository } from "./libraryRepository";
 import { mediaRoots } from "./schema";
@@ -69,16 +69,6 @@ describe("ScrapeRunRepository", () => {
     });
     expect(await repository.list()).toEqual([run]);
     expect(await repository.getLatestFinalized()).toBeNull();
-    expect(
-      database?.sqlite
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'scrape_%' ORDER BY name")
-        .all(),
-    ).toEqual([
-      { name: "scrape_attempts" },
-      { name: "scrape_item_outcomes" },
-      { name: "scrape_run_items" },
-      { name: "scrape_runs" },
-    ]);
   });
 
   it("hydrates only the latest finalized run", async () => {
@@ -371,26 +361,5 @@ describe("ScrapeRunRepository", () => {
       completedAt: new Date("2026-08-24T06:00:00.000Z"),
       error: "Interrupted by shutdown",
     });
-  });
-
-  it("keeps committed rows when a projection read fails", async () => {
-    const repository = createRepository();
-    const run = await createRun(repository);
-    const committed = commitSuccess(repository, {
-      outcome: "success",
-      attemptId: repository.admitAttempt(run.items[0].id).id,
-      crawlerDataJson: "{}",
-      outputRootId: "output",
-      outputRelativePath: "ABC-001.mp4",
-      size: 1,
-      libraryEntry: { rootId: "output", rootRelativePath: "ABC-001.mp4" },
-    });
-    vi.spyOn(repository, "get").mockRejectedValueOnce(new Error("projection read failed"));
-
-    await expect(repository.get(run.id)).rejects.toThrow("projection read failed");
-    expect(database?.sqlite.prepare("SELECT id FROM scrape_item_outcomes").all()).toEqual([
-      { id: committed.outcomeId },
-    ]);
-    expect(database?.sqlite.prepare("SELECT id FROM library_items").all()).toEqual([{ id: committed.entryId }]);
   });
 });

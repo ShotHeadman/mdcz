@@ -4,7 +4,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^@mdcz\/server\/router$/, replacement: resolve(__dirname, "../server/src/router.ts") },
       { find: /^@mdcz\/shared\/(.+)$/, replacement: resolve(__dirname, "../../packages/shared/$1") },
       { find: /^@mdcz\/shared$/, replacement: resolve(__dirname, "../../packages/shared") },
       { find: /^@mdcz\/ui\/(.+)$/, replacement: resolve(__dirname, "../../packages/ui/src/$1") },

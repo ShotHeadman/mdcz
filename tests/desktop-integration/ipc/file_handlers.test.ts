@@ -122,23 +122,30 @@ describe("createFileHandlers", () => {
     await writeFile(join(root, "trailer.mp4"), "trailer");
     await writeFile(join(root, "ignore.txt"), "ignore");
 
-    const handlers = createFileHandlers(createContext());
+    const registeredRoots: Array<{ id: string; hostPath: string }> = [];
+    const ensurePath = vi.fn(async (hostPath: string) => {
+      const root = { id: "scan-root", hostPath };
+      registeredRoots.push(root);
+      return root;
+    });
+    const handlers = createFileHandlers(createContext({ ensurePath, list: async () => registeredRoots }));
     const result = await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
 
+    expect(ensurePath).toHaveBeenCalledWith(root, undefined);
     expect(result.supportedExtensions).toEqual(expect.arrayContaining(["mp4", "mkv", "strm"]));
     expect(result.candidates).toEqual([
       expect.objectContaining({
         path: rootVideo,
         name: "ABC-123.mp4",
         extension: ".mp4",
-        ref: expect.objectContaining({ relativePath: expect.stringMatching(/ABC-123\.mp4$/u) }),
+        ref: { rootId: "scan-root", relativePath: "ABC-123.mp4" },
         size: 7,
       }),
       expect.objectContaining({
         path: nestedVideo,
         name: "DEF-456.mkv",
         extension: ".mkv",
-        ref: expect.objectContaining({ relativePath: expect.stringMatching(/nested\/DEF-456\.mkv$/u) }),
+        ref: { rootId: "scan-root", relativePath: "nested/DEF-456.mkv" },
         size: 7,
       }),
     ]);
@@ -368,15 +375,13 @@ describe("createFileHandlers", () => {
     expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);
   });
 
-  it("does not persist media roots for read-only file operations", async () => {
+  it("does not persist media roots for file reads", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "movie.nfo");
     await writeFile(nfoPath, '<?xml version="1.0"?><movie><title>Example</title><num>ABC-123</num></movie>');
     const upsert = vi.fn(async () => undefined);
     const handlers = createFileHandlers(createContext({ upsert }));
 
-    await handlers[IpcChannel.File_ListEntries].action(actionArgs({ dirPath: root }));
-    await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
     await handlers[IpcChannel.File_Exists].action(actionArgs({ path: nfoPath }));
     await handlers[IpcChannel.File_NfoRead].action(actionArgs({ nfoPath }));
 

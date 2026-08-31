@@ -32,7 +32,6 @@ describe("route helpers", () => {
       "amazon-poster",
       "media-library-tools",
       "symlink-manager",
-      "file-cleaner",
       "batch-nfo-translator",
     ]);
   });

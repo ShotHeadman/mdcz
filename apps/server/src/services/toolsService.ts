@@ -1,4 +1,3 @@
-import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
@@ -26,7 +25,6 @@ import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyAmazonPosters,
   applyBatchNfoTranslations,
-  cleanFilesByExtension,
   createSymlinks,
   lookupAmazonPoster,
   scanAmazonPosters,
@@ -150,22 +148,6 @@ export class ToolsService {
           message: input.dryRun
             ? `预览完成：${result.planned.length} 个目标可创建`
             : `软链接完成：${result.linked} 链接，${result.copied} 复制，${result.failed} 失败`,
-          data: result,
-        };
-      }
-      case "file-cleaner": {
-        const root = await this.mediaRoots.get(input.rootId);
-        const rootDir = resolveRootRelativePath(root, input.relativePath ?? "");
-        const result = await cleanFilesByExtension({
-          rootDir,
-          extensions: input.extensions,
-          dryRun: input.dryRun,
-          recursive: input.recursive,
-        });
-        return {
-          toolId: input.toolId,
-          ok: true,
-          message: input.dryRun ? `预览到 ${result.matched} 个文件` : `已删除 ${result.deleted} 个文件`,
           data: result,
         };
       }

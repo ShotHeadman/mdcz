@@ -383,27 +383,7 @@ describe("commitPublishedMedia", () => {
     expect(journal.listUnfinished()).toHaveLength(1);
   });
 
-  it("reports post-commit cleanup failure as committed and does not roll back", async () => {
-    const test = await fixture();
-    const fileSystem = await defaultFileSystem();
-    const originalRm = fileSystem.rm;
-    fileSystem.rm = async (filePath, options) => {
-      if (filePath === test.source) throw new Error("source cleanup failed");
-      await originalRm(filePath, options);
-    };
-    const error = await commitPublishedMedia(test.plan, {
-      resolveRoot: test.resolveRoot,
-      journal: createMemoryPublicationJournal(),
-      fileSystem,
-      commit: () => "committed",
-    }).catch((failure: unknown) => failure);
-    expect(error).toBeInstanceOf(PublicationError);
-    expect(error).toMatchObject({ committed: true });
-    await expect(readFile(test.target, "utf8")).resolves.toBe("video");
-    await expect(readFile(test.nfo, "utf8")).resolves.toBe("<movie/>");
-  });
-
-  it("does not roll back when repair recording fails after commit", async () => {
+  it("preserves committed files when cleanup and repair reporting fail", async () => {
     const test = await fixture();
     const fileSystem = await defaultFileSystem();
     const originalRm = fileSystem.rm;
@@ -451,11 +431,12 @@ describe("commitPublishedMedia", () => {
     await expect(stat(test.target)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("retains the source until the database commit for a copied video", async () => {
+  it("retains sources and obsolete files until the database commit", async () => {
     const test = await fixture();
     const commit = vi.fn(() => {
       expect(existsSync(test.source)).toBe(true);
       expect(readFileSync(test.source, "utf8")).toBe("video");
+      expect(readFileSync(test.obsolete, "utf8")).toBe("old");
       return "committed";
     });
     await expect(
@@ -467,6 +448,7 @@ describe("commitPublishedMedia", () => {
     ).resolves.toBe("committed");
     expect(commit).toHaveBeenCalledOnce();
     await expect(stat(test.source)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(test.obsolete)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rejects a copied video whose verification size is wrong", async () => {
@@ -489,23 +471,6 @@ describe("commitPublishedMedia", () => {
     ).rejects.toThrow("Copied video size mismatch");
     expect(await readFile(test.source, "utf8")).toBe("video");
     await expect(stat(test.target)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("deletes obsolete assets only after a successful commit", async () => {
-    const test = await fixture();
-    const commit = vi.fn(() => {
-      expect(readFileSync(test.obsolete, "utf8")).toBe("old");
-      return "committed";
-    });
-    await expect(
-      commitPublishedMedia(test.plan, {
-        resolveRoot: test.resolveRoot,
-        journal: createMemoryPublicationJournal(),
-        commit,
-      }),
-    ).resolves.toBe("committed");
-    expect(commit).toHaveBeenCalledOnce();
-    await expect(stat(test.obsolete)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("revalidates obsolete assets immediately before cleanup", async () => {

@@ -122,6 +122,7 @@ export class ScanQueueService {
     if (this.closing) throw new Error("Scan queue is closing");
     const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
+    await this.mediaRoots.ensurePathRecord({ hostPath: input.scanDir });
     const roots = await this.mediaRoots.listRoots();
     const root = resolveRootFile(roots, hostPath).root;
     const supported = new Set(

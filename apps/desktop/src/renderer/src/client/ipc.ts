@@ -82,7 +82,6 @@ export const ipc = {
     testLlm: (input: TranslateTestLlmInput) => client[IpcChannel.Translate_TestLlm](input),
   },
   file: {
-    listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
     listMediaCandidates: (dirPath: string, excludeDirPaths?: readonly string[]) =>
       client[IpcChannel.File_ListMediaCandidates]({
         dirPath,

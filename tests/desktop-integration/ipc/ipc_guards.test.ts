@@ -4,11 +4,13 @@ import { scraperRetryInputSchema } from "@main/ipc/payloads";
 import { t } from "@main/ipc/shared";
 import { IpcChannel, requireIpcChannel } from "@mdcz/shared/IpcChannel";
 import { describe, expect, it, vi } from "vitest";
+import { invokeIpc } from "../../../apps/desktop/src/preload/index";
 import { ipcActionArgs } from "../../unit/ipc/ipcActionArgs";
 
 const testUserDataPath = vi.hoisted(
   () => `${process.env.TEMP ?? process.env.TMPDIR ?? process.cwd()}/mdcz-ipc-guards-${process.pid}`,
 );
+const ipcInvoke = vi.hoisted(() => vi.fn(async () => "ok"));
 
 vi.mock("electron", () => ({
   app: {
@@ -26,12 +28,18 @@ vi.mock("electron", () => ({
     openPath: vi.fn(),
     showItemInFolder: vi.fn(),
   },
+  contextBridge: { exposeInMainWorld: vi.fn() },
+  ipcRenderer: { invoke: ipcInvoke, on: vi.fn(), removeListener: vi.fn() },
   ipcMain: { handle: vi.fn(), once: vi.fn(), removeHandler: vi.fn() },
 }));
 
 describe("IPC guards", () => {
-  it("throws in preload before reaching ipcRenderer for an unknown channel", () => {
-    expect(() => requireIpcChannel("nope")).toThrow("Unsupported IPC channel: nope");
+  it("allows only registered preload channels", async () => {
+    expect(() => invokeIpc("nope")).toThrow("Unsupported IPC channel: nope");
+    expect(ipcInvoke).not.toHaveBeenCalled();
+
+    await expect(invokeIpc(IpcChannel.App_Info)).resolves.toBe("ok");
+    expect(ipcInvoke).toHaveBeenCalledWith(requireIpcChannel(IpcChannel.App_Info), undefined);
   });
 
   it("rejects an IPC call from a frame whose origin is not the app's own", async () => {

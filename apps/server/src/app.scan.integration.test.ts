@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { deterministicMediaRootId } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
 import { closeTestServers, createTestServer, loginAsAdmin, syncMediaRootFromConfig } from "./app.testSupport";
@@ -155,7 +156,6 @@ describe("buildServer scan integration", () => {
 
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
     const response = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(
@@ -168,11 +168,11 @@ describe("buildServer scan integration", () => {
     expect(response.json().result.data.candidates).toEqual([
       expect.objectContaining({
         name: "done.mp4",
-        ref: { relativePath: "JAV_output/done.mp4", rootId },
+        ref: { relativePath: "JAV_output/done.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },
       }),
       expect.objectContaining({
         name: "movie.mp4",
-        ref: { relativePath: "nested/movie.mp4", rootId },
+        ref: { relativePath: "nested/movie.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },
       }),
     ]);
   });

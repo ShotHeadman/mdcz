@@ -1,5 +1,5 @@
-import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, posix } from "node:path";
+import { readFile, rm, stat } from "node:fs/promises";
+import { basename, dirname, extname, posix } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { localFileUrlForHostPath } from "@main/localFileProtocol";
 import { configManager } from "@main/services/config/ConfigManager";
@@ -33,7 +33,6 @@ import { resolveLocalFileTarget } from "../localFileTarget";
 import {
   fileBrowseInputSchema,
   fileDeleteInputSchema,
-  fileDirPathInputSchema,
   fileExistsInputSchema,
   fileListMediaCandidatesInputSchema,
   fileNfoReadInputSchema,
@@ -49,7 +48,6 @@ export const createFileHandlers = (
   context: ServiceContainer,
 ): Pick<
   IpcRouterContract,
-  | typeof IpcChannel.File_ListEntries
   | typeof IpcChannel.File_ListMediaCandidates
   | typeof IpcChannel.File_Exists
   | typeof IpcChannel.File_Browse
@@ -85,73 +83,6 @@ export const createFileHandlers = (
   };
 
   return {
-    [IpcChannel.File_ListEntries]: t.procedure.input(fileDirPathInputSchema).action(
-      async ({
-        input,
-      }): Promise<{
-        entries: Array<{
-          type: "file" | "directory";
-          path: string;
-          name: string;
-          size?: number;
-          lastModified?: string | null;
-          ref: { rootId: string; relativePath: string };
-        }>;
-      }> => {
-        try {
-          const dirPath = input?.dirPath?.trim();
-          if (!dirPath) {
-            throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, "Directory path is required");
-          }
-
-          await assertDirectory(dirPath);
-
-          const entries = await readdir(dirPath, { withFileTypes: true });
-          const roots = await mediaRoots.listRoots();
-          const normalizedEntries: Array<{
-            type: "file" | "directory";
-            path: string;
-            ref: { rootId: string; relativePath: string };
-            name: string;
-            size?: number;
-            lastModified?: string | null;
-          }> = [];
-
-          for (const entry of entries) {
-            const entryPath = join(dirPath, entry.name);
-            try {
-              const stats = await lstat(entryPath);
-              if (stats.isSymbolicLink()) {
-                // Avoid traversing symlink/junction targets from renderer recursive scans.
-                continue;
-              }
-
-              const type = stats.isDirectory() ? "directory" : stats.isFile() ? "file" : null;
-              if (!type) {
-                continue;
-              }
-              const resolved = resolveRootFile(roots, entryPath);
-
-              normalizedEntries.push({
-                type,
-                path: entryPath,
-                ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
-                name: entry.name,
-                size: type === "file" ? stats.size : undefined,
-                lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
-              });
-            } catch {
-              // Skip inaccessible entries and keep scanning.
-            }
-          }
-
-          normalizedEntries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
-          return { entries: normalizedEntries };
-        } catch (error) {
-          throw asSerializableIpcError(error);
-        }
-      },
-    ),
     [IpcChannel.File_ListMediaCandidates]: t.procedure.input(fileListMediaCandidatesInputSchema).action(
       async ({
         input,
@@ -169,6 +100,7 @@ export const createFileHandlers = (
 
           await assertDirectory(dirPath);
           const configuration = await configManager.getValidated();
+          await ensurePath(dirPath);
           const registeredRoots = await mediaRoots.listRoots();
 
           const discoveredPaths = await listVideoFiles(

@@ -14,11 +14,19 @@ export interface PublicationJournalEntry {
 
 export type BeginPublicationJournalEntry = Omit<PublicationJournalEntry, "state">;
 
+const parseManifest = (manifestJson: string): unknown => {
+  try {
+    return JSON.parse(manifestJson);
+  } catch {
+    return undefined;
+  }
+};
+
 const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
   operationId: row.operationId,
   operationType: row.operationType,
   state: row.state,
-  manifest: JSON.parse(row.manifestJson),
+  manifest: parseManifest(row.manifestJson),
   createdAt: row.createdAt,
 });
 

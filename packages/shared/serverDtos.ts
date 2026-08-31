@@ -1095,14 +1095,6 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     dryRun: z.boolean().optional(),
   }),
   z.object({
-    toolId: z.literal("file-cleaner"),
-    rootId: z.string().trim().min(1),
-    relativePath: z.string().optional().default(""),
-    extensions: z.array(z.string().trim().min(1)).min(1),
-    dryRun: z.boolean().optional().default(true),
-    recursive: z.boolean().optional().default(true),
-  }),
-  z.object({
     toolId: z.literal("batch-nfo-translator"),
     action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
     text: z.string().trim().min(1).optional(),

@@ -1,17 +1,6 @@
 import type { ToolDefinition } from "@mdcz/shared/toolCatalog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Label } from "@mdcz/ui";
-import {
-  Bug,
-  FileSearch,
-  FileText,
-  FolderOpen,
-  Languages,
-  Link2,
-  Search,
-  ShoppingCart,
-  Trash2,
-  UserCheck,
-} from "lucide-react";
+import { Bug, FileSearch, FileText, FolderOpen, Languages, Link2, Search, ShoppingCart, UserCheck } from "lucide-react";
 import type { ReactNode } from "react";
 
 export const ToolCardIcon = ({ icon }: { icon: ToolDefinition["overviewIcon"] }) => {
@@ -21,7 +10,6 @@ export const ToolCardIcon = ({ icon }: { icon: ToolDefinition["overviewIcon"] })
   if (icon === "bug") return <Bug className={iconClassName} strokeWidth={1.8} />;
   if (icon === "folder") return <FolderOpen className={iconClassName} strokeWidth={1.8} />;
   if (icon === "link") return <Link2 className={iconClassName} strokeWidth={1.8} />;
-  if (icon === "trash") return <Trash2 className={iconClassName} strokeWidth={1.8} />;
   if (icon === "translate") return <Languages className={iconClassName} strokeWidth={1.8} />;
   if (icon === "search") return <Search className={iconClassName} strokeWidth={1.8} />;
 
@@ -41,7 +29,6 @@ const ToolDetailIcon = ({ toolId }: { toolId: ToolDefinition["id"] }) => {
   if (toolId === "amazon-poster") return <ShoppingCart className={iconClassName} />;
   if (toolId === "media-library-tools") return <UserCheck className={iconClassName} />;
   if (toolId === "symlink-manager") return <Link2 className={iconClassName} />;
-  if (toolId === "file-cleaner") return <Trash2 className={iconClassName} />;
   if (toolId === "batch-nfo-translator") return <FileSearch className={iconClassName} />;
   return <Search className={iconClassName} />;
 };

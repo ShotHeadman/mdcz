@@ -5,19 +5,6 @@ import type { NormalizedCropRegion } from "../posterCrop";
 import type { CrawlerData, MediaCandidate } from "../types";
 
 export type FileIpcContract = {
-  [IpcChannel.File_ListEntries]: IpcProcedure<
-    { dirPath?: string },
-    {
-      entries: Array<{
-        type: "file" | "directory";
-        path: string;
-        ref: RootFileRef;
-        name: string;
-        size?: number;
-        lastModified?: string | null;
-      }>;
-    }
-  >;
   [IpcChannel.File_ListMediaCandidates]: IpcProcedure<
     { dirPath?: string; excludeDirPaths?: string[] },
     {
