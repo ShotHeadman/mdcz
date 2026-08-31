@@ -8,7 +8,7 @@ import type {
 } from "../serverDtos";
 
 export interface LibraryDeleteInput {
-  deleteMediaFiles?: boolean;
+  deleteMode?: "none" | "assets" | "all";
   id: string;
 }
 

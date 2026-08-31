@@ -1,7 +1,9 @@
 import type { ScrapeResult } from "@mdcz/shared/types";
+import { runtimeLoggerService } from "../../shared";
 import { TaskScheduler } from "../scheduler";
 import {
   type ScrapeRunItem,
+  type ScrapeRunItemInitialState,
   type ScrapeRunLogEntry,
   ScrapeRunSession,
   type ScrapeRunSnapshot,
@@ -11,7 +13,7 @@ import {
 export type ScrapeWorkflowDisposition = "completed" | "failed" | "stopped" | "interrupted";
 
 export interface ScrapeRunStore<TRun> {
-  retry(runId: string): Promise<TRun>;
+  retry(runId: string, itemIds?: readonly string[]): Promise<TRun>;
   finalize(input: {
     runId: string;
     disposition: ScrapeWorkflowDisposition;
@@ -28,6 +30,7 @@ export interface ScrapeWorkflowReporter {
 
 export interface ScrapeHostExecution<TManualScrape> {
   items: readonly ScrapeRunItem<TManualScrape>[];
+  initialItems?: readonly ScrapeRunItemInitialState<TManualScrape>[];
   concurrency: number;
   admitItem(item: ScrapeRunItem<TManualScrape>): Promise<string>;
   executeItem(item: ScrapeRunItem<TManualScrape>, signal: AbortSignal, attemptId: string): Promise<ScrapeResult>;
@@ -83,11 +86,11 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     return await this.enqueue(await this.host.create(input));
   }
 
-  async retry(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
+  async retry(runId: string, itemIds?: readonly string[]): Promise<ScrapeRunSnapshot<TManualScrape>> {
     if (this.closing) throw new Error("Scrape queue is closing");
     if (this.repairRequired) throw new Error(`Scrape queue requires repair: ${this.repairRequired}`);
     if (this.entries.has(runId)) throw new Error(`Scrape run is already live: ${runId}`);
-    return await this.enqueue(await this.store.retry(runId));
+    return await this.enqueue(await (itemIds ? this.store.retry(runId, itemIds) : this.store.retry(runId)));
   }
 
   liveRuns(): Array<{
@@ -127,9 +130,18 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
 
   async resume(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
     const entry = this.requireLive(runId);
+    if (entry.state === "queued" || entry.state === "running") return this.entrySnapshot(entry);
     if (entry.state !== "paused") throw new Error(`Cannot resume scrape run in ${entry.state} state: ${runId}`);
     if (this.closing) throw new Error("Scrape queue is closing");
     if (this.repairRequired) throw new Error(`Scrape queue requires repair: ${this.repairRequired}`);
+
+    if (this.activeRunId === runId && entry.session.snapshot().status === "paused") {
+      entry.state = "running";
+      await entry.session.resume();
+      this.host.onInvalidate();
+      return this.entrySnapshot(entry);
+    }
+
     entry.state = "queued";
     this.readyRunIds.push(runId);
     this.host.onInvalidate();
@@ -179,6 +191,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     const session = new ScrapeRunSession<TManualScrape>({
       runId: id,
       items: execution.items,
+      initialItems: execution.initialItems,
       concurrency: execution.concurrency,
       acquireItem: execution.acquireItem,
       admitItem: execution.admitItem,
@@ -251,12 +264,18 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
             : snapshot.status === "interrupted"
               ? "interrupted"
               : "failed";
+      const logger = runtimeLoggerService.getLogger("Publication");
+      const startedAt = performance.now();
+      logger.info(`[publication] operation=${entry.id} phase=run-finalization-start`);
       const finalized = await this.store.finalize({
         runId: entry.id,
         disposition,
         error: snapshot.error,
         startedAt: entry.startedAt,
       });
+      logger.info(
+        `[publication] operation=${entry.id} phase=run-finalization-end durationMs=${Math.round(performance.now() - startedAt)} status=${disposition}`,
+      );
       await this.host.onTerminal?.(finalized, snapshot);
     })();
     await entry.settlement;
@@ -272,6 +291,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
   private entrySnapshot(entry: WorkflowEntry<TRun, TManualScrape>): ScrapeRunSnapshot<TManualScrape> {
     const snapshot = entry.session.snapshot();
     if (entry.state === "paused" && snapshot.status === "queued") return { ...snapshot, status: "paused" };
+    if (entry.state === "queued" && snapshot.status === "paused") return { ...snapshot, status: "queued" };
     if (
       entry.state === "stopping" &&
       snapshot.status !== "completed" &&

@@ -48,6 +48,9 @@ export const startSelectedScrape = async (
   }
 
   const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId, outputRelativeDirectory });
+  const snapshot = await ipc.scraper.getStatus(data.taskId);
+  if (!snapshot) throw new Error(`Scrape task disappeared after start: ${data.taskId}`);
+  useScrapeStore.getState().setSnapshot(snapshot);
   return { data };
 };
 
@@ -95,7 +98,7 @@ export const updateNfo = async (path: LocalFileTarget, crawlerData: CrawlerData,
   return { data };
 };
 
-export const retryScrapeSelection = async () => {
+export const retryScrapeSelection = async (itemIds?: readonly string[]) => {
   const snapshot = selectScrapeSnapshot(useScrapeStore.getState());
   if (!snapshot) throw new Error("没有可重试的刮削任务");
   if (
@@ -106,5 +109,7 @@ export const retryScrapeSelection = async () => {
   ) {
     throw new Error("当前刮削任务仍在进行，请等待任务结束后再重试");
   }
-  return { data: await ipc.scraper.retry(snapshot.task.id) };
+  return {
+    data: itemIds ? await ipc.scraper.retry(snapshot.task.id, itemIds) : await ipc.scraper.retry(snapshot.task.id),
+  };
 };

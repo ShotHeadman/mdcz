@@ -37,7 +37,7 @@ export const ipc = {
   library: {
     availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
-    delete: (input: { deleteMediaFiles?: boolean; id: string }) => client[IpcChannel.Library_Delete](input),
+    delete: (input: { deleteMode?: "none" | "assets" | "all"; id: string }) => client[IpcChannel.Library_Delete](input),
   },
   mediaRoots: {
     ensurePath: (input: MediaRootEnsurePathInput) =>
@@ -66,8 +66,9 @@ export const ipc = {
     stop: () => client[IpcChannel.Scraper_Stop](undefined),
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
-    getStatus: () => client[IpcChannel.Scraper_GetStatus](undefined),
-    retry: (runId: string) => client[IpcChannel.Scraper_Retry]({ runId }),
+    getStatus: (taskId?: string) => client[IpcChannel.Scraper_GetStatus]({ taskId }),
+    retry: (runId: string, itemIds?: readonly string[]) =>
+      client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
     confirmUncensored: (items: UncensoredConfirmItem[]) => client[IpcChannel.Scraper_ConfirmUncensored]({ items }),
   },
   crawler: {

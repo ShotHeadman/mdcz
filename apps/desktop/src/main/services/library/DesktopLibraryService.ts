@@ -100,24 +100,34 @@ export class DesktopLibraryService {
     return { success: true };
   }
 
-  async deleteEntry(id: string, options: { deleteMediaFiles?: boolean } = {}): Promise<{ success: true }> {
+  async deleteEntry(id: string, options: { deleteMode?: "none" | "assets" | "all" } = {}): Promise<{ success: true }> {
     const normalizedId = id.trim();
     if (!normalizedId) {
       throw new Error("Library entry id is required");
     }
     const state = await this.persistenceService.getState();
-    if (options.deleteMediaFiles) {
+    const deleteMode = options.deleteMode ?? "none";
+    if (deleteMode !== "none") {
       const [roots, entry] = await Promise.all([
         state.repositories.mediaRoots.list(),
         state.repositories.library.getEntryById(normalizedId),
       ]);
       const rootMap = new Map(roots.map((root) => [root.id, root]));
-      const obsolete = [
-        ...entry.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
-        ...entry.assets.flatMap((asset) =>
-          asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
-        ),
-      ];
+      const assetRefs = entry.assets.flatMap((asset) =>
+        asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
+      );
+      const obsolete =
+        deleteMode === "assets"
+          ? [
+              ...entry.files
+                .filter((file) => !(file.rootId === entry.rootId && file.rootRelativePath === entry.rootRelativePath))
+                .map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+              ...assetRefs,
+            ]
+          : [
+              ...entry.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+              ...assetRefs,
+            ];
       await commitPublishedMedia(
         {
           operationId: `delete-library-entry:${normalizedId}`,

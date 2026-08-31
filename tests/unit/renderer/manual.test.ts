@@ -1,7 +1,7 @@
 import { Website } from "@mdcz/shared/enums";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readNfo, resolveNfoWritePath, retryScrapeSelection, updateNfo } from "@/api/manual";
+import { readNfo, resolveNfoWritePath, retryScrapeSelection, startSelectedScrape, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { buildFailedScrapeSnapshot, buildScrapeSnapshot } from "./scrapeTestSupport";
 
@@ -12,14 +12,18 @@ vi.mock("@/client/ipc", () => ({
       nfoWrite: vi.fn(),
     },
     scraper: {
+      getStatus: vi.fn(),
       retry: vi.fn(),
+      start: vi.fn(),
     },
   },
 }));
 
 const nfoRead = vi.mocked(ipc.file.nfoRead);
 const nfoWrite = vi.mocked(ipc.file.nfoWrite);
+const getStatus = vi.mocked(ipc.scraper.getStatus);
 const retry = vi.mocked(ipc.scraper.retry);
+const start = vi.mocked(ipc.scraper.start);
 
 describe("readNfo", () => {
   const crawlerData = {
@@ -34,7 +38,9 @@ describe("readNfo", () => {
   beforeEach(() => {
     nfoRead.mockReset();
     nfoWrite.mockReset();
+    getStatus.mockReset();
     retry.mockReset();
+    start.mockReset();
   });
 
   it("delegates configured naming resolution to the backend and uses its effective path", async () => {
@@ -80,6 +86,31 @@ describe("updateNfo", () => {
     );
 
     expect(nfoWrite).toHaveBeenCalledWith("/media/ABC-123.nfo", expect.any(Object), "/media/ABC-123.mp4");
+  });
+});
+
+describe("startSelectedScrape", () => {
+  beforeEach(() => {
+    getStatus.mockReset();
+    start.mockReset();
+    useScrapeStore.getState().reset();
+  });
+
+  it("hydrates the new task by id even when it has already completed", async () => {
+    const snapshot = buildScrapeSnapshot({
+      task: { ...buildScrapeSnapshot().task, id: "fast-run" },
+    });
+    start.mockResolvedValue({ taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削" });
+    getStatus.mockResolvedValue(snapshot);
+
+    await expect(
+      startSelectedScrape([{ rootId: "root-1", relativePath: "ABC-001.mp4" }], "output-root"),
+    ).resolves.toEqual({
+      data: { taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削" },
+    });
+
+    expect(getStatus).toHaveBeenCalledWith("fast-run");
+    expect(useScrapeStore.getState().snapshot).toBe(snapshot);
   });
 });
 

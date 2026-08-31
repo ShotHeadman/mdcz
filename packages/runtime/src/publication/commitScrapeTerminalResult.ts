@@ -1,6 +1,7 @@
 import type { MediaRoot } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
+import { runtimeLoggerService } from "../shared";
 import { libraryEntryFromPublicationPlan } from "./libraryEntry";
 import { commitPublishedMedia } from "./publishMedia";
 import {
@@ -23,15 +24,17 @@ const errorMessage = (error: unknown): string => {
 };
 
 const formatCommitFailure = (error: unknown): string =>
-  `文件操作已完成，但媒体库提交失败：${errorMessage(error)}。请重新扫描，以磁盘实际状态重新协调。`;
+  error instanceof PublicationError && error.committed
+    ? `媒体库已提交，但清理失败：${errorMessage(error)}。请重新扫描`
+    : `文件操作已回滚，媒体库提交失败：${errorMessage(error)}。请重新扫描`;
 
 const commitPublishedMediaResult = async <TResult>(
   plan: PublicationPlan,
   options: PublishMediaOptions<TResult>,
-): Promise<TResult> => {
+): Promise<{ value: TResult; cleanupError?: PublicationError }> => {
   let committed: { value: TResult } | undefined;
   try {
-    return await commitPublishedMedia(plan, {
+    const value = await commitPublishedMedia(plan, {
       ...options,
       commit: () => {
         const value = options.commit();
@@ -39,8 +42,11 @@ const commitPublishedMediaResult = async <TResult>(
         return value;
       },
     });
+    return { value };
   } catch (error) {
-    if (error instanceof PublicationError && error.committed && committed) return committed.value;
+    if (error instanceof PublicationError && error.committed && committed) {
+      return { value: committed.value, cleanupError: error };
+    }
     throw error;
   }
 };
@@ -99,10 +105,21 @@ export const commitScrapeTerminalResult = async (input: {
   fileTransitions: ScrapeFileTransitions;
 }): Promise<ScrapeResult> => {
   const { result, attemptId, scrapeRuns } = input;
+  const logger = runtimeLoggerService.getLogger("Publication");
+  const transition = async (name: "success" | "failed"): Promise<void> => {
+    const operation = input.success?.plan.operationId ?? attemptId;
+    const startedAt = performance.now();
+    logger.info(`[publication] operation=${operation} phase=file-transition-${name}-start itemPath=${input.itemPath}`);
+    if (name === "success") await input.fileTransitions.succeeded();
+    else await input.fileTransitions.failed();
+    logger.info(
+      `[publication] operation=${operation} phase=file-transition-${name}-end durationMs=${Math.round(performance.now() - startedAt)} itemPath=${input.itemPath}`,
+    );
+  };
   const commitFailure = async (error: string, causes: unknown[] = []): Promise<ScrapeResult> => {
     let terminalError = error;
     try {
-      await input.fileTransitions.failed();
+      await transition("failed");
     } catch (transitionError) {
       causes.push(transitionError);
       terminalError = `${terminalError}；失败文件移动失败：${errorMessage(transitionError)}`;
@@ -141,7 +158,7 @@ export const commitScrapeTerminalResult = async (input: {
   const crawlerDataJson = JSON.stringify(crawlerData);
   const identity = success.identity.trim() || crawlerData.number;
   const nfoRootId = success.nfo && success.nfo.rootId !== output.rootId ? success.nfo.rootId : null;
-  let committed: { outcomeId: string; entryId: string };
+  let committed: { value: { outcomeId: string; entryId: string }; cleanupError?: PublicationError };
   try {
     committed = await commitPublishedMediaResult(success.plan, {
       resolveRoot: input.resolveRoot,
@@ -150,6 +167,10 @@ export const commitScrapeTerminalResult = async (input: {
       repairIssues: input.repairIssues,
       fileSystem: input.fileSystem,
       download: input.download,
+      logContext: {
+        runId: success.plan.operationId.split(":")[0],
+        itemId: result.fileId,
+      },
       commit: () =>
         scrapeRuns.commitSuccessOutcome({
           outcome: "success",
@@ -181,6 +202,11 @@ export const commitScrapeTerminalResult = async (input: {
     const coordinatedError = formatCommitFailure(error);
     return await commitFailure(coordinatedError, [error]);
   }
-  await input.fileTransitions.succeeded();
-  return { ...result, resultId: committed.outcomeId, status: "success" };
+  await transition("success");
+  return {
+    ...result,
+    resultId: committed.value.outcomeId,
+    status: "success",
+    ...(committed.cleanupError ? { error: formatCommitFailure(committed.cleanupError) } : {}),
+  };
 };

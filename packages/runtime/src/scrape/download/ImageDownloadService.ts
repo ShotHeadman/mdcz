@@ -126,7 +126,12 @@ export class ImageDownloadService {
   async downloadFile(
     url: string,
     outputPath: string,
-    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+    options: {
+      timeoutMs?: number;
+      readTimeoutMs?: number;
+      totalTimeoutMs?: number;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<SafeDownloadResult> {
     throwIfAborted(options.signal);
     if (this.hostCooldown.shouldSkipUrl(url)) {
@@ -136,6 +141,8 @@ export class ImageDownloadService {
     try {
       const downloadedPath = await this.networkClient.download(url, outputPath, {
         timeout: options.timeoutMs,
+        readTimeoutMs: options.readTimeoutMs,
+        totalTimeoutMs: options.totalTimeoutMs,
         signal: options.signal,
       });
       this.hostCooldown.reset(url);

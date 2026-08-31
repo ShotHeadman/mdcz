@@ -80,7 +80,7 @@ export class SceneImageDownloader {
       }
 
       this.logger.info(
-        `Trying scene image set ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}) with ${attemptedUrls.length} image(s)`,
+        `Trying ${setIndex === 0 ? "preferred" : "fallback"} scene image set ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}) with ${attemptedUrls.length} image(s)`,
       );
 
       const downloadedPaths = await this.downloadSceneImageSet({
@@ -106,9 +106,8 @@ export class SceneImageDownloader {
         await this.cleanupTemporarySceneImages(downloadedPaths);
       }
 
-      input.onSceneProgress?.(0, attemptedUrls.length);
       this.logger.info(
-        `Scene image set ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}) incomplete (${downloadedPaths.length}/${attemptedUrls.length}); trying next set`,
+        `Scene image fallback ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}) after ${downloadedPaths.length}/${attemptedUrls.length} image(s); trying next set`,
       );
     }
 

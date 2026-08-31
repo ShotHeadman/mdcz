@@ -82,4 +82,28 @@ describe("scrape store contract", () => {
     useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("task-1");
   });
+
+  it("uses manifest item ids for retry and keeps unaffected items in retry snapshots", () => {
+    const completed = buildScrapeSnapshot({
+      task: { ...buildScrapeSnapshot().task, totalItems: 2, successCount: 1, failedCount: 1 },
+      items: [
+        buildScrapeLiveItem({ id: "item-success", status: "success" }),
+        buildScrapeLiveItem({ id: "item-failed", resultId: "result-failed", status: "failed" }),
+      ],
+    });
+    useScrapeStore.getState().setSnapshot(completed);
+
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...completed.task, status: "running", completedAt: null },
+        progress: { percent: 50, completedItems: 1, totalItems: 2 },
+        items: [buildScrapeLiveItem({ id: "item-failed", resultId: null, status: "processing" })],
+      }),
+    );
+
+    expect(selectScrapeResults(useScrapeStore.getState()).map(({ fileId, status }) => ({ fileId, status }))).toEqual([
+      { fileId: "item-success", status: "success" },
+      { fileId: "item-failed", status: "processing" },
+    ]);
+  });
 });

@@ -162,9 +162,19 @@ describe("scrape run session", () => {
 
     await session.start();
     await started.promise;
-    const paused = session.pause();
+    await expect(session.pause()).resolves.toMatchObject({
+      status: "paused",
+      progress: { completedItems: 0, totalItems: 2, percent: 0 },
+      items: [
+        { id: "one", status: "processing" },
+        { id: "two", status: "pending" },
+      ],
+    });
     first.resolve(terminalResult(items[0], "success"));
-    await expect(paused).resolves.toMatchObject({
+    await session.waitForIdle();
+    expect(executed).toEqual(["one"]);
+    expect(committed).toEqual(["one"]);
+    expect(session.snapshot()).toMatchObject({
       status: "paused",
       progress: { completedItems: 1, totalItems: 2, percent: 50 },
       items: [
@@ -172,8 +182,6 @@ describe("scrape run session", () => {
         { id: "two", status: "pending" },
       ],
     });
-    expect(executed).toEqual(["one"]);
-    expect(committed).toEqual(["one"]);
 
     await session.resume();
     await session.waitForIdle();
@@ -278,12 +286,30 @@ describe("scrape run session", () => {
     expect(session.snapshot().progress.percent).toBe(21);
     await session.start();
     await started.promise;
-    const paused = session.pause();
+    await session.pause();
     first.resolve(terminalResult(items[0], "success"));
-    await paused;
+    await session.waitForIdle();
     expect(session.snapshot().progress).toEqual({ completedItems: 1, totalItems: 2, percent: 50 });
     session.recordProgress("one", -10);
     expect(session.snapshot().progress.percent).toBe(50);
+  });
+
+  it("reserves 100 percent for a fully settled run", () => {
+    const items = [runItem("one"), runItem("two")];
+    const session = new ScrapeRunSession({
+      runId: "run-progress-terminal",
+      items,
+      concurrency: 2,
+      admitItem,
+      executeItem: async (item) => terminalResult(item, "success"),
+      commitItem: async (_item, result) => result,
+      onSnapshot: () => undefined,
+    });
+
+    session.recordProgress("one", 100);
+    session.recordProgress("two", 100);
+
+    expect(session.snapshot().progress).toEqual({ completedItems: 0, totalItems: 2, percent: 99 });
   });
 
   it("aborts in-flight work and skips every unsettled item on stop", async () => {

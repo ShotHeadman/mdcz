@@ -3,6 +3,7 @@ import { copyFile, mkdir, open, readFile, rename, rm, stat, statfs, writeFile } 
 import path from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
+import { runtimeLoggerService } from "../shared";
 import {
   assertPublicationFileUnchanged,
   type ObservedPublicationFile,
@@ -32,8 +33,8 @@ const flushFile = async (filePath: string): Promise<void> => {
 const defaultFileSystem: PublicationFileSystem = {
   copyFile: async (source, target) => {
     await copyFile(source, target);
-    await flushFile(target);
   },
+  flush: flushFile,
   mkdir,
   readFile,
   rename,
@@ -109,8 +110,29 @@ export const commitPublishedMedia = async <TResult>(
     ...plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : [])),
     ...plan.obsolete,
   ]);
+  const logger = runtimeLoggerService.getLogger("Publication");
+  const startedAt = performance.now();
+  const logPhase = (phase: string, phaseStartedAt: number, details = "") => {
+    const context = ` runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""}`;
+    logger.info(
+      `[publication] operation=${plan.operationId}${context} phase=${phase}-end durationMs=${Math.round(performance.now() - phaseStartedAt)}${details}`,
+    );
+  };
+  const startPhase = (phase: string, details = ""): number => {
+    logger.info(
+      `[publication] operation=${plan.operationId} runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""} phase=${phase}-start${details}`,
+    );
+    return performance.now();
+  };
+  logger.info(
+    `[publication] operation=${plan.operationId} runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""} phase=publication-start size=${plan.video?.size ?? 0} source=${plan.video ? `${plan.video.source.rootId}:${plan.video.source.relativePath}` : ""} target=${plan.video ? `${plan.video.target.rootId}:${plan.video.target.relativePath}` : ""}`,
+  );
+  const previewStartedAt = startPhase("preflight-preview");
   const previewed = await preflightPublication(plan, options, fileSystem);
+  logPhase("preflight-preview", previewStartedAt);
+  const lockStartedAt = startPhase("publication-lock");
   const release = options.acquireAll?.(lockRefs) ?? mediaPathOwnership.acquireAll(lockRefs);
+  logPhase("publication-lock", lockStartedAt);
   let journalOpen = false;
   let committed = false;
   const planned: PlannedPublication[] = [];
@@ -152,7 +174,9 @@ export const commitPublishedMedia = async <TResult>(
   try {
     const conflict = options.journal.conflicts(lockRefs);
     if (conflict) throw new Error(`Publication conflicts with unfinished operation: ${conflict.operationId}`);
+    const preflightStartedAt = startPhase("preflight");
     const resolved = await preflightPublication(plan, options, fileSystem, previewed.observed);
+    logPhase("preflight", preflightStartedAt);
     const replacing = new Set((plan.replaceExistingTargets ?? []).map(refKey));
     for (const artifact of plan.artifacts) {
       const targetPath = resolved.resolve(artifact.target);
@@ -177,7 +201,12 @@ export const commitPublishedMedia = async <TResult>(
           } else {
             data = artifact.content.data;
           }
-          await fileSystem.writeFile(temporaryPath, data, { flush: true });
+          const writeStartedAt = startPhase("sidecar-write", ` target=${targetPath}`);
+          await fileSystem.writeFile(temporaryPath, data);
+          logPhase("sidecar-write", writeStartedAt, ` target=${targetPath} size=${expectedBytes(data)}`);
+          const flushStartedAt = startPhase("flush", ` target=${temporaryPath}`);
+          await fileSystem.flush?.(temporaryPath);
+          logPhase("flush", flushStartedAt, ` target=${temporaryPath}`);
           const staged = await fileSystem.stat(temporaryPath);
           if (!staged.isFile() || staged.size !== expectedBytes(data)) {
             throw new Error(
@@ -217,7 +246,15 @@ export const commitPublishedMedia = async <TResult>(
                 `Publication source changed before mutation: ${video.source.rootId}:${video.source.relativePath}`,
               );
             }
+            const copyStartedAt = startPhase(
+              "video-copy",
+              ` source=${sourcePath} target=${targetPath} size=${video.size}`,
+            );
             await fileSystem.copyFile(sourcePath, temporaryPath);
+            logPhase("video-copy", copyStartedAt, ` source=${sourcePath} target=${targetPath} size=${video.size}`);
+            const flushStartedAt = startPhase("flush", ` target=${temporaryPath}`);
+            await fileSystem.flush?.(temporaryPath);
+            logPhase("flush", flushStartedAt, ` target=${temporaryPath}`);
             const copied = await fileSystem.stat(temporaryPath);
             if (!copied.isFile() || copied.size !== video.size) {
               throw new Error(`Copied video size mismatch for ${video.target.rootId}:${video.target.relativePath}`);
@@ -259,6 +296,7 @@ export const commitPublishedMedia = async <TResult>(
     for (const item of planned) await item.stage();
     const staged = await preflightPublication(plan, options, fileSystem, resolved.observed);
 
+    const renameStartedAt = startPhase("rename");
     for (const item of planned) {
       const expectedTarget = observedAt(staged.observed, item.targetPath);
       if (!expectedTarget) throw new Error(`Publication target was not observed: ${item.targetPath}`);
@@ -270,12 +308,16 @@ export const commitPublishedMedia = async <TResult>(
       await fileSystem.rename(item.temporaryPath, item.targetPath);
       if (!item.targetExisted) published.push(item);
     }
+    logPhase("rename", renameStartedAt);
 
+    const commitStartedAt = startPhase("database-commit");
     const result = options.journal.commit(plan.operationId, () => options.commit());
     committed = true;
     journalOpen = false;
+    logPhase("database-commit", commitStartedAt);
 
     try {
+      const cleanupStartedAt = startPhase("cleanup");
       const retainedObsolete = await removeCommittedObsoleteFiles(fileSystem, obsolete, (rootId, relativePath) =>
         resolved.resolve({ rootId, relativePath }),
       );
@@ -298,6 +340,7 @@ export const commitPublishedMedia = async <TResult>(
         await options.repairIssues?.resolve(plan.operationId, target.rootId, target.relativePath);
       }
       options.journal.finish(plan.operationId);
+      logPhase("cleanup", cleanupStartedAt);
     } catch (error) {
       throw new PublicationError(
         `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
@@ -337,5 +380,6 @@ export const commitPublishedMedia = async <TResult>(
     throw error;
   } finally {
     release();
+    logPhase("publication", startedAt);
   }
 };

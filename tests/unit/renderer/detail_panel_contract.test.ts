@@ -117,6 +117,7 @@ describe("detail panel adapter contract", () => {
       fanartUrl: "local-file://metadata-root/art/fanart.jpg",
       sceneImages: ["local-file://metadata-root/art/scene-1.jpg"],
       trailerUrl: "local-file://metadata-root/art/trailer.mp4",
+      trailerFallbackUrls: ["https://example.com/remote-trailer.mp4"],
       outputPath: "organized/ABC-123",
       nfoPath: "organized/ABC-123/ABC-123.nfo",
       rating: 4.6,
@@ -149,6 +150,41 @@ describe("detail panel adapter contract", () => {
 
     expect(result.sceneImages).toEqual(["https://example.com/remote-scene.jpg"]);
     expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
+    expect(result.trailerFallbackUrls).toBeUndefined();
+  });
+
+  it("keeps both remote trailer candidates for local and source fallback playback", () => {
+    const local = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-123.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      assets: [{ type: "local", kind: "trailer", file: { rootId: "output", relativePath: "trailer.mp4" } }],
+      crawlerData: createCrawlerData({
+        trailer_source_url: "https://source.example/trailer.mp4",
+        trailer_url: "https://fallback.example/trailer.mp4",
+      }),
+    });
+    const remote = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-124.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-124.mp4",
+      fileName: "ABC-124.mp4",
+      assets: [],
+      crawlerData: createCrawlerData({
+        trailer_source_url: "https://source.example/trailer.mp4",
+        trailer_url: "https://fallback.example/trailer.mp4",
+      }),
+    });
+
+    expect(local.trailerFallbackUrls).toEqual([
+      "https://source.example/trailer.mp4",
+      "https://fallback.example/trailer.mp4",
+    ]);
+    expect(remote.trailerUrl).toBe("https://source.example/trailer.mp4");
+    expect(remote.trailerFallbackUrls).toEqual(["https://fallback.example/trailer.mp4"]);
   });
 
   it("prefers the local file per asset kind when a run mixes downloaded and remote-only assets", () => {

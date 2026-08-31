@@ -10,6 +10,7 @@ import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError, IpcErrorCode } from "../errors";
 import {
   scraperConfirmUncensoredInputSchema,
+  scraperGetStatusInputSchema,
   scraperRetryInputSchema,
   scraperStartInputSchema,
   scraperStartSinglePathInputSchema,
@@ -42,9 +43,9 @@ export const createScraperHandlers = (
   const { scraperService } = context;
 
   return {
-    [IpcChannel.Scraper_GetStatus]: t.procedure.action(async () => {
-      return scraperService.getSnapshot();
-    }),
+    [IpcChannel.Scraper_GetStatus]: t.procedure
+      .input(scraperGetStatusInputSchema)
+      .action(async ({ input }) => scraperService.getSnapshot(input.taskId)),
     [IpcChannel.Scraper_Start]: t.procedure.input(scraperStartInputSchema).action(({ input }) =>
       withIpcErrorHandling(
         "start scraper",
@@ -94,7 +95,7 @@ export const createScraperHandlers = (
       withIpcErrorHandling(
         "retry files",
         async () => {
-          const result = await scraperService.retry(input.runId);
+          const result = await scraperService.retry(input.runId, input.itemIds);
           return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
         },
         { mapError: toScraperServiceIpcError },

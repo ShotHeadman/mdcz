@@ -295,6 +295,7 @@ export type ScrapeStartInput = z.output<typeof scrapeStartInputSchema>;
 
 export const scrapeTaskControlInputSchema = z.object({
   taskId: z.string().trim().min(1),
+  itemIds: z.array(z.string().trim().min(1)).min(1).optional(),
 });
 
 export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema>;

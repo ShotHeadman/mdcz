@@ -484,17 +484,28 @@ export class ScrapeRunRepository {
     })();
   }
 
-  async retry(runId: string, admittedAt = new Date()): Promise<ScrapeRunRecord> {
+  async retry(runId: string, itemIds?: readonly string[], admittedAt = new Date()): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
     if (!run.disposition || run.disposition === "interrupted") {
       throw new Error(`Only completed, failed, or stopped scrape runs can be retried: ${run.id}`);
     }
     const outcomesByItemId = new Map(latestOutcomes(run.outcomes).map((outcome) => [outcome.itemId, outcome]));
-    const items = run.items.filter((item) => {
-      const outcome = outcomesByItemId.get(item.id);
-      return outcome?.outcome === "failed" || outcome?.outcome === "skipped";
-    });
+    const items = itemIds
+      ? (() => {
+          const selectedIds = new Set(itemIds);
+          if (selectedIds.size === 0) throw new Error(`Scrape retry requires at least one item: ${run.id}`);
+          const unknownItemId = [...selectedIds].find((itemId) => !run.items.some((item) => item.id === itemId));
+          if (unknownItemId) throw new Error(`Scrape item does not belong to run ${run.id}: ${unknownItemId}`);
+          return run.items.filter((item) => selectedIds.has(item.id));
+        })()
+      : run.items.filter((item) => {
+          const outcome = outcomesByItemId.get(item.id);
+          return outcome?.outcome === "failed" || outcome?.outcome === "skipped";
+        });
     if (items.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
+    for (const item of items) {
+      if (!outcomesByItemId.has(item.id)) throw new Error(`Scrape item has no settled outcome to retry: ${item.id}`);
+    }
     this.database.sqlite.transaction(() => {
       for (const item of items) this.admitAttempt(item.id, admittedAt);
     })();

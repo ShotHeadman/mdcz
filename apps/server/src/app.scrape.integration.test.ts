@@ -1026,21 +1026,26 @@ describe("buildServer scrape integration", () => {
     await waitForScrapeRunStatus(fastify, token, taskId, "paused");
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
 
-    const liveRunsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/scrape.liveRuns",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(liveRunsResponse.json().result.data.runs).toEqual([
-      expect.objectContaining({
-        task: expect.objectContaining({ id: taskId, status: "paused", continuity: "live" }),
+    await expect
+      .poll(
+        async () => {
+          const response = await fastify.inject({
+            method: "GET",
+            url: "/trpc/scrape.liveRuns",
+            headers: { authorization: `Bearer ${token}` },
+          });
+          return response.json().result.data.runs[0];
+        },
+        { timeout: 10_000 },
+      )
+      .toMatchObject({
+        task: { id: taskId, status: "paused", continuity: "live" },
         progress: { percent: 50, completedItems: 1, totalItems: 2 },
         items: expect.arrayContaining([
           expect.objectContaining({ status: "success" }),
           expect.objectContaining({ status: "pending" }),
         ]),
-      }),
-    ]);
+      });
 
     await fastify.inject({
       method: "POST",

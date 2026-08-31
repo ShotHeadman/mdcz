@@ -100,7 +100,10 @@ export function registerLocalFileHandler(dependencies: LocalFileProtocolDependen
   protocol.handle(LOCAL_FILE_SCHEME, async (request) => {
     try {
       const filePath = await resolveLocalFileRequest(request.url, dependencies.getRoot);
-      return await net.fetch(pathToFileURL(filePath).href);
+      return await net.fetch(pathToFileURL(filePath).href, {
+        method: request.method,
+        headers: request.headers,
+      });
     } catch {
       return new Response(null, { status: 404, statusText: "Not Found" });
     }

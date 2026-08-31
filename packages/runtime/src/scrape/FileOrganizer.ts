@@ -30,6 +30,7 @@ interface ResolveOutputPlanOptions {
 
 interface PlanOptions {
   executionMode?: ScrapeExecutionMode;
+  outputBaseDirectory?: string;
 }
 
 export type ScrapeExecutionMode = "single" | "batch";
@@ -70,6 +71,8 @@ export class FileOrganizer {
     let outputDir: string;
     if (options.executionMode === "single" || !config.behavior.successFileMove) {
       outputDir = sourceVideo.dir;
+    } else if (options.outputBaseDirectory) {
+      outputDir = join(resolve(options.outputBaseDirectory), layout.folderRelativePath);
     } else {
       const baseOutput = this.resolveBaseOutput(fileInfo, config);
       const sourceDir = resolve(sourceVideo.dir);

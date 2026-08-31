@@ -30,6 +30,7 @@ export interface DetailViewItem {
   outputPath?: string;
   sceneImages?: string[];
   trailerUrl?: string;
+  trailerFallbackUrls?: string[];
   errorMessage?: string;
 }
 

@@ -18,7 +18,7 @@ export function LibraryPage() {
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
-  const [deleteMediaFiles, setDeleteMediaFiles] = useState(false);
+  const [deleteAssets, setDeleteAssets] = useState(false);
   const queryClient = useQueryClient();
   const libraryQ = useInfiniteQuery({
     queryKey: ["library", "list", query],
@@ -78,19 +78,19 @@ export function LibraryPage() {
       />
       <LibraryDeleteDialog
         open={Boolean(deleteTarget)}
-        deleteMediaFiles={deleteMediaFiles}
+        deleteMediaFiles={deleteAssets}
         showDeleteMediaFiles
-        onDeleteMediaFilesChange={setDeleteMediaFiles}
+        onDeleteMediaFilesChange={setDeleteAssets}
         onCancel={() => {
           setDeleteTarget(null);
-          setDeleteMediaFiles(false);
+          setDeleteAssets(false);
         }}
         onConfirm={() => {
           const target = deleteTarget;
           if (!target) return;
-          void deleteLibraryEntry(target, deleteMediaFiles, () => {
+          void deleteLibraryEntry(target, deleteAssets, () => {
             setDeleteTarget(null);
-            setDeleteMediaFiles(false);
+            setDeleteAssets(false);
             void libraryQ.refetch();
             void queryClient.invalidateQueries({ queryKey: ["library", "availability"] });
           });
@@ -100,9 +100,14 @@ export function LibraryPage() {
   );
 }
 
-async function deleteLibraryEntry(entry: LibraryEntryDto, deleteMediaFiles: boolean, onSuccess: () => void) {
+async function deleteLibraryEntry(entry: LibraryEntryDto, deleteAssets: boolean, onSuccess: () => void) {
   try {
-    await ipc.library.delete({ deleteMediaFiles, id: entry.id });
+    const deleteMode = !deleteAssets
+      ? "none"
+      : window.confirm("是否同时删除视频文件？\n选择“取消”将仅删除附带数据并保留视频。")
+        ? "all"
+        : "assets";
+    await ipc.library.delete({ deleteMode, id: entry.id });
     toast.success("已从媒体库移除");
     onSuccess();
   } catch (error) {

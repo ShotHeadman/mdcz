@@ -21,7 +21,6 @@ export interface ScrapeWorkbenchFrameProps {
 }
 
 const ABNORMAL_OUTCOME_LABEL = {
-  failed: "刮削失败",
   stopped: "已手动停止",
   interrupted: "上次运行被中断",
 } as const;
@@ -113,7 +112,7 @@ export function ScrapeWorkbenchFrame({
 
           {showCompletedActions ? (
             <>
-              {outcome && outcome !== "completed" ? (
+              {outcome === "stopped" || outcome === "interrupted" ? (
                 <Badge variant={outcome === "stopped" ? "secondary" : "destructive"} className="h-5 px-2 text-[10px]">
                   {ABNORMAL_OUTCOME_LABEL[outcome]}
                 </Badge>

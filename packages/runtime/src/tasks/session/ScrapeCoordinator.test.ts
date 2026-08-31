@@ -49,12 +49,13 @@ const createStore = (run: Run): ScrapeRunStore<Run> => ({
 const createHost = (
   run: Run,
   executeItem: (item: ScrapeRunItem, signal: AbortSignal) => Promise<ScrapeResult>,
+  concurrency = 1,
 ): ScrapeHostPort<string, Run, undefined> => ({
   create: vi.fn(async () => run),
   runId: (entry) => entry.id,
   createExecution: async (entry) => ({
     items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
-    concurrency: 1,
+    concurrency,
     admitItem: async (item) => `${item.id}:attempt`,
     executeItem,
     commitItem: async (_item, result) => result,
@@ -106,6 +107,92 @@ describe("ScrapeCoordinator", () => {
     expect(store.retry).not.toHaveBeenCalled();
     release.resolve();
     await coordinator.waitForIdle();
+  });
+
+  it("resumes immediately while paused in-flight work is still settling", async () => {
+    const run: Run = {
+      id: "run-resume",
+      items: [
+        { id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" },
+        { id: "item-2", rootId: "root-1", relativePath: "ABC-002.mp4" },
+      ],
+    };
+    const store = createStore(run);
+    const started = deferred<void>();
+    const release = deferred<void>();
+    const executed: string[] = [];
+    const host = createHost(run, async (item) => {
+      executed.push(item.id);
+      if (item.id === "item-1") {
+        started.resolve();
+        await release.promise;
+      }
+      return resultFor(item, "success");
+    });
+    const coordinator = new ScrapeCoordinator(store, host);
+
+    await coordinator.start("start");
+    await started.promise;
+    await expect(coordinator.pause(run.id)).resolves.toMatchObject({ status: "paused" });
+    await expect(coordinator.resume(run.id)).resolves.toMatchObject({ status: "running" });
+    await expect(coordinator.resume(run.id)).resolves.toMatchObject({ status: "running" });
+    expect(coordinator.liveRuns()[0]?.snapshot.status).toBe("running");
+
+    release.resolve();
+    await coordinator.waitForIdle();
+
+    expect(executed).toEqual(["item-1", "item-2"]);
+    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ runId: run.id, disposition: "completed" }));
+  });
+
+  it("lets two processing items finish while paused and admits the third only after resume", async () => {
+    const run: Run = {
+      id: "run-pause",
+      items: [
+        { id: "item-1", rootId: "root-1", relativePath: "ABC-001.mp4" },
+        { id: "item-2", rootId: "root-1", relativePath: "ABC-002.mp4" },
+        { id: "item-3", rootId: "root-1", relativePath: "ABC-003.mp4" },
+      ],
+    };
+    const store = createStore(run);
+    const processing = deferred<void>();
+    const processingCommitted = deferred<void>();
+    const release = deferred<void>();
+    const started: string[] = [];
+    const committed: string[] = [];
+    const host = createHost(
+      run,
+      async (item, signal) => {
+        started.push(item.id);
+        if (started.length === 2) processing.resolve();
+        if (item.id !== "item-3") await waitForAbort(signal, release.promise);
+        return resultFor(item, "success");
+      },
+      2,
+    );
+    const createExecution = host.createExecution;
+    host.createExecution = async (entry) => ({
+      ...(await createExecution(entry, { progress: () => undefined, stage: () => undefined })),
+      commitItem: async (item, result) => {
+        committed.push(item.id);
+        if (committed.length === 2) processingCommitted.resolve();
+        return result;
+      },
+    });
+    const coordinator = new ScrapeCoordinator(store, host);
+
+    await coordinator.start("start");
+    await processing.promise;
+    await coordinator.pause(run.id);
+    release.resolve();
+    await processingCommitted.promise;
+    expect(started).toEqual(["item-1", "item-2"]);
+
+    await coordinator.resume(run.id);
+    await coordinator.waitForIdle();
+
+    expect(started).toEqual(["item-1", "item-2", "item-3"]);
+    expect(committed).toEqual(["item-1", "item-2", "item-3"]);
   });
 
   it("finalizes mixed item outcomes as failed", async () => {

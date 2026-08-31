@@ -5,6 +5,7 @@ import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
+import type { ScrapeRunManifest } from "@mdcz/persistence";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -113,28 +114,41 @@ const attachLiveRun = (service: ScraperService, status: "running" | "paused") =>
     logs: [],
     error: null,
   };
+  const run: ScrapeRunManifest = {
+    id: snapshot.runId,
+    rootId: "desktop-input",
+    requestedOutputRootId: null,
+    requestedOutputRelativeDirectory: null,
+    executionMode: "single",
+    createdAt: startedAt,
+    startedAt,
+    completedAt: null,
+    disposition: null,
+    error: null,
+    items: snapshot.items.map((item, ordinal) => ({
+      id: item.id,
+      runId: snapshot.runId,
+      ordinal,
+      rootId: item.rootId,
+      relativePath: item.relativePath,
+      manualUrl: null,
+      uncensoredChoice: null,
+    })),
+    attempts: [],
+    outcomes: [],
+  };
   Object.assign(service, {
     workflow: {
       liveRuns: () => [
         {
-          run: {
-            id: snapshot.runId,
-            rootId: "desktop-input",
-            createdAt: startedAt,
-            completedAt: null,
-            items: snapshot.items.map((item) => ({
-              id: item.id,
-              rootId: item.rootId,
-              relativePath: item.relativePath,
-            })),
-          },
+          run,
           snapshot,
           startedAt,
         },
       ],
     },
   });
-  return snapshot;
+  return { run, snapshot, startedAt };
 };
 
 describe("ScraperService.getSnapshot", () => {
@@ -178,5 +192,31 @@ describe("ScraperService.getSnapshot", () => {
     expect(snapshot?.task.id).toBe("live-run");
     expect(snapshot?.task.status).toBe("paused");
     expect(snapshot?.task.continuity).toBe("live");
+  });
+
+  it("keeps this process's terminal snapshot available only to its active renderer session", async () => {
+    const { service } = await createHarness();
+    const { run, snapshot, startedAt } = attachLiveRun(service, "running");
+    const completedAt = new Date("2026-08-29T00:05:00.000Z");
+    const terminalSnapshot: ScrapeRunSnapshot = {
+      ...snapshot,
+      status: "completed",
+      progress: { percent: 100, completedItems: 1, totalItems: 1 },
+      items: snapshot.items.map((item) => ({ ...item, status: "success" })),
+    };
+    const host = Reflect.get(service, "host") as {
+      onTerminal(run: ScrapeRunManifest, snapshot: ScrapeRunSnapshot): Promise<void> | void;
+    };
+
+    await host.onTerminal({ ...run, startedAt, completedAt, disposition: "completed" }, terminalSnapshot);
+    Object.assign(service, { workflow: null });
+
+    await expect(service.getSnapshot("live-run")).resolves.toMatchObject({
+      task: { id: "live-run", status: "completed", continuity: "final" },
+      progress: { percent: 100, completedItems: 1, totalItems: 1 },
+      items: [{ id: "item-1", status: "success" }],
+    });
+    await expect(service.getSnapshot("another-run")).resolves.toBeNull();
+    await expect(service.getSnapshot()).resolves.toBeNull();
   });
 });

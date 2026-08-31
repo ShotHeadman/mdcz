@@ -38,7 +38,7 @@ export interface ScrapeActionTarget {
 }
 
 export interface ScrapeActionPort {
-  retryFailed(): Promise<{ message: string }>;
+  retryFailed(itemIds?: readonly string[]): Promise<{ message: string }>;
   deleteFile(targets: ScrapeActionTarget[]): Promise<void>;
   deleteFileAndFolder?(target: ScrapeActionTarget): Promise<void>;
   openFolder?(target: ScrapeActionTarget): Promise<void> | void;

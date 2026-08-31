@@ -10,10 +10,10 @@ import { useUIStore } from "@mdcz/views/state/uiStore";
 import { Copy, FileText, Link2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { MediaBrowserFilter } from "../common";
+import type { MediaBrowserFilter, MediaBrowserItem } from "../common";
 import { getScrapeResultTitle, type ResultTreeManualUrlTarget, ResultTreeView } from "../detail";
 import type { ScrapeActionPort } from "./ports";
-import { activateRetryScrapeTask, resetScrapeWorkbenchToSetup } from "./workbenchSession";
+import { activateRetryScrapeTask } from "./workbenchSession";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
@@ -56,7 +56,7 @@ function buildMenuContent(
 
   const handleRetryScrape = async () => {
     try {
-      const response = await port.retryFailed();
+      const response = await port.retryFailed([result.fileId]);
       activateRetryScrapeTask();
       toast.success(response.message);
     } catch (error) {
@@ -180,7 +180,7 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
   const successCount = useMemo(() => resultGroups.filter((group) => group.status === "success").length, [resultGroups]);
   const failedCount = useMemo(() => resultGroups.filter((group) => group.status === "failed").length, [resultGroups]);
 
-  const items = useMemo(
+  const items = useMemo<MediaBrowserItem[]>(
     () =>
       resultGroups.map((group) => ({
         id: group.id,
@@ -190,14 +190,19 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
           getScrapeResultTitle(group.display) ||
           getFileNameFromPath(group.display.output?.relativePath ?? group.display.relativePath),
         errorText: group.errorText ?? group.display.error,
-        status: group.status,
+        status:
+          scrapeStatus === "paused" &&
+          group.status === "processing" &&
+          !group.items.some((item) => item.status === "processing")
+            ? "paused"
+            : group.status,
         onClick: () =>
           setSelectedResultId(
             group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,
           ),
         menuContent: buildMenuContent(group, selectedResultId, port, setManualUrlTarget),
       })),
-    [port, resultGroups, selectedResultId, setSelectedResultId],
+    [port, resultGroups, scrapeStatus, selectedResultId, setSelectedResultId],
   );
 
   return (
@@ -212,7 +217,6 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
       ]}
       manualUrlTarget={manualUrlTarget}
       scrapeStatus={scrapeStatus}
-      onClearResults={resetScrapeWorkbenchToSetup}
       onManualUrlDialogOpenChange={(open) => {
         if (!open) {
           setManualUrlTarget(null);

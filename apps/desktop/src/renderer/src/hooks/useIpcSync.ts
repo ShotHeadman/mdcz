@@ -2,7 +2,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { createRuntimeLog, useLogStore } from "@mdcz/views/state/logStore";
 import { applyMaintenanceSessionSnapshot, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { createRefreshCoordinator } from "@mdcz/views/state/refreshCoordinator";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { overviewKeys } from "@/api/overview";
@@ -27,7 +27,7 @@ export const useIpcSync = (queryClient: QueryClient) => {
       useLogStore.getState().addLog(createRuntimeLog("error", `Failed to refresh ${resource}: ${message}`));
     };
     const scrape = createRefreshCoordinator({
-      read: ipc.scraper.getStatus,
+      read: () => ipc.scraper.getStatus(selectScrapeTaskId(useScrapeStore.getState()) || undefined),
       apply: (snapshot) => {
         if (snapshot) useScrapeStore.getState().setSnapshot(snapshot);
       },

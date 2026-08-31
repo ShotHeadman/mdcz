@@ -55,6 +55,8 @@ export interface MountedRootScrapeRuntimeItemInput {
   manualScrape?: ManualScrapeOptions;
   localState?: NfoLocalState;
   operationId?: string;
+  replaceExistingTargets?: boolean;
+  outputBaseDirectory?: string;
   publicationRoots?: MediaRoot[];
   progress: { fileIndex: number; totalFiles: number };
   onEvent?: (type: string, message: string) => Promise<void> | void;
@@ -202,6 +204,8 @@ export class MountedRootScrapeRuntime {
           source: { rootId: input.root.id, relativePath: input.relativePath },
           roots,
           operationId: input.operationId ?? `${input.scrapeSessionId ?? "scrape"}:${input.relativePath}`,
+          replaceExistingTargets: input.replaceExistingTargets,
+          outputBaseDirectory: input.outputBaseDirectory,
         },
       );
       if (result.status !== "success" || !result.crawlerData) {

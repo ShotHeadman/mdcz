@@ -92,6 +92,8 @@ export type FileScrapeOptions = {
   source?: RootFileRef;
   roots?: readonly Pick<MediaRoot, "id" | "hostPath">[];
   operationId?: string;
+  replaceExistingTargets?: boolean;
+  outputBaseDirectory?: string;
 };
 
 export type FileScrapeResult = ScrapeResult & { publicationPlan?: PublicationPlan };
@@ -197,6 +199,7 @@ export class FileScraper {
         {
           ...this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration, existingNfoLocalState, {
             executionMode: this.options.mode ?? "batch",
+            outputBaseDirectory: options.outputBaseDirectory,
           }),
           subtitleSidecars: resolved.subtitleSidecars,
         },
@@ -344,6 +347,9 @@ export class FileScraper {
         artifacts,
         assets: assetTargets,
         obsoletePaths: [],
+        replaceExistingTargetPaths: options.replaceExistingTargets
+          ? [outputVideoPath, ...artifacts.map((artifact) => artifact.targetPath)]
+          : undefined,
       };
       const identity = toScrapeIdentity(fileId, fileInfo, options);
       const publicationPlan =

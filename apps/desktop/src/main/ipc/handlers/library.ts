@@ -33,7 +33,7 @@ export const createLibraryHandlers = (
   [IpcChannel.Library_Delete]: t.procedure.input(libraryDeleteInputSchema).action(async ({ input }) => {
     try {
       return await context.desktopLibraryService.deleteEntry(input?.id ?? "", {
-        deleteMediaFiles: input?.deleteMediaFiles,
+        deleteMode: input?.deleteMode,
       });
     } catch (error) {
       logger.error(`Library delete failed: ${toErrorMessage(error)}`);

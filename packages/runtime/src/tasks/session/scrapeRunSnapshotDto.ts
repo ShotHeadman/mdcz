@@ -140,20 +140,10 @@ const latestOutcomeByItem = (
   return latest;
 };
 
-const finalizedItemSnapshot = (
-  item: FinalizedScrapeRun["items"][number],
-  outcome: FinalizedScrapeRun["outcomes"][number] | undefined,
-): ScrapeRunItemSnapshot => {
-  if (!outcome) {
-    return {
-      id: item.id,
-      rootId: item.rootId,
-      relativePath: item.relativePath,
-      sourcePath: item.relativePath,
-      status: "pending",
-      error: null,
-    };
-  }
+export const toScrapeResultFromOutcome = (
+  item: Pick<FinalizedScrapeRun["items"][number], "id" | "rootId" | "relativePath">,
+  outcome: FinalizedScrapeRun["outcomes"][number],
+): ScrapeResult => {
   const crawlerData = outcome.crawlerDataJson ? (JSON.parse(outcome.crawlerDataJson) as CrawlerData) : undefined;
   const assets: AssetRef[] = [];
   for (const asset of outcome.assets ?? []) {
@@ -168,7 +158,7 @@ const finalizedItemSnapshot = (
     }
   }
   const nfoRootId = outcome.nfoRootId ?? outcome.outputRootId ?? item.rootId;
-  const result: ScrapeResult = {
+  return {
     fileId: item.id,
     rootId: item.rootId,
     relativePath: item.relativePath,
@@ -184,6 +174,22 @@ const finalizedItemSnapshot = (
       ? { output: { rootId: outcome.outputRootId, relativePath: outcome.outputRelativePath } }
       : {}),
   };
+};
+
+const finalizedItemSnapshot = (
+  item: FinalizedScrapeRun["items"][number],
+  outcome: FinalizedScrapeRun["outcomes"][number] | undefined,
+): ScrapeRunItemSnapshot => {
+  if (!outcome) {
+    return {
+      id: item.id,
+      rootId: item.rootId,
+      relativePath: item.relativePath,
+      sourcePath: item.relativePath,
+      status: "pending",
+      error: null,
+    };
+  }
   return {
     id: item.id,
     rootId: item.rootId,
@@ -191,7 +197,7 @@ const finalizedItemSnapshot = (
     sourcePath: item.relativePath,
     status: outcome.outcome,
     error: outcome.error,
-    result,
+    result: toScrapeResultFromOutcome(item, outcome),
   };
 };
 

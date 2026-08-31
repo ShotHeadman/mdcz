@@ -34,6 +34,7 @@ export interface PublicationFileSystem {
   stat(path: string): Promise<Stats>;
   statfs(path: string): Promise<{ bavail: number; bsize: number }>;
   writeFile(path: string, data: Buffer | string, options?: { flush?: boolean }): Promise<void>;
+  flush?(path: string): Promise<void>;
 }
 
 export interface PublicationRepairPort {
@@ -106,6 +107,7 @@ export interface PublishMediaOptions<TResult> extends DurablePublicationContext 
   download?(url: string): Promise<Uint8Array>;
   acquireAll?(refs: readonly RootFileRef[]): () => void;
   fileSystem?: PublicationFileSystem;
+  logContext?: { runId?: string; itemId?: string };
 }
 
 export class PublicationError extends Error {

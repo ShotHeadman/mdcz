@@ -69,6 +69,7 @@ export interface DetailPanelViewProps {
   onOpenNfo?: () => void;
   onPosterError?: () => void;
   onThumbError?: () => void;
+  onTrailerError?: () => void;
   resolveImageCandidates: ResolveImageCandidates;
   showFilePath: boolean;
   posterEditor: {
@@ -190,6 +191,7 @@ export function DetailPanelView({
   onOpenNfo,
   onPosterError,
   onThumbError,
+  onTrailerError,
   resolveImageCandidates,
   showFilePath,
   posterEditor,
@@ -447,6 +449,7 @@ export function DetailPanelView({
                       controls
                       preload="metadata"
                       src={trailerSrc}
+                      onError={onTrailerError}
                     />
                   </section>
                 ) : null}

@@ -201,6 +201,18 @@ const getNormalizedSceneImageUrls = (values: string[]): string[] => {
   return urls;
 };
 
+const normalizeSceneUrlKey = (value: string): string => {
+  try {
+    const url = new URL(value);
+    url.protocol = url.protocol.toLowerCase();
+    url.hostname = url.hostname.toLowerCase();
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value;
+  }
+};
+
 export const getSceneImageSets = (
   data: CrawlerData,
   imageAlternatives: Partial<ImageAlternatives>,
@@ -211,6 +223,7 @@ export const getSceneImageSets = (
   }
 
   const seenSets = new Set<string>();
+  const seenUrls = new Set<string>();
   const sets: SceneImageSet[] = [];
   const candidates: SceneImageSet[] = [
     {
@@ -224,10 +237,14 @@ export const getSceneImageSets = (
   ];
 
   for (const candidate of candidates) {
-    const urls = getNormalizedSceneImageUrls(Array.isArray(candidate.urls) ? candidate.urls : []).slice(
-      0,
-      maxSceneImages,
-    );
+    const urls = getNormalizedSceneImageUrls(Array.isArray(candidate.urls) ? candidate.urls : [])
+      .filter((url) => {
+        const key = normalizeSceneUrlKey(url);
+        if (seenUrls.has(key)) return false;
+        seenUrls.add(key);
+        return true;
+      })
+      .slice(0, maxSceneImages);
     if (urls.length === 0) {
       continue;
     }

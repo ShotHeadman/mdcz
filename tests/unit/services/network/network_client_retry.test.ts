@@ -1,3 +1,6 @@
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { fetchMock, sleepMock, impitConstructorMock } = vi.hoisted(() => {
@@ -154,6 +157,28 @@ describe("NetworkClient retry policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(json).toHaveBeenCalledTimes(1);
     expect(sleepMock).toHaveBeenCalledWith(1000);
+  });
+
+  it("streams downloads through a temporary file before publishing the target", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mdcz-network-download-"));
+    const target = join(directory, "trailer.mp4");
+    fetchMock.mockResolvedValueOnce(new Response(Uint8Array.from([1, 2, 3, 4])));
+
+    try {
+      const client = new NetworkClient({ getRetryCount: () => 0 });
+      await expect(
+        client.download("https://example.com/trailer.mp4", target, {
+          readTimeoutMs: 1_000,
+          totalTimeoutMs: 5_000,
+        }),
+      ).resolves.toBe(target);
+
+      await expect(readFile(target)).resolves.toEqual(Buffer.from([1, 2, 3, 4]));
+      await expect(readdir(directory)).resolves.toEqual(["trailer.mp4"]);
+      expect(fetchMock.mock.calls[0]?.[1]?.timeout).toBe(5_000);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("retries supported throttling and transient server failures", async () => {

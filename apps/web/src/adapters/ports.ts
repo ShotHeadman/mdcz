@@ -184,10 +184,10 @@ export const createWebDetailPort = (): DetailActionPort => ({
 });
 
 export const createWebScrapeActionPort = (): ScrapeActionPort => ({
-  retryFailed: async () => {
+  retryFailed: async (itemIds) => {
     const runId = selectScrapeTaskId(useScrapeStore.getState());
     if (!runId) throw new Error("没有可重试的刮削任务");
-    const retry = await api.scrape.retry({ taskId: runId });
+    const retry = await api.scrape.retry({ taskId: runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) });
     requestScrapeLiveRunsRefresh();
     return { message: `重试任务已启动：${retry.runId}` };
   },

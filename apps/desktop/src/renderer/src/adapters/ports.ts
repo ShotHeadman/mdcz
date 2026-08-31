@@ -110,8 +110,8 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
 });
 
 export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
-  retryFailed: async () => {
-    const response = await retryScrapeSelection();
+  retryFailed: async (itemIds) => {
+    const response = await retryScrapeSelection(itemIds);
     return {
       message: response.data.message,
     };

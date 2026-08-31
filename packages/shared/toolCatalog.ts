@@ -70,7 +70,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "扫描待翻译字段并批量回写标题、简介等文本。",
     detailTitle: "批量翻译 NFO",
     detailDescription: "扫描现有媒体库中的 NFO，使用当前 LLM 配置批量翻译标题和简介后回写。",
-    overviewLayout: "standardHalf",
+    overviewLayout: "compactFull",
     overviewIcon: "translate",
   },
 ] as const;

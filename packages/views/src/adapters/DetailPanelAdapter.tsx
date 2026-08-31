@@ -34,11 +34,14 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
   const candidates = useMemo(() => buildDetailArtworkCandidates(item), [item]);
   const posterCandidateKey = buildCandidateKey(candidates.poster);
   const thumbCandidateKey = buildCandidateKey(candidates.thumb);
-  const trailerCandidateKey = buildCandidateKey(item?.trailerUrl ? [item.trailerUrl] : []);
+  const trailerCandidateKey = buildCandidateKey(
+    [item?.trailerUrl, ...(item?.trailerFallbackUrls ?? [])].filter((value): value is string => Boolean(value)),
+  );
   const baseDir = item?.outputPath ?? (item?.path ? getDirFromPath(item.path) : undefined);
   const [sources, setSources] = useState<[string[], string[], string[]]>([[], [], []]);
   const [posterIndex, setPosterIndex] = useState(0);
   const [thumbIndex, setThumbIndex] = useState(0);
+  const [trailerIndex, setTrailerIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +50,7 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
     const trailerCandidates = readCandidateKey(trailerCandidateKey);
     setPosterIndex(0);
     setThumbIndex(0);
+    setTrailerIndex(0);
 
     const resolveSources = async () => {
       const resolved = await Promise.all([
@@ -73,12 +77,17 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
     setThumbIndex((currentIndex) => Math.min(currentIndex + 1, sources[1].length));
   }, [sources]);
 
+  const handleTrailerError = useCallback(() => {
+    setTrailerIndex((currentIndex) => Math.min(currentIndex + 1, sources[2].length));
+  }, [sources]);
+
   return {
     posterSrc: posterOverride || sources[0][posterIndex] || "",
     thumbSrc: sources[1][thumbIndex] ?? "",
-    trailerSrc: sources[2][0] ?? "",
+    trailerSrc: sources[2][trailerIndex] ?? "",
     handlePosterError,
     handleThumbError,
+    handleTrailerError,
   };
 }
 
@@ -323,6 +332,7 @@ export function DetailPanelAdapter({
       onOpenNfo={actions.openNfo}
       onPosterError={artwork.handlePosterError}
       onThumbError={artwork.handleThumbError}
+      onTrailerError={artwork.handleTrailerError}
       resolveImageCandidates={resolveImageCandidates}
       showFilePath={port.showFilePath}
       posterEditor={{

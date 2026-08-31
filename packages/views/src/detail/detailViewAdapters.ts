@@ -115,6 +115,12 @@ const buildDetailViewMetadata = (input: {
 }) => {
   const { crawlerData, videoMeta, resolution, assets } = input;
 
+  const trailerCandidates = [crawlerData?.trailer_source_url, crawlerData?.trailer_url].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
+  const trailerUrl = assets?.trailer ?? trailerCandidates[0];
+  const trailerFallbackUrls = trailerCandidates.filter((candidate) => candidate !== trailerUrl);
+
   return {
     title: crawlerData?.title_zh ?? crawlerData?.title,
     actors: crawlerData?.actors,
@@ -131,7 +137,8 @@ const buildDetailViewMetadata = (input: {
     rating: crawlerData?.rating,
     ...resolveArtworkUrls(crawlerData, assets),
     sceneImages: resolveSceneImages(crawlerData, assets?.sceneImages),
-    trailerUrl: assets?.trailer ?? crawlerData?.trailer_url,
+    trailerUrl,
+    trailerFallbackUrls: trailerFallbackUrls.length > 0 ? trailerFallbackUrls : undefined,
   };
 };
 

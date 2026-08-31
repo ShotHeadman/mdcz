@@ -13,6 +13,11 @@ export interface RuntimeProbeRequestInit extends RuntimeRequestInit {
   captureImageSize?: boolean;
 }
 
+export interface RuntimeDownloadRequestInit extends RuntimeRequestInit {
+  readTimeoutMs?: number;
+  totalTimeoutMs?: number;
+}
+
 export interface RuntimeProbeResult {
   ok: boolean;
   status: number;
@@ -45,7 +50,7 @@ export interface RuntimeNetworkClient {
 }
 
 export interface RuntimeDownloadNetworkClient extends RuntimeNetworkClient {
-  download(url: string, outputPath: string, init?: RuntimeRequestInit): Promise<string>;
+  download(url: string, outputPath: string, init?: RuntimeDownloadRequestInit): Promise<string>;
 }
 
 export interface SiteRequestConfig {

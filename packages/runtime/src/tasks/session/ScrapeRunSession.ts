@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { TaskExecutor } from "../executor";
 
@@ -21,6 +22,9 @@ export interface ScrapeRunItem<TManualScrape = unknown> {
   relativePath: string;
   sourcePath: string;
   manualScrape?: TManualScrape;
+  executionSource?: RootFileRef;
+  replaceExistingTargets?: boolean;
+  outputBaseDirectory?: string;
 }
 
 export interface ScrapeRunItemSnapshot<TManualScrape = unknown> extends ScrapeRunItem<TManualScrape> {
@@ -28,6 +32,13 @@ export interface ScrapeRunItemSnapshot<TManualScrape = unknown> extends ScrapeRu
   error: string | null;
   result?: ScrapeResult;
 }
+
+export type ScrapeRunItemInitialState<TManualScrape = unknown> = Pick<
+  ScrapeRunItemSnapshot<TManualScrape>,
+  "id" | "error" | "result"
+> & {
+  status: Exclude<ScrapeRunItemStatus, "processing">;
+};
 
 export interface ScrapeRunProgress {
   percent: number;
@@ -64,6 +75,7 @@ export interface ScrapeRunSnapshot<TManualScrape = unknown> {
 export interface ScrapeRunSessionOptions<TManualScrape = unknown> {
   runId: string;
   items: readonly ScrapeRunItem<TManualScrape>[];
+  initialItems?: readonly ScrapeRunItemInitialState<TManualScrape>[];
   concurrency: number;
   acquireItem?: (item: ScrapeRunItem<TManualScrape>) => () => void;
   admitItem: (item: ScrapeRunItem<TManualScrape>) => Promise<string>;
@@ -125,6 +137,11 @@ export class ScrapeRunSession<TManualScrape = unknown> {
 
     const ids = new Set<string>();
     const paths = new Set<string>();
+    const initialItemsById = new Map<string, ScrapeRunItemInitialState<TManualScrape>>();
+    for (const initialItem of options.initialItems ?? []) {
+      if (initialItemsById.has(initialItem.id)) throw new Error(`Duplicate initial scrape item ID: ${initialItem.id}`);
+      initialItemsById.set(initialItem.id, initialItem);
+    }
     this.items = options.items.map((item) => {
       if (!item.id.trim()) throw new Error("Scrape item ID must not be empty");
       if (!item.rootId.trim()) throw new Error(`Scrape item root ID must not be empty: ${item.id}`);
@@ -135,8 +152,17 @@ export class ScrapeRunSession<TManualScrape = unknown> {
       const pathKey = `${item.rootId}\u0000${item.relativePath}`;
       if (paths.has(pathKey)) throw new Error(`Duplicate scrape item path: ${item.rootId}:${item.relativePath}`);
       paths.add(pathKey);
-      return { ...item, status: "pending" as const, error: null };
+      const initial = initialItemsById.get(item.id);
+      return {
+        ...item,
+        status: initial?.status ?? "pending",
+        error: initial?.error ?? null,
+        ...(initial?.result ? { result: initial.result } : {}),
+      };
     });
+    for (const initialItem of initialItemsById.values()) {
+      if (!ids.has(initialItem.id)) throw new Error(`Initial scrape item is not in the session: ${initialItem.id}`);
+    }
     this.itemsById = new Map(this.items.map((item) => [item.id, item]));
   }
 
@@ -150,7 +176,6 @@ export class ScrapeRunSession<TManualScrape = unknown> {
     if (this.status !== "running") return this.snapshot();
     this.executor?.pause();
     this.setStatus("paused");
-    await this.waitForIdle();
     return this.snapshot();
   }
 
@@ -208,16 +233,17 @@ export class ScrapeRunSession<TManualScrape = unknown> {
   snapshot(): ScrapeRunSnapshot<TManualScrape> {
     const completedItems = this.items.filter((item) => isTerminalItemStatus(item.status)).length;
     const totalItems = this.items.length;
+    const reportedPercent = Math.round(
+      ((completedItems + [...this.progressByItemId.values()].reduce((total, percent) => total + percent / 100, 0)) /
+        totalItems) *
+        100,
+    );
     return {
       runId: this.options.runId,
       generation: this.generation,
       status: this.status,
       progress: {
-        percent: Math.round(
-          ((completedItems + [...this.progressByItemId.values()].reduce((total, percent) => total + percent / 100, 0)) /
-            totalItems) *
-            100,
-        ),
+        percent: completedItems === totalItems ? 100 : Math.min(99, reportedPercent),
         completedItems,
         totalItems,
       },

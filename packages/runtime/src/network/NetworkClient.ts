@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, open, rename, rm } from "node:fs/promises";
+import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { atomicWriteFile } from "@mdcz/media-store";
 import { type Browser, Impit, type RequestInit as ImpitRequestInit } from "impit";
 import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
@@ -20,6 +22,10 @@ type ProbeMethod = "HEAD" | "GET";
 type ProbeOptions = Omit<ImpitRequestInit, "method"> & {
   method?: ProbeMethod;
   captureImageSize?: boolean;
+};
+type DownloadOptions = Omit<ImpitRequestInit, "method"> & {
+  readTimeoutMs?: number;
+  totalTimeoutMs?: number;
 };
 
 export interface NetworkCookieJar {
@@ -215,12 +221,63 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     });
   }
 
-  async download(url: string, outputPath: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<string> {
-    const bytes = await this.getContent(url, init);
-
-    await atomicWriteFile(outputPath, bytes);
-
-    return outputPath;
+  async download(url: string, outputPath: string, init: DownloadOptions = {}): Promise<string> {
+    const { readTimeoutMs, totalTimeoutMs, ...requestInit } = init;
+    const totalTimeoutSignal = totalTimeoutMs ? AbortSignal.timeout(totalTimeoutMs) : undefined;
+    const signal =
+      requestInit.signal && totalTimeoutSignal
+        ? AbortSignal.any([requestInit.signal, totalTimeoutSignal])
+        : (requestInit.signal ?? totalTimeoutSignal);
+    const temporaryPath = `${outputPath}.${randomUUID()}.download.part`;
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    try {
+      await this.executeRequest(
+        url,
+        {
+          ...requestInit,
+          method: "GET",
+          signal,
+          timeout: totalTimeoutMs ?? requestInit.timeout,
+        },
+        undefined,
+        {
+          transformResponse: async (response) => {
+            if (!response.body) throw new Error(`Download response has no body: ${url}`);
+            const handle = await open(temporaryPath, "w");
+            try {
+              const reader = response.body.getReader();
+              while (true) {
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                const chunk = readTimeoutMs
+                  ? await Promise.race([
+                      reader.read(),
+                      new Promise<never>((_, reject) => {
+                        timer = setTimeout(() => {
+                          response.abort();
+                          reject(new Error(`Download body timed out after ${readTimeoutMs}ms: ${url}`));
+                        }, readTimeoutMs);
+                      }),
+                    ]).finally(() => clearTimeout(timer))
+                  : await reader.read();
+                if (chunk.done) break;
+                if (chunk.value) await handle.write(chunk.value);
+              }
+            } finally {
+              await handle.close();
+            }
+            await rename(temporaryPath, outputPath);
+            return outputPath;
+          },
+        },
+      );
+      return outputPath;
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      if (totalTimeoutSignal?.aborted && !requestInit.signal?.aborted) {
+        throw new Error(`Download timed out after ${totalTimeoutMs}ms: ${url}`, { cause: error });
+      }
+      throw error;
+    }
   }
 
   async head(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<{ status: number; ok: boolean }> {

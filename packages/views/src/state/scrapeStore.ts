@@ -25,7 +25,19 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
   ...initialState(),
   setSnapshot: (snapshot) => {
     if (!snapshot) return;
-    set({ snapshot, pending: false, error: null });
+    set((state) => {
+      const previous = state.snapshot;
+      if (!previous || previous.task.id !== snapshot.task.id) {
+        return { snapshot, pending: false, error: null };
+      }
+
+      const incomingById = new Map(snapshot.items.map((item) => [item.id, item]));
+      const items = previous.items.map((item) => incomingById.get(item.id) ?? item);
+      for (const item of snapshot.items) {
+        if (!previous.items.some((candidate) => candidate.id === item.id)) items.push(item);
+      }
+      return { snapshot: { ...snapshot, items }, pending: false, error: null };
+    });
   },
   setPending: (pending) => set({ pending }),
   setError: (error) => set({ error, pending: false }),
@@ -34,7 +46,7 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
 
 const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
   ...(item.resultId ? { resultId: item.resultId } : {}),
-  fileId: `${item.rootId}:${item.relativePath}`,
+  fileId: item.id,
   rootId: item.rootId,
   relativePath: item.relativePath,
   fileName: item.fileName,

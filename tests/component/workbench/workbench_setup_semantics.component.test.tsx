@@ -116,8 +116,8 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
   }
 });
 
-test("media browser list renders processing items with spinner state", async () => {
-  const screen = await render(
+test("media browser list distinguishes processing and paused queue states", async () => {
+  const processing = await render(
     <MediaBrowserList
       items={[
         {
@@ -136,6 +136,29 @@ test("media browser list renders processing items with spinner state", async () 
     />,
   );
 
-  await expect.element(screen.getByText("ABC-123", { exact: true })).toBeVisible();
-  expect(screen.container.querySelector(".animate-spin")).not.toBeNull();
+  await expect.element(processing.getByText("ABC-123", { exact: true })).toBeVisible();
+  expect(processing.container.querySelector(".animate-spin")).not.toBeNull();
+  processing.unmount();
+
+  const paused = await render(
+    <MediaBrowserList
+      items={[
+        {
+          id: "ABC-123",
+          title: "ABC-123",
+          subtitle: "ABC-123.mp4",
+          status: "paused",
+          active: false,
+          menuContent: null,
+          onClick: () => undefined,
+        },
+      ]}
+      filter="all"
+      onFilterChange={() => undefined}
+      stats={[{ label: "总计", value: "1" }]}
+    />,
+  );
+
+  await expect.element(paused.getByLabelText("已暂停")).toBeVisible();
+  expect(paused.container.querySelector(".animate-spin")).toBeNull();
 });

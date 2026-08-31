@@ -206,7 +206,12 @@ describe("commitScrapeTerminalResult", () => {
       fileTransitions: noFileTransitions(),
     });
 
-    expect(committed).toMatchObject({ status: "success", resultId: "success-outcome" });
+    expect(committed).toMatchObject({
+      status: "success",
+      resultId: "success-outcome",
+      error: expect.stringContaining("媒体库已提交，但清理失败"),
+    });
+    expect(committed.error).toContain("。请重新扫描");
     expect(store.commitOutcome).not.toHaveBeenCalled();
     expect(store.commitSuccessOutcome).toHaveBeenCalledOnce();
     await expect(readFile(test.target, "utf8")).resolves.toBe("video");
@@ -241,6 +246,8 @@ describe("commitScrapeTerminalResult", () => {
 
     expect(committed.status).toBe("failed");
     expect(committed.error).toContain("library constraint failed");
+    expect(committed.error).toContain("。请重新扫描");
+    expect(committed.error).not.toContain("以磁盘实际状态重新协调");
     expect(store.commitOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", attemptId: "attempt-1" }),
     );

@@ -320,6 +320,8 @@ describe("ScrapeRunRepository", () => {
       completedAt: new Date("2026-08-24T05:00:00.000Z"),
       error: "retry failed",
     });
+    const successfulRetry = await repository.retry(run.id, [run.items[1].id]);
+    expect(successfulRetry.attempts).toContainEqual(expect.objectContaining({ itemId: run.items[1].id, attempt: 2 }));
     const interrupted = await createRun(repository, "interrupted");
     await repository.finalize({ runId: interrupted.id, disposition: "interrupted" });
     await expect(repository.retry(interrupted.id)).rejects.toThrow("Only completed, failed, or stopped");
