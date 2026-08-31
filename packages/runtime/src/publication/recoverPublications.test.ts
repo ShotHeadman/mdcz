@@ -18,10 +18,8 @@ afterEach(async () => {
 
 const token = (operationId: string): string => operationId.replaceAll(/[^A-Za-z0-9._-]/g, "_");
 
-const sibling = (targetPath: string, operationId: string, suffix: "part" | "bak"): string => {
-  const parsed = path.parse(targetPath);
-  return path.join(parsed.dir, `${parsed.base}.${token(operationId)}.${suffix}`);
-};
+const siblingRelative = (relativePath: string, operationId: string, suffix: "part" | "bak"): string =>
+  `${relativePath}.${token(operationId)}.${suffix}`;
 
 const residue = async (root: string): Promise<string[]> => {
   const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
@@ -35,8 +33,8 @@ describe("recoverPublications", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
     directories.push(directory);
     const target = path.join(directory, "movie.nfo");
-    const backup = sibling(target, "op-1", "bak");
-    const temporary = sibling(target, "op-1", "part");
+    const backup = path.join(directory, siblingRelative("movie.nfo", "op-1", "bak"));
+    const temporary = path.join(directory, siblingRelative("movie.nfo", "op-1", "part"));
     await writeFile(target, "new-nfo");
     await writeFile(backup, "original-nfo");
     await writeFile(temporary, "partial");
@@ -47,8 +45,8 @@ describe("recoverPublications", () => {
         {
           rootId: "root-1",
           relativePath: "movie.nfo",
-          temporaryPath: temporary,
-          backupPath: backup,
+          temporaryPath: siblingRelative("movie.nfo", "op-1", "part"),
+          backupPath: siblingRelative("movie.nfo", "op-1", "bak"),
           targetExisted: true,
         },
       ],
@@ -73,7 +71,7 @@ describe("recoverPublications", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
     directories.push(directory);
     const target = path.join(directory, "movie.mp4");
-    const backup = sibling(target, "op-1", "bak");
+    const backup = path.join(directory, siblingRelative("movie.mp4", "op-1", "bak"));
     const obsolete = path.join(directory, "old.jpg");
     await writeFile(target, "new-video");
     await writeFile(backup, "old-video");
@@ -88,8 +86,8 @@ describe("recoverPublications", () => {
           {
             rootId: "root-1",
             relativePath: "movie.mp4",
-            temporaryPath: sibling(target, "op-1", "part"),
-            backupPath: backup,
+            temporaryPath: siblingRelative("movie.mp4", "op-1", "part"),
+            backupPath: siblingRelative("movie.mp4", "op-1", "bak"),
             targetExisted: true,
           },
         ],
@@ -130,7 +128,7 @@ describe("recoverPublications", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
     directories.push(directory);
     const target = path.join(directory, "movie.nfo");
-    const backup = sibling(target, "op-1", "bak");
+    const backup = path.join(directory, siblingRelative("movie.nfo", "op-1", "bak"));
     await writeFile(target, "new-nfo");
     await writeFile(backup, "original-nfo");
     const journal = createMemoryPublicationJournal();
@@ -142,8 +140,8 @@ describe("recoverPublications", () => {
           {
             rootId: "root-1",
             relativePath: "movie.nfo",
-            temporaryPath: sibling(target, "op-1", "part"),
-            backupPath: backup,
+            temporaryPath: siblingRelative("movie.nfo", "op-1", "part"),
+            backupPath: siblingRelative("movie.nfo", "op-1", "bak"),
             targetExisted: true,
           },
         ],
@@ -195,8 +193,8 @@ describe("recoverPublications", () => {
           {
             rootId: "root-1",
             relativePath: "movie.nfo",
-            temporaryPath: path.join(directory, "movie.nfo.op-1.part"),
-            backupPath: path.join(directory, "movie.nfo.op-1.bak"),
+            temporaryPath: siblingRelative("movie.nfo", "op-1", "part"),
+            backupPath: siblingRelative("movie.nfo", "op-1", "bak"),
             targetExisted: true,
           },
         ],
@@ -222,7 +220,7 @@ describe("recoverPublications", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
     directories.push(directory);
     const target = path.join(directory, "movie.mp4");
-    const backup = sibling(target, "op-1", "bak");
+    const backup = path.join(directory, siblingRelative("movie.mp4", "op-1", "bak"));
     const obsolete = path.join(directory, "old.jpg");
     await writeFile(target, "new-video");
     await writeFile(backup, "old-video");
@@ -238,8 +236,8 @@ describe("recoverPublications", () => {
           {
             rootId: "root-1",
             relativePath: "movie.mp4",
-            temporaryPath: sibling(target, "op-1", "part"),
-            backupPath: backup,
+            temporaryPath: siblingRelative("movie.mp4", "op-1", "part"),
+            backupPath: siblingRelative("movie.mp4", "op-1", "bak"),
             targetExisted: true,
           },
         ],
@@ -281,7 +279,45 @@ describe("recoverPublications", () => {
     expect(repairIssues.resolve).not.toHaveBeenCalledWith("op-1", "root-1", "old.jpg");
   });
 
-  it("records a repair issue for a malformed stored manifest", async () => {
+  it.each([
+    { not: "a manifest" },
+    {
+      entries: [
+        {
+          rootId: "",
+          relativePath: "movie.nfo",
+          temporaryPath: "movie.nfo.part",
+          backupPath: null,
+          targetExisted: false,
+        },
+      ],
+      obsolete: [],
+    },
+    {
+      entries: [
+        {
+          rootId: "root-1",
+          relativePath: "../outside.nfo",
+          temporaryPath: "movie.nfo.part",
+          backupPath: null,
+          targetExisted: false,
+        },
+      ],
+      obsolete: [],
+    },
+    {
+      entries: [
+        {
+          rootId: "root-1",
+          relativePath: "movie.nfo",
+          temporaryPath: "/tmp/movie.nfo.part",
+          backupPath: null,
+          targetExisted: false,
+        },
+      ],
+      obsolete: [],
+    },
+  ])("records a repair issue for a malformed stored manifest %#", async (manifest) => {
     const journal = adaptPublicationJournal({
       begin() {},
       commit(_operationId, write) {
@@ -293,7 +329,7 @@ describe("recoverPublications", () => {
           operationId: "op-bad",
           operationType: "scrape",
           state: "pending",
-          manifest: { not: "a manifest" },
+          manifest,
           createdAt: new Date(),
         },
       ],

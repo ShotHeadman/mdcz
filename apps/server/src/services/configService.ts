@@ -81,6 +81,12 @@ export class ServerConfigService {
         context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
       ) => Promise<void> | void)
     | undefined;
+  private afterActiveConfigurationCommit:
+    | ((
+        configuration: Configuration,
+        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+      ) => Promise<void> | void)
+    | undefined;
 
   constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {
     this.config = new RuntimeConfigService({
@@ -90,6 +96,7 @@ export class ServerConfigService {
       }),
       mapValidationError: (error) => new ServerConfigValidationError(error.message, error.fields, error.fieldErrors),
       onBeforeCommit: (configuration, context) => this.beforeActiveConfigurationCommit?.(configuration, context),
+      onAfterCommit: (configuration, context) => this.afterActiveConfigurationCommit?.(configuration, context),
     });
     this.config.onChange((event) => {
       for (const listener of this.changeListeners) listener(event);
@@ -110,6 +117,15 @@ export class ServerConfigService {
     ) => Promise<void> | void,
   ): void {
     this.beforeActiveConfigurationCommit = callback;
+  }
+
+  setAfterActiveConfigurationCommit(
+    callback: (
+      configuration: Configuration,
+      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+    ) => Promise<void> | void,
+  ): void {
+    this.afterActiveConfigurationCommit = callback;
   }
 
   async load(): Promise<Configuration> {

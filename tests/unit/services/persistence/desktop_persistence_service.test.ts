@@ -54,8 +54,8 @@ describe("DesktopPersistenceService", () => {
           {
             rootId: "root-1",
             relativePath: "movie.nfo",
-            temporaryPath: join(mediaRoot, "movie.nfo.op.part"),
-            backupPath: backup,
+            temporaryPath: "movie.nfo.op.part",
+            backupPath: "movie.nfo.op.bak",
             targetExisted: true,
           },
         ],

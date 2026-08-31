@@ -126,13 +126,11 @@ export class MaintenanceService {
   }
 
   async execute(
-    sessionId: string,
     selections: MaintenanceApplySelection[],
     presetId: MaintenancePresetId,
   ): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     if (selections.length === 0) throw new Error("No entries to process");
-    const session = await this.coordinator.getActiveSession();
-    if (!session || session.id !== sessionId) throw new Error("维护任务不存在");
+    const session = await this.requireActiveSession();
     if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
     if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
@@ -140,28 +138,24 @@ export class MaintenanceService {
       throw new Error("维护项目不属于当前任务");
     }
     this.signalService.resetProgress();
-    const handle = await this.coordinator.beginApply({ sessionId, selections });
+    const handle = await this.coordinator.beginApply({ sessionId: session.id, selections });
     void handle.completion.catch((error) => this.signalService.showLogText(String(error), "error"));
     return handle;
   }
 
-  async stop(sessionId?: string): Promise<void> {
-    const task = await this.requireActiveSession(sessionId);
+  async stop(): Promise<void> {
+    const task = await this.requireActiveSession();
     await this.coordinator.stop(task.id);
   }
 
-  async pause(sessionId?: string): Promise<void> {
-    const task = await this.requireActiveSession(sessionId);
+  async pause(): Promise<void> {
+    const task = await this.requireActiveSession();
     await this.coordinator.pause(task.id);
   }
 
-  async resume(sessionId?: string): Promise<void> {
-    const task = await this.requireActiveSession(sessionId);
+  async resume(): Promise<void> {
+    const task = await this.requireActiveSession();
     await this.coordinator.resume(task.id);
-  }
-
-  async resolveActiveSessionId(preferredSessionId?: string): Promise<string | null> {
-    return (await this.requireActiveSession(preferredSessionId)).id;
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
@@ -186,9 +180,9 @@ export class MaintenanceService {
     await this.imageHostCooldownStore.flush();
   }
 
-  private async requireActiveSession(sessionId?: string): Promise<MaintenanceActiveSessionSnapshot> {
+  private async requireActiveSession(): Promise<MaintenanceActiveSessionSnapshot> {
     const session = await this.coordinator.getActiveSession();
-    if (!session || (sessionId && session.id !== sessionId)) throw new Error("维护会话不存在或已过期");
+    if (!session) throw new Error("维护会话不存在或已过期");
     return session;
   }
 

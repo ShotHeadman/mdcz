@@ -67,16 +67,23 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const taskEvents = options.services?.taskEvents ?? createTaskEventBus();
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
+  const reportUnavailableMediaPath = (hostPath: string, error: unknown) => {
+    config.reportDiagnostic(
+      "read-error",
+      new Error(`Configured media root unavailable: ${hostPath}: ${String(error)}`),
+    );
+  };
   config.setBeforeActiveConfigurationCommit(async (next, { source }) => {
-    await mediaRoots.synchronizeConfiguredRoots(next, {
-      strict: source !== "load" && source !== "watch",
-      onUnavailable: (hostPath, error) => {
-        config.reportDiagnostic(
-          "read-error",
-          new Error(`Configured media root unavailable: ${hostPath}: ${String(error)}`),
-        );
-      },
-    });
+    await mediaRoots.assertConfiguredMediaPath(
+      next,
+      source === "load" || source === "watch" ? reportUnavailableMediaPath : undefined,
+    );
+  });
+  config.setAfterActiveConfigurationCommit(async (next, { source }) => {
+    await mediaRoots.registerConfiguredMediaPath(
+      next,
+      source === "load" || source === "watch" ? reportUnavailableMediaPath : undefined,
+    );
   });
   config.onDiagnostic((event) => {
     runtimeLogs

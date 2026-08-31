@@ -211,6 +211,10 @@ export interface RuntimeConfigServiceOptions {
     configuration: Configuration,
     context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
   ) => Promise<void> | void;
+  onAfterCommit?: (
+    configuration: Configuration,
+    context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+  ) => Promise<void> | void;
   mapValidationError?: (error: RuntimeConfigValidationError) => Error;
 }
 
@@ -306,8 +310,12 @@ export class RuntimeConfigService {
             await this.store.reloadActiveProfileName();
           }
           const loaded = await this.store.reloadActiveProfile();
+          await this.options.onBeforeCommit?.(loaded, {
+            source: profileSwitch ? "switch" : "watch",
+            previous: previousConfiguration,
+          });
           const next = await this.applyAfterLoad(loaded);
-          await this.options.onBeforeCommit?.(next, {
+          await this.options.onAfterCommit?.(next, {
             source: profileSwitch ? "switch" : "watch",
             previous: previousConfiguration,
           });
@@ -336,8 +344,9 @@ export class RuntimeConfigService {
     this.configuration = await this.runWithValidation(async () => {
       await this.options.onBeforeLoad?.();
       const loaded = await this.store.load();
+      await this.options.onBeforeCommit?.(loaded, { source: "load", previous: this.configuration });
       const next = await this.applyAfterLoad(loaded);
-      await this.options.onBeforeCommit?.(next, { source: "load", previous: this.configuration });
+      await this.options.onAfterCommit?.(next, { source: "load", previous: this.configuration });
       return next;
     });
     this.emitChange("load");
@@ -368,7 +377,9 @@ export class RuntimeConfigService {
         await this.options.onBeforeSave?.(parsed);
         beforeSaveCompleted = true;
         const saved = await this.store.save(parsed);
-        return await this.applyAfterSave(saved);
+        const applied = await this.applyAfterSave(saved);
+        await this.options.onAfterCommit?.(applied, { source: "save", previous: this.configuration });
+        return applied;
       } catch (error) {
         if (beforeSaveCompleted) {
           await this.options.onSaveError?.(error);
@@ -435,16 +446,17 @@ export class RuntimeConfigService {
     const previousConfiguration = this.configuration;
     this.configuration = await this.runWithValidation(async () => {
       const switched = await this.store.switchProfile(name);
-      const next = await this.applyAfterLoad(switched);
       try {
-        await this.options.onBeforeCommit?.(next, { source: "switch", previous: previousConfiguration });
+        await this.options.onBeforeCommit?.(switched, { source: "switch", previous: previousConfiguration });
+        const next = await this.applyAfterLoad(switched);
+        await this.options.onAfterCommit?.(next, { source: "switch", previous: previousConfiguration });
+        return next;
       } catch (error) {
         if (this.store.activeProfile !== previousProfile) {
           await this.store.switchProfile(previousProfile).catch(() => undefined);
         }
         throw error;
       }
-      return next;
     });
     this.emitChange("switch");
     return this.configuration;
@@ -481,6 +493,7 @@ export class RuntimeConfigService {
     });
     if (result.active && importedConfiguration) {
       this.configuration = await this.applyAfterLoad(importedConfiguration);
+      await this.options.onAfterCommit?.(importedConfiguration, { source: "save", previous: previousConfiguration });
       this.emitChange("save");
     }
     return result;

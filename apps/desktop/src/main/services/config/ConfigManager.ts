@@ -36,7 +36,7 @@ export class ConfigManager extends EventEmitter {
   private readonly computedConfig = new ComputedConfig(() => this.configuration);
 
   private initializePromise: Promise<void> | null = null;
-  private skipBeforeActiveConfigurationCommit = false;
+  private skipActiveConfigurationCommit = false;
 
   private configDirectory = DEFAULT_CONFIG_DIRECTORY;
   private saveSnapshot: {
@@ -48,8 +48,12 @@ export class ConfigManager extends EventEmitter {
   private readonly config = new RuntimeConfigService({
     store: this.createStore(),
     onBeforeCommit: (configuration, context) => {
-      if (this.skipBeforeActiveConfigurationCommit) return;
+      if (this.skipActiveConfigurationCommit) return;
       return this.beforeActiveConfigurationCommit?.(configuration, context);
+    },
+    onAfterCommit: (configuration, context) => {
+      if (this.skipActiveConfigurationCommit) return;
+      return this.afterActiveConfigurationCommit?.(configuration, context);
     },
     onBeforeSave: (configuration) => {
       this.saveSnapshot = {
@@ -93,6 +97,12 @@ export class ConfigManager extends EventEmitter {
         context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
       ) => Promise<void> | void)
     | undefined;
+  private afterActiveConfigurationCommit:
+    | ((
+        configuration: Configuration,
+        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+      ) => Promise<void> | void)
+    | undefined;
 
   constructor() {
     super();
@@ -116,9 +126,19 @@ export class ConfigManager extends EventEmitter {
     this.beforeActiveConfigurationCommit = callback;
   }
 
+  setAfterActiveConfigurationCommit(
+    callback: (
+      configuration: Configuration,
+      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+    ) => Promise<void> | void,
+  ): void {
+    this.afterActiveConfigurationCommit = callback;
+  }
+
   async synchronizeConfiguredRoots(): Promise<void> {
     await this.ensureLoaded();
     await this.beforeActiveConfigurationCommit?.(this.configuration, { source: "load", previous: null });
+    await this.afterActiveConfigurationCommit?.(this.configuration, { source: "load", previous: null });
   }
 
   async ensureLoaded(): Promise<void> {
@@ -321,11 +341,11 @@ export class ConfigManager extends EventEmitter {
       await this.config.load();
       this.syncConfigDirectoryFromConfiguration();
       this.config.replaceStore(this.createStore());
-      this.skipBeforeActiveConfigurationCommit = true;
+      this.skipActiveConfigurationCommit = true;
       try {
         await this.config.saveFull(this.configuration);
       } finally {
-        this.skipBeforeActiveConfigurationCommit = false;
+        this.skipActiveConfigurationCommit = false;
       }
     } catch (error) {
       const message = toErrorMessage(error);

@@ -23,11 +23,6 @@ export interface MediaRootRegistryPort {
   get(id: string): Promise<MediaRoot>;
 }
 
-export interface ConfiguredRootSyncOptions {
-  strict?: boolean;
-  onUnavailable?: (hostPath: string, error: unknown) => void;
-}
-
 const isRemoteUrl = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim());
 const hasInvalidPathBytes = (value: string): boolean => value.includes("\0");
 
@@ -40,29 +35,9 @@ export const toMediaRootDto = (root: MediaRoot & { availability?: MediaRootAvail
   updatedAt: root.updatedAt.toISOString(),
 });
 
-const uniquePaths = (paths: string[]): string[] => {
-  const seen = new Set<string>();
-  return paths.filter((value) => {
-    const normalized = normalizeHostPath(value);
-    if (seen.has(normalized)) return false;
-    seen.add(normalized);
-    return true;
-  });
-};
-
-const configuredRootPaths = (configuration: Configuration): string[] => {
-  const paths = configuration.paths;
-  const configured = [paths.mediaPath, paths.metadataPath];
-  configured.push(
-    ...[
-      paths.actorPhotoFolder,
-      paths.outputSummaryPath,
-      paths.successOutputFolder,
-      paths.failedOutputFolder,
-      paths.softlinkPath,
-    ].filter((value) => path.isAbsolute(value.trim())),
-  );
-  return uniquePaths(configured.map((value) => value.trim()).filter(Boolean));
+const configuredMediaPath = (configuration: Configuration): string | null => {
+  const value = configuration.paths.mediaPath.trim();
+  return value || null;
 };
 
 export class ConfiguredMediaRootService {
@@ -119,17 +94,31 @@ export class ConfiguredMediaRootService {
     });
   }
 
-  async synchronizeConfiguredRoots(
+  async assertConfiguredMediaPath(
     configuration: Configuration,
-    options: ConfiguredRootSyncOptions = {},
+    onUnavailable?: (hostPath: string, error: unknown) => void,
   ): Promise<void> {
-    for (const hostPath of configuredRootPaths(configuration)) {
-      try {
-        await this.ensurePathRecord({ hostPath });
-      } catch (error) {
-        if (options.strict) throw error;
-        options.onUnavailable?.(hostPath, error);
-      }
+    const hostPath = configuredMediaPath(configuration);
+    if (!hostPath) return;
+    try {
+      await this.validateMountedFilesystemPath(hostPath);
+    } catch (error) {
+      if (!onUnavailable) throw error;
+      onUnavailable(hostPath, error);
+    }
+  }
+
+  async registerConfiguredMediaPath(
+    configuration: Configuration,
+    onUnavailable?: (hostPath: string, error: unknown) => void,
+  ): Promise<void> {
+    const hostPath = configuredMediaPath(configuration);
+    if (!hostPath) return;
+    try {
+      await this.ensurePathRecord({ hostPath });
+    } catch (error) {
+      if (!onUnavailable) throw error;
+      onUnavailable(hostPath, error);
     }
   }
 

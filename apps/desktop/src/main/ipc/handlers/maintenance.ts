@@ -60,11 +60,9 @@ export const createMaintenanceHandlers = (
           throw new Error("presetId is required");
         }
 
-        const sessionId = await maintenanceService.resolveActiveSessionId();
-        if (!sessionId) throw new Error("没有活动的维护预览任务");
-        await maintenanceService.execute(sessionId, selections as MaintenanceApplySelection[], presetId);
+        const handle = await maintenanceService.execute(selections as MaintenanceApplySelection[], presetId);
 
-        return { sessionId: sessionId };
+        return { sessionId: handle.session.id };
       } catch (error) {
         logger.error("Maintenance execute failed");
         throw asSerializableIpcError(error);
@@ -73,8 +71,7 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Stop]: t.procedure.action(async () => {
       try {
-        const sessionId = await maintenanceService.resolveActiveSessionId();
-        await maintenanceService.stop(sessionId ?? undefined);
+        await maintenanceService.stop();
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
@@ -83,8 +80,7 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Pause]: t.procedure.action(async () => {
       try {
-        const sessionId = await maintenanceService.resolveActiveSessionId();
-        await maintenanceService.pause(sessionId ?? undefined);
+        await maintenanceService.pause();
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);
@@ -93,8 +89,7 @@ export const createMaintenanceHandlers = (
 
     [IpcChannel.Maintenance_Resume]: t.procedure.action(async () => {
       try {
-        const sessionId = await maintenanceService.resolveActiveSessionId();
-        await maintenanceService.resume(sessionId ?? undefined);
+        await maintenanceService.resume();
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(error);

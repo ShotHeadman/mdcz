@@ -384,6 +384,7 @@ describe("buildServer composition integration", () => {
   it("adds configured media roots without disabling earlier roots", async () => {
     const firstRoot = await createTempRoot("config-media-root-a");
     const secondRoot = await createTempRoot("config-media-root-b");
+    const metadataPath = await createTempRoot("config-metadata-not-a-root");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
 
@@ -399,6 +400,12 @@ describe("buildServer composition integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { paths: { mediaPath: secondRoot } },
     });
+    const metadataResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { metadataPath, successOutputFolder: join(firstRoot, "offline-output") } },
+    });
     const rootsResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/mediaRoots.list",
@@ -408,12 +415,14 @@ describe("buildServer composition integration", () => {
     const roots = rootsResponse.json().result.data.roots;
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
+    expect(metadataResponse.statusCode).toBe(200);
     expect(roots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot }),
         expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
       ]),
     );
+    expect(roots).toHaveLength(2);
   });
 
   it("prepares a missing output directory before registering its root", async () => {
@@ -466,6 +475,7 @@ describe("buildServer composition integration", () => {
     });
 
     const previous = await services.config.get();
+    const rootsBefore = await services.mediaRoots.list();
     const response = await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -478,6 +488,7 @@ describe("buildServer composition integration", () => {
       paths: { mediaPath: previous.paths.mediaPath },
       network: { timeout: previous.network.timeout },
     });
+    await expect(services.mediaRoots.list()).resolves.toEqual(rootsBefore);
   });
 
   it("coalesces concurrent media root synchronization by deterministic id", async () => {

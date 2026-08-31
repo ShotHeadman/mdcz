@@ -117,11 +117,13 @@ const recoverPending = async (
 ): Promise<"done" | "retain"> => {
   for (const item of [...manifest.entries].reverse()) {
     const targetPath = await resolve(item.rootId, item.relativePath);
+    const temporaryPath = await resolve(item.rootId, item.temporaryPath);
+    const backupPath = item.backupPath ? await resolve(item.rootId, item.backupPath) : null;
     try {
-      const backupExists = item.backupPath ? await exists(fileSystem, item.backupPath) : false;
-      if (backupExists && item.backupPath) {
-        await fileSystem.rename(item.backupPath, targetPath);
-        await fileSystem.rm(item.temporaryPath, { force: true });
+      const backupExists = backupPath ? await exists(fileSystem, backupPath) : false;
+      if (backupExists && backupPath) {
+        await fileSystem.rename(backupPath, targetPath);
+        await fileSystem.rm(temporaryPath, { force: true });
         continue;
       }
       if (item.targetExisted) {
@@ -134,11 +136,11 @@ const recoverPending = async (
           );
           return "retain";
         }
-        await fileSystem.rm(item.temporaryPath, { force: true });
+        await fileSystem.rm(temporaryPath, { force: true });
         continue;
       }
       await fileSystem.rm(targetPath, { force: true });
-      await fileSystem.rm(item.temporaryPath, { force: true });
+      await fileSystem.rm(temporaryPath, { force: true });
     } catch (error) {
       if (isUnavailableError(error)) return "retain";
       await recordRepair(options, entry, item, error);
@@ -159,6 +161,8 @@ const recoverCommitted = async (
 ): Promise<"done" | "retain"> => {
   for (const item of manifest.entries) {
     const targetPath = await resolve(item.rootId, item.relativePath);
+    const temporaryPath = await resolve(item.rootId, item.temporaryPath);
+    const backupPath = item.backupPath ? await resolve(item.rootId, item.backupPath) : null;
     try {
       if (!(await exists(fileSystem, targetPath))) {
         await recordRepair(
@@ -169,8 +173,8 @@ const recoverCommitted = async (
         );
         return "retain";
       }
-      if (item.backupPath) await fileSystem.rm(item.backupPath, { force: true });
-      await fileSystem.rm(item.temporaryPath, { force: true });
+      if (backupPath) await fileSystem.rm(backupPath, { force: true });
+      await fileSystem.rm(temporaryPath, { force: true });
     } catch (error) {
       if (isUnavailableError(error)) return "retain";
       await recordRepair(options, entry, item, error);

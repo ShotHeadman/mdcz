@@ -242,8 +242,8 @@ export const commitPublishedMedia = async <TResult>(
       entries: planned.map((item) => ({
         rootId: item.ref.rootId,
         relativePath: item.ref.relativePath,
-        temporaryPath: item.temporaryPath,
-        backupPath: item.backupPath,
+        temporaryPath: `${item.ref.relativePath}.${operationFileToken(plan.operationId)}.part`,
+        backupPath: item.backupPath ? `${item.ref.relativePath}.${operationFileToken(plan.operationId)}.bak` : null,
         targetExisted: item.targetExisted,
       })),
       obsolete,

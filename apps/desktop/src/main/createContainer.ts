@@ -58,16 +58,23 @@ export const createContainer = ({
   });
   const persistenceService = new DesktopPersistenceService();
   const mediaRoots = createDesktopMediaRootService(persistenceService);
+  const reportUnavailableMediaPath = (hostPath: string, error: unknown) => {
+    configManager.reportDiagnostic(
+      "read-error",
+      new Error(`Configured media root unavailable: ${hostPath}: ${String(error)}`),
+    );
+  };
   configManager.setBeforeActiveConfigurationCommit(async (next, { source }) => {
-    await mediaRoots.synchronizeConfiguredRoots(next, {
-      strict: source !== "load" && source !== "watch",
-      onUnavailable: (hostPath, error) => {
-        configManager.reportDiagnostic(
-          "read-error",
-          new Error(`Configured media root unavailable: ${hostPath}: ${String(error)}`),
-        );
-      },
-    });
+    await mediaRoots.assertConfiguredMediaPath(
+      next,
+      source === "load" || source === "watch" ? reportUnavailableMediaPath : undefined,
+    );
+  });
+  configManager.setAfterActiveConfigurationCommit(async (next, { source }) => {
+    await mediaRoots.registerConfiguredMediaPath(
+      next,
+      source === "load" || source === "watch" ? reportUnavailableMediaPath : undefined,
+    );
   });
   const outputLibraryScanner = new OutputLibraryScanner({ persistenceService });
   const desktopLibraryService = new DesktopLibraryService(persistenceService);

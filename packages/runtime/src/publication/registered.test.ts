@@ -56,8 +56,8 @@ describe("commitRegisteredPublication", () => {
           {
             rootId: "library",
             relativePath: "movie.nfo",
-            temporaryPath: temporary,
-            backupPath: backup,
+            temporaryPath: "movie.nfo.nfo-write_movie.part",
+            backupPath: "movie.nfo.nfo-write_movie.bak",
             targetExisted: true,
           },
         ],
