@@ -232,6 +232,7 @@ export class FileScraper {
         imageAlternatives: aggregationResult.imageAlternatives,
         movieBaseName: path.basename(plan.nfoPath, ".nfo"),
         outputDir: stagingDir,
+        existingAssetDir: metadataOutputDir,
         sources: aggregationResult.sources,
         callbacks: { signal },
         onLog: (message) => this.deps.signalService.showLogText(message),
@@ -253,10 +254,16 @@ export class FileScraper {
 
       const toTargetPath = (stagedPath: string): string => {
         const relativePath = path.relative(stagingDir as string, stagedPath);
-        if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-          throw new Error(`Staged publication artifact escaped its workspace: ${stagedPath}`);
+        if (relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
+          return path.join(metadataOutputDir, relativePath);
         }
-        return path.join(metadataOutputDir, relativePath);
+
+        const existingRelativePath = path.relative(metadataOutputDir, stagedPath);
+        if (existingRelativePath && !existingRelativePath.startsWith("..") && !path.isAbsolute(existingRelativePath)) {
+          return stagedPath;
+        }
+
+        throw new Error(`Scrape asset is outside its staging and output directories: ${stagedPath}`);
       };
       const downloadedAssets = downloaded.assets ?? { sceneImages: [], downloaded: [] };
       const targetAssets: DownloadedAssets = {

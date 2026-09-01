@@ -112,27 +112,32 @@ export const commitPublishedMedia = async <TResult>(
   ]);
   const logger = runtimeLoggerService.getLogger("Publication");
   const startedAt = performance.now();
-  const logPhase = (phase: string, phaseStartedAt: number, details = "") => {
-    const context = ` runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""}`;
+  const operationLabel = plan.operationId.slice(-8);
+  let publicationStatus: "success" | "failed" = "failed";
+  const phaseCounts = new Map<string, number>();
+  let activePhase: string | null = null;
+  const logPhase = (phase: string, phaseStartedAt: number): void => {
+    const count = (phaseCounts.get(phase) ?? 0) + 1;
+    phaseCounts.set(phase, count);
+    const label = count === 1 ? phase : `${phase}#${count}`;
     logger.info(
-      `[publication] operation=${plan.operationId}${context} phase=${phase}-end durationMs=${Math.round(performance.now() - phaseStartedAt)}${details}`,
+      `[publication] op=${operationLabel} phase=${label} durationMs=${Math.round(performance.now() - phaseStartedAt)}`,
     );
+    activePhase = null;
   };
-  const startPhase = (phase: string, details = ""): number => {
-    logger.info(
-      `[publication] operation=${plan.operationId} runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""} phase=${phase}-start${details}`,
-    );
+  const startPhase = (phase: string): number => {
+    activePhase = phase;
     return performance.now();
   };
   logger.info(
-    `[publication] operation=${plan.operationId} runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""} phase=publication-start size=${plan.video?.size ?? 0} source=${plan.video ? `${plan.video.source.rootId}:${plan.video.source.relativePath}` : ""} target=${plan.video ? `${plan.video.target.rootId}:${plan.video.target.relativePath}` : ""}`,
+    `[publication] start operation=${plan.operationId} runId=${options.logContext?.runId ?? ""} itemId=${options.logContext?.itemId ?? ""} source=${plan.video ? `${plan.video.source.rootId}:${plan.video.source.relativePath}` : "-"} target=${plan.video ? `${plan.video.target.rootId}:${plan.video.target.relativePath}` : "-"}`,
   );
-  const previewStartedAt = startPhase("preflight-preview");
+  const previewStartedAt = startPhase("preview");
   const previewed = await preflightPublication(plan, options, fileSystem);
-  logPhase("preflight-preview", previewStartedAt);
-  const lockStartedAt = startPhase("publication-lock");
+  logPhase("preview", previewStartedAt);
+  const lockStartedAt = startPhase("lock");
   const release = options.acquireAll?.(lockRefs) ?? mediaPathOwnership.acquireAll(lockRefs);
-  logPhase("publication-lock", lockStartedAt);
+  logPhase("lock", lockStartedAt);
   let journalOpen = false;
   let committed = false;
   const planned: PlannedPublication[] = [];
@@ -201,12 +206,12 @@ export const commitPublishedMedia = async <TResult>(
           } else {
             data = artifact.content.data;
           }
-          const writeStartedAt = startPhase("sidecar-write", ` target=${targetPath}`);
+          const writeStartedAt = startPhase("sidecar-write");
           await fileSystem.writeFile(temporaryPath, data);
-          logPhase("sidecar-write", writeStartedAt, ` target=${targetPath} size=${expectedBytes(data)}`);
-          const flushStartedAt = startPhase("flush", ` target=${temporaryPath}`);
+          logPhase("sidecar-write", writeStartedAt);
+          const flushStartedAt = startPhase("flush");
           await fileSystem.flush?.(temporaryPath);
-          logPhase("flush", flushStartedAt, ` target=${temporaryPath}`);
+          logPhase("flush", flushStartedAt);
           const staged = await fileSystem.stat(temporaryPath);
           if (!staged.isFile() || staged.size !== expectedBytes(data)) {
             throw new Error(
@@ -246,15 +251,12 @@ export const commitPublishedMedia = async <TResult>(
                 `Publication source changed before mutation: ${video.source.rootId}:${video.source.relativePath}`,
               );
             }
-            const copyStartedAt = startPhase(
-              "video-copy",
-              ` source=${sourcePath} target=${targetPath} size=${video.size}`,
-            );
+            const copyStartedAt = startPhase("video-copy");
             await fileSystem.copyFile(sourcePath, temporaryPath);
-            logPhase("video-copy", copyStartedAt, ` source=${sourcePath} target=${targetPath} size=${video.size}`);
-            const flushStartedAt = startPhase("flush", ` target=${temporaryPath}`);
+            logPhase("video-copy", copyStartedAt);
+            const flushStartedAt = startPhase("flush");
             await fileSystem.flush?.(temporaryPath);
-            logPhase("flush", flushStartedAt, ` target=${temporaryPath}`);
+            logPhase("flush", flushStartedAt);
             const copied = await fileSystem.stat(temporaryPath);
             if (!copied.isFile() || copied.size !== video.size) {
               throw new Error(`Copied video size mismatch for ${video.target.rootId}:${video.target.relativePath}`);
@@ -309,12 +311,11 @@ export const commitPublishedMedia = async <TResult>(
       if (!item.targetExisted) published.push(item);
     }
     logPhase("rename", renameStartedAt);
-
-    const commitStartedAt = startPhase("database-commit");
+    const commitStartedAt = startPhase("commit");
     const result = options.journal.commit(plan.operationId, () => options.commit());
     committed = true;
     journalOpen = false;
-    logPhase("database-commit", commitStartedAt);
+    logPhase("commit", commitStartedAt);
 
     try {
       const cleanupStartedAt = startPhase("cleanup");
@@ -350,6 +351,7 @@ export const commitPublishedMedia = async <TResult>(
       );
     }
 
+    publicationStatus = "success";
     return result;
   } catch (error) {
     if (committed) {
@@ -380,6 +382,8 @@ export const commitPublishedMedia = async <TResult>(
     throw error;
   } finally {
     release();
-    logPhase("publication", startedAt);
+    logger.info(
+      `[publication] ${publicationStatus} operation=${plan.operationId} durationMs=${Math.round(performance.now() - startedAt)}${activePhase ? ` active=${activePhase}` : ""}`,
+    );
   }
 };

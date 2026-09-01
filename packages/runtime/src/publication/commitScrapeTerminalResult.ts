@@ -1,7 +1,6 @@
 import type { MediaRoot } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
-import { runtimeLoggerService } from "../shared";
 import { libraryEntryFromPublicationPlan } from "./libraryEntry";
 import { commitPublishedMedia } from "./publishMedia";
 import {
@@ -105,16 +104,9 @@ export const commitScrapeTerminalResult = async (input: {
   fileTransitions: ScrapeFileTransitions;
 }): Promise<ScrapeResult> => {
   const { result, attemptId, scrapeRuns } = input;
-  const logger = runtimeLoggerService.getLogger("Publication");
   const transition = async (name: "success" | "failed"): Promise<void> => {
-    const operation = input.success?.plan.operationId ?? attemptId;
-    const startedAt = performance.now();
-    logger.info(`[publication] operation=${operation} phase=file-transition-${name}-start itemPath=${input.itemPath}`);
     if (name === "success") await input.fileTransitions.succeeded();
     else await input.fileTransitions.failed();
-    logger.info(
-      `[publication] operation=${operation} phase=file-transition-${name}-end durationMs=${Math.round(performance.now() - startedAt)} itemPath=${input.itemPath}`,
-    );
   };
   const commitFailure = async (error: string, causes: unknown[] = []): Promise<ScrapeResult> => {
     let terminalError = error;

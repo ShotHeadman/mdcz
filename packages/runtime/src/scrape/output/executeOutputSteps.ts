@@ -52,6 +52,7 @@ export const downloadCrawlerAssets = async (input: {
   downloadManager: DownloadManager;
   fileInfo: FileInfo;
   outputDir: string;
+  existingAssetDir?: string;
   imageAlternatives?: Partial<ImageAlternatives>;
   sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "scene_images">;
   callbacks?: DownloadCallbacks;
@@ -84,6 +85,7 @@ export const downloadCrawlerAssets = async (input: {
     },
     {
       movieBaseName: input.movieBaseName,
+      existingAssetDir: input.existingAssetDir,
     },
   );
   const crawlerData =

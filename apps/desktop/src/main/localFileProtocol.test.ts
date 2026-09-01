@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import { afterEach, describe, expect, it } from "vitest";
-import { LocalFileProtocolError, localFileUrlForHostPath, resolveLocalFileRequest } from "./localFileProtocol";
+import {
+  createLocalFileResponse,
+  LocalFileProtocolError,
+  localFileUrlForHostPath,
+  resolveLocalFileRequest,
+} from "./localFileProtocol";
 
 const directories: string[] = [];
 
@@ -76,5 +81,31 @@ describe("resolveLocalFileRequest", () => {
     expect(
       localFileUrlForHostPath(join(dirname(root), "other.jpg"), [{ id: "root-1", hostPath: root }]),
     ).toBeUndefined();
+  });
+
+  it("serves seekable byte ranges without buffering the entire media file", async () => {
+    const root = await createTempDir();
+    const filePath = join(root, "trailer.mp4");
+    await writeFile(filePath, "0123456789");
+    const cases = [
+      { range: undefined, status: 200, body: "0123456789", contentRange: null },
+      { range: "bytes=2-5", status: 206, body: "2345", contentRange: "bytes 2-5/10" },
+      { range: "bytes=7-", status: 206, body: "789", contentRange: "bytes 7-9/10" },
+      { range: "bytes=-3", status: 206, body: "789", contentRange: "bytes 7-9/10" },
+      { range: "bytes=20-", status: 416, body: "", contentRange: "bytes */10" },
+    ] as const;
+
+    for (const testCase of cases) {
+      const request = new Request("local-file://root-1/trailer.mp4", {
+        headers: testCase.range ? { range: testCase.range } : undefined,
+      });
+      const response = await createLocalFileResponse(filePath, request);
+
+      expect(response.status).toBe(testCase.status);
+      expect(response.headers.get("accept-ranges")).toBe("bytes");
+      expect(response.headers.get("content-range")).toBe(testCase.contentRange);
+      expect(response.headers.get("content-type")).toBe("video/mp4");
+      await expect(response.text()).resolves.toBe(testCase.body);
+    }
   });
 });

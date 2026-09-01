@@ -310,8 +310,9 @@ describe("DownloadManager keep flags", () => {
       "trailer.mp4": "trailer",
       "extrafanart/fanart1.jpg": "scene",
     });
+    const stagingDir = await createTempDir();
     const assets = await manager.downloadAll(
-      root,
+      stagingDir,
       createCrawlerData({
         thumb_url: "https://example.com/thumb.jpg",
         poster_url: "https://example.com/poster.jpg",
@@ -320,6 +321,9 @@ describe("DownloadManager keep flags", () => {
         scene_images: ["https://example.com/scene-001.jpg"],
       }),
       createConfig(),
+      {},
+      undefined,
+      { existingAssetDir: root },
     );
     expect(assets).toMatchObject({
       thumb: join(root, "thumb.jpg"),

@@ -46,18 +46,20 @@ export const buildImageAssetPathFromSource = (targetPath: string, sourcePath: st
 
 export const resolveSingleAsset = async ({
   targetPath,
+  existingPath = targetPath,
   keepExisting,
   fallbackToExistingOnFailure = true,
   create,
 }: {
   targetPath: string;
+  existingPath?: string;
   keepExisting: boolean;
   fallbackToExistingOnFailure?: boolean;
   create: () => Promise<string | null>;
 }): Promise<{ assetPath?: string; createdPath?: string }> => {
-  const existingPath = await resolveExistingAsset(targetPath);
-  if (keepExisting && existingPath) {
-    return { assetPath: existingPath };
+  const resolvedExistingPath = await resolveExistingAsset(existingPath);
+  if (keepExisting && resolvedExistingPath) {
+    return { assetPath: resolvedExistingPath };
   }
 
   const createdPath = await create();
@@ -65,7 +67,7 @@ export const resolveSingleAsset = async ({
     return { assetPath: createdPath, createdPath };
   }
 
-  return fallbackToExistingOnFailure ? { assetPath: existingPath } : {};
+  return fallbackToExistingOnFailure ? { assetPath: resolvedExistingPath } : {};
 };
 
 export const runParallel = async <K extends string, TTask extends { key: K; path: string }, TValue>(

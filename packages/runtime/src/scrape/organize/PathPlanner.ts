@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
-import { buildSubtitleSidecarTargetPath, type SubtitleSidecarMatch } from "../media";
+import type { SubtitleSidecarMatch } from "../media";
 import { pathExists } from "../utils/filesystem";
 import type { SidecarResolver } from "./SidecarResolver";
 
@@ -11,7 +11,6 @@ export class PathPlanner {
     sourceVideoPath: string;
     targetVideoPath: string;
     nfoPath?: string;
-    ignoreExistingNfoAtTarget?: boolean;
     subtitleSidecars?: SubtitleSidecarMatch[];
   }): Promise<{
     targetVideoPath: string;
@@ -26,14 +25,9 @@ export class PathPlanner {
       resolve(options.sourceVideoPath),
       ...subtitleSidecars.map((subtitleSidecar) => resolve(subtitleSidecar.path)),
     ]);
-    if (options.ignoreExistingNfoAtTarget && options.nfoPath) {
-      ignoredExistingPaths.add(resolve(options.nfoPath));
-    }
-
     const parsedTargetVideo = parse(options.targetVideoPath);
     const parsedNfo = options.nfoPath ? parse(options.nfoPath) : undefined;
     const nfoTracksVideoBase = parsedNfo ? parsedNfo.name === parsedTargetVideo.name : false;
-    const sharedMultipartNfo = Boolean(parsedNfo && !nfoTracksVideoBase);
     let collisionSuffix = 0;
 
     while (true) {
@@ -43,16 +37,9 @@ export class PathPlanner {
       const candidateNfoPath = parsedNfo
         ? join(parsedNfo.dir, `${nfoTracksVideoBase ? candidateBaseName : parsedNfo.name}${parsedNfo.ext}`)
         : undefined;
-      const candidatePaths = [
-        candidateVideoPath,
-        ...subtitleSidecars.map((subtitleSidecar) =>
-          buildSubtitleSidecarTargetPath(subtitleSidecar, candidateVideoPath),
-        ),
-        ...(candidateNfoPath && !sharedMultipartNfo ? [candidateNfoPath] : []),
-      ];
-      const hasCollision = (
-        await Promise.all(candidatePaths.map((targetPath) => this.hasTargetCollision(targetPath, ignoredExistingPaths)))
-      ).some(Boolean);
+      // Artifact targets (NFO, images, subtitles) are reconciled by
+      // publication; only an existing video can select a new basename.
+      const hasCollision = await this.hasTargetCollision(candidateVideoPath, ignoredExistingPaths);
 
       if (!hasCollision) {
         return {

@@ -25,6 +25,7 @@ export interface DownloadCallbacks {
 
 export interface DownloadExecutionPlan {
   outputDir: string;
+  existingAssetDir: string;
   movieBaseName: string;
   assetFileNames: MovieAssetFileNames;
   data: CrawlerData;
@@ -42,6 +43,7 @@ export interface DownloadExecutionContext {
   imageDownloader: ImageDownloadService;
   sceneImageDownloader: SceneImageDownloader;
   logger: {
+    info(message: string): void;
     warn(message: string): void;
   };
 }

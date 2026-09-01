@@ -265,17 +265,13 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
               ? "interrupted"
               : "failed";
       const logger = runtimeLoggerService.getLogger("Publication");
-      const startedAt = performance.now();
-      logger.info(`[publication] operation=${entry.id} phase=run-finalization-start`);
       const finalized = await this.store.finalize({
         runId: entry.id,
         disposition,
         error: snapshot.error,
         startedAt: entry.startedAt,
       });
-      logger.info(
-        `[publication] operation=${entry.id} phase=run-finalization-end durationMs=${Math.round(performance.now() - startedAt)} status=${disposition}`,
-      );
+      logger.info(`[publication] run-finalized operation=${entry.id} status=${disposition}`);
       await this.host.onTerminal?.(finalized, snapshot);
     })();
     await entry.settlement;

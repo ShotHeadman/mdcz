@@ -12,9 +12,12 @@ import { UpdateService } from "@main/services/UpdateService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
 import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
 import { NetworkClient } from "@mdcz/runtime/network";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { app, BrowserWindow } from "electron";
 
 const QUIT_FORCE_EXIT_TIMEOUT_MS = 15_000;
+
+runtimeLoggerService.setFactory((name) => loggerService.getLogger(name));
 
 const signalService = new SignalService();
 const sharedNetworkClient = new NetworkClient({

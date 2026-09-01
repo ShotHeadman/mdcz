@@ -156,7 +156,6 @@ export class FileOrganizer {
       sourceVideoPath: sourceFilePath,
       targetVideoPath: plan.targetVideoPath,
       nfoPath: plan.nfoPath,
-      ignoreExistingNfoAtTarget: sameDirectoryOutput,
       subtitleSidecars: plan.subtitleSidecars,
     });
 

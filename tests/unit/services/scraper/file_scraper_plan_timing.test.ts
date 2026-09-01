@@ -66,6 +66,10 @@ describe("FileScraper plan timing", () => {
     const actorImageService = {
       prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
     } as unknown as ActorImageService;
+    const downloadAll = vi.fn().mockResolvedValue({
+      downloaded: [],
+      sceneImages: [],
+    });
     mockConfigManager(config);
     const scraper = createFileScraper({
       aggregationService: {
@@ -96,10 +100,7 @@ describe("FileScraper plan timing", () => {
         writeNfo: vi.fn(),
       } as unknown as NfoGenerator,
       downloadManager: {
-        downloadAll: vi.fn().mockResolvedValue({
-          downloaded: [],
-          sceneImages: [],
-        }),
+        downloadAll,
       } as unknown as DownloadManager,
       fileOrganizer,
       signalService: new SignalService(null),
@@ -123,5 +124,9 @@ describe("FileScraper plan timing", () => {
         executionMode: "batch",
       },
     );
+    expect(downloadAll.mock.calls[0]?.[5]).toEqual({
+      movieBaseName: "ABC-123",
+      existingAssetDir: plan.outputDir,
+    });
   });
 });

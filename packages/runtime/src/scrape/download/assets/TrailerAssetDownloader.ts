@@ -14,7 +14,7 @@ export class TrailerAssetDownloader implements AssetDownloader {
   }
 
   async download(context: DownloadExecutionContext): Promise<void> {
-    const { assets, imageDownloader, plan } = context;
+    const { assets, imageDownloader, logger, plan } = context;
 
     throwIfAborted(plan.signal);
 
@@ -25,15 +25,25 @@ export class TrailerAssetDownloader implements AssetDownloader {
     const keepTrailer = shouldKeepAsset(plan.assetDecisions.trailer, plan.config.download.keepTrailer);
     const trailerResult = await resolveSingleAsset({
       targetPath: trailerPath,
+      existingPath: join(plan.existingAssetDir, plan.assetFileNames.trailer),
       keepExisting: keepTrailer,
       fallbackToExistingOnFailure: shouldFallbackToExistingAsset(plan.assetDecisions.trailer),
       create: async () => {
         if (!url) return null;
+        const startedAt = performance.now();
+        logger.info(
+          `[${plan.data.number}] Trailer download started: source=${url} target=${trailerPath} totalTimeoutMs=${TRAILER_TOTAL_TIMEOUT_MS} readTimeoutMs=${TRAILER_READ_TIMEOUT_MS}`,
+        );
         const downloadResult = await imageDownloader.downloadFile(url, trailerPath, {
           signal: plan.signal,
           readTimeoutMs: TRAILER_READ_TIMEOUT_MS,
           totalTimeoutMs: TRAILER_TOTAL_TIMEOUT_MS,
         });
+        if (downloadResult.status === "downloaded") {
+          logger.info(
+            `[${plan.data.number}] Trailer download completed in ${Math.round(performance.now() - startedAt)}ms: ${downloadResult.path}`,
+          );
+        }
         return downloadResult.status === "downloaded" ? downloadResult.path : null;
       },
     });
@@ -43,6 +53,13 @@ export class TrailerAssetDownloader implements AssetDownloader {
       if (trailerResult.createdPath) {
         assets.downloaded.push(trailerResult.createdPath);
       }
+      return;
     }
+
+    logger.info(
+      url
+        ? `[${plan.data.number}] Local trailer unavailable; retaining remote playback fallback: ${url}`
+        : `[${plan.data.number}] Trailer unavailable: no local file or remote URL`,
+    );
   }
 }

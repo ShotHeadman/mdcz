@@ -102,11 +102,7 @@ export function LibraryPage() {
 
 async function deleteLibraryEntry(entry: LibraryEntryDto, deleteAssets: boolean, onSuccess: () => void) {
   try {
-    const deleteMode = !deleteAssets
-      ? "none"
-      : window.confirm("是否同时删除视频文件？\n选择“取消”将仅删除附带数据并保留视频。")
-        ? "all"
-        : "assets";
+    const deleteMode = !deleteAssets ? "none" : window.confirm("是否同时删除视频文件？") ? "all" : "assets";
     await ipc.library.delete({ deleteMode, id: entry.id });
     toast.success("已从媒体库移除");
     onSuccess();
