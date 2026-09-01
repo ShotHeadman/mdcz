@@ -1,4 +1,4 @@
-import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import type { MaintenanceActiveSessionSnapshot, MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
 import type {
   LocalScanEntry,
   MaintenanceItemResult,
@@ -10,6 +10,13 @@ import { create } from "zustand";
 
 export type MaintenanceFilter = "all" | "success" | "failed";
 export type MaintenanceExecutionStatus = MaintenanceStatus["state"];
+
+interface MaintenanceSnapshotView {
+  entries: LocalScanEntry[];
+  previewResults: Record<string, MaintenancePreviewItem>;
+  itemResults: Record<string, MaintenanceItemResult>;
+  fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
+}
 
 interface MaintenanceState {
   snapshot: MaintenanceActiveSessionSnapshot | null;
@@ -31,6 +38,93 @@ interface MaintenanceState {
   reset(): void;
 }
 
+const previewFileId = (preview: MaintenanceActiveSessionSnapshot["previews"][number]): string =>
+  preview.entry ? `${preview.rootId}:${preview.relativePath}` : preview.relativePath;
+
+const EMPTY_MAINTENANCE_SNAPSHOT_VIEW: MaintenanceSnapshotView = {
+  entries: [],
+  previewResults: {},
+  itemResults: {},
+  fieldSelections: {},
+};
+const maintenanceSnapshotViews = new WeakMap<MaintenanceActiveSessionSnapshot, MaintenanceSnapshotView>();
+
+const buildMaintenanceSnapshotView = (snapshot: MaintenanceActiveSessionSnapshot): MaintenanceSnapshotView => {
+  const fileIdByPreviewId = new Map(snapshot.previews.map((preview) => [preview.id, previewFileId(preview)]));
+  return {
+    entries: snapshot.previews.flatMap((preview) =>
+      preview.entry
+        ? [
+            {
+              ...preview.entry,
+              fileId: previewFileId(preview),
+              ref: { rootId: preview.rootId, relativePath: preview.relativePath },
+            },
+          ]
+        : [],
+    ),
+    previewResults: Object.fromEntries(
+      snapshot.previews.map((preview) => {
+        const item: MaintenancePreviewItem = {
+          fileId: previewFileId(preview),
+          previewId: preview.id,
+          status: preview.status === "ready" ? "ready" : "blocked",
+          ...(preview.error ? { error: preview.error } : {}),
+          ...(preview.fieldDiffs.length ? { fieldDiffs: preview.fieldDiffs } : {}),
+          ...(preview.unchangedFieldDiffs.length ? { unchangedFieldDiffs: preview.unchangedFieldDiffs } : {}),
+          ...(preview.pathDiff ? { pathDiff: preview.pathDiff } : {}),
+          ...(preview.proposedCrawlerData ? { proposedCrawlerData: preview.proposedCrawlerData } : {}),
+          ...(preview.imageAlternatives ? { imageAlternatives: preview.imageAlternatives } : {}),
+        };
+        return [item.fileId, item];
+      }),
+    ),
+    itemResults: snapshot.currentBatch
+      ? Object.fromEntries(
+          snapshot.currentBatch.items.flatMap((item): Array<[string, MaintenanceItemResult]> => {
+            const fileId = fileIdByPreviewId.get(item.selection.previewId);
+            if (!fileId) return [];
+            const result = item.result;
+            return [
+              [
+                fileId,
+                {
+                  fileId,
+                  batchId: snapshot.currentBatch?.id,
+                  status: result?.status ?? item.status,
+                  ...(result?.error ? { error: result.error } : {}),
+                  ...(result?.crawlerData ? { crawlerData: result.crawlerData } : {}),
+                  ...(result?.entry ? { updatedEntry: result.entry } : {}),
+                  ...(result?.fieldDiffs ? { fieldDiffs: result.fieldDiffs } : {}),
+                  ...(result?.unchangedFieldDiffs ? { unchangedFieldDiffs: result.unchangedFieldDiffs } : {}),
+                  ...(result?.pathDiff ? { pathDiff: result.pathDiff } : {}),
+                },
+              ],
+            ];
+          }),
+        )
+      : {},
+    fieldSelections: Object.fromEntries(
+      Object.entries(snapshot.draft.fieldSelections).flatMap(([previewId, selection]) => {
+        const fileId = fileIdByPreviewId.get(previewId);
+        return fileId ? [[fileId, selection]] : [];
+      }),
+    ),
+  };
+};
+
+const selectMaintenanceSnapshotView = (state: MaintenanceState): MaintenanceSnapshotView => {
+  const snapshot = state.snapshot;
+  if (!snapshot) return EMPTY_MAINTENANCE_SNAPSHOT_VIEW;
+
+  const cached = maintenanceSnapshotViews.get(snapshot);
+  if (cached) return cached;
+
+  const view = buildMaintenanceSnapshotView(snapshot);
+  maintenanceSnapshotViews.set(snapshot, view);
+  return view;
+};
+
 const initialState = () => ({
   snapshot: null as MaintenanceActiveSessionSnapshot | null,
   selectedIds: [] as string[],
@@ -42,67 +136,14 @@ const initialState = () => ({
   error: null as string | null,
 });
 
-const previewFileId = (preview: MaintenanceActiveSessionSnapshot["previews"][number]): string =>
-  preview.entry ? `${preview.rootId}:${preview.relativePath}` : preview.relativePath;
-
 export const selectMaintenanceEntries = (state: MaintenanceState): LocalScanEntry[] =>
-  state.snapshot?.previews.flatMap((preview) =>
-    preview.entry
-      ? [
-          {
-            ...preview.entry,
-            fileId: previewFileId(preview),
-            ref: { rootId: preview.rootId, relativePath: preview.relativePath },
-          },
-        ]
-      : [],
-  ) ?? [];
+  selectMaintenanceSnapshotView(state).entries;
 
 export const selectMaintenancePreviewResults = (state: MaintenanceState): Record<string, MaintenancePreviewItem> =>
-  Object.fromEntries(
-    (state.snapshot?.previews ?? []).map((preview) => {
-      const item: MaintenancePreviewItem = {
-        fileId: previewFileId(preview),
-        previewId: preview.id,
-        status: preview.status === "ready" ? "ready" : "blocked",
-        ...(preview.error ? { error: preview.error } : {}),
-        ...(preview.fieldDiffs.length ? { fieldDiffs: preview.fieldDiffs } : {}),
-        ...(preview.unchangedFieldDiffs.length ? { unchangedFieldDiffs: preview.unchangedFieldDiffs } : {}),
-        ...(preview.pathDiff ? { pathDiff: preview.pathDiff } : {}),
-        ...(preview.proposedCrawlerData ? { proposedCrawlerData: preview.proposedCrawlerData } : {}),
-        ...(preview.imageAlternatives ? { imageAlternatives: preview.imageAlternatives } : {}),
-      };
-      return [item.fileId, item];
-    }),
-  );
+  selectMaintenanceSnapshotView(state).previewResults;
 
-export const selectMaintenanceItemResults = (state: MaintenanceState): Record<string, MaintenanceItemResult> => {
-  if (!state.snapshot?.currentBatch) return {};
-  const fileIdByPreviewId = new Map(state.snapshot.previews.map((preview) => [preview.id, previewFileId(preview)]));
-  return Object.fromEntries(
-    state.snapshot.currentBatch.items.flatMap((item): Array<[string, MaintenanceItemResult]> => {
-      const fileId = fileIdByPreviewId.get(item.selection.previewId);
-      if (!fileId) return [];
-      const result = item.result;
-      return [
-        [
-          fileId,
-          {
-            fileId,
-            batchId: state.snapshot?.currentBatch?.id,
-            status: result?.status ?? item.status,
-            ...(result?.error ? { error: result.error } : {}),
-            ...(result?.crawlerData ? { crawlerData: result.crawlerData } : {}),
-            ...(result?.entry ? { updatedEntry: result.entry } : {}),
-            ...(result?.fieldDiffs ? { fieldDiffs: result.fieldDiffs } : {}),
-            ...(result?.unchangedFieldDiffs ? { unchangedFieldDiffs: result.unchangedFieldDiffs } : {}),
-            ...(result?.pathDiff ? { pathDiff: result.pathDiff } : {}),
-          },
-        ],
-      ];
-    }),
-  );
-};
+export const selectMaintenanceItemResults = (state: MaintenanceState): Record<string, MaintenanceItemResult> =>
+  selectMaintenanceSnapshotView(state).itemResults;
 
 export const selectMaintenanceExecutionStatus = (state: MaintenanceState): MaintenanceExecutionStatus => {
   const session = state.snapshot;
@@ -117,16 +158,8 @@ export const selectMaintenanceExecutionStatus = (state: MaintenanceState): Maint
 export const selectMaintenanceProgress = (state: MaintenanceState): number =>
   state.snapshot?.totalEntries ? Math.round((state.snapshot.completedEntries / state.snapshot.totalEntries) * 100) : 0;
 
-export const selectMaintenanceFieldSelections = (state: MaintenanceState) => {
-  if (!state.snapshot) return {};
-  const fileIdByPreviewId = new Map(state.snapshot.previews.map((preview) => [preview.id, previewFileId(preview)]));
-  return Object.fromEntries(
-    Object.entries(state.snapshot.draft.fieldSelections).flatMap(([previewId, selection]) => {
-      const fileId = fileIdByPreviewId.get(previewId);
-      return fileId ? [[fileId, selection]] : [];
-    }),
-  );
-};
+export const selectMaintenanceFieldSelections = (state: MaintenanceState) =>
+  selectMaintenanceSnapshotView(state).fieldSelections;
 
 export const selectMaintenanceHasWork = (state: MaintenanceState): boolean => Boolean(state.snapshot) || state.pending;
 export const selectMaintenanceSessionId = (state: MaintenanceState): string => state.snapshot?.id ?? "";
@@ -166,7 +199,13 @@ export const useMaintenanceStore = create<MaintenanceState>()((set) => ({
 export const applyMaintenanceSessionSnapshot = (snapshot: MaintenanceActiveSessionSnapshot | null): void =>
   useMaintenanceStore.getState().setSnapshot(snapshot);
 export const changeMaintenancePreset = (presetId: MaintenancePresetId): void =>
-  useMaintenanceStore.setState({ presetId, snapshot: null, selectedIds: [], activeId: null, error: null });
+  useMaintenanceStore.setState({
+    presetId,
+    snapshot: null,
+    selectedIds: [],
+    activeId: null,
+    error: null,
+  });
 export const toggleMaintenanceSelectedIds = (ids: string[]): void =>
   useMaintenanceStore.getState().toggleSelectedIds(ids);
 export const resetMaintenanceSession = (): void => useMaintenanceStore.getState().reset();
