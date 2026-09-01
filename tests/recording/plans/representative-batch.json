@@ -1,0 +1,9 @@
+{
+  "journeyId": "representative-batch",
+  "items": [
+    {
+      "relativePath": "movie-file.mp4",
+      "caseId": "movie-case"
+    }
+  ]
+}

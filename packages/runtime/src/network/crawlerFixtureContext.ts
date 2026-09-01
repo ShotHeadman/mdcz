@@ -23,6 +23,12 @@ interface ScrapeExecutionContext {
 
 const scrapeExecutionStorage = new AsyncLocalStorage<ScrapeExecutionContext>();
 
+export const preserveScrapeExecutionContext = <T extends () => unknown>(run: T): T => {
+  const store = scrapeExecutionStorage.getStore();
+  if (!store) return run;
+  return (() => scrapeExecutionStorage.run(store, run)) as T;
+};
+
 export const runWithScrapeItemContext = async <T>(context: ScrapeItemContext, run: () => Promise<T>): Promise<T> => {
   const item = { ...context, active: true };
   try {
