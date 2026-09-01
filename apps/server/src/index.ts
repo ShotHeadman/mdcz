@@ -1,3 +1,4 @@
+import { finalizeCrawlerRecording } from "@mdcz/runtime/network";
 import { buildServer } from "./app";
 import { parseHost, parsePort } from "./config";
 
@@ -7,6 +8,7 @@ const startServer = async (): Promise<void> => {
   const { fastify } = buildServer();
 
   const shutdown = async (): Promise<void> => {
+    await finalizeCrawlerRecording();
     await fastify.close();
   };
 

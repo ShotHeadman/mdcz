@@ -7,6 +7,7 @@ import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
+import { preserveScrapeExecutionContext } from "./crawlerFixtureContext";
 import { RateLimiter } from "./RateLimiter";
 
 const RETRY_STATUS_CODE = 429;
@@ -460,7 +461,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   ): Promise<TResult> {
     return this.rateLimiter.schedule(
       url,
-      async () => {
+      preserveScrapeExecutionContext(async () => {
         if (init.signal?.aborted) {
           throw createAbortError();
         }
@@ -515,7 +516,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
             await retryTransportError(error);
           }
         }
-      },
+      }),
       init.signal,
     );
   }

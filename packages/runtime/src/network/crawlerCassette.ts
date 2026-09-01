@@ -59,10 +59,30 @@ export interface LoadedCrawlerCassette {
   responseBodies: ReadonlyMap<number, Uint8Array>;
 }
 
-const assertPathSegment = (label: string, value: string): void => {
+export const assertCrawlerFixturePathSegment = (label: string, value: string): void => {
   if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(value)) {
     throw new Error(`${label} must be a single filesystem-safe path segment: ${value}`);
   }
+};
+
+export const resolveCrawlerCassetteDirectory = (fixturesRoot: string, website: Website, caseId: string): string => {
+  assertCrawlerFixturePathSegment("Website", website);
+  assertCrawlerFixturePathSegment("Crawler fixture caseId", caseId);
+  return path.resolve(fixturesRoot, website, caseId);
+};
+
+export const responseBodyExtension = (contentType: string | null): string => {
+  const type = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (type.includes("html")) return ".html";
+  if (type.includes("json")) return ".json";
+  if (type.startsWith("text/")) return ".txt";
+  if (type === "image/jpeg" || type === "image/jpg") return ".jpg";
+  if (type === "image/png") return ".png";
+  if (type === "image/gif") return ".gif";
+  if (type === "image/webp") return ".webp";
+  if (type === "image/avif") return ".avif";
+  if (type === "image/bmp") return ".bmp";
+  return ".bin";
 };
 
 const resolveResponsePath = (directory: string, bodyPath: string): string => {
@@ -105,9 +125,7 @@ export const loadCrawlerCassette = async (
   website: Website,
   caseId: string,
 ): Promise<LoadedCrawlerCassette> => {
-  assertPathSegment("Website", website);
-  assertPathSegment("Crawler fixture caseId", caseId);
-  const directory = path.resolve(fixturesRoot, website, caseId);
+  const directory = resolveCrawlerCassetteDirectory(fixturesRoot, website, caseId);
   const cassettePath = path.join(directory, "cassette.json");
   const cassette = crawlerCassetteSchema.parse(JSON.parse(await readFile(cassettePath, "utf8")));
 
