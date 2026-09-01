@@ -9,16 +9,9 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const pnpmCli = resolvePnpmCli(process.env.npm_execpath);
 const args = process.argv.slice(2);
 const mode = args[0] === "desktop" || args[0] === "webui" ? args[0] : "webui";
-const rest = args[0] === "desktop" || args[0] === "webui" ? args.slice(1) : args;
-const planIndex = rest.indexOf("--plan");
-const planArg = planIndex >= 0 ? rest[planIndex + 1] : undefined;
-if (planIndex >= 0 && !planArg) throw new Error("record: --plan requires a path");
-
-const planPath = path.resolve(workspaceRoot, planArg ?? "tests/recording/plans/representative-batch.json");
 const env = {
   ...process.env,
   MDCZ_RECORD_CRAWLER: "1",
-  MDCZ_RECORD_PLAN: planPath,
   MDCZ_RECORD_STAGING:
     process.env.MDCZ_RECORD_STAGING?.trim() || path.join(workspaceRoot, "test-results/recording/staging"),
   MDCZ_RECORD_PUBLISH: process.env.MDCZ_RECORD_PUBLISH?.trim() || path.join(workspaceRoot, "tests/fixtures/crawler"),
@@ -59,10 +52,10 @@ const waitForUrl = async (url, timeoutMs = 60_000) => {
   throw new Error(`Timed out waiting for ${url}`);
 };
 
-console.log(`Recording crawler fixtures with plan ${planPath}`);
+console.log("Recording crawler fixtures from whatever items you scrape.");
 
 if (mode === "desktop") {
-  console.log("Desktop recording starts the real app. Scrape the planned items, then stop the process to publish.");
+  console.log("Desktop recording starts the real app. Scrape any items, then stop the process to publish.");
   await runPnpm(["dev:desktop"]);
 } else {
   const webui = spawn(

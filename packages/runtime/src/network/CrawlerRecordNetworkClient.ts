@@ -5,6 +5,7 @@ import type { Website } from "@mdcz/shared/enums";
 import {
   type CrawlerCassette,
   type CrawlerCassetteInteraction,
+  crawlerCaseIdFromRelativePath,
   headersToCassetteList,
   rawRequestBodyToBase64,
   resolveCrawlerCassetteDirectory,
@@ -13,7 +14,6 @@ import {
 } from "./crawlerCassette";
 import { CrawlerCredentialRedactor } from "./crawlerCredentials";
 import { getCrawlerFixtureContext } from "./crawlerFixtureContext";
-import { type CrawlerRecordingPlan, caseIdForRecordingPath, loadCrawlerRecordingPlan } from "./crawlerRecordingPlan";
 import { type CrawlerRecordingObservation, publishCrawlerRecordingStaging } from "./crawlerRecordingPublish";
 import {
   NetworkClient,
@@ -25,7 +25,6 @@ import {
 export interface CrawlerRecordNetworkClientOptions {
   stagingRoot: string;
   publishRoot: string;
-  plan: CrawlerRecordingPlan;
   network?: Omit<NetworkClientOptions, "rawDispatch">;
 }
 
@@ -40,6 +39,7 @@ interface SessionState {
 }
 
 const sessionKey = (website: Website, caseId: string): string => `${website}\u0000${caseId}`;
+const recordingCaseIdBindings = new Map<string, string>();
 
 const paddedSequence = (sequence: number): string => String(sequence).padStart(3, "0");
 
@@ -51,7 +51,6 @@ const captureResponseBytes = async (response: RawNetworkResponse): Promise<Uint8
 export class CrawlerRecordNetworkClient extends NetworkClient {
   private readonly stagingRoot: string;
   private readonly publishRoot: string;
-  private readonly plan: CrawlerRecordingPlan;
   private readonly redactor = new CrawlerCredentialRedactor();
   private readonly sessions = new Map<string, SessionState>();
   private readonly sequenceLocks = new Map<string, Promise<void>>();
@@ -63,7 +62,6 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     });
     this.stagingRoot = path.resolve(options.stagingRoot);
     this.publishRoot = path.resolve(options.publishRoot);
-    this.plan = options.plan;
   }
 
   observations(): CrawlerRecordingObservation[] {
@@ -79,10 +77,10 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     await publishCrawlerRecordingStaging({
       stagingRoot: this.stagingRoot,
       publishRoot: this.publishRoot,
-      plan: this.plan,
       observations: this.observations(),
       redactor: this.redactor,
     });
+    recordingCaseIdBindings.clear();
   }
 
   private async dispatchAndRecord(
@@ -94,9 +92,9 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
 
     const { website } = context.source;
     const { caseId, relativePath } = context.item;
-    const plannedCaseId = caseIdForRecordingPath(this.plan, relativePath);
-    if (plannedCaseId !== caseId) {
-      throw new Error(`Recording plan caseId mismatch for ${relativePath}: expected ${plannedCaseId}, got ${caseId}`);
+    const derivedCaseId = crawlerCaseIdFromRelativePath(relativePath);
+    if (derivedCaseId !== caseId) {
+      throw new Error(`Recording caseId mismatch for ${relativePath}: expected ${derivedCaseId}, got ${caseId}`);
     }
 
     const key = sessionKey(website, caseId);
@@ -277,7 +275,6 @@ const DEFAULT_STAGING_ROOT = "test-results/recording/staging";
 const DEFAULT_PUBLISH_ROOT = "tests/fixtures/crawler";
 
 interface ResolvedRecordingSettings {
-  plan: CrawlerRecordingPlan;
   stagingRoot: string;
   publishRoot: string;
 }
@@ -295,10 +292,7 @@ export const resolveCrawlerRecordingSettingsFromEnv = (
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedRecordingSettings | undefined => {
   if (!envFlagEnabled(env.MDCZ_RECORD_CRAWLER)) return undefined;
-  const planPath = env.MDCZ_RECORD_PLAN?.trim();
-  if (!planPath) throw new Error("MDCZ_RECORD_PLAN is required when MDCZ_RECORD_CRAWLER is enabled");
   return {
-    plan: loadCrawlerRecordingPlan(planPath),
     stagingRoot: env.MDCZ_RECORD_STAGING?.trim() || DEFAULT_STAGING_ROOT,
     publishRoot: env.MDCZ_RECORD_PUBLISH?.trim() || DEFAULT_PUBLISH_ROOT,
   };
@@ -325,10 +319,14 @@ export const createCrawlerNetworkClient = (
 };
 
 export const attachCrawlerRecordingCaseId = <T extends { relativePath: string; caseId?: string }>(item: T): T => {
-  const settings = cachedRecordingSettings();
-  if (!settings) return item;
-  const caseId = caseIdForRecordingPath(settings.plan, item.relativePath);
-  if (!caseId) throw new Error(`Recording plan has no caseId for ${item.relativePath}`);
+  if (!cachedRecordingSettings()) return item;
+  const relativePath = item.relativePath.replaceAll("\\", "/");
+  const caseId = crawlerCaseIdFromRelativePath(relativePath);
+  const bound = recordingCaseIdBindings.get(caseId);
+  if (bound && bound !== relativePath) {
+    throw new Error(`Recording caseId '${caseId}' is already used by ${bound}, not ${relativePath}`);
+  }
+  recordingCaseIdBindings.set(caseId, relativePath);
   return { ...item, caseId };
 };
 

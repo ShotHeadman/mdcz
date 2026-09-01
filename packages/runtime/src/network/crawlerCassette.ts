@@ -65,6 +65,22 @@ export const assertCrawlerFixturePathSegment = (label: string, value: string): v
   }
 };
 
+export const crawlerCaseIdFromRelativePath = (relativePath: string): string => {
+  const normalized = relativePath.replaceAll("\\", "/").trim();
+  const base = path.posix.basename(normalized);
+  if (!base || base === "." || base === "..") {
+    throw new Error(`Cannot derive crawler caseId from relative path: ${relativePath}`);
+  }
+  const stem = base.includes(".") ? base.replace(/\.[^.]+$/u, "") : base;
+  const caseId = stem
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9._-]+/gu, "-")
+    .replaceAll(/^[._-]+|[._-]+$/gu, "")
+    .replaceAll(/-{2,}/gu, "-");
+  assertCrawlerFixturePathSegment("Crawler fixture caseId", caseId);
+  return caseId;
+};
+
 export const resolveCrawlerCassetteDirectory = (fixturesRoot: string, website: Website, caseId: string): string => {
   assertCrawlerFixturePathSegment("Website", website);
   assertCrawlerFixturePathSegment("Crawler fixture caseId", caseId);
