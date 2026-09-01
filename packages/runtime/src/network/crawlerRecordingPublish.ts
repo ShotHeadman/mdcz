@@ -3,12 +3,12 @@ import path from "node:path";
 import { Website } from "@mdcz/shared/enums";
 import {
   type CrawlerCassette,
+  crawlerCaseIdFromRelativePath,
   crawlerCassetteSchema,
   loadCrawlerCassette,
   resolveCrawlerCassetteDirectory,
 } from "./crawlerCassette";
 import type { CrawlerCredentialRedactor } from "./crawlerCredentials";
-import { type CrawlerRecordingPlan, caseIdForRecordingPath } from "./crawlerRecordingPlan";
 
 export interface CrawlerRecordingObservation {
   relativePath: string;
@@ -61,21 +61,20 @@ const scanForResidualSecrets = async (directory: string, redactor: CrawlerCreden
 
 export const validateCrawlerRecordingStaging = async (options: {
   stagingRoot: string;
-  plan: CrawlerRecordingPlan;
-  observations: readonly CrawlerRecordingObservation[];
+  observations?: readonly CrawlerRecordingObservation[];
   redactor?: CrawlerCredentialRedactor;
 }): Promise<CrawlerCassette[]> => {
-  const unmapped = options.observations.filter(
-    (observation) => caseIdForRecordingPath(options.plan, observation.relativePath) !== observation.caseId,
+  const unmapped = (options.observations ?? []).filter(
+    (observation) => crawlerCaseIdFromRelativePath(observation.relativePath) !== observation.caseId,
   );
   if (unmapped.length > 0) {
     throw new Error(
-      `Recording items are missing a plan caseId: ${unmapped.map((item) => item.relativePath).join(", ")}`,
+      `Recording caseId does not match the scraped path: ${unmapped.map((item) => item.relativePath).join(", ")}`,
     );
   }
 
   const expected = new Map<string, CrawlerRecordingObservation>();
-  for (const observation of options.observations) {
+  for (const observation of options.observations ?? []) {
     expected.set(`${observation.website}\u0000${observation.caseId}`, observation);
   }
 
@@ -113,32 +112,10 @@ export const validateCrawlerRecordingStaging = async (options: {
   return cassettes;
 };
 
-export const observationsFromStagedCassettes = async (
-  stagingRoot: string,
-  plan: CrawlerRecordingPlan,
-): Promise<CrawlerRecordingObservation[]> => {
-  const staged = await listCassetteDirectories(stagingRoot);
-  const observations: CrawlerRecordingObservation[] = [];
-  for (const entry of staged) {
-    if (!websiteValues.has(entry.website)) {
-      throw new Error(`Recording staging contains an unknown website directory: ${entry.website}`);
-    }
-    const website = entry.website as Website;
-    const loaded = await loadCrawlerCassette(stagingRoot, website, entry.caseId);
-    const mapped = plan.items.find((item) => item.caseId === loaded.cassette.caseId);
-    if (!mapped) {
-      throw new Error(`Staged cassette ${website}/${entry.caseId} is not in the recording plan`);
-    }
-    observations.push({ relativePath: mapped.relativePath, caseId: entry.caseId, website });
-  }
-  return observations;
-};
-
 export const publishCrawlerRecordingStaging = async (options: {
   stagingRoot: string;
   publishRoot: string;
-  plan: CrawlerRecordingPlan;
-  observations: readonly CrawlerRecordingObservation[];
+  observations?: readonly CrawlerRecordingObservation[];
   redactor?: CrawlerCredentialRedactor;
 }): Promise<void> => {
   const cassettes = await validateCrawlerRecordingStaging(options);

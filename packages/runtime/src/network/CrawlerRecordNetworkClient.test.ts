@@ -5,9 +5,8 @@ import { CrawlerReplayNetworkClient } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CrawlerRecordNetworkClient } from "./CrawlerRecordNetworkClient";
-import { loadCrawlerCassette } from "./crawlerCassette";
+import { crawlerCaseIdFromRelativePath, loadCrawlerCassette } from "./crawlerCassette";
 import { runWithCrawlerSourceContext, runWithScrapeItemContext } from "./crawlerFixtureContext";
-import type { CrawlerRecordingPlan } from "./crawlerRecordingPlan";
 
 const { fetchMock, impitConstructorMock } = vi.hoisted(() => {
   const fetchMock = vi.fn();
@@ -42,21 +41,13 @@ const tempDir = async (label: string): Promise<string> => {
   return directory;
 };
 
-const PLAN: CrawlerRecordingPlan = {
-  journeyId: "representative-batch",
-  items: [
-    { relativePath: "one.mp4", caseId: "movie-one" },
-    { relativePath: "nested/two.mp4", caseId: "movie-two" },
-  ],
-};
-
-const itemOne = { itemId: "one", relativePath: "one.mp4", caseId: "movie-one" };
-const itemTwo = { itemId: "two", relativePath: "nested/two.mp4", caseId: "movie-two" };
+const itemOne = { itemId: "one", relativePath: "one.mp4", caseId: "one" };
+const itemTwo = { itemId: "two", relativePath: "nested/two.mp4", caseId: "two" };
 
 const createRecorder = async () => {
   const stagingRoot = await tempDir("record-staging");
   const publishRoot = await tempDir("record-publish");
-  const recorder = new CrawlerRecordNetworkClient({ stagingRoot, publishRoot, plan: PLAN });
+  const recorder = new CrawlerRecordNetworkClient({ stagingRoot, publishRoot });
   return { recorder, stagingRoot, publishRoot };
 };
 
@@ -66,6 +57,15 @@ const recorded = async <T>(item: typeof itemOne, website: Website, run: () => Pr
 const jpegBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9, 0x01, 0x02, 0x03, 0x04]);
 
 describe("CrawlerRecordNetworkClient", () => {
+  it.each([
+    ["one.mp4", "one"],
+    ["nested/two.mp4", "two"],
+    ["SSIS-497.mp4", "ssis-497"],
+    ["[Censored] SSIS-497 {streaming}.mp4", "censored-ssis-497-streaming"],
+  ])("derives caseId %s → %s from the scraped file", (relativePath, caseId) => {
+    expect(crawlerCaseIdFromRelativePath(relativePath)).toBe(caseId);
+  });
+
   it("assigns arbitrary items by caseId and isolates concurrent website sources", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       await new Promise((resolve) => setTimeout(resolve, 15));
@@ -80,10 +80,10 @@ describe("CrawlerRecordNetworkClient", () => {
       recorded(itemTwo, Website.DMM, async () => await recorder.getText("https://www.dmm.co.jp/two")),
     ]);
 
-    const dmmOne = await loadCrawlerCassette(stagingRoot, Website.DMM, "movie-one");
-    const javdbOne = await loadCrawlerCassette(stagingRoot, Website.JAVDB, "movie-one");
-    const javbusOne = await loadCrawlerCassette(stagingRoot, Website.JAVBUS, "movie-one");
-    const dmmTwo = await loadCrawlerCassette(stagingRoot, Website.DMM, "movie-two");
+    const dmmOne = await loadCrawlerCassette(stagingRoot, Website.DMM, "one");
+    const javdbOne = await loadCrawlerCassette(stagingRoot, Website.JAVDB, "one");
+    const javbusOne = await loadCrawlerCassette(stagingRoot, Website.JAVBUS, "one");
+    const dmmTwo = await loadCrawlerCassette(stagingRoot, Website.DMM, "two");
 
     expect(dmmOne.cassette.interactions).toHaveLength(1);
     expect(dmmOne.cassette.interactions[0]?.request.url).toBe("https://www.dmm.co.jp/one");
@@ -103,7 +103,7 @@ describe("CrawlerRecordNetworkClient", () => {
     await recorder.getText("https://cdn.example.com/poster.jpg");
     await runWithScrapeItemContext(itemOne, async () => await recorder.getText("https://cdn.example.com/thumb.jpg"));
 
-    await expect(loadCrawlerCassette(stagingRoot, Website.DMM, "movie-one")).rejects.toThrow();
+    await expect(loadCrawlerCassette(stagingRoot, Website.DMM, "one")).rejects.toThrow();
   });
 
   it("stores html, json, text, and binary bodies with the original bytes and matching extensions", async () => {
@@ -126,7 +126,7 @@ describe("CrawlerRecordNetworkClient", () => {
       await recorder.getContent("https://www.dmm.co.jp/cover.jpg");
     });
 
-    const loaded = await loadCrawlerCassette(stagingRoot, Website.DMM, "movie-one");
+    const loaded = await loadCrawlerCassette(stagingRoot, Website.DMM, "one");
     expect(loaded.cassette.interactions.map((interaction) => interaction.response?.bodyPath)).toEqual([
       "responses/001.html",
       "responses/002.json",
@@ -160,7 +160,7 @@ describe("CrawlerRecordNetworkClient", () => {
       });
     });
 
-    const loaded = await loadCrawlerCassette(stagingRoot, Website.JAVDB, "movie-one");
+    const loaded = await loadCrawlerCassette(stagingRoot, Website.JAVDB, "one");
     const cassetteText = JSON.stringify(loaded.cassette);
     const body = Buffer.from(loaded.responseBodies.get(1) ?? []).toString("utf8");
     expect(cassetteText).not.toContain(secret);
@@ -183,8 +183,8 @@ describe("CrawlerRecordNetworkClient", () => {
     ).toBe(true);
 
     await recorder.finalize();
-    const published = await loadCrawlerCassette(publishRoot, Website.JAVDB, "movie-one");
-    expect(published.cassette.caseId).toBe("movie-one");
+    const published = await loadCrawlerCassette(publishRoot, Website.JAVDB, "one");
+    expect(published.cassette.caseId).toBe("one");
   });
 
   it("replays a recorded cassette without public network fallback", async () => {
@@ -198,7 +198,7 @@ describe("CrawlerRecordNetworkClient", () => {
     await expect(
       recorded(itemOne, Website.DMM, async () => await replay.getText("https://www.dmm.co.jp/detail")),
     ).resolves.toBe("<html>ok</html>");
-    await replay.assertConsumed({ caseId: "movie-one", websites: [Website.DMM] });
+    await replay.assertConsumed({ caseId: "one", websites: [Website.DMM] });
     await expect(replay.getText("https://www.dmm.co.jp/detail")).rejects.toThrow(
       /public network fallback is disabled/u,
     );
@@ -212,7 +212,6 @@ describe("CrawlerRecordNetworkClient", () => {
     const noRetry = new CrawlerRecordNetworkClient({
       stagingRoot,
       publishRoot: await tempDir("record-publish-retry"),
-      plan: PLAN,
       network: { getRetryCount: () => 0 },
     });
 
@@ -223,7 +222,7 @@ describe("CrawlerRecordNetworkClient", () => {
       recorded(itemOne, Website.DMM, async () => await noRetry.getText("https://www.dmm.co.jp/same")),
     ).resolves.toBe("retry-ok");
 
-    const loaded = await loadCrawlerCassette(stagingRoot, Website.DMM, "movie-one");
+    const loaded = await loadCrawlerCassette(stagingRoot, Website.DMM, "one");
     expect(loaded.cassette.interactions).toHaveLength(2);
     expect(loaded.cassette.interactions[0]?.transportError).toEqual({ name: "FetchError", message: "socket hang up" });
     expect(loaded.cassette.interactions[1]?.response?.bodyPath).toBe("responses/002.txt");
