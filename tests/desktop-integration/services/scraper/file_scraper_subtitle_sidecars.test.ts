@@ -3,11 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
-import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import * as scraperOutput from "@main/services/scraper/output";
-import type { AggregationService, FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import type {
+  AggregationService,
+  DownloadManager,
+  FileOrganizer,
+  NfoGenerator,
+  OrganizePlan,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +98,7 @@ describe("FileScraper subtitle sidecars", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn((_fileInfo: FileInfo) => plan),
+        resolveOutputPlan: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
         ensureOutputReady: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
         organizeVideo: vi.fn(async (_fileInfo: FileInfo, nextPlan: OrganizePlan) => nextPlan.targetVideoPath),
       } as unknown as FileOrganizer,
@@ -125,8 +131,6 @@ describe("FileScraper subtitle sidecars", () => {
     const nfoOptions = writeNfo.mock.calls[0]?.[2] as { fileInfo?: FileInfo } | undefined;
 
     expect(result.status).toBe("success");
-    expect(result.fileInfo.isSubtitled).toBe(true);
-    expect(result.fileInfo.subtitleTag).toBe(expectedSubtitleTag);
     expect(nfoOptions?.fileInfo?.isSubtitled).toBe(true);
     expect(nfoOptions?.fileInfo?.subtitleTag).toBe(expectedSubtitleTag);
   });

@@ -9,8 +9,7 @@ import {
 } from "@mdcz/shared/mediaCandidate";
 import type { ServerPathSuggestResponse } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { changeMaintenancePreset } from "@mdcz/views/state/maintenanceSession";
+import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -26,7 +25,6 @@ export interface CandidateScanResult {
 export interface WorkbenchSetupPort {
   browseDirectory(kind: "scan" | "target", currentPath: string): Promise<string | null>;
   scanCandidates(scanDir: string, excludeDirPaths?: readonly string[]): Promise<CandidateScanResult>;
-  savePaths(scanDir: string, targetDir: string): Promise<void>;
   isServer?: boolean;
   suggestDirectory?: (input: { kind: "scan" | "target"; path: string }) => Promise<ServerPathSuggestResponse>;
 }
@@ -36,13 +34,8 @@ export interface WorkbenchSetupAdapterProps {
   config?: Configuration;
   configLoading?: boolean;
   port: WorkbenchSetupPort;
-  onStartScrape: (filePaths: string[], scanDir: string, targetDir: string) => Promise<void>;
-  onStartMaintenance: (
-    filePaths: string[],
-    scanDir: string,
-    targetDir: string,
-    presetId: MaintenancePresetId,
-  ) => Promise<void>;
+  onStartScrape: (candidates: MediaCandidate[], targetDir: string) => Promise<void>;
+  onStartMaintenance: (candidates: MediaCandidate[], presetId: MaintenancePresetId) => Promise<void>;
 }
 
 const toPathAutocompleteResult = (result: ServerPathSuggestResponse): PathAutocompleteResult => ({
@@ -96,7 +89,7 @@ export function WorkbenchSetupAdapter({
       setAllSelected: state.setAllSelected,
     })),
   );
-  const presetId = useMaintenanceEntryStore((state) => state.presetId);
+  const presetId = useMaintenanceStore((state) => state.presetId);
   const [startPending, setStartPending] = useState(false);
   const scanRequestRef = useRef(0);
   const initializedRef = useRef(false);
@@ -117,7 +110,12 @@ export function WorkbenchSetupAdapter({
   );
   const scanning = scanStatus === "scanning";
   const primaryDisabled =
-    startPending || scanning || scanStatus === "error" || candidates.length === 0 || selectedPaths.length === 0;
+    startPending ||
+    scanning ||
+    scanStatus === "error" ||
+    candidates.length === 0 ||
+    selectedPaths.length === 0 ||
+    (mode === "scrape" && !targetDir.trim());
   const runSummary =
     candidates.length > 0
       ? `${candidates.length} 个文件 · ${formatBytes(totalSize, { trimTrailingZeros: true })} · ${extensionCount} 种类型 · ${
@@ -186,11 +184,11 @@ export function WorkbenchSetupAdapter({
     if (nextScanDir && !scanDir) {
       setScanDir(nextScanDir);
     }
-    if (nextTargetDir && !targetDir) {
+    if (mode === "scrape" && nextTargetDir && !targetDir) {
       setTargetDir(nextTargetDir);
     }
     initializedRef.current = true;
-  }, [config, scanDir, setScanDir, setTargetDir, targetDir]);
+  }, [config, mode, scanDir, setScanDir, setTargetDir, targetDir]);
 
   useEffect(() => {
     const expectedPlanKey = resolveMediaCandidateScanPlan(mode, scanDir, config).scanKey;
@@ -209,7 +207,7 @@ export function WorkbenchSetupAdapter({
         return;
       }
       setScanDir(selectedPath);
-      if (!targetDir) {
+      if (mode === "scrape" && !targetDir) {
         setTargetDir(resolveSuccessTargetDir(selectedPath, config?.paths?.successOutputFolder));
       }
     } catch (error) {
@@ -236,11 +234,10 @@ export function WorkbenchSetupAdapter({
 
     setStartPending(true);
     try {
-      await port.savePaths(scanDir, targetDir);
       if (mode === "maintenance") {
-        await onStartMaintenance(selectedPaths, scanDir, targetDir, presetId);
+        await onStartMaintenance(selectedCandidates, presetId);
       } else {
-        await onStartScrape(selectedPaths, scanDir, targetDir);
+        await onStartScrape(selectedCandidates, targetDir);
       }
     } finally {
       setStartPending(false);
@@ -252,7 +249,7 @@ export function WorkbenchSetupAdapter({
       mode={mode}
       configLoading={configLoading}
       scanDir={scanDir}
-      targetDir={targetDir}
+      targetDir={mode === "scrape" ? targetDir : undefined}
       candidates={candidates}
       selectedPaths={selectedPaths}
       selectedSize={selectedSize}
@@ -273,20 +270,20 @@ export function WorkbenchSetupAdapter({
           : undefined
       }
       onSuggestTargetDir={
-        suggestDirectory
+        mode === "scrape" && suggestDirectory
           ? async (input) => toPathAutocompleteResult(await suggestDirectory({ kind: "target", path: input.path }))
           : undefined
       }
       formatBytes={formatBytes}
       onBrowseScanDir={handleChooseScanDir}
-      onBrowseTargetDir={handleChooseTargetDir}
+      onBrowseTargetDir={mode === "scrape" ? handleChooseTargetDir : undefined}
       onScanDirChange={(value) => {
         setScanDir(value);
-        if (!targetDir) {
+        if (mode === "scrape" && !targetDir) {
           setTargetDir(resolveSuccessTargetDir(value, config?.paths?.successOutputFolder));
         }
       }}
-      onTargetDirChange={setTargetDir}
+      onTargetDirChange={mode === "scrape" ? setTargetDir : undefined}
       onRefreshScan={() => runScan(scanDir)}
       onPresetChange={changeMaintenancePreset}
       onStart={handleStart}

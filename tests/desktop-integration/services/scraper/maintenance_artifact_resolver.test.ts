@@ -14,6 +14,7 @@ const createTempDir = async (): Promise<string> => {
 
 const createEntry = (root: string, nfoFileName = "ABC-123.nfo") => ({
   fileId: "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   videoPath: join(root, "ABC-123.mp4"),
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),
@@ -81,13 +82,17 @@ describe("MaintenanceArtifactResolver", () => {
       });
 
       expect(result.nfoPath).toBe(canonicalPath);
-      await expect(readFile(canonicalPath, "utf8")).resolves.toContain(scenario.title);
-      await expect(readFile(sourceMoviePath, "utf8")).rejects.toThrow();
+      expect(result.publicationArtifacts).toContainEqual({
+        targetPath: canonicalPath,
+        data: Buffer.from(`<movie><title>${scenario.title}</title></movie>`),
+      });
+      expect(result.obsoletePaths).toContain(sourceMoviePath);
+      await expect(readFile(entry.nfoPath, "utf8")).resolves.toContain(scenario.title);
       if (scenario.expectMovieAlias) {
-        await expect(readFile(filenamePath, "utf8")).rejects.toThrow();
+        expect(result.obsoletePaths).toContain(filenamePath);
         continue;
       }
-      await expect(readFile(moviePath, "utf8")).rejects.toThrow();
+      expect(result.obsoletePaths).toContain(moviePath);
     }
   });
 
@@ -143,15 +148,20 @@ describe("MaintenanceArtifactResolver", () => {
       trailer: join(plan.outputDir, "trailer.mp4"),
       actorPhotos: [join(plan.outputDir, ".actors", "Actor A.jpg")],
     });
-    await expect(readFile(join(plan.outputDir, "thumb.jpg"), "utf8")).resolves.toBe("thumb");
-    await expect(readFile(join(plan.outputDir, "poster.jpg"), "utf8")).resolves.toBe("poster");
-    await expect(readFile(join(plan.outputDir, "fanart.jpg"), "utf8")).resolves.toBe("fanart");
-    await expect(readFile(join(plan.outputDir, "trailer.mp4"), "utf8")).resolves.toBe("trailer");
-    await expect(readFile(join(plan.outputDir, "extrafanart", "fanart1.jpg"), "utf8")).resolves.toBe("scene-1");
-    await expect(readFile(join(plan.outputDir, ".actors", "Actor A.jpg"), "utf8")).resolves.toBe("actor-a");
-    await expect(readFile(thumbPath, "utf8")).rejects.toThrow();
-    await expect(readFile(sceneImagePath, "utf8")).rejects.toThrow();
-    await expect(readFile(actorPhotoPath, "utf8")).rejects.toThrow();
+    expect(result.publicationArtifacts).toHaveLength(6);
+    expect(result.publicationArtifacts.map(({ targetPath }) => targetPath)).toEqual(
+      expect.arrayContaining([
+        join(plan.outputDir, "thumb.jpg"),
+        join(plan.outputDir, "poster.jpg"),
+        join(plan.outputDir, "fanart.jpg"),
+        join(plan.outputDir, "trailer.mp4"),
+        join(plan.outputDir, "extrafanart", "fanart1.jpg"),
+        join(plan.outputDir, ".actors", "Actor A.jpg"),
+      ]),
+    );
+    await expect(readFile(thumbPath, "utf8")).resolves.toBe("thumb");
+    await expect(readFile(sceneImagePath, "utf8")).resolves.toBe("scene-1");
+    await expect(readFile(actorPhotoPath, "utf8")).resolves.toBe("actor-a");
   });
 
   it("removes stale source assets after replacements were already created in the output directory", async () => {
@@ -213,9 +223,12 @@ describe("MaintenanceArtifactResolver", () => {
     await expect(readFile(outputScenePath, "utf8")).resolves.toBe("new-scene");
     await expect(readFile(join(plan.outputDir, "trailer.mp4"), "utf8")).resolves.toBe("new-trailer");
     await expect(readFile(outputActorPath, "utf8")).resolves.toBe("new-actor");
-    await expect(readFile(thumbPath, "utf8")).rejects.toThrow();
-    await expect(readFile(sceneImagePath, "utf8")).rejects.toThrow();
-    await expect(readFile(trailerPath, "utf8")).rejects.toThrow();
-    await expect(readFile(actorPhotoPath, "utf8")).rejects.toThrow();
+    expect(result.obsoletePaths).toEqual(
+      expect.arrayContaining([thumbPath, sceneImagePath, trailerPath, actorPhotoPath]),
+    );
+    await expect(readFile(thumbPath, "utf8")).resolves.toBe("old-thumb");
+    await expect(readFile(sceneImagePath, "utf8")).resolves.toBe("old-scene");
+    await expect(readFile(trailerPath, "utf8")).resolves.toBe("old-trailer");
+    await expect(readFile(actorPhotoPath, "utf8")).resolves.toBe("old-actor");
   });
 });

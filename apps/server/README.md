@@ -121,7 +121,7 @@ Webhook payload shape:
 }
 ```
 
-When `MDCZ_AUTOMATION_WEBHOOK_URL` is set, task updates are also delivered to that URL with the same JSON payload.
+When `MDCZ_AUTOMATION_WEBHOOK_URL` is set, the server sends the same JSON payload when a task first enters `running` and when it first reaches `completed` or `failed`. Deliveries use one in-process FIFO per configured URL and a 10-second request timeout. They are best-effort notifications: the server does not persist an outbox, retry failed requests, or replay deliveries after a restart. Use `GET /api/automation/library/recent` to reconcile task state.
 
 ## Reverse Proxy
 

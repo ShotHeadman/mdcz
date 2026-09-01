@@ -1,8 +1,10 @@
-import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
+import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
-import { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import {
-  ActorImageService,
+  type ActorImageService,
   AggregationService,
   DownloadManager,
   FileOrganizer,
@@ -11,39 +13,36 @@ import {
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
-import { createServerActorSourceProvider, serverActorImageCacheRoot } from "./actorSourceFactory";
-import { getServerImageHostCooldownStore } from "./imageHostCooldownStore";
 import type { ServerConfigService } from "./services/configService";
 
-export const createServerMaintenanceRuntime = (
-  config: ServerConfigService,
-  mappingStore?: TranslationMappingStore,
-): MaintenanceRuntime => {
-  const networkClient = new NetworkClient();
+export interface ServerMaintenanceRuntimeDependencies {
+  config: ServerConfigService;
+  networkClient: NetworkClient;
+  crawlerProvider: CrawlerProvider;
+  imageHostCooldownStore: PersistentCooldownStore;
+  actorImageService: ActorImageService;
+  actorSourceProvider: ActorSourceProvider;
+  mappingStore?: TranslationMappingStore;
+}
+
+export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDependencies): MaintenanceRuntime => {
   const logger = runtimeLoggerService.getLogger("maintenance");
-  const actorImageService = new ActorImageService({
-    cacheRoot: serverActorImageCacheRoot(config),
-    logger,
-    networkClient,
-  });
   return new MaintenanceRuntime({
-    actorImageService,
-    actorSourceProvider: createServerActorSourceProvider(config, networkClient, actorImageService),
-    aggregationService: new AggregationService(
-      new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient), siteRequestConfigRegistrar: networkClient }),
-      { logger },
-    ),
-    config,
-    downloadManager: new DownloadManager(networkClient, {
-      imageHostCooldownStore: getServerImageHostCooldownStore(config),
+    actorImageService: deps.actorImageService,
+    actorSourceProvider: deps.actorSourceProvider,
+    aggregationService: new AggregationService(deps.crawlerProvider, { logger }),
+    config: deps.config,
+    downloadManager: new DownloadManager(deps.networkClient, {
+      imageHostCooldownStore: deps.imageHostCooldownStore,
       logger,
     }),
     fileOrganizer: new FileOrganizer(logger),
+    networkPolicyClient: deps.networkClient,
     nfoGenerator: new NfoGenerator(),
     signalService: {
       setProgress: () => undefined,
       showLogText: () => undefined,
     },
-    translateService: new TranslateService(networkClient, { logger, mappingStore }),
+    translateService: new TranslateService(deps.networkClient, { logger, mappingStore: deps.mappingStore }),
   });
 };

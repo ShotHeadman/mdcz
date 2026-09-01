@@ -1,13 +1,17 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import type { DownloadManager } from "@main/services/scraper/DownloadManager";
-import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { getMaintenancePreset as getPreset } from "@mdcz/runtime/maintenance";
 import { MaintenanceFileScraper } from "@mdcz/runtime/maintenance/MaintenanceFileScraper";
-import type { FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import type {
+  DownloadManager,
+  FileOrganizer,
+  NfoGenerator,
+  OrganizePlan,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +40,7 @@ const createEntry = (
   overrides: Partial<LocalScanEntry> = {},
 ): LocalScanEntry => ({
   fileId: "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),
     fileName: "ABC-123.mp4",
@@ -68,7 +73,13 @@ const createScraperHarness = (root: string, downloadAll: ReturnType<typeof vi.fn
       translateService: {
         translateCrawlerData: vi.fn(async (data: CrawlerData) => data),
       } as unknown as TranslateService,
-      nfoGenerator: { writeNfo: vi.fn().mockResolvedValue(plan.nfoPath) } as unknown as NfoGenerator,
+      nfoGenerator: {
+        writeNfo: vi.fn(async () => {
+          await mkdir(outputDir, { recursive: true });
+          await writeFile(plan.nfoPath, "nfo");
+          return plan.nfoPath;
+        }),
+      } as unknown as NfoGenerator,
       downloadManager: { downloadAll } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
@@ -122,6 +133,7 @@ describe("MaintenanceFileScraper asset replacement", () => {
     const root = await createTempDir();
     const oldTrailerPath = join(root, "trailer.mp4");
     await writeFile(oldTrailerPath, "old-trailer", "utf8");
+    await writeFile(join(root, "ABC-123.mp4"), "video", "utf8");
     const { scraper, config } = createScraperHarness(
       root,
       vi.fn().mockResolvedValue({ downloaded: [], sceneImages: [] }),
@@ -142,6 +154,7 @@ describe("MaintenanceFileScraper asset replacement", () => {
 
     expect(result.status).toBe("success");
     expect(result.updatedEntry?.assets.trailer).toBeUndefined();
-    await expect(readFile(oldTrailerPath, "utf8")).rejects.toThrow();
+    expect(result.publicationPlan?.obsoletePaths).toContain(oldTrailerPath);
+    await expect(readFile(oldTrailerPath, "utf8")).resolves.toBe("old-trailer");
   });
 });

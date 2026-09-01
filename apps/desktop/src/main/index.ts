@@ -12,9 +12,12 @@ import { UpdateService } from "@main/services/UpdateService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
 import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
 import { NetworkClient } from "@mdcz/runtime/network";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { app, BrowserWindow } from "electron";
 
-const QUIT_FORCE_EXIT_TIMEOUT_MS = 3_000;
+const QUIT_FORCE_EXIT_TIMEOUT_MS = 15_000;
+
+runtimeLoggerService.setFactory((name) => loggerService.getLogger(name));
 
 const signalService = new SignalService();
 const sharedNetworkClient = new NetworkClient({
@@ -27,7 +30,6 @@ let windowService: WindowService | null = null;
 let serviceContainer: ServiceContainer | null = null;
 const trayService = new TrayService();
 const shortcutService = new ShortcutService();
-let ipcRegistered = false;
 let cleanupPromise: Promise<void> | null = null;
 let disposeShortcutConfigListener: (() => void) | null = null;
 let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) => {
@@ -55,23 +57,36 @@ const toMainWindowCreationOptions = (
   useCustomTitleBar: config.ui.useCustomTitleBar,
 });
 
+const ensureServiceContainer = async (): Promise<ServiceContainer> => {
+  if (serviceContainer) {
+    return serviceContainer;
+  }
+
+  const container = createContainer({
+    windowService: ensureWindowService(),
+    signalService,
+    networkClient: sharedNetworkClient,
+  });
+  // Recovery must finish before IPC and renderer load; getState() can otherwise race the first window requests.
+  await container.persistenceService.initialize();
+  await configManager.synchronizeConfiguredRoots();
+  registerLocalFileHandler({
+    getRoot: async (rootId) => {
+      const state = await container.persistenceService.getState();
+      const roots = await state.repositories.mediaRoots.list();
+      return roots.find((root) => root.id === rootId) ?? null;
+    },
+  });
+  registerIpcHandlers(container);
+  serviceContainer = container;
+  return container;
+};
+
 const ensureMainWindow = async (options: MainWindowCreationOptions): Promise<void> => {
+  await ensureServiceContainer();
   const currentWindowService = ensureWindowService();
   const mainWindow = currentWindowService.createMainWindow(options);
   signalService.setMainWindow(mainWindow);
-
-  if (!ipcRegistered) {
-    const container: ServiceContainer = createContainer({
-      windowService: currentWindowService,
-      signalService,
-      networkClient: sharedNetworkClient,
-    });
-
-    registerIpcHandlers(container);
-    serviceContainer = container;
-    ipcRegistered = true;
-  }
-
   await currentWindowService.loadMainWindow();
 };
 
@@ -120,7 +135,6 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       await bootstrap();
-      registerLocalFileHandler();
       const initialConfig = await configManager.getValidated();
       await configManager.startWatching();
       await ensureMainWindow(toMainWindowCreationOptions(initialConfig));

@@ -1,10 +1,11 @@
-import { rm, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { mapWithConcurrency } from "@main/utils/async";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath } from "@mdcz/media-store";
+import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { DESKTOP_OUTPUT_ROOT_DISPLAY_NAME, DESKTOP_OUTPUT_ROOT_ID } from "@mdcz/runtime/library";
+import { commitPublishedMedia } from "@mdcz/runtime/publication";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
   CrawlerDataDto,
@@ -99,26 +100,56 @@ export class DesktopLibraryService {
     return { success: true };
   }
 
-  async deleteEntry(id: string, options: { deleteMediaFiles?: boolean } = {}): Promise<{ success: true }> {
+  async deleteEntry(id: string, options: { deleteMode?: "none" | "assets" | "all" } = {}): Promise<{ success: true }> {
     const normalizedId = id.trim();
     if (!normalizedId) {
       throw new Error("Library entry id is required");
     }
     const state = await this.persistenceService.getState();
-    if (options.deleteMediaFiles) {
+    const deleteMode = options.deleteMode ?? "none";
+    if (deleteMode !== "none") {
       const [roots, entry] = await Promise.all([
-        state.repositories.mediaRoots.list({ includeDeleted: true }),
+        state.repositories.mediaRoots.list(),
         state.repositories.library.getEntryById(normalizedId),
       ]);
       const rootMap = new Map(roots.map((root) => [root.id, root]));
-      const filePaths = new Set(
-        entry.files
-          .map((file) => resolveAssetDeletionPath(rootMap, file.rootId, file.rootRelativePath))
-          .filter((filePath): filePath is string => typeof filePath === "string" && !isRemotePath(filePath)),
+      const assetRefs = entry.assets.flatMap((asset) =>
+        asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
       );
-      for (const filePath of filePaths) {
-        await rm(filePath, { force: true });
-      }
+      const obsolete =
+        deleteMode === "assets"
+          ? [
+              ...entry.files
+                .filter((file) => !(file.rootId === entry.rootId && file.rootRelativePath === entry.rootRelativePath))
+                .map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+              ...assetRefs,
+            ]
+          : [
+              ...entry.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+              ...assetRefs,
+            ];
+      await commitPublishedMedia(
+        {
+          operationId: `delete-library-entry:${normalizedId}`,
+          operationType: "maintenance",
+          artifacts: [],
+          assets: [],
+          obsolete,
+        },
+        {
+          resolveRoot: async (rootId) => {
+            const root = rootMap.get(rootId);
+            if (!root) throw new Error(`Media root not found: ${rootId}`);
+            return root;
+          },
+          journal: state.repositories.publicationJournal,
+          repairIssues: state.repositories.libraryRepairIssues,
+          commit: () => {
+            state.repositories.library.deleteEntry(normalizedId);
+          },
+        },
+      );
+      return { success: true };
     }
     await state.repositories.library.deleteEntry(normalizedId);
     return { success: true };
@@ -161,14 +192,20 @@ export class DesktopLibraryService {
       directory: entry.directory,
       size: entry.size,
       modifiedAt: toIso(entry.modifiedAt),
-      taskId: entry.sourceTaskId,
-      scrapeOutputId: entry.scrapeOutputId,
+      runId: entry.sourceRunId,
+      scrapeOutcomeId: entry.sourceOutcomeId,
       title: entry.title,
       number: entry.number,
       actors: entry.actors,
       crawlerData: parseCrawlerData(entry.crawlerDataJson),
-      thumbnailPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.thumbnailPath),
-      lastKnownPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.lastKnownPath),
+      thumbnailPath: resolveAssetDisplayPath(
+        rootMap,
+        entry.thumbnailRootId ?? entry.rootId,
+        entry.thumbnailPath,
+        "relative",
+      ),
+      thumbnailRootId: entry.thumbnailRootId,
+      lastKnownPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.lastKnownPath, "absolute"),
       createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
       hiddenFromRecentAt: toIso(entry.hiddenFromRecentAt),
@@ -184,13 +221,7 @@ export class DesktopLibraryService {
     };
   }
 
-  private async checkAvailability(
-    root: { hostPath: string; enabled: boolean },
-    relativePath: string,
-  ): Promise<boolean> {
-    if (!root.enabled) {
-      return false;
-    }
+  private async checkAvailability(root: { hostPath: string }, relativePath: string): Promise<boolean> {
     const key = availabilityKey(root, relativePath);
     const cached = this.availabilityCache.get(key);
     if (cached && cached.expiresAt > Date.now()) {
@@ -227,34 +258,34 @@ const resolveAssetDisplayPath = (
   rootMap: ReadonlyMap<string, MediaRoot>,
   rootId: string,
   value: string | null | undefined,
+  mode: "relative" | "absolute",
 ): string | null => {
   const trimmed = value?.trim();
   if (!trimmed) {
     return null;
   }
-  if (isRemotePath(trimmed) || isAbsoluteLocalPath(trimmed)) {
+  if (isRemotePath(trimmed)) {
     return trimmed;
   }
 
   const root = rootMap.get(rootId);
-  return root ? resolveRootRelativePath(root, trimmed) : trimmed;
-};
-
-const resolveAssetDeletionPath = (
-  rootMap: ReadonlyMap<string, MediaRoot>,
-  rootId: string,
-  relativePath: string,
-): string | null => {
-  const trimmed = relativePath.trim();
-  const root = rootMap.get(rootId);
-  if (!trimmed || !root || isRemotePath(trimmed) || isAbsoluteLocalPath(trimmed)) {
-    return null;
+  if (isAbsoluteLocalPath(trimmed)) {
+    if (mode === "absolute") {
+      return trimmed;
+    }
+    if (!root) {
+      return null;
+    }
+    try {
+      return toRootRelativePath(root, trimmed);
+    } catch {
+      return null;
+    }
   }
-  try {
-    return resolveRootRelativePath(root, trimmed);
-  } catch {
-    return null;
+  if (mode === "absolute") {
+    return root ? resolveRootRelativePath(root, trimmed) : trimmed;
   }
+  return trimmed;
 };
 
 const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>

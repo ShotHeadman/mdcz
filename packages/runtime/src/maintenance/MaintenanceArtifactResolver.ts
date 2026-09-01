@@ -1,22 +1,30 @@
-import { unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { toErrorMessage } from "@mdcz/shared/error";
+import { createHash } from "node:crypto";
+import { createReadStream, type Stats } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import type { DiscoveredAssets, LocalScanEntry, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import { type OrganizePlan, resolveMetadataOutputDir } from "../scrape";
-import { reconcileExistingNfoFiles, resolveCanonicalNfoPath } from "../scrape/nfo";
-import { moveFileSafely, pathExists } from "../scrape/utils/filesystem";
-import { runtimeLoggerService } from "../shared";
+import { findExistingNfoPath, getNfoWritePaths } from "../scrape/nfo";
+import { pathExists } from "../scrape/utils/filesystem";
 
 interface ResolvedMaintenanceArtifacts {
   nfoPath?: string;
   assets: DiscoveredAssets;
+  publicationArtifacts: Array<{ targetPath: string; data: Buffer }>;
+  obsoletePaths: string[];
 }
 
 type PreferredMaintenanceAssets = Pick<DiscoveredAssets, "thumb" | "poster" | "fanart" | "sceneImages" | "trailer">;
 
-export class MaintenanceArtifactResolver {
-  private readonly logger = runtimeLoggerService.getLogger("MaintenanceArtifactResolver");
+interface MaintenanceMoveContext {
+  referencedPaths: ReadonlySet<string>;
+  stalePaths: Set<string>;
+  publicationArtifacts: Map<string, Buffer>;
+}
 
+const normalizePathKey = (filePath: string): string => resolvePath(filePath);
+
+export class MaintenanceArtifactResolver {
   async resolve(input: {
     entry: LocalScanEntry;
     plan?: OrganizePlan;
@@ -44,59 +52,141 @@ export class MaintenanceArtifactResolver {
               ? (input.preparedActorPhotoPaths ?? [])
               : input.entry.assets.actorPhotos,
         },
+        publicationArtifacts: [],
+        obsoletePaths: [],
       };
     }
 
     const outputDir = resolveMetadataOutputDir(input.plan);
-    const nfoPath = await this.resolveNfoPath(input.entry, input.plan, input.savedNfoPath, input.nfoNaming);
+    const moveContext = this.createMoveContext(input, preferredAssets);
+    const assets: DiscoveredAssets = {
+      thumb: await this.resolvePrimaryAsset(input.entry.assets.thumb, preferredAssets.thumb, outputDir, moveContext),
+      poster: await this.resolvePrimaryAsset(input.entry.assets.poster, preferredAssets.poster, outputDir, moveContext),
+      fanart: await this.resolvePrimaryAsset(input.entry.assets.fanart, preferredAssets.fanart, outputDir, moveContext),
+      sceneImages: await this.resolveAssetCollection(
+        input.entry.assets.sceneImages,
+        preferredAssets.sceneImages,
+        outputDir,
+        moveContext,
+      ),
+      trailer: await this.resolvePrimaryAsset(
+        input.entry.assets.trailer,
+        preferredAssets.trailer,
+        outputDir,
+        moveContext,
+        {
+          discardExisting: input.assetDecisions?.trailer === "replace" && !preferredAssets.trailer,
+        },
+      ),
+      actorPhotos: await this.resolveAssetCollection(
+        input.entry.assets.actorPhotos,
+        input.preparedActorPhotoPaths ?? [],
+        outputDir,
+        moveContext,
+      ),
+    };
+    const nfoPath = await this.resolveNfoPath(
+      input.entry,
+      input.plan,
+      moveContext,
+      input.savedNfoPath,
+      input.nfoNaming,
+    );
+    const resolved = { nfoPath, assets };
+
+    const keptPathSet = new Set(
+      [
+        input.outputVideoPath,
+        nfoPath,
+        assets.thumb,
+        assets.poster,
+        assets.fanart,
+        assets.trailer,
+        ...assets.sceneImages,
+        ...assets.actorPhotos,
+      ]
+        .filter((filePath): filePath is string => Boolean(filePath))
+        .map(normalizePathKey),
+    );
+    return {
+      ...resolved,
+      publicationArtifacts: [...moveContext.publicationArtifacts].map(([targetPath, data]) => ({ targetPath, data })),
+      obsoletePaths: [...moveContext.stalePaths].filter((stalePath) => !keptPathSet.has(normalizePathKey(stalePath))),
+    };
+  }
+
+  private createMoveContext(
+    input: {
+      entry: LocalScanEntry;
+      outputVideoPath: string;
+      savedNfoPath?: string;
+      preparedActorPhotoPaths?: string[];
+    },
+    preferredAssets: PreferredMaintenanceAssets,
+  ): MaintenanceMoveContext {
+    const referencedPaths = [
+      input.entry.fileInfo.filePath,
+      input.entry.nfoPath,
+      input.entry.assets.thumb,
+      input.entry.assets.poster,
+      input.entry.assets.fanart,
+      input.entry.assets.trailer,
+      ...input.entry.assets.sceneImages,
+      ...input.entry.assets.actorPhotos,
+      input.outputVideoPath,
+      input.savedNfoPath,
+      preferredAssets.thumb,
+      preferredAssets.poster,
+      preferredAssets.fanart,
+      preferredAssets.trailer,
+      ...preferredAssets.sceneImages,
+      ...(input.preparedActorPhotoPaths ?? []),
+    ].filter((filePath): filePath is string => Boolean(filePath));
 
     return {
-      nfoPath,
-      assets: {
-        thumb: await this.resolvePrimaryAsset(input.entry.assets.thumb, preferredAssets.thumb, outputDir),
-        poster: await this.resolvePrimaryAsset(input.entry.assets.poster, preferredAssets.poster, outputDir),
-        fanart: await this.resolvePrimaryAsset(input.entry.assets.fanart, preferredAssets.fanart, outputDir),
-        sceneImages: await this.resolveAssetCollection(
-          input.entry.assets.sceneImages,
-          preferredAssets.sceneImages,
-          outputDir,
-        ),
-        trailer: await this.resolvePrimaryAsset(input.entry.assets.trailer, preferredAssets.trailer, outputDir, {
-          discardExisting: input.assetDecisions?.trailer === "replace" && !preferredAssets.trailer,
-        }),
-        actorPhotos: await this.resolveAssetCollection(
-          input.entry.assets.actorPhotos,
-          input.preparedActorPhotoPaths ?? [],
-          outputDir,
-        ),
-      },
+      referencedPaths: new Set(referencedPaths.map(normalizePathKey)),
+      stalePaths: new Set<string>(),
+      publicationArtifacts: new Map(),
     };
   }
 
   private async resolveNfoPath(
     entry: LocalScanEntry,
     plan: OrganizePlan,
+    moveContext: MaintenanceMoveContext,
     savedNfoPath?: string,
     nfoNaming: "both" | "movie" | "filename" = "both",
   ): Promise<string | undefined> {
     if (savedNfoPath) {
-      await this.removeStaleOriginalNfo(entry.nfoPath, savedNfoPath);
+      this.scheduleStaleOriginalNfo(entry.nfoPath, savedNfoPath, moveContext);
       return savedNfoPath;
     }
 
-    const targetNfoPath = resolveCanonicalNfoPath(plan.nfoPath, nfoNaming);
-    const movedNfoPath = await this.moveKnownAsset(entry.nfoPath, targetNfoPath);
-    if (!movedNfoPath) {
+    const nfoPaths = getNfoWritePaths(plan.nfoPath, nfoNaming);
+    const sourceNfoPath =
+      (entry.nfoPath && (await pathExists(entry.nfoPath)) ? entry.nfoPath : undefined) ??
+      (await findExistingNfoPath(plan.nfoPath, nfoNaming, pathExists));
+    if (!sourceNfoPath) {
       return undefined;
     }
-    await this.removeStaleOriginalNfo(entry.nfoPath, movedNfoPath);
-    return await reconcileExistingNfoFiles(plan.nfoPath, nfoNaming, pathExists);
+    const movedNfoPath = await this.moveKnownAsset(sourceNfoPath, nfoPaths.canonicalPath, moveContext);
+    if (!movedNfoPath) return undefined;
+    const canonicalData = moveContext.publicationArtifacts.get(movedNfoPath);
+    for (const requiredPath of nfoPaths.requiredPaths) {
+      if (requiredPath === movedNfoPath || (await this.statIfExists(requiredPath))) continue;
+      const data = canonicalData ?? (await readFile(movedNfoPath));
+      moveContext.publicationArtifacts.set(requiredPath, data);
+    }
+    this.scheduleStaleOriginalNfo(entry.nfoPath, movedNfoPath, moveContext);
+    for (const stalePath of nfoPaths.stalePaths) moveContext.stalePaths.add(stalePath);
+    return nfoPaths.canonicalPath;
   }
 
   private async resolvePrimaryAsset(
     sourcePath: string | undefined,
     preferredPath: string | undefined,
     outputDir: string,
+    moveContext: MaintenanceMoveContext,
     options: {
       discardExisting?: boolean;
     } = {},
@@ -109,8 +199,11 @@ export class MaintenanceArtifactResolver {
     const targetPath = join(outputDir, basename(candidatePath));
 
     if (preferredPath) {
-      const resolvedPreferredPath = await this.moveKnownAsset(preferredPath, targetPath);
-      await this.removeStaleSourceAsset(sourcePath, resolvedPreferredPath);
+      const resolvedPreferredPath = await this.moveKnownAsset(preferredPath, targetPath, moveContext);
+      if (!resolvedPreferredPath) {
+        throw new Error(`Maintenance replacement asset is missing at both ${preferredPath} and ${targetPath}`);
+      }
+      this.scheduleStaleSourceAsset(sourcePath, resolvedPreferredPath, moveContext);
       return resolvedPreferredPath;
     }
 
@@ -119,17 +212,18 @@ export class MaintenanceArtifactResolver {
     }
 
     if (options.discardExisting) {
-      await this.removeKnownAsset(sourcePath, targetPath);
+      this.scheduleKnownAssetRemoval(sourcePath, targetPath, moveContext);
       return undefined;
     }
 
-    return await this.moveKnownAsset(sourcePath, targetPath);
+    return await this.moveKnownAsset(sourcePath, targetPath, moveContext);
   }
 
   private async resolveAssetCollection(
     sourcePaths: string[],
     preferredPaths: string[],
     outputDir: string,
+    moveContext: MaintenanceMoveContext,
   ): Promise<string[]> {
     if (preferredPaths.length > 0) {
       const resolvedPreferredPaths: string[] = [];
@@ -137,8 +231,11 @@ export class MaintenanceArtifactResolver {
 
       for (const preferredPath of preferredPaths) {
         const targetPath = join(outputDir, basename(dirname(preferredPath)), basename(preferredPath));
-        const resolvedPreferredPath = await this.moveKnownAsset(preferredPath, targetPath);
-        if (!resolvedPreferredPath || seen.has(resolvedPreferredPath)) {
+        const resolvedPreferredPath = await this.moveKnownAsset(preferredPath, targetPath, moveContext);
+        if (!resolvedPreferredPath) {
+          throw new Error(`Maintenance replacement asset is missing at both ${preferredPath} and ${targetPath}`);
+        }
+        if (seen.has(resolvedPreferredPath)) {
           continue;
         }
 
@@ -146,14 +243,14 @@ export class MaintenanceArtifactResolver {
         resolvedPreferredPaths.push(resolvedPreferredPath);
       }
 
-      await this.removeStaleCollectionAssets(sourcePaths, resolvedPreferredPaths);
+      this.scheduleStaleCollectionAssets(sourcePaths, resolvedPreferredPaths, moveContext);
       return resolvedPreferredPaths;
     }
 
     const resolved: string[] = [];
     for (const sourcePath of sourcePaths) {
       const targetPath = join(outputDir, basename(dirname(sourcePath)), basename(sourcePath));
-      const movedPath = await this.moveKnownAsset(sourcePath, targetPath);
+      const movedPath = await this.moveKnownAsset(sourcePath, targetPath, moveContext);
       if (movedPath) {
         resolved.push(movedPath);
       }
@@ -161,83 +258,125 @@ export class MaintenanceArtifactResolver {
     return resolved;
   }
 
-  private async removeStaleSourceAsset(
+  private scheduleStaleSourceAsset(
     sourcePath: string | undefined,
-    resolvedPath: string | undefined,
-  ): Promise<void> {
-    if (!sourcePath || !resolvedPath || sourcePath === resolvedPath || !(await pathExists(sourcePath))) {
-      return;
+    resolvedPath: string,
+    moveContext: MaintenanceMoveContext,
+  ): void {
+    if (sourcePath && normalizePathKey(sourcePath) !== normalizePathKey(resolvedPath)) {
+      moveContext.stalePaths.add(sourcePath);
     }
-
-    await unlink(sourcePath).catch(() => undefined);
   }
 
-  private async removeStaleCollectionAssets(sourcePaths: string[], keptPaths: string[]): Promise<void> {
-    const keptPathSet = new Set(keptPaths);
-
+  private scheduleStaleCollectionAssets(
+    sourcePaths: string[],
+    keptPaths: string[],
+    moveContext: MaintenanceMoveContext,
+  ): void {
+    const keptPathSet = new Set(keptPaths.map(normalizePathKey));
     for (const sourcePath of sourcePaths) {
-      if (keptPathSet.has(sourcePath) || !(await pathExists(sourcePath))) {
-        continue;
+      if (!keptPathSet.has(normalizePathKey(sourcePath))) {
+        moveContext.stalePaths.add(sourcePath);
       }
-
-      await unlink(sourcePath).catch(() => undefined);
     }
   }
 
-  private async moveKnownAsset(sourcePath: string | undefined, targetPath: string): Promise<string | undefined> {
+  private async moveKnownAsset(
+    sourcePath: string | undefined,
+    targetPath: string,
+    moveContext: MaintenanceMoveContext,
+  ): Promise<string | undefined> {
     if (!sourcePath) {
       return undefined;
     }
 
-    if (sourcePath === targetPath) {
-      return (await pathExists(sourcePath)) ? sourcePath : undefined;
+    const sourceKey = normalizePathKey(sourcePath);
+    const targetKey = normalizePathKey(targetPath);
+    if (sourceKey === targetKey) {
+      return (await this.statIfExists(sourcePath)) ? targetPath : undefined;
     }
 
-    if (!(await pathExists(sourcePath))) {
-      return (await pathExists(targetPath)) ? targetPath : undefined;
+    const [sourceStats, targetStats] = await Promise.all([
+      this.statIfExists(sourcePath),
+      this.statIfExists(targetPath),
+    ]);
+    if (!sourceStats && !targetStats) {
+      return undefined;
     }
-
-    if (await pathExists(targetPath)) {
+    if (sourceStats && !targetStats) {
+      moveContext.publicationArtifacts.set(targetPath, await readFile(sourcePath));
       return targetPath;
     }
-
-    return await moveFileSafely(sourcePath, targetPath);
-  }
-
-  private async removeKnownAsset(sourcePath: string | undefined, targetPath: string): Promise<void> {
-    const candidates = new Set([sourcePath, targetPath].filter((value): value is string => Boolean(value)));
-    for (const filePath of candidates) {
-      if (!(await pathExists(filePath))) {
-        continue;
+    if (!sourceStats && targetStats) {
+      if (moveContext.referencedPaths.has(targetKey)) {
+        return targetPath;
       }
-
-      await unlink(filePath).catch(() => undefined);
+      throw new Error(
+        `Ambiguous maintenance asset state: source ${sourcePath} is missing while target ${targetPath} exists but is not referenced by the current scan`,
+      );
     }
+
+    if (sourceStats?.size !== targetStats?.size) {
+      throw new Error(
+        `Conflicting maintenance asset copies at ${sourcePath} and ${targetPath}: sizes ${sourceStats?.size} and ${targetStats?.size} differ`,
+      );
+    }
+
+    const [sourceDigest, targetDigest] = await Promise.all([this.sha256File(sourcePath), this.sha256File(targetPath)]);
+    if (sourceDigest !== targetDigest) {
+      throw new Error(
+        `Conflicting maintenance asset copies at ${sourcePath} and ${targetPath}: SHA-256 digests differ`,
+      );
+    }
+
+    moveContext.stalePaths.add(sourcePath);
+    return targetPath;
   }
 
-  private async removeStaleOriginalNfo(originalNfoPath: string | undefined, savedNfoPath: string): Promise<void> {
+  private scheduleKnownAssetRemoval(
+    sourcePath: string | undefined,
+    targetPath: string,
+    moveContext: MaintenanceMoveContext,
+  ): void {
+    if (sourcePath) {
+      moveContext.stalePaths.add(sourcePath);
+    }
+    moveContext.stalePaths.add(targetPath);
+  }
+
+  private scheduleStaleOriginalNfo(
+    originalNfoPath: string | undefined,
+    savedNfoPath: string,
+    moveContext: MaintenanceMoveContext,
+  ): void {
     if (!originalNfoPath) {
       return;
     }
 
     const savedMovieNfoPath = join(dirname(savedNfoPath), "movie.nfo");
     const originalMovieNfoPath = join(dirname(originalNfoPath), "movie.nfo");
-    const staleCandidates = new Set([originalNfoPath]);
-    if (originalMovieNfoPath !== savedMovieNfoPath) {
-      staleCandidates.add(originalMovieNfoPath);
+    moveContext.stalePaths.add(originalNfoPath);
+    if (normalizePathKey(originalMovieNfoPath) !== normalizePathKey(savedMovieNfoPath)) {
+      moveContext.stalePaths.add(originalMovieNfoPath);
     }
+  }
 
-    for (const stalePath of staleCandidates) {
-      if (stalePath === savedNfoPath || stalePath === savedMovieNfoPath || !(await pathExists(stalePath))) {
-        continue;
+  private async statIfExists(filePath: string): Promise<Stats | undefined> {
+    try {
+      return await stat(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
       }
-
-      try {
-        await unlink(stalePath);
-      } catch (error) {
-        const message = toErrorMessage(error);
-        this.logger.warn(`Failed to remove stale NFO ${stalePath}: ${message}`);
-      }
+      throw error;
     }
+  }
+
+  private async sha256File(filePath: string): Promise<string> {
+    const hash = createHash("sha256");
+    for await (const chunk of createReadStream(filePath)) {
+      hash.update(chunk);
+    }
+    return hash.digest("hex");
   }
 }

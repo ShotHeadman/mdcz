@@ -1,9 +1,13 @@
 import type { IpcChannel } from "@mdcz/shared/IpcChannel";
+import { requireIpcChannel } from "@mdcz/shared/IpcChannel";
 import type { EventChannel, EventPayloadByChannel } from "@mdcz/shared/ipcEvents";
 import { isEventChannel } from "@mdcz/shared/ipcEvents";
-import { contextBridge, type IpcRendererEvent, ipcRenderer, shell } from "electron";
+import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 
 type Unsubscribe = () => void;
+
+export const invokeIpc = (channel: string, payload?: unknown): Promise<unknown> =>
+  ipcRenderer.invoke(requireIpcChannel(channel), payload);
 
 const listen = <TChannel extends EventChannel>(
   channel: TChannel,
@@ -28,7 +32,7 @@ const listen = <TChannel extends EventChannel>(
 };
 
 contextBridge.exposeInMainWorld("api", {
-  invoke: (channel: IpcChannel, payload?: unknown): Promise<unknown> => ipcRenderer.invoke(channel, payload),
+  invoke: (channel: IpcChannel, payload?: unknown): Promise<unknown> => invokeIpc(channel, payload),
   on: <TChannel extends EventChannel>(
     channel: TChannel,
     callback: (payload: EventPayloadByChannel[TChannel]) => void,
@@ -38,8 +42,4 @@ contextBridge.exposeInMainWorld("api", {
     }
     return listen(channel, callback);
   },
-});
-
-contextBridge.exposeInMainWorld("electron", {
-  openPath: (targetPath: string): Promise<string> => shell.openPath(targetPath),
 });

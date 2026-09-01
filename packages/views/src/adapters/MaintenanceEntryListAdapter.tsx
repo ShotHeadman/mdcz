@@ -6,17 +6,22 @@ import {
   type MaintenanceEntryGroupViewModel,
 } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import { ContextMenuItem } from "@mdcz/ui";
-import { type MaintenanceFilter, useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
-import { toggleMaintenanceSelectedIds } from "@mdcz/views/state/maintenanceSession";
+import {
+  type MaintenanceFilter,
+  selectMaintenanceEntries,
+  selectMaintenanceExecutionStatus,
+  selectMaintenanceItemResults,
+  selectMaintenancePreviewResults,
+  toggleMaintenanceSelectedIds,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { FileText, FolderOpen, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { MediaBrowserItemStatus } from "../common";
 import { MaintenanceEntryListView, type MaintenanceEntryListViewItem } from "../maintenance";
-import type { ActionAvailability, MaintenanceActionPort } from "./ports";
+import type { MaintenanceActionPort } from "./ports";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
@@ -42,8 +47,6 @@ const buildGroupSubtitle = (group: MaintenanceEntryGroupViewModel): string => {
   return `${baseTitle} · 共 ${group.items.length} 个分盘文件`;
 };
 
-const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
-
 function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
   const handleOpenFolder = async () => {
     const filePath = entry.fileInfo.filePath.trim();
@@ -53,13 +56,13 @@ function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
     }
 
     try {
-      await port.openFolder(filePath);
+      await port.openFolder?.(filePath);
     } catch (error) {
       toast.error(`打开目录失败: ${toErrorMessage(error)}`);
     }
   };
 
-  const handlePlay = () => void port.play(entry.fileInfo.filePath);
+  const handlePlay = () => void port.play?.(entry.fileInfo.filePath);
 
   const handleOpenNfo = () => {
     void port.openNfo(entry.nfoPath ?? entry.fileInfo.filePath);
@@ -67,32 +70,30 @@ function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
 
   return (
     <>
-      {isActionVisible(port.capabilities?.openFolder) ? (
+      {typeof port.openFolder === "function" ? (
         <ContextMenuItem onClick={handleOpenFolder}>
           <FolderOpen className="mr-2 h-4 w-4" />
           打开目录
         </ContextMenuItem>
       ) : null}
-      {isActionVisible(port.capabilities?.play) ? (
+      {typeof port.play === "function" ? (
         <ContextMenuItem onClick={handlePlay}>
           <Play className="mr-2 h-4 w-4" />
           播放
         </ContextMenuItem>
       ) : null}
-      {isActionVisible(port.capabilities?.openNfo) ? (
-        <ContextMenuItem onClick={handleOpenNfo}>
-          <FileText className="mr-2 h-4 w-4" />
-          编辑 NFO
-        </ContextMenuItem>
-      ) : null}
+      <ContextMenuItem onClick={handleOpenNfo}>
+        <FileText className="mr-2 h-4 w-4" />
+        编辑 NFO
+      </ContextMenuItem>
     </>
   );
 }
 
 export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionPort }) {
-  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceEntryStore(
+  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceStore(
     useShallow((state) => ({
-      entries: state.entries,
+      entries: selectMaintenanceEntries(state),
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
@@ -101,13 +102,13 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       setActiveId: state.setActiveId,
     })),
   );
-  const { itemResults, executionStatus } = useMaintenanceExecutionStore(
+  const { itemResults, executionStatus } = useMaintenanceStore(
     useShallow((state) => ({
-      itemResults: state.itemResults,
-      executionStatus: state.executionStatus,
+      itemResults: selectMaintenanceItemResults(state),
+      executionStatus: selectMaintenanceExecutionStatus(state),
     })),
   );
-  const previewResults = useMaintenancePreviewStore((state) => state.previewResults);
+  const previewResults = useMaintenanceStore(selectMaintenancePreviewResults);
   const showsSelection = getMaintenancePresetMeta(presetId).supportsExecution !== false;
   const selectionLocked = executionStatus !== "idle";
   const groupedEntries = useMemo(

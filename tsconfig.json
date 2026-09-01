@@ -34,7 +34,6 @@
       "@mdcz/persistence/test": ["packages/persistence/src/testDatabase.ts"],
       "@mdcz/runtime": ["packages/runtime/src/index.ts"],
       "@mdcz/runtime/*": ["packages/runtime/src/*"],
-      "@mdcz/server/router": ["apps/server/src/router.ts"],
       "@mdcz/shared": ["packages/shared/index.ts"],
       "@mdcz/shared/*": ["packages/shared/*"],
       "@mdcz/media-store": ["packages/media-store/src/index.ts"],

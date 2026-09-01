@@ -5,7 +5,13 @@ import { buildImageCandidates, removeStaleImageAssetVariants, resolveExistingIma
 import { PosterImageDerivationService } from "./PosterImageDerivationService";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan, PrimaryImageKey } from "./types";
 
-type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
+type PrimaryImageTask = {
+  key: PrimaryImageKey;
+  candidates: string[];
+  path: string;
+  existingPath: string;
+  keepExisting: boolean;
+};
 
 export class PrimaryImageAssetDownloader implements AssetDownloader {
   constructor(private readonly posterDerivationService?: PosterImageDerivationService) {}
@@ -23,7 +29,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
 
     for (const task of primaryTasks) {
-      const existingAsset = await resolveExistingImageAsset(task.path);
+      const existingAsset = await resolveExistingImageAsset(task.existingPath);
       if (task.keepExisting && existingAsset && !plan.forceReplace[task.key]) {
         assets[task.key] = existingAsset;
         continue;
@@ -59,7 +65,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
 
     for (const task of primaryTasks) {
       if (!assets[task.key]) {
-        const existingAsset = await resolveExistingImageAsset(task.path);
+        const existingAsset = await resolveExistingImageAsset(task.existingPath);
         if (existingAsset) {
           assets[task.key] = existingAsset;
         }
@@ -80,6 +86,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       plan.data.thumb_url,
       plan.imageAlternatives.thumb_url,
       join(plan.outputDir, plan.assetFileNames.thumb),
+      join(plan.existingAssetDir, plan.assetFileNames.thumb),
     );
     this.addPrimaryImageTask(
       tasks,
@@ -89,6 +96,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       plan.data.poster_url,
       plan.imageAlternatives.poster_url,
       join(plan.outputDir, plan.assetFileNames.poster),
+      join(plan.existingAssetDir, plan.assetFileNames.poster),
     );
 
     return tasks;
@@ -102,6 +110,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     primaryUrl: string | undefined,
     alternatives: string[] | undefined,
     path: string,
+    existingPath: string,
   ): void {
     if (!enabled) {
       return;
@@ -111,6 +120,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       key,
       candidates: buildImageCandidates(primaryUrl, alternatives),
       path,
+      existingPath,
       keepExisting,
     });
   }

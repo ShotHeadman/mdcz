@@ -1,29 +1,26 @@
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
-import type { ScraperStatus, UncensoredConfirmItem, UncensoredConfirmResponse } from "../types";
+import type { RootFileRef } from "../mediaRef";
+import type { ScrapeRunSnapshotDto } from "../serverDtos";
+import type { UncensoredConfirmItem, UncensoredConfirmResponse } from "../types";
+
+export type ScraperStartInput =
+  | { mode: "selection"; refs: RootFileRef[]; outputRootId: string; outputRelativeDirectory?: string }
+  | { mode: "single"; ref: RootFileRef };
 
 export type ScraperIpcContract = {
-  [IpcChannel.Scraper_Start]: IpcProcedure<
-    { mode?: "single" | "selection"; paths?: string[] },
+  [IpcChannel.Scraper_Start]: IpcProcedure<ScraperStartInput, { taskId: string; totalFiles: number; message: string }>;
+  [IpcChannel.Scraper_StartSinglePath]: IpcProcedure<
+    { path: string },
     { taskId: string; totalFiles: number; message: string }
   >;
   [IpcChannel.Scraper_Stop]: IpcProcedure<void, { success: true; pendingCount: number }>;
   [IpcChannel.Scraper_Pause]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Scraper_Resume]: IpcProcedure<void, { success: true }>;
-  [IpcChannel.Scraper_GetStatus]: IpcProcedure<void, ScraperStatus>;
-  [IpcChannel.Scraper_GetFailedFiles]: IpcProcedure<void, { filePaths: string[] }>;
-  [IpcChannel.Scraper_Requeue]: IpcProcedure<{ filePaths?: string[]; manualUrl?: string }, { requeuedCount: number }>;
-  [IpcChannel.Scraper_RetryFailed]: IpcProcedure<
-    { filePaths?: string[]; manualUrl?: string },
+  [IpcChannel.Scraper_GetStatus]: IpcProcedure<{ taskId?: string }, ScrapeRunSnapshotDto | null>;
+  [IpcChannel.Scraper_Retry]: IpcProcedure<
+    { runId: string; itemIds?: string[] },
     { taskId: string; totalFiles: number; message: string }
-  >;
-  [IpcChannel.Scraper_GetRecoverableSession]: IpcProcedure<
-    void,
-    { recoverable: boolean; pendingCount: number; failedCount: number }
-  >;
-  [IpcChannel.Scraper_ResolveRecoverableSession]: IpcProcedure<
-    { action?: "recover" | "discard" },
-    { success: true; message: string; taskId?: string; totalFiles?: number }
   >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<{ items?: UncensoredConfirmItem[] }, UncensoredConfirmResponse>;
 };

@@ -172,7 +172,6 @@ export const assertWorkbenchRefreshStaleNfo = async (input: {
 
 export const prepareWorkbenchMediaFixture = async (paths: WorkbenchMediaFixturePaths): Promise<void> => {
   await mkdir(paths.fixtureDir, { recursive: true });
-  await mkdir(paths.outputDir, { recursive: true });
   await writeFile(paths.fixturePath, ZERO_BYTE);
   await assertZeroByteFile(paths.fixturePath);
 };

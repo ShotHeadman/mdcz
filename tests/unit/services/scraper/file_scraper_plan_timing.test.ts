@@ -1,10 +1,15 @@
-import type { ActorImageService } from "@main/services/ActorImageService";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
-import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import type { AggregationService, FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import type {
+  ActorImageService,
+  AggregationService,
+  DownloadManager,
+  FileOrganizer,
+  NfoGenerator,
+  OrganizePlan,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -54,12 +59,17 @@ describe("FileScraper plan timing", () => {
     };
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
+      resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
       ensureOutputReady: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer;
     const actorImageService = {
       prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
     } as unknown as ActorImageService;
+    const downloadAll = vi.fn().mockResolvedValue({
+      downloaded: [],
+      sceneImages: [],
+    });
     mockConfigManager(config);
     const scraper = createFileScraper({
       aggregationService: {
@@ -90,14 +100,15 @@ describe("FileScraper plan timing", () => {
         writeNfo: vi.fn(),
       } as unknown as NfoGenerator,
       downloadManager: {
-        downloadAll: vi.fn().mockResolvedValue({
-          downloaded: [],
-          sceneImages: [],
-        }),
+        downloadAll,
       } as unknown as DownloadManager,
       fileOrganizer,
       signalService: new SignalService(null),
       actorImageService,
+      getConfiguration: async () => ({
+        ...config,
+        paths: { ...config.paths, mediaPath: "/selected-output" },
+      }),
     });
 
     await scraper.scrapeFile("/tmp/ABC-123.mp4", { fileIndex: 1, totalFiles: 1 });
@@ -107,11 +118,15 @@ describe("FileScraper plan timing", () => {
         number: "ABC-123",
       }),
       translatedData,
-      expect.any(Object),
+      expect.objectContaining({ paths: expect.objectContaining({ mediaPath: "/selected-output" }) }),
       undefined,
       {
         executionMode: "batch",
       },
     );
+    expect(downloadAll.mock.calls[0]?.[5]).toEqual({
+      movieBaseName: "ABC-123",
+      existingAssetDir: plan.outputDir,
+    });
   });
 });

@@ -1,19 +1,19 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { RendererShortcutAction } from "@mdcz/shared/ipcEvents";
-import { activateRetryScrapeTask } from "@mdcz/views/adapters";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  buildScrapeResultGroupActionContext,
+  findScrapeResultGroup,
+} from "@mdcz/shared/viewModels/scrapeResultGrouping";
+import { activateNewScrapeTask, activateRetryScrapeTask } from "@mdcz/views/adapters";
+import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { selectIsScraping, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
-import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
-import type { ConfigOutput } from "@/client/types";
-import { CURRENT_CONFIG_QUERY_KEY } from "@/hooks/configQueries";
-import { buildScrapeResultGroupActionContext, findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { playMediaPath } from "@/utils/playback";
 
 const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([
@@ -40,7 +40,6 @@ const isEditingText = () => {
 export function ShortcutHandler() {
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
   const pathname = location.pathname;
 
   useEffect(() => {
@@ -58,15 +57,24 @@ export function ShortcutHandler() {
 
       void (async () => {
         const scrapeState = useScrapeStore.getState();
-        const selectedGroup = findScrapeResultGroup(scrapeState.results, uiState.selectedResultId);
+        const results = selectScrapeResults(scrapeState);
+        const selectedGroup = findScrapeResultGroup(results, uiState.selectedResultId);
         const actionContext = selectedGroup
           ? buildScrapeResultGroupActionContext(selectedGroup, uiState.selectedResultId)
           : undefined;
         const selectedItem = actionContext?.selectedItem;
         const selectedNfoPath = actionContext?.nfoPath;
+        const groupedTargets = actionContext?.targets ?? [];
         const groupedVideoPaths = actionContext?.videoPaths ?? [];
-        const selectedPath = selectedItem?.fileInfo.filePath;
-        const selectedNumber = selectedItem?.fileInfo.number;
+        const selectedPath = selectedItem
+          ? (selectedItem.output?.relativePath ?? selectedItem.relativePath)
+          : undefined;
+        const selectedRef = selectedItem
+          ? (selectedItem.output ?? { rootId: selectedItem.rootId, relativePath: selectedItem.relativePath })
+          : undefined;
+        const selectedNumber = selectedItem
+          ? (selectedItem.crawlerData?.number ?? selectedItem.fileName.replace(/\.[^.]+$/u, ""))
+          : undefined;
         const handleRetrySelectedScrape = async () => {
           if (!selectedPath) {
             toast.info("请先选择一个结果项");
@@ -74,14 +82,9 @@ export function ShortcutHandler() {
           }
 
           try {
-            const response = await retryScrapeSelection(groupedVideoPaths, {
-              scrapeStatus: scrapeState.scrapeStatus,
-              canRequeueCurrentRun: selectedGroup?.status === "failed",
-            });
+            const response = await retryScrapeSelection();
 
-            if (response.data.strategy === "new-task") {
-              activateRetryScrapeTask(groupedVideoPaths);
-            }
+            activateRetryScrapeTask();
 
             toast.success(response.data.message);
           } catch (error) {
@@ -91,10 +94,10 @@ export function ShortcutHandler() {
 
         switch (action) {
           case "start-or-stop-scrape": {
-            if (scrapeState.isScraping) {
+            if (selectIsScraping(scrapeState)) {
               try {
                 await stopScrape();
-                useScrapeStore.getState().setScrapeStatus("stopping");
+                useScrapeStore.getState().setPending(true);
                 toast.info("正在停止刮削任务...");
               } catch (error) {
                 toast.error(`停止失败: ${toErrorMessage(error)}`);
@@ -103,7 +106,7 @@ export function ShortcutHandler() {
             }
 
             try {
-              const maintenanceBusy = useMaintenanceExecutionStore.getState().executionStatus !== "idle";
+              const maintenanceBusy = selectMaintenanceExecutionStatus(useMaintenanceStore.getState()) !== "idle";
               if (maintenanceBusy) {
                 toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
                 return;
@@ -130,22 +133,27 @@ export function ShortcutHandler() {
                 return;
               }
 
-              const currentConfig = (await ipc.config.get()) as ConfigOutput;
-              await ipc.config.save({
-                paths: {
-                  ...currentConfig.paths,
-                  mediaPath: workbenchSetupState.scanDir,
-                  successOutputFolder: workbenchSetupState.targetDir || currentConfig.paths.successOutputFolder,
-                },
-              });
+              const selectedCandidates = workbenchSetupState.candidates.filter((candidate) =>
+                workbenchSetupState.selectedPaths.includes(candidate.path),
+              );
+              if (selectedCandidates.length === 0) {
+                toast.info("请先选择至少一个文件");
+                return;
+              }
 
-              scrapeState.clearResults();
-              uiState.setSelectedResultId(null);
-              scrapeState.updateProgress(0, 0);
-              const response = await startSelectedScrape(workbenchSetupState.selectedPaths);
-              scrapeState.setScraping(true);
-              scrapeState.setScrapeStatus("running");
-              await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
+              if (!workbenchSetupState.targetDir.trim()) {
+                toast.info("请先选择输出目录");
+                return;
+              }
+              const outputRoot = await ipc.mediaRoots.prepareOutputDirectory({
+                hostPath: workbenchSetupState.targetDir,
+              });
+              activateNewScrapeTask();
+              const response = await startSelectedScrape(
+                selectedCandidates.map((candidate) => candidate.ref),
+                outputRoot.id,
+                outputRoot.relativeDirectory,
+              );
               toast.success(response.data.message);
             } catch (error) {
               const errorMessage = toErrorMessage(error);
@@ -179,7 +187,7 @@ export function ShortcutHandler() {
               return;
             }
             try {
-              await deleteFile(groupedVideoPaths);
+              await deleteFile(groupedTargets.map((target) => target.ref));
               toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "文件已删除");
             } catch (error) {
               toast.error(`删除失败: ${toErrorMessage(error)}`);
@@ -188,7 +196,7 @@ export function ShortcutHandler() {
           }
 
           case "delete-file-and-folder": {
-            if (!selectedPath) {
+            if (!selectedPath || !selectedRef) {
               toast.info("请先选择一个结果项");
               return;
             }
@@ -196,7 +204,7 @@ export function ShortcutHandler() {
               return;
             }
             try {
-              await deleteFileAndFolder(selectedPath);
+              await deleteFileAndFolder(selectedRef);
               toast.success("文件和文件夹已删除");
             } catch (error) {
               toast.error(`删除失败: ${toErrorMessage(error)}`);
@@ -209,13 +217,9 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            if (!window.electron?.openPath) {
-              toast.info("仅桌面客户端支持打开目录");
-              return;
-            }
             const slash = Math.max(selectedPath.lastIndexOf("/"), selectedPath.lastIndexOf("\\"));
             const dir = slash > 0 ? selectedPath.slice(0, slash) : selectedPath;
-            void window.electron.openPath(dir);
+            void ipc.app.showItemInFolder(selectedRef ?? dir);
             return;
           }
 
@@ -224,7 +228,7 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            await playMediaPath(selectedPath, "仅桌面客户端支持播放");
+            await playMediaPath(selectedRef ?? selectedPath, "仅桌面客户端支持播放");
             return;
           }
 
@@ -249,7 +253,7 @@ export function ShortcutHandler() {
     });
 
     return unsubscribe;
-  }, [navigate, pathname, queryClient]);
+  }, [navigate, pathname]);
 
   return null;
 }

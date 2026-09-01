@@ -10,21 +10,51 @@ vi.mock("electron", () => {
     isPackaged: false,
     getAppPath: () => process.cwd(),
     getPath: () => userDataPath,
+    getVersion: () => "0.0.0-test",
     commandLine: {
       appendSwitch: () => {},
     },
     setAppUserModelId: () => {},
   };
 
-  const ipcMain = {
-    handle: () => {},
-    once: () => {},
-    removeHandler: () => {},
-  };
-
   return {
     app,
-    ipcMain,
+    ipcMain: {
+      handle: () => {},
+      once: () => {},
+      removeHandler: () => {},
+    },
+    shell: {
+      openExternal: async () => "",
+      openPath: async () => "",
+      showItemInFolder: () => {},
+    },
+    dialog: {
+      showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+      showSaveDialog: async () => ({ canceled: true, filePath: undefined }),
+    },
+    nativeImage: {
+      createFromPath: () => ({}),
+    },
+    nativeTheme: {
+      shouldUseDarkColors: false,
+    },
+    net: {
+      fetch,
+    },
+    protocol: {
+      registerSchemesAsPrivileged: () => {},
+      handle: () => {},
+    },
+    contextBridge: {
+      exposeInMainWorld: () => {},
+    },
+    ipcRenderer: {
+      invoke: async () => undefined,
+      on: () => {},
+      off: () => {},
+      removeListener: () => {},
+    },
   };
 });
 

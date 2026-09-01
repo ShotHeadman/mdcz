@@ -1,7 +1,11 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { checkConnection, EmbyActorInfo, EmbyActorPhoto } from "@main/services/mediaServer/emby";
 import { SignalService } from "@main/services/SignalService";
 import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import {
+  checkEmbyConnection as checkConnection,
+  EmbyActorInfoService as EmbyActorInfo,
+  EmbyActorPhotoService as EmbyActorPhoto,
+} from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { describe, expect, it, vi } from "vitest";
 
@@ -58,6 +62,7 @@ const createInfoService = (networkClient: FakeNetworkClient, actorSourceProvider
     signalService: new SignalService(null),
     networkClient: networkClient as unknown as NetworkClient,
     actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
   });
 
 const createPhotoService = (networkClient: FakeNetworkClient, actorSourceProvider: FakeActorSourceProvider) =>
@@ -65,6 +70,7 @@ const createPhotoService = (networkClient: FakeNetworkClient, actorSourceProvide
     signalService: new SignalService(null),
     networkClient: networkClient as unknown as NetworkClient,
     actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
   });
 
 const createStructuredLookupResult = (name = "神木麗"): ActorLookupResult => ({

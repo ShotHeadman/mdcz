@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { DesktopPersistenceService } from "@main/services/persistence";
 import { AmazonPosterToolService } from "@main/services/tools/AmazonPosterToolService";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import type { AmazonJpImageService } from "@mdcz/runtime/tools";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,7 +62,18 @@ const createService = (options?: {
   } as unknown as AmazonJpImageService;
 
   return {
-    service: new AmazonPosterToolService(networkClient, amazonJpImageService),
+    service: new AmazonPosterToolService(networkClient, amazonJpImageService, {
+      getState: async () => ({
+        repositories: {
+          publicationJournal: createMemoryPublicationJournal(),
+          mediaRoots: {
+            list: async () => [{ id: "tmp", hostPath: tmpdir() }],
+            ensurePath: async (hostPath: string) => ({ id: "tmp", hostPath }),
+            upsert: async () => undefined,
+          },
+        },
+      }),
+    } as unknown as DesktopPersistenceService),
     networkClient,
     amazonJpImageService,
   };

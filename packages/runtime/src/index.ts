@@ -4,6 +4,7 @@ export * from "./library";
 export * from "./maintenance";
 export * from "./mediaserver";
 export * from "./network";
+export * from "./publication";
 export * from "./scrape";
 export * from "./shared";
 export * from "./tasks";

@@ -14,6 +14,7 @@ const crawlerData: CrawlerData = {
 
 const entryFor = (videoPath: string, nfoPath = "/media/movie.nfo"): LocalScanEntry => ({
   fileId: buildFileId(videoPath),
+  ref: { rootId: "test-root", relativePath: videoPath.split("/").at(-1) ?? videoPath },
   fileInfo: {
     filePath: videoPath,
     fileName:
@@ -38,6 +39,8 @@ const dependencies = (): UncensoredConfirmDependencies => ({
       nfoPath: savedNfoPath,
       assets: entry.assets,
       outputVideoPath,
+      publicationArtifacts: [],
+      obsoletePaths: [],
     })),
   },
   fileOrganizer: {
@@ -49,7 +52,7 @@ const dependencies = (): UncensoredConfirmDependencies => ({
     ensureOutputReady: vi.fn(async (plan) => plan),
     organizeVideo: vi.fn(async (_fileInfo, plan) => plan.targetVideoPath),
   },
-  localScanService: { scanVideo: vi.fn(async (videoPath) => entryFor(videoPath)) },
+  localScanService: { scanVideo: vi.fn(async (_root, videoPath) => entryFor(videoPath)) },
   logger: { info: vi.fn(), warn: vi.fn() },
   nfoGenerator: { writeNfo: vi.fn(async () => "/media/leak/movie.nfo") },
   pathExists: vi.fn(async () => true),
@@ -129,7 +132,7 @@ describe("confirmUncensoredOutputs", () => {
 
   it("applies mixed choices to independent NFO groups", async () => {
     const deps = dependencies();
-    deps.localScanService.scanVideo = vi.fn(async (videoPath) =>
+    deps.localScanService.scanVideo = vi.fn(async (_root, videoPath) =>
       entryFor(videoPath, videoPath.replace(/\.mp4$/u, ".nfo")),
     );
     const result = await confirmUncensoredOutputs(

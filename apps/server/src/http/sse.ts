@@ -1,4 +1,6 @@
 import type { ServerResponse } from "node:http";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import type { TaskNotificationDto } from "@mdcz/shared/serverDtos";
 import type { ServerServices } from "../services";
 import { formatSseEvent } from "../taskEvents";
 import { buildCorsHeaders } from "./cors";
@@ -9,6 +11,48 @@ export async function writeTaskEventsStream(
   origin?: string,
   requestHost?: string,
 ): Promise<void> {
+  let closed = false;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let bufferedNotifications: TaskNotificationDto[] | null = [];
+
+  const write = (chunk: string): void => {
+    if (closed) return;
+    if (!raw.write(chunk)) {
+      runtimeLoggerService
+        .getLogger("task-sse")
+        .warn("Task SSE output is backpressured; closing the stream for a full resync");
+      closeStream();
+    }
+  };
+
+  const writeNotification = (notification: TaskNotificationDto): void => {
+    if (bufferedNotifications) {
+      bufferedNotifications.push(notification);
+      return;
+    }
+    write(formatSseEvent(notification));
+  };
+
+  const onClose = (): void => {
+    cleanup();
+  };
+
+  const cleanup = (): void => {
+    if (closed) return;
+    closed = true;
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    unsubscribe?.();
+    raw.removeListener("close", onClose);
+  };
+
+  const closeStream = (): void => {
+    cleanup();
+    if (!raw.writableEnded) raw.end();
+  };
+
+  raw.on("close", onClose);
+  unsubscribe = services.taskEvents.subscribe(writeNotification);
   raw.writeHead(200, {
     ...buildCorsHeaders(origin, requestHost),
     "cache-control": "no-cache, no-transform",
@@ -16,32 +60,19 @@ export async function writeTaskEventsStream(
     "content-type": "text/event-stream; charset=utf-8",
     "x-accel-buffering": "no",
   });
-  raw.write(": connected\n\n");
+  write(": connected\n\n");
+  if (closed) return;
 
-  const heartbeatInterval = setInterval(() => {
-    raw.write(": heartbeat\n\n");
+  const pending = bufferedNotifications ?? [];
+  bufferedNotifications = null;
+  for (const notification of pending) {
+    writeNotification(notification);
+    if (closed) return;
+  }
+  writeNotification({ kind: "invalidate", resources: ["ready"] });
+  if (closed) return;
+
+  heartbeatInterval = setInterval(() => {
+    write("event: heartbeat\ndata: {}\n\n");
   }, 30_000);
-  const unsubscribe = services.taskEvents.subscribe((event) => {
-    raw.write(formatSseEvent(event));
-  });
-  const [scanSnapshot, scrapeSnapshot, maintenanceSnapshot] = await Promise.all([
-    services.scans.list(),
-    services.scrape.list(),
-    services.maintenance.list(),
-  ]);
-  raw.write(
-    formatSseEvent({
-      id: "snapshot",
-      event: "task-update",
-      data: {
-        kind: "snapshot",
-        tasks: [...scanSnapshot.tasks, ...scrapeSnapshot.tasks, ...maintenanceSnapshot.tasks],
-      },
-    }),
-  );
-
-  raw.on("close", () => {
-    clearInterval(heartbeatInterval);
-    unsubscribe();
-  });
 }

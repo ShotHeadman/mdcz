@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type AggregationResult,
@@ -17,7 +17,7 @@ import {
   loginAsAdmin,
   startTestImageServer,
   syncMediaRootFromConfig,
-  waitForTaskStatus,
+  waitForScrapeRunStatus,
 } from "./app.testSupport";
 
 const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScrapeAggregationService => ({
@@ -99,46 +99,6 @@ const createGatedAggregation = (
   };
 };
 
-const createAbortAwareAggregation = (): {
-  aggregation: MountedRootScrapeAggregationService;
-  aborted: Promise<void>;
-  started: Promise<void>;
-} => {
-  let resolveStarted!: () => void;
-  let resolveAborted!: () => void;
-  const started = new Promise<void>((resolve) => {
-    resolveStarted = resolve;
-  });
-  const aborted = new Promise<void>((resolve) => {
-    resolveAborted = resolve;
-  });
-
-  return {
-    started,
-    aborted,
-    aggregation: {
-      async aggregate(_number, _configuration, signal): Promise<AggregationResult | null> {
-        resolveStarted();
-        return await new Promise<AggregationResult | null>((resolve) => {
-          if (signal?.aborted) {
-            resolveAborted();
-            resolve(null);
-            return;
-          }
-          signal?.addEventListener(
-            "abort",
-            () => {
-              resolveAborted();
-              resolve(null);
-            },
-            { once: true },
-          );
-        });
-      },
-    },
-  };
-};
-
 afterEach(async () => {
   await closeTestServers();
 });
@@ -171,7 +131,7 @@ describe("buildServer scrape integration", () => {
     });
     const taskEvents: unknown[] = [];
     const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
-      taskEvents.push(event.data);
+      taskEvents.push(event);
     });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
@@ -189,19 +149,26 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+        outputRootId: rootId,
+        outputRelativeDirectory: "JAV_output",
+      },
     });
-    const taskId = startResponse.json().result.data.id;
-    expect(startResponse.json().result.data.videoCount).toBe(0);
+    const taskId = startResponse.json().result.data.runId;
+    expect(startResponse.json().result.data).toEqual({ runId: taskId });
 
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
 
-    const scrapeResultsResponse = await fastify.inject({
+    const scrapeHistoryResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    const scrapeResultId = scrapeResultsResponse.json().result.data.results[0].id;
+    const scrapeResult = scrapeHistoryResponse.json().result.data.results[0];
+    expect(scrapeHistoryResponse.json().result.data.runs[0].executionMode).toBe("batch");
+    const scrapeResultId = scrapeResult.id;
     const cropSessionResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: scrapeResultId }))}`,
@@ -217,7 +184,7 @@ describe("buildServer scrape integration", () => {
 
     const libraryResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/library.search",
+      url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
       payload: { query: "ABC-123", limit: 20 },
     });
@@ -236,11 +203,6 @@ describe("buildServer scrape integration", () => {
     const overviewResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/overview.summary",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const logsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/logs.list",
       headers: { authorization: `Bearer ${token}` },
     });
     const assetResponse = await fastify.inject({
@@ -302,11 +264,25 @@ describe("buildServer scrape integration", () => {
         expect.objectContaining({ kind: "poster", uri: "JAV_output/Actor A/ABC-123/poster.png" }),
       ]),
     );
+    expect(scrapeResult.assets).toEqual(
+      expect.arrayContaining([
+        { type: "local", kind: "poster", file: { rootId, relativePath: "JAV_output/Actor A/ABC-123/poster.png" } },
+        { type: "local", kind: "thumb", file: { rootId, relativePath: "JAV_output/Actor A/ABC-123/thumb.png" } },
+      ]),
+    );
+    // `downloadTrailer: false` skips writing the file and the NFO entry, but the source site's URL
+    // still reaches the detail view as a remote ref.
+    expect(scrapeResult.assets).toContainEqual({
+      type: "remote",
+      kind: "trailer",
+      url: "https://example.com/runtime-trailer-source.mp4",
+    });
     expect(nfoContent).toContain("Runtime Title ABC-123");
     expect(nfoContent).toContain(".actors/Actor A.jpg");
     expect(nfoContent).not.toContain("<director>Runtime Director</director>");
-    expect(nfoContent).toContain("<trailer>");
-    expect(nfoContent).toContain("trailer_source_url");
+    expect(nfoContent).not.toContain("<trailer>");
+    expect(nfoContent).not.toContain("trailer_source_url");
+    expect(nfoContent).not.toContain("scene_images");
     expect(actorPhotoContent.length).toBeGreaterThan(8000);
     expect(posterContent.length).toBeGreaterThan(0);
     expect(assetResponse.statusCode).toBe(200);
@@ -320,38 +296,79 @@ describe("buildServer scrape integration", () => {
       number: "ABC-123",
       available: true,
     });
-    const logMessages = logsResponse.json().result.data.logs.map((log: { message: string }) => log.message);
-    expect(logMessages).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(/^Starting file scrape task .+ for ABC-123 \(scrapeSessionId: .+\)$/u),
-      ]),
-    );
-    expect(logMessages.some((message: string) => message.includes("刮削进度"))).toBe(false);
     expect(taskEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "task-progress",
-          taskKind: "scrape",
-          value: expect.any(Number),
+          kind: "invalidate",
+          resources: expect.arrayContaining(["scrape-history"]),
+        }),
+        expect.objectContaining({
+          kind: "log",
+          log: expect.objectContaining({
+            message: expect.stringMatching(/^Starting file scrape task .+ for ABC-123 \(scrapeSessionId: .+\)$/u),
+          }),
         }),
       ]),
     );
     expect(
-      taskEvents.some(
+      taskEvents.every(
         (event) =>
           typeof event === "object" &&
           event !== null &&
           "kind" in event &&
-          event.kind === "log" &&
-          "log" in event &&
-          typeof event.log === "object" &&
-          event.log !== null &&
-          "message" in event.log &&
-          typeof event.log.message === "string" &&
-          event.log.message.includes("刮削进度"),
+          (event.kind === "invalidate" || event.kind === "log"),
       ),
-    ).toBe(false);
+    ).toBe(true);
     unsubscribeTaskEvents();
+  });
+
+  it("writes an explicit nested output root directly instead of applying the global output folder again", async () => {
+    const root = await createTempRoot("scrape-explicit-output-root");
+    const outputPath = join(root, "custom-output");
+    await writeFile(join(root, "ABC-456.mp4"), "video");
+    await mkdir(outputPath);
+    const imageServer = await startTestImageServer();
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const outputRoot = await services.mediaRoots.ensurePath({ hostPath: outputPath });
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        paths: { successOutputFolder: "legacy-output" },
+        download: { downloadSceneImages: false, downloadTrailer: false },
+      },
+    });
+
+    const startResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-456.mp4" }],
+        outputRootId: outputRoot.id,
+        outputRelativeDirectory: outputRoot.relativeDirectory,
+      },
+    });
+    const taskId = startResponse.json().result.data.runId;
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+
+    const historyResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const result = historyResponse.json().result.data.results[0];
+    expect(outputRoot.id).toBe(rootId);
+    expect(outputRoot.relativeDirectory).toBe("custom-output");
+    expect(result.outputRootId).toBe(rootId);
+    expect(result.outputRelativePath).toMatch(/^custom-output\/Actor A\/ABC-456\/ABC-456\.mp4$/u);
+    await expect(readFile(join(root, result.outputRelativePath))).resolves.toEqual(Buffer.from("video"));
   });
 
   it("applies configured poster tag badges with the same runtime rendering used by desktop", async () => {
@@ -395,9 +412,14 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+        outputRootId: rootId,
+        outputRelativeDirectory: "JAV_output",
+      },
     });
-    await waitForTaskStatus(fastify, token, startResponse.json().result.data.id, "completed");
+    await waitForScrapeRunStatus(fastify, token, startResponse.json().result.data.runId, "completed");
 
     const expectedPosterPath = join(root, "expected-poster.png");
     await writeFile(expectedPosterPath, sourcePoster);
@@ -429,6 +451,7 @@ describe("buildServer scrape integration", () => {
   it("keeps organized video on the media root while serving metadata from a local mirror root", async () => {
     const mediaRoot = await createTempRoot("separate-metadata-media");
     const metadataRoot = await createTempRoot("separate-metadata-local");
+    const nextMetadataRoot = await createTempRoot("separate-metadata-local-next");
     await writeFile(join(mediaRoot, "ABC-123.mp4"), "video");
     const imageServer = await startTestImageServer();
     const { fastify } = await createTestServer({
@@ -450,17 +473,22 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+        outputRootId: rootId,
+        outputRelativeDirectory: "JAV_output",
+      },
     });
-    const taskId = startResponse.json().result.data.id;
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    const taskId = startResponse.json().result.data.runId;
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
 
-    const resultsResponse = await fastify.inject({
+    const historyResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    const result = resultsResponse.json().result.data.results[0];
+    const result = historyResponse.json().result.data.results[0];
     const outputRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.mp4";
     const nfoRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.nfo";
     const strmRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.strm";
@@ -488,8 +516,27 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/mediaRoots.list",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(rootsResponse.json().result.data.roots.map((root: { id: string }) => root.id)).not.toContain(
-      result.nfoRootId,
+    expect(rootsResponse.json().result.data.roots.map((root: { id: string }) => root.id)).toContain(result.nfoRootId);
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { metadataPath: nextMetadataRoot } },
+    });
+    const nextMetadataRootRecord = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.ensurePath",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { hostPath: nextMetadataRoot },
+    });
+    const rootsAfterMetadataChange = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(nextMetadataRootRecord.json().result.data.id).not.toBe(result.nfoRootId);
+    expect(rootsAfterMetadataChange.json().result.data.roots.map((root: { id: string }) => root.id)).toEqual(
+      expect.arrayContaining([result.nfoRootId, nextMetadataRootRecord.json().result.data.id]),
     );
 
     const assetResponse = await fastify.inject({
@@ -513,7 +560,7 @@ describe("buildServer scrape integration", () => {
     expect(nfoResponse.json().result.data.data).toMatchObject({ number: "ABC-123" });
   });
 
-  it("starts scrape tasks from selected host files inside scan and media roots", async () => {
+  it("starts scrape tasks from selected files in a registered media root", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const selectedPath = join(root, "ABC-128.mp4");
     await writeFile(selectedPath, "video");
@@ -526,29 +573,30 @@ describe("buildServer scrape integration", () => {
 
     const startResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.startSelectedFiles",
+      url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId, relativePath: "ABC-128.mp4" }],
+        outputRootId: rootId,
+        uncensoredConfirmed: true,
+      },
     });
 
     expect(startResponse.statusCode).toBe(200);
-    expect(startResponse.json().result.data).toMatchObject({
-      kind: "scrape",
-      rootId,
-      status: expect.stringMatching(/queued|running|completed/),
-    });
-    const taskId = startResponse.json().result.data.id;
+    expect(startResponse.json().result.data).toEqual({ runId: expect.any(String) });
+    const taskId = startResponse.json().result.data.runId;
 
-    const resultsResponse = await fastify.inject({
+    const liveRunsResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: "/trpc/scrape.liveRuns",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(resultsResponse.json().result.data.results[0]).toMatchObject({
-      rootId,
-      relativePath: "ABC-128.mp4",
+    expect(liveRunsResponse.json().result.data.runs[0]).toMatchObject({
+      task: { id: taskId, kind: "scrape" },
+      items: [expect.objectContaining({ rootId, relativePath: "ABC-128.mp4" })],
     });
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
   });
 
   it("confirms moved uncensored outputs in place without scraping the old source again", async () => {
@@ -566,43 +614,32 @@ describe("buildServer scrape integration", () => {
         },
       },
     });
-    const completedEvents: unknown[] = [];
-    services.taskEvents.subscribe((event) => {
-      if (event.data.kind === "event" && event.data.event.type === "completed") {
-        completedEvents.push(event.data);
-      }
-    });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABP-999-U.mp4" }] },
+      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABP-999-U.mp4" }], outputRootId: rootId },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
 
-    await waitForTaskStatus(fastify, token, taskId, "completed");
-    const initialResults = await services.persistence
-      .getState()
-      .then((state) => state.repositories.library.listScrapeResults(taskId));
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+    const initialResults = await services.persistence.getState().then(async (state) => {
+      const run = await state.repositories.scrapeRuns.get(taskId);
+      return state.repositories.scrapeRuns.latestOutcomes(run);
+    });
     const initialResult = initialResults[0];
     expect(initialResult?.outputRelativePath).not.toBe("ABP-999-U.mp4");
     await expect(readFile(join(root, "ABP-999-U.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
 
-    const firstCompletedEvent = completedEvents.at(-1) as {
-      ambiguousUncensoredItems?: Array<{
-        nfoRelativePath: string | null;
-        number: string;
-        ref: { rootId: string; relativePath: string };
-      }>;
-    };
-    expect(firstCompletedEvent.ambiguousUncensoredItems).toEqual([
-      expect.objectContaining({
-        ref: { rootId, relativePath: "ABP-999-U.mp4" },
-        number: "ABP-999",
-        nfoRelativePath: initialResult?.nfoRelativePath,
-      }),
+    const pendingConfirmationResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/scrape.pendingUncensoredConfirmation",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(pendingConfirmationResponse.json().result.data.items).toEqual([
+      expect.objectContaining({ taskId, ref: { rootId, relativePath: "ABP-999-U.mp4" } }),
     ]);
 
     const confirmResponse = await fastify.inject({
@@ -616,19 +653,14 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(confirmResponse.statusCode).toBe(200);
-    expect(confirmResponse.json().result.data).toMatchObject({
-      kind: "scrape",
-      rootId,
-      status: "completed",
-    });
-    expect(confirmResponse.json().result.data.id).toBe(taskId);
+    expect(confirmResponse.json().result.data).toEqual({ runId: taskId });
     expect(aggregateCount).toBe(1);
-    const confirmedResultsResponse = await fastify.inject({
+    const confirmedHistoryResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    const confirmedResult = confirmedResultsResponse.json().result.data.results[0];
+    const confirmedResult = confirmedHistoryResponse.json().result.data.results[0];
     expect(confirmedResult).toMatchObject({ status: "success", uncensoredAmbiguous: false });
     expect(confirmedResult.outputRelativePath).toContain("流出");
     await expect(readFile(join(root, confirmedResult.outputRelativePath))).resolves.toBeTruthy();
@@ -643,33 +675,68 @@ describe("buildServer scrape integration", () => {
       },
     });
     expect(repeatedResponse.statusCode).toBe(200);
-    expect(repeatedResponse.json().result.data.id).toBe(taskId);
+    expect(repeatedResponse.json().result.data).toEqual({ runId: taskId });
     expect(aggregateCount).toBe(1);
   });
 
-  it("rejects confirmation items without successful persisted outputs", async () => {
+  it("keeps terminal outcomes unchanged when uncensored output files are missing", async () => {
     const root = await createTempRoot("uncensored-choice-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
-    const task = await state.repositories.tasks.createTask({ kind: "scrape", rootId });
-    for (const relativePath of ["UMR-001.mp4", "LEAK-001.mp4", "UNC-001.mp4"]) {
-      await state.repositories.library.upsertScrapeResult({
-        taskId: task.id,
+    const manifest = await state.repositories.scrapeRuns.create({
+      rootId,
+      executionMode: "batch",
+      items: ["UMR-001.mp4", "LEAK-001.mp4", "UNC-001.mp4"].map((relativePath, ordinal) => ({
+        ordinal,
         rootId,
         relativePath,
-        status: "success",
-        uncensoredAmbiguous: true,
-      });
+      })),
+    });
+    for (const item of manifest.items) {
+      state.database.sqlite.transaction(() =>
+        state.repositories.scrapeRuns.commitSuccessOutcome({
+          outcome: "success",
+          attemptId: state.repositories.scrapeRuns.admitAttempt(item.id).id,
+          crawlerDataJson: JSON.stringify({
+            title: item.relativePath,
+            number: item.relativePath.replace(".mp4", ""),
+            actors: [],
+            genres: [],
+            scene_images: [],
+          }),
+          outputRootId: rootId,
+          outputRelativePath: item.relativePath,
+          uncensoredAmbiguous: true,
+          size: 1,
+          libraryEntry: {
+            rootId,
+            rootRelativePath: item.relativePath,
+          },
+        }),
+      )();
     }
+    await state.repositories.scrapeRuns.finalize({ runId: manifest.id, disposition: "completed" });
 
+    const terminalHistoryResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(terminalHistoryResponse.json().result.data.runs).toEqual([
+      expect.objectContaining({
+        id: manifest.id,
+        disposition: "completed",
+        successCount: 3,
+      }),
+    ]);
     const confirmResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        taskId: task.id,
+        taskId: manifest.id,
         items: [
           { ref: { rootId, relativePath: "UMR-001.mp4" }, choice: "umr" },
           { ref: { rootId, relativePath: "LEAK-001.mp4" }, choice: "leak" },
@@ -679,8 +746,8 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(confirmResponse.statusCode).toBe(200);
-    expect(confirmResponse.json().result.data.id).toBe(task.id);
-    const results = await state.repositories.library.listScrapeResults(task.id);
+    expect(confirmResponse.json().result.data).toEqual({ runId: manifest.id });
+    const results = state.repositories.scrapeRuns.latestOutcomes(await state.repositories.scrapeRuns.get(manifest.id));
     expect(results.every((result) => result.uncensoredAmbiguous)).toBe(true);
   });
 
@@ -693,14 +760,21 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-001.mp4" }] },
+      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABC-001.mp4" }], outputRootId: rootId },
+    });
+    const taskId = startResponse.json().result.data.runId;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.stop",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
     });
 
     const confirmResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
-      payload: { taskId: startResponse.json().result.data.id, refs: [{ rootId, relativePath: "NOPE-001.mp4" }] },
+      payload: { taskId, refs: [{ rootId, relativePath: "NOPE-001.mp4" }] },
     });
 
     expect(confirmResponse.statusCode).toBe(400);
@@ -724,63 +798,73 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(confirmResponse.statusCode).toBe(400);
-    expect(confirmResponse.json().error.message).toContain("Task not found");
+    expect(confirmResponse.json().error.message).toContain("Scrape run not found");
   });
 
-  it("rejects selected scrape files outside the requested scan directory", async () => {
+  it("accepts scrape refs that span multiple registered media roots", async () => {
     const root = await createTempRoot("selected-scrape-root");
     const otherRoot = await createTempRoot("selected-scrape-other");
-    const selectedPath = join(otherRoot, "ABC-129.mp4");
-    await writeFile(selectedPath, "video");
-    const { fastify } = await createTestServer();
+    await writeFile(join(root, "ABC-129.mp4"), "video");
+    await writeFile(join(otherRoot, "ABC-129.mp4"), "video");
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: otherRoot } },
-    });
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const otherRootId = await syncMediaRootFromConfig(fastify, token, otherRoot);
 
     const startResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.startSelectedFiles",
+      url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+      payload: {
+        executionMode: "batch",
+        refs: [
+          { rootId, relativePath: "ABC-129.mp4" },
+          { rootId: otherRootId, relativePath: "ABC-129.mp4" },
+        ],
+        outputRootId: rootId,
+        uncensoredConfirmed: true,
+      },
     });
 
-    expect(startResponse.statusCode).toBe(500);
-    expect(startResponse.json().error.message).toContain("文件不在扫描目录内");
+    expect(startResponse.statusCode).toBe(200);
+    const manifest = await (await services.persistence.getState()).repositories.scrapeRuns.get(
+      startResponse.json().result.data.runId,
+    );
+    expect(manifest.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rootId, relativePath: "ABC-129.mp4" }),
+        expect.objectContaining({ rootId: otherRootId, relativePath: "ABC-129.mp4" }),
+      ]),
+    );
   });
 
-  it("rejects selected scrape files outside configured media path", async () => {
+  it("rejects scrape refs for an unregistered media root", async () => {
     const root = await createTempRoot("selected-unregistered-root");
-    const configuredRoot = await createTempRoot("configured-media-root");
-    const selectedPath = join(root, "ABC-130.mp4");
-    await writeFile(selectedPath, "video");
+    await writeFile(join(root, "ABC-130.mp4"), "video");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { paths: { mediaPath: configuredRoot } },
-    });
 
     const startResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.startSelectedFiles",
+      url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { filePaths: [selectedPath], scanDir: root, uncensoredConfirmed: true },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId: "missing-root", relativePath: "ABC-130.mp4" }],
+        outputRootId: "missing-root",
+        uncensoredConfirmed: true,
+      },
     });
 
     expect(startResponse.statusCode).toBe(500);
-    expect(startResponse.json().error.message).toContain("文件不在已注册媒体目录内");
+    expect(startResponse.json().error.message).toContain("Media root not found");
   });
 
-  it("aborts an active scrape runtime pipeline when the task is stopped", async () => {
+  it("aborts an in-flight scrape item when the task is stopped", async () => {
     const root = await createTempRoot("scrape-stop-root");
     await writeFile(join(root, "ABC-124.mp4"), "video");
-    const control = createAbortAwareAggregation();
+    const imageServer = await startTestImageServer();
+    const control = createGatedAggregation(`${imageServer.url}/image.png`);
     const { fastify } = await createTestServer({ scrapeAggregation: control.aggregation });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
@@ -789,119 +873,106 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { refs: [{ rootId, relativePath: "ABC-124.mp4" }] },
+      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABC-124.mp4" }], outputRootId: rootId },
     });
-    const taskId = startResponse.json().result.data.id;
-    await control.started;
+    const taskId = startResponse.json().result.data.runId;
+    await control.firstCallStarted;
 
-    const stopResponse = await fastify.inject({
+    const stopping = fastify.inject({
       method: "POST",
       url: "/trpc/scrape.stop",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
+    control.releaseFirstCall();
+    const stopResponse = await stopping;
 
     expect(stopResponse.statusCode).toBe(200);
-    await control.aborted;
-    await waitForTaskStatus(fastify, token, taskId, "failed");
+    await waitForScrapeRunStatus(fastify, token, taskId, "stopped");
 
-    const resultsResponse = await fastify.inject({
+    const historyResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.listResults?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
+      payload: undefined,
     });
-    expect(resultsResponse.json().result.data.results[0]).toMatchObject({
-      status: "skipped",
-      error: "刮削已停止",
-    });
+    expect(historyResponse.json().result.data.results[0]?.status).toBe("skipped");
   });
 
-  it("recovers and discards persisted recoverable scrape sessions", async () => {
-    const root = await createTempRoot("scrape-recover-root");
-    await writeFile(join(root, "ABC-126.mp4"), "video");
-    await writeFile(join(root, "ABC-127.mp4"), "video");
+  it("reads manifest-only runs as interrupted history and removes recovery routes", async () => {
+    const root = await createTempRoot("scrape-interrupted-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
-    const recoverTask = await state.repositories.tasks.createTask({
-      kind: "scrape",
+    const manifest = await state.repositories.scrapeRuns.create({
+      id: "interrupted-run",
       rootId,
-      now: new Date(1_700_000_000_000),
+      executionMode: "batch",
+      createdAt: new Date(1_700_000_000_000),
+      items: [
+        { id: "interrupted-item", ordinal: 0, rootId, relativePath: "ABC-126.mp4" },
+        { id: "failed-item", ordinal: 1, rootId, relativePath: "ABC-127.mp4" },
+      ],
     });
-    await state.repositories.library.upsertScrapeResult({
-      taskId: recoverTask.id,
-      rootId,
-      relativePath: "ABC-126.mp4",
-      status: "processing",
-    });
-    await state.repositories.library.upsertScrapeResult({
-      taskId: recoverTask.id,
-      rootId,
-      relativePath: "ABC-127.mp4",
-      status: "failed",
+    await state.repositories.scrapeRuns.commitOutcome({
+      outcome: "failed",
+      id: "failed-outcome",
+      attemptId: state.repositories.scrapeRuns.admitAttempt("failed-item").id,
       error: "boom",
+      completedAt: new Date(1_700_000_001_000),
     });
-    await state.repositories.tasks.patch(recoverTask.id, { status: "failed", error: "interrupted" });
+
+    const readTotalChanges = (): number => {
+      const row = state.database.sqlite.prepare("SELECT total_changes() AS count").get();
+      if (!row || typeof row !== "object" || !("count" in row) || typeof row.count !== "number") {
+        throw new Error("SQLite total_changes() returned an invalid row");
+      }
+      return row.count;
+    };
+    const changesBeforeProjectionReads = readTotalChanges();
+
+    const historyResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(historyResponse.statusCode).toBe(200);
+    expect(historyResponse.json().result.data.runs[0]).toMatchObject({
+      id: manifest.id,
+      disposition: "interrupted",
+      completedAt: null,
+    });
+    expect(historyResponse.json().result.data.results).toEqual([
+      expect.objectContaining({
+        id: "failed-outcome",
+        persistenceState: "terminal",
+        status: "failed",
+        error: "boom",
+      }),
+    ]);
+
+    const repeatedHistoryResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: manifest.id }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(repeatedHistoryResponse.json().result.data).toEqual(historyResponse.json().result.data);
+    expect(readTotalChanges()).toBe(changesBeforeProjectionReads);
 
     const recoverableResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/scrape.getRecoverableSession",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(recoverableResponse.statusCode).toBe(200);
-    expect(recoverableResponse.json().result.data).toMatchObject({
-      recoverable: true,
-      taskId: recoverTask.id,
-      pendingCount: 1,
-      failedCount: 1,
-    });
-
     const resolveResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.resolveRecoverableSession",
       headers: { authorization: `Bearer ${token}` },
       payload: { action: "recover" },
     });
-    expect(resolveResponse.statusCode).toBe(200);
-    expect(resolveResponse.json().result.data.task.id).toBe(recoverTask.id);
-    await expect(state.repositories.tasks.listEvents(recoverTask.id)).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "queued", message: "恢复未完成刮削并重新排队" })]),
-    );
-
-    const discardTask = await state.repositories.tasks.createTask({
-      kind: "scrape",
-      rootId,
-      now: new Date(1_700_000_001_000),
-    });
-    await state.repositories.library.upsertScrapeResult({
-      taskId: discardTask.id,
-      rootId,
-      relativePath: "ABC-126.mp4",
-      status: "processing",
-    });
-    await state.repositories.tasks.patch(discardTask.id, { status: "running" });
-    const discardResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/scrape.resolveRecoverableSession",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { action: "discard" },
-    });
-    expect(discardResponse.statusCode).toBe(200);
-    expect(discardResponse.json().result.data).toMatchObject({
-      success: true,
-      task: null,
-    });
-    await expect(state.repositories.library.listScrapeResults(discardTask.id)).resolves.toEqual([
-      expect.objectContaining({
-        status: "skipped",
-        error: "已放弃未完成刮削",
-      }),
-    ]);
-    await expect(state.repositories.tasks.get(discardTask.id)).resolves.toMatchObject({
-      status: "failed",
-      error: "已放弃未完成刮削",
-    });
+    expect(recoverableResponse.statusCode).toBe(404);
+    expect(resolveResponse.statusCode).toBe(404);
   });
 
   it("does not re-scrape finished files when a paused task resumes", async () => {
@@ -928,26 +999,53 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        executionMode: "batch",
         refs: [
           { rootId, relativePath: "ABC-123.mp4" },
           { rootId, relativePath: "ABC-456.mp4" },
         ],
+        outputRootId: rootId,
       },
     });
-    const taskId = startResponse.json().result.data.id;
+    const taskId = startResponse.json().result.data.runId;
 
     // Pause while the first file is still inside its aggregation call, so the second file has
     // not been dequeued yet and stays pending.
     await gated.firstCallStarted;
-    await fastify.inject({
+    const pauseResponse = fastify.inject({
       method: "POST",
       url: "/trpc/scrape.pause",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
+    await Promise.resolve();
     gated.releaseFirstCall();
-    await waitForTaskStatus(fastify, token, taskId, "paused");
+    const pausedResponse = await pauseResponse;
+    expect(pausedResponse.statusCode).toBe(200);
+    expect(pausedResponse.json().result.data).toEqual({ runId: taskId });
+    await waitForScrapeRunStatus(fastify, token, taskId, "paused");
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
+
+    await expect
+      .poll(
+        async () => {
+          const response = await fastify.inject({
+            method: "GET",
+            url: "/trpc/scrape.liveRuns",
+            headers: { authorization: `Bearer ${token}` },
+          });
+          return response.json().result.data.runs[0];
+        },
+        { timeout: 10_000 },
+      )
+      .toMatchObject({
+        task: { id: taskId, status: "paused", continuity: "live" },
+        progress: { percent: 50, completedItems: 1, totalItems: 2 },
+        items: expect.arrayContaining([
+          expect.objectContaining({ status: "success" }),
+          expect.objectContaining({ status: "pending" }),
+        ]),
+      });
 
     await fastify.inject({
       method: "POST",
@@ -955,16 +1053,16 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
 
     // The resumed run picks up only the file that never reached a terminal status.
     expect(gated.aggregatedNumbers).toEqual(["ABC-123", "ABC-456"]);
 
-    const detailResponse = await fastify.inject({
+    const historyResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(detailResponse.json().result.data.task.videoCount).toBe(2);
+    expect(historyResponse.json().result.data.runs[0].successCount).toBe(2);
   });
 });

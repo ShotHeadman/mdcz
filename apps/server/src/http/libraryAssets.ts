@@ -241,7 +241,7 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
     }
 
     try {
-      const root = await services.mediaRoots.getActiveRoot(params.rootId);
+      const root = await services.mediaRoots.get(params.rootId);
       const source = await statRootPath(root, relativePath);
       if (source.kind !== "file") {
         return sendError(reply, 415, "Library asset is not a file");

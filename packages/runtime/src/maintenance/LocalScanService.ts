@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
+import { deterministicMediaRootId, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
@@ -128,7 +129,24 @@ export class LocalScanService {
    * Scan a directory for video files and discover their local NFO and assets.
    * This is a pure read-only operation — no files are modified.
    */
-  async scan(dirPath: string, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]> {
+  async scan(root: MediaRoot, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]>;
+  async scan(dirPath: string, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]>;
+  async scan(
+    rootOrPath: MediaRoot | string,
+    sceneImagesFolder: string,
+    signal?: AbortSignal,
+  ): Promise<LocalScanEntry[]> {
+    const root: MediaRoot =
+      typeof rootOrPath === "string"
+        ? {
+            id: deterministicMediaRootId(rootOrPath),
+            displayName: rootOrPath,
+            hostPath: rootOrPath,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }
+        : rootOrPath;
+    const dirPath = root.hostPath;
     throwIfAborted(signal);
     this.logger.info(`Scanning directory: ${dirPath}`);
 
@@ -142,7 +160,7 @@ export class LocalScanService {
     for (const videoPath of videoFiles) {
       throwIfAborted(signal);
       try {
-        const entry = await this.scanVideo(videoPath, sceneImagesFolder, signal);
+        const entry = await this.scanVideo(root, videoPath, sceneImagesFolder, signal);
         entries.push(entry);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -157,7 +175,33 @@ export class LocalScanService {
     return entries;
   }
 
-  async scanFiles(filePaths: string[], sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]> {
+  async scanFiles(
+    root: MediaRoot,
+    filePaths: string[],
+    sceneImagesFolder: string,
+    signal?: AbortSignal,
+  ): Promise<LocalScanEntry[]>;
+  async scanFiles(filePaths: string[], sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]>;
+  async scanFiles(
+    rootOrPaths: MediaRoot | string[],
+    pathsOrSceneImagesFolder: string[] | string,
+    sceneImagesFolderOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<LocalScanEntry[]> {
+    const filePaths = Array.isArray(rootOrPaths) ? rootOrPaths : (pathsOrSceneImagesFolder as string[]);
+    const sceneImagesFolder = Array.isArray(rootOrPaths)
+      ? (pathsOrSceneImagesFolder as string)
+      : (sceneImagesFolderOrSignal as string);
+    const signal = Array.isArray(rootOrPaths) ? (sceneImagesFolderOrSignal as AbortSignal | undefined) : maybeSignal;
+    const root: MediaRoot = Array.isArray(rootOrPaths)
+      ? {
+          id: deterministicMediaRootId(filePaths[0] ? dirname(filePaths[0]) : "."),
+          displayName: "扫描文件",
+          hostPath: dirname(filePaths[0] ?? "."),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+      : rootOrPaths;
     throwIfAborted(signal);
     const uniqueFilePaths = [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
     const entries: LocalScanEntry[] = [];
@@ -178,7 +222,7 @@ export class LocalScanService {
           continue;
         }
 
-        const entry = await this.scanVideo(videoPath, sceneImagesFolder, signal);
+        const entry = await this.scanVideo(root, videoPath, sceneImagesFolder, signal);
         entries.push(entry);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -194,7 +238,34 @@ export class LocalScanService {
   }
 
   /** Scan a single video file and discover its NFO and assets. */
-  async scanVideo(videoPath: string, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry> {
+  async scanVideo(
+    root: MediaRoot,
+    videoPath: string,
+    sceneImagesFolder: string,
+    signal?: AbortSignal,
+  ): Promise<LocalScanEntry>;
+  async scanVideo(videoPath: string, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry>;
+  async scanVideo(
+    rootOrVideoPath: MediaRoot | string,
+    pathOrSceneImagesFolder: string,
+    sceneImagesFolderOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<LocalScanEntry> {
+    const videoPath = typeof rootOrVideoPath === "string" ? rootOrVideoPath : pathOrSceneImagesFolder;
+    const sceneImagesFolder =
+      typeof rootOrVideoPath === "string" ? pathOrSceneImagesFolder : (sceneImagesFolderOrSignal as string);
+    const signal =
+      typeof rootOrVideoPath === "string" ? (sceneImagesFolderOrSignal as AbortSignal | undefined) : maybeSignal;
+    const root: MediaRoot =
+      typeof rootOrVideoPath === "string"
+        ? {
+            id: deterministicMediaRootId(dirname(videoPath)),
+            displayName: dirname(videoPath),
+            hostPath: dirname(videoPath),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }
+        : rootOrVideoPath;
     throwIfAborted(signal);
     const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath);
     const dir = dirname(videoPath);
@@ -228,6 +299,7 @@ export class LocalScanService {
 
     return {
       fileId: buildFileId(videoPath),
+      ref: { rootId: root.id, relativePath: toRootRelativePath(root, videoPath) },
       fileInfo,
       nfoPath,
       crawlerData,

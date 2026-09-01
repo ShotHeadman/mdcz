@@ -4,7 +4,7 @@ import type {
   CrawlerData,
   FieldDiff,
   LocalScanEntry,
-  MaintenanceCommitItem,
+  MaintenanceAssetDecisions,
   MaintenanceImageAlternatives,
   PathDiff,
 } from "@mdcz/shared/types";
@@ -14,7 +14,7 @@ import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
-import type { MaintenanceSignalService } from "./output";
+import type { MaintenanceSignalService } from "./MaintenanceFileScraper";
 import type { MaintenancePreset } from "./presets";
 
 export interface PreparedMaintenanceFile {
@@ -27,7 +27,11 @@ export interface PreparedMaintenanceFile {
   pathDiff?: PathDiff;
 }
 
-export type CommittedMaintenanceFile = Omit<MaintenanceCommitItem, "entry">;
+export interface CommittedMaintenanceFile {
+  crawlerData?: CrawlerData;
+  imageAlternatives?: MaintenanceImageAlternatives;
+  assetDecisions?: MaintenanceAssetDecisions;
+}
 
 interface MaintenancePreparationDependencies {
   aggregationService: AggregationService;

@@ -1,7 +1,9 @@
 import { Website } from "@mdcz/shared/enums";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readNfo, resolveNfoWritePath, retryScrapeSelection, updateNfo } from "@/api/manual";
+import { readNfo, resolveNfoWritePath, retryScrapeSelection, startSelectedScrape, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
+import { buildFailedScrapeSnapshot, buildScrapeSnapshot } from "./scrapeTestSupport";
 
 vi.mock("@/client/ipc", () => ({
   ipc: {
@@ -10,16 +12,18 @@ vi.mock("@/client/ipc", () => ({
       nfoWrite: vi.fn(),
     },
     scraper: {
-      requeue: vi.fn(),
-      retryFailed: vi.fn(),
+      getStatus: vi.fn(),
+      retry: vi.fn(),
+      start: vi.fn(),
     },
   },
 }));
 
 const nfoRead = vi.mocked(ipc.file.nfoRead);
 const nfoWrite = vi.mocked(ipc.file.nfoWrite);
-const requeue = vi.mocked(ipc.scraper.requeue);
-const retryFailed = vi.mocked(ipc.scraper.retryFailed);
+const getStatus = vi.mocked(ipc.scraper.getStatus);
+const retry = vi.mocked(ipc.scraper.retry);
+const start = vi.mocked(ipc.scraper.start);
 
 describe("readNfo", () => {
   const crawlerData = {
@@ -34,8 +38,9 @@ describe("readNfo", () => {
   beforeEach(() => {
     nfoRead.mockReset();
     nfoWrite.mockReset();
-    requeue.mockReset();
-    retryFailed.mockReset();
+    getStatus.mockReset();
+    retry.mockReset();
+    start.mockReset();
   });
 
   it("delegates configured naming resolution to the backend and uses its effective path", async () => {
@@ -84,101 +89,73 @@ describe("updateNfo", () => {
   });
 });
 
-describe("retryScrapeSelection", () => {
+describe("startSelectedScrape", () => {
   beforeEach(() => {
-    requeue.mockReset();
-    retryFailed.mockReset();
+    getStatus.mockReset();
+    start.mockReset();
+    useScrapeStore.getState().reset();
   });
 
-  it("starts a new retry task when the scraper is idle", async () => {
-    retryFailed.mockResolvedValue({
+  it("hydrates the new task by id even when it has already completed", async () => {
+    const snapshot = buildScrapeSnapshot({
+      task: { ...buildScrapeSnapshot().task, id: "fast-run" },
+    });
+    start.mockResolvedValue({ taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削" });
+    getStatus.mockResolvedValue(snapshot);
+
+    await expect(
+      startSelectedScrape([{ rootId: "root-1", relativePath: "ABC-001.mp4" }], "output-root"),
+    ).resolves.toEqual({
+      data: { taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削" },
+    });
+
+    expect(getStatus).toHaveBeenCalledWith("fast-run");
+    expect(useScrapeStore.getState().snapshot).toBe(snapshot);
+  });
+});
+
+describe("retryScrapeSelection", () => {
+  beforeEach(() => {
+    retry.mockReset();
+    useScrapeStore.getState().reset();
+  });
+
+  it("retries this session's finished run id", async () => {
+    useScrapeStore.getState().setSnapshot(
+      buildFailedScrapeSnapshot({
+        task: { ...buildFailedScrapeSnapshot().task, id: "original" },
+      }),
+    );
+    retry.mockResolvedValue({
       taskId: "task-1",
       totalFiles: 2,
       message: "重试任务已启动，共 2 个文件",
     });
 
-    await expect(
-      retryScrapeSelection(["/media/ABC-123.mp4", "/media/ABC-123-CD2.mp4"], { scrapeStatus: "idle" }),
-    ).resolves.toEqual({
+    await expect(retryScrapeSelection()).resolves.toEqual({
       data: {
+        taskId: "task-1",
+        totalFiles: 2,
         message: "重试任务已启动，共 2 个文件",
-        queued: 2,
-        running: true,
-        strategy: "new-task",
       },
     });
 
-    expect(retryFailed).toHaveBeenCalledWith(["/media/ABC-123.mp4", "/media/ABC-123-CD2.mp4"], undefined);
-    expect(requeue).not.toHaveBeenCalled();
+    expect(retry).toHaveBeenCalledWith("original");
   });
 
-  it("passes manual URLs to a new retry task when idle", async () => {
-    retryFailed.mockResolvedValue({
-      taskId: "task-1",
-      totalFiles: 1,
-      message: "重试任务已启动，共 1 个文件",
-    });
-
-    await expect(
-      retryScrapeSelection("/media/ABC-123.mp4", {
-        scrapeStatus: "idle",
-        manualUrl: "https://video.dmm.co.jp/",
+  it("requires a terminal run", async () => {
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...buildScrapeSnapshot().task, id: "running", status: "running", completedAt: null },
       }),
-    ).resolves.toMatchObject({
-      data: {
-        strategy: "new-task",
-      },
-    });
-
-    expect(retryFailed).toHaveBeenCalledWith(["/media/ABC-123.mp4"], "https://video.dmm.co.jp/");
-  });
-
-  it("requeues failed files into the current task when a scrape is already running", async () => {
-    requeue.mockResolvedValue({ requeuedCount: 1 });
-
-    await expect(
-      retryScrapeSelection("/media/ABC-123.mp4", {
-        scrapeStatus: "running",
-        canRequeueCurrentRun: true,
-      }),
-    ).resolves.toEqual({
-      data: {
-        message: "已加入当前任务队列，共 1 个文件",
-        queued: 1,
-        running: true,
-        strategy: "requeue",
-      },
-    });
-
-    expect(requeue).toHaveBeenCalledWith(["/media/ABC-123.mp4"], undefined);
-    expect(retryFailed).not.toHaveBeenCalled();
-  });
-
-  it("passes manual URLs when requeueing into the current task", async () => {
-    requeue.mockResolvedValue({ requeuedCount: 1 });
-
-    await retryScrapeSelection("/media/ABC-123.mp4", {
-      scrapeStatus: "running",
-      canRequeueCurrentRun: true,
-      manualUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=abc00123/",
-    });
-
-    expect(requeue).toHaveBeenCalledWith(
-      ["/media/ABC-123.mp4"],
-      "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=abc00123/",
     );
-    expect(retryFailed).not.toHaveBeenCalled();
+    await expect(retryScrapeSelection()).rejects.toThrow("当前刮削任务仍在进行");
+
+    expect(retry).not.toHaveBeenCalled();
   });
 
-  it("rejects retrying successful items while the current scrape is still running", async () => {
-    await expect(
-      retryScrapeSelection("/media/ABC-123.mp4", {
-        scrapeStatus: "running",
-        canRequeueCurrentRun: false,
-      }),
-    ).rejects.toThrow("当前刮削任务仍在进行，已成功项目请等待任务结束后再重新刮削");
-
-    expect(requeue).not.toHaveBeenCalled();
-    expect(retryFailed).not.toHaveBeenCalled();
+  it("requires a run in the scrape store", async () => {
+    await expect(retryScrapeSelection()).rejects.toThrow("没有可重试的刮削任务");
+    expect(retry).not.toHaveBeenCalled();
   });
 });

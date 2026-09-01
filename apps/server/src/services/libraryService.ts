@@ -67,7 +67,7 @@ export class LibraryService {
   }
 
   async relink(input: { id: string; rootId: string; relativePath: string }): Promise<LibraryDetailResponse> {
-    await this.mediaRoots.getActiveRoot(input.rootId);
+    await this.mediaRoots.get(input.rootId);
     const state = await this.persistence.getState();
     const entry = await state.repositories.library.relinkEntry({
       id: input.id,
@@ -142,11 +142,12 @@ export class LibraryService {
 
   async overview(): Promise<OverviewSummaryResponse> {
     const state = await this.persistence.getState();
-    const [latestOutput, roots, summary] = await Promise.all([
-      state.repositories.library.latestScrapeOutput(),
+    const [latestRun, roots, summary] = await Promise.all([
+      state.repositories.scrapeRuns.getLatestFinalized(),
       this.mediaRoots.list(),
       state.repositories.library.getOverviewSummary(8),
     ]);
+    const latestOutput = latestRun ? state.repositories.scrapeRuns.summary(latestRun) : null;
     const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
     const entries = summary.recentEntries.filter((entry) => rootMap.has(entry.rootId));
     const runtimeEntries = entries.map(toRuntimeLibraryEntrySummaryInput);
@@ -158,10 +159,10 @@ export class LibraryService {
       : null;
     const output = latestOutput
       ? {
-          fileCount: latestOutput.fileCount,
+          fileCount: latestOutput.successCount,
           totalBytes: latestOutput.totalBytes,
           outputAt: latestOutput.completedAt.toISOString(),
-          rootPath: latestOutput.outputDirectory,
+          rootPath: latestOutput.outputRootId ? (rootMap.get(latestOutput.outputRootId)?.hostPath ?? null) : null,
         }
       : {
           fileCount: summary.fileCount,
@@ -180,6 +181,7 @@ export class LibraryService {
           title: entry.title,
           actors: entry.actors,
           thumbnailPath: entry.thumbnailPath ?? null,
+          thumbnailRootId: record?.thumbnailRootId ?? null,
           lastKnownPath: entry.lastKnownPath,
           completedAt: new Date(entry.completedAt).toISOString(),
           available: record && root ? await this.checkAvailability(root, record.rootRelativePath) : null,
@@ -193,6 +195,7 @@ export class LibraryService {
         totalBytes: output.totalBytes,
         outputAt: output.outputAt,
         rootPath: output.rootPath,
+        unresolvedRepairCount: state.repositories.libraryRepairIssues.countUnresolved(),
       },
       recentAcquisitions,
     };
@@ -260,13 +263,14 @@ export class LibraryService {
       directory: entry.directory,
       size: entry.size,
       modifiedAt: toIso(entry.modifiedAt),
-      taskId: entry.sourceTaskId,
-      scrapeOutputId: entry.scrapeOutputId,
+      runId: entry.sourceRunId,
+      scrapeOutcomeId: entry.sourceOutcomeId,
       title: entry.title,
       number: entry.number,
       actors: entry.actors,
       crawlerData: parseCrawlerData(entry.crawlerDataJson),
       thumbnailPath: entry.thumbnailPath,
+      thumbnailRootId: entry.thumbnailRootId,
       lastKnownPath: entry.lastKnownPath,
       createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
@@ -288,13 +292,7 @@ export class LibraryService {
     return new Map(roots.roots.map((root) => [root.id, root]));
   }
 
-  private async checkAvailability(
-    root: { hostPath: string; enabled: boolean },
-    relativePath: string,
-  ): Promise<boolean> {
-    if (!root.enabled) {
-      return false;
-    }
+  private async checkAvailability(root: { hostPath: string }, relativePath: string): Promise<boolean> {
     const key = availabilityKey(root, relativePath);
     const cached = this.availabilityCache.get(key);
     if (cached && cached.expiresAt > Date.now()) {

@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import { PosterCropService } from "@mdcz/runtime/scrape";
 import { describe, expect, it } from "vitest";
 
@@ -22,7 +23,10 @@ describe("PosterCropService", () => {
       3,
     );
 
-    await service.save(videoPath, "fixed", session.initialCrop);
+    await service.save(videoPath, "fixed", session.initialCrop, {
+      journal: createMemoryPublicationJournal(),
+      roots: [{ id: "test", hostPath: root }],
+    });
     await rm(thumbPath);
     const saved = await service.prepare(videoPath, "fixed");
     expect(saved.width / saved.height).toBeCloseTo(2 / 3, 2);
@@ -37,7 +41,17 @@ describe("PosterCropService", () => {
     await writeFile(thumbPath, testImage(900, 500));
     await writeFile(posterPath, "existing-poster");
     const service = new PosterCropService();
-    await expect(service.save(videoPath, "fixed", { x: 0.9, y: 0, width: 0.5, height: 0.75 })).rejects.toThrow();
+    await expect(
+      service.save(
+        videoPath,
+        "fixed",
+        { x: 0.9, y: 0, width: 0.5, height: 0.75 },
+        {
+          journal: createMemoryPublicationJournal(),
+          roots: [{ id: "test", hostPath: root }],
+        },
+      ),
+    ).rejects.toThrow();
     await expect(readFile(posterPath, "utf8")).resolves.toBe("existing-poster");
   });
 

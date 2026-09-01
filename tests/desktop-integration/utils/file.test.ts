@@ -113,7 +113,7 @@ describe("moveFileSafely", () => {
     await expect(access(sourcePath)).rejects.toThrow();
   });
 
-  it("copies then deletes the source when rename reports EXDEV", async () => {
+  it("copies across devices without deleting the source", async () => {
     const root = await createTempDir();
     const sourcePath = join(root, "source.mp4");
     const targetPath = join(root, "output", "movie.mp4");
@@ -139,11 +139,15 @@ describe("moveFileSafely", () => {
     expect(temporaryPath).toMatch(/\.part$/u);
     expect(rename).toHaveBeenLastCalledWith(temporaryPath, targetPath);
     await expect(readFile(targetPath, "utf8")).resolves.toBe("video");
-    await expect(access(sourcePath)).rejects.toThrow();
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("video");
   });
 
-  it("keeps the source and cleans the target when EXDEV fallback fails", async () => {
-    const failures: Array<{ message: string; overrides: FileSystemOverrides; publishFails?: boolean }> = [
+  it("cleans failed parts but preserves the source", async () => {
+    const failures: Array<{
+      message: string;
+      overrides: FileSystemOverrides;
+      publishFails?: boolean;
+    }> = [
       {
         message: "copy failed",
         overrides: {
@@ -159,15 +163,6 @@ describe("moveFileSafely", () => {
           copyFile: copyFileOnDisk,
         },
         publishFails: true,
-      },
-      {
-        message: "source deletion failed",
-        overrides: {
-          copyFile: copyFileOnDisk,
-          unlink: async () => {
-            throw createNodeError("EACCES", "source deletion failed");
-          },
-        },
       },
     ];
 

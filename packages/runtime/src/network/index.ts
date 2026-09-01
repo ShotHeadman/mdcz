@@ -1,3 +1,5 @@
+import { atomicWriteFile } from "@mdcz/media-store";
+
 export type RuntimeHeaderInit = ConstructorParameters<typeof Headers>[0];
 
 export interface RuntimeRequestInit {
@@ -9,6 +11,11 @@ export interface RuntimeRequestInit {
 export interface RuntimeProbeRequestInit extends RuntimeRequestInit {
   method?: "HEAD" | "GET";
   captureImageSize?: boolean;
+}
+
+export interface RuntimeDownloadRequestInit extends RuntimeRequestInit {
+  readTimeoutMs?: number;
+  totalTimeoutMs?: number;
 }
 
 export interface RuntimeProbeResult {
@@ -43,7 +50,7 @@ export interface RuntimeNetworkClient {
 }
 
 export interface RuntimeDownloadNetworkClient extends RuntimeNetworkClient {
-  download(url: string, outputPath: string, init?: RuntimeRequestInit): Promise<string>;
+  download(url: string, outputPath: string, init?: RuntimeDownloadRequestInit): Promise<string>;
 }
 
 export interface SiteRequestConfig {
@@ -125,10 +132,8 @@ export class FetchNetworkClient implements RuntimeNetworkClient {
   }
 
   async download(url: string, outputPath: string, init: RuntimeRequestInit = {}): Promise<string> {
-    const [{ mkdir, writeFile }, { dirname }] = await Promise.all([import("node:fs/promises"), import("node:path")]);
     const bytes = await this.getContent(url, init);
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, bytes);
+    await atomicWriteFile(outputPath, bytes);
     return outputPath;
   }
 

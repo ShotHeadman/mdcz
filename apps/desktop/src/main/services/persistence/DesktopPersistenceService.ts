@@ -2,13 +2,17 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   createPersistenceDatabase,
+  LibraryRepairIssueRepository,
   LibraryRepository,
-  MaintenanceRepository,
   MediaRootRepository,
   type PersistenceDatabase,
+  PublicationJournalRepository,
   runMigrations,
-  TaskRepository,
+  ScanTaskRepository,
+  ScrapeRunRepository,
 } from "@mdcz/persistence";
+import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
+import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
 import { app } from "electron";
 import { getDesktopUserDataPath } from "../../appIdentity";
 
@@ -25,9 +29,11 @@ const resolveNativeBinding = (): string =>
 
 export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
-  maintenance: MaintenanceRepository;
+  libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
-  tasks: TaskRepository;
+  publicationJournal: PublicationJournalPort;
+  scrapeRuns: ScrapeRunRepository;
+  scanTasks: ScanTaskRepository;
 }
 
 export interface DesktopPersistenceState {
@@ -37,6 +43,7 @@ export interface DesktopPersistenceState {
 
 export class DesktopPersistenceService {
   private state: DesktopPersistenceState | null = null;
+  private initializePromise: Promise<DesktopPersistenceState> | null = null;
 
   constructor(
     private readonly databasePath = join(getDesktopUserDataPath(), "mdcz.sqlite"),
@@ -55,29 +62,13 @@ export class DesktopPersistenceService {
     if (this.state) {
       return this.state;
     }
-
-    await mkdir(dirname(this.databasePath), { recursive: true });
-    const database = createPersistenceDatabase({
-      path: this.databasePath,
-      ...(this.nativeBinding === null ? {} : { nativeBinding: this.nativeBinding ?? resolveNativeBinding() }),
-    });
-
-    try {
-      runMigrations(database);
-      this.state = {
-        database,
-        repositories: {
-          library: new LibraryRepository(database),
-          maintenance: new MaintenanceRepository(database),
-          mediaRoots: new MediaRootRepository(database),
-          tasks: new TaskRepository(database),
-        },
-      };
-      return this.state;
-    } catch (error) {
-      database.close();
-      throw error;
+    if (!this.initializePromise) {
+      this.initializePromise = this.open().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
     }
+    return await this.initializePromise;
   }
 
   async getState(): Promise<DesktopPersistenceState> {
@@ -87,5 +78,43 @@ export class DesktopPersistenceService {
   async close(): Promise<void> {
     this.state?.database.close();
     this.state = null;
+    this.initializePromise = null;
+  }
+
+  private async open(): Promise<DesktopPersistenceState> {
+    await mkdir(dirname(this.databasePath), { recursive: true });
+    const database = createPersistenceDatabase({
+      path: this.databasePath,
+      ...(this.nativeBinding === null ? {} : { nativeBinding: this.nativeBinding ?? resolveNativeBinding() }),
+    });
+
+    try {
+      runMigrations(database);
+      const scrapeRuns = new ScrapeRunRepository(database);
+      scrapeRuns.interruptUnfinished();
+      const libraryRepairIssues = new LibraryRepairIssueRepository(database);
+      const mediaRoots = new MediaRootRepository(database);
+      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
+      await recoverPublications({
+        journal: publicationJournal,
+        repairIssues: libraryRepairIssues,
+        resolveRoot: async (rootId) => await mediaRoots.get(rootId),
+      });
+      this.state = {
+        database,
+        repositories: {
+          library: new LibraryRepository(database),
+          libraryRepairIssues,
+          mediaRoots,
+          publicationJournal,
+          scrapeRuns,
+          scanTasks: new ScanTaskRepository(database),
+        },
+      };
+      return this.state;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
 }

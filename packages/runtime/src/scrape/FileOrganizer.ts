@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
@@ -9,7 +9,7 @@ import { FileMover } from "./organize/FileMover";
 import { NamingEngine } from "./organize/NamingEngine";
 import { PathPlanner } from "./organize/PathPlanner";
 import { SidecarResolver } from "./organize/SidecarResolver";
-import { ensureParentDirectory, hasEnoughDiskSpace, listVideoFiles } from "./utils/filesystem";
+import { ensureParentDirectory, hasEnoughDiskSpace, isPathInside, listVideoFiles } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
 import { inspectStrmTarget, isStrmFile, writeStrmTarget } from "./utils/strm";
 
@@ -30,9 +30,17 @@ interface ResolveOutputPlanOptions {
 
 interface PlanOptions {
   executionMode?: ScrapeExecutionMode;
+  outputBaseDirectory?: string;
 }
 
 export type ScrapeExecutionMode = "single" | "batch";
+
+interface ScrapeFileTransitionOptions {
+  configuration: Configuration;
+  failureRootPath: string;
+  sourcePath: string;
+  sourceRootPath: string;
+}
 
 export class FileOrganizer {
   private readonly logger: RuntimeLogger;
@@ -61,20 +69,20 @@ export class FileOrganizer {
     const layout = this.namingEngine.buildLayout(fileInfo, data, config, localState);
 
     let outputDir: string;
-    if (config.behavior.successFileMove) {
-      const baseOutput = this.resolveBaseOutput(fileInfo, config, options);
-      const sourceDir = resolve(sourceVideo.dir);
-      const isAlreadyInOutput =
-        options.executionMode === "single"
-          ? this.isSingleModeOutputDirectory(sourceDir, layout.folderRelativePath)
-          : sourceDir.startsWith(resolve(baseOutput) + sep);
-      outputDir = isAlreadyInOutput ? sourceDir : join(baseOutput, layout.folderRelativePath);
-    } else {
+    if (options.executionMode === "single" || !config.behavior.successFileMove) {
       outputDir = sourceVideo.dir;
+    } else if (options.outputBaseDirectory) {
+      outputDir = join(resolve(options.outputBaseDirectory), layout.folderRelativePath);
+    } else {
+      const baseOutput = this.resolveBaseOutput(fileInfo, config);
+      const sourceDir = resolve(sourceVideo.dir);
+      const resolvedBase = resolve(baseOutput);
+      const isAlreadyInOutput = isPathInside(resolvedBase, sourceDir) && sourceDir !== resolvedBase;
+      outputDir = isAlreadyInOutput ? sourceDir : join(baseOutput, layout.folderRelativePath);
     }
 
     const targetVideoPath = join(outputDir, layout.targetVideoFileName);
-    const metadataDir = this.resolveMetadataDir(outputDir, config);
+    const metadataDir = options.executionMode === "single" ? outputDir : this.resolveMetadataDir(outputDir, config);
     const nfoPath = join(metadataDir, layout.nfoFileName);
     const strmPath = metadataDir === outputDir ? undefined : join(metadataDir, `${parse(targetVideoPath).name}.strm`);
 
@@ -148,7 +156,6 @@ export class FileOrganizer {
       sourceVideoPath: sourceFilePath,
       targetVideoPath: plan.targetVideoPath,
       nfoPath: plan.nfoPath,
-      ignoreExistingNfoAtTarget: sameDirectoryOutput,
       subtitleSidecars: plan.subtitleSidecars,
     });
 
@@ -163,7 +170,12 @@ export class FileOrganizer {
     };
   }
 
-  async organizeVideo(fileInfo: FileInfo, plan: OrganizePlan, config: Configuration): Promise<string> {
+  async organizeVideo(
+    fileInfo: FileInfo,
+    plan: OrganizePlan,
+    config: Configuration,
+    sourceRootPath: string,
+  ): Promise<string> {
     let organizedPath: string;
     if (!config.behavior.successFileMove) {
       if (!config.behavior.successFileRename) {
@@ -176,15 +188,13 @@ export class FileOrganizer {
         });
       }
     } else {
-      const sourceDir = dirname(fileInfo.filePath);
       organizedPath = await this.fileMover.moveBundledMedia(fileInfo.filePath, plan.targetVideoPath, {
         subtitleSidecars: plan.subtitleSidecars,
         sharedMovieBaseName: parse(plan.nfoPath).name,
       });
 
       if (config.behavior.deleteEmptyFolder) {
-        const mediaRoot = resolve(config.paths.mediaPath.trim() || dirname(fileInfo.filePath));
-        await this.fileMover.cleanupEmptyAncestors(sourceDir, mediaRoot);
+        await this.cleanupEmptySourceDirectories(fileInfo.filePath, sourceRootPath);
       }
     }
 
@@ -195,10 +205,27 @@ export class FileOrganizer {
     return organizedPath;
   }
 
-  async moveToFailedFolder(fileInfo: FileInfo, config: Configuration): Promise<string> {
-    const mediaRoot = config.paths.mediaPath.trim();
-    const base = mediaRoot.length > 0 ? mediaRoot : dirname(fileInfo.filePath);
-    const failedDir = resolve(base, config.paths.failedOutputFolder.trim());
+  createScrapeFileTransitions(options: ScrapeFileTransitionOptions) {
+    return {
+      failed: async () => {
+        if (!options.configuration.behavior.failedFileMove) return;
+        await this.moveToFailedFolder(options.sourcePath, options.failureRootPath, options.configuration);
+      },
+      succeeded: async () => {
+        if (!options.configuration.behavior.successFileMove || !options.configuration.behavior.deleteEmptyFolder)
+          return;
+        await this.cleanupEmptySourceDirectories(options.sourcePath, options.sourceRootPath);
+      },
+    };
+  }
+
+  async cleanupEmptySourceDirectories(sourcePath: string, sourceRootPath: string): Promise<void> {
+    await this.fileMover.cleanupEmptyAncestors(dirname(sourcePath), resolve(sourceRootPath));
+  }
+
+  async moveToFailedFolder(sourcePath: string, failureRootPath: string, config: Configuration): Promise<string> {
+    const fileInfo = parseFileInfo(sourcePath, config.scrape.filenameIgnoreTokens);
+    const failedDir = resolve(failureRootPath, config.paths.failedOutputFolder.trim());
     const resolvedPaths = await this.pathPlanner.resolveBundledTargetPaths({
       sourceVideoPath: fileInfo.filePath,
       targetVideoPath: join(failedDir, fileInfo.fileName + fileInfo.extension),
@@ -213,11 +240,7 @@ export class FileOrganizer {
     return movedPath;
   }
 
-  private resolveBaseOutput(fileInfo: FileInfo, config: Configuration, options: PlanOptions): string {
-    if (options.executionMode === "single") {
-      return dirname(fileInfo.filePath);
-    }
-
+  private resolveBaseOutput(fileInfo: FileInfo, config: Configuration): string {
     const mediaRoot = config.paths.mediaPath.trim();
     const base = mediaRoot.length > 0 ? mediaRoot : dirname(fileInfo.filePath);
     return resolve(base, config.paths.successOutputFolder.trim());
@@ -239,26 +262,16 @@ export class FileOrganizer {
 
     const mediaRoot = resolve(configuredMediaRoot);
     const metadataRoot = resolve(configuredMetadataRoot);
-    if (this.isPathInside(mediaRoot, metadataRoot) || this.isPathInside(metadataRoot, mediaRoot)) {
+    if (isPathInside(mediaRoot, metadataRoot) || isPathInside(metadataRoot, mediaRoot)) {
       throw new Error("本地元数据目录不能与媒体目录相同或互相包含");
     }
 
     const outputRelativePath = relative(mediaRoot, resolve(outputDir));
-    if (outputRelativePath.startsWith(`..${sep}`) || outputRelativePath === ".." || isAbsolute(outputRelativePath)) {
+    if (!isPathInside(mediaRoot, outputDir)) {
       throw new Error(`影片输出目录不在媒体目录内：${outputDir}`);
     }
 
     return resolve(metadataRoot, outputRelativePath);
-  }
-
-  private isPathInside(rootPath: string, candidatePath: string): boolean {
-    const candidateRelativePath = relative(resolve(rootPath), resolve(candidatePath));
-    return (
-      candidateRelativePath === "" ||
-      (!candidateRelativePath.startsWith(`..${sep}`) &&
-        candidateRelativePath !== ".." &&
-        !isAbsolute(candidateRelativePath))
-    );
   }
 
   private async writeMetadataStrm(strmPath: string, organizedVideoPath: string): Promise<void> {
@@ -272,28 +285,6 @@ export class FileOrganizer {
     }
 
     await writeStrmTarget(strmPath, target);
-  }
-
-  private isSingleModeOutputDirectory(sourceDir: string, folderRelativePath: string): boolean {
-    const relativeSegments = folderRelativePath.split(/[\\/]+/u).filter((segment) => segment.length > 0);
-    if (relativeSegments.length === 0) {
-      return true;
-    }
-
-    const sourceSegments = resolve(sourceDir)
-      .split(/[\\/]+/u)
-      .filter((segment) => segment.length > 0);
-    if (relativeSegments.length > sourceSegments.length) {
-      return false;
-    }
-
-    const startIndex = sourceSegments.length - relativeSegments.length;
-    return relativeSegments.every((segment, index) => {
-      const sourceSegment = sourceSegments[startIndex + index];
-      return process.platform === "win32"
-        ? sourceSegment.toLowerCase() === segment.toLowerCase()
-        : sourceSegment === segment;
-    });
   }
 }
 

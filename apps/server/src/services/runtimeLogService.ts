@@ -61,13 +61,7 @@ export class RuntimeLogService {
       this.entries.splice(0, this.entries.length - this.maxEntries);
     }
     this.echoToConsole(level, message);
-    this.taskEvents?.publishRealtime({
-      id: entry.id,
-      taskId: entry.taskId,
-      createdAt: entry.createdAt,
-      kind: "log",
-      log: entry,
-    });
+    this.taskEvents?.log(entry);
     return entry;
   }
 

@@ -1,91 +1,51 @@
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
-import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, subscribeTaskRealtime } from "../client";
-import { applyWebTaskSnapshot, hydrateActiveScrapeTaskResults } from "./useWebTaskSync";
+import { createRefreshCoordinator } from "@mdcz/views/state/refreshCoordinator";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../client", () => ({
-  api: {
-    scrape: {
-      listResults: vi.fn(),
-    },
-    tasks: {
-      list: vi.fn(),
-    },
-  },
-  subscribeTaskRealtime: vi.fn(),
-}));
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+};
 
-describe("web task sync", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useScrapeStore.getState().reset();
-    useWorkbenchTaskStore.getState().reset();
-    vi.mocked(subscribeTaskRealtime).mockReturnValue(() => undefined);
+describe("createRefreshCoordinator", () => {
+  it("serializes refreshes and discards a response superseded while in flight", async () => {
+    const first = deferred<number>();
+    const second = deferred<number>();
+    const apply = vi.fn();
+    const read = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const coordinator = createRefreshCoordinator({ apply, read });
+
+    const initialRequest = coordinator.request();
+    const newerRequest = coordinator.request();
+    first.resolve(1);
+    await Promise.resolve();
+    expect(apply).not.toHaveBeenCalled();
+    second.resolve(2);
+    await Promise.all([initialRequest, newerRequest]);
+
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(2);
   });
 
-  it("hydrates active scrape task state through the shared stores", async () => {
-    vi.mocked(api.tasks.list).mockResolvedValue({
-      tasks: [
-        {
-          id: "task-1",
-          kind: "scrape",
-          rootId: "root-1",
-          rootDisplayName: "Media",
-          status: "running",
-          createdAt: "2026-05-14T00:00:00.000Z",
-          updatedAt: "2026-05-14T00:00:00.000Z",
-          startedAt: "2026-05-14T00:00:00.000Z",
-          completedAt: null,
-          videoCount: 1,
-          directoryCount: 0,
-          error: null,
-          videos: ["ABC-001.mp4", "ABC-002.mp4"],
-        },
-      ],
-    });
+  it("reports refresh errors and clears them after a later success", async () => {
+    const failure = new Error("offline");
+    const apply = vi.fn();
+    const onError = vi.fn();
+    const onSuccess = vi.fn();
+    const read = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(2);
+    const coordinator = createRefreshCoordinator({ apply, onError, onSuccess, read });
 
-    await applyWebTaskSnapshot();
+    await coordinator.request();
+    expect(onError).toHaveBeenCalledWith(failure);
+    expect(apply).not.toHaveBeenCalled();
 
-    expect(useWorkbenchTaskStore.getState().hydrationState.activeScrapeTaskId).toBe("task-1");
-    expect(useScrapeStore.getState()).toMatchObject({
-      isScraping: true,
-      scrapeStatus: "running",
-      current: 1,
-      total: 2,
-      progress: 50,
-    });
-  });
-
-  it("hydrates active scrape results through shared task hydration", async () => {
-    useWorkbenchTaskStore.getState().setActiveScrapeTaskId("task-1");
-    vi.mocked(api.scrape.listResults).mockResolvedValue({
-      results: [
-        {
-          id: "result-1",
-          taskId: "task-1",
-          rootId: "root-1",
-          rootDisplayName: "Media",
-          relativePath: "ABC-001.mp4",
-          fileName: "ABC-001.mp4",
-          status: "processing",
-          error: null,
-          crawlerData: null,
-          nfoRootId: null,
-          nfoRelativePath: null,
-          outputRelativePath: null,
-          manualUrl: null,
-          uncensoredAmbiguous: false,
-          createdAt: "2026-05-14T00:00:00.000Z",
-          updatedAt: "2026-05-14T00:00:00.000Z",
-        },
-      ],
-    });
-
-    await hydrateActiveScrapeTaskResults("task-1");
-
-    expect(useScrapeStore.getState()).toMatchObject({
-      results: [{ fileId: "root-1:ABC-001.mp4", status: "processing" }],
-    });
+    await coordinator.request();
+    expect(apply).toHaveBeenCalledWith(2);
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 });

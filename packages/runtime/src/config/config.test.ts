@@ -136,6 +136,88 @@ describe("runtime config helpers", () => {
 });
 
 describe("RuntimeConfigService profile watcher", () => {
+  it("validates an active profile import before replacing its file", async () => {
+    const configDir = await createTempDir();
+    const profilePath = join(configDir, "default.toml");
+    const sourcePath = join(configDir, "incoming.toml");
+    let afterCommit = 0;
+    const service = new RuntimeConfigService({
+      store: new RuntimeConfigProfileStore({ configDir }),
+      onBeforeCommit: (configuration) => {
+        if (configuration.paths.mediaPath) throw new Error("media path unavailable");
+      },
+      onAfterCommit: (_configuration, { source }) => {
+        if (source === "save") afterCommit += 1;
+      },
+    });
+    await service.load();
+    const original = await readFile(profilePath, "utf8");
+    await writeFile(
+      sourcePath,
+      serializeConfiguration({
+        ...defaultConfiguration,
+        paths: { ...defaultConfiguration.paths, mediaPath: "/offline/media" },
+      }),
+      "utf8",
+    );
+
+    await expect(service.importProfileFromFile({ sourcePath, name: "default", overwrite: true })).rejects.toThrow(
+      "media path unavailable",
+    );
+    await expect(readFile(profilePath, "utf8")).resolves.toBe(original);
+    await expect(service.get()).resolves.toMatchObject({ paths: { mediaPath: "" } });
+    expect(afterCommit).toBe(0);
+  });
+
+  it("does not register after commit when save finalization fails", async () => {
+    const configDir = await createTempDir();
+    let afterCommit = 0;
+    const service = new RuntimeConfigService({
+      store: new RuntimeConfigProfileStore({ configDir }),
+      onAfterSave: () => {
+        throw new Error("persist failed");
+      },
+      onAfterCommit: (_configuration, { source }) => {
+        if (source === "save") afterCommit += 1;
+      },
+    });
+    await service.load();
+
+    await expect(service.update({ network: { timeout: 12 } })).rejects.toThrow("persist failed");
+    expect(afterCommit).toBe(0);
+  });
+
+  it("rejects a switched profile before applying loaded configuration", async () => {
+    const configDir = await createTempDir();
+    const appliedMediaPaths: string[] = [];
+    const store = new RuntimeConfigProfileStore({ configDir });
+    const service = new RuntimeConfigService({
+      store,
+      onAfterLoad: (configuration) => {
+        appliedMediaPaths.push(configuration.paths.mediaPath);
+        return configuration;
+      },
+      onBeforeCommit: (configuration, { source }) => {
+        if (source === "switch" && configuration.paths.mediaPath) throw new Error("media path unavailable");
+      },
+    });
+    await service.load();
+    await store.createProfile("offline");
+    await writeFile(
+      join(configDir, "offline.toml"),
+      serializeConfiguration({
+        ...defaultConfiguration,
+        paths: { ...defaultConfiguration.paths, mediaPath: "/offline/media" },
+      }),
+      "utf8",
+    );
+
+    await expect(service.switchProfile("offline")).rejects.toThrow("media path unavailable");
+    expect(appliedMediaPaths).toEqual([""]);
+    await expect(service.get()).resolves.toMatchObject({ paths: { mediaPath: "" } });
+    expect((await store.listProfiles()).active).toBe("default");
+  });
+
   it("reloads valid edits and keeps the last-known-good value for invalid edits", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });

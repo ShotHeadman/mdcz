@@ -11,21 +11,23 @@ import {
   DialogTitle,
 } from "@mdcz/ui";
 import { LogsPanelView } from "@mdcz/views/logs";
-import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
+import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { api, subscribeTaskEvents } from "../client";
+import { api, subscribeTaskNotifications } from "../client";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
 export const LogsPage = () => {
   const queryClient = useQueryClient();
-  const { activeMaintenanceTaskId, activeScrapeTaskId } = useWorkbenchTaskStore((state) => state.hydrationState);
+  const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
+  const activeMaintenanceSessionId = useMaintenanceStore(selectMaintenanceSessionId);
   const activeTaskIds = useMemo(() => {
-    return [activeScrapeTaskId, activeMaintenanceTaskId].filter((id) => id.trim().length > 0);
-  }, [activeMaintenanceTaskId, activeScrapeTaskId]);
+    return [activeScrapeTaskId, activeMaintenanceSessionId].filter((id) => id.trim().length > 0);
+  }, [activeMaintenanceSessionId, activeScrapeTaskId]);
   const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
@@ -50,16 +52,24 @@ export const LogsPage = () => {
 
   useEffect(
     () =>
-      subscribeTaskEvents((event) => {
-        if (event.kind !== "log") return;
-        if (activeTaskIds.length > 0 && event.log.source === "task" && !activeTaskIds.includes(event.log.taskId)) {
-          return;
-        }
-        queryClient.setQueryData(logsQueryKey, (previous: typeof logsQ.data | undefined) => {
-          if (!previous) return { logs: [event.log] };
-          if (previous.logs.some((log) => log.id === event.log.id)) return previous;
-          return { logs: [...previous.logs, event.log] };
-        });
+      subscribeTaskNotifications({
+        onNotification: (event) => {
+          if (event.kind === "invalidate") {
+            // Logs are payload events with no replay, so a reconnect refetches the authoritative list.
+            if (event.resources.includes("ready")) {
+              void queryClient.invalidateQueries({ queryKey: logsQueryKey });
+            }
+            return;
+          }
+          if (activeTaskIds.length > 0 && event.log.source === "task" && !activeTaskIds.includes(event.log.taskId)) {
+            return;
+          }
+          queryClient.setQueryData(logsQueryKey, (previous: typeof logsQ.data | undefined) => {
+            if (!previous) return { logs: [event.log] };
+            if (previous.logs.some((log) => log.id === event.log.id)) return previous;
+            return { logs: [...previous.logs, event.log] };
+          });
+        },
       }),
     [activeTaskIds, logsQueryKey, queryClient],
   );

@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { deterministicMediaRootId } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
 import { closeTestServers, createTestServer, loginAsAdmin, syncMediaRootFromConfig } from "./app.testSupport";
@@ -46,12 +47,12 @@ describe("buildServer scan integration", () => {
 
     const detailResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+      url: `/trpc/scans.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     const listResponse = await fastify.inject({
       method: "GET",
-      url: "/trpc/tasks.list",
+      url: "/trpc/scans.list",
       headers: { authorization: `Bearer ${token}` },
     });
     const libraryResponse = await fastify.inject({
@@ -117,7 +118,7 @@ describe("buildServer scan integration", () => {
 
     const retryResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/tasks.retry",
+      url: "/trpc/scans.retry",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
@@ -155,7 +156,6 @@ describe("buildServer scan integration", () => {
 
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
     const response = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(
@@ -168,15 +168,37 @@ describe("buildServer scan integration", () => {
     expect(response.json().result.data.candidates).toEqual([
       expect.objectContaining({
         name: "done.mp4",
-        relativePath: "JAV_output/done.mp4",
-        rootId,
-        rootRelativePath: "JAV_output/done.mp4",
+        ref: { relativePath: "JAV_output/done.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },
       }),
       expect.objectContaining({
         name: "movie.mp4",
-        relativePath: "nested/movie.mp4",
-        rootId,
-        rootRelativePath: "nested/movie.mp4",
+        ref: { relativePath: "nested/movie.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },
+      }),
+    ]);
+  });
+
+  it("reuses the enclosing root for a nested scan directory so candidates cannot escape it", async () => {
+    mediaDirectory = await createTempDirectory("server-subdirectory-candidates");
+    const selectedDirectory = join(mediaDirectory.path, "selected");
+    await mkdir(selectedDirectory);
+    await writeFile(join(selectedDirectory, "inside.mp4"), "video");
+    await writeFile(join(mediaDirectory.path, "outside.mp4"), "video");
+
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const parentRootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
+    const response = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ scanDir: selectedDirectory }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data.candidates).toEqual([
+      expect.objectContaining({
+        name: "inside.mp4",
+        path: join(selectedDirectory, "inside.mp4"),
+        ref: { rootId: parentRootId, relativePath: "selected/inside.mp4" },
       }),
     ]);
   });

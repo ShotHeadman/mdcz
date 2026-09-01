@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 import { AmazonPoster } from "./AmazonPoster";
 import { BatchNfoTranslator } from "./BatchNfoTranslator";
 import { CrawlerTester } from "./CrawlerTester";
-import { FileCleaner } from "./FileCleaner";
 import { Person } from "./Person";
 import { SingleFileScraper } from "./SingleFileScraper";
 import { SymlinkManager } from "./SymlinkManager";
@@ -18,7 +17,6 @@ const TOOL_COMPONENTS: Record<ToolId, ComponentType> = {
   "amazon-poster": AmazonPoster,
   "media-library-tools": Person,
   "symlink-manager": SymlinkManager,
-  "file-cleaner": FileCleaner,
   "batch-nfo-translator": BatchNfoTranslator,
 };
 

@@ -1,173 +1,48 @@
-import { buildFileId } from "@mdcz/shared/mediaIdentity";
-import type { LocalScanEntry } from "@mdcz/shared/types";
-import type { MaintenanceActionPort } from "@mdcz/views/adapters";
-import {
-  activateNewScrapeTask,
-  activateRetryScrapeTask,
-  applyScrapeTaskStatus,
-  getWorkbenchSessionSnapshot,
-  resolveWorkbenchMode,
-  startMaintenanceFlow,
-} from "@mdcz/views/adapters";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { getWorkbenchSessionSnapshot, resetScrapeWorkbenchToSetup } from "@mdcz/views/adapters/workbenchSession";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
+import { beforeEach, describe, expect, it } from "vitest";
+import { buildFailedScrapeSnapshot, buildScrapeSnapshot } from "./scrapeTestSupport";
 
-const resetStores = () => {
-  useScrapeStore.getState().reset();
-  useUIStore.getState().setSelectedResultId(null);
-  useMaintenanceEntryStore.getState().reset();
-  useMaintenanceExecutionStore.getState().reset();
-  useMaintenancePreviewStore.getState().reset();
-};
-
-const createEntry = (): LocalScanEntry => ({
-  fileId: "root-1:ABC-001.mp4",
-  rootRef: { rootId: "root-1", relativePath: "ABC-001.mp4" },
-  fileInfo: {
-    filePath: "/media/ABC-001.mp4",
-    fileName: "ABC-001.mp4",
-    extension: ".mp4",
-    number: "ABC-001",
-    isSubtitled: false,
-  },
-  assets: { sceneImages: [], actorPhotos: [] },
-  currentDir: "/media",
-});
-
-afterEach(resetStores);
-
-describe("workbench session shared controller", () => {
-  it("resolves maintenance intent to setup unless scrape is active", () => {
-    expect(
-      resolveWorkbenchMode({
-        currentMode: "scrape",
-        routeIntent: "maintenance",
-        isScraping: false,
-        scrapeHasWork: false,
-        maintenanceHasWork: false,
-      }),
-    ).toBe("maintenance");
-
-    expect(
-      resolveWorkbenchMode({
-        currentMode: "scrape",
-        routeIntent: "maintenance",
-        isScraping: true,
-        scrapeHasWork: true,
-        maintenanceHasWork: false,
-      }),
-    ).toBe("scrape");
+describe("workbench session scrape setup", () => {
+  beforeEach(() => {
+    useScrapeStore.getState().reset();
+    useMaintenanceStore.getState().reset();
+    useWorkbenchTaskStore.getState().reset();
+    useUIStore.getState().setSelectedResultId(null);
+    useUIStore.getState().setWorkbenchMode("scrape");
   });
 
-  it("derives setup visibility from shared scrape and maintenance stores", () => {
-    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
-    useScrapeStore.getState().setScraping(true);
-    useScrapeStore.getState().setScrapeStatus("running");
+  it("keeps the processing queue after a scrape completes in this window", () => {
+    useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
     expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(false);
-    resetStores();
-
-    useMaintenanceEntryStore.getState().setEntries([createEntry()], "/media");
-    expect(getWorkbenchSessionSnapshot("maintenance").showSetup).toBe(false);
+    expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
   });
 
-  it("activates retry without clearing results and preserves the selected item under its new key", () => {
-    const retryPath = "/library/ABC-001/ABC-001.mp4";
-    useScrapeStore.setState({
-      results: [
-        {
-          status: "success",
-          fileId: "old-source-key",
-          fileInfo: { ...createEntry().fileInfo, filePath: retryPath },
-        },
-        {
-          status: "failed",
-          fileId: "untouched",
-          error: "keep me",
-          fileInfo: { ...createEntry().fileInfo, filePath: "/library/KEEP-002.mp4" },
-        },
-      ],
-    });
-    useUIStore.getState().setSelectedResultId("old-source-key");
-
-    activateRetryScrapeTask([retryPath]);
-
-    expect(useScrapeStore.getState()).toMatchObject({
-      isScraping: true,
-      scrapeStatus: "running",
-      current: 0,
-      total: 0,
-      results: [
-        { fileId: buildFileId(retryPath), status: "processing" },
-        { fileId: "untouched", status: "failed", error: "keep me" },
-      ],
-    });
-    expect(useUIStore.getState().selectedResultId).toBe(buildFileId(retryPath));
+  it("keeps the processing queue when the last scrape has failures", () => {
+    useScrapeStore.getState().setSnapshot(buildFailedScrapeSnapshot());
+    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(false);
+    expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
   });
 
-  it("seeds selected files when activating a new scrape task", () => {
-    const filePaths = ["/incoming/ABC-001.mp4", "/incoming/XYZ-002.mkv"];
+  it("stays on setup after return even if live status is refreshed with null", () => {
+    const snapshot = buildFailedScrapeSnapshot();
+    useScrapeStore.getState().setSnapshot(snapshot);
+    useUIStore.getState().setSelectedResultId("root-1:ABC-001.mp4");
 
-    activateNewScrapeTask(filePaths);
+    resetScrapeWorkbenchToSetup();
+    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(useUIStore.getState().selectedResultId).toBeNull();
 
-    expect(useScrapeStore.getState()).toMatchObject({
-      isScraping: true,
-      scrapeStatus: "running",
-      results: [
-        { fileId: buildFileId(filePaths[0]), status: "processing" },
-        { fileId: buildFileId(filePaths[1]), status: "processing" },
-      ],
-    });
+    useScrapeStore.getState().setSnapshot(null);
+    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
   });
 
-  it("keeps unfinished results during pause and fails them on idle", () => {
-    activateNewScrapeTask(["/incoming/ABC-001.mp4"]);
-
-    applyScrapeTaskStatus("paused");
-    expect(useScrapeStore.getState().results[0].status).toBe("processing");
-
-    applyScrapeTaskStatus("completed");
-    expect(useScrapeStore.getState().results[0]).toMatchObject({
-      status: "failed",
-      error: "已停止或未完成",
-    });
-  });
-
-  it("starts maintenance through real port scan and shared store updates", async () => {
-    const entry = createEntry();
-    const port: MaintenanceActionPort = {
-      openFolder: vi.fn(),
-      play: vi.fn(),
-      openNfo: vi.fn(),
-      scanFiles: vi.fn(async () => ({ entries: [entry] })),
-      preview: vi.fn(),
-      execute: vi.fn(),
-      pause: vi.fn(),
-      resume: vi.fn(),
-      stop: vi.fn(),
-    };
-    const toast = {
-      info: vi.fn(),
-      success: vi.fn(),
-      warning: vi.fn(),
-      error: vi.fn(),
-    };
-
-    await startMaintenanceFlow({
-      filePaths: [entry.fileInfo.filePath],
-      scanDir: "/media",
-      presetId: "read_local",
-      port,
-      isScraping: false,
-      toast,
-      toErrorMessage: (error) => (error instanceof Error ? error.message : String(error)),
-    });
-
-    expect(port.scanFiles).toHaveBeenCalledWith([entry.fileInfo.filePath], { scanDir: "/media" });
-    expect(useMaintenanceEntryStore.getState().entries).toEqual([entry]);
-    expect(toast.success).toHaveBeenCalledWith("本地读取完成，共 1 项");
+  it("shows the start page when the renderer store is empty", () => {
+    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
   });
 });

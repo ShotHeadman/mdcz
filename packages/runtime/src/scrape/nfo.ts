@@ -1,5 +1,6 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import { atomicCopyFile, atomicWriteFile } from "@mdcz/media-store";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
@@ -35,6 +36,8 @@ export interface NfoOptions {
   nfoNaming?: NfoNamingMode;
   nfoTitleTemplate?: string;
   enabledFields?: readonly NfoField[];
+  includeRemoteSceneImageUrls?: boolean;
+  allowRemoteTrailerFallback?: boolean;
   buildTags?: (data: CrawlerData, fileInfo: FileInfo | undefined, localState: NfoLocalState | undefined) => string[];
   pathExists?: PathExists;
   writeFile?: NfoFileWriter;
@@ -133,8 +136,11 @@ export const nfoIgnoreFieldsToEnabledFields = (
 const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
-  enabledFields: readonly NfoField[] | undefined,
+  options: NfoOptions | undefined,
 ): Record<string, unknown> | undefined => {
+  const enabledFields = options?.enabledFields;
+  const includeRemoteSceneImageUrls = options?.includeRemoteSceneImageUrls ?? true;
+  const allowRemoteTrailerFallback = options?.allowRemoteTrailerFallback ?? true;
   const remoteThumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
   const thumbSourceUrl = isNfoFieldEnabled(enabledFields, "thumb") ? remoteThumbSourceUrl : undefined;
   const posterSourceUrl = isNfoFieldEnabled(enabledFields, "poster")
@@ -143,12 +149,16 @@ const buildMdczNode = (
   const fanartSourceUrl = isNfoFieldEnabled(enabledFields, "fanart")
     ? (data.fanart_source_url ?? toRemoteImageSourceUrl(data.fanart_url) ?? remoteThumbSourceUrl)
     : undefined;
-  const trailerSourceUrl = isNfoFieldEnabled(enabledFields, "trailer")
-    ? (data.trailer_source_url ?? toRemoteImageSourceUrl(data.trailer_url))
-    : undefined;
-  const sceneImageUrls = isNfoFieldEnabled(enabledFields, "sceneImages")
-    ? data.scene_images.map((value) => toRemoteImageSourceUrl(value)).filter((value): value is string => Boolean(value))
-    : [];
+  const trailerSourceUrl =
+    allowRemoteTrailerFallback && isNfoFieldEnabled(enabledFields, "trailer")
+      ? (data.trailer_source_url ?? toRemoteImageSourceUrl(data.trailer_url))
+      : undefined;
+  const sceneImageUrls =
+    includeRemoteSceneImageUrls && isNfoFieldEnabled(enabledFields, "sceneImages")
+      ? data.scene_images
+          .map((value) => toRemoteImageSourceUrl(value))
+          .filter((value): value is string => Boolean(value))
+      : [];
 
   if (
     !rawTitle &&
@@ -195,6 +205,7 @@ export class NfoGenerator {
     const videoNode = buildVideoNode(videoMeta);
     const movie: Record<string, unknown> = {};
     const enabledFields = options?.enabledFields;
+    const allowRemoteTrailerFallback = options?.allowRemoteTrailerFallback ?? true;
 
     if (isNfoFieldEnabled(enabledFields, "sourceComment") && sources && Object.keys(sources).length > 0) {
       movie["#comment"] = buildSourceComment(data, sources);
@@ -218,7 +229,9 @@ export class NfoGenerator {
     movie.trailer = isNfoFieldEnabled(enabledFields, "trailer")
       ? assets?.trailer
         ? basename(assets.trailer)
-        : data.trailer_url
+        : allowRemoteTrailerFallback
+          ? data.trailer_url
+          : undefined
       : undefined;
     movie.num = isNfoFieldEnabled(enabledFields, "num") ? data.number : undefined;
     movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
@@ -242,7 +255,7 @@ export class NfoGenerator {
       if (fanartNode) movie.fanart = fanartNode;
     }
     const hasCustomTitleTemplate = titleTemplate !== "{title}";
-    const mdczNode = buildMdczNode(data, hasCustomTitleTemplate ? rawTitle : undefined, enabledFields);
+    const mdczNode = buildMdczNode(data, hasCustomTitleTemplate ? rawTitle : undefined, options);
     if (mdczNode) movie.mdcz = mdczNode;
     if (isNfoFieldEnabled(enabledFields, "fileinfo") && videoNode) {
       movie.fileinfo = { streamdetails: { video: videoNode } };
@@ -257,13 +270,11 @@ export class NfoGenerator {
   }
 
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {
-    const write =
-      options?.writeFile ??
-      ((filePath, content) => import("node:fs/promises").then((fs) => fs.writeFile(filePath, content, "utf8")));
+    const write = options?.writeFile ?? atomicWriteFile;
     const xml = this.buildXml(data, options);
     const nfoNaming = options?.nfoNaming ?? "both";
     const { primaryPath, moviePath, canonicalPath, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
-    await mkdir(dirname(primaryPath), { recursive: true });
+    if (!options?.writeFile) await mkdir(dirname(primaryPath), { recursive: true });
 
     if (nfoNaming === "both") {
       await write(primaryPath, xml);
@@ -414,7 +425,7 @@ export const reconcileExistingNfoFiles = async (
   await mkdir(dirname(primaryPath), { recursive: true });
   for (const requiredPath of requiredPaths) {
     if (requiredPath === sourcePath || (await pathExists(requiredPath))) continue;
-    await copyFile(sourcePath, requiredPath);
+    await atomicCopyFile(sourcePath, requiredPath);
   }
   for (const stalePath of stalePaths) await tryRemoveStaleNfo(stalePath, pathExists);
   return canonicalPath;
@@ -476,8 +487,8 @@ async function tryRemoveStaleNfo(stalePath: string, pathExists?: PathExists): Pr
     if (!pathExists || (await pathExists(stalePath))) {
       await rm(stalePath);
     }
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
 

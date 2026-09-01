@@ -1,5 +1,6 @@
-import { mkdir, rename, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { atomicCopyFile } from "@mdcz/media-store";
 
 import { throwIfAborted } from "../../utils/abort";
 import {
@@ -19,26 +20,31 @@ export class SceneImageAssetDownloader implements AssetDownloader {
   }
 
   async download(context: DownloadExecutionContext): Promise<void> {
-    const { assets, plan, sceneImageDownloader } = context;
+    const { assets, logger, plan, sceneImageDownloader } = context;
 
     throwIfAborted(plan.signal);
 
     const sceneDir = join(plan.outputDir, plan.config.paths.sceneImagesFolder);
-    const existingSceneImages = await listExistingSceneImages(sceneDir);
-    const sceneImageComparisonPaths = uniqueFilePaths([
-      assets.thumb,
-      await resolveExistingImageAsset(join(plan.outputDir, plan.assetFileNames.fanart)),
-    ]);
     const forceReplaceSceneImages = plan.assetDecisions.sceneImages === "replace";
     const keepSceneImages = shouldKeepAsset(plan.assetDecisions.sceneImages, plan.config.download.keepSceneImages);
 
-    if (keepSceneImages && existingSceneImages.length > 0) {
-      assets.sceneImages.push(...existingSceneImages);
-      return;
+    if (keepSceneImages) {
+      const preservedSceneImages = await listExistingSceneImages(
+        join(plan.existingAssetDir, plan.config.paths.sceneImagesFolder),
+      );
+      if (preservedSceneImages.length > 0) {
+        assets.sceneImages.push(...preservedSceneImages);
+        return;
+      }
     }
 
     throwIfAborted(plan.signal);
 
+    const existingSceneImages = await listExistingSceneImages(sceneDir);
+    const sceneImageComparisonPaths = uniqueFilePaths([
+      assets.thumb,
+      await resolveExistingImageAsset(join(plan.existingAssetDir, plan.assetFileNames.fanart)),
+    ]);
     const targetSceneCount = Math.max(0, plan.config.aggregation.behavior.maxSceneImages);
     const sceneImageSets = getSceneImageSets(plan.data, plan.imageAlternatives, targetSceneCount);
 
@@ -71,10 +77,13 @@ export class SceneImageAssetDownloader implements AssetDownloader {
         buildSceneImageFileName(plan.config.paths.sceneImagesFolder, index, sceneImage.path),
       );
 
-      await mkdir(dirname(finalPath), { recursive: true });
-      await unlink(finalPath).catch(() => undefined);
       if (sceneImage.path !== finalPath) {
-        await rename(sceneImage.path, finalPath);
+        await atomicCopyFile(sceneImage.path, finalPath);
+        await unlink(sceneImage.path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") {
+            logger.warn(`Published scene image but failed to remove temporary source ${sceneImage.path}`);
+          }
+        });
       }
       assets.sceneImages.push(finalPath);
       assets.downloaded.push(finalPath);

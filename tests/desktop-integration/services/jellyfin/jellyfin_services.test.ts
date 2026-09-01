@@ -1,15 +1,10 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActorImageService } from "@main/services/ActorImageService";
+import { getActorImageCacheDirectory } from "@main/appIdentity";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
 import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
-import {
-  checkConnection,
-  isUuid,
-  JellyfinActorInfoService,
-  JellyfinActorPhotoService,
-} from "@main/services/mediaServer/jellyfin";
+import { checkConnection, isUuid } from "@main/services/mediaServer/jellyfin";
 import { SignalService } from "@main/services/SignalService";
 import {
   type ActorLookupResult,
@@ -18,7 +13,9 @@ import {
   GfriendsActorSource,
   LocalActorSource,
 } from "@mdcz/runtime/actorSource";
+import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { ActorImageService } from "@mdcz/runtime/scrape";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -69,7 +66,9 @@ const createActorSourceProvider = (
   new ActorSourceProvider({
     registry: new ActorSourceRegistry([
       // Local image resolution is rooted in the mocked desktop user data directory.
-      new LocalActorSource({ actorImageService: new ActorImageService() }),
+      new LocalActorSource({
+        actorImageService: new ActorImageService({ cacheRoot: getActorImageCacheDirectory() }),
+      }),
       new GfriendsActorSource({
         networkClient: networkClient as unknown as NetworkClient,
         actorMapUrl,
@@ -276,6 +275,7 @@ describe("Jellyfin services", () => {
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
     });
 
     const result = await service.run(
@@ -332,6 +332,7 @@ describe("Jellyfin services", () => {
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
     });
 
     const result = await service.run(
@@ -394,6 +395,7 @@ describe("Jellyfin services", () => {
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
     });
 
     const result = await service.run(
@@ -446,6 +448,7 @@ describe("Jellyfin services", () => {
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
     });
 
     const result = await service.run(
@@ -505,6 +508,7 @@ describe("Jellyfin services", () => {
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: createActorSourceProvider(networkClient),
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
     });
 
     const result = await service.run(
@@ -547,6 +551,7 @@ describe("Jellyfin services", () => {
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: createActorSourceProvider(networkClient),
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
     });
 
     await expect(

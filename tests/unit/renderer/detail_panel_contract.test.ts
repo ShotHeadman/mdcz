@@ -1,14 +1,14 @@
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@mdcz/shared/types";
-import { buildDetailArtworkCandidates } from "@mdcz/views/detail";
-import { describe, expect, it } from "vitest";
 import {
+  buildDetailArtworkCandidates,
   formatBitrate,
   formatDuration,
   normalizeDetailOutlineText,
   toDetailViewItemFromMaintenanceEntry,
   toDetailViewItemFromScrapeResult,
-} from "@/components/detail/detailViewAdapters";
+} from "@mdcz/views/detail";
+import { describe, expect, it } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -23,6 +23,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 
 const createEntry = (crawlerData?: CrawlerData): LocalScanEntry => ({
   fileId: "entry-1",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   nfoPath: "/media/ABC-123.nfo",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
@@ -60,13 +61,9 @@ describe("detail panel adapter contract", () => {
     const payload: ScrapeResult = {
       fileId: "file:/library/ABC-123/ABC-123.mp4",
       status: "success",
-      fileInfo: {
-        filePath: "/library/ABC-123/ABC-123.mp4",
-        fileName: "ABC-123.mp4",
-        extension: ".mp4",
-        number: "ABC-123",
-        isSubtitled: false,
-      },
+      rootId: "library",
+      relativePath: "ABC-123/ABC-123.mp4",
+      fileName: "ABC-123.mp4",
       crawlerData: createCrawlerData({
         title: "Remote Title",
         title_zh: "中文标题",
@@ -83,6 +80,7 @@ describe("detail panel adapter contract", () => {
         publisher: "Publisher A",
         series: "Series A",
         scene_images: [],
+        trailer_url: "https://example.com/remote-trailer.mp4",
       }),
       videoMeta: {
         durationSeconds: 3661,
@@ -90,15 +88,15 @@ describe("detail panel adapter contract", () => {
         height: 1080,
         bitrate: 12_500_000,
       },
-      assets: {
-        poster: "/art/poster.jpg",
-        thumb: "/art/thumb.jpg",
-        fanart: "/art/fanart.jpg",
-        sceneImages: ["/art/scene-1.jpg"],
-        downloaded: ["/art/poster.jpg"],
-      },
-      outputPath: "/output/ABC-123",
-      nfoPath: "/output/ABC-123/ABC-123.nfo",
+      assets: [
+        { type: "local", kind: "poster", file: { rootId: "metadata-root", relativePath: "art/poster.jpg" } },
+        { type: "local", kind: "thumb", file: { rootId: "metadata-root", relativePath: "art/thumb.jpg" } },
+        { type: "local", kind: "fanart", file: { rootId: "metadata-root", relativePath: "art/fanart.jpg" } },
+        { type: "local", kind: "scene", file: { rootId: "metadata-root", relativePath: "art/scene-1.jpg" } },
+        { type: "local", kind: "trailer", file: { rootId: "metadata-root", relativePath: "art/trailer.mp4" } },
+      ],
+      output: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.mp4" },
+      nfo: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.nfo" },
       uncensoredAmbiguous: true,
     };
 
@@ -111,14 +109,101 @@ describe("detail panel adapter contract", () => {
       durationSeconds: 3661,
       resolution: "1920x1080",
       bitrate: 12_500_000,
-      posterUrl: "/art/poster.jpg",
-      thumbUrl: "/art/thumb.jpg",
-      fanartUrl: "/art/fanart.jpg",
-      sceneImages: ["/art/scene-1.jpg"],
-      outputPath: "/output/ABC-123",
-      nfoPath: "/output/ABC-123/ABC-123.nfo",
+      path: "organized/ABC-123/ABC-123.mp4",
+      fileRef: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.mp4" },
+      nfoRef: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.nfo" },
+      posterUrl: "local-file://metadata-root/art/poster.jpg",
+      thumbUrl: "local-file://metadata-root/art/thumb.jpg",
+      fanartUrl: "local-file://metadata-root/art/fanart.jpg",
+      sceneImages: ["local-file://metadata-root/art/scene-1.jpg"],
+      trailerUrl: "local-file://metadata-root/art/trailer.mp4",
+      trailerFallbackUrls: ["https://example.com/remote-trailer.mp4"],
+      outputPath: "organized/ABC-123",
+      nfoPath: "organized/ABC-123/ABC-123.nfo",
       rating: 4.6,
     });
+
+    expect(buildDetailArtworkCandidates(toDetailViewItemFromScrapeResult(payload))).toEqual({
+      poster: [
+        "local-file://metadata-root/art/poster.jpg",
+        "organized/ABC-123/ABC-123-poster.jpg",
+        "organized/ABC-123/poster.jpg",
+      ],
+      thumb: [
+        "local-file://metadata-root/art/thumb.jpg",
+        "organized/ABC-123/ABC-123-thumb.jpg",
+        "organized/ABC-123/thumb.jpg",
+      ],
+    });
+  });
+
+  it("falls back to remote scene and trailer references when local assets are absent", () => {
+    const result = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-123.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      assets: [],
+      crawlerData: createCrawlerData({ trailer_url: "https://example.com/remote-trailer.mp4" }),
+    });
+
+    expect(result.sceneImages).toEqual(["https://example.com/remote-scene.jpg"]);
+    expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
+    expect(result.trailerFallbackUrls).toBeUndefined();
+  });
+
+  it("keeps both remote trailer candidates for local and source fallback playback", () => {
+    const local = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-123.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      assets: [{ type: "local", kind: "trailer", file: { rootId: "output", relativePath: "trailer.mp4" } }],
+      crawlerData: createCrawlerData({
+        trailer_source_url: "https://source.example/trailer.mp4",
+        trailer_url: "https://fallback.example/trailer.mp4",
+      }),
+    });
+    const remote = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-124.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-124.mp4",
+      fileName: "ABC-124.mp4",
+      assets: [],
+      crawlerData: createCrawlerData({
+        trailer_source_url: "https://source.example/trailer.mp4",
+        trailer_url: "https://fallback.example/trailer.mp4",
+      }),
+    });
+
+    expect(local.trailerFallbackUrls).toEqual([
+      "https://source.example/trailer.mp4",
+      "https://fallback.example/trailer.mp4",
+    ]);
+    expect(remote.trailerUrl).toBe("https://source.example/trailer.mp4");
+    expect(remote.trailerFallbackUrls).toEqual(["https://fallback.example/trailer.mp4"]);
+  });
+
+  it("prefers the local file per asset kind when a run mixes downloaded and remote-only assets", () => {
+    const result = toDetailViewItemFromScrapeResult({
+      fileId: "root:ABC-123.mp4",
+      status: "success",
+      rootId: "root",
+      relativePath: "ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      assets: [
+        { type: "remote", kind: "poster", url: "https://example.com/remote-poster.jpg" },
+        { type: "local", kind: "poster", file: { rootId: "output", relativePath: "ABC-123/poster.jpg" } },
+        { type: "remote", kind: "trailer", url: "https://example.com/remote-trailer.mp4" },
+      ],
+      crawlerData: createCrawlerData(),
+    });
+
+    expect(result.posterUrl).toBe("local-file://output/ABC-123/poster.jpg");
+    expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
   });
 
   it("builds the same poster and thumbnail fallback candidates as the desktop detail controller", () => {

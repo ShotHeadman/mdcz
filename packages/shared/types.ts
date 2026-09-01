@@ -1,4 +1,5 @@
 import type { Website } from "./enums";
+import type { AssetRef, RootFileRef } from "./mediaRef";
 
 export type FileId = string;
 export type GroupId = string;
@@ -84,6 +85,7 @@ export type SubtitleTag = "字幕" | "中文字幕";
 
 /** Structured record of all files produced by DownloadManager. */
 export interface DownloadedAssets {
+  rootId?: string;
   thumb?: string;
   poster?: string;
   fanart?: string;
@@ -96,19 +98,21 @@ export interface DownloadedAssets {
 export interface ScrapeResult {
   resultId?: string;
   fileId: FileId;
-  fileInfo: FileInfo;
+  rootId: string;
+  relativePath: string;
+  fileName: string;
   status: ScrapeResultStatus;
   crawlerData?: CrawlerData;
   videoMeta?: VideoMeta;
   error?: string;
-  outputPath?: string;
-  nfoRootId?: string;
-  nfoPath?: string;
-  assets?: DownloadedAssets;
+  output?: RootFileRef;
+  nfo?: RootFileRef;
+  assets: AssetRef[];
   /** Maps each CrawlerData field to the Website that provided the value. */
   sources?: Partial<Record<keyof CrawlerData, Website>>;
   /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
   uncensoredAmbiguous?: boolean;
+  part?: FileInfo["part"];
 }
 
 export type UncensoredChoice = "umr" | "leak" | "uncensored";
@@ -151,20 +155,7 @@ export interface MediaCandidate {
   size: number;
   lastModified: string | null;
   extension: string;
-  relativePath: string;
-  relativeDirectory: string;
-  rootId?: string;
-  rootRelativePath?: string;
-}
-
-export interface ScraperStatus {
-  state: "idle" | "running" | "stopping" | "paused";
-  running: boolean;
-  totalFiles: number;
-  completedFiles: number;
-  successCount: number;
-  failedCount: number;
-  skippedCount: number;
+  ref: RootFileRef;
 }
 
 export interface IpcError {
@@ -190,10 +181,7 @@ export interface DiscoveredAssets {
 /** A single video entry produced by local directory scanning. */
 export interface LocalScanEntry {
   fileId: FileId;
-  rootRef?: {
-    rootId: string;
-    relativePath: string;
-  };
+  ref: RootFileRef;
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;
@@ -255,7 +243,6 @@ export type MaintenancePreviewStatus = "ready" | "blocked";
 export interface MaintenancePreviewItem {
   fileId: FileId;
   previewId?: string;
-  taskId?: string;
   status: MaintenancePreviewStatus;
   error?: string;
   fieldDiffs?: FieldDiff[];
@@ -281,18 +268,12 @@ export interface MaintenanceAssetDecisions {
   trailer?: "preserve" | "replace";
 }
 
-export interface MaintenanceCommitItem {
-  entry: LocalScanEntry;
-  crawlerData?: CrawlerData;
-  imageAlternatives?: MaintenanceImageAlternatives;
-  assetDecisions?: MaintenanceAssetDecisions;
-}
-
-export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed";
+export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 
 /** Per-item execution result pushed via IPC events. */
 export interface MaintenanceItemResult {
   fileId: FileId;
+  batchId?: string;
   status: MaintenanceItemStatus;
   error?: string;
   crawlerData?: CrawlerData;

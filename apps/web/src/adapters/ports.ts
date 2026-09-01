@@ -1,5 +1,6 @@
-import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
-import type { CrawlerData, LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import { LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
+import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
@@ -7,8 +8,14 @@ import type {
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
-import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
+import {
+  applyMaintenanceSessionSnapshot,
+  selectMaintenanceSessionId,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
+import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc } from "../client";
+import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 
 const dedupeValues = (values: string[]): string[] =>
   values
@@ -37,6 +44,9 @@ const joinPath = (left: string, right: string): string => {
 };
 
 const getRootRelativeItemPath = (item: DetailViewItem): string => {
+  if (item.fileRef) {
+    return item.fileRef.relativePath.replace(/\\/gu, "/");
+  }
   const [_rootId, ...relativeParts] = item.id.split(":");
   return relativeParts.join(":").replace(/\\/gu, "/");
 };
@@ -76,8 +86,8 @@ const toRelativePath = (item: DetailViewItem, path: string): string => {
   return normalizedPath;
 };
 
-const getRootId = (item: DetailViewItem): string => item.id.split(":")[0] || "";
-const getMetadataRootId = (item: DetailViewItem): string => item.nfoRootId ?? getRootId(item);
+const getRootId = (item: DetailViewItem): string => item.fileRef?.rootId ?? item.id.split(":")[0] ?? "";
+const getMetadataRootId = (item: DetailViewItem): string => item.nfoRef?.rootId ?? getRootId(item);
 
 const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
@@ -112,31 +122,31 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (isRemoteImageCandidate(trimmed)) {
     return trimmed;
   }
+  if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
+    const file = parseLocalFileUrl(trimmed);
+    return getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath }) || trimmed;
+  }
   if (!item) {
     return trimmed;
   }
 
-  const rootId = getMetadataRootId(item);
+  const normalizedCandidate = trimmed.replace(/\\/gu, "/");
+  const asset = item.assets?.find(
+    (candidate) =>
+      candidate.type === "local" && candidate.file.relativePath.replace(/\\/gu, "/") === normalizedCandidate,
+  );
+  const rootId = asset?.type === "local" ? asset.file.rootId : getMetadataRootId(item);
   if (!rootId) {
     return trimmed;
   }
-  return (
-    getLibraryAssetSrc({ rootId, path: toRelativePath(item, resolveCandidatePath(trimmed, item, baseDir)) }) || trimmed
-  );
+  const path = asset?.type === "local" ? asset.file.relativePath : resolveCandidatePath(trimmed, item, baseDir);
+  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path) }) || trimmed;
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
-  capabilities: {
-    play: "hidden",
-    openFolder: "hidden",
-    openNfo: "enabled",
-    editPoster: "enabled",
-  },
   showFilePath: false,
   resolveImageCandidates: async (candidates, baseDir, item) =>
     dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
-  play: () => undefined,
-  openFolder: () => undefined,
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
@@ -174,128 +184,69 @@ export const createWebDetailPort = (): DetailActionPort => ({
 });
 
 export const createWebScrapeActionPort = (): ScrapeActionPort => ({
-  capabilities: {
-    deleteFile: "enabled",
-    deleteFileAndFolder: "hidden",
-    openFolder: "hidden",
-    play: "hidden",
-    openNfo: "enabled",
+  retryFailed: async (itemIds) => {
+    const runId = selectScrapeTaskId(useScrapeStore.getState());
+    if (!runId) throw new Error("没有可重试的刮削任务");
+    const retry = await api.scrape.retry({ taskId: runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) });
+    requestScrapeLiveRunsRefresh();
+    return { message: `重试任务已启动：${retry.runId}` };
   },
-  retrySelection: async (targets, options) => {
-    const refs = targets.map((target) => target.ref);
-    if (refs.some((ref) => !ref)) {
-      throw new Error("Web 重试需要媒体目录引用，请从工作台重新扫描后启动。");
-    }
-    const task = await api.scrape.start({
-      refs: refs as NonNullable<(typeof refs)[number]>[],
-      manualUrl: options.manualUrl,
-    });
-    useWorkbenchTaskStore.getState().setActiveScrapeTaskId(task.id);
-    return { message: `重试任务已启动，共 ${refs.length} 个文件`, strategy: "new-task" };
-  },
-  getDeleteFileAvailability: (targets) =>
-    targets.length > 0 && targets.every((target) => target.ref) ? "enabled" : "hidden",
   deleteFile: async (targets) => {
-    const refs = targets.map((target) => target.ref);
-    if (refs.some((ref) => !ref)) {
-      throw new Error("Web 删除文件需要媒体目录引用，请从工作台重新扫描后再试。");
-    }
-    for (const ref of refs as NonNullable<(typeof refs)[number]>[]) {
-      await api.scrape.deleteFile(ref);
+    for (const target of targets) {
+      await api.scrape.deleteFile(target.ref);
     }
   },
-  deleteFileAndFolder: async (filePath) => {
-    void filePath;
-    throw new Error("Web 端不支持删除服务器主机文件夹");
-  },
-  openFolder: () => undefined,
-  play: () => undefined,
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
 });
 
 export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
-  const requireTaskId = () => {
-    const activeTaskId = useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId;
-    if (!activeTaskId) {
-      throw new Error("当前没有可控制的维护任务");
+  const requireSessionId = () => {
+    const activeSessionId = selectMaintenanceSessionId(useMaintenanceStore.getState());
+    if (!activeSessionId) {
+      throw new Error("当前没有可控制的维护会话");
     }
-    return activeTaskId;
+    return activeSessionId;
   };
 
   return {
-    capabilities: {
-      openFolder: "hidden",
-      play: "hidden",
-      openNfo: "enabled",
-    },
-    openFolder: () => undefined,
-    play: () => undefined,
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
     },
-    scanFiles: async (filePaths, context) => {
-      if (!context?.scanDir) {
-        throw new Error("Web 维护扫描需要扫描目录");
-      }
-      return await api.maintenance.scanSelectedFiles({ filePaths, scanDir: context.scanDir });
+    getActiveSession: async () => await api.maintenance.getActiveSession(),
+    updateDraft: async (previewId, draft) => {
+      await api.maintenance.updateDraft({ sessionId: requireSessionId(), previewId, ...draft });
     },
-    preview: async (entries: LocalScanEntry[], presetId: MaintenancePresetId) => {
-      const refs = entries.map((entry) => ({
-        rootId: entry.rootRef?.rootId ?? entry.fileId.split(":")[0] ?? "",
-        relativePath: entry.rootRef?.relativePath ?? entry.fileInfo.filePath,
-      }));
+    discardSession: async () => {
+      const sessionId = selectMaintenanceSessionId(useMaintenanceStore.getState()) || undefined;
+      await api.maintenance.discardSession(sessionId ? { sessionId } : undefined);
+      useMaintenanceStore.getState().reset();
+    },
+    preview: async (refs, presetId: MaintenancePresetId) => {
       const rootId = refs[0]?.rootId ?? "";
-      const task = await api.maintenance.start({ rootId, presetId, refs });
-      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(task.id);
-      const preview = await api.maintenance.preview({ taskId: task.id });
-      return {
-        items: preview.items.map(maintenancePreviewDtoToPreviewItem),
-      };
+      if (!rootId) throw new Error("请选择要维护的文件");
+      const { sessionId } = await api.maintenance.start({ rootId, presetId, refs });
+      applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
+      return { sessionId };
     },
-    execute: async (commitItems: MaintenanceCommitItem[], _presetId: MaintenancePresetId, context) => {
-      const selectedFileIds = new Set(commitItems.map((item) => item.entry.fileId));
-      const previews = Object.values(context?.previewResults ?? {}).filter((preview) =>
-        selectedFileIds.has(preview.fileId),
-      );
-      const previewIds = previews.map((preview) => preview.previewId).filter((id): id is string => Boolean(id));
-      if (previewIds.length === 0) {
-        throw new Error("没有可应用的维护预览");
-      }
-      const taskIds = new Set(
-        previews.map((preview) => preview.taskId).filter((taskId): taskId is string => Boolean(taskId)),
-      );
-      if (taskIds.size !== 1) {
-        throw new Error("维护预览缺少任务 ID");
-      }
-      const taskId = [...taskIds][0];
-      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(taskId);
-      await api.maintenance.apply({
-        taskId,
-        confirmationToken: `maintenance:${taskId}`,
-        previewIds,
-        selections: previews
-          .map((preview) => {
-            if (!preview.previewId) {
-              return null;
-            }
-            return {
-              previewId: preview.previewId,
-              fieldSelections: context?.fieldSelections[preview.fileId],
-            };
-          })
-          .filter((selection): selection is NonNullable<typeof selection> => Boolean(selection)),
+    execute: async (selections: MaintenanceApplySelection[]) => {
+      const sessionId = requireSessionId();
+      await api.maintenance.execute({
+        sessionId,
+        confirmationToken: `maintenance:${sessionId}`,
+        previewIds: selections.map((selection) => selection.previewId),
+        selections,
       });
     },
     pause: async () => {
-      await api.maintenance.pause({ taskId: requireTaskId() });
+      await api.maintenance.pause({ sessionId: requireSessionId() });
     },
     resume: async () => {
-      await api.maintenance.resume({ taskId: requireTaskId() });
+      await api.maintenance.resume({ sessionId: requireSessionId() });
     },
     stop: async () => {
-      await api.maintenance.stop({ taskId: requireTaskId() });
+      await api.maintenance.stop({ sessionId: requireSessionId() });
     },
   };
 };

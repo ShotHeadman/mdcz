@@ -1,7 +1,7 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { SceneImageDownloader } from "@mdcz/runtime/scrape";
+import { getSceneImageSets, SceneImageDownloader } from "@mdcz/runtime/scrape";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -26,6 +26,18 @@ describe("SceneImageDownloader", () => {
         await rm(dirPath, { recursive: true, force: true });
       }),
     );
+  });
+
+  it("normalizes and removes duplicate URLs across preferred and fallback sets", () => {
+    expect(
+      getSceneImageSets(
+        { scene_images: ["https://IMG.example.com/1.jpg#preferred"] } as never,
+        {
+          scene_images: [["https://img.example.com/1.jpg#fallback", "https://img.example.com/2.jpg"]],
+        },
+        2,
+      ).map((set) => set.urls),
+    ).toEqual([["https://IMG.example.com/1.jpg#preferred"], ["https://img.example.com/2.jpg"]]);
   });
 
   it("falls back to a later scene image set when the first set is incomplete", async () => {

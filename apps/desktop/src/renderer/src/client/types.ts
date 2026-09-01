@@ -16,11 +16,3 @@ export interface ScrapeFileBody {
   path: string;
   url?: string;
 }
-
-export interface FileItem {
-  type: "file" | "directory";
-  path: string;
-  name: string;
-  size?: number;
-  last_modified?: string | null;
-}

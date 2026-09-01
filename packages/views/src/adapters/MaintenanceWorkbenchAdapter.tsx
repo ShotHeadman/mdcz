@@ -1,8 +1,15 @@
+import { toErrorMessage } from "@mdcz/shared/error";
 import { findMaintenanceEntryGroup } from "@mdcz/shared/viewModels/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import {
+  applyMaintenanceSessionSnapshot,
+  selectMaintenanceEntries,
+  selectMaintenanceFieldSelections,
+  selectMaintenanceItemResults,
+  selectMaintenancePreviewResults,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import { useMemo } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { toDetailViewItemFromMaintenanceEntry } from "../detail";
 import { MaintenanceWorkbenchFrame } from "../workbench";
@@ -12,19 +19,18 @@ import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
 
 export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
-  const { entries, activeId, presetId } = useMaintenanceEntryStore(
+  const { entries, activeId, presetId } = useMaintenanceStore(
     useShallow((state) => ({
-      entries: state.entries,
+      entries: selectMaintenanceEntries(state),
       activeId: state.activeId,
       presetId: state.presetId,
     })),
   );
-  const itemResults = useMaintenanceExecutionStore((state) => state.itemResults);
-  const { previewResults, fieldSelections, setFieldSelection } = useMaintenancePreviewStore(
+  const itemResults = useMaintenanceStore(selectMaintenanceItemResults);
+  const { previewResults, fieldSelections } = useMaintenanceStore(
     useShallow((state) => ({
-      previewResults: state.previewResults,
-      fieldSelections: state.fieldSelections,
-      setFieldSelection: state.setFieldSelection,
+      previewResults: selectMaintenancePreviewResults(state),
+      fieldSelections: selectMaintenanceFieldSelections(state),
     })),
   );
 
@@ -56,6 +62,20 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     );
   }, [activeGroup, activeId, detailEntry]);
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
+  const handleFieldSelectionChange = (
+    fileId: string,
+    field: import("@mdcz/shared/types").FieldDiff["field"],
+    side: import("../maintenance").MaintenanceFieldSelectionSide,
+  ) => {
+    const state = useMaintenanceStore.getState();
+    const previewId = selectMaintenancePreviewResults(state)[fileId]?.previewId;
+    if (!previewId) return;
+    const selections = { ...selectMaintenanceFieldSelections(state)[fileId], [field]: side };
+    void ports.maintenance
+      .updateDraft(previewId, { fieldSelections: selections })
+      .then(async () => applyMaintenanceSessionSnapshot(await ports.maintenance.getActiveSession()))
+      .catch((error) => toast.error(`保存维护选择失败: ${toErrorMessage(error)}`));
+  };
   const detailItem = useMemo(() => {
     if (!activeGroup || !detailEntry) {
       return null;
@@ -91,7 +111,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
                   entry: detailEntry ?? undefined,
                   preview: detailPreview,
                   fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
-                  onFieldSelectionChange: setFieldSelection,
+                  onFieldSelectionChange: handleFieldSelectionChange,
                 }
               : undefined
           }

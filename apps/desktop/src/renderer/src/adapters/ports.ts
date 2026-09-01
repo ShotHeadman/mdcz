@@ -1,122 +1,137 @@
-import type { CrawlerData, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import { type LocalFileTarget, parseWireRelativePath } from "@mdcz/shared/mediaRef";
+import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
   MaintenanceActionPort,
   ScrapeActionPort,
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
-import type { DetailViewItem } from "@mdcz/views/detail";
+import { type DetailViewItem, getDetailLocalAssetRef } from "@mdcz/views/detail";
 import { deleteFile, deleteFileAndFolder, readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { getImageSrc, getLocalImagePath, resolveImagePath } from "@/utils/image";
-import { getDirFromPath } from "@/utils/path";
 import { playMediaPath } from "@/utils/playback";
 
 const dedupeValues = (values: string[]): string[] =>
   values.filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
 
-export const resolveDesktopImageCandidates = async (candidates: string[], baseDir?: string): Promise<string[]> =>
+const isAbsoluteLocalPath = (value: string): boolean =>
+  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+
+const toDesktopFileTarget = (path: string, item?: DetailViewItem | null): LocalFileTarget => {
+  const normalizedPath = path.replace(/\\/gu, "/");
+  const asset = getDetailLocalAssetRef(item, normalizedPath);
+  if (asset) return asset;
+  if (!item?.fileRef || isAbsoluteLocalPath(path)) {
+    return path;
+  }
+
+  try {
+    return { rootId: item.fileRef.rootId, relativePath: parseWireRelativePath(normalizedPath) };
+  } catch {
+    return path;
+  }
+};
+
+const getItemFileTarget = (item: DetailViewItem): LocalFileTarget | undefined => item.fileRef ?? item.path;
+
+export const resolveDesktopImageCandidates = async (
+  candidates: string[],
+  baseDir?: string,
+  item?: DetailViewItem | null,
+): Promise<string[]> =>
   dedupeValues(
     await Promise.all(
       candidates.map(async (candidate) => {
-        const localPath = getLocalImagePath(candidate, baseDir);
+        const resolvedPath = getDetailLocalAssetRef(item, candidate) ? candidate : resolveImagePath(candidate, baseDir);
+        const directSource = getImageSrc(resolvedPath);
+        if (directSource) {
+          return directSource;
+        }
+        const localPath = getLocalImagePath(resolvedPath);
         if (localPath) {
           try {
-            const { exists } = await ipc.file.exists(localPath);
-            return exists ? getImageSrc(localPath) : "";
+            const result = await ipc.file.exists(toDesktopFileTarget(localPath, item));
+            return result.exists ? (result.url ?? "") : "";
           } catch {
             return "";
           }
         }
 
-        return getImageSrc(resolveImagePath(candidate, baseDir));
+        return "";
       }),
     ),
   );
 
 export const createDesktopDetailPort = (): DetailActionPort => ({
-  capabilities: {
-    play: "enabled",
-    openFolder: "enabled",
-    openNfo: "enabled",
-    editPoster: "enabled",
-  },
   showFilePath: true,
   resolveImageCandidates: resolveDesktopImageCandidates,
   play: (item) => {
-    if (!item.path) {
+    const target = getItemFileTarget(item);
+    if (!target) {
       return;
     }
-    return playMediaPath(item.path);
+    return playMediaPath(target);
   },
-  openFolder: (item) => {
-    if (!item.path) {
+  openFolder: async (item) => {
+    const target = getItemFileTarget(item);
+    if (!target) {
       return;
     }
-    if (window.electron?.openPath) {
-      window.electron.openPath(getDirFromPath(item.path));
-    }
+    await ipc.app.showItemInFolder(target);
   },
-  readNfo: async (_item: DetailViewItem, path: string) => {
-    const response = await readNfo(path, _item.path);
+  readNfo: async (item: DetailViewItem, path: string) => {
+    const nfoTarget = item.nfoRef && path === item.nfoPath ? item.nfoRef : path;
+    const response = await readNfo(nfoTarget, getItemFileTarget(item));
     return {
       path: response.data.path,
       crawlerData: response.data.crawlerData,
     };
   },
   writeNfo: async (item: DetailViewItem, path: string, data: CrawlerData) => {
-    await updateNfo(path, data, item.path);
+    await updateNfo(path, data, getItemFileTarget(item));
   },
   preparePosterCrop: async (item) => {
-    if (!item.path) throw new Error("缺少本地视频路径");
-    const session = await ipc.file.posterCropSession(item.path);
-    return { ...session, sourceUrl: getImageSrc(session.sourcePath) };
+    const target = getItemFileTarget(item);
+    if (!target) throw new Error("缺少本地视频路径");
+    const session = await ipc.file.posterCropSession(target);
+    const source = await ipc.file.exists(session.sourcePath);
+    return { ...session, sourceUrl: source.url ?? "" };
   },
   savePosterCrop: async (item, crop) => {
-    if (!item.path) throw new Error("缺少本地视频路径");
-    const result = await ipc.file.posterCropSave(item.path, crop);
-    return { posterUrl: `${getImageSrc(result.targetPath)}?revision=${encodeURIComponent(result.revision)}` };
+    const target = getItemFileTarget(item);
+    if (!target) throw new Error("缺少本地视频路径");
+    const result = await ipc.file.posterCropSave(target, crop);
+    const poster = await ipc.file.exists(result.targetPath);
+    const posterUrl = poster.url ?? "";
+    return { posterUrl: posterUrl ? `${posterUrl}?revision=${encodeURIComponent(result.revision)}` : "" };
   },
 });
 
 export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
-  capabilities: {
-    deleteFile: "enabled",
-    deleteFileAndFolder: "enabled",
-    openFolder: "enabled",
-    play: "enabled",
-    openNfo: "enabled",
-  },
-  retrySelection: async (targets, options) => {
-    const filePaths = targets.map((target) => target.filePath);
-    const response = await retryScrapeSelection(filePaths, options);
+  retryFailed: async (itemIds) => {
+    const response = await retryScrapeSelection(itemIds);
     return {
       message: response.data.message,
-      strategy: response.data.strategy,
     };
   },
   deleteFile: async (targets) => {
-    const filePaths = targets.map((target) => target.filePath);
-    await deleteFile(filePaths);
+    await deleteFile(targets.map((target) => target.ref));
   },
-  deleteFileAndFolder: async (filePath) => {
-    await deleteFileAndFolder(filePath);
+  deleteFileAndFolder: async (target) => {
+    await deleteFileAndFolder(target.ref);
   },
-  openFolder: async (filePath) => {
-    await ipc.app.showItemInFolder(filePath);
+  openFolder: async (target) => {
+    await ipc.app.showItemInFolder(target.ref ?? target.filePath);
   },
-  play: (filePath) => playMediaPath(filePath, "播放功能仅在桌面客户端可用", "播放失败"),
+  play: (target) => playMediaPath(target.ref ?? target.filePath, "播放功能仅在桌面客户端可用", "播放失败"),
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
 });
 
 export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => ({
-  capabilities: {
-    openFolder: "enabled",
-    play: "enabled",
-    openNfo: "enabled",
-  },
   openFolder: async (filePath) => {
     await ipc.app.showItemInFolder(filePath);
   },
@@ -124,10 +139,16 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
-  scanFiles: (filePaths) => ipc.maintenance.scanFiles(filePaths),
-  preview: (entries, presetId) => ipc.maintenance.preview(entries, presetId),
-  execute: async (commitItems: MaintenanceCommitItem[], presetId: MaintenancePresetId) => {
-    await ipc.maintenance.execute(commitItems, presetId);
+  getActiveSession: () => ipc.maintenance.getActiveSession(),
+  updateDraft: async (previewId, draft) => {
+    await ipc.maintenance.updateDraft({ previewId, ...draft });
+  },
+  discardSession: async () => {
+    await ipc.maintenance.discardSession();
+  },
+  preview: (refs, presetId) => ipc.maintenance.preview(refs, presetId),
+  execute: async (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) => {
+    await ipc.maintenance.execute(selections, presetId);
   },
   pause: async () => {
     await ipc.maintenance.pause();

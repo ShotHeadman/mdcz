@@ -1,9 +1,9 @@
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger, cn, ScrollArea } from "@mdcz/ui";
-import { CheckCircle2, LoaderCircle, XCircle } from "lucide-react";
+import { CheckCircle2, LoaderCircle, PauseCircle, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type MediaBrowserFilter = "all" | "success" | "failed";
-export type MediaBrowserItemStatus = "success" | "failed" | "processing" | "idle";
+export type MediaBrowserItemStatus = "success" | "failed" | "processing" | "paused" | "idle";
 
 export interface MediaBrowserItem {
   id: string;
@@ -52,6 +52,10 @@ function StatusIcon({ status }: { status?: MediaBrowserItemStatus }) {
 
   if (status === "processing") {
     return <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-primary" />;
+  }
+
+  if (status === "paused") {
+    return <PauseCircle aria-label="已暂停" className="h-4 w-4 shrink-0 text-muted-foreground" />;
   }
 
   return null;

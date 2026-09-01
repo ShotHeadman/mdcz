@@ -2,21 +2,27 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   createPersistenceDatabase,
+  LibraryRepairIssueRepository,
   LibraryRepository,
-  MaintenanceRepository,
   MediaRootRepository,
   type PersistenceDatabase,
+  PublicationJournalRepository,
   runMigrations,
-  TaskRepository,
+  ScanTaskRepository,
+  ScrapeRunRepository,
 } from "@mdcz/persistence";
+import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
+import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
 
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
   library: LibraryRepository;
-  maintenance: MaintenanceRepository;
+  libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
-  tasks: TaskRepository;
+  publicationJournal: PublicationJournalPort;
+  scrapeRuns: ScrapeRunRepository;
+  scanTasks: ScanTaskRepository;
 }
 
 export interface ServerPersistenceState {
@@ -26,6 +32,7 @@ export interface ServerPersistenceState {
 
 export class ServerPersistenceService {
   private state: ServerPersistenceState | null = null;
+  private initializePromise: Promise<ServerPersistenceState> | null = null;
   private closed = false;
 
   constructor(private readonly paths: Pick<ServerRuntimePaths, "databasePath">) {}
@@ -46,18 +53,40 @@ export class ServerPersistenceService {
       return this.state;
     }
 
+    if (!this.initializePromise) {
+      this.initializePromise = this.open().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
+    }
+    return await this.initializePromise;
+  }
+
+  private async open(): Promise<ServerPersistenceState> {
     await mkdir(dirname(this.paths.databasePath), { recursive: true });
     const database = createPersistenceDatabase({ path: this.paths.databasePath });
 
     try {
       runMigrations(database);
+      const scrapeRuns = new ScrapeRunRepository(database);
+      scrapeRuns.interruptUnfinished();
+      const libraryRepairIssues = new LibraryRepairIssueRepository(database);
+      const mediaRoots = new MediaRootRepository(database);
+      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
+      await recoverPublications({
+        journal: publicationJournal,
+        repairIssues: libraryRepairIssues,
+        resolveRoot: async (rootId) => await mediaRoots.get(rootId),
+      });
       this.state = {
         database,
         repositories: {
           library: new LibraryRepository(database),
-          maintenance: new MaintenanceRepository(database),
-          mediaRoots: new MediaRootRepository(database),
-          tasks: new TaskRepository(database),
+          libraryRepairIssues,
+          mediaRoots,
+          publicationJournal,
+          scrapeRuns,
+          scanTasks: new ScanTaskRepository(database),
         },
       };
       return this.state;
@@ -75,5 +104,6 @@ export class ServerPersistenceService {
     this.closed = true;
     this.state?.database.close();
     this.state = null;
+    this.initializePromise = null;
   }
 }

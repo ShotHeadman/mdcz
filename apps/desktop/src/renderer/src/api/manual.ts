@@ -1,22 +1,11 @@
-import type { CrawlerData, ScraperStatus } from "@mdcz/shared/types";
+import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
+import type { CrawlerData } from "@mdcz/shared/types";
+import { selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { ipc } from "@/client/ipc";
 
 export interface NfoResponse {
   path: string;
   crawlerData: CrawlerData;
-}
-
-export interface RequeueResponse {
-  message: string;
-  running: boolean;
-  queued: number;
-  strategy: "new-task" | "requeue";
-}
-
-export interface RetryScrapeSelectionOptions {
-  scrapeStatus: ScraperStatus["state"];
-  canRequeueCurrentRun?: boolean;
-  manualUrl?: string;
 }
 
 const asNfoPath = (path: string): string => {
@@ -30,6 +19,9 @@ const asNfoPath = (path: string): string => {
   }
   return `${path}.nfo`;
 };
+
+const asNfoTarget = (target: LocalFileTarget): LocalFileTarget =>
+  typeof target === "string" ? asNfoPath(target) : { ...target, relativePath: asNfoPath(target.relativePath) };
 
 export const stopScrape = async () => {
   const data = await ipc.scraper.stop();
@@ -46,31 +38,36 @@ export const resumeScrape = async () => {
   return { data };
 };
 
-export const startSelectedScrape = async (filePaths: string[]) => {
-  const selectedPaths = filePaths.map((filePath) => filePath.trim()).filter(Boolean);
-  if (selectedPaths.length === 0) {
+export const startSelectedScrape = async (
+  refs: RootFileRef[],
+  outputRootId: string,
+  outputRelativeDirectory?: string,
+) => {
+  if (refs.length === 0) {
     throw new Error("No files selected");
   }
 
-  const data = await ipc.scraper.start("selection", selectedPaths);
+  const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId, outputRelativeDirectory });
+  const snapshot = await ipc.scraper.getStatus(data.taskId);
+  if (!snapshot) throw new Error(`Scrape task disappeared after start: ${data.taskId}`);
+  useScrapeStore.getState().setSnapshot(snapshot);
   return { data };
 };
 
-export const deleteFile = async (path: string | string[]) => {
-  const filePaths = Array.isArray(path) ? path : [path];
-  const data = await ipc.file.delete(filePaths);
+export const deleteFile = async (target: RootFileRef | RootFileRef[]) => {
+  const data = await ipc.file.delete(Array.isArray(target) ? target : [target]);
+  if (data.failedCount > 0) throw new Error(`删除失败：${data.failedCount} 个文件未删除`);
   return { data };
 };
 
-export const deleteFileAndFolder = async (path: string) => {
-  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  const dir = slash > 0 ? path.slice(0, slash) : path;
-  const data = await ipc.file.delete([path, dir]);
+export const deleteFileAndFolder = async (target: RootFileRef) => {
+  const data = await ipc.file.delete([target], true);
+  if (data.failedCount > 0) throw new Error("删除文件夹失败");
   return { data };
 };
 
-export const readNfo = async (path: string, videoPath?: string) => {
-  const response = await ipc.file.nfoRead(asNfoPath(path), videoPath);
+export const readNfo = async (path: LocalFileTarget, videoPath?: LocalFileTarget) => {
+  const response = await ipc.file.nfoRead(asNfoTarget(path), videoPath);
   const data: NfoResponse = {
     path: response.nfoPath,
     crawlerData: response.data,
@@ -92,44 +89,27 @@ export const resolveNfoWritePath = (path: string, videoPath?: string): string =>
   return asNfoPath(normalizedVideoPath);
 };
 
-export const updateNfo = async (path: string, crawlerData: CrawlerData, videoPath?: string) => {
-  const nfoPath = resolveNfoWritePath(path, videoPath);
+export const updateNfo = async (path: LocalFileTarget, crawlerData: CrawlerData, videoPath?: LocalFileTarget) => {
+  const nfoPath =
+    typeof path === "string"
+      ? resolveNfoWritePath(path, typeof videoPath === "string" ? videoPath : undefined)
+      : asNfoTarget(path);
   const data = await ipc.file.nfoWrite(nfoPath, crawlerData, videoPath);
   return { data };
 };
 
-export const retryScrapeSelection = async (path: string | string[], options: RetryScrapeSelectionOptions) => {
-  const filePaths = Array.isArray(path) ? path : [path];
-
-  if (options.scrapeStatus === "idle") {
-    const result = await ipc.scraper.retryFailed(filePaths, options.manualUrl);
-    const data: RequeueResponse = {
-      message: result.message,
-      running: true,
-      queued: result.totalFiles,
-      strategy: "new-task",
-    };
-    return { data };
+export const retryScrapeSelection = async (itemIds?: readonly string[]) => {
+  const snapshot = selectScrapeSnapshot(useScrapeStore.getState());
+  if (!snapshot) throw new Error("没有可重试的刮削任务");
+  if (
+    snapshot.task.status === "queued" ||
+    snapshot.task.status === "running" ||
+    snapshot.task.status === "paused" ||
+    snapshot.task.status === "stopping"
+  ) {
+    throw new Error("当前刮削任务仍在进行，请等待任务结束后再重试");
   }
-
-  if (options.scrapeStatus === "running" || options.scrapeStatus === "paused") {
-    if (!options.canRequeueCurrentRun) {
-      throw new Error("当前刮削任务仍在进行，已成功项目请等待任务结束后再重新刮削");
-    }
-
-    const result = await ipc.scraper.requeue(filePaths, options.manualUrl);
-    if (result.requeuedCount <= 0) {
-      throw new Error("当前项目不在失败队列中，无法加入当前任务");
-    }
-
-    const data: RequeueResponse = {
-      message: `已加入当前任务队列，共 ${result.requeuedCount} 个文件`,
-      running: true,
-      queued: result.requeuedCount,
-      strategy: "requeue",
-    };
-    return { data };
-  }
-
-  throw new Error("当前刮削任务正在停止，请等待停止完成后再重新刮削");
+  return {
+    data: itemIds ? await ipc.scraper.retry(snapshot.task.id, itemIds) : await ipc.scraper.retry(snapshot.task.id),
+  };
 };

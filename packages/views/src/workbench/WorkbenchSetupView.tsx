@@ -13,7 +13,7 @@ export interface WorkbenchSetupViewProps {
   mode: WorkbenchSetupMode;
   configLoading?: boolean;
   scanDir: string;
-  targetDir: string;
+  targetDir?: string;
   candidates: MediaCandidate[];
   selectedPaths: string[];
   selectedSize: number;
@@ -32,7 +32,7 @@ export interface WorkbenchSetupViewProps {
   onSuggestTargetDir?: (input: { path: string }) => Promise<PathAutocompleteResult>;
   formatBytes: (value: number, options?: { trimTrailingZeros?: boolean }) => string;
   onBrowseScanDir: () => void;
-  onBrowseTargetDir: () => void;
+  onBrowseTargetDir?: () => void;
   onScanDirChange?: (value: string) => void;
   onTargetDirChange?: (value: string) => void;
   onRefreshScan: () => void;
@@ -143,8 +143,10 @@ function MediaRow({
       <label htmlFor={checkboxId} className="contents">
         <div className="min-w-0 space-y-0.5">
           <div className="truncate text-sm font-bold leading-5 tracking-tight text-foreground">{candidate.name}</div>
-          {candidate.relativeDirectory ? (
-            <div className="truncate font-mono text-[10px]/4 text-muted-foreground">{candidate.relativeDirectory}</div>
+          {candidate.ref.relativePath.includes("/") ? (
+            <div className="truncate font-mono text-[10px]/4 text-muted-foreground">
+              {candidate.ref.relativePath.slice(0, candidate.ref.relativePath.lastIndexOf("/"))}
+            </div>
           ) : null}
         </div>
         <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension}</div>
@@ -158,7 +160,7 @@ export function WorkbenchSetupView({
   mode,
   configLoading = false,
   scanDir,
-  targetDir,
+  targetDir = "",
   candidates,
   selectedPaths,
   selectedSize,
@@ -201,7 +203,7 @@ export function WorkbenchSetupView({
       <div className="h-full overflow-y-auto">
         <main className="mx-auto w-full max-w-6xl px-6 pb-36 pt-10 md:px-10 lg:px-12">
           <section className="mb-10">
-            <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+            <div className={mode === "scrape" ? "grid gap-6 lg:grid-cols-2 lg:gap-8" : "grid gap-6"}>
               <PathControl
                 label="扫描目录"
                 value={scanDir}
@@ -211,15 +213,17 @@ export function WorkbenchSetupView({
                 supportsBrowse={!isServer}
                 loadSuggestions={onSuggestScanDir ? (value) => onSuggestScanDir({ path: value }) : undefined}
               />
-              <PathControl
-                label="输出目录"
-                value={targetDir}
-                placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
-                onBrowse={onBrowseTargetDir}
-                onChange={onTargetDirChange}
-                supportsBrowse={!isServer}
-                loadSuggestions={onSuggestTargetDir ? (value) => onSuggestTargetDir({ path: value }) : undefined}
-              />
+              {mode === "scrape" ? (
+                <PathControl
+                  label="输出目录"
+                  value={targetDir}
+                  placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
+                  onBrowse={onBrowseTargetDir ?? (() => undefined)}
+                  onChange={onTargetDirChange}
+                  supportsBrowse={!isServer}
+                  loadSuggestions={onSuggestTargetDir ? (value) => onSuggestTargetDir({ path: value }) : undefined}
+                />
+              ) : null}
             </div>
           </section>
 

@@ -46,18 +46,20 @@ export const buildImageAssetPathFromSource = (targetPath: string, sourcePath: st
 
 export const resolveSingleAsset = async ({
   targetPath,
+  existingPath = targetPath,
   keepExisting,
   fallbackToExistingOnFailure = true,
   create,
 }: {
   targetPath: string;
+  existingPath?: string;
   keepExisting: boolean;
   fallbackToExistingOnFailure?: boolean;
   create: () => Promise<string | null>;
 }): Promise<{ assetPath?: string; createdPath?: string }> => {
-  const existingPath = await resolveExistingAsset(targetPath);
-  if (keepExisting && existingPath) {
-    return { assetPath: existingPath };
+  const resolvedExistingPath = await resolveExistingAsset(existingPath);
+  if (keepExisting && resolvedExistingPath) {
+    return { assetPath: resolvedExistingPath };
   }
 
   const createdPath = await create();
@@ -65,7 +67,7 @@ export const resolveSingleAsset = async ({
     return { assetPath: createdPath, createdPath };
   }
 
-  return fallbackToExistingOnFailure ? { assetPath: existingPath } : {};
+  return fallbackToExistingOnFailure ? { assetPath: resolvedExistingPath } : {};
 };
 
 export const runParallel = async <K extends string, TTask extends { key: K; path: string }, TValue>(
@@ -201,6 +203,18 @@ const getNormalizedSceneImageUrls = (values: string[]): string[] => {
   return urls;
 };
 
+const normalizeSceneUrlKey = (value: string): string => {
+  try {
+    const url = new URL(value);
+    url.protocol = url.protocol.toLowerCase();
+    url.hostname = url.hostname.toLowerCase();
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value;
+  }
+};
+
 export const getSceneImageSets = (
   data: CrawlerData,
   imageAlternatives: Partial<ImageAlternatives>,
@@ -211,6 +225,7 @@ export const getSceneImageSets = (
   }
 
   const seenSets = new Set<string>();
+  const seenUrls = new Set<string>();
   const sets: SceneImageSet[] = [];
   const candidates: SceneImageSet[] = [
     {
@@ -224,10 +239,14 @@ export const getSceneImageSets = (
   ];
 
   for (const candidate of candidates) {
-    const urls = getNormalizedSceneImageUrls(Array.isArray(candidate.urls) ? candidate.urls : []).slice(
-      0,
-      maxSceneImages,
-    );
+    const urls = getNormalizedSceneImageUrls(Array.isArray(candidate.urls) ? candidate.urls : [])
+      .filter((url) => {
+        const key = normalizeSceneUrlKey(url);
+        if (seenUrls.has(key)) return false;
+        seenUrls.add(key);
+        return true;
+      })
+      .slice(0, maxSceneImages);
     if (urls.length === 0) {
       continue;
     }

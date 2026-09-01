@@ -1,14 +1,4 @@
-export type TaskExecutorOutcome = "settled" | "paused" | "stopped";
-
-export interface TaskExecutorSummary {
-  outcome: TaskExecutorOutcome;
-  startedCount: number;
-  settledCount: number;
-  pendingCount: number;
-}
-
 export interface TaskExecutorContext {
-  executionVersion: number;
   signal: AbortSignal;
 }
 
@@ -20,8 +10,7 @@ export interface TaskExecutorGate<TItem> {
 export class TaskExecutor<TItem, TResult> {
   private pauseRequested = false;
   private stopRequested = false;
-  private activeCount = 0;
-  private activeRun: Promise<TaskExecutorSummary> | null = null;
+  private activeRun: Promise<void> | null = null;
   private controller: AbortController | null = null;
 
   constructor(
@@ -29,6 +18,7 @@ export class TaskExecutor<TItem, TResult> {
       concurrency: number;
       runItem: (item: TItem, context: TaskExecutorContext) => Promise<TResult>;
       applyResult: (item: TItem, result: TResult, context: TaskExecutorContext) => Promise<unknown>;
+      discardResult?: (item: TItem, result: TResult, context: TaskExecutorContext) => Promise<unknown> | unknown;
       gate?: TaskExecutorGate<TItem>;
     },
   ) {
@@ -37,13 +27,13 @@ export class TaskExecutor<TItem, TResult> {
     }
   }
 
-  execute(items: readonly TItem[], executionVersion: number): Promise<TaskExecutorSummary> {
+  execute(items: readonly TItem[], signal?: AbortSignal): Promise<void> {
     if (this.activeRun) throw new Error("TaskExecutor is already active");
 
     this.pauseRequested = false;
     this.stopRequested = false;
     this.controller = new AbortController();
-    const run = this.run(items, executionVersion);
+    const run = this.run(items, signal);
     this.activeRun = run;
     const clear = () => {
       if (this.activeRun === run) {
@@ -59,65 +49,49 @@ export class TaskExecutor<TItem, TResult> {
     if (this.activeRun) this.pauseRequested = true;
   }
 
-  resume(): void {
-    if (this.activeRun && !this.stopRequested) this.pauseRequested = false;
-  }
-
   stop(): void {
     if (!this.activeRun || this.stopRequested) return;
     this.stopRequested = true;
     this.controller?.abort();
   }
 
-  async waitForIdle(): Promise<void> {
-    await this.activeRun;
-  }
-
-  get isIdle(): boolean {
-    return this.activeRun === null;
-  }
-
-  get activeItems(): number {
-    return this.activeCount;
-  }
-
-  private async run(items: readonly TItem[], executionVersion: number): Promise<TaskExecutorSummary> {
+  private async run(items: readonly TItem[], signal?: AbortSignal): Promise<void> {
     const controller = this.controller;
     if (!controller) throw new Error("TaskExecutor controller was not initialized");
 
     let nextIndex = 0;
-    let startedCount = 0;
-    let settledCount = 0;
-    const context: TaskExecutorContext = { executionVersion, signal: controller.signal };
+    const context: TaskExecutorContext = {
+      signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+    };
 
     const worker = async (): Promise<void> => {
       while (!this.pauseRequested && !this.stopRequested) {
         const index = nextIndex;
         if (index >= items.length) return;
         nextIndex += 1;
-        startedCount += 1;
-        this.activeCount += 1;
 
         const item = items[index];
+        let result: TResult | undefined;
+        let hasResult = false;
+        let applied = false;
         try {
           await this.deps.gate?.beforeItem?.(item, context);
           if (this.stopRequested) continue;
-          const result = await this.deps.runItem(item, context);
+          result = await this.deps.runItem(item, context);
+          hasResult = true;
           await this.deps.gate?.beforeResult?.(item, context);
           await this.deps.applyResult(item, result, context);
-          settledCount += 1;
+          applied = true;
         } finally {
-          this.activeCount -= 1;
+          if (hasResult && !applied) await this.deps.discardResult?.(item, result as TResult, context);
         }
       }
     };
 
-    await Promise.all(Array.from({ length: Math.min(this.deps.concurrency, items.length) }, worker));
-    return {
-      outcome: this.stopRequested ? "stopped" : this.pauseRequested ? "paused" : "settled",
-      startedCount,
-      settledCount,
-      pendingCount: items.length - startedCount,
-    };
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: Math.min(this.deps.concurrency, items.length) }, worker),
+    );
+    const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+    if (rejected) throw rejected.reason;
   }
 }

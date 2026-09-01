@@ -6,7 +6,6 @@ import { expect, test } from "vitest";
 import { render } from "vitest-browser-react";
 
 const rootDir = "/media";
-const successDir = "/media/JAV_output";
 
 test("server workbench setup hides browse buttons and keeps path autocomplete", async () => {
   const screen = await render(
@@ -65,7 +64,6 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
       <WorkbenchSetupView
         mode="maintenance"
         scanDir={rootDir}
-        targetDir={successDir}
         candidates={[
           {
             path: "/media/ABC-123.mp4",
@@ -73,8 +71,7 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
             size: 1,
             lastModified: null,
             extension: ".mp4",
-            relativePath: "/media/ABC-123.mp4",
-            relativeDirectory: "",
+            ref: { rootId: "test-root", relativePath: "ABC-123.mp4" },
           },
         ]}
         selectedPaths={["/media/ABC-123.mp4"]}
@@ -91,14 +88,12 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
         isServer={false}
         formatBytes={() => "1 B"}
         onBrowseScanDir={() => undefined}
-        onBrowseTargetDir={() => undefined}
         onRefreshScan={() => undefined}
         onPresetChange={() => undefined}
         onStart={() => undefined}
         onToggleCandidate={() => undefined}
         onToggleAll={() => undefined}
         onScanDirChange={() => undefined}
-        onTargetDirChange={() => undefined}
       />,
     );
 
@@ -114,12 +109,15 @@ test("maintenance setup exposes unique copy for each preset branch", async () =>
     await expect.element(screen.getByText("维护预设")).toBeVisible();
     await expect.element(screen.getByText(option.label)).toBeVisible();
     await expect.element(screen.getByText(option.description)).toBeVisible();
+    if (option.id === "read_local") {
+      await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
+    }
     await screen.unmount();
   }
 });
 
-test("media browser list renders processing items with spinner state", async () => {
-  const screen = await render(
+test("media browser list distinguishes processing and paused queue states", async () => {
+  const processing = await render(
     <MediaBrowserList
       items={[
         {
@@ -138,6 +136,29 @@ test("media browser list renders processing items with spinner state", async () 
     />,
   );
 
-  await expect.element(screen.getByText("ABC-123", { exact: true })).toBeVisible();
-  expect(screen.container.querySelector(".animate-spin")).not.toBeNull();
+  await expect.element(processing.getByText("ABC-123", { exact: true })).toBeVisible();
+  expect(processing.container.querySelector(".animate-spin")).not.toBeNull();
+  processing.unmount();
+
+  const paused = await render(
+    <MediaBrowserList
+      items={[
+        {
+          id: "ABC-123",
+          title: "ABC-123",
+          subtitle: "ABC-123.mp4",
+          status: "paused",
+          active: false,
+          menuContent: null,
+          onClick: () => undefined,
+        },
+      ]}
+      filter="all"
+      onFilterChange={() => undefined}
+      stats={[{ label: "总计", value: "1" }]}
+    />,
+  );
+
+  await expect.element(paused.getByLabelText("已暂停")).toBeVisible();
+  expect(paused.container.querySelector(".animate-spin")).toBeNull();
 });

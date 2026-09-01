@@ -17,7 +17,7 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
   onExecute: vi.fn(),
   onExecuteDialogOpenChange: vi.fn(),
   onPauseToggle: vi.fn(),
-  onPreview: vi.fn(async () => null),
+  onPreview: vi.fn(async () => undefined),
   onReturnToSetup: vi.fn(),
   onStop: vi.fn(),
   paused: false,
@@ -25,6 +25,7 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
   previewPending: false,
   progressValue: 0,
   readyCount: 1,
+  recentResults: [],
   selectedCount: 1,
   stopping: false,
   supportsExecution: false,
@@ -43,7 +44,6 @@ function PresetSelectionHarness() {
       <WorkbenchSetupView
         mode="maintenance"
         scanDir="/media"
-        targetDir="/media/JAV_output"
         candidates={[]}
         selectedPaths={[]}
         selectedSize={0}
@@ -58,7 +58,6 @@ function PresetSelectionHarness() {
         primaryDisabled
         formatBytes={() => "0 B"}
         onBrowseScanDir={() => undefined}
-        onBrowseTargetDir={() => undefined}
         onRefreshScan={() => undefined}
         onPresetChange={setPresetId}
         onStart={() => undefined}
@@ -79,7 +78,7 @@ function OrganizeHarness({ onExecute }: { onExecute: () => void }) {
         hasPreviewResults,
         onPreview: async () => {
           setHasPreviewResults(true);
-          return null;
+          return undefined;
         },
         onExecute,
       })}

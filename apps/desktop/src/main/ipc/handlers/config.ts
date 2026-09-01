@@ -1,20 +1,20 @@
 import { extname } from "node:path";
 import type { ServiceContainer } from "@main/container";
-import {
-  type Configuration,
-  ConfigValidationError,
-  configManager,
-  configurationSchema,
-  type DeepPartial,
-  defaultConfiguration,
-} from "@main/services/config";
-import { fileOrganizer } from "@main/services/scraper/fileOrganizerAdapter";
+import { ConfigValidationError, configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
+import { fileOrganizer } from "@main/services/scraper/FileScraper";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { ConfigPathInput } from "@mdcz/shared/serverDtos";
 import { dialog } from "electron";
 import { createIpcError, IpcErrorCode } from "../errors";
+import {
+  configImportProfileInputSchema,
+  configPathInputSchema,
+  configPreviewNamingInputSchema,
+  configProfileNameInputSchema,
+  configResetInputSchema,
+  configSaveInputSchema,
+} from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 export const createConfigHandlers = (
@@ -37,7 +37,7 @@ export const createConfigHandlers = (
   const { windowService } = context;
 
   return {
-    [IpcChannel.Config_Get]: t.procedure.input<ConfigPathInput>().action(async ({ input }) => {
+    [IpcChannel.Config_Get]: t.procedure.input(configPathInputSchema).action(async ({ input }) => {
       try {
         if (!input?.path) {
           return await configManager.getValidated();
@@ -59,7 +59,7 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_Save]: t.procedure.input<{ config?: DeepPartial<Configuration> }>().action(async ({ input }) => {
+    [IpcChannel.Config_Save]: t.procedure.input(configSaveInputSchema).action(async ({ input }) => {
       try {
         await configManager.save(input?.config ?? {});
         return { success: true as const };
@@ -83,7 +83,7 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_Reset]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_Reset]: t.procedure.input(configResetInputSchema).action(async ({ input }) => {
       try {
         await configManager.reset(input?.path);
         return { success: true as const };
@@ -91,18 +91,16 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(createIpcError(IpcErrorCode.CONFIG_SAVE_ERROR, toErrorMessage(error)));
       }
     }),
-    [IpcChannel.Config_PreviewNaming]: t.procedure
-      .input<{ config?: DeepPartial<Configuration> }>()
-      .action(async ({ input }) => {
-        try {
-          const config = configurationSchema.parse(input?.config ?? {});
-          return {
-            items: fileOrganizer.buildNamingPreview(config),
-          };
-        } catch (error) {
-          throw asSerializableIpcError(error);
-        }
-      }),
+    [IpcChannel.Config_PreviewNaming]: t.procedure.input(configPreviewNamingInputSchema).action(async ({ input }) => {
+      try {
+        const config = configurationSchema.parse(input?.config ?? {});
+        return {
+          items: fileOrganizer.buildNamingPreview(config),
+        };
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
     [IpcChannel.Config_ListProfiles]: t.procedure.action(async () => {
       try {
         await configManager.ensureLoaded();
@@ -111,7 +109,7 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_CreateProfile]: t.procedure.input<{ name?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_CreateProfile]: t.procedure.input(configProfileNameInputSchema).action(async ({ input }) => {
       try {
         const name = input?.name?.trim();
         if (!name) {
@@ -123,7 +121,7 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_SwitchProfile]: t.procedure.input<{ name?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_SwitchProfile]: t.procedure.input(configProfileNameInputSchema).action(async ({ input }) => {
       try {
         const name = input?.name?.trim();
         if (!name) {
@@ -135,7 +133,7 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_DeleteProfile]: t.procedure.input<{ name?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_DeleteProfile]: t.procedure.input(configProfileNameInputSchema).action(async ({ input }) => {
       try {
         const name = input?.name?.trim();
         if (!name) {
@@ -147,7 +145,7 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_ExportProfile]: t.procedure.input<{ name?: string }>().action(async ({ input }) => {
+    [IpcChannel.Config_ExportProfile]: t.procedure.input(configProfileNameInputSchema).action(async ({ input }) => {
       try {
         const name = input?.name?.trim();
         if (!name) {
@@ -184,27 +182,25 @@ export const createConfigHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Config_ImportProfile]: t.procedure
-      .input<{ filePath?: string; name?: string; overwrite?: boolean }>()
-      .action(async ({ input }) => {
-        try {
-          const filePath = input?.filePath?.trim();
-          const name = input?.name?.trim();
-          if (!filePath) {
-            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Import file path is required");
-          }
-          if (!name) {
-            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
-          }
-
-          const result = await configManager.importProfile(filePath, name, Boolean(input?.overwrite));
-          return {
-            success: true as const,
-            ...result,
-          };
-        } catch (error) {
-          throw asSerializableIpcError(error);
+    [IpcChannel.Config_ImportProfile]: t.procedure.input(configImportProfileInputSchema).action(async ({ input }) => {
+      try {
+        const filePath = input?.filePath?.trim();
+        const name = input?.name?.trim();
+        if (!filePath) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Import file path is required");
         }
-      }),
+        if (!name) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Profile name is required");
+        }
+
+        const result = await configManager.importProfile(filePath, name, Boolean(input?.overwrite));
+        return {
+          success: true as const,
+          ...result,
+        };
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
   };
 };

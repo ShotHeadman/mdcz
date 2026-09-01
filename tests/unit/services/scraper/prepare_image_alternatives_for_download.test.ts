@@ -1,4 +1,4 @@
-import { prepareImageAlternativesForDownload } from "@main/services/scraper/output";
+import { prepareImageAlternativesForDownload } from "@mdcz/runtime/scrape";
 import { isDmmImageUrl } from "@mdcz/runtime/scrape/utils/dmmImage";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";

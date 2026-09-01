@@ -56,18 +56,6 @@ export function Person() {
   const anyPersonCheckPending = checkJellyfinConnectionMut.isPending || checkEmbyConnectionMut.isPending;
 
   useEffect(() => {
-    return ipc.on.progress((payload) => {
-      if (jellyfinSyncRunning) {
-        setJellyfinSyncProgress(payload.value);
-        return;
-      }
-      if (embySyncRunning) {
-        setEmbySyncProgress(payload.value);
-      }
-    });
-  }, [embySyncRunning, jellyfinSyncRunning]);
-
-  useEffect(() => {
     return () => {
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
       clearProgressResetTimer(embyProgressResetTimerRef);

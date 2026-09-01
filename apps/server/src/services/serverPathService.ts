@@ -140,10 +140,7 @@ export class ServerPathService {
       this.config.get().catch(() => null),
     ]);
     const configuredPathValues = configuration ? this.collectConfigPathValues(configuration) : [];
-    const candidates = [
-      ...mediaRootList.roots.filter((root) => root.enabled).map((root) => root.hostPath),
-      ...configuredPathValues,
-    ];
+    const candidates = [...mediaRootList.roots.map((root) => root.hostPath), ...configuredPathValues];
     const checked = await Promise.all(
       candidates.map(async (candidate) => {
         if (!this.pathApi.isAbsolute(candidate)) {

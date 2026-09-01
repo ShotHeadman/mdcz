@@ -1,7 +1,10 @@
 import { resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import type { DesktopPersistenceService } from "@main/services/persistence";
 import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
+import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import type { LlmApiClient } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
@@ -29,6 +32,7 @@ type EntryOverrides = Omit<Partial<LocalScanEntry>, "assets" | "crawlerData" | "
 
 const createEntry = (overrides: EntryOverrides = {}): LocalScanEntry => ({
   fileId: "file-id",
+  ref: { rootId: "test-root", relativePath: "test.mp4" },
   fileInfo: {
     filePath: "/library/ABC-123.mp4",
     fileName: "ABC-123.mp4",
@@ -81,18 +85,47 @@ const createService = (
     vi.fn(async ({ nfoPath }: { nfoPath?: string }) => {
       return nfoPath;
     });
+  const mediaRoot = {
+    id: "library",
+    displayName: "library",
+    hostPath: "/library",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  };
+  const ensurePathRecord = vi.fn(async () => mediaRoot);
+  const mediaRoots = {
+    ensurePathRecord,
+    listRoots: async () => [mediaRoot],
+  } as unknown as ConfiguredMediaRootService;
 
-  const service = new BatchTranslateToolService({} as NetworkClient, {
-    localScanService,
-    llmApiClient,
-    writeNfo: writeNfo as never,
-  });
+  const service = new BatchTranslateToolService(
+    {} as NetworkClient,
+    {
+      getState: async () => ({
+        repositories: {
+          publicationJournal: createMemoryPublicationJournal(),
+          mediaRoots: {
+            list: async () => [mediaRoot],
+            ensurePath: async () => mediaRoot,
+            upsert: async () => undefined,
+          },
+        },
+      }),
+    } as unknown as DesktopPersistenceService,
+    {
+      localScanService,
+      llmApiClient,
+      writeNfo: writeNfo as never,
+    },
+    mediaRoots,
+  );
 
   return {
     service,
     localScanService,
     llmApiClient,
     writeNfo,
+    ensurePathRecord,
   };
 };
 
@@ -196,7 +229,7 @@ describe("BatchTranslateToolService", () => {
       ],
     ]);
 
-    const { service, localScanService } = createService({
+    const { service, localScanService, ensurePathRecord } = createService({
       scanVideo: async (videoPath) => {
         const matched = entriesByPath.get(videoPath);
         if (!matched) {
@@ -231,6 +264,8 @@ describe("BatchTranslateToolService", () => {
     );
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
+    expect(ensurePathRecord).toHaveBeenCalledOnce();
+    expect(ensurePathRecord).toHaveBeenCalledWith({ hostPath: "/library" });
     expect(generateText).toHaveBeenCalledTimes(1);
     expect(generateText).toHaveBeenCalledWith(
       expect.objectContaining({

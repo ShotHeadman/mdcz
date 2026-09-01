@@ -1,4 +1,4 @@
-import type { MaintenancePreviewItem, PathDiff } from "@mdcz/shared/types";
+import type { MaintenanceItemResult, PathDiff } from "@mdcz/shared/types";
 import {
   Button,
   Dialog,
@@ -37,7 +37,7 @@ export interface MaintenanceBatchBarViewProps {
   onExecute: () => void;
   onExecuteDialogOpenChange: (open: boolean) => void;
   onPauseToggle: () => void;
-  onPreview: () => Promise<MaintenancePreviewItem[] | null | undefined>;
+  onPreview: () => Promise<void>;
   onReturnToSetup: () => void;
   onStop: () => void;
   paused: boolean;
@@ -45,6 +45,7 @@ export interface MaintenanceBatchBarViewProps {
   previewPending: boolean;
   progressValue: number;
   readyCount: number;
+  recentResults: MaintenanceItemResult[];
   selectedCount: number;
   stopping: boolean;
   supportsExecution: boolean;
@@ -72,6 +73,7 @@ export function MaintenanceBatchBarView({
   previewPending,
   progressValue,
   readyCount,
+  recentResults,
   selectedCount,
   stopping,
   supportsExecution,
@@ -159,6 +161,28 @@ export function MaintenanceBatchBarView({
           </>
         )}
       </div>
+
+      {!activeExecution && recentResults.length > 0 ? (
+        <div className="max-w-xl rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+          <div className="mb-1 font-medium">最近批次结果</div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+            <span>成功 {recentResults.filter((item) => item.status === "success").length}</span>
+            <span>失败 {recentResults.filter((item) => item.status === "failed").length}</span>
+            <span>跳过 {recentResults.filter((item) => item.status === "skipped").length}</span>
+          </div>
+          {recentResults.some((item) => item.error) ? (
+            <div className="mt-2 max-h-24 space-y-1 overflow-y-auto">
+              {recentResults
+                .filter((item) => item.error)
+                .map((item) => (
+                  <div key={`${item.batchId ?? "batch"}:${item.fileId}`} className="break-all text-destructive">
+                    {item.fileId}: {item.error}
+                  </div>
+                ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <Dialog open={usesDiffView && executeDialogOpen} onOpenChange={onExecuteDialogOpenChange}>
         <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">

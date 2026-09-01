@@ -53,7 +53,7 @@ export const SetupPage = () => {
     mutationFn: () =>
       api.setup.complete({
         ...(environmentPasswordConfigured ? {} : { password }),
-        mediaRoot: { displayName, hostPath, enabled: true },
+        mediaRoot: { displayName, hostPath },
       }),
     onSuccess: async () => {
       await Promise.all([

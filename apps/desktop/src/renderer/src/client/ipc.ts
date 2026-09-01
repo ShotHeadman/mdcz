@@ -2,28 +2,15 @@ import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
+import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type {
-  ButtonStatusPayload,
-  FailedInfoPayload,
-  LogPayload,
-  ProgressPayload,
-  ScrapeInfoPayload,
-  ShortcutPayload,
-} from "@mdcz/shared/ipcEvents";
+import type { InvalidatePayload, LogPayload, ShortcutPayload } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { LibraryListInput } from "@mdcz/shared/serverDtos";
-import type {
-  CrawlerData,
-  LocalScanEntry,
-  MaintenanceCommitItem,
-  MaintenanceItemResult,
-  MaintenancePresetId,
-  MediaCandidate,
-  ScrapeResult,
-  UncensoredConfirmItem,
-} from "@mdcz/shared/types";
+import type { LibraryListInput, MediaRootEnsurePathInput, MediaRootEnsurePathResponse } from "@mdcz/shared/serverDtos";
+import type { CrawlerData, MaintenancePresetId, MediaCandidate, UncensoredConfirmItem } from "@mdcz/shared/types";
 
 type Unsubscribe = () => void;
 
@@ -35,8 +22,8 @@ export const ipc = {
   app: {
     info: () => client[IpcChannel.App_Info](undefined),
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
-    playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
-    showItemInFolder: (path: string) => client[IpcChannel.App_ShowItemInFolder]({ path }),
+    playMedia: (path: LocalFileTarget) => client[IpcChannel.App_PlayMedia]({ path }),
+    showItemInFolder: (path: LocalFileTarget) => client[IpcChannel.App_ShowItemInFolder]({ path }),
     ensureWatermarkDirectory: () => client[IpcChannel.App_EnsureWatermarkDirectory](undefined),
     openWatermarkDirectory: () => client[IpcChannel.App_OpenWatermarkDirectory](undefined),
     relaunch: () => client[IpcChannel.App_Relaunch](undefined),
@@ -50,7 +37,13 @@ export const ipc = {
   library: {
     availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
-    delete: (input: { deleteMediaFiles?: boolean; id: string }) => client[IpcChannel.Library_Delete](input),
+    delete: (input: { deleteMode?: "none" | "assets" | "all"; id: string }) => client[IpcChannel.Library_Delete](input),
+  },
+  mediaRoots: {
+    ensurePath: (input: MediaRootEnsurePathInput) =>
+      client[IpcChannel.MediaRoots_EnsurePath](input) as Promise<MediaRootEnsurePathResponse>,
+    prepareOutputDirectory: (input: MediaRootEnsurePathInput) =>
+      client[IpcChannel.MediaRoots_PrepareOutputDirectory](input) as Promise<MediaRootEnsurePathResponse>,
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
@@ -68,18 +61,14 @@ export const ipc = {
       client[IpcChannel.Config_ImportProfile]({ filePath, name, overwrite }),
   },
   scraper: {
-    start: (mode: "single" | "selection", paths: string[]) => client[IpcChannel.Scraper_Start]({ mode, paths }),
+    start: (input: ScraperStartInput) => client[IpcChannel.Scraper_Start](input),
+    startSinglePath: (path: string) => client[IpcChannel.Scraper_StartSinglePath]({ path }),
     stop: () => client[IpcChannel.Scraper_Stop](undefined),
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
-    getStatus: () => client[IpcChannel.Scraper_GetStatus](undefined),
-    getFailedFiles: () => client[IpcChannel.Scraper_GetFailedFiles](undefined),
-    requeue: (filePaths: string[], manualUrl?: string) => client[IpcChannel.Scraper_Requeue]({ filePaths, manualUrl }),
-    retryFailed: (filePaths: string[], manualUrl?: string) =>
-      client[IpcChannel.Scraper_RetryFailed]({ filePaths, manualUrl }),
-    getRecoverableSession: () => client[IpcChannel.Scraper_GetRecoverableSession](undefined),
-    resolveRecoverableSession: (action: "recover" | "discard") =>
-      client[IpcChannel.Scraper_ResolveRecoverableSession]({ action }),
+    getStatus: (taskId?: string) => client[IpcChannel.Scraper_GetStatus]({ taskId }),
+    retry: (runId: string, itemIds?: readonly string[]) =>
+      client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
     confirmUncensored: (items: UncensoredConfirmItem[]) => client[IpcChannel.Scraper_ConfirmUncensored]({ items }),
   },
   crawler: {
@@ -94,7 +83,6 @@ export const ipc = {
     testLlm: (input: TranslateTestLlmInput) => client[IpcChannel.Translate_TestLlm](input),
   },
   file: {
-    listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
     listMediaCandidates: (dirPath: string, excludeDirPaths?: readonly string[]) =>
       client[IpcChannel.File_ListMediaCandidates]({
         dirPath,
@@ -103,15 +91,18 @@ export const ipc = {
         candidates: MediaCandidate[];
         supportedExtensions: string[];
       }>,
-    exists: (path: string) => client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean }>,
+    exists: (path: LocalFileTarget) =>
+      client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean; url?: string }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
-    delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),
-    nfoRead: (nfoPath: string, videoPath?: string) => client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
-    nfoWrite: (nfoPath: string, data: CrawlerData, videoPath?: string) =>
+    delete: (targets: RootFileRef[], containingFolder?: boolean) =>
+      client[IpcChannel.File_Delete]({ targets, containingFolder }),
+    nfoRead: (nfoPath: LocalFileTarget, videoPath?: LocalFileTarget) =>
+      client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
+    nfoWrite: (nfoPath: LocalFileTarget, data: CrawlerData, videoPath?: LocalFileTarget) =>
       client[IpcChannel.File_NfoWrite]({ nfoPath, videoPath, data }),
-    posterCropSession: (videoPath: string) => client[IpcChannel.File_PosterCropSession]({ videoPath }),
-    posterCropSave: (videoPath: string, crop: NormalizedCropRegion) =>
+    posterCropSession: (videoPath: LocalFileTarget) => client[IpcChannel.File_PosterCropSession]({ videoPath }),
+    posterCropSave: (videoPath: LocalFileTarget, crop: NormalizedCropRegion) =>
       client[IpcChannel.File_PosterCropSave]({ videoPath, crop }),
   },
   tool: {
@@ -139,32 +130,23 @@ export const ipc = {
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
   maintenance: {
-    scan: (dirPath: string) => client[IpcChannel.Maintenance_Scan]({ dirPath }),
-    scanFiles: (filePaths: string[]) => client[IpcChannel.Maintenance_Scan]({ filePaths }),
-    preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_Preview]({ entries, presetId }),
-    execute: (items: MaintenanceCommitItem[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_Execute]({ items, presetId }),
+    preview: (refs: RootFileRef[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_StartPreview]({ refs, presetId }),
+    execute: (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) =>
+      client[IpcChannel.Maintenance_Apply]({ selections, presetId }),
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
     pause: () => client[IpcChannel.Maintenance_Pause](undefined),
     resume: () => client[IpcChannel.Maintenance_Resume](undefined),
-    getStatus: () => client[IpcChannel.Maintenance_GetStatus](undefined),
+    getActiveSession: () => client[IpcChannel.Maintenance_ReadSnapshot](undefined),
+    updateDraft: (input: { previewId: string; fieldSelections?: Record<string, "old" | "new"> }) =>
+      client[IpcChannel.Maintenance_UpdateDraft](input),
+    discardSession: () => client[IpcChannel.Maintenance_DiscardSession](undefined),
   },
   on: {
     log: (callback: (payload: LogPayload) => void): Unsubscribe => window.api.on(IpcChannel.Event_Log, callback),
-    progress: (callback: (payload: ProgressPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_Progress, callback),
-    scrapeResult: (callback: (payload: ScrapeResult) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_ScrapeResult, callback),
-    scrapeInfo: (callback: (payload: ScrapeInfoPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_ScrapeInfo, callback),
-    failedInfo: (callback: (payload: FailedInfoPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_FailedInfo, callback),
-    buttonStatus: (callback: (payload: ButtonStatusPayload) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_ButtonStatus, callback),
+    invalidate: (callback: (payload: InvalidatePayload) => void): Unsubscribe =>
+      window.api.on(IpcChannel.Event_Invalidate, callback),
     shortcut: (callback: (payload: ShortcutPayload) => void): Unsubscribe =>
       window.api.on(IpcChannel.Event_Shortcut, callback),
-    maintenanceItemResult: (callback: (payload: MaintenanceItemResult) => void): Unsubscribe =>
-      window.api.on(IpcChannel.Event_MaintenanceItemResult, callback),
   },
 };

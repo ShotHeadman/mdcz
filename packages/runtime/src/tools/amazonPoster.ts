@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, rename, stat, unlink } from "node:fs/promises";
+import { readdir, readFile, stat, unlink } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
 import { Website } from "@mdcz/shared/enums";
@@ -10,6 +10,7 @@ import type {
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeDownloadNetworkClient } from "../network";
+import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
 import type { RuntimeLogger } from "../shared";
@@ -110,6 +111,8 @@ export interface AmazonPosterDependencies {
   enhanceAmazonPoster?: (data: CrawlerData) => Promise<AmazonPosterEnhanceResult>;
   logger?: Pick<RuntimeLogger, "warn">;
 }
+
+export type AmazonPosterApplyDependencies = AmazonPosterDependencies & RegisteredPublicationContext;
 
 const defaultAmazonPosterDependencies: Required<Pick<AmazonPosterDependencies, "validateImage">> = {
   validateImage,
@@ -217,7 +220,7 @@ export const lookupAmazonPoster = async (
 export const applyAmazonPosters = async (
   networkClient: RuntimeDownloadNetworkClient,
   items: Array<{ nfoPath: string; amazonPosterUrl: string }>,
-  dependencies: AmazonPosterDependencies = {},
+  dependencies: AmazonPosterApplyDependencies,
 ): Promise<AmazonPosterApplyResultItem[]> => {
   const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
   const results: AmazonPosterApplyResultItem[] = [];
@@ -241,11 +244,18 @@ export const applyAmazonPosters = async (
         await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
         const validation = await validateImageFn(tempPosterPath);
         if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
-        if (replacedExisting) await unlink(savedPosterPath).catch(() => undefined);
-        await rename(tempPosterPath, savedPosterPath);
-      } catch (error) {
+        const data = await readFile(tempPosterPath);
+        await commitRegisteredPublication(
+          {
+            operationId: `amazon-poster:${savedPosterPath}`,
+            operationType: "maintenance",
+            artifacts: [{ targetPath: savedPosterPath, content: { kind: "bytes" as const, data } }],
+            replaceExistingArtifacts: true,
+          },
+          { journal: dependencies.journal, repairIssues: dependencies.repairIssues, roots: dependencies.roots },
+        );
+      } finally {
         await unlink(tempPosterPath).catch(() => undefined);
-        throw error;
       }
       results.push({
         directory,

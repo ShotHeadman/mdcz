@@ -1,4 +1,4 @@
-import type { Configuration } from "@mdcz/shared/config";
+import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   authLoginInputSchema,
   configImportInputSchema,
@@ -15,9 +15,11 @@ import {
   libraryRelinkInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
-  maintenanceScanSelectedFilesInputSchema,
+  maintenanceDiscardSessionInputSchema,
+  maintenanceSessionInputSchema,
   maintenanceStartInputSchema,
-  maintenanceTaskInputSchema,
+  maintenanceUpdateDraftInputSchema,
+  mediaRootEnsurePathInputSchema,
   nfoReadInputSchema,
   nfoWriteInputSchema,
   posterCropSaveInputSchema,
@@ -26,10 +28,8 @@ import {
   scanStartInputSchema,
   scanTaskIdInputSchema,
   scrapeConfirmUncensoredInputSchema,
-  scrapeRecoverableSessionResolveInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
-  scrapeStartSelectedFilesInputSchema,
   scrapeTaskControlInputSchema,
   serverPathSuggestInputSchema,
   setupCompleteInputSchema,
@@ -38,30 +38,8 @@ import {
 } from "@mdcz/shared/serverDtos";
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
-import type { ServerServices } from "../services";
 import { decorateTaskLog } from "../services/runtimeLogService";
 import { mapConfigError, protectedProcedure, setupProcedure, t } from "./context";
-
-const syncMediaRootFromConfig = async (
-  services: ServerServices,
-  config: Configuration,
-  options: { displayName?: string } = {},
-) => {
-  const mediaPath = config.paths.mediaPath.trim();
-  if (!mediaPath) {
-    return;
-  }
-  await services.mediaRoots.setPrimaryMediaRoot({
-    displayName: options.displayName?.trim() || pathDisplayName(mediaPath),
-    hostPath: mediaPath,
-    enabled: true,
-  });
-};
-
-const pathDisplayName = (hostPath: string): string => {
-  const normalized = hostPath.replace(/[\\/]+$/u, "");
-  return normalized.split(/[\\/]+/u).at(-1) || normalized || "媒体库";
-};
 
 export const appRouter = t.router({
   auth: t.router({
@@ -110,12 +88,7 @@ export const appRouter = t.router({
   config: t.router({
     defaults: protectedProcedure.query(({ ctx }) => ctx.services.config.defaults()),
     export: protectedProcedure.query(async ({ ctx }) => await ctx.services.config.export()),
-    read: protectedProcedure.input(configPathInputSchema).query(async ({ ctx, input }) => {
-      if (input?.path) {
-        return await ctx.services.config.get(input.path);
-      }
-      return await ctx.services.config.get();
-    }),
+    read: protectedProcedure.query(async ({ ctx }) => await ctx.services.config.get()),
     import: protectedProcedure.input(configImportInputSchema).mutation(async ({ ctx, input }) => {
       try {
         return await ctx.services.config.import(input.content);
@@ -135,18 +108,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.config.reset(input?.path)),
     update: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        const config = await ctx.services.config.update(input);
-        await syncMediaRootFromConfig(ctx.services, config);
-        return config;
-      } catch (error) {
-        return mapConfigError(error);
-      }
-    }),
-    save: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
-      try {
-        const config = await ctx.services.config.update(input);
-        await syncMediaRootFromConfig(ctx.services, config);
-        return config;
+        return await ctx.services.config.update(input);
       } catch (error) {
         return mapConfigError(error);
       }
@@ -175,7 +137,7 @@ export const appRouter = t.router({
     }),
   }),
   health: t.router({
-    read: t.procedure.query(() => createHealthPayload()),
+    read: t.procedure.query((): HealthResponse => createHealthPayload()),
   }),
   system: t.router({
     about: protectedProcedure.query(async ({ ctx }) => await ctx.services.system.about()),
@@ -186,14 +148,10 @@ export const appRouter = t.router({
       if (kind === "runtime") {
         return ctx.services.runtimeLogs.list(input);
       }
-      const [scanLogs, scrapeLogs, maintenanceLogs] = await Promise.all([
-        ctx.services.scans.logs(),
-        ctx.services.scrape.logs(),
-        ctx.services.maintenance.logs(),
-      ]);
+      const scanLogs = await ctx.services.scans.logs();
       const taskIdFilter = new Set(input?.taskIds ?? []);
       const taskLogsClearedAt = ctx.services.runtimeLogs.getTaskLogsClearedAt();
-      const taskLogs = [...scanLogs.logs, ...scrapeLogs.logs, ...maintenanceLogs.logs]
+      const taskLogs = scanLogs.logs
         .map(decorateTaskLog)
         .filter((log) => taskIdFilter.size === 0 || taskIdFilter.has(log.taskId))
         .filter((log) => !taskLogsClearedAt || log.createdAt > taskLogsClearedAt);
@@ -216,9 +174,6 @@ export const appRouter = t.router({
       .input(libraryAvailabilityInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.availability(input)),
     list: protectedProcedure
-      .input(libraryListInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
-    search: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
     detail: protectedProcedure
@@ -251,30 +206,36 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.tools.execute(input)),
   }),
   mediaRoots: t.router({
+    ensurePath: protectedProcedure
+      .input(mediaRootEnsurePathInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.ensurePath(input)),
+    prepareOutputDirectory: protectedProcedure
+      .input(mediaRootEnsurePathInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.prepareOutputDirectory(input)),
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.mediaRoots.list()),
   }),
   maintenance: t.router({
     execute: protectedProcedure
       .input(maintenanceApplyInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.apply(input)),
-    scanSelectedFiles: protectedProcedure
-      .input(maintenanceScanSelectedFilesInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.maintenance.scanSelectedFiles(input)),
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.execute(input)),
     pause: protectedProcedure
-      .input(maintenanceTaskInputSchema)
+      .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.pause(input)),
-    preview: protectedProcedure
-      .input(maintenanceTaskInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.maintenance.preview(input)),
-    recover: protectedProcedure.query(async ({ ctx }) => await ctx.services.maintenance.list()),
+    getActiveSession: protectedProcedure.query(async ({ ctx }) => await ctx.services.maintenance.getActiveSession()),
+    updateDraft: protectedProcedure
+      .input(maintenanceUpdateDraftInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.updateDraft(input)),
+    discardSession: protectedProcedure
+      .input(maintenanceDiscardSessionInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.discardSession(input)),
     resume: protectedProcedure
-      .input(maintenanceTaskInputSchema)
+      .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.resume(input)),
     start: protectedProcedure
       .input(maintenanceStartInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.start(input)),
     stop: protectedProcedure
-      .input(maintenanceTaskInputSchema)
+      .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.stop(input)),
   }),
   persistence: t.router({
@@ -305,11 +266,12 @@ export const appRouter = t.router({
     deleteFile: protectedProcedure
       .input(fileActionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.deleteFile(input)),
-    listResults: protectedProcedure
+    history: protectedProcedure
       .input(scrapeTaskControlInputSchema.optional())
-      .query(async ({ ctx, input }) => await ctx.services.scrape.listResults(input)),
-    getRecoverableSession: protectedProcedure.query(
-      async ({ ctx }) => await ctx.services.scrape.getRecoverableSession(),
+      .query(async ({ ctx, input }) => await ctx.services.scrape.history(input)),
+    liveRuns: protectedProcedure.query(async ({ ctx }) => await ctx.services.scrape.liveRuns()),
+    pendingUncensoredConfirmation: protectedProcedure.query(
+      async ({ ctx }) => await ctx.services.scrape.pendingUncensoredConfirmation(),
     ),
     nfoRead: protectedProcedure
       .input(nfoReadInputSchema)
@@ -325,19 +287,19 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.posterCropSave(input)),
     pause: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.pause(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: await ctx.services.scrape.pause(input) })),
     result: protectedProcedure
       .input(scrapeResultIdInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.result(input.id)),
     resume: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.resume(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: await ctx.services.scrape.resume(input) })),
     retry: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.retry(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.retry(input)).task.id })),
     confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        return await ctx.services.scrape.confirmUncensored(input);
+        return { runId: await ctx.services.scrape.confirmUncensored(input) };
       } catch (error) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -346,62 +308,21 @@ export const appRouter = t.router({
         });
       }
     }),
-    resolveRecoverableSession: protectedProcedure
-      .input(scrapeRecoverableSessionResolveInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.resolveRecoverableSession(input)),
     start: protectedProcedure
       .input(scrapeStartInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.start(input)),
-    startSelectedFiles: protectedProcedure
-      .input(scrapeStartSelectedFilesInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.startSelectedFiles(input)),
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.start(input)).task.id })),
     stop: protectedProcedure
       .input(scrapeTaskControlInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.stop(input)),
-  }),
-  tasks: t.router({
-    detail: protectedProcedure.input(scanTaskIdInputSchema).query(async ({ ctx, input }) => {
-      const scanDetail = await ctx.services.scans.detail(input.taskId).catch(() => null);
-      const scrapeDetail = scanDetail ?? (await ctx.services.scrape.detail(input.taskId).catch(() => null));
-      return scrapeDetail ?? (await ctx.services.maintenance.detail(input.taskId));
-    }),
-    events: protectedProcedure.input(scanTaskIdInputSchema).query(async ({ ctx, input }) => {
-      const scanEvents = await ctx.services.scans.events(input.taskId).catch(() => null);
-      const scrapeEvents = scanEvents ?? (await ctx.services.scrape.events(input.taskId).catch(() => null));
-      return scrapeEvents ?? (await ctx.services.maintenance.events(input.taskId));
-    }),
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const [scans, scrape, maintenance] = await Promise.all([
-        ctx.services.scans.list(),
-        ctx.services.scrape.list(),
-        ctx.services.maintenance.list(),
-      ]);
-      return {
-        tasks: [...scans.tasks, ...scrape.tasks, ...maintenance.tasks].sort((left, right) =>
-          right.createdAt.localeCompare(left.createdAt),
-        ),
-      };
-    }),
-    retry: protectedProcedure.input(scanTaskIdInputSchema).mutation(async ({ ctx, input }) => {
-      const detail = await ctx.services.scans.detail(input.taskId).catch(() => null);
-      if (detail?.task.kind === "scan") {
-        return await ctx.services.scans.retry(input.taskId);
-      }
-      const scrapeDetail = await ctx.services.scrape.detail(input.taskId).catch(() => null);
-      if (scrapeDetail?.task.kind === "scrape") {
-        return await ctx.services.scrape.retry(input);
-      }
-      return await ctx.services.maintenance.start({
-        rootId: (await ctx.services.maintenance.detail(input.taskId)).task.rootId,
-        presetId: "read_local",
-      });
-    }),
+      .mutation(async ({ ctx, input }) => ({ runId: await ctx.services.scrape.stop(input) })),
   }),
   setup: t.router({
     complete: setupProcedure.input(setupCompleteInputSchema).mutation(async ({ ctx, input }) => {
       ctx.services.auth.assertValidSetupPassword(input.password);
-      const config = await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
-      await syncMediaRootFromConfig(ctx.services, config, { displayName: input.mediaRoot.displayName });
+      await ctx.services.mediaRoots.ensurePath({
+        displayName: input.mediaRoot.displayName,
+        hostPath: input.mediaRoot.hostPath,
+      });
+      await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
       return await ctx.services.auth.completeSetup(input.password);
     }),
     status: t.procedure.query(async ({ ctx }) => {

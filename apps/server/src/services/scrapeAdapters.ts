@@ -1,6 +1,4 @@
-import { rm } from "node:fs/promises";
 import {
-  atomicWriteRootFile,
   type MediaRoot,
   readRootFile,
   resolveRootRelativePath,
@@ -8,8 +6,8 @@ import {
   storageErrorCodes,
   toRootRelativePath,
 } from "@mdcz/media-store";
-import type { ScrapeResultRecord } from "@mdcz/persistence";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { commitPublishedMedia } from "@mdcz/runtime/publication";
 import {
   getNfoReadCandidates,
   getNfoWritePaths,
@@ -28,6 +26,15 @@ import type {
 } from "@mdcz/shared/serverDtos";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
+import type { ServerPersistenceService } from "./persistenceService";
+
+export interface ServerScrapeArtifactRecord {
+  rootId: string;
+  relativePath: string;
+  nfoRootId: string | null;
+  outputRootId: string | null;
+  outputRelativePath: string | null;
+}
 
 const readExistingNfo = async (
   root: MediaRoot,
@@ -54,10 +61,11 @@ export class ServerNfoAdapter {
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly nfoGenerator: NfoGenerator,
+    private readonly persistence: ServerPersistenceService,
   ) {}
 
   async read(input: NfoReadInput): Promise<NfoReadResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
+    const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
     const candidates = getNfoReadCandidates(
       input.relativePath,
       configuration.download.nfoNaming,
@@ -75,7 +83,7 @@ export class ServerNfoAdapter {
   }
 
   async write(input: NfoWriteInput): Promise<NfoWriteResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.getActiveRoot(input.rootId), this.config.get()]);
+    const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
     const plannedRelativePath = resolveFilenameNfoPath(input.relativePath, input.videoRelativePath);
     const candidates = getNfoReadCandidates(
       input.relativePath,
@@ -96,10 +104,26 @@ export class ServerNfoAdapter {
       ? this.nfoGenerator.mergeEditableXml(existingXml, input.data, options)
       : this.nfoGenerator.buildXml(input.data, options);
     const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
-    for (const requiredPath of paths.requiredPaths) await atomicWriteRootFile(root, requiredPath, xml);
-    for (const stalePath of paths.stalePaths) {
-      await rm(resolveRootRelativePath(root, stalePath), { force: true });
-    }
+    const state = await this.persistence.getState();
+    await commitPublishedMedia(
+      {
+        operationId: `nfo-write:${input.rootId}:${plannedRelativePath}`,
+        operationType: "maintenance",
+        artifacts: paths.requiredPaths.map((relativePath) => ({
+          target: { rootId: root.id, relativePath },
+          content: { kind: "text" as const, data: xml },
+        })),
+        assets: [],
+        obsolete: paths.stalePaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+        replaceExistingTargets: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+      },
+      {
+        resolveRoot: async () => root,
+        journal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
+        commit: () => undefined,
+      },
+    );
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,
@@ -114,12 +138,13 @@ export class ServerPosterCropAdapter {
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly posterCropService: PosterCropService,
-    private readonly resolveMetadataVideoPath: (result: ScrapeResultRecord) => string,
+    private readonly resolveMetadataVideoPath: (result: ServerScrapeArtifactRecord) => string,
+    private readonly persistence: ServerPersistenceService,
   ) {}
 
-  async session(record: ScrapeResultRecord) {
+  async session(record: ServerScrapeArtifactRecord) {
     const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
+      this.mediaRoots.get(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
     const session = await this.posterCropService.prepare(
@@ -135,15 +160,21 @@ export class ServerPosterCropAdapter {
     } satisfies PosterCropSessionResponse;
   }
 
-  async save(record: ScrapeResultRecord, input: PosterCropSaveInput) {
+  async save(record: ServerScrapeArtifactRecord, input: PosterCropSaveInput) {
     const [root, configuration] = await Promise.all([
-      this.mediaRoots.getActiveRoot(record.nfoRootId ?? record.rootId),
+      this.mediaRoots.get(record.nfoRootId ?? record.outputRootId ?? record.rootId),
       this.config.get(),
     ]);
+    const state = await this.persistence.getState();
     const result = await this.posterCropService.save(
       resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
       configuration.naming.assetNamingMode,
       input.crop,
+      {
+        journal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
+        roots: [root],
+      },
     );
     return {
       sourceRelativePath: requireRootRelativeAssetPath(root, result.sourcePath),

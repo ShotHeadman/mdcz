@@ -2,7 +2,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { findScrapeResultGroup } from "@mdcz/shared/viewModels/scrapeResultGrouping";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -17,11 +17,9 @@ import {
   serializeEditableNfoData,
   validateEditableNfoData,
 } from "../nfo";
-import type { ActionAvailability, DetailActionPort, PosterCropEditSession } from "./ports";
+import type { DetailActionPort, PosterCropEditSession } from "./ports";
 
-const EMPTY_RESULTS: ReturnType<typeof useScrapeStore.getState>["results"] = [];
-
-const isActionVisible = (availability: ActionAvailability | undefined) => availability !== "hidden";
+const EMPTY_RESULTS: ReturnType<typeof selectScrapeResults> = [];
 
 const getDirFromPath = (path: string): string => {
   const normalized = path.replace(/[\\/]+$/u, "");
@@ -36,29 +34,32 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
   const candidates = useMemo(() => buildDetailArtworkCandidates(item), [item]);
   const posterCandidateKey = buildCandidateKey(candidates.poster);
   const thumbCandidateKey = buildCandidateKey(candidates.thumb);
+  const trailerCandidateKey = buildCandidateKey(
+    [item?.trailerUrl, ...(item?.trailerFallbackUrls ?? [])].filter((value): value is string => Boolean(value)),
+  );
   const baseDir = item?.outputPath ?? (item?.path ? getDirFromPath(item.path) : undefined);
-  const [posterSources, setPosterSources] = useState<string[]>([]);
-  const [thumbSources, setThumbSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<[string[], string[], string[]]>([[], [], []]);
   const [posterIndex, setPosterIndex] = useState(0);
   const [thumbIndex, setThumbIndex] = useState(0);
+  const [trailerIndex, setTrailerIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const posterCandidates = readCandidateKey(posterCandidateKey);
     const thumbCandidates = readCandidateKey(thumbCandidateKey);
+    const trailerCandidates = readCandidateKey(trailerCandidateKey);
     setPosterIndex(0);
     setThumbIndex(0);
+    setTrailerIndex(0);
 
     const resolveSources = async () => {
-      const [nextPosterSources, nextThumbSources] = await Promise.all([
+      const resolved = await Promise.all([
         port.resolveImageCandidates(posterCandidates, baseDir, item),
         port.resolveImageCandidates(thumbCandidates, baseDir, item),
+        port.resolveImageCandidates(trailerCandidates, baseDir, item),
       ]);
 
-      if (!cancelled) {
-        setPosterSources(nextPosterSources);
-        setThumbSources(nextThumbSources);
-      }
+      if (!cancelled) setSources(resolved);
     };
 
     void resolveSources();
@@ -66,21 +67,27 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
     return () => {
       cancelled = true;
     };
-  }, [baseDir, posterCandidateKey, thumbCandidateKey, port, item]);
+  }, [baseDir, posterCandidateKey, thumbCandidateKey, trailerCandidateKey, port, item]);
 
   const handlePosterError = useCallback(() => {
-    setPosterIndex((currentIndex) => Math.min(currentIndex + 1, posterSources.length));
-  }, [posterSources.length]);
+    setPosterIndex((currentIndex) => Math.min(currentIndex + 1, sources[0].length));
+  }, [sources]);
 
   const handleThumbError = useCallback(() => {
-    setThumbIndex((currentIndex) => Math.min(currentIndex + 1, thumbSources.length));
-  }, [thumbSources.length]);
+    setThumbIndex((currentIndex) => Math.min(currentIndex + 1, sources[1].length));
+  }, [sources]);
+
+  const handleTrailerError = useCallback(() => {
+    setTrailerIndex((currentIndex) => Math.min(currentIndex + 1, sources[2].length));
+  }, [sources]);
 
   return {
-    posterSrc: posterOverride || posterSources[posterIndex] || "",
-    thumbSrc: thumbSources[thumbIndex] ?? "",
+    posterSrc: posterOverride || sources[0][posterIndex] || "",
+    thumbSrc: sources[1][thumbIndex] ?? "",
+    trailerSrc: sources[2][trailerIndex] ?? "",
     handlePosterError,
     handleThumbError,
+    handleTrailerError,
   };
 }
 
@@ -97,7 +104,7 @@ export function DetailPanelAdapter({
   emptyMessage = "请选择一个项目以查看详情",
   compare,
 }: DetailPanelProps) {
-  const results = useScrapeStore((state) => (explicitItem === undefined ? state.results : EMPTY_RESULTS));
+  const results = useScrapeStore((state) => (explicitItem === undefined ? selectScrapeResults(state) : EMPTY_RESULTS));
   const selectedResultId = useUIStore((state) => (explicitItem === undefined ? state.selectedResultId : null));
 
   const item = useMemo(
@@ -140,7 +147,7 @@ export function DetailPanelAdapter({
     setPosterOverride("");
     setPosterCropSession(null);
     setPosterCrop(null);
-    if (!item || item.status !== "success" || !isActionVisible(port.capabilities?.editPoster)) return;
+    if (!item || item.status !== "success") return;
     void port
       .preparePosterCrop(item)
       .then((session) => {
@@ -152,7 +159,7 @@ export function DetailPanelAdapter({
     return () => {
       cancelled = true;
     };
-  }, [item, port, port.capabilities?.editPoster]);
+  }, [item, port]);
 
   const openNfoEditor = useCallback(
     async (path: string) => {
@@ -220,7 +227,7 @@ export function DetailPanelAdapter({
       toast.info("请先选择一个项目");
       return;
     }
-    void port.play(item);
+    void port.play?.(item);
   }, [item, port]);
 
   const handleOpenFolder = useCallback(() => {
@@ -228,7 +235,7 @@ export function DetailPanelAdapter({
       toast.info("请先选择一个项目");
       return;
     }
-    void port.openFolder(item);
+    void port.openFolder?.(item);
   }, [item, port]);
 
   const handleOpenNfo = useCallback(async () => {
@@ -283,18 +290,11 @@ export function DetailPanelAdapter({
 
   const actions = useMemo(
     () => ({
-      play: isActionVisible(port.capabilities?.play) ? handlePlay : undefined,
-      openFolder: isActionVisible(port.capabilities?.openFolder) ? handleOpenFolder : undefined,
-      openNfo: isActionVisible(port.capabilities?.openNfo) ? handleOpenNfo : undefined,
+      play: typeof port.play === "function" ? handlePlay : undefined,
+      openFolder: typeof port.openFolder === "function" ? handleOpenFolder : undefined,
+      openNfo: handleOpenNfo,
     }),
-    [
-      handleOpenFolder,
-      handleOpenNfo,
-      handlePlay,
-      port.capabilities?.openFolder,
-      port.capabilities?.openNfo,
-      port.capabilities?.play,
-    ],
+    [handleOpenFolder, handleOpenNfo, handlePlay, port.openFolder, port.play],
   );
 
   useEffect(() => {
@@ -315,6 +315,7 @@ export function DetailPanelAdapter({
       compare={compare}
       posterSrc={artwork.posterSrc}
       thumbSrc={artwork.thumbSrc}
+      trailerSrc={artwork.trailerSrc}
       nfo={{
         open: nfoOpen,
         data: nfoData,
@@ -331,6 +332,7 @@ export function DetailPanelAdapter({
       onOpenNfo={actions.openNfo}
       onPosterError={artwork.handlePosterError}
       onThumbError={artwork.handleThumbError}
+      onTrailerError={artwork.handleTrailerError}
       resolveImageCandidates={resolveImageCandidates}
       showFilePath={port.showFilePath}
       posterEditor={{

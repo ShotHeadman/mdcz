@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { stat as fsStat } from "node:fs/promises";
 import path from "node:path";
 import { and, desc, eq, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
+import { writeLibraryRows } from "./libraryWrite";
 import {
   type LibraryItemAssetRow,
   type LibraryItemFileRow,
@@ -9,25 +10,8 @@ import {
   libraryItemAssets,
   libraryItemFiles,
   libraryItems,
-  type ScrapeOutputRow,
-  type ScrapeResultRow,
-  scrapeOutputs,
-  scrapeResults,
-  taskRecords,
+  mediaRoots,
 } from "./schema";
-
-export type ScrapeResultRecordStatus = "pending" | "processing" | "success" | "failed" | "skipped";
-
-export interface ScrapeOutputRecord {
-  id: string;
-  taskId: string | null;
-  rootId: string | null;
-  outputDirectory: string | null;
-  fileCount: number;
-  totalBytes: number;
-  completedAt: Date;
-  createdAt: Date;
-}
 
 export interface LibraryEntryRecord {
   id: string;
@@ -38,13 +22,14 @@ export interface LibraryEntryRecord {
   directory: string;
   size: number;
   modifiedAt: Date | null;
-  sourceTaskId: string | null;
-  scrapeOutputId: string | null;
+  sourceRunId: string | null;
+  sourceOutcomeId: string | null;
   title: string | null;
   number: string | null;
   actors: string[];
   crawlerDataJson: string | null;
   thumbnailPath: string | null;
+  thumbnailRootId: string | null;
   lastKnownPath: string | null;
   createdAt: Date;
   lastRefreshedAt: Date | null;
@@ -53,43 +38,16 @@ export interface LibraryEntryRecord {
   assets: LibraryItemAssetRecord[];
 }
 
-export interface ScrapeResultRecord {
-  id: string;
-  taskId: string;
-  rootId: string;
-  relativePath: string;
-  status: ScrapeResultRecordStatus;
-  error: string | null;
-  crawlerDataJson: string | null;
-  nfoRootId: string | null;
-  nfoRelativePath: string | null;
-  outputRelativePath: string | null;
-  manualUrl: string | null;
-  uncensoredAmbiguous: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface UpsertScrapeOutputInput {
-  id?: string;
-  taskId?: string | null;
-  rootId?: string | null;
-  outputDirectory?: string | null;
-  fileCount: number;
-  totalBytes: number;
-  completedAt: Date;
-  createdAt?: Date;
-}
-
 export interface UpsertLibraryEntryInput {
   id?: string;
+  fileId?: string;
   mediaIdentity?: string | null;
   rootId: string;
   rootRelativePath: string;
   size?: number;
   modifiedAt?: Date | null;
-  sourceTaskId?: string | null;
-  scrapeOutputId?: string | null;
+  sourceRunId?: string | null;
+  sourceOutcomeId?: string | null;
   title?: string | null;
   number?: string | null;
   actors?: string[];
@@ -137,6 +95,7 @@ export interface LibraryOverviewEntryRecord {
   title: string | null;
   actors: string[];
   thumbnailPath: string | null;
+  thumbnailRootId: string | null;
   lastKnownPath: string | null;
   createdAt: Date;
   hiddenFromRecentAt: Date | null;
@@ -173,32 +132,66 @@ export interface LibraryItemAssetRecord {
   createdAt: Date;
 }
 
-export interface UpsertScrapeResultInput {
-  id?: string;
-  taskId: string;
+export interface CommitMaintenanceRefreshInput {
+  librarySource?: MaintenanceLibrarySourceRecord;
+  sourceAbsolutePath: string;
+  targetAbsolutePath: string;
+  size: number;
+  modifiedAt: Date;
+  crawlerData?: MaintenanceCrawlerDataRecord;
+  fallbackNumber: string;
+  assets: MaintenanceDiscoveredAssetsRecord;
+  refreshedAt: Date;
+}
+
+export interface MaintenanceLibrarySourceRecord {
+  libraryItemId: string;
+  libraryFileId: string;
   rootId: string;
-  relativePath: string;
-  status: ScrapeResultRecordStatus;
-  error?: string | null;
-  crawlerDataJson?: string | null;
-  nfoRootId?: string | null;
-  nfoRelativePath?: string | null;
-  outputRelativePath?: string | null;
-  manualUrl?: string | null;
-  uncensoredAmbiguous?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
+  rootRelativePath: string;
 }
 
-export interface TaskExecutionRef {
-  taskId: string;
-  executionVersion: number;
+export interface MaintenanceCrawlerDataRecord {
+  title: string;
+  number: string;
+  actors: string[];
+  thumb_url?: string;
+  poster_url?: string;
+  fanart_url?: string;
+  thumb_source_url?: string;
+  poster_source_url?: string;
+  fanart_source_url?: string;
+  trailer_source_url?: string;
+  scene_images: string[];
+  trailer_url?: string;
 }
 
-export interface CommitOwnedScrapeSuccessInput {
-  execution: TaskExecutionRef;
-  result: UpsertScrapeResultInput;
-  entry: UpsertLibraryEntryInput;
+export interface MaintenanceDiscoveredAssetsRecord {
+  thumb?: string;
+  poster?: string;
+  fanart?: string;
+  sceneImages: string[];
+  trailer?: string;
+  actorPhotos: string[];
+}
+
+export type RootPathCandidate = {
+  hostPath: string;
+  rootId: string;
+  rootRelativePath: string;
+};
+
+type MaintenanceAssetInput = {
+  kind: string;
+  uri: string;
+  rootId: string | null;
+  relativePath: string | null;
+};
+
+export interface PreparedMaintenanceRefresh {
+  librarySource: MaintenanceLibrarySourceRecord | undefined;
+  targetCandidates: RootPathCandidate[];
+  libraryEntry: UpsertLibraryEntryInput;
 }
 
 const safeActors = (value: string): string[] => {
@@ -209,17 +202,6 @@ const safeActors = (value: string): string[] => {
     return [];
   }
 };
-
-const toScrapeOutputRecord = (row: ScrapeOutputRow): ScrapeOutputRecord => ({
-  id: row.id,
-  taskId: row.taskId,
-  rootId: row.rootId,
-  outputDirectory: row.outputDirectory,
-  fileCount: row.fileCount,
-  totalBytes: row.totalBytes,
-  completedAt: row.completedAt,
-  createdAt: row.createdAt,
-});
 
 const toLibraryItemFileRecord = (row: LibraryItemFileRow): LibraryItemFileRecord => ({
   id: row.id,
@@ -250,7 +232,7 @@ const toLibraryEntryRecord = (
   files: LibraryItemFileRecord[],
   assets: LibraryItemAssetRecord[],
 ): LibraryEntryRecord => {
-  const primaryFile = files[0];
+  const primaryFile = files.find((file) => file.id === `${item.id}:primary`) ?? files[0];
   if (!primaryFile) {
     throw new Error(`Library item has no file refs: ${item.id}`);
   }
@@ -268,13 +250,14 @@ const toLibraryEntryRecord = (
     directory: primaryFile.directory,
     size: primaryFile.size,
     modifiedAt: primaryFile.modifiedAt,
-    sourceTaskId: item.sourceTaskId,
-    scrapeOutputId: item.scrapeOutputId,
+    sourceRunId: item.sourceRunId,
+    sourceOutcomeId: item.sourceOutcomeId,
     title: item.title,
     number: item.number,
     actors: safeActors(item.actorsJson),
     crawlerDataJson: item.crawlerDataJson,
     thumbnailPath: thumbnail?.uri ?? null,
+    thumbnailRootId: thumbnail?.rootId ?? null,
     lastKnownPath: primaryFile.lastKnownPath,
     createdAt: item.createdAt,
     lastRefreshedAt: item.lastRefreshedAt,
@@ -286,208 +269,106 @@ const toLibraryEntryRecord = (
 
 const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
 
-const toScrapeResultRecord = (row: ScrapeResultRow): ScrapeResultRecord => ({
-  id: row.id,
-  taskId: row.taskId,
-  rootId: row.rootId,
-  relativePath: row.relativePath,
-  status: row.status as ScrapeResultRecordStatus,
-  error: row.errorMessage,
-  crawlerDataJson: row.crawlerDataJson,
-  nfoRootId: row.nfoRootId,
-  nfoRelativePath: row.nfoRelativePath,
-  outputRelativePath: row.outputRelativePath,
-  manualUrl: row.manualUrl,
-  uncensoredAmbiguous: row.uncensoredAmbiguous,
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
-});
-
-const isCurrentExecution = (database: PersistenceDatabase, execution: TaskExecutionRef): boolean =>
-  Boolean(
-    database.db
-      .select({ id: taskRecords.id })
-      .from(taskRecords)
-      .where(
-        and(
-          eq(taskRecords.id, execution.taskId),
-          eq(taskRecords.executionVersion, execution.executionVersion),
-          inArray(taskRecords.status, ["running", "paused", "stopping"]),
-        ),
-      )
-      .limit(1)
-      .get(),
-  );
-
-const writeScrapeResult = (database: PersistenceDatabase, input: UpsertScrapeResultInput): string => {
-  const id = input.id ?? randomUUID();
-  const now = new Date();
-  const createdAt = input.createdAt ?? now;
-  const updatedAt = input.updatedAt ?? now;
-  database.db
-    .insert(scrapeResults)
-    .values({
-      id,
-      taskId: input.taskId,
-      rootId: input.rootId,
-      relativePath: input.relativePath,
-      status: input.status,
-      errorMessage: input.error ?? null,
-      crawlerDataJson: input.crawlerDataJson ?? null,
-      nfoRootId: input.nfoRootId ?? null,
-      nfoRelativePath: input.nfoRelativePath ?? null,
-      outputRelativePath: input.outputRelativePath ?? null,
-      manualUrl: input.manualUrl ?? null,
-      uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
-      createdAt,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: scrapeResults.id,
-      set: {
-        status: input.status,
-        errorMessage: input.error ?? null,
-        crawlerDataJson: input.crawlerDataJson ?? null,
-        nfoRootId: input.nfoRootId ?? null,
-        nfoRelativePath: input.nfoRelativePath ?? null,
-        outputRelativePath: input.outputRelativePath ?? null,
-        manualUrl: input.manualUrl ?? null,
-        uncensoredAmbiguous: input.uncensoredAmbiguous ?? false,
-        updatedAt,
-      },
-    })
-    .run();
-  return id;
-};
-
-const writeLibraryEntry = (database: PersistenceDatabase, input: UpsertLibraryEntryInput): string => {
-  const id = input.id ?? `${input.rootId}:${input.rootRelativePath}`;
-  const directory = path.posix.dirname(input.rootRelativePath);
-  const createdAt = input.createdAt ?? new Date();
-  const now = new Date();
-  const actorsJson = JSON.stringify(input.actors ?? []);
-  const mediaIdentity = input.mediaIdentity ?? input.number ?? id;
-  const assets = deriveAssets(input.crawlerDataJson, input.thumbnailPath, input.assets);
-
-  database.db
-    .insert(libraryItems)
-    .values({
-      id,
-      mediaIdentity,
-      crawlerDataJson: input.crawlerDataJson ?? null,
-      sourceTaskId: input.sourceTaskId ?? null,
-      scrapeOutputId: input.scrapeOutputId ?? null,
-      title: input.title ?? null,
-      number: input.number ?? null,
-      actorsJson,
-      createdAt,
-      lastRefreshedAt: input.lastRefreshedAt ?? null,
-      hiddenFromRecentAt: null,
-    })
-    .onConflictDoUpdate({
-      target: libraryItems.id,
-      set: {
-        mediaIdentity,
-        crawlerDataJson: input.crawlerDataJson ?? null,
-        sourceTaskId: input.sourceTaskId ?? null,
-        scrapeOutputId: input.scrapeOutputId ?? null,
-        title: input.title ?? null,
-        number: input.number ?? null,
-        actorsJson,
-        lastRefreshedAt: input.lastRefreshedAt ?? null,
-      },
-    })
-    .run();
-  database.db
-    .insert(libraryItemFiles)
-    .values({
-      id: `${id}:primary`,
-      itemId: id,
-      rootId: input.rootId,
-      rootRelativePath: input.rootRelativePath,
-      fileName: path.posix.basename(input.rootRelativePath),
-      directory: directory === "." ? "" : directory,
-      size: input.size ?? 0,
-      modifiedAt: input.modifiedAt ?? null,
-      lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [libraryItemFiles.itemId, libraryItemFiles.rootId, libraryItemFiles.rootRelativePath],
-      set: {
-        fileName: path.posix.basename(input.rootRelativePath),
-        directory: directory === "." ? "" : directory,
-        size: input.size ?? 0,
-        modifiedAt: input.modifiedAt ?? null,
-        lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
-        updatedAt: now,
-      },
-    })
-    .run();
-  database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
-  if (assets.length > 0) {
-    database.db
-      .insert(libraryItemAssets)
-      .values(assets.map((asset) => ({ ...asset, itemId: id })))
-      .run();
-  }
-  return id;
-};
-
 export class LibraryRepository {
-  private readonly listCountCache = new Map<string, { count: number; expiresAt: number }>();
-
   constructor(private readonly database: PersistenceDatabase) {}
 
-  async upsertScrapeOutput(input: UpsertScrapeOutputInput): Promise<ScrapeOutputRecord> {
-    const id = input.id ?? randomUUID();
-    const createdAt = input.createdAt ?? new Date();
-    this.database.db
-      .insert(scrapeOutputs)
-      .values({
-        id,
-        taskId: input.taskId ?? null,
-        rootId: input.rootId ?? null,
-        outputDirectory: input.outputDirectory ?? null,
-        fileCount: input.fileCount,
-        totalBytes: input.totalBytes,
-        completedAt: input.completedAt,
-        createdAt,
-      })
-      .onConflictDoUpdate({
-        target: scrapeOutputs.id,
-        set: {
-          taskId: input.taskId ?? null,
-          rootId: input.rootId ?? null,
-          outputDirectory: input.outputDirectory ?? null,
-          fileCount: input.fileCount,
-          totalBytes: input.totalBytes,
-          completedAt: input.completedAt,
-        },
-      })
-      .run();
-    return await this.getScrapeOutput(id);
-  }
-
-  async latestScrapeOutput(): Promise<ScrapeOutputRecord | null> {
-    const row = this.database.db.select().from(scrapeOutputs).orderBy(desc(scrapeOutputs.completedAt)).limit(1).get();
-    return row ? toScrapeOutputRecord(row) : null;
-  }
-
-  async getScrapeOutput(id: string): Promise<ScrapeOutputRecord> {
-    const row = this.database.db.select().from(scrapeOutputs).where(eq(scrapeOutputs.id, id)).limit(1).get();
-    if (!row) {
-      throw new Error(`Scrape output not found: ${id}`);
-    }
-    return toScrapeOutputRecord(row);
-  }
-
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
-    const transaction = this.database.sqlite.transaction(() => writeLibraryEntry(this.database, input));
+    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input));
     const id = transaction();
-    this.invalidateListCounts();
     return await this.getEntryById(id);
+  }
+
+  async resolveMaintenanceSource(absolutePath: string): Promise<MaintenanceLibrarySourceRecord | null> {
+    const matches = this.findLibraryFilesAtAbsolutePath(absolutePath);
+    const itemIds = new Set(matches.map(({ file }) => file.itemId));
+    if (itemIds.size > 1) {
+      throw new Error(`同一实际文件被多个媒体库条目引用：${absolutePath}`);
+    }
+    const match = matches[0];
+    return match
+      ? {
+          libraryItemId: match.file.itemId,
+          libraryFileId: match.file.id,
+          rootId: match.file.rootId,
+          rootRelativePath: match.file.rootRelativePath,
+        }
+      : null;
+  }
+
+  async preflightMaintenanceRefresh(input: {
+    librarySource?: MaintenanceLibrarySourceRecord;
+    sourceAbsolutePath: string;
+    targetAbsolutePath: string;
+  }): Promise<void> {
+    this.assertMaintenanceSource(input.librarySource);
+    if (
+      input.librarySource &&
+      !this.pathCandidates(input.sourceAbsolutePath).some(
+        (candidate) =>
+          candidate.rootId === input.librarySource?.rootId &&
+          candidate.rootRelativePath === input.librarySource.rootRelativePath,
+      )
+    ) {
+      throw new Error("维护源文件位置已变化，请重新预览");
+    }
+    const candidates = this.pathCandidates(input.targetAbsolutePath);
+    if (candidates.length === 0) {
+      throw new Error(`维护目标路径不属于任何已注册媒体目录：${input.targetAbsolutePath}`);
+    }
+    this.assertNoMaintenanceTargetConflict(candidates, input.librarySource?.libraryItemId);
+  }
+
+  async prepareRefresh(input: CommitMaintenanceRefreshInput): Promise<PreparedMaintenanceRefresh> {
+    this.assertMaintenanceSource(input.librarySource);
+    const targetCandidates = this.pathCandidates(input.targetAbsolutePath);
+    if (targetCandidates.length === 0) {
+      throw new Error(`维护目标路径不属于任何已注册媒体目录：${input.targetAbsolutePath}`);
+    }
+    this.assertNoMaintenanceTargetConflict(targetCandidates, input.librarySource?.libraryItemId);
+    const target = chooseRootCandidate(targetCandidates, input.librarySource?.rootId);
+    const assets = await this.buildMaintenanceAssets(input, target.rootId);
+    const crawlerDataJson = input.crawlerData ? JSON.stringify(input.crawlerData) : null;
+    const mediaIdentity = input.crawlerData?.number?.trim() || input.fallbackNumber.trim() || null;
+    const title = input.crawlerData?.title ?? null;
+    const number = input.crawlerData?.number ?? input.fallbackNumber ?? null;
+    const existingItem = input.librarySource
+      ? this.database.db
+          .select()
+          .from(libraryItems)
+          .where(eq(libraryItems.id, input.librarySource.libraryItemId))
+          .limit(1)
+          .get()
+      : null;
+    const itemId = input.librarySource?.libraryItemId ?? `${target.rootId}:${target.rootRelativePath}`;
+    return {
+      librarySource: input.librarySource,
+      targetCandidates,
+      libraryEntry: {
+        id: itemId,
+        fileId: input.librarySource?.libraryFileId,
+        rootId: target.rootId,
+        rootRelativePath: target.rootRelativePath,
+        mediaIdentity,
+        size: input.size,
+        modifiedAt: input.modifiedAt,
+        sourceRunId: existingItem?.sourceRunId ?? null,
+        sourceOutcomeId: existingItem?.sourceOutcomeId ?? null,
+        title,
+        number,
+        actors: input.crawlerData?.actors ?? [],
+        crawlerDataJson,
+        assets,
+        lastKnownPath: target.rootRelativePath,
+        createdAt: existingItem?.createdAt ?? input.refreshedAt,
+        lastRefreshedAt: input.refreshedAt,
+      },
+    };
+  }
+
+  writeRefresh(prepared: PreparedMaintenanceRefresh): { libraryItemId: string } {
+    this.assertMaintenanceSource(prepared.librarySource);
+    this.assertNoMaintenanceTargetConflict(prepared.targetCandidates, prepared.librarySource?.libraryItemId);
+    return { libraryItemId: writeLibraryRows(this.database, prepared.libraryEntry) };
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {
@@ -525,97 +406,17 @@ export class LibraryRepository {
       })
       .where(eq(libraryItemFiles.id, `${item.id}:primary`))
       .run();
-    this.invalidateListCounts();
     return await this.touchEntry(item.id, now);
   }
 
-  async deleteEntriesForTask(taskId: string): Promise<void> {
-    const rows = this.database.db
-      .select({ id: libraryItems.id })
-      .from(libraryItems)
-      .where(eq(libraryItems.sourceTaskId, taskId))
-      .all();
-    const ids = rows.map((row) => row.id);
-    if (ids.length === 0) {
-      return;
-    }
-    const transaction = this.database.sqlite.transaction(() => {
-      this.database.db.delete(libraryItemAssets).where(inArray(libraryItemAssets.itemId, ids)).run();
-      this.database.db.delete(libraryItemFiles).where(inArray(libraryItemFiles.itemId, ids)).run();
-      this.database.db.delete(libraryItems).where(inArray(libraryItems.id, ids)).run();
-    });
-    transaction();
-    this.invalidateListCounts();
-  }
-
-  async deleteEntry(id: string): Promise<void> {
-    await this.getLibraryItem(id);
-    const transaction = this.database.sqlite.transaction(() => {
+  deleteEntry(id: string): void {
+    const item = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
+    if (!item) throw new Error(`Library entry not found: ${id}`);
+    this.database.sqlite.transaction(() => {
       this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
       this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).run();
       this.database.db.delete(libraryItems).where(eq(libraryItems.id, id)).run();
-    });
-    transaction();
-    this.invalidateListCounts();
-  }
-
-  async upsertScrapeResult(input: UpsertScrapeResultInput): Promise<ScrapeResultRecord> {
-    const id = writeScrapeResult(this.database, input);
-    return await this.getScrapeResult(id);
-  }
-
-  async upsertOwnedScrapeResult(
-    execution: TaskExecutionRef,
-    input: UpsertScrapeResultInput,
-  ): Promise<ScrapeResultRecord | null> {
-    const transaction = this.database.sqlite.transaction(() => {
-      if (!isCurrentExecution(this.database, execution)) return null;
-      return writeScrapeResult(this.database, input);
-    });
-    const id = transaction();
-    return id ? await this.getScrapeResult(id) : null;
-  }
-
-  async commitOwnedScrapeSuccess(
-    input: CommitOwnedScrapeSuccessInput,
-  ): Promise<{ result: ScrapeResultRecord; entry: LibraryEntryRecord } | null> {
-    const transaction = this.database.sqlite.transaction(() => {
-      if (!isCurrentExecution(this.database, input.execution)) return null;
-      const resultId = writeScrapeResult(this.database, input.result);
-      const entryId = writeLibraryEntry(this.database, input.entry);
-      return { resultId, entryId };
-    });
-    const ids = transaction();
-    if (!ids) return null;
-    this.invalidateListCounts();
-    return {
-      result: await this.getScrapeResult(ids.resultId),
-      entry: await this.getEntryById(ids.entryId),
-    };
-  }
-
-  async listScrapeResults(taskId?: string): Promise<ScrapeResultRecord[]> {
-    const rows = taskId
-      ? this.database.db
-          .select()
-          .from(scrapeResults)
-          .where(eq(scrapeResults.taskId, taskId))
-          .orderBy(scrapeResults.relativePath)
-          .all()
-      : this.database.db.select().from(scrapeResults).orderBy(desc(scrapeResults.updatedAt)).all();
-    return rows.map(toScrapeResultRecord);
-  }
-
-  async getScrapeResult(id: string): Promise<ScrapeResultRecord> {
-    const row = this.database.db.select().from(scrapeResults).where(eq(scrapeResults.id, id)).limit(1).get();
-    if (!row) {
-      throw new Error(`Scrape result not found: ${id}`);
-    }
-    return toScrapeResultRecord(row);
-  }
-
-  async deleteScrapeResultsForTask(taskId: string): Promise<void> {
-    this.database.db.delete(scrapeResults).where(eq(scrapeResults.taskId, taskId)).run();
+    })();
   }
 
   async getEntry(rootId: string, rootRelativePath: string): Promise<LibraryEntryRecord> {
@@ -635,6 +436,30 @@ export class LibraryRepository {
     const item = await this.getLibraryItem(id);
     const [files, assets] = await Promise.all([this.listFilesForItems([id]), this.listAssetsForItems([id])]);
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
+  }
+
+  async getEntryBySourceOutcomeId(sourceOutcomeId: string): Promise<LibraryEntryRecord | null> {
+    return (await this.getEntriesBySourceOutcomeIds([sourceOutcomeId])).get(sourceOutcomeId) ?? null;
+  }
+
+  async getEntriesBySourceOutcomeIds(sourceOutcomeIds: string[]): Promise<Map<string, LibraryEntryRecord>> {
+    const ids = [...new Set(sourceOutcomeIds.map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) return new Map();
+    const items = this.database.db.select().from(libraryItems).where(inArray(libraryItems.sourceOutcomeId, ids)).all();
+    const itemIds = items.map((item) => item.id);
+    const [filesByItem, assetsByItem] = await Promise.all([
+      this.listFilesForItems(itemIds),
+      this.listAssetsForItems(itemIds),
+    ]);
+    const entries = new Map<string, LibraryEntryRecord>();
+    for (const item of items) {
+      if (!item.sourceOutcomeId) continue;
+      entries.set(
+        item.sourceOutcomeId,
+        toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
+      );
+    }
+    return entries;
   }
 
   async getEntriesByIds(ids: string[]): Promise<LibraryEntryRecord[]> {
@@ -734,7 +559,7 @@ export class LibraryRepository {
               id: lastItem.id,
             }
           : null,
-      total: this.getListCount(baseWhere, input),
+      total: this.getListCount(baseWhere),
     };
   }
 
@@ -792,6 +617,7 @@ export class LibraryRepository {
                 title: item.title,
                 actors: safeActors(item.actorsJson),
                 thumbnailPath: thumbnail?.uri ?? null,
+                thumbnailRootId: thumbnail?.rootId ?? null,
                 lastKnownPath: primaryFile.lastKnownPath,
                 createdAt: item.createdAt,
                 hiddenFromRecentAt: item.hiddenFromRecentAt,
@@ -800,6 +626,139 @@ export class LibraryRepository {
           : [];
       }),
     };
+  }
+
+  private pathCandidates(absolutePath: string): RootPathCandidate[] {
+    const resolvedPath = path.resolve(absolutePath);
+    return this.database.db
+      .select()
+      .from(mediaRoots)
+      .all()
+      .flatMap((root): RootPathCandidate[] => {
+        const resolvedRootPath = path.resolve(root.hostPath);
+        const relative = path.relative(resolvedRootPath, resolvedPath);
+        if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+          return [];
+        }
+        return [
+          {
+            hostPath: resolvedRootPath,
+            rootId: root.id,
+            rootRelativePath: relative.replace(/\\/gu, "/"),
+          },
+        ];
+      })
+      .sort((left, right) => right.hostPath.length - left.hostPath.length || left.rootId.localeCompare(right.rootId));
+  }
+
+  private findLibraryFilesAtAbsolutePath(
+    absolutePath: string,
+  ): Array<{ candidate: RootPathCandidate; file: LibraryItemFileRow }> {
+    return this.pathCandidates(absolutePath).flatMap((candidate) => {
+      const file = this.database.db
+        .select()
+        .from(libraryItemFiles)
+        .where(
+          and(
+            eq(libraryItemFiles.rootId, candidate.rootId),
+            eq(libraryItemFiles.rootRelativePath, candidate.rootRelativePath),
+          ),
+        )
+        .limit(1)
+        .get();
+      return file ? [{ candidate, file }] : [];
+    });
+  }
+
+  private assertMaintenanceSource(source: MaintenanceLibrarySourceRecord | undefined): void {
+    if (!source) return;
+    const file = this.database.db
+      .select({ id: libraryItemFiles.id })
+      .from(libraryItemFiles)
+      .where(
+        and(
+          eq(libraryItemFiles.id, source.libraryFileId),
+          eq(libraryItemFiles.itemId, source.libraryItemId),
+          eq(libraryItemFiles.rootId, source.rootId),
+          eq(libraryItemFiles.rootRelativePath, source.rootRelativePath),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (!file) throw new Error("原媒体库条目或文件引用已变化，请重新预览");
+  }
+
+  private assertNoMaintenanceTargetConflict(
+    candidates: readonly RootPathCandidate[],
+    allowedItemId: string | undefined,
+  ): void {
+    for (const candidate of candidates) {
+      const occupant = this.database.db
+        .select({ itemId: libraryItemFiles.itemId })
+        .from(libraryItemFiles)
+        .where(
+          and(
+            eq(libraryItemFiles.rootId, candidate.rootId),
+            eq(libraryItemFiles.rootRelativePath, candidate.rootRelativePath),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (occupant && occupant.itemId !== allowedItemId) {
+        throw new Error(
+          `维护目标路径已属于另一个媒体库条目 ${occupant.itemId}：${candidate.rootId}:${candidate.rootRelativePath}`,
+        );
+      }
+    }
+  }
+
+  private async buildMaintenanceAssets(
+    input: CommitMaintenanceRefreshInput,
+    preferredRootId: string,
+  ): Promise<MaintenanceAssetInput[]> {
+    const outputs: MaintenanceAssetInput[] = [];
+    const localKinds = new Set<string>();
+    const addLocal = async (kind: string, value: string | undefined): Promise<void> => {
+      const absolutePath = value?.trim();
+      if (!absolutePath) return;
+      const candidates = this.pathCandidates(absolutePath);
+      if (candidates.length === 0) {
+        throw new Error(`维护生成的本地资源不属于任何已注册媒体目录：${absolutePath}`);
+      }
+      const file = await fsStat(absolutePath);
+      if (!file.isFile()) throw new Error(`维护生成的资源不是文件：${absolutePath}`);
+      const mapped = chooseRootCandidate(candidates, preferredRootId);
+      outputs.push({
+        kind,
+        uri: mapped.rootRelativePath,
+        rootId: mapped.rootId,
+        relativePath: mapped.rootRelativePath,
+      });
+      localKinds.add(kind);
+    };
+
+    await addLocal("thumb", input.assets.thumb);
+    await addLocal("poster", input.assets.poster);
+    await addLocal("fanart", input.assets.fanart);
+    await addLocal("trailer", input.assets.trailer);
+    for (const sceneImage of input.assets.sceneImages) await addLocal("scene", sceneImage);
+    for (const actorPhoto of input.assets.actorPhotos) await addLocal("actor", actorPhoto);
+
+    const addRemoteFallback = (kind: string, values: Array<string | undefined>): void => {
+      if (localKinds.has(kind)) return;
+      for (const value of values) {
+        const uri = value?.trim();
+        if (!uri || !isRemoteAssetUri(uri)) continue;
+        outputs.push({ kind, uri, rootId: null, relativePath: null });
+      }
+    };
+    const crawlerData = input.crawlerData;
+    addRemoteFallback("thumb", [crawlerData?.thumb_source_url, crawlerData?.thumb_url]);
+    addRemoteFallback("poster", [crawlerData?.poster_source_url, crawlerData?.poster_url]);
+    addRemoteFallback("fanart", [crawlerData?.fanart_source_url, crawlerData?.fanart_url]);
+    addRemoteFallback("trailer", [crawlerData?.trailer_source_url, crawlerData?.trailer_url]);
+    addRemoteFallback("scene", crawlerData?.scene_images ?? []);
+    return outputs;
   }
 
   private async getLibraryItem(id: string): Promise<LibraryItemRow> {
@@ -836,42 +795,22 @@ export class LibraryRepository {
     return groupByItem(rows.map(toLibraryItemAssetRecord));
   }
 
-  private getListCount(baseWhere: SQL | undefined, input: Pick<ListLibraryEntriesInput, "query" | "rootId">): number {
-    const key = JSON.stringify([input.query?.trim().toLowerCase() ?? "", input.rootId?.trim() ?? ""]);
-    const cached = this.listCountCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.count;
-    }
-    const count = Number(
+  private getListCount(baseWhere: SQL | undefined): number {
+    return Number(
       this.database.db.select({ count: sql<number>`count(*)` }).from(libraryItems).where(baseWhere).get()?.count ?? 0,
     );
-    this.listCountCache.set(key, { count, expiresAt: Date.now() + 30_000 });
-    return count;
-  }
-
-  private invalidateListCounts(): void {
-    this.listCountCache.clear();
   }
 }
 
+const chooseRootCandidate = (candidates: readonly RootPathCandidate[], preferredRootId?: string): RootPathCandidate => {
+  const longest = candidates[0];
+  if (!longest) throw new Error("路径不属于任何已注册媒体目录");
+  const sameDepth = candidates.filter((candidate) => candidate.hostPath.length === longest.hostPath.length);
+  return sameDepth.find((candidate) => candidate.rootId === preferredRootId) ?? longest;
+};
+
 const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
   const filters: SQL[] = [];
-  const activeRootExists = sql`(
-    EXISTS (
-      SELECT 1
-      FROM library_item_files AS active_root_file
-      INNER JOIN media_roots AS active_root ON active_root.id = active_root_file.root_id
-      WHERE active_root_file.item_id = ${libraryItems.id}
-        AND active_root.deleted = 0
-    )
-    OR NOT EXISTS (
-      SELECT 1
-      FROM library_item_files AS root_presence
-      INNER JOIN media_roots AS any_root ON any_root.id = root_presence.root_id
-      WHERE root_presence.item_id = ${libraryItems.id}
-    )
-  )`;
-  filters.push(activeRootExists);
   const rootId = input.rootId?.trim();
   if (rootId) {
     filters.push(
@@ -881,7 +820,6 @@ const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "r
         LEFT JOIN media_roots AS root ON root.id = root_file.root_id
         WHERE root_file.item_id = ${libraryItems.id}
           AND root_file.root_id = ${rootId}
-          AND (root.id IS NULL OR root.deleted = 0)
       )`,
     );
   }
@@ -910,7 +848,6 @@ const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "r
           FROM library_item_files AS display_file
           INNER JOIN media_roots AS display_root ON display_root.id = display_file.root_id
           WHERE display_file.item_id = ${libraryItems.id}
-            AND display_root.deleted = 0
             AND lower(display_root.display_name) LIKE ${pattern} ${escapeClause}
         )
       )`,
@@ -930,47 +867,4 @@ const groupByItem = <TRecord extends { itemId: string }>(records: TRecord[]): Ma
     grouped.set(record.itemId, group);
   }
   return grouped;
-};
-
-const deriveAssets = (
-  crawlerDataJson: string | null | undefined,
-  thumbnailPath: string | null | undefined,
-  explicitAssets: UpsertLibraryEntryInput["assets"] = [],
-): Array<Omit<LibraryItemAssetRecord, "itemId">> => {
-  const now = new Date();
-  const assets = new Map<string, Omit<LibraryItemAssetRecord, "itemId">>();
-  const add = (kind: string, uri: unknown, rootId: string | null = null, relativePath: string | null = null) => {
-    if (typeof uri !== "string" || !uri.trim()) {
-      return;
-    }
-    assets.set(`${kind}:${uri}`, {
-      id: randomUUID(),
-      kind,
-      uri,
-      rootId,
-      relativePath,
-      createdAt: now,
-    });
-  };
-
-  add("thumb", thumbnailPath);
-  for (const asset of explicitAssets) {
-    add(asset.kind, asset.uri, asset.rootId ?? null, asset.relativePath ?? null);
-  }
-  if (crawlerDataJson) {
-    try {
-      const crawlerData = JSON.parse(crawlerDataJson) as Record<string, unknown>;
-      add("thumb", crawlerData.thumb_url);
-      add("poster", crawlerData.poster_url);
-      add("fanart", crawlerData.fanart_url);
-      add("trailer", crawlerData.trailer_url);
-      for (const image of Array.isArray(crawlerData.scene_images) ? crawlerData.scene_images : []) {
-        add("scene", image);
-      }
-    } catch {
-      // Keep malformed crawler data inspectable on the item; assets are a best-effort projection.
-    }
-  }
-
-  return [...assets.values()];
 };

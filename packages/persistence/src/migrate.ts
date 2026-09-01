@@ -24,10 +24,19 @@ export interface RunMigrationsConfig {
 }
 
 export const runMigrations = (database: PersistenceDatabase, config: RunMigrationsConfig = {}): void => {
+  const migrationsFolder = config.migrationsFolder ?? defaultMigrationsFolder;
+
   try {
-    migrate(database.db, { migrationsFolder: config.migrationsFolder ?? defaultMigrationsFolder });
+    migrate(database.db, { migrationsFolder });
   } catch (error) {
-    throw new PersistenceError(persistenceErrorCodes.MigrationFailed, "Failed to migrate persistence database", error);
+    const reason = error instanceof Error ? error.message : String(error);
+    const cause = error instanceof Error && error.cause instanceof Error ? ` | Caused by: ${error.cause.message}` : "";
+
+    throw new PersistenceError(
+      persistenceErrorCodes.MigrationFailed,
+      `Failed to migrate persistence database "${database.sqlite.name}" from "${migrationsFolder}": ${reason}${cause}`,
+      error,
+    );
   }
 };
 

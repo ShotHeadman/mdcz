@@ -4,10 +4,13 @@ import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createFileHandlers } from "@main/ipc/handlers/file";
 import { configManager } from "@main/services/config/ConfigManager";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
+import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ipcActionArgs } from "../../unit/ipc/ipcActionArgs";
 
 vi.mock("@egoist/tipc/main", () => {
   type MockProcedure = {
@@ -54,14 +57,38 @@ vi.mock("electron", () => {
   };
 });
 
-const actionArgs = <TInput>(input: TInput) => ({ context: { sender: {} as never }, input });
+const actionArgs = ipcActionArgs;
 
-const createContext = (): ServiceContainer =>
-  ({
+const createContext = (mediaRoots?: {
+  ensurePath?: (hostPath: string) => Promise<unknown>;
+  list?: () => Promise<Array<{ id: string; hostPath: string }>>;
+  get?: (rootId: string) => Promise<{ id: string; hostPath: string }>;
+  upsert?: (root: unknown) => Promise<unknown>;
+}): ServiceContainer => {
+  const upsert = mediaRoots?.upsert ?? (async () => undefined);
+  const list = mediaRoots?.list ?? (async () => [{ id: "tmp", hostPath: tmpdir() }]);
+  const ensurePath = mediaRoots?.ensurePath ?? (async () => ({ id: "tmp", hostPath: tmpdir() }));
+  const get =
+    mediaRoots?.get ??
+    (async (rootId: string) => {
+      const root = (await list()).find((candidate) => candidate.id === rootId);
+      if (!root) throw new Error(`Unknown root: ${rootId}`);
+      return root;
+    });
+  return {
     windowService: {
       getMainWindow: () => null,
     },
-  }) as unknown as ServiceContainer;
+    persistenceService: {
+      getState: async () => ({
+        repositories: {
+          publicationJournal: createMemoryPublicationJournal(),
+          mediaRoots: { ensurePath, get, list, upsert },
+        },
+      }),
+    },
+  } as unknown as ServiceContainer;
+};
 
 const tempDirs: string[] = [];
 
@@ -95,25 +122,30 @@ describe("createFileHandlers", () => {
     await writeFile(join(root, "trailer.mp4"), "trailer");
     await writeFile(join(root, "ignore.txt"), "ignore");
 
-    const handlers = createFileHandlers(createContext());
+    const registeredRoots: Array<{ id: string; hostPath: string }> = [];
+    const ensurePath = vi.fn(async (hostPath: string) => {
+      const root = { id: "scan-root", hostPath };
+      registeredRoots.push(root);
+      return root;
+    });
+    const handlers = createFileHandlers(createContext({ ensurePath, list: async () => registeredRoots }));
     const result = await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
 
+    expect(ensurePath).toHaveBeenCalledWith(root, undefined);
     expect(result.supportedExtensions).toEqual(expect.arrayContaining(["mp4", "mkv", "strm"]));
     expect(result.candidates).toEqual([
       expect.objectContaining({
         path: rootVideo,
         name: "ABC-123.mp4",
         extension: ".mp4",
-        relativePath: "ABC-123.mp4",
-        relativeDirectory: "",
+        ref: { rootId: "scan-root", relativePath: "ABC-123.mp4" },
         size: 7,
       }),
       expect.objectContaining({
         path: nestedVideo,
         name: "DEF-456.mkv",
         extension: ".mkv",
-        relativePath: join("nested", "DEF-456.mkv"),
-        relativeDirectory: "nested",
+        ref: { rootId: "scan-root", relativePath: "nested/DEF-456.mkv" },
         size: 7,
       }),
     ]);
@@ -162,7 +194,7 @@ describe("createFileHandlers", () => {
     expect(result.candidates[0]).toEqual(
       expect.objectContaining({
         path: keepVideo,
-        relativePath: join("library", "ABC-123.mp4"),
+        ref: expect.objectContaining({ relativePath: expect.stringMatching(/library\/ABC-123\.mp4$/u) }),
       }),
     );
   });
@@ -184,6 +216,25 @@ describe("createFileHandlers", () => {
         path: videoPath,
       }),
     );
+  });
+
+  it("deletes a containing folder from its media root ref", async () => {
+    const root = await createTempDir();
+    const folder = join(root, "nested");
+    await mkdir(folder);
+    await writeFile(join(folder, "movie.mp4"), "video");
+    await writeFile(join(folder, "movie.nfo"), "metadata");
+    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+
+    await expect(
+      handlers[IpcChannel.File_Delete].action(
+        actionArgs({
+          targets: [{ rootId: "media", relativePath: "nested/movie.mp4" }],
+          containingFolder: true,
+        }),
+      ),
+    ).resolves.toEqual({ deletedCount: 2, failedCount: 0 });
+    await expect(readFile(join(folder, "movie.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
   });
   it("applies configured NFO fields when manually saving metadata", async () => {
     const root = await createTempDir();
@@ -301,8 +352,15 @@ describe("createFileHandlers", () => {
       thumbPath,
       '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500"><rect width="100%" height="100%" fill="#c84630"/></svg>',
     );
-    const handlers = createFileHandlers(createContext());
-    const session = await handlers[IpcChannel.File_PosterCropSession].action(actionArgs({ videoPath }));
+    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+    const videoRef = { rootId: "media", relativePath: "ABC-123.mp4" };
+    const thumbRef = { rootId: "media", relativePath: "thumb.jpg" };
+    await expect(handlers[IpcChannel.File_Exists].action(actionArgs({ path: thumbRef }))).resolves.toEqual({
+      exists: true,
+      url: toLocalFileUrl(thumbRef),
+    });
+
+    const session = await handlers[IpcChannel.File_PosterCropSession].action(actionArgs({ videoPath: videoRef }));
     expect(session).toMatchObject({
       sourcePath: thumbPath,
       targetPath: join(root, "poster.jpg"),
@@ -311,9 +369,49 @@ describe("createFileHandlers", () => {
     });
 
     const saved = await handlers[IpcChannel.File_PosterCropSave].action(
-      actionArgs({ videoPath, crop: session.initialCrop }),
+      actionArgs({ videoPath: videoRef, crop: session.initialCrop }),
     );
     expect(saved.revision).toEqual(expect.any(String));
     expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);
+  });
+
+  it("does not persist media roots for file reads", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "movie.nfo");
+    await writeFile(nfoPath, '<?xml version="1.0"?><movie><title>Example</title><num>ABC-123</num></movie>');
+    const upsert = vi.fn(async () => undefined);
+    const handlers = createFileHandlers(createContext({ upsert }));
+
+    await handlers[IpcChannel.File_Exists].action(actionArgs({ path: nfoPath }));
+    await handlers[IpcChannel.File_NfoRead].action(actionArgs({ nfoPath }));
+
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("admits one enclosing root at the NFO write boundary", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123.nfo");
+    const ensurePath = vi.fn(async (hostPath: string) => ({ id: "root", hostPath }));
+    const handlers = createFileHandlers(
+      createContext({
+        ensurePath,
+      }),
+    );
+
+    await handlers[IpcChannel.File_NfoWrite].action(
+      actionArgs({
+        nfoPath,
+        data: {
+          title: "Manual NFO",
+          number: "ABC-123",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.JAVDB,
+        },
+      }),
+    );
+
+    expect(ensurePath).toHaveBeenCalledOnce();
   });
 });

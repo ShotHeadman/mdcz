@@ -13,15 +13,12 @@ export enum IpcChannel {
   Config_ImportProfile = "config:import-profile",
 
   Scraper_Start = "scraper:start",
+  Scraper_StartSinglePath = "scraper:start-single-path",
   Scraper_Stop = "scraper:stop",
   Scraper_Pause = "scraper:pause",
   Scraper_Resume = "scraper:resume",
   Scraper_GetStatus = "scraper:get-status",
-  Scraper_Requeue = "scraper:requeue",
-  Scraper_RetryFailed = "scraper:retry-failed",
-  Scraper_GetFailedFiles = "scraper:get-failed-files",
-  Scraper_GetRecoverableSession = "scraper:get-recoverable-session",
-  Scraper_ResolveRecoverableSession = "scraper:resolve-recoverable-session",
+  Scraper_Retry = "scraper:retry",
   Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",
@@ -31,7 +28,6 @@ export enum IpcChannel {
   Network_CheckCookies = "network:check-cookies",
 
   Translate_TestLlm = "translate:test-llm",
-  File_ListEntries = "file:list-entries",
   File_ListMediaCandidates = "file:list-media-candidates",
   File_Exists = "file:exists",
   File_Browse = "file:browse",
@@ -42,11 +38,7 @@ export enum IpcChannel {
   File_PosterCropSave = "file:poster-crop-save",
 
   Event_Log = "event:log",
-  Event_Progress = "event:progress",
-  Event_ScrapeResult = "event:scrape-result",
-  Event_ScrapeInfo = "event:scrape-info",
-  Event_FailedInfo = "event:failed-info",
-  Event_ButtonStatus = "event:button-status",
+  Event_Invalidate = "event:invalidate",
   Event_Shortcut = "event:shortcut",
 
   App_Info = "app:info",
@@ -66,6 +58,9 @@ export enum IpcChannel {
   Library_Availability = "library:availability",
   Library_Delete = "library:delete",
 
+  MediaRoots_EnsurePath = "mediaRoots:ensurePath",
+  MediaRoots_PrepareOutputDirectory = "mediaRoots:prepare-output-directory",
+
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",
   Tool_JellyfinServerCheckConnection = "tool:jellyfin-server-check-connection",
@@ -80,13 +75,23 @@ export enum IpcChannel {
   Tool_BatchTranslateApply = "tool:batch-translate-apply",
   Tool_ToggleDevTools = "tool:toggle-devtools",
 
-  Maintenance_Scan = "maintenance:scan",
-  Maintenance_Preview = "maintenance:preview",
-  Maintenance_Execute = "maintenance:execute",
+  Maintenance_StartPreview = "maintenance:start-preview",
+  Maintenance_Apply = "maintenance:apply",
   Maintenance_Stop = "maintenance:stop",
   Maintenance_Pause = "maintenance:pause",
   Maintenance_Resume = "maintenance:resume",
-  Maintenance_GetStatus = "maintenance:get-status",
-
-  Event_MaintenanceItemResult = "event:maintenance-item-result",
+  Maintenance_ReadSnapshot = "maintenance:read-snapshot",
+  Maintenance_UpdateDraft = "maintenance:update-draft",
+  Maintenance_DiscardSession = "maintenance:discard-session",
 }
+
+const IPC_CHANNEL_SET = new Set<string>(Object.values(IpcChannel));
+
+export const isIpcChannel = (channel: string): channel is IpcChannel => IPC_CHANNEL_SET.has(channel);
+
+export const requireIpcChannel = (channel: string): IpcChannel => {
+  if (!isIpcChannel(channel)) {
+    throw new Error(`Unsupported IPC channel: ${channel}`);
+  }
+  return channel;
+};

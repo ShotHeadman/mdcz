@@ -1,162 +1,29 @@
 import { getDesktopUserDataPath } from "@main/appIdentity";
-import type { ActorImageService } from "@main/services/ActorImageService";
-import type { Configuration } from "@main/services/config";
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
 import { probeVideoMetadata } from "@main/utils/video";
-import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
-import type { FileOrganizer, ImageAlternatives, OrganizePlan, SourceMap } from "@mdcz/runtime/scrape";
-import {
-  applyPosterTagBadgesIfNeeded,
-  nfoIgnoreFieldsToEnabledFields,
-  PosterWatermarkService,
-  prepareCrawlerDataForMovieOutput,
-  prepareImageAlternativesForDownload,
-} from "@mdcz/runtime/scrape";
+import { applyPosterTagBadgesIfNeeded, PosterWatermarkService } from "@mdcz/runtime/scrape";
+import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import type { Logger } from "winston";
-import type { DownloadCallbacks, DownloadManager } from "../DownloadManager";
-import type { NfoGenerator } from "../NfoGenerator";
-import { reconcileExistingNfoFiles } from "../NfoGenerator";
-
-export {
-  prepareCrawlerDataForMovieOutput,
-  prepareCrawlerDataForNfo,
-  prepareImageAlternativesForDownload,
-} from "@mdcz/runtime/scrape";
 
 const posterWatermarkService = new PosterWatermarkService({ dataDir: getDesktopUserDataPath() });
 
-export interface ScrapeProgressState {
-  fileIndex: number;
-  totalFiles: number;
-}
-
-export const updateScrapeProgress = (
-  signalService: Pick<SignalService, "setProgress">,
-  progress: ScrapeProgressState,
-  stepPercent: number,
-): void => {
-  const normalizedPercent = Math.max(0, Math.min(100, stepPercent));
-  const fileIndex = Math.max(1, progress.fileIndex);
-  const totalFiles = Math.max(1, progress.totalFiles);
-  const globalValue = (fileIndex - 1 + normalizedPercent / 100) / totalFiles;
-  const value = Math.max(0, Math.min(100, Math.round(globalValue * 100)));
-
-  signalService.setProgress(value, fileIndex, totalFiles);
-};
-
-export function prepareOutputCrawlerData(input: {
-  actorImageService: ActorImageService;
-  actorSourceProvider?: ActorSourceProvider;
-  config: Configuration;
+export const applyDesktopPosterTagBadges = async (input: {
+  assets: DownloadedAssets;
+  config: Pick<Configuration, "download">;
   crawlerData: CrawlerData;
-  enabled: boolean;
-  movieDir?: string;
-  signal?: AbortSignal;
-  sourceVideoPath: string;
-}): Promise<{ actorPhotoPaths: string[]; data: CrawlerData }>;
-export function prepareOutputCrawlerData(input: {
-  actorImageService: ActorImageService;
-  actorSourceProvider?: ActorSourceProvider;
-  config: Configuration;
-  crawlerData: CrawlerData | undefined;
-  enabled: boolean;
-  movieDir?: string;
-  signal?: AbortSignal;
-  sourceVideoPath: string;
-}): Promise<{ actorPhotoPaths: string[]; data: CrawlerData | undefined }>;
-export async function prepareOutputCrawlerData(input: {
-  actorImageService: ActorImageService;
-  actorSourceProvider?: ActorSourceProvider;
-  config: Configuration;
-  crawlerData: CrawlerData | undefined;
-  enabled: boolean;
-  movieDir?: string;
-  signal?: AbortSignal;
-  sourceVideoPath: string;
-}): Promise<{ actorPhotoPaths: string[]; data: CrawlerData | undefined }> {
-  if (!input.crawlerData) {
-    return {
-      data: input.crawlerData,
-      actorPhotoPaths: [],
-    };
-  }
-
-  return await prepareCrawlerDataForMovieOutput(input.actorImageService, input.config, input.crawlerData, {
-    enabled: input.enabled,
-    movieDir: input.movieDir,
-    sourceVideoPath: input.sourceVideoPath,
-    actorSourceProvider: input.actorSourceProvider,
-    signal: input.signal,
-  });
-}
-
-export const downloadCrawlerAssets = async (input: {
-  callbacks?: DownloadCallbacks;
-  config: Configuration;
-  crawlerData: CrawlerData;
-  downloadManager: DownloadManager;
   fileInfo: FileInfo;
-  imageAlternatives?: Partial<ImageAlternatives>;
   localState?: NfoLocalState;
   logger: Pick<Logger, "warn">;
-  movieBaseName?: string;
-  outputDir: string;
-  signalService: Pick<SignalService, "showLogText">;
-  sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "scene_images">;
-}): Promise<DownloadedAssets> => {
-  input.signalService.showLogText(`[${input.fileInfo.number}] Downloading resources...`);
-  const preparedImageAlternatives = prepareImageAlternativesForDownload(
-    input.crawlerData,
-    input.imageAlternatives,
-    input.sources,
-  );
-
-  const assets = await input.downloadManager.downloadAll(
-    input.outputDir,
-    input.crawlerData,
-    input.config,
-    preparedImageAlternatives,
-    {
-      ...input.callbacks,
-      onSceneProgress: (downloaded, total) => {
-        input.signalService.showLogText(`[${input.fileInfo.number}] Scene images: ${downloaded}/${total}`);
-        input.callbacks?.onSceneProgress?.(downloaded, total);
-      },
-    },
-    {
-      movieBaseName: input.movieBaseName,
-    },
-  );
-
-  return await applyPosterTagBadgesIfNeeded({
-    assets,
-    config: input.config,
-    crawlerData: input.crawlerData,
+  signal?: AbortSignal;
+  signalService?: Pick<SignalService, "showLogText">;
+}): Promise<DownloadedAssets> =>
+  await applyPosterTagBadgesIfNeeded({
+    ...input,
     dataDir: getDesktopUserDataPath(),
-    fileInfo: input.fileInfo,
-    localState: input.localState,
-    logger: input.logger,
-    signal: input.callbacks?.signal,
-    signalService: input.signalService,
     watermarkService: posterWatermarkService,
   });
-};
-
-export const applyResolvedSceneImageMetadata = (
-  crawlerData: CrawlerData,
-  sceneImageUrls: string[] | undefined,
-): CrawlerData => {
-  if (sceneImageUrls === undefined) {
-    return crawlerData;
-  }
-
-  return {
-    ...crawlerData,
-    scene_images: [...sceneImageUrls],
-  };
-};
 
 export const probeVideoMetadataOrWarn = async (input: {
   logger: Pick<Logger, "warn">;
@@ -170,76 +37,4 @@ export const probeVideoMetadataOrWarn = async (input: {
     input.logger.warn(`${input.warningPrefix}: ${message}`);
     return undefined;
   }
-};
-
-export const writePreparedNfo = async (input: {
-  assets: DownloadedAssets;
-  config: Pick<Configuration, "download" | "naming">;
-  crawlerData: CrawlerData | undefined;
-  enabled: boolean;
-  fileInfo: FileInfo;
-  keepExisting?: boolean;
-  localState?: NfoLocalState;
-  logger: Pick<Logger, "warn">;
-  nfoGenerator: NfoGenerator;
-  nfoPath?: string;
-  signalService?: Pick<SignalService, "showLogText">;
-  sourceVideoPath: string;
-  sources?: SourceMap;
-  startLogLabel?: string;
-  videoMeta?: VideoMeta;
-}): Promise<string | undefined> => {
-  if (!(input.enabled && input.crawlerData && input.nfoPath)) {
-    return undefined;
-  }
-
-  if (input.startLogLabel && input.signalService) {
-    input.signalService.showLogText(input.startLogLabel);
-  }
-
-  if (input.keepExisting) {
-    const existingNfoPath = await reconcileExistingNfoFiles(input.nfoPath, input.config.download.nfoNaming);
-    if (existingNfoPath) {
-      return existingNfoPath;
-    }
-  }
-
-  const videoMeta =
-    input.videoMeta ??
-    (await probeVideoMetadataOrWarn({
-      logger: input.logger,
-      sourceVideoPath: input.sourceVideoPath,
-      warningPrefix: `Video probe failed for ${input.sourceVideoPath}`,
-    }));
-
-  return await input.nfoGenerator.writeNfo(input.nfoPath, input.crawlerData, {
-    assets: input.assets,
-    sources: input.sources,
-    videoMeta,
-    fileInfo: input.fileInfo,
-    localState: input.localState,
-    nfoNaming: input.config.download.nfoNaming,
-    enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
-    nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
-  });
-};
-
-export const organizePreparedVideo = async (input: {
-  config: Configuration;
-  enabled: boolean;
-  fileInfo: FileInfo;
-  fileOrganizer: FileOrganizer;
-  plan?: OrganizePlan;
-  signalService?: Pick<SignalService, "showLogText">;
-  startLogLabel?: string;
-}): Promise<string> => {
-  if (!(input.enabled && input.plan)) {
-    return input.fileInfo.filePath;
-  }
-
-  if (input.startLogLabel && input.signalService) {
-    input.signalService.showLogText(input.startLogLabel);
-  }
-
-  return await input.fileOrganizer.organizeVideo(input.fileInfo, input.plan, input.config);
 };

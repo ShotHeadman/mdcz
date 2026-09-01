@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
 import { Website } from "./enums";
+import { assetRefSchema, parseWireRelativeDirectory, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
@@ -19,9 +20,6 @@ export const mediaRootSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   hostPath: z.string(),
-  rootType: z.literal("mounted-filesystem"),
-  enabled: z.boolean(),
-  deleted: z.boolean(),
   availability: mediaRootAvailabilitySchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -38,22 +36,31 @@ export type MediaRootListResponse = z.infer<typeof mediaRootListResponseSchema>;
 export const mediaRootCreateInputSchema = z.object({
   displayName: z.string().trim().min(1),
   hostPath: z.string().trim().min(1),
-  enabled: z.boolean().optional(),
 });
 
 export type MediaRootCreateInput = z.infer<typeof mediaRootCreateInputSchema>;
+
+export const mediaRootEnsurePathInputSchema = z.object({
+  displayName: z.string().trim().min(1).optional(),
+  hostPath: z.string().trim().min(1),
+});
+
+export type MediaRootEnsurePathInput = z.infer<typeof mediaRootEnsurePathInputSchema>;
+
+export const mediaRootEnsurePathResponseSchema = mediaRootSchema.extend({
+  relativeDirectory: z.string(),
+});
+
+export type MediaRootEnsurePathResponse = z.infer<typeof mediaRootEnsurePathResponseSchema>;
 
 export const rootBrowserInputSchema = z.object({
   rootId: z.string().trim().min(1),
   relativePath: z.string().optional().default(""),
 });
 
-export type RootBrowserInput = z.infer<typeof rootBrowserInputSchema>;
+export type RootBrowserInput = z.input<typeof rootBrowserInputSchema>;
 
-export interface RootRelativeFileRefDto {
-  rootId: string;
-  relativePath: string;
-}
+export type { RootFileRef } from "./mediaRef";
 
 export const rootBrowserEntrySchema = z.object({
   type: z.enum(["directory", "file"]),
@@ -111,6 +118,18 @@ export type TaskKind = z.infer<typeof taskKindSchema>;
 
 export const scanStatusSchema = z.enum(["queued", "running", "completed", "failed", "paused", "stopping"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
+
+export const taskStatusSchema = z.enum([
+  "queued",
+  "running",
+  "paused",
+  "stopping",
+  "completed",
+  "failed",
+  "stopped",
+  "interrupted",
+]);
+export type TaskStatus = z.infer<typeof taskStatusSchema>;
 
 export const crawlerDataSchema = z.object({
   title: z.string(),
@@ -176,9 +195,30 @@ export const scanTaskSchema = z.object({
   directoryCount: z.number(),
   error: z.string().nullable(),
   videos: z.array(z.string()).optional(),
+  continuity: z.enum(["live", "final", "interrupted"]).optional(),
 });
 
 export type ScanTaskDto = z.infer<typeof scanTaskSchema>;
+
+export const scrapeRunTaskSchema = z.object({
+  id: z.string(),
+  kind: z.literal("scrape"),
+  rootId: z.string(),
+  rootDisplayName: z.string(),
+  status: taskStatusSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  totalItems: z.number().int().nonnegative(),
+  successCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  error: z.string().nullable(),
+  continuity: z.enum(["live", "final", "interrupted"]),
+});
+
+export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;
 
 export const scanTaskListResponseSchema = z.object({
   tasks: z.array(scanTaskSchema),
@@ -210,12 +250,9 @@ export interface ScanCandidatesResponse {
   candidates: MediaCandidate[];
 }
 
-export const scrapeFileRefSchema = z.object({
-  rootId: z.string().trim().min(1),
-  relativePath: z.string().trim().min(1),
-});
+export const scrapeFileRefSchema = rootFileRefSchema;
 
-export type ScrapeFileRefDto = z.infer<typeof scrapeFileRefSchema>;
+export type ScrapeFileRefDto = RootFileRef;
 
 export const ambiguousUncensoredItemSchema = z.object({
   id: z.string(),
@@ -229,28 +266,36 @@ export const ambiguousUncensoredItemSchema = z.object({
 
 export type AmbiguousUncensoredItemDto = z.infer<typeof ambiguousUncensoredItemSchema>;
 
-export const scrapeStartInputSchema = z.object({
-  outputRootId: z.string().trim().min(1).optional(),
+const scrapeBatchStartInputSchema = z.object({
+  executionMode: z.literal("batch"),
+  outputRootId: z.string().trim().min(1),
+  outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
   refs: z.array(scrapeFileRefSchema).min(1),
   maintenancePreset: maintenancePresetIdSchema.optional(),
   uncensoredConfirmed: z.boolean().optional(),
   manualUrl: z.string().trim().min(1).optional(),
 });
 
-export type ScrapeStartInput = z.infer<typeof scrapeStartInputSchema>;
-
-export const scrapeStartSelectedFilesInputSchema = z.object({
-  filePaths: z.array(z.string().trim().min(1)).min(1),
-  scanDir: z.string().trim().min(1).optional(),
-  targetDir: z.string().trim().min(1).optional(),
-  manualUrl: z.string().trim().min(1).optional(),
+const scrapeSingleStartInputSchema = z.object({
+  executionMode: z.literal("single"),
+  outputRootId: z.string().trim().min(1).optional(),
+  outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
+  refs: z.array(scrapeFileRefSchema).length(1),
+  maintenancePreset: maintenancePresetIdSchema.optional(),
   uncensoredConfirmed: z.boolean().optional(),
+  manualUrl: z.string().trim().min(1).optional(),
 });
 
-export type ScrapeStartSelectedFilesInput = z.infer<typeof scrapeStartSelectedFilesInputSchema>;
+export const scrapeStartInputSchema = z.discriminatedUnion("executionMode", [
+  scrapeBatchStartInputSchema,
+  scrapeSingleStartInputSchema,
+]);
+
+export type ScrapeStartInput = z.output<typeof scrapeStartInputSchema>;
 
 export const scrapeTaskControlInputSchema = z.object({
   taskId: z.string().trim().min(1),
+  itemIds: z.array(z.string().trim().min(1)).min(1).optional(),
 });
 
 export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema>;
@@ -270,31 +315,6 @@ export const scrapeConfirmUncensoredInputSchema = z.object({
 });
 
 export type ScrapeConfirmUncensoredInput = z.infer<typeof scrapeConfirmUncensoredInputSchema>;
-
-export const scrapeRecoverableSessionResponseSchema = z.object({
-  recoverable: z.boolean(),
-  pendingCount: z.number(),
-  failedCount: z.number(),
-  taskId: z.string().nullable(),
-});
-
-export type ScrapeRecoverableSessionResponse = z.infer<typeof scrapeRecoverableSessionResponseSchema>;
-
-export const scrapeRecoverableSessionResolveInputSchema = z
-  .object({
-    action: z.enum(["recover", "discard"]).optional().default("recover"),
-  })
-  .optional();
-
-export type ScrapeRecoverableSessionResolveInput = z.infer<typeof scrapeRecoverableSessionResolveInputSchema>;
-
-export const scrapeRecoverableSessionResolveResponseSchema = z.object({
-  success: z.literal(true),
-  message: z.string(),
-  task: scanTaskSchema.nullable(),
-});
-
-export type ScrapeRecoverableSessionResolveResponse = z.infer<typeof scrapeRecoverableSessionResolveResponseSchema>;
 
 export const scrapeResultIdInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -361,6 +381,7 @@ export const scrapeResultSchema = z.object({
   taskId: z.string(),
   rootId: z.string(),
   rootDisplayName: z.string(),
+  outputRootId: z.string().nullable().optional(),
   relativePath: z.string(),
   fileName: z.string(),
   status: z.enum(["pending", "processing", "success", "failed", "skipped"]),
@@ -369,13 +390,41 @@ export const scrapeResultSchema = z.object({
   nfoRootId: z.string().nullable(),
   nfoRelativePath: z.string().nullable(),
   outputRelativePath: z.string().nullable(),
+  assets: z.array(assetRefSchema),
   manualUrl: z.string().nullable(),
   uncensoredAmbiguous: z.boolean().optional(),
+  persistenceState: z.enum(["terminal", "interrupted"]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 
 export type ScrapeResultDto = z.infer<typeof scrapeResultSchema>;
+
+/**
+ * A live item belongs to an in-process scrape run.  Unlike ScrapeResultDto it
+ * is not persisted history: its `id` is the stable manifest item id and it
+ * can therefore describe pending and processing work as well as a committed
+ * terminal outcome.
+ */
+export const scrapeLiveItemSchema = z.object({
+  id: z.string(),
+  resultId: z.string().nullable(),
+  rootId: z.string(),
+  relativePath: z.string(),
+  fileName: z.string(),
+  status: z.enum(["pending", "processing", "success", "failed", "skipped"]),
+  error: z.string().nullable(),
+  crawlerData: crawlerDataSchema.nullable(),
+  nfoRootId: z.string().nullable(),
+  nfoRelativePath: z.string().nullable(),
+  outputRootId: z.string().nullable(),
+  outputRelativePath: z.string().nullable(),
+  assets: z.array(assetRefSchema),
+  manualUrl: z.string().nullable(),
+  uncensoredAmbiguous: z.boolean(),
+});
+
+export type ScrapeLiveItemDto = z.infer<typeof scrapeLiveItemSchema>;
 
 export const scrapeResultListResponseSchema = z.object({
   results: z.array(scrapeResultSchema),
@@ -388,6 +437,33 @@ export const scrapeResultDetailResponseSchema = z.object({
 });
 
 export type ScrapeResultDetailResponse = z.infer<typeof scrapeResultDetailResponseSchema>;
+
+export const scrapeHistoryRunSchema = z.object({
+  id: z.string(),
+  rootId: z.string(),
+  rootDisplayName: z.string(),
+  requestedOutputRootId: z.string().nullable(),
+  outputRootId: z.string().nullable(),
+  executionMode: z.enum(["single", "batch"]),
+  disposition: z.enum(["completed", "failed", "stopped", "interrupted"]),
+  createdAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  successCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  totalBytes: z.number().nonnegative(),
+  error: z.string().nullable(),
+});
+
+export type ScrapeHistoryRunDto = z.infer<typeof scrapeHistoryRunSchema>;
+
+export const scrapeHistoryResponseSchema = z.object({
+  runs: z.array(scrapeHistoryRunSchema),
+  results: z.array(scrapeResultSchema),
+});
+
+export type ScrapeHistoryResponse = z.infer<typeof scrapeHistoryResponseSchema>;
 
 export const nfoReadResponseSchema = z.object({
   rootId: z.string(),
@@ -423,72 +499,33 @@ export const fileActionResponseSchema = z.object({
 
 export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
 
-const maintenanceFieldDiffSchema = z
-  .object({
-    changed: z.boolean(),
-    field: z.string(),
-    kind: z.enum(["value", "image", "imageCollection"]),
-    label: z.string(),
-    newValue: z.any(),
-    oldValue: z.any(),
-  })
-  .passthrough();
-
-const maintenancePathDiffSchema = z.object({
-  changed: z.boolean(),
-  currentDir: z.string(),
-  currentVideoPath: z.string(),
-  fileId: z.string(),
-  targetDir: z.string(),
-  targetVideoPath: z.string(),
-});
-
-export const maintenancePreviewItemSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  presetId: maintenancePresetIdSchema,
-  rootId: z.string(),
-  rootDisplayName: z.string(),
-  relativePath: z.string(),
-  fileName: z.string(),
-  status: z.enum(["ready", "blocked", "applied", "failed"]),
-  error: z.string().nullable(),
-  fieldDiffs: z.array(maintenanceFieldDiffSchema),
-  unchangedFieldDiffs: z.array(maintenanceFieldDiffSchema),
-  pathDiff: maintenancePathDiffSchema.nullable(),
-  proposedCrawlerData: crawlerDataSchema.nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-
-export type MaintenancePreviewItemDto = z.infer<typeof maintenancePreviewItemSchema>;
-
 export const maintenanceStartInputSchema = z.object({
   rootId: z.string().trim().min(1),
   presetId: maintenancePresetIdSchema,
-  refs: z.array(scrapeFileRefSchema).optional(),
+  refs: z.array(scrapeFileRefSchema).min(1),
 });
 
 export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
 
-export const maintenanceScanSelectedFilesInputSchema = z.object({
-  filePaths: z.array(z.string().trim().min(1)).min(1),
-  scanDir: z.string().trim().min(1),
+export const maintenanceSessionInputSchema = z.object({
+  sessionId: z.string().trim().min(1),
 });
 
-export type MaintenanceScanSelectedFilesInput = z.infer<typeof maintenanceScanSelectedFilesInputSchema>;
+export type MaintenanceSessionInput = z.infer<typeof maintenanceSessionInputSchema>;
 
-export interface MaintenanceScanSelectedFilesResponse {
-  entries: import("./types").LocalScanEntry[];
-}
-
-export const maintenanceTaskInputSchema = z.object({
-  taskId: z.string().trim().min(1),
+export const maintenanceUpdateDraftInputSchema = maintenanceSessionInputSchema.extend({
+  previewId: z.string().min(1),
+  fieldSelections: z.record(z.string(), z.enum(["old", "new"])).optional(),
 });
+export type MaintenanceUpdateDraftInput = z.infer<typeof maintenanceUpdateDraftInputSchema>;
 
-export type MaintenanceTaskInput = z.infer<typeof maintenanceTaskInputSchema>;
+export const maintenanceDiscardSessionInputSchema = z.object({ sessionId: z.string().min(1).optional() }).optional();
+export type MaintenanceDiscardSessionInput = z.infer<typeof maintenanceDiscardSessionInputSchema>;
 
-export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
+export const maintenanceMutationAckSchema = z.object({ sessionId: z.string() });
+export type MaintenanceMutationAckDto = z.infer<typeof maintenanceMutationAckSchema>;
+
+export const maintenanceApplyInputSchema = maintenanceSessionInputSchema.extend({
   confirmationToken: z.string().trim().min(1).optional(),
   previewIds: z.array(z.string().trim().min(1)).optional(),
   selections: z
@@ -503,36 +540,6 @@ export const maintenanceApplyInputSchema = maintenanceTaskInputSchema.extend({
 
 export type MaintenanceApplyInput = z.infer<typeof maintenanceApplyInputSchema>;
 
-export const maintenancePreviewResponseSchema = z.object({
-  task: scanTaskSchema,
-  items: z.array(maintenancePreviewItemSchema),
-  confirmationToken: z.string(),
-});
-
-export type MaintenancePreviewResponse = z.infer<typeof maintenancePreviewResponseSchema>;
-
-export const maintenanceApplyLogSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  previewId: z.string(),
-  rootId: z.string(),
-  relativePath: z.string(),
-  presetId: maintenancePresetIdSchema,
-  status: z.enum(["success", "failed", "skipped"]),
-  error: z.string().nullable(),
-  appliedAt: z.string(),
-});
-
-export type MaintenanceApplyLogDto = z.infer<typeof maintenanceApplyLogSchema>;
-
-export const maintenanceApplyResponseSchema = z.object({
-  task: scanTaskSchema,
-  items: z.array(maintenancePreviewItemSchema),
-  applied: z.array(maintenanceApplyLogSchema),
-});
-
-export type MaintenanceApplyResponse = z.infer<typeof maintenanceApplyResponseSchema>;
-
 export const logEntrySchema = taskEventSchema.extend({
   source: z.enum(["task", "runtime"]),
   level: z.enum(["OK", "WARN", "ERR", "REQ", "INFO"]).optional(),
@@ -540,15 +547,12 @@ export const logEntrySchema = taskEventSchema.extend({
 
 export type LogEntryDto = z.infer<typeof logEntrySchema>;
 
-export const logListInputSchema = z.preprocess(
-  (input) => (input === null ? undefined : input),
-  z
-    .object({
-      kind: z.enum(["all", "task", "runtime"]).optional().default("all"),
-      taskIds: z.array(z.string().trim().min(1)).optional(),
-    })
-    .optional(),
-);
+export const logListInputSchema = z
+  .object({
+    kind: z.enum(["all", "task", "runtime"]).optional(),
+    taskIds: z.array(z.string().trim().min(1)).optional(),
+  })
+  .nullish();
 
 export type LogListInput = z.infer<typeof logListInputSchema>;
 
@@ -558,51 +562,64 @@ export const logListResponseSchema = z.object({
 
 export type LogListResponse = z.infer<typeof logListResponseSchema>;
 
-const taskRealtimeEventBaseSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
-  createdAt: z.string(),
+export const scrapeRunSnapshotSchema = z.object({
+  task: scrapeRunTaskSchema,
+  progress: z.object({
+    percent: z.number().min(0).max(100),
+    completedItems: z.number().int().nonnegative(),
+    totalItems: z.number().int().nonnegative(),
+  }),
+  items: z.array(scrapeLiveItemSchema),
+  latestStage: z
+    .object({
+      stage: z.string(),
+      message: z.string(),
+      relativePath: z.string().nullable(),
+    })
+    .nullable(),
+  logs: z.array(logEntrySchema),
+  ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema),
 });
 
-export const taskRealtimeEventSchema = z.discriminatedUnion("kind", [
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("log"),
-    log: logEntrySchema,
+export type ScrapeRunSnapshotDto = z.infer<typeof scrapeRunSnapshotSchema>;
+
+export const scrapeLiveRunsResponseSchema = z.object({
+  runs: z.array(scrapeRunSnapshotSchema),
+});
+
+export type ScrapeLiveRunsResponse = z.infer<typeof scrapeLiveRunsResponseSchema>;
+
+export const scrapeMutationAckSchema = z.object({
+  runId: z.string(),
+});
+
+export type ScrapeMutationAckDto = z.infer<typeof scrapeMutationAckSchema>;
+
+export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema.extend({
+  taskId: z.string(),
+});
+
+export type ScrapePendingUncensoredConfirmationItemDto = z.infer<typeof scrapePendingUncensoredConfirmationItemSchema>;
+
+export const scrapePendingUncensoredConfirmationResponseSchema = z.object({
+  items: z.array(scrapePendingUncensoredConfirmationItemSchema),
+});
+
+export type ScrapePendingUncensoredConfirmationResponse = z.infer<
+  typeof scrapePendingUncensoredConfirmationResponseSchema
+>;
+
+export const taskNotificationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("invalidate"),
+    resources: z.array(
+      z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending-confirmation"]),
+    ),
   }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("task-progress"),
-    taskKind: taskKindSchema,
-    value: z.number().min(0).max(100).optional(),
-    current: z.number().int().nonnegative(),
-    total: z.number().int().nonnegative(),
-    message: z.string().optional(),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("scrape-stage"),
-    stage: z.string(),
-    message: z.string(),
-    relativePath: z.string().optional(),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("scrape-result"),
-    result: z.lazy(() => scrapeResultSchema),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("task-failed"),
-    message: z.string(),
-    error: z.string().nullable().optional(),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("maintenance-preview-item"),
-    item: z.lazy(() => maintenancePreviewItemSchema),
-  }),
-  taskRealtimeEventBaseSchema.extend({
-    kind: z.literal("maintenance-apply-item"),
-    item: maintenanceApplyLogSchema,
-  }),
+  z.object({ kind: z.literal("log"), log: logEntrySchema }),
 ]);
 
-export type TaskRealtimeEventDto = z.infer<typeof taskRealtimeEventSchema>;
+export type TaskNotificationDto = z.infer<typeof taskNotificationSchema>;
 
 export const libraryEntrySchema = z.object({
   id: z.string(),
@@ -614,13 +631,14 @@ export const libraryEntrySchema = z.object({
   directory: z.string(),
   size: z.number(),
   modifiedAt: z.string().nullable(),
-  taskId: z.string().nullable(),
-  scrapeOutputId: z.string().nullable(),
+  runId: z.string().nullable(),
+  scrapeOutcomeId: z.string().nullable(),
   title: z.string().nullable(),
   number: z.string().nullable(),
   actors: z.array(z.string()),
   crawlerData: crawlerDataSchema.nullable(),
   thumbnailPath: z.string().nullable(),
+  thumbnailRootId: z.string().nullable().optional(),
   lastKnownPath: z.string().nullable(),
   createdAt: z.string(),
   lastRefreshedAt: z.string().nullable(),
@@ -722,6 +740,7 @@ export const overviewRecentAcquisitionSchema = z.object({
   title: z.string().nullable(),
   actors: z.array(z.string()),
   thumbnailPath: z.string().nullable(),
+  thumbnailRootId: z.string().nullable().optional(),
   lastKnownPath: z.string().nullable(),
   completedAt: z.string(),
   available: z.boolean().nullable(),
@@ -734,6 +753,7 @@ export const overviewOutputSummarySchema = z.object({
   totalBytes: z.number(),
   outputAt: z.string().nullable(),
   rootPath: z.string().nullable(),
+  unresolvedRepairCount: z.number().int().nonnegative(),
 });
 
 export type OverviewOutputSummaryDto = z.infer<typeof overviewOutputSummarySchema>;
@@ -744,18 +764,6 @@ export const overviewSummaryResponseSchema = z.object({
 });
 
 export type OverviewSummaryResponse = z.infer<typeof overviewSummaryResponseSchema>;
-
-export const webTaskUpdateSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("task"), task: scanTaskSchema }),
-  z.object({
-    kind: z.literal("event"),
-    event: taskEventSchema,
-    ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema).optional(),
-  }),
-  z.object({ kind: z.literal("snapshot"), tasks: z.array(scanTaskSchema) }),
-]);
-
-export type WebTaskUpdateDto = z.infer<typeof webTaskUpdateSchema>;
 
 export const healthResponseSchema = z.object({
   service: z.string(),
@@ -797,7 +805,7 @@ export type SystemAboutResponse = z.infer<typeof systemAboutResponseSchema>;
 export const automationWebhookEventSchema = z.object({
   taskId: z.string(),
   kind: taskKindSchema,
-  status: scanStatusSchema,
+  status: taskStatusSchema,
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   summary: z.string(),
@@ -837,18 +845,30 @@ export const automationWebhookDeliveryStatusResponseSchema = z.object({
 
 export type AutomationWebhookDeliveryStatusResponse = z.infer<typeof automationWebhookDeliveryStatusResponseSchema>;
 
-export const automationScrapeStartInputSchema = z.object({
-  refs: z.array(scrapeFileRefSchema).min(1).optional(),
-  rootId: z.string().trim().min(1).optional(),
-  outputRootId: z.string().trim().min(1).optional(),
-  manualUrl: z.string().trim().min(1).optional(),
-  uncensoredConfirmed: z.boolean().optional(),
-});
+export const automationScrapeStartInputSchema = z
+  .object({
+    refs: z.array(scrapeFileRefSchema).min(1).optional(),
+    rootId: z.string().trim().min(1).optional(),
+    outputRootId: z.string().trim().min(1).optional(),
+    outputRelativeDirectory: z.string().transform(parseWireRelativeDirectory).optional(),
+    executionMode: z.enum(["single", "batch"]).default("batch"),
+    manualUrl: z.string().trim().min(1).optional(),
+    uncensoredConfirmed: z.boolean().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.refs?.length && value.executionMode === "batch" && !value.outputRootId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["outputRootId"],
+        message: "Batch scrapes require outputRootId",
+      });
+    }
+  });
 
 export type AutomationScrapeStartInput = z.infer<typeof automationScrapeStartInputSchema>;
 
 export const automationScrapeStartResponseSchema = z.object({
-  task: scanTaskSchema,
+  task: z.union([scanTaskSchema, scrapeRunTaskSchema]),
   webhook: automationWebhookEventSchema,
 });
 
@@ -1076,14 +1096,6 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     dryRun: z.boolean().optional(),
   }),
   z.object({
-    toolId: z.literal("file-cleaner"),
-    rootId: z.string().trim().min(1),
-    relativePath: z.string().optional().default(""),
-    extensions: z.array(z.string().trim().min(1)).min(1),
-    dryRun: z.boolean().optional().default(true),
-    recursive: z.boolean().optional().default(true),
-  }),
-  z.object({
     toolId: z.literal("batch-nfo-translator"),
     action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
     text: z.string().trim().min(1).optional(),
@@ -1119,7 +1131,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
   }),
 ]);
 
-export type ToolExecuteInput = z.infer<typeof toolExecuteInputSchema>;
+export type ToolExecuteInput = z.input<typeof toolExecuteInputSchema>;
 
 export const toolExecuteResponseSchema = z.object({
   toolId: z.string(),

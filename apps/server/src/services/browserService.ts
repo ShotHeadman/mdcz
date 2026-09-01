@@ -8,7 +8,7 @@ export class BrowserService {
   constructor(private readonly mediaRoots: MediaRootService) {}
 
   async list(input: RootBrowserInput): Promise<RootBrowserResponse> {
-    const root = await this.mediaRoots.getActiveRoot(input.rootId);
+    const root = await this.mediaRoots.get(input.rootId);
     const entries = await listRootDirectory(root, input.relativePath ?? "");
     const browserEntries: RootBrowserEntryDto[] = [];
 

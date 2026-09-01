@@ -1,7 +1,19 @@
-import { stat as fsStat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  copyFile,
+  stat as fsStat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
-import { StorageError, storageErrorCodes, toStorageError } from "./errors";
+import { toStorageError } from "./errors";
 import type { MediaRoot } from "./mediaRoot";
 import { normalizeRootRelativePath, type RootRelativePath, resolveRootRelativePath } from "./rootRelativePath";
 
@@ -14,7 +26,6 @@ export interface StorageEntry {
 }
 
 export const statRootPath = async (root: MediaRoot, relativePath: string): Promise<StorageEntry> => {
-  assertStorageRootEnabled(root);
   const normalizedRelativePath = normalizeRootRelativePath(relativePath);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
@@ -33,7 +44,6 @@ export const statRootPath = async (root: MediaRoot, relativePath: string): Promi
 };
 
 export const readRootFile = async (root: MediaRoot, relativePath: string): Promise<Buffer> => {
-  assertStorageRootEnabled(root);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
   try {
@@ -44,7 +54,6 @@ export const readRootFile = async (root: MediaRoot, relativePath: string): Promi
 };
 
 export const listRootDirectory = async (root: MediaRoot, relativePath = ""): Promise<StorageEntry[]> => {
-  assertStorageRootEnabled(root);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
   try {
@@ -90,7 +99,9 @@ const walkRootDirectory = async (
   visitedDirs: Set<string>,
   ancestorDirs: Set<string>,
   allowVisitedTarget = false,
+  signal?: AbortSignal,
 ): Promise<RootFileWalkEntry[]> => {
+  signal?.throwIfAborted();
   const absolutePath = resolveRootRelativePath(root, relativePath);
   const dirKey = await resolveDirectoryKey(absolutePath);
   if (ancestorDirs.has(dirKey) || (!allowVisitedTarget && visitedDirs.has(dirKey))) {
@@ -103,13 +114,16 @@ const walkRootDirectory = async (
   const files: RootFileWalkEntry[] = [];
 
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const entryRelativePath = normalizeRootRelativePath(path.posix.join(relativePath, entry.name));
     const entryAbsolutePath = resolveRootRelativePath(root, entryRelativePath);
 
     try {
       if (entry.isDirectory()) {
         if (recursive) {
-          files.push(...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs)));
+          files.push(
+            ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, false, signal)),
+          );
         }
         continue;
       }
@@ -119,7 +133,7 @@ const walkRootDirectory = async (
         if (stats.isDirectory()) {
           if (recursive) {
             files.push(
-              ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, true)),
+              ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, true, signal)),
             );
           }
           continue;
@@ -135,10 +149,12 @@ const walkRootDirectory = async (
         }
       }
     } catch {
+      signal?.throwIfAborted();
       // Keep mounted filesystem scans resilient to inaccessible entries.
     }
   }
 
+  signal?.throwIfAborted();
   return files;
 };
 
@@ -146,19 +162,26 @@ export const listRootFiles = async (
   root: MediaRoot,
   relativePath = "",
   recursive = false,
+  signal?: AbortSignal,
 ): Promise<RootFileWalkEntry[]> => {
-  assertStorageRootEnabled(root);
   const normalizedRelativePath = normalizeRootRelativePath(relativePath);
 
   try {
-    return await walkRootDirectory(root, normalizedRelativePath, recursive, new Set<string>(), new Set<string>());
+    return await walkRootDirectory(
+      root,
+      normalizedRelativePath,
+      recursive,
+      new Set<string>(),
+      new Set<string>(),
+      false,
+      signal,
+    );
   } catch (error) {
     throw toStorageError(error, relativePath);
   }
 };
 
 export const mkdirpRootPath = async (root: MediaRoot, relativePath: string): Promise<void> => {
-  assertStorageRootEnabled(root);
   const absolutePath = resolveRootRelativePath(root, relativePath);
 
   try {
@@ -168,28 +191,72 @@ export const mkdirpRootPath = async (root: MediaRoot, relativePath: string): Pro
   }
 };
 
+const assertAbsolutePath = (value: string, label: string): void => {
+  if (!path.isAbsolute(value)) {
+    throw new TypeError(`${label} must be an absolute path: ${value}`);
+  }
+};
+
+const attachCleanupError = (error: unknown, cleanupError: unknown): void => {
+  if (!(error instanceof Error)) return;
+
+  const property = error.cause === undefined ? "cause" : "cleanupError";
+  try {
+    Object.defineProperty(error, property, {
+      configurable: true,
+      value: cleanupError,
+    });
+  } catch {
+    // Preserve the original error even when it cannot be extended.
+  }
+};
+
+const publishFileAtomically = async (
+  targetPath: string,
+  populateTemporaryFile: (temporaryPath: string) => Promise<void>,
+): Promise<void> => {
+  const parent = path.dirname(targetPath);
+  const temporaryPath = path.join(parent, `.${path.basename(targetPath)}.${randomUUID()}.tmp`);
+  let ownsTemporaryFile = false;
+
+  try {
+    await mkdir(parent, { recursive: true });
+    const temporaryFile = await open(temporaryPath, "wx");
+    ownsTemporaryFile = true;
+    await temporaryFile.close();
+    await populateTemporaryFile(temporaryPath);
+    await rename(temporaryPath, targetPath);
+  } catch (error) {
+    if (ownsTemporaryFile) {
+      try {
+        await rm(temporaryPath, { force: true });
+      } catch (cleanupError) {
+        attachCleanupError(error, cleanupError);
+      }
+    }
+    throw error;
+  }
+};
+
+export const atomicWriteFile = async (filePath: string, content: string | Uint8Array): Promise<void> => {
+  assertAbsolutePath(filePath, "filePath");
+  await publishFileAtomically(filePath, async (temporaryPath) => {
+    await writeFile(temporaryPath, content);
+  });
+};
+
+export const atomicCopyFile = async (sourcePath: string, targetPath: string): Promise<void> => {
+  assertAbsolutePath(sourcePath, "sourcePath");
+  assertAbsolutePath(targetPath, "targetPath");
+  await publishFileAtomically(targetPath, async (temporaryPath) => {
+    await copyFile(sourcePath, temporaryPath);
+  });
+};
+
 export const atomicWriteRootFile = async (
   root: MediaRoot,
   relativePath: string,
   content: string | Uint8Array,
 ): Promise<void> => {
-  assertStorageRootEnabled(root);
-  const absolutePath = resolveRootRelativePath(root, relativePath);
-  const parent = path.dirname(absolutePath);
-  const tempPath = path.join(parent, `.${path.basename(absolutePath)}.${process.pid}.${Date.now()}.tmp`);
-
-  try {
-    await mkdir(parent, { recursive: true });
-    await writeFile(tempPath, content);
-    await rename(tempPath, absolutePath);
-  } catch (error) {
-    await rm(tempPath, { force: true }).catch(() => undefined);
-    throw toStorageError(error, relativePath);
-  }
-};
-
-export const assertStorageRootEnabled = (root: MediaRoot): void => {
-  if (!root.enabled) {
-    throw new StorageError(storageErrorCodes.UnsupportedOperation, `Media root is disabled: ${root.id}`);
-  }
+  await atomicWriteFile(resolveRootRelativePath(root, relativePath), content);
 };

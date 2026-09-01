@@ -1,9 +1,11 @@
 import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
+import type { ServerPersistenceService } from "./persistenceService";
 import type { ScrapeService } from "./scrapeService";
 import { ToolsService } from "./toolsService";
 
@@ -58,8 +60,9 @@ class FakeActorSourceProvider {
 }
 
 const createTools = (networkClient: FakeNetworkClient, actorSourceProvider: FakeActorSourceProvider) =>
-  new ToolsService(config, {} as MediaRootService, {} as ScrapeService, {
+  new ToolsService(config, {} as MediaRootService, {} as ScrapeService, {} as ServerPersistenceService, {
     networkClient: networkClient as unknown as NetworkClient,
+    crawlerProvider: { listSites: () => [] } as unknown as CrawlerProvider,
     actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
   });
 

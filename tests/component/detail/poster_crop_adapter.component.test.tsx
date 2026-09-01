@@ -19,11 +19,8 @@ const item = {
 };
 
 const createPort = (overrides: Partial<DetailActionPort> = {}): DetailActionPort => ({
-  capabilities: { editPoster: "enabled", openFolder: "hidden", openNfo: "hidden", play: "hidden" },
   showFilePath: false,
   resolveImageCandidates: async (candidates) => candidates,
-  play: () => undefined,
-  openFolder: () => undefined,
   readNfo: async () => ({ path: "", crawlerData: null }),
   writeNfo: async () => undefined,
   preparePosterCrop: async () => session,

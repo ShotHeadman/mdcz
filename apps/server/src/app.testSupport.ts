@@ -1,7 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { NetworkClient } from "@mdcz/runtime/network";
 import {
+  ActorImageService,
   type AggregationResult,
   type MountedRootScrapeAggregationService,
   MountedRootScrapeRuntime,
@@ -64,11 +67,24 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const persistence = new ServerPersistenceService(paths);
   const mediaRoots = new MediaRootService(persistence);
   const taskEvents = createTaskEventBus();
+  const networkClient = new NetworkClient({
+    getProxyUrl: () => config.getComputed().proxyUrl,
+    getTimeoutMs: () => config.getComputed().networkTimeoutMs,
+    getRetryCount: () => config.getComputed().networkRetryCount,
+  });
+  const imageHostCooldownStore = new PersistentCooldownStore({
+    filePath: join(paths.dataDir, "image-host-cooldowns.json"),
+  });
+  const actorImageService = new ActorImageService({
+    cacheRoot: join(paths.dataDir, "actor-image-cache"),
+    networkClient,
+  });
   const app = buildServer({
     serviceOptions: {
       automationWebhook: options.automationWebhook,
     },
     webStaticDir: options.webStaticDir ?? false,
+    resources: { networkClient, imageHostCooldownStore },
     services: {
       auth:
         options.environmentPassword === undefined
@@ -80,16 +96,20 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       runtimeActions: options.runtimeActions,
       taskEvents,
       scrape: options.scrapeAggregation
-        ? new ScrapeService(
-            persistence,
-            mediaRoots,
-            config,
-            taskEvents,
-            new MountedRootScrapeRuntime(config, options.scrapeAggregation),
-          )
+        ? new ScrapeService(persistence, mediaRoots, config, taskEvents, {
+            networkClient,
+            runtime: new MountedRootScrapeRuntime({
+              config,
+              aggregationService: options.scrapeAggregation,
+              networkClient,
+              imageHostCooldownStore,
+              actorImageService,
+            }),
+            imageHostCooldownStore,
+          })
         : undefined,
       maintenance: options.createMaintenanceRuntime
-        ? new MaintenanceService(persistence, mediaRoots, config, taskEvents, options.createMaintenanceRuntime(config))
+        ? new MaintenanceService(persistence, mediaRoots, taskEvents, options.createMaintenanceRuntime(config))
         : undefined,
     },
   });
@@ -115,7 +135,7 @@ export const loginAsAdmin = async (fastify: FastifyInstance, password = "admin")
   return response.json().result.data.token as string;
 };
 
-export const waitForTaskStatus = async (
+export const waitForScanTaskStatus = async (
   fastify: FastifyInstance,
   token: string,
   taskId: string,
@@ -125,11 +145,39 @@ export const waitForTaskStatus = async (
     .poll(async () => {
       const detailResponse = await fastify.inject({
         method: "GET",
-        url: `/trpc/tasks.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+        url: `/trpc/scans.detail?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
         headers: { authorization: `Bearer ${token}` },
       });
       return detailResponse.json().result.data.task.status;
     })
+    .toBe(status);
+};
+
+export const waitForScrapeRunStatus = async (
+  fastify: FastifyInstance,
+  token: string,
+  runId: string,
+  status: string,
+): Promise<void> => {
+  await expect
+    .poll(
+      async () => {
+        const headers = { authorization: `Bearer ${token}` };
+        const liveResponse = await fastify.inject({ method: "GET", url: "/trpc/scrape.liveRuns", headers });
+        const liveRun = liveResponse
+          .json()
+          .result.data.runs.find((run: { task: { id: string } }) => run.task.id === runId);
+        if (liveRun) return liveRun.task.status;
+
+        const historyResponse = await fastify.inject({
+          method: "GET",
+          url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId: runId }))}`,
+          headers,
+        });
+        return historyResponse.json().result?.data?.runs[0]?.disposition;
+      },
+      { timeout: 10_000 },
+    )
     .toBe(status);
 };
 

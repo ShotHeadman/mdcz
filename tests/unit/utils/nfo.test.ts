@@ -1,5 +1,5 @@
-import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { NfoGenerator } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -118,6 +118,7 @@ describe("parseNfo", () => {
           height: 1080,
           bitrate: 8_000_000,
         },
+        buildTags: buildMovieTags,
       },
     );
 
@@ -222,6 +223,7 @@ describe("parseNfo", () => {
           uncensoredChoice: "leak",
           tags: ["中文字幕", "自定义标签"],
         },
+        buildTags: buildMovieTags,
       },
     );
 
@@ -247,6 +249,7 @@ describe("parseNfo", () => {
         localState: {
           tags: ["自定义标签"],
         },
+        buildTags: buildMovieTags,
       },
     );
 

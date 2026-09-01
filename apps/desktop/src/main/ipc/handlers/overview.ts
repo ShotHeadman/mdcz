@@ -1,12 +1,12 @@
 import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
-import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import { createRecentAcquisitionsFromEntries } from "@mdcz/runtime/library";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { OverviewRecentAcquisitionItem } from "@mdcz/shared/ipc-contracts/overviewContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { LibraryDetailInput } from "@mdcz/shared/serverDtos";
+import { libraryDetailInputSchema } from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:overview");
@@ -15,22 +15,44 @@ const isRemotePath = (value: string): boolean => /^https?:\/\//iu.test(value.tri
 const isAbsoluteLocalPath = (value: string): boolean =>
   /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
 
-const resolveLibraryPath = (
+const resolveAssetDisplayPath = (
   rootMap: ReadonlyMap<string, MediaRoot>,
-  rootId: string | undefined,
+  rootId: string,
   value: string | null | undefined,
+  mode: "relative" | "absolute",
 ): string | null => {
   const path = value?.trim();
   if (!path) {
     return null;
   }
-  if (isRemotePath(path) || isAbsoluteLocalPath(path)) {
+  if (isRemotePath(path)) {
     return path;
   }
-
   const root = rootId ? rootMap.get(rootId) : undefined;
-  return root ? resolveRootRelativePath(root, path) : path;
+  if (isAbsoluteLocalPath(path)) {
+    if (mode === "absolute") {
+      return path;
+    }
+    if (!root) {
+      return null;
+    }
+    try {
+      return toRootRelativePath(root, path);
+    } catch {
+      return null;
+    }
+  }
+  if (mode === "absolute") {
+    return root ? resolveRootRelativePath(root, path) : path;
+  }
+  return path;
 };
+
+const resolveLibraryPath = (
+  rootMap: ReadonlyMap<string, MediaRoot>,
+  rootId: string | undefined,
+  value: string | null | undefined,
+): string | null => resolveAssetDisplayPath(rootMap, rootId ?? "", value, "absolute");
 
 export const createOverviewHandlers = (
   context: ServiceContainer,
@@ -51,17 +73,23 @@ export const createOverviewHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Overview_RemoveRecentAcquisition]: t.procedure.input<LibraryDetailInput>().action(async ({ input }) => {
-      try {
-        return await context.desktopLibraryService.removeRecentAcquisition(input.id);
-      } catch (error) {
-        logger.error(`Overview remove recent acquisition failed: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
-      }
-    }),
+    [IpcChannel.Overview_RemoveRecentAcquisition]: t.procedure
+      .input(libraryDetailInputSchema)
+      .action(async ({ input }) => {
+        try {
+          return await context.desktopLibraryService.removeRecentAcquisition(input.id);
+        } catch (error) {
+          logger.error(`Overview remove recent acquisition failed: ${toErrorMessage(error)}`);
+          throw asSerializableIpcError(error);
+        }
+      }),
     [IpcChannel.Overview_GetOutputSummary]: t.procedure.action(async () => {
       try {
-        return await outputLibraryScanner.getSummary();
+        const [summary, state] = await Promise.all([
+          outputLibraryScanner.getSummary(),
+          context.persistenceService.getState(),
+        ]);
+        return { ...summary, unresolvedRepairCount: state.repositories.libraryRepairIssues.countUnresolved() };
       } catch (error) {
         logger.error(`Overview output summary failed: ${toErrorMessage(error)}`);
         throw asSerializableIpcError(error);
@@ -80,13 +108,20 @@ const readPersistedRecentAcquisitions = async (context: ServiceContainer): Promi
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
   const recent = createRecentAcquisitionsFromEntries(entries);
 
-  return recent.map((record) => ({
-    id: record.id ?? "",
-    number: record.number,
-    title: record.title,
-    actors: record.actors,
-    thumbnailPath: resolveLibraryPath(rootMap, entryById.get(record.id ?? "")?.rootId, record.thumbnailPath),
-    lastKnownPath: resolveLibraryPath(rootMap, entryById.get(record.id ?? "")?.rootId, record.lastKnownPath),
-    completedAt: record.completedAt,
-  }));
+  return recent.map((record) => {
+    const entry = entryById.get(record.id ?? "");
+    const rootId = entry?.rootId ?? "";
+    const thumbnailRootId = entry?.thumbnailRootId ?? entry?.rootId ?? null;
+    return {
+      id: record.id ?? "",
+      rootId,
+      number: record.number,
+      title: record.title,
+      actors: record.actors,
+      thumbnailPath: resolveAssetDisplayPath(rootMap, thumbnailRootId ?? rootId, record.thumbnailPath, "relative"),
+      thumbnailRootId,
+      lastKnownPath: resolveLibraryPath(rootMap, rootId, record.lastKnownPath),
+      completedAt: record.completedAt,
+    };
+  });
 };

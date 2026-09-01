@@ -7,6 +7,7 @@ import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { createIpcError, IpcErrorCode } from "../errors";
+import { crawlerProbeSiteInputSchema, crawlerTestInputSchema } from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const WEBSITE_VALUES = new Set(Object.values(Website));
@@ -27,7 +28,7 @@ export const createCrawlerHandlers = (
   const { crawlerProvider, networkClient } = context;
 
   return {
-    [IpcChannel.Crawler_Test]: t.procedure.input<{ site?: Website; number?: string }>().action(async ({ input }) => {
+    [IpcChannel.Crawler_Test]: t.procedure.input(crawlerTestInputSchema).action(async ({ input }) => {
       try {
         const site = parseWebsite(input?.site);
         const number = input?.number?.trim();
@@ -78,22 +79,24 @@ export const createCrawlerHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.Crawler_ProbeSiteConnectivity]: t.procedure.input<{ site?: Website }>().action(async ({ input }) => {
-      try {
-        const site = parseWebsite(input?.site);
-        if (!site) {
-          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Site is required");
-        }
+    [IpcChannel.Crawler_ProbeSiteConnectivity]: t.procedure
+      .input(crawlerProbeSiteInputSchema)
+      .action(async ({ input }) => {
+        try {
+          const site = parseWebsite(input?.site);
+          if (!site) {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Site is required");
+          }
 
-        const configuration = await configManager.getValidated();
-        return await probeSiteConnectivity(site, configuration, networkClient);
-      } catch (error) {
-        return {
-          ok: false as const,
-          message: `请求失败: ${toErrorMessage(error)}`,
-          latencyMs: 0,
-        };
-      }
-    }),
+          const configuration = await configManager.getValidated();
+          return await probeSiteConnectivity(site, configuration, networkClient);
+        } catch (error) {
+          return {
+            ok: false as const,
+            message: `请求失败: ${toErrorMessage(error)}`,
+            latencyMs: 0,
+          };
+        }
+      }),
   };
 };

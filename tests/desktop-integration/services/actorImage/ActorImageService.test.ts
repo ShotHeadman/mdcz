@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActorImageService, getActorImageCacheDirectory } from "@main/services/ActorImageService";
+import { getActorImageCacheDirectory } from "@main/appIdentity";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import { ActorImageService } from "@mdcz/runtime/scrape";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +51,7 @@ describe("ActorImageService", () => {
   it("creates cache skeleton and indexes manual root images during local resolve", async () => {
     const { root, cacheRoot } = await createActorLibrary();
     const config = createConfig(root);
-    const service = new ActorImageService();
+    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
     const manualPath = join(root, "Actor A.jpg");
     await writeFile(manualPath, "manual", "utf8");
 
@@ -79,7 +80,7 @@ describe("ActorImageService", () => {
         actorPhotoFolder: "actor-library",
       },
     });
-    const service = new ActorImageService();
+    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
     const manualPath = join(actorLibraryDir, "Actor Relative.jpg");
 
     await mkdir(actorLibraryDir, { recursive: true });
@@ -100,7 +101,7 @@ describe("ActorImageService", () => {
     const { root } = await createActorLibrary();
     const movieDir = join(root, "Movie");
     const config = createConfig(root);
-    const service = new ActorImageService();
+    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
     const manualPath = join(root, "Actor A.jpg");
 
     await writeFile(manualPath, "manual", "utf8");
@@ -125,7 +126,7 @@ describe("ActorImageService", () => {
     const { root } = await createActorLibrary();
     const movieDir = join(root, "Movie");
     const config = createConfig(root);
-    const service = new ActorImageService();
+    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
     const manualPath = join(root, "Actor A.jpg");
     const actorSourceProvider = {
       lookup: vi.fn(),
@@ -146,7 +147,7 @@ describe("ActorImageService", () => {
   it("returns fallback on corrupt index.json without overwriting the file", async () => {
     const { root, cacheRoot } = await createActorLibrary();
     const config = createConfig(root);
-    const service = new ActorImageService();
+    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
 
     await mkdir(cacheRoot, { recursive: true });
     await writeFile(join(cacheRoot, "index.json"), "not valid json", "utf8");
@@ -171,7 +172,10 @@ describe("ActorImageService", () => {
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
-    const service = new ActorImageService({ networkClient });
+    const service = new ActorImageService({
+      cacheRoot: getActorImageCacheDirectory(),
+      networkClient,
+    });
 
     const profiles = await service.prepareActorProfilesForMovie(config, {
       movieDir,
@@ -196,7 +200,10 @@ describe("ActorImageService", () => {
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
-    const service = new ActorImageService({ networkClient });
+    const service = new ActorImageService({
+      cacheRoot: getActorImageCacheDirectory(),
+      networkClient,
+    });
     const manualPath = join(root, "Actor B.jpg");
 
     await service.prepareActorProfilesForMovie(config, {
@@ -223,7 +230,10 @@ describe("ActorImageService", () => {
     const networkClient = {
       getContent: vi.fn(async () => Buffer.from("<html>blocked</html>", "utf8")),
     };
-    const service = new ActorImageService({ networkClient });
+    const service = new ActorImageService({
+      cacheRoot: getActorImageCacheDirectory(),
+      networkClient,
+    });
 
     const profiles = await service.prepareActorProfilesForMovie(config, {
       movieDir: join(root, "Movie"),
@@ -270,7 +280,10 @@ describe("ActorImageService", () => {
         warnings: [],
       }),
     } as unknown as ActorSourceProvider;
-    const service = new ActorImageService({ networkClient });
+    const service = new ActorImageService({
+      cacheRoot: getActorImageCacheDirectory(),
+      networkClient,
+    });
 
     const profiles = await service.prepareActorProfilesForMovie(config, {
       movieDir,
@@ -298,7 +311,10 @@ describe("ActorImageService", () => {
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
-    const service = new ActorImageService({ networkClient });
+    const service = new ActorImageService({
+      cacheRoot: getActorImageCacheDirectory(),
+      networkClient,
+    });
 
     await service.prepareActorProfilesForMovie(createConfig(firstRoot), {
       movieDir: join(firstRoot, "Movie"),

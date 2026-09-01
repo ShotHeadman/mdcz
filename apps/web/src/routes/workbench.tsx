@@ -1,9 +1,8 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
-import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
-  applyScrapeTaskStatus,
   buildUncensoredConfirmationItems,
   MaintenanceWorkbenchAdapter,
   resetScrapeWorkbenchToSetup,
@@ -15,7 +14,12 @@ import {
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  selectIsScraping,
+  selectScrapeResults,
+  selectScrapeTaskId,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,7 +29,9 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
+import { requestPendingUncensoredConfirmationRefresh, requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
+import { ErrorBanner } from "../routeCommon";
 
 export const Route = createFileRoute("/workbench")({
   validateSearch: (search): { intent?: "maintenance" } => ({
@@ -55,35 +61,10 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
       supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
     };
   },
-  savePaths: async (scanDir, targetDir) => {
-    await api.config.save({
-      paths: {
-        mediaPath: scanDir,
-        successOutputFolder: targetDir,
-      },
-    });
-  },
 });
 
 const STOP_SCRAPE_CONFIRM_MESSAGE = "确定要停止刮削吗？";
 const getRetryFailedConfirmMessage = (failedCount: number): string => `确定要批量重试 ${failedCount} 个失败项目吗？`;
-
-type WebScrapeRetryTarget = Parameters<SharedWorkbenchPorts["scrape"]["retrySelection"]>[0][number];
-
-const scrapeResultToWebRetryRef = (result: ScrapeResult): WebScrapeRetryTarget["ref"] => {
-  const [rootId, ...relativeParts] = result.fileId.split(":");
-  const relativePath = relativeParts.join(":");
-
-  return rootId && relativePath ? { rootId, relativePath } : undefined;
-};
-
-const scrapeResultsToWebRetryTargets = (results: ScrapeResult[]): WebScrapeRetryTarget[] =>
-  results
-    .filter((result) => result.status === "failed")
-    .map((result) => ({
-      filePath: result.fileInfo.filePath,
-      ref: scrapeResultToWebRetryRef(result),
-    }));
 
 function WorkbenchPage() {
   const search = Route.useSearch();
@@ -91,22 +72,20 @@ function WorkbenchPage() {
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const { hydrationState, resolveUncensoredTask, setActiveScrapeTaskId, setScrapeStartPending } = useWorkbenchTaskStore(
+  const { hydrationState, clearUncensoredConfirmation, refreshError } = useWorkbenchTaskStore(
     useShallow((state) => ({
       hydrationState: state.hydrationState,
-      resolveUncensoredTask: state.resolveUncensoredTask,
-      setActiveScrapeTaskId: state.setActiveScrapeTaskId,
-      setScrapeStartPending: state.setScrapeStartPending,
+      clearUncensoredConfirmation: state.clearUncensoredConfirmation,
+      refreshError: state.refreshError,
     })),
   );
-  const activeScrapeTaskId = hydrationState.activeScrapeTaskId;
+  const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
   const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: queryKeys.config.current, retry: false });
 
-  const { isScraping, scrapeStatus, results } = useScrapeStore(
+  const { isScraping, results } = useScrapeStore(
     useShallow((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      results: state.results,
+      isScraping: selectIsScraping(state),
+      results: selectScrapeResults(state),
     })),
   );
   const { workbenchMode, setWorkbenchMode } = useUIStore(
@@ -118,7 +97,7 @@ function WorkbenchPage() {
 
   const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, search.intent);
   const showSetup = sessionSnapshot.showSetup;
-  const failedTargets = useMemo(() => scrapeResultsToWebRetryTargets(results), [results]);
+  const failedCount = useMemo(() => results.filter((result) => result.status === "failed").length, [results]);
 
   useEffect(() => {
     if (sessionSnapshot.workbenchMode !== workbenchMode) {
@@ -132,31 +111,27 @@ function WorkbenchPage() {
     }
   }, [hydrationState.shouldOpenUncensoredDialog]);
 
-  const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
-    setScrapeStartPending(true);
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
+    activateNewScrapeTask();
     try {
-      activateNewScrapeTask(filePaths);
-      const task = await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
-      setActiveScrapeTaskId(task.id);
-      applyScrapeTaskStatus(task.status);
+      const outputRoot = await api.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
+      await api.scrape.start({
+        refs: candidates.map((candidate) => candidate.ref),
+        executionMode: "batch",
+        outputRootId: outputRoot.id,
+        outputRelativeDirectory: outputRoot.relativeDirectory,
+      });
+      requestScrapeLiveRunsRefresh();
       toast.success("已启动选中文件刮削");
     } catch (error) {
       resetScrapeWorkbenchToSetup();
       toast.error(`启动失败: ${toErrorMessage(error)}`);
-    } finally {
-      setScrapeStartPending(false);
     }
   };
 
-  const handleStartSelectedMaintenance = async (
-    filePaths: string[],
-    scanDir: string,
-    _targetDir: string,
-    presetId: MaintenancePresetId,
-  ) => {
+  const handleStartSelectedMaintenance = async (candidates: MediaCandidate[], presetId: MaintenancePresetId) => {
     await startMaintenanceFlow({
-      filePaths,
-      scanDir,
+      candidates,
       presetId,
       port: ports.maintenance,
       isScraping,
@@ -181,8 +156,8 @@ function WorkbenchPage() {
     const taskId = requireActiveScrapeTaskId();
     if (!taskId) return;
     try {
-      const task = await api.scrape.pause({ taskId });
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.pause({ taskId });
+      requestScrapeLiveRunsRefresh();
       toast.info("任务已暂停");
     } catch (error) {
       toast.error(`暂停失败: ${toErrorMessage(error)}`);
@@ -193,8 +168,8 @@ function WorkbenchPage() {
     const taskId = requireActiveScrapeTaskId();
     if (!taskId) return;
     try {
-      const task = await api.scrape.resume({ taskId });
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.resume({ taskId });
+      requestScrapeLiveRunsRefresh();
       toast.success("任务已恢复");
     } catch (error) {
       toast.error(`恢复失败: ${toErrorMessage(error)}`);
@@ -206,8 +181,8 @@ function WorkbenchPage() {
     if (!taskId) return;
     if (!window.confirm(STOP_SCRAPE_CONFIRM_MESSAGE)) return;
     try {
-      const task = await api.scrape.stop({ taskId });
-      applyScrapeTaskStatus(task.status);
+      await api.scrape.stop({ taskId });
+      requestScrapeLiveRunsRefresh();
       toast.info("正在停止...");
     } catch (error) {
       toast.error(`停止失败: ${toErrorMessage(error)}`);
@@ -215,19 +190,15 @@ function WorkbenchPage() {
   };
 
   const handleRetryFailed = async () => {
-    const targets = scrapeResultsToWebRetryTargets(useScrapeStore.getState().results);
-    if (targets.length === 0) {
+    if (failedCount === 0) {
       toast.info("当前没有可重试的失败项目");
       return;
     }
-    if (!window.confirm(getRetryFailedConfirmMessage(targets.length))) {
+    if (!window.confirm(getRetryFailedConfirmMessage(failedCount))) {
       return;
     }
     try {
-      const result = await ports.scrape.retrySelection(targets, { scrapeStatus });
-      if (result.strategy === "new-task") {
-        applyScrapeTaskStatus("running");
-      }
+      const result = await ports.scrape.retryFailed();
       toast.success(result.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);
@@ -238,38 +209,42 @@ function WorkbenchPage() {
     if (!hydrationState.uncensoredTaskId) {
       throw new Error("缺少刮削任务 ID");
     }
-    const task = await api.scrape.confirmUncensored({
+    await api.scrape.confirmUncensored({
       taskId: hydrationState.uncensoredTaskId,
       items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
     });
-    resolveUncensoredTask(task.id);
-    applyScrapeTaskStatus(task.status);
+    clearUncensoredConfirmation();
+    requestScrapeLiveRunsRefresh();
+    requestPendingUncensoredConfirmationRefresh();
     toast.success("已提交无码确认重刮任务");
   };
 
   return (
-    <div className="h-full min-h-0 overflow-hidden">
-      {showSetup ? (
-        <WorkbenchSetupAdapter
-          mode={workbenchMode}
-          config={configQ.data}
-          configLoading={configQ.isLoading}
-          port={setupPort}
-          onStartScrape={handleStartSelectedScrape}
-          onStartMaintenance={handleStartSelectedMaintenance}
-        />
-      ) : workbenchMode === "scrape" ? (
-        <ScrapeWorkbenchAdapter
-          ports={ports}
-          failedCount={failedTargets.length}
-          onPauseScrape={() => void handlePauseScrape()}
-          onResumeScrape={() => void handleResumeScrape()}
-          onRetryFailed={() => void handleRetryFailed()}
-          onStopScrape={() => void handleStopScrape()}
-        />
-      ) : (
-        <MaintenanceWorkbenchAdapter ports={ports} />
-      )}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {refreshError ? <ErrorBanner>{`任务状态刷新失败: ${refreshError}`}</ErrorBanner> : null}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {showSetup ? (
+          <WorkbenchSetupAdapter
+            mode={workbenchMode}
+            config={configQ.data}
+            configLoading={configQ.isLoading}
+            port={setupPort}
+            onStartScrape={handleStartSelectedScrape}
+            onStartMaintenance={handleStartSelectedMaintenance}
+          />
+        ) : workbenchMode === "scrape" ? (
+          <ScrapeWorkbenchAdapter
+            ports={ports}
+            failedCount={failedCount}
+            onPauseScrape={() => void handlePauseScrape()}
+            onResumeScrape={() => void handleResumeScrape()}
+            onRetryFailed={() => void handleRetryFailed()}
+            onStopScrape={() => void handleStopScrape()}
+          />
+        ) : (
+          <MaintenanceWorkbenchAdapter ports={ports} />
+        )}
+      </div>
       <UncensoredConfirmDialog
         open={uncensoredDialogOpen && hydrationState.ambiguousUncensoredItems.length > 0}
         items={hydrationState.ambiguousUncensoredItems}
@@ -282,6 +257,5 @@ function WorkbenchPage() {
 
 export const __workbenchTestHooks = {
   getRetryFailedConfirmMessage,
-  scrapeResultsToWebRetryTargets,
   STOP_SCRAPE_CONFIRM_MESSAGE,
 };

@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   buildAmbiguousUncensoredScrapeGroups,
   buildUncensoredConfirmItemsForScrapeGroups,
@@ -7,6 +7,7 @@ import {
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import {
   activateNewScrapeTask,
+  activateRetryScrapeTask,
   applyScrapeTaskStatus,
   MaintenanceWorkbenchAdapter,
   resetScrapeWorkbenchToSetup,
@@ -15,8 +16,13 @@ import {
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import {
+  selectIsScraping,
+  selectScrapeResults,
+  selectScrapeStatus,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -45,12 +51,12 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
   const { isScraping, scrapeStatus, results } = useScrapeStore(
     useShallow((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      results: state.results,
+      isScraping: selectIsScraping(state),
+      scrapeStatus: selectScrapeStatus(state),
+      results: selectScrapeResults(state),
     })),
   );
-  const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
+  const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const { workbenchMode, setWorkbenchMode } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,
@@ -65,19 +71,19 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       ambiguousItems.map((group) => ({
         id: group.id,
         ref: {
-          rootId: "",
-          relativePath: group.display.fileInfo.filePath,
+          rootId: group.display.rootId,
+          relativePath: group.display.relativePath,
         },
         fileId: group.display.fileId,
-        fileName: group.display.fileInfo.fileName,
-        number: group.display.fileInfo.number,
+        fileName: group.display.fileName,
+        number: group.display.crawlerData?.number ?? group.display.fileName.replace(/\.[^.]+$/u, ""),
         title: group.display.crawlerData?.title_zh ?? group.display.crawlerData?.title ?? null,
-        nfoRelativePath: group.display.nfoPath ?? null,
+        nfoRelativePath: group.display.nfo?.relativePath ?? null,
       })),
     [ambiguousItems],
   );
   const failedPaths = useMemo(
-    () => results.filter((result) => result.status === "failed").map((result) => result.fileInfo.filePath),
+    () => results.filter((result) => result.status === "failed").map((result) => result.relativePath),
     [results],
   );
   const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, routeIntent);
@@ -104,18 +110,20 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
   };
 
-  const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
-    void scanDir;
-    void targetDir;
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
     if (maintenanceBusy) {
       toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
       return;
     }
 
     try {
-      activateNewScrapeTask(filePaths);
-      const response = await startSelectedScrape(filePaths);
-      await refreshCurrentConfig();
+      const outputRoot = await ipc.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
+      activateNewScrapeTask();
+      const response = await startSelectedScrape(
+        candidates.map((candidate) => candidate.ref),
+        outputRoot.id,
+        outputRoot.relativeDirectory,
+      );
       toast.success(response.data.message);
     } catch (error) {
       const errorMessage = toErrorMessage(error);
@@ -134,20 +142,14 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
   };
 
-  const handleStartSelectedMaintenance = async (
-    filePaths: string[],
-    scanDir: string,
-    _targetDir: string,
-    presetId: MaintenancePresetId,
-  ) => {
+  const handleStartSelectedMaintenance = async (candidates: MediaCandidate[], presetId: MaintenancePresetId) => {
     if (isScraping) {
       toast.warning("正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。");
       return;
     }
 
     await startMaintenanceFlow({
-      filePaths,
-      scanDir,
+      candidates,
       presetId,
       port: workbenchPorts.maintenance,
       isScraping,
@@ -162,7 +164,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     if (!window.confirm("确定要停止刮削吗？")) return;
     try {
       await stopScrape();
-      applyScrapeTaskStatus("stopping");
+      applyScrapeTaskStatus();
       toast.info("正在停止...");
     } catch (_error) {
       toast.error("停止失败");
@@ -172,7 +174,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handlePauseScrape = async () => {
     try {
       await pauseScrape();
-      applyScrapeTaskStatus("paused");
+      applyScrapeTaskStatus();
       toast.info("任务已暂停");
     } catch (_error) {
       toast.error("暂停失败");
@@ -182,15 +184,11 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleResumeScrape = async () => {
     try {
       await resumeScrape();
-      applyScrapeTaskStatus("running");
+      applyScrapeTaskStatus();
       toast.success("任务已恢复");
     } catch (_error) {
       toast.error("恢复失败");
     }
-  };
-
-  const resetForNewTask = () => {
-    activateNewScrapeTask();
   };
 
   const handleRetryFailed = async () => {
@@ -204,12 +202,8 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
 
     try {
-      const result = await retryScrapeSelection(failedPaths, {
-        scrapeStatus,
-      });
-      if (result.data.strategy === "new-task") {
-        resetForNewTask();
-      }
+      const result = await retryScrapeSelection();
+      activateRetryScrapeTask();
       toast.success(result.data.message);
     } catch (error) {
       toast.error(`重试失败: ${toErrorMessage(error)}`);
@@ -229,7 +223,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     const { successCount, failedCount } = summarizeUncensoredConfirmResultForScrapeGroups(ambiguousItems, result.items);
 
     if (result.updatedCount > 0) {
-      useScrapeStore.getState().resolveUncensoredResults(result.items);
+      useScrapeStore.getState().setPending(true);
     }
 
     if (failedCount === 0) {

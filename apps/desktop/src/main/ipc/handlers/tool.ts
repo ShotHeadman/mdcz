@@ -16,13 +16,16 @@ import { SymlinkServiceError } from "@main/services/tools";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type {
-  BatchTranslateApplyInput,
-  EmbyConnectionCheckResult,
-  JellyfinConnectionCheckResult,
-  PersonSyncResult,
-} from "@mdcz/shared/ipcTypes";
+import type { EmbyConnectionCheckResult, JellyfinConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import { createIpcError, IpcErrorCode } from "../errors";
+import {
+  toolAmazonPosterApplyInputSchema,
+  toolAmazonPosterLookupInputSchema,
+  toolBatchTranslateApplyInputSchema,
+  toolCreateSymlinkInputSchema,
+  toolDirectoryInputSchema,
+  toolMediaServerModeInputSchema,
+} from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
@@ -148,7 +151,7 @@ export const createToolHandlers = (
     service: MediaServerRunner<PersonSyncResult>,
     extra: { includeActorPhotoFolderError?: boolean } = {},
   ) =>
-    t.procedure.input<{ mode?: MediaServerMode }>().action(async ({ input }): Promise<PersonSyncResult> => {
+    t.procedure.input(toolMediaServerModeInputSchema).action(async ({ input }): Promise<PersonSyncResult> => {
       try {
         const mode = options.parseMode(input?.mode);
         if (!mode) {
@@ -213,14 +216,7 @@ export const createToolHandlers = (
       embyHandlers.infoService,
     ),
     [IpcChannel.Tool_CreateSymlink]: t.procedure
-      .input<{
-        sourceDir?: string;
-        source_dir?: string;
-        destDir?: string;
-        dest_dir?: string;
-        copyFiles?: boolean;
-        copy_files?: boolean;
-      }>()
+      .input(toolCreateSymlinkInputSchema)
       .action(async ({ input }): Promise<{ message: string }> => {
         try {
           if (symlinkTaskStarting || symlinkTask) {
@@ -257,7 +253,7 @@ export const createToolHandlers = (
           symlinkTaskStarting = false;
         }
       }),
-    [IpcChannel.Tool_AmazonPosterScan]: t.procedure.input<{ directory?: string }>().action(async ({ input }) => {
+    [IpcChannel.Tool_AmazonPosterScan]: t.procedure.input(toolDirectoryInputSchema).action(async ({ input }) => {
       try {
         const directory = input?.directory?.trim();
         if (!directory) {
@@ -271,7 +267,7 @@ export const createToolHandlers = (
       }
     }),
     [IpcChannel.Tool_AmazonPosterLookup]: t.procedure
-      .input<{ nfoPath?: string; title?: string }>()
+      .input(toolAmazonPosterLookupInputSchema)
       .action(async ({ input }) => {
         try {
           const nfoPath = input?.nfoPath?.trim();
@@ -285,7 +281,7 @@ export const createToolHandlers = (
         }
       }),
     [IpcChannel.Tool_AmazonPosterApply]: t.procedure
-      .input<{ items?: Array<{ nfoPath: string; amazonPosterUrl: string }> }>()
+      .input(toolAmazonPosterApplyInputSchema)
       .action(async ({ input }) => {
         try {
           return {
@@ -295,7 +291,7 @@ export const createToolHandlers = (
           return raiseHandlerError("Tool_AmazonPosterApply", error);
         }
       }),
-    [IpcChannel.Tool_BatchTranslateScan]: t.procedure.input<{ directory?: string }>().action(async ({ input }) => {
+    [IpcChannel.Tool_BatchTranslateScan]: t.procedure.input(toolDirectoryInputSchema).action(async ({ input }) => {
       try {
         const directory = input?.directory?.trim();
         if (!directory) {
@@ -310,21 +306,23 @@ export const createToolHandlers = (
         return raiseHandlerError("Tool_BatchTranslateScan", error);
       }
     }),
-    [IpcChannel.Tool_BatchTranslateApply]: t.procedure.input<BatchTranslateApplyInput>().action(async ({ input }) => {
-      try {
-        const items = input?.items ?? [];
-        if (items.length === 0) {
-          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "At least one item is required");
-        }
+    [IpcChannel.Tool_BatchTranslateApply]: t.procedure
+      .input(toolBatchTranslateApplyInputSchema)
+      .action(async ({ input }) => {
+        try {
+          const items = input?.items ?? [];
+          if (items.length === 0) {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "At least one item is required");
+          }
 
-        const configuration = await configManager.getValidated();
-        return {
-          results: await batchTranslateToolService.apply(items, configuration, { maxBatchItems: input?.batchSize }),
-        };
-      } catch (error) {
-        return raiseHandlerError("Tool_BatchTranslateApply", error);
-      }
-    }),
+          const configuration = await configManager.getValidated();
+          return {
+            results: await batchTranslateToolService.apply(items, configuration, { maxBatchItems: input?.batchSize }),
+          };
+        } catch (error) {
+          return raiseHandlerError("Tool_BatchTranslateApply", error);
+        }
+      }),
     [IpcChannel.Tool_ToggleDevTools]: t.procedure.action(async () => {
       windowService.toggleDevTools();
       return { success: true as const };

@@ -1,7 +1,8 @@
+import { type AssetRef, type RootFileRef, toLocalFileUrl } from "@mdcz/shared/mediaRef";
+import type { ScrapeResultDto } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
   DiscoveredAssets,
-  DownloadedAssets,
   LocalScanEntry,
   MaintenanceItemResult,
   MaintenancePreviewItem,
@@ -10,8 +11,30 @@ import type {
 } from "@mdcz/shared/types";
 import type { DetailViewItem } from "./types";
 
-type DetailLocalAssets = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages">;
-type DetailDownloadedAssets = Pick<DownloadedAssets, "poster" | "thumb" | "fanart" | "sceneImages">;
+type DetailAssetSources = Pick<DiscoveredAssets, "poster" | "thumb" | "fanart" | "sceneImages" | "trailer">;
+
+const assetSource = (assets: readonly AssetRef[], kind: string): string | undefined => {
+  const local = assets.find((asset) => asset.type === "local" && asset.kind === kind);
+  if (local?.type === "local") return toLocalFileUrl(local.file);
+  const remote = assets.find((asset) => asset.type === "remote" && asset.kind === kind);
+  return remote?.type === "remote" ? remote.url : undefined;
+};
+
+const toAssetSources = (assets: readonly AssetRef[]): DetailAssetSources => ({
+  poster: assetSource(assets, "poster"),
+  thumb: assetSource(assets, "thumb"),
+  fanart: assetSource(assets, "fanart"),
+  trailer: assetSource(assets, "trailer"),
+  sceneImages: assets.flatMap((asset) =>
+    asset.kind !== "scene" ? [] : [asset.type === "local" ? toLocalFileUrl(asset.file) : asset.url],
+  ),
+});
+
+const getDirectoryPath = (filePath: string): string => {
+  const normalized = filePath.replace(/[\\/]+$/u, "");
+  const separatorIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  return separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : "";
+};
 
 export const formatDuration = (durationSeconds: number | undefined): string | undefined => {
   if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -67,10 +90,7 @@ const formatResolution = (
   return fallbackResolution;
 };
 
-const resolveArtworkUrls = (
-  crawlerData: CrawlerData | undefined,
-  assets: DetailLocalAssets | DetailDownloadedAssets | undefined,
-) => ({
+const resolveArtworkUrls = (crawlerData: CrawlerData | undefined, assets: DetailAssetSources | undefined) => ({
   posterUrl: assets?.poster ?? crawlerData?.poster_url,
   thumbUrl: assets?.thumb ?? assets?.fanart ?? crawlerData?.thumb_url ?? crawlerData?.fanart_url,
   fanartUrl: assets?.fanart ?? assets?.thumb ?? crawlerData?.fanart_url ?? crawlerData?.thumb_url,
@@ -91,9 +111,15 @@ const buildDetailViewMetadata = (input: {
   crawlerData?: CrawlerData;
   videoMeta?: VideoMeta;
   resolution?: string;
-  assets?: DetailLocalAssets | DetailDownloadedAssets;
+  assets?: DetailAssetSources;
 }) => {
   const { crawlerData, videoMeta, resolution, assets } = input;
+
+  const trailerCandidates = [crawlerData?.trailer_source_url, crawlerData?.trailer_url].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
+  const trailerUrl = assets?.trailer ?? trailerCandidates[0];
+  const trailerFallbackUrls = trailerCandidates.filter((candidate) => candidate !== trailerUrl);
 
   return {
     title: crawlerData?.title_zh ?? crawlerData?.title,
@@ -111,6 +137,8 @@ const buildDetailViewMetadata = (input: {
     rating: crawlerData?.rating,
     ...resolveArtworkUrls(crawlerData, assets),
     sceneImages: resolveSceneImages(crawlerData, assets?.sceneImages),
+    trailerUrl,
+    trailerFallbackUrls: trailerFallbackUrls.length > 0 ? trailerFallbackUrls : undefined,
   };
 };
 
@@ -120,22 +148,54 @@ export const getScrapeResultTitle = (result: ScrapeResult): string | undefined =
 export const getMaintenanceDetailTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
 
-export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailViewItem => ({
-  resultId: result.resultId,
-  id: result.fileId,
-  status: toDetailStatus(result.status),
-  number: result.fileInfo.number,
-  path: result.fileInfo.filePath,
-  nfoRootId: result.nfoRootId,
-  nfoPath: result.nfoPath,
-  outputPath: result.outputPath,
-  errorMessage: result.error,
-  ...buildDetailViewMetadata({
-    crawlerData: result.crawlerData,
-    videoMeta: result.videoMeta,
+export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailViewItem => {
+  const fileRef: RootFileRef = result.output ?? { rootId: result.rootId, relativePath: result.relativePath };
+  return {
+    resultId: result.resultId,
+    id: result.fileId,
+    status: toDetailStatus(result.status),
+    number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
+    path: fileRef.relativePath,
+    fileRef,
+    nfoRef: result.nfo,
     assets: result.assets,
-  }),
-});
+    nfoPath: result.nfo?.relativePath,
+    outputPath: result.output ? getDirectoryPath(result.output.relativePath) : undefined,
+    errorMessage: result.error,
+    ...buildDetailViewMetadata({
+      crawlerData: result.crawlerData,
+      videoMeta: result.videoMeta,
+      assets: toAssetSources(result.assets),
+    }),
+  };
+};
+
+export const toDetailViewItemFromScrapeResultDto = (result: ScrapeResultDto): DetailViewItem => {
+  const fileRef: RootFileRef =
+    result.outputRootId && result.outputRelativePath
+      ? { rootId: result.outputRootId, relativePath: result.outputRelativePath }
+      : { rootId: result.rootId, relativePath: result.relativePath };
+  const nfoRef = result.nfoRelativePath
+    ? { rootId: result.nfoRootId ?? fileRef.rootId, relativePath: result.nfoRelativePath }
+    : undefined;
+  return {
+    resultId: result.id,
+    id: `${result.rootId}:${result.relativePath}`,
+    status: toDetailStatus(result.status),
+    number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
+    path: fileRef.relativePath,
+    fileRef,
+    nfoRef,
+    assets: result.assets,
+    nfoPath: result.nfoRelativePath ?? undefined,
+    outputPath: result.outputRelativePath ? getDirectoryPath(result.outputRelativePath) : undefined,
+    errorMessage: result.error ?? undefined,
+    ...buildDetailViewMetadata({
+      crawlerData: result.crawlerData ?? undefined,
+      assets: toAssetSources(result.assets),
+    }),
+  };
+};
 
 export const toDetailViewItemFromMaintenanceEntry = (
   entry: LocalScanEntry,
@@ -159,6 +219,7 @@ export const toDetailViewItemFromMaintenanceEntry = (
       number: entry.fileInfo.number,
       minimalErrorView: true,
       path: entry.fileInfo.filePath,
+      fileRef: entry.ref,
       nfoPath: entry.nfoPath,
       resolution: entry.fileInfo.resolution,
       title: entry.fileInfo.fileName,
@@ -172,6 +233,7 @@ export const toDetailViewItemFromMaintenanceEntry = (
     number: entry.fileInfo.number,
     minimalErrorView: false,
     path: entry.fileInfo.filePath,
+    fileRef: entry.ref,
     nfoPath: entry.nfoPath,
     outputPath: entry.currentDir,
     errorMessage: hasResultError ? result?.error : undefined,

@@ -1,19 +1,11 @@
-import { buildFileId, normalizePathForIdentity } from "@mdcz/shared/mediaIdentity";
-import type { AmbiguousUncensoredItemDto, ScanTaskDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
-import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
-import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
-import { useMaintenanceEntryStore } from "@mdcz/views/state/maintenanceEntryStore";
-import { useMaintenanceExecutionStore } from "@mdcz/views/state/maintenanceExecutionStore";
-import { useMaintenancePreviewStore } from "@mdcz/views/state/maintenancePreviewStore";
+import type { AmbiguousUncensoredItemDto, ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
+import type { MaintenancePresetId, MediaCandidate, UncensoredChoice } from "@mdcz/shared/types";
 import {
-  applyMaintenancePreviewResult,
-  applyMaintenanceScanResult,
-  beginMaintenancePreviewRequest,
-  cancelMaintenancePreviewFlow,
   changeMaintenancePreset,
-  setMaintenancePreviewPending,
-} from "@mdcz/views/state/maintenanceSession";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+  selectMaintenanceHasWork,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
+import { selectIsScraping, selectScrapeHasWork, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import type { MaintenanceActionPort } from "./ports";
@@ -55,49 +47,10 @@ export const getWorkbenchSessionSnapshot = (
   routeIntent?: WorkbenchRouteIntent,
 ): WorkbenchSessionSnapshot => {
   const scrapeStore = useScrapeStore.getState();
-  const maintenanceStatus = useMaintenanceExecutionStore.getState().executionStatus;
-  const maintenanceEntries = useMaintenanceEntryStore.getState().entries;
-  const maintenancePreviewResults = useMaintenancePreviewStore.getState().previewResults;
-  const maintenanceItemResults = useMaintenanceExecutionStore.getState().itemResults;
-  const scrapeHasWork = scrapeStore.isScraping || scrapeStore.scrapeStatus !== "idle" || scrapeStore.results.length > 0;
-  const maintenanceHasWork =
-    maintenanceStatus !== "idle" ||
-    maintenanceEntries.length > 0 ||
-    Object.keys(maintenancePreviewResults).length > 0 ||
-    Object.keys(maintenanceItemResults).length > 0;
-  const workbenchMode = resolveWorkbenchMode({
-    currentMode,
-    routeIntent,
-    isScraping: scrapeStore.isScraping,
-    scrapeHasWork,
-    maintenanceHasWork,
-  });
-
-  return {
-    workbenchMode,
-    scrapeHasWork,
-    maintenanceHasWork,
-    showSetup: workbenchMode === "maintenance" ? !maintenanceHasWork : !scrapeHasWork,
-  };
-};
-
-export const useWorkbenchSessionSnapshot = (
-  currentMode: WorkbenchMode,
-  routeIntent?: WorkbenchRouteIntent,
-): WorkbenchSessionSnapshot => {
-  const scrapeHasWork = useScrapeStore(
-    (state) => state.isScraping || state.scrapeStatus !== "idle" || state.results.length > 0,
-  );
-  const isScraping = useScrapeStore((state) => state.isScraping);
-  const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
-  const maintenanceEntryCount = useMaintenanceEntryStore((state) => state.entries.length);
-  const maintenancePreviewCount = useMaintenancePreviewStore((state) => Object.keys(state.previewResults).length);
-  const maintenanceItemResultCount = useMaintenanceExecutionStore((state) => Object.keys(state.itemResults).length);
-  const maintenanceHasWork =
-    maintenanceStatus !== "idle" ||
-    maintenanceEntryCount > 0 ||
-    maintenancePreviewCount > 0 ||
-    maintenanceItemResultCount > 0;
+  const maintenanceStore = useMaintenanceStore.getState();
+  const isScraping = selectIsScraping(scrapeStore);
+  const scrapeHasWork = selectScrapeHasWork(scrapeStore);
+  const maintenanceHasWork = selectMaintenanceHasWork(maintenanceStore);
   const workbenchMode = resolveWorkbenchMode({
     currentMode,
     routeIntent,
@@ -114,15 +67,32 @@ export const useWorkbenchSessionSnapshot = (
   };
 };
 
-export const activateNewScrapeTask = (filePaths?: string[]): void => {
-  const scrapeStore = useScrapeStore.getState();
-  scrapeStore.clearResults();
-  if (filePaths) {
-    scrapeStore.seedProcessingResults(filePaths);
-  }
-  scrapeStore.updateProgress(0, 0);
-  scrapeStore.setScraping(true);
-  scrapeStore.setScrapeStatus("running");
+export const useWorkbenchSessionSnapshot = (
+  currentMode: WorkbenchMode,
+  routeIntent?: WorkbenchRouteIntent,
+): WorkbenchSessionSnapshot => {
+  const scrapeHasWork = useScrapeStore(selectScrapeHasWork);
+  const isScraping = useScrapeStore(selectIsScraping);
+  const maintenanceHasWork = useMaintenanceStore(selectMaintenanceHasWork);
+  const workbenchMode = resolveWorkbenchMode({
+    currentMode,
+    routeIntent,
+    isScraping,
+    scrapeHasWork,
+    maintenanceHasWork,
+  });
+
+  return {
+    workbenchMode,
+    scrapeHasWork,
+    maintenanceHasWork,
+    showSetup: workbenchMode === "maintenance" ? !maintenanceHasWork : !scrapeHasWork,
+  };
+};
+
+export const activateNewScrapeTask = (): void => {
+  useScrapeStore.getState().reset();
+  useScrapeStore.getState().setPending(true);
   useUIStore.getState().setSelectedResultId(null);
 };
 
@@ -130,46 +100,12 @@ export const activateNewScrapeTask = (filePaths?: string[]): void => {
  * Activates a retry that the backend runs as its own task, without discarding the results
  * already in the queue. Only the retried entries are reset to `processing`.
  */
-export const activateRetryScrapeTask = (filePaths: string[]): void => {
-  const scrapeStore = useScrapeStore.getState();
-  const uiStore = useUIStore.getState();
-  const selectedResult = scrapeStore.results.find((result) => result.fileId === uiStore.selectedResultId);
-  const retryPaths = new Set(filePaths.map(normalizePathForIdentity));
-
-  scrapeStore.markResultsRetrying(filePaths);
-
-  if (selectedResult && retryPaths.has(normalizePathForIdentity(selectedResult.fileInfo.filePath))) {
-    uiStore.setSelectedResultId(buildFileId(selectedResult.fileInfo.filePath));
-  }
-
-  scrapeStore.updateProgress(0, 0);
-  scrapeStore.setScraping(true);
-  scrapeStore.setScrapeStatus("running");
+export const activateRetryScrapeTask = (): void => {
+  useScrapeStore.getState().setPending(true);
 };
 
-export const applyScrapeTaskStatus = (status: ScanTaskDto["status"]): void => {
-  const scrapeStore = useScrapeStore.getState();
-  const previousStatus = scrapeStore.scrapeStatus;
-  if (status === "running" || status === "queued") {
-    scrapeStore.setScrapeStatus("running");
-    scrapeStore.setScraping(true);
-    return;
-  }
-  if (status === "paused") {
-    scrapeStore.setScrapeStatus("paused");
-    scrapeStore.setScraping(true);
-    return;
-  }
-  if (status === "stopping") {
-    scrapeStore.setScrapeStatus("stopping");
-    scrapeStore.setScraping(true);
-    return;
-  }
-  if (previousStatus !== "idle") {
-    scrapeStore.failUnfinishedResults("已停止或未完成");
-  }
-  scrapeStore.setScrapeStatus("idle");
-  scrapeStore.setScraping(false);
+export const applyScrapeTaskStatus = (): void => {
+  useScrapeStore.getState().setPending(true);
 };
 
 export interface UncensoredConfirmationSelection {
@@ -194,15 +130,8 @@ export const resetScrapeWorkbenchToSetup = (): void => {
   useScrapeStore.getState().reset();
 };
 
-export const getFailedScrapeTargets = () =>
-  useScrapeStore
-    .getState()
-    .results.filter((result) => result.status === "failed")
-    .map((result) => ({ filePath: result.fileInfo.filePath }));
-
 export interface StartMaintenanceFlowOptions {
-  filePaths: string[];
-  scanDir: string;
+  candidates: MediaCandidate[];
   presetId: MaintenancePresetId;
   port: MaintenanceActionPort;
   isScraping: boolean;
@@ -223,46 +152,38 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     return;
   }
 
-  const executionStore = useMaintenanceExecutionStore.getState();
+  const executionStore = useMaintenanceStore.getState();
 
   try {
     options.setWorkbenchMode?.("maintenance");
     changeMaintenancePreset(options.presetId);
-    executionStore.setExecutionStatus("scanning");
+    executionStore.setPending(true);
 
-    const scan = await options.port.scanFiles(options.filePaths, {
-      scanDir: options.scanDir,
-    });
-    applyMaintenanceScanResult(scan.entries, options.scanDir);
-
-    if (scan.entries.length === 0) {
+    const refs = options.candidates.map((candidate) => candidate.ref);
+    if (refs.length === 0) {
+      executionStore.setPending(false);
       options.toast.info("未发现可维护项目");
       await options.onRefreshConfig?.();
       return;
     }
 
     if (options.presetId === "read_local") {
-      options.toast.success(`本地读取完成，共 ${countMaintenanceDisplayItems(scan.entries)} 项`);
+      await options.port.preview(refs, options.presetId);
+      options.toast.success(`本地读取已启动，共 ${options.candidates.length} 项`);
       await options.onRefreshConfig?.();
       return;
     }
 
-    executionStore.setExecutionStatus("previewing");
-    beginMaintenancePreviewRequest();
-    executionStore.setProgress(0, 0, scan.entries.length);
-    const preview = await options.port.preview(scan.entries, options.presetId);
-    applyMaintenancePreviewResult(preview);
-    executionStore.setExecutionStatus("idle");
+    await options.port.preview(refs, options.presetId);
     await options.onRefreshConfig?.();
     options.toast.success("维护预览已生成");
   } catch (error) {
     if (options.toErrorMessage(error) === "Operation aborted") {
-      cancelMaintenancePreviewFlow();
+      executionStore.setPending(false);
       return;
     }
 
-    setMaintenancePreviewPending(false);
-    executionStore.setExecutionStatus("idle");
+    executionStore.setError(options.toErrorMessage(error));
     options.toast.error(`启动失败: ${options.toErrorMessage(error)}`);
   }
 };

@@ -12,8 +12,6 @@ import {
   AmazonPosterWorkspaceDetail,
   BatchNfoTranslatorWorkspaceDetail,
   CrawlerTesterDetail,
-  type FileCleanerCandidateView,
-  FileCleanerWorkspaceDetail,
   PersonMediaLibraryDetail,
   type PersonServer,
   type PersonSyncMode,
@@ -26,12 +24,7 @@ import { useCallback, useState } from "react";
 import { api, getLibraryAssetSrc } from "../../client";
 import { queryKeys } from "../../lib/queryKeys";
 import { AppLink, ErrorBanner } from "../../routeCommon";
-import {
-  fileCleanerCandidatesFromResponse,
-  formatToolBytes,
-  toMediaServerCheckResult,
-  toRunState,
-} from "../toolsController";
+import { toMediaServerCheckResult, toRunState } from "../toolsController";
 
 const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
@@ -72,7 +65,6 @@ const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPat
 export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const queryClient = useQueryClient();
   const [singleFileRootId, setSingleFileRootId] = useState("");
-  const [fileCleanerCandidates, setFileCleanerCandidates] = useState<FileCleanerCandidateView[]>([]);
   const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
   const [amazonDialogOpen, setAmazonDialogOpen] = useState(false);
   const [amazonItems, setAmazonItems] = useState<AmazonPosterScanItem[]>([]);
@@ -96,8 +88,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
     mutationFn: (input: Parameters<typeof api.tools.execute>[0]) => api.tools.execute(input),
     onSuccess: async (_response, input) => {
       if (input.toolId === "single-file-scraper") {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.scrape.results() });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.scrape.history() });
       }
     },
   });
@@ -142,32 +133,6 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
       )}
       {toolId === "symlink-manager" && (
         <SymlinkManagerDetail state={state} onRun={(input) => void executeM.mutate({ toolId, ...input })} />
-      )}
-      {toolId === "file-cleaner" && (
-        <FileCleanerWorkspaceDetail
-          candidates={fileCleanerCandidates}
-          deleting={executeM.isPending}
-          formatBytes={formatToolBytes}
-          roots={roots}
-          scanning={executeM.isPending}
-          onDelete={async () => {
-            const lastInput = executeM.variables;
-            if (!lastInput || lastInput.toolId !== "file-cleaner") return;
-            await executeM.mutateAsync({ ...lastInput, dryRun: false });
-            setFileCleanerCandidates([]);
-          }}
-          onScan={async (input) => {
-            const response = await executeM.mutateAsync({
-              toolId,
-              rootId: input.rootId,
-              relativePath: input.relativePath,
-              extensions: input.extensions,
-              dryRun: true,
-              recursive: input.includeSubdirs,
-            });
-            setFileCleanerCandidates(fileCleanerCandidatesFromResponse(response));
-          }}
-        />
       )}
       {toolId === "batch-nfo-translator" && (
         <BatchNfoTranslatorWorkspaceDetail

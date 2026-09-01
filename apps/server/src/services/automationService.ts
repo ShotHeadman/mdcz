@@ -5,12 +5,17 @@ import type {
   AutomationWebhookDeliveryStatusDto,
   AutomationWebhookDeliveryStatusResponse,
   AutomationWebhookEventDto,
-  ScanTaskDto,
 } from "@mdcz/shared/serverDtos";
-import type { TaskEventBus } from "../taskEvents";
+import type { TaskEventBus, TaskLifecycleEvent } from "../taskEvents";
 import type { MaintenanceService } from "./maintenanceService";
 import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
+
+const MAX_TRACKED_WEBHOOK_TASKS = 1_000;
+const MAX_QUEUED_WEBHOOK_DELIVERIES = 1_000;
+const WEBHOOK_DELIVERY_TIMEOUT_MS = 10_000;
+const WEBHOOK_PHASE_STARTED = 1;
+const WEBHOOK_PHASE_TERMINAL = 2;
 
 export interface AutomationWebhookOptions {
   secret?: string;
@@ -20,6 +25,9 @@ export interface AutomationWebhookOptions {
 export class AutomationService {
   readonly #webhook?: AutomationWebhookOptions;
   #deliveryStatus: AutomationWebhookDeliveryStatusDto;
+  readonly #deliveryQueue: AutomationWebhookEventDto[] = [];
+  #delivering = false;
+  readonly #taskDeliveryPhases = new Map<string, number>();
 
   constructor(
     private readonly scans: ScanQueueService,
@@ -40,21 +48,29 @@ export class AutomationService {
       lastSuccessAt: null,
       lastError: null,
     };
-    taskEvents.subscribe((event) => {
-      if (event.data.kind === "task") {
-        void this.deliverWebhook(this.toWebhookEvent(event.data.task));
-      }
-    });
+    taskEvents.subscribeLifecycle((task) => this.enqueueWebhook(task));
   }
 
   async scrapeStart(input: AutomationScrapeStartInput): Promise<AutomationScrapeStartResponse> {
     if (input.refs?.length) {
-      const task = await this.scrape.start({
+      const common = {
         refs: input.refs,
-        outputRootId: input.outputRootId,
         manualUrl: input.manualUrl,
         uncensoredConfirmed: input.uncensoredConfirmed,
-      });
+      };
+      if (input.executionMode === "single") {
+        const task = (await this.scrape.start({ ...common, executionMode: "single" })).task;
+        return { task, webhook: this.toWebhookEvent(task) };
+      }
+      if (!input.outputRootId) throw new Error("Batch scrapes require outputRootId");
+      const task = (
+        await this.scrape.start({
+          ...common,
+          executionMode: "batch",
+          outputRootId: input.outputRootId,
+          outputRelativeDirectory: input.outputRelativeDirectory,
+        })
+      ).task;
       return { task, webhook: this.toWebhookEvent(task) };
     }
 
@@ -68,17 +84,35 @@ export class AutomationService {
 
   async recent(input?: { limit?: number }): Promise<AutomationRecentResponse> {
     const limit = input?.limit ?? 20;
-    const [scanTasks, scrapeTasks, maintenanceTasks] = await Promise.all([
+    const [scanTasks, scrapeHistory, maintenanceTask] = await Promise.all([
       this.scans.list(),
-      this.scrape.list(),
-      this.maintenance.list(),
+      this.scrape.history(),
+      this.maintenance.automationTask(),
     ]);
 
+    const tasks = [
+      ...scanTasks.tasks.map((task) => ({ updatedAt: task.updatedAt, event: this.toWebhookEvent(task) })),
+      ...scrapeHistory.runs.map((run) => ({
+        updatedAt: run.completedAt ?? run.createdAt,
+        event: {
+          taskId: run.id,
+          kind: "scrape" as const,
+          status: run.disposition,
+          startedAt: run.startedAt,
+          completedAt: run.completedAt,
+          summary: `刮削 ${run.rootDisplayName || run.rootId}: ${run.disposition}`,
+          errors: run.error ? [run.error] : [],
+        },
+      })),
+      ...(maintenanceTask
+        ? [{ updatedAt: maintenanceTask.updatedAt, event: this.toWebhookEvent(maintenanceTask) }]
+        : []),
+    ];
     return {
-      tasks: [...scanTasks.tasks, ...scrapeTasks.tasks, ...maintenanceTasks.tasks]
+      tasks: tasks
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .slice(0, limit)
-        .map((task) => this.toWebhookEvent(task)),
+        .map(({ event }) => event),
     };
   }
 
@@ -86,7 +120,7 @@ export class AutomationService {
     return { webhook: { ...this.#deliveryStatus } };
   }
 
-  toWebhookEvent(task: ScanTaskDto): AutomationWebhookEventDto {
+  toWebhookEvent(task: TaskLifecycleEvent): AutomationWebhookEventDto {
     return {
       taskId: task.id,
       kind: task.kind,
@@ -98,7 +132,7 @@ export class AutomationService {
     };
   }
 
-  private summary(task: ScanTaskDto): string {
+  private summary(task: TaskLifecycleEvent): string {
     const target = task.rootDisplayName || task.rootId;
     if (task.kind === "scan") {
       return `扫描 ${target}: ${task.status}`;
@@ -107,6 +141,57 @@ export class AutomationService {
       return `刮削 ${target}: ${task.status}`;
     }
     return `维护 ${target}: ${task.status}`;
+  }
+
+  private enqueueWebhook(task: TaskLifecycleEvent): void {
+    if (!this.#webhook?.url) {
+      return;
+    }
+
+    const phase =
+      task.status === "running"
+        ? WEBHOOK_PHASE_STARTED
+        : task.status === "completed" ||
+            task.status === "failed" ||
+            task.status === "stopped" ||
+            task.status === "interrupted"
+          ? WEBHOOK_PHASE_TERMINAL
+          : 0;
+    if (phase === 0) {
+      return;
+    }
+
+    const deliveredPhases = this.#taskDeliveryPhases.get(task.id) ?? 0;
+    if ((deliveredPhases & phase) !== 0) {
+      return;
+    }
+
+    if (this.#deliveryQueue.length >= MAX_QUEUED_WEBHOOK_DELIVERIES) {
+      this.#deliveryStatus.failed += 1;
+      this.#deliveryStatus.lastError = "Webhook delivery queue is full";
+      return;
+    }
+    this.#taskDeliveryPhases.set(task.id, deliveredPhases | phase);
+    // Terminal tombstones are kept until eviction so a repeated terminal event is not delivered twice.
+    if (this.#taskDeliveryPhases.size > MAX_TRACKED_WEBHOOK_TASKS) {
+      const oldestTaskId = this.#taskDeliveryPhases.keys().next().value;
+      if (oldestTaskId !== undefined) this.#taskDeliveryPhases.delete(oldestTaskId);
+    }
+    this.#deliveryQueue.push(this.toWebhookEvent(task));
+    void this.processWebhookQueue();
+  }
+
+  private async processWebhookQueue(): Promise<void> {
+    if (this.#delivering) return;
+    this.#delivering = true;
+    try {
+      while (this.#deliveryQueue.length > 0) {
+        const payload = this.#deliveryQueue.shift();
+        if (payload) await this.deliverWebhook(payload);
+      }
+    } finally {
+      this.#delivering = false;
+    }
   }
 
   private async deliverWebhook(payload: AutomationWebhookEventDto): Promise<void> {
@@ -123,6 +208,7 @@ export class AutomationService {
           ...(this.#webhook.secret ? { "x-mdcz-webhook-secret": this.#webhook.secret } : {}),
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(WEBHOOK_DELIVERY_TIMEOUT_MS),
       });
       if (!response.ok) {
         throw new Error(`Webhook delivery failed: ${response.status}`);

@@ -1,4 +1,5 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable(
   "media_roots",
@@ -6,24 +7,18 @@ export const mediaRoots = sqliteTable(
     id: text("id").primaryKey(),
     displayName: text("display_name").notNull(),
     hostPath: text("host_path").notNull(),
-    rootType: text("root_type").notNull(),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    deleted: integer("deleted", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("media_roots_state_idx").on(table.deleted, table.enabled)],
+  (table) => [uniqueIndex("media_roots_host_path_idx").on(table.hostPath)],
 );
 
-export const taskRecords = sqliteTable(
-  "task_records",
+export const scanTasks = sqliteTable(
+  "scan_tasks",
   {
     id: text("id").primaryKey(),
-    kind: text("kind").notNull(),
     rootId: text("root_id").notNull(),
     status: text("status").notNull(),
-    executionVersion: integer("execution_version").notNull().default(0),
-    summary: text("summary"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
@@ -33,13 +28,13 @@ export const taskRecords = sqliteTable(
     directoryCount: integer("directory_count").notNull().default(0),
   },
   (table) => [
-    index("task_records_queue_idx").on(table.kind, table.status, table.createdAt),
-    index("task_records_kind_created_at_idx").on(table.kind, table.createdAt),
+    index("scan_tasks_queue_idx").on(table.status, table.createdAt),
+    index("scan_tasks_created_at_idx").on(table.createdAt),
   ],
 );
 
-export const taskEvents = sqliteTable(
-  "task_events",
+export const scanTaskEvents = sqliteTable(
+  "scan_task_events",
   {
     id: text("id").primaryKey(),
     taskId: text("task_id").notNull(),
@@ -47,7 +42,7 @@ export const taskEvents = sqliteTable(
     message: text("message").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("task_events_task_created_at_idx").on(table.taskId, table.createdAt)],
+  (table) => [index("scan_task_events_task_created_at_idx").on(table.taskId, table.createdAt)],
 );
 
 export const scanResults = sqliteTable(
@@ -62,98 +57,106 @@ export const scanResults = sqliteTable(
   (table) => [uniqueIndex("scan_results_task_root_path_idx").on(table.taskId, table.rootId, table.relativePath)],
 );
 
-export const scrapeOutputs = sqliteTable(
-  "scrape_outputs",
+export const scrapeRuns = sqliteTable(
+  "scrape_runs",
   {
     id: text("id").primaryKey(),
-    taskId: text("task_id"),
-    rootId: text("root_id"),
-    outputDirectory: text("output_directory"),
-    fileCount: integer("file_count").notNull().default(0),
-    totalBytes: integer("total_bytes").notNull().default(0),
-    completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
+    rootId: text("root_id").notNull(),
+    outputRootId: text("output_root_id"),
+    outputRelativeDirectory: text("output_relative_directory"),
+    executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    disposition: text("disposition").$type<"completed" | "failed" | "stopped" | "interrupted">(),
+    errorMessage: text("error_message"),
   },
-  (table) => [index("scrape_outputs_completed_at_idx").on(table.completedAt)],
+  (table) => [
+    check("scrape_runs_execution_mode_check", sql`${table.executionMode} in ('single', 'batch')`),
+    check(
+      "scrape_runs_disposition_check",
+      sql`${table.disposition} is null or ${table.disposition} in ('completed', 'failed', 'stopped', 'interrupted')`,
+    ),
+    index("scrape_runs_created_at_idx").on(table.createdAt),
+  ],
 );
 
-export const scrapeResults = sqliteTable(
-  "scrape_results",
+export const scrapeRunItems = sqliteTable(
+  "scrape_run_items",
   {
     id: text("id").primaryKey(),
-    taskId: text("task_id").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => scrapeRuns.id),
+    ordinal: integer("ordinal").notNull(),
     rootId: text("root_id").notNull(),
     relativePath: text("relative_path").notNull(),
-    status: text("status").notNull(),
+    manualUrl: text("manual_url"),
+    uncensoredChoice: text("uncensored_choice").$type<"umr" | "leak" | "uncensored">(),
+  },
+  (table) => [
+    check("scrape_run_items_ordinal_check", sql`${table.ordinal} >= 0`),
+    check(
+      "scrape_run_items_uncensored_choice_check",
+      sql`${table.uncensoredChoice} is null or ${table.uncensoredChoice} in ('umr', 'leak', 'uncensored')`,
+    ),
+    uniqueIndex("scrape_run_items_run_ordinal_idx").on(table.runId, table.ordinal),
+    uniqueIndex("scrape_run_items_run_root_path_idx").on(table.runId, table.rootId, table.relativePath),
+  ],
+);
+
+export const scrapeItemOutcomes = sqliteTable(
+  "scrape_item_outcomes",
+  {
+    id: text("id").primaryKey(),
+    attemptId: text("attempt_id")
+      .notNull()
+      .references(() => scrapeAttempts.id, { onDelete: "cascade" }),
+    outcome: text("outcome").$type<"success" | "failed" | "skipped">().notNull(),
     errorMessage: text("error_message"),
     crawlerDataJson: text("crawler_data_json"),
     nfoRootId: text("nfo_root_id"),
     nfoRelativePath: text("nfo_relative_path"),
+    outputRootId: text("output_root_id"),
     outputRelativePath: text("output_relative_path"),
-    manualUrl: text("manual_url"),
     uncensoredAmbiguous: integer("uncensored_ambiguous", { mode: "boolean" }).notNull().default(false),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [index("scrape_results_task_path_idx").on(table.taskId, table.relativePath)],
-);
-
-export const maintenancePreviews = sqliteTable(
-  "maintenance_previews",
-  {
-    id: text("id").primaryKey(),
-    taskId: text("task_id").notNull(),
-    rootId: text("root_id").notNull(),
-    relativePath: text("relative_path").notNull(),
-    presetId: text("preset_id").notNull(),
-    status: text("status").notNull(),
-    errorMessage: text("error_message"),
-    fieldDiffsJson: text("field_diffs_json").notNull().default("[]"),
-    unchangedFieldDiffsJson: text("unchanged_field_diffs_json").notNull().default("[]"),
-    pathDiffJson: text("path_diff_json"),
-    proposedCrawlerDataJson: text("proposed_crawler_data_json"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [index("maintenance_previews_task_path_idx").on(table.taskId, table.relativePath)],
-);
-
-export const maintenanceApplyLog = sqliteTable(
-  "maintenance_apply_log",
-  {
-    id: text("id").primaryKey(),
-    taskId: text("task_id").notNull(),
-    previewId: text("preview_id").notNull(),
-    rootId: text("root_id").notNull(),
-    relativePath: text("relative_path").notNull(),
-    presetId: text("preset_id").notNull(),
-    status: text("status").notNull(),
-    errorMessage: text("error_message"),
-    appliedAt: integer("applied_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [index("maintenance_apply_log_task_applied_at_idx").on(table.taskId, table.appliedAt)],
-);
-
-export const libraryEntries = sqliteTable(
-  "library_entries",
-  {
-    id: text("id").primaryKey(),
-    rootId: text("root_id").notNull(),
-    rootRelativePath: text("root_relative_path").notNull(),
-    fileName: text("file_name").notNull(),
-    directory: text("directory").notNull(),
     size: integer("size").notNull().default(0),
     modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
-    sourceTaskId: text("source_task_id"),
-    scrapeOutputId: text("scrape_output_id"),
-    title: text("title"),
-    number: text("number"),
-    actorsJson: text("actors_json").notNull().default("[]"),
-    thumbnailPath: text("thumbnail_path"),
-    lastKnownPath: text("last_known_path"),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    check("scrape_item_outcomes_outcome_check", sql`${table.outcome} in ('success', 'failed', 'skipped')`),
+    check("scrape_item_outcomes_size_check", sql`${table.size} >= 0`),
+    uniqueIndex("scrape_item_outcomes_attempt_idx").on(table.attemptId),
+  ],
+);
+
+export const scrapeAttempts = sqliteTable(
+  "scrape_attempts",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => scrapeRunItems.id, { onDelete: "cascade" }),
+    attempt: integer("attempt").notNull(),
+    admittedAt: integer("admitted_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    check("scrape_attempts_attempt_check", sql`${table.attempt} >= 1`),
+    uniqueIndex("scrape_attempts_item_attempt_idx").on(table.itemId, table.attempt),
+  ],
+);
+
+export const publicationJournal = sqliteTable(
+  "publication_journal",
+  {
+    operationId: text("operation_id").primaryKey(),
+    operationType: text("operation_type").notNull(),
+    state: text("state").$type<"pending" | "committed">().notNull(),
+    manifestJson: text("manifest_json").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath)],
+  (table) => [check("publication_journal_state_check", sql`${table.state} in ('pending', 'committed')`)],
 );
 
 export const libraryItems = sqliteTable(
@@ -162,8 +165,8 @@ export const libraryItems = sqliteTable(
     id: text("id").primaryKey(),
     mediaIdentity: text("media_identity"),
     crawlerDataJson: text("crawler_data_json"),
-    sourceTaskId: text("source_task_id"),
-    scrapeOutputId: text("scrape_output_id"),
+    sourceRunId: text("source_run_id"),
+    sourceOutcomeId: text("source_outcome_id"),
     title: text("title"),
     number: text("number"),
     actorsJson: text("actors_json").notNull().default("[]"),
@@ -172,7 +175,7 @@ export const libraryItems = sqliteTable(
     hiddenFromRecentAt: integer("hidden_from_recent_at", { mode: "timestamp_ms" }),
   },
   (table) => [
-    index("library_items_source_task_idx").on(table.sourceTaskId),
+    index("library_items_source_run_idx").on(table.sourceRunId),
     index("library_items_created_at_idx").on(table.createdAt, table.id),
   ],
 );
@@ -181,8 +184,12 @@ export const libraryItemFiles = sqliteTable(
   "library_item_files",
   {
     id: text("id").primaryKey(),
-    itemId: text("item_id").notNull(),
-    rootId: text("root_id").notNull(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => libraryItems.id, { onDelete: "cascade" }),
+    rootId: text("root_id")
+      .notNull()
+      .references(() => mediaRoots.id, { onDelete: "restrict" }),
     rootRelativePath: text("root_relative_path").notNull(),
     fileName: text("file_name").notNull(),
     directory: text("directory").notNull(),
@@ -193,8 +200,7 @@ export const libraryItemFiles = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
-    uniqueIndex("library_item_files_item_path_idx").on(table.itemId, table.rootId, table.rootRelativePath),
-    index("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
+    uniqueIndex("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
     index("library_item_files_item_idx").on(table.itemId),
   ],
 );
@@ -203,26 +209,52 @@ export const libraryItemAssets = sqliteTable(
   "library_item_assets",
   {
     id: text("id").primaryKey(),
-    itemId: text("item_id").notNull(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => libraryItems.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     uri: text("uri").notNull(),
-    rootId: text("root_id"),
+    rootId: text("root_id").references(() => mediaRoots.id, { onDelete: "restrict" }),
     relativePath: text("relative_path"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("library_item_assets_item_idx").on(table.itemId)],
+  (table) => [
+    check("library_item_assets_root_path_check", sql`(${table.rootId} is null) = (${table.relativePath} is null)`),
+    index("library_item_assets_item_idx").on(table.itemId),
+  ],
+);
+
+export const libraryRepairIssues = sqliteTable(
+  "library_repair_issues",
+  {
+    id: text("id").primaryKey(),
+    operationId: text("operation_id").notNull(),
+    operationType: text("operation_type").$type<"scrape" | "maintenance">().notNull(),
+    rootId: text("root_id").notNull(),
+    relativePath: text("relative_path").notNull(),
+    errorMessage: text("error_message").notNull(),
+    detectedAt: integer("detected_at", { mode: "timestamp_ms" }).notNull(),
+    resolvedAt: integer("resolved_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    check("library_repair_issues_operation_type_check", sql`${table.operationType} in ('scrape', 'maintenance')`),
+    uniqueIndex("library_repair_issues_operation_path_idx").on(table.operationId, table.rootId, table.relativePath),
+    index("library_repair_issues_unresolved_idx").on(table.resolvedAt, table.detectedAt),
+    index("library_repair_issues_operation_idx").on(table.operationId, table.operationType),
+  ],
 );
 
 export const schema = {
   mediaRoots,
-  taskRecords,
-  taskEvents,
+  scanTasks,
+  scanTaskEvents,
   scanResults,
-  scrapeOutputs,
-  scrapeResults,
-  maintenancePreviews,
-  maintenanceApplyLog,
-  libraryEntries,
+  scrapeRuns,
+  scrapeRunItems,
+  scrapeAttempts,
+  scrapeItemOutcomes,
+  publicationJournal,
+  libraryRepairIssues,
   libraryItems,
   libraryItemFiles,
   libraryItemAssets,
@@ -230,25 +262,27 @@ export const schema = {
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;
 export type InsertMediaRootRow = typeof mediaRoots.$inferInsert;
-export type TaskRecordRow = typeof taskRecords.$inferSelect;
-export type InsertTaskRecordRow = typeof taskRecords.$inferInsert;
-export type TaskEventRow = typeof taskEvents.$inferSelect;
-export type InsertTaskEventRow = typeof taskEvents.$inferInsert;
+export type ScanTaskRow = typeof scanTasks.$inferSelect;
+export type InsertScanTaskRow = typeof scanTasks.$inferInsert;
+export type ScanTaskEventRow = typeof scanTaskEvents.$inferSelect;
+export type InsertScanTaskEventRow = typeof scanTaskEvents.$inferInsert;
 export type ScanResultRow = typeof scanResults.$inferSelect;
 export type InsertScanResultRow = typeof scanResults.$inferInsert;
-export type ScrapeOutputRow = typeof scrapeOutputs.$inferSelect;
-export type InsertScrapeOutputRow = typeof scrapeOutputs.$inferInsert;
-export type ScrapeResultRow = typeof scrapeResults.$inferSelect;
-export type InsertScrapeResultRow = typeof scrapeResults.$inferInsert;
-export type MaintenancePreviewRow = typeof maintenancePreviews.$inferSelect;
-export type InsertMaintenancePreviewRow = typeof maintenancePreviews.$inferInsert;
-export type MaintenanceApplyLogRow = typeof maintenanceApplyLog.$inferSelect;
-export type InsertMaintenanceApplyLogRow = typeof maintenanceApplyLog.$inferInsert;
-export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
-export type InsertLibraryEntryRow = typeof libraryEntries.$inferInsert;
+export type ScrapeRunRow = typeof scrapeRuns.$inferSelect;
+export type InsertScrapeRunRow = typeof scrapeRuns.$inferInsert;
+export type ScrapeRunItemRow = typeof scrapeRunItems.$inferSelect;
+export type InsertScrapeRunItemRow = typeof scrapeRunItems.$inferInsert;
+export type ScrapeAttemptRow = typeof scrapeAttempts.$inferSelect;
+export type InsertScrapeAttemptRow = typeof scrapeAttempts.$inferInsert;
+export type ScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferSelect;
+export type InsertScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferInsert;
+export type PublicationJournalRow = typeof publicationJournal.$inferSelect;
+export type InsertPublicationJournalRow = typeof publicationJournal.$inferInsert;
 export type LibraryItemRow = typeof libraryItems.$inferSelect;
 export type InsertLibraryItemRow = typeof libraryItems.$inferInsert;
 export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
 export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
 export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
 export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;
+export type LibraryRepairIssueRow = typeof libraryRepairIssues.$inferSelect;
+export type InsertLibraryRepairIssueRow = typeof libraryRepairIssues.$inferInsert;

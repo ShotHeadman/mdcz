@@ -19,6 +19,7 @@ import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { NamingEngine } from "../scrape/organize/NamingEngine";
 import { profileFileName, RuntimeProfileWatcher } from "./profileWatcher";
 
+export { buildComputedConfiguration, type ComputedConfiguration } from "./computed";
 export { RuntimeProfileWatcher } from "./profileWatcher";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
@@ -206,6 +207,14 @@ export interface RuntimeConfigServiceOptions {
   onBeforeSave?: (configuration: Configuration) => Promise<void> | void;
   onSaveError?: (error: unknown) => Promise<void> | void;
   onAfterSave?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
+  onBeforeCommit?: (
+    configuration: Configuration,
+    context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+  ) => Promise<void> | void;
+  onAfterCommit?: (
+    configuration: Configuration,
+    context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+  ) => Promise<void> | void;
   mapValidationError?: (error: RuntimeConfigValidationError) => Error;
 }
 
@@ -253,6 +262,10 @@ export class RuntimeConfigService {
     return this.store.configDirectory;
   }
 
+  current(): Configuration {
+    return this.configuration ?? defaultConfiguration;
+  }
+
   replaceStore(store: RuntimeConfigProfileStore): void {
     const previousDirectory = this.store.configDirectory;
     this.store = store;
@@ -278,6 +291,10 @@ export class RuntimeConfigService {
     return () => this.diagnosticListeners.delete(listener);
   }
 
+  reportDiagnostic(kind: RuntimeConfigDiagnosticEvent["kind"], error: unknown): void {
+    this.emitDiagnostic(kind, error);
+  }
+
   async startWatching(options: RuntimeConfigWatchOptions = {}): Promise<void> {
     await this.stopWatching();
     this.watcher = new RuntimeProfileWatcher({
@@ -285,15 +302,29 @@ export class RuntimeConfigService {
       debounceMs: options.debounceMs,
       shouldReload: (fileName) => this.isWatchedFile(fileName),
       reload: async (fileName) => {
+        const previousProfile = this.store.activeProfile;
+        const previousConfiguration = this.configuration;
+        const profileSwitch = fileName === RUNTIME_ACTIVE_PROFILE_META_FILE;
         try {
-          const profileSwitch = fileName === RUNTIME_ACTIVE_PROFILE_META_FILE;
           if (profileSwitch) {
             await this.store.reloadActiveProfileName();
           }
           const loaded = await this.store.reloadActiveProfile();
-          this.configuration = await this.applyAfterLoad(loaded);
+          await this.options.onBeforeCommit?.(loaded, {
+            source: profileSwitch ? "switch" : "watch",
+            previous: previousConfiguration,
+          });
+          const next = await this.applyAfterLoad(loaded);
+          await this.options.onAfterCommit?.(next, {
+            source: profileSwitch ? "switch" : "watch",
+            previous: previousConfiguration,
+          });
+          this.configuration = next;
           this.emitChange(profileSwitch ? "switch" : "watch");
         } catch (error) {
+          if (profileSwitch && this.store.activeProfile !== previousProfile) {
+            await this.store.switchProfile(previousProfile).catch(() => undefined);
+          }
           this.emitDiagnostic(this.classifyReloadError(error), error);
         }
       },
@@ -313,7 +344,10 @@ export class RuntimeConfigService {
     this.configuration = await this.runWithValidation(async () => {
       await this.options.onBeforeLoad?.();
       const loaded = await this.store.load();
-      return await this.applyAfterLoad(loaded);
+      await this.options.onBeforeCommit?.(loaded, { source: "load", previous: this.configuration });
+      const next = await this.applyAfterLoad(loaded);
+      await this.options.onAfterCommit?.(next, { source: "load", previous: this.configuration });
+      return next;
     });
     this.emitChange("load");
     return this.configuration;
@@ -339,10 +373,13 @@ export class RuntimeConfigService {
       const parsed = parseRuntimeConfiguration(configuration);
       let beforeSaveCompleted = false;
       try {
+        await this.options.onBeforeCommit?.(parsed, { source: "save", previous: this.configuration });
         await this.options.onBeforeSave?.(parsed);
         beforeSaveCompleted = true;
         const saved = await this.store.save(parsed);
-        return await this.applyAfterSave(saved);
+        const applied = await this.applyAfterSave(saved);
+        await this.options.onAfterCommit?.(applied, { source: "save", previous: this.configuration });
+        return applied;
       } catch (error) {
         if (beforeSaveCompleted) {
           await this.options.onSaveError?.(error);
@@ -405,9 +442,21 @@ export class RuntimeConfigService {
   }
 
   async switchProfile(name: string): Promise<Configuration> {
+    const previousProfile = this.store.activeProfile;
+    const previousConfiguration = this.configuration;
     this.configuration = await this.runWithValidation(async () => {
       const switched = await this.store.switchProfile(name);
-      return await this.applyAfterLoad(switched);
+      try {
+        await this.options.onBeforeCommit?.(switched, { source: "switch", previous: previousConfiguration });
+        const next = await this.applyAfterLoad(switched);
+        await this.options.onAfterCommit?.(next, { source: "switch", previous: previousConfiguration });
+        return next;
+      } catch (error) {
+        if (this.store.activeProfile !== previousProfile) {
+          await this.store.switchProfile(previousProfile).catch(() => undefined);
+        }
+        throw error;
+      }
     });
     this.emitChange("switch");
     return this.configuration;
@@ -432,9 +481,20 @@ export class RuntimeConfigService {
     fileName?: string;
     overwrite?: boolean;
   }): Promise<RuntimeProfileImportOutput> {
-    const result = await this.runWithValidation(() => this.store.importProfile(input));
-    if (result.active) {
-      this.configuration = await this.load();
+    const previousConfiguration = this.configuration;
+    let importedConfiguration: Configuration | undefined;
+    const result = await this.runWithValidation(async () => {
+      const format = input.fileName ? inferConfigurationFileFormat(input.fileName) : "toml";
+      importedConfiguration = parseRuntimeConfigurationContent(input.content, format);
+      if (input.name === this.store.activeProfile) {
+        await this.options.onBeforeCommit?.(importedConfiguration, { source: "save", previous: previousConfiguration });
+      }
+      return await this.store.importProfile(input);
+    });
+    if (result.active && importedConfiguration) {
+      this.configuration = await this.applyAfterLoad(importedConfiguration);
+      await this.options.onAfterCommit?.(importedConfiguration, { source: "save", previous: previousConfiguration });
+      this.emitChange("save");
     }
     return result;
   }
@@ -444,11 +504,13 @@ export class RuntimeConfigService {
     name: string;
     overwrite?: boolean;
   }): Promise<RuntimeProfileImportOutput> {
-    const result = await this.runWithValidation(() => this.store.importProfileFromFile(input));
-    if (result.active) {
-      this.configuration = await this.load();
-    }
-    return result;
+    const content = await readFile(input.sourcePath, "utf8");
+    return await this.importProfile({
+      name: input.name,
+      content,
+      fileName: input.sourcePath,
+      overwrite: input.overwrite,
+    });
   }
 
   async cleanupInvalidNonActiveProfiles(logger?: RuntimeCleanupLogger): Promise<void> {
@@ -686,10 +748,10 @@ export class RuntimeConfigProfileStore {
     overwrite?: boolean;
   }): Promise<RuntimeProfileImportOutput> {
     const content = await readFile(input.sourcePath, "utf8");
-    const configuration = parseRuntimeConfigurationContent(content, inferConfigurationFileFormat(input.sourcePath));
     return await this.importProfile({
       name: input.name,
-      content: serializeConfiguration(configuration, "toml"),
+      content,
+      fileName: input.sourcePath,
       overwrite: input.overwrite,
     });
   }

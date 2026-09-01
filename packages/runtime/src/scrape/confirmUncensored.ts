@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+import type { MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type {
@@ -11,12 +12,12 @@ import type {
   UncensoredChoice,
   UncensoredConfirmResultItem,
 } from "@mdcz/shared/types";
-import { LocalScanService } from "../maintenance/LocalScanService";
-import { MaintenanceArtifactResolver } from "../maintenance/MaintenanceArtifactResolver";
-import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
-import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
-import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
-import { pathExists } from "./utils/filesystem";
+import type { LocalScanService } from "../maintenance/LocalScanService";
+import type { MaintenanceArtifactResolver } from "../maintenance/MaintenanceArtifactResolver";
+import { buildMovieTags } from "../maintenance/movieTags";
+import type { RuntimeLogger } from "../shared";
+import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
+import { type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { parseFileInfo } from "./utils/number";
 
 export interface RuntimeUncensoredConfirmItem {
@@ -49,11 +50,20 @@ interface PreparedUncensoredConfirmItem {
 
 export interface UncensoredConfirmDependencies {
   artifactResolver: Pick<MaintenanceArtifactResolver, "resolve">;
-  fileOrganizer: Pick<FileOrganizer, "ensureOutputReady" | "organizeVideo" | "plan">;
+  fileOrganizer: Pick<FileOrganizer, "ensureOutputReady" | "organizeVideo" | "plan"> &
+    Partial<Pick<FileOrganizer, "resolveOutputPlan">>;
   localScanService: Pick<LocalScanService, "scanVideo">;
   logger: Pick<RuntimeLogger, "info" | "warn">;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
-  pathExists: typeof pathExists;
+  pathExists: (filePath: string) => Promise<boolean>;
+  publish?(input: {
+    operationId: string;
+    sourceVideoPath: string;
+    targetVideoPath: string;
+    artifacts: Array<{ targetPath: string; content: { kind: "bytes"; data: Buffer } | { kind: "text"; data: string } }>;
+    obsoletePaths: string[];
+    replaceExistingArtifacts?: boolean;
+  }): Promise<void>;
 }
 
 const buildBatchKey = (nfoPath: string, choice: UncensoredChoice): string => `${nfoPath.trim()}::${choice}`;
@@ -71,19 +81,10 @@ const buildSharedFileInfo = (entries: LocalScanEntry[], outputVideoPath: string)
   };
 };
 
-const defaultDependencies = (): UncensoredConfirmDependencies => ({
-  artifactResolver: new MaintenanceArtifactResolver(),
-  fileOrganizer: new FileOrganizer(),
-  localScanService: new LocalScanService(),
-  logger: noopRuntimeLogger,
-  nfoGenerator: new NfoGenerator(),
-  pathExists,
-});
-
 export const confirmUncensoredOutputs = async (
   items: RuntimeUncensoredConfirmItem[],
   config: Configuration,
-  dependencies: UncensoredConfirmDependencies = defaultDependencies(),
+  dependencies: UncensoredConfirmDependencies,
 ): Promise<RuntimeUncensoredConfirmResult> => {
   const updatedItems: Array<UncensoredConfirmResultItem & { assets: DiscoveredAssets }> = [];
   const failures: RuntimeUncensoredConfirmFailure[] = [];
@@ -107,8 +108,17 @@ export const confirmUncensoredOutputs = async (
         continue;
       }
 
+      const scanPath = item.metadataVideoPath?.trim() || videoPath;
+      const root: MediaRoot = {
+        id: item.fileId,
+        displayName: dirname(scanPath),
+        hostPath: dirname(scanPath),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
       const scannedEntry = await dependencies.localScanService.scanVideo(
-        item.metadataVideoPath?.trim() || videoPath,
+        root,
+        scanPath,
         config.paths.sceneImagesFolder,
       );
       const effectiveNfoPath = scannedEntry.nfoPath ?? nfoPath;
@@ -165,8 +175,17 @@ export const confirmUncensoredOutputs = async (
           config,
           prepared.nextLocalState,
         );
-        const plan = await dependencies.fileOrganizer.ensureOutputReady(rawPlan, prepared.entry.fileInfo.filePath);
-        const outputVideoPath = await dependencies.fileOrganizer.organizeVideo(prepared.entry.fileInfo, plan, config);
+        const plan = dependencies.fileOrganizer.resolveOutputPlan
+          ? await dependencies.fileOrganizer.resolveOutputPlan(rawPlan, prepared.entry.fileInfo.filePath)
+          : await dependencies.fileOrganizer.ensureOutputReady(rawPlan, prepared.entry.fileInfo.filePath);
+        const outputVideoPath = dependencies.publish
+          ? plan.targetVideoPath
+          : await dependencies.fileOrganizer.organizeVideo(
+              prepared.entry.fileInfo,
+              plan,
+              config,
+              config.paths.mediaPath?.trim() || dirname(prepared.entry.fileInfo.filePath),
+            );
         processedItems.push({ ...prepared, outputVideoPath, plan });
       } catch (error) {
         fail(prepared.item, `Failed to reorganize ${prepared.item.videoPath}: ${toErrorMessage(error)}`);
@@ -175,6 +194,7 @@ export const confirmUncensoredOutputs = async (
     if (processedItems.length === 0) continue;
 
     let savedNfoPath: string;
+    const nfoArtifacts = new Map<string, string>();
     try {
       const seed = processedItems[0];
       savedNfoPath = await dependencies.nfoGenerator.writeNfo(
@@ -189,6 +209,10 @@ export const confirmUncensoredOutputs = async (
           nfoNaming: config.download.nfoNaming,
           enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
           nfoTitleTemplate: config.naming.nfoTitleTemplate,
+          buildTags: buildMovieTags,
+          writeFile: async (targetPath, content) => {
+            nfoArtifacts.set(targetPath, content);
+          },
         },
       );
     } catch (error) {
@@ -197,6 +221,10 @@ export const confirmUncensoredOutputs = async (
       continue;
     }
 
+    const finalizedItems: Array<{
+      processed: (typeof processedItems)[number];
+      artifacts: Awaited<ReturnType<UncensoredConfirmDependencies["artifactResolver"]["resolve"]>>;
+    }> = [];
     for (const processed of processedItems) {
       try {
         const artifacts = await dependencies.artifactResolver.resolve({
@@ -206,6 +234,33 @@ export const confirmUncensoredOutputs = async (
           savedNfoPath,
           nfoNaming: config.download.nfoNaming,
         });
+        finalizedItems.push({ processed, artifacts });
+      } catch (error) {
+        fail(processed.item, `Failed to finalize ${processed.item.videoPath}: ${toErrorMessage(error)}`);
+      }
+    }
+
+    for (const { processed, artifacts } of finalizedItems) {
+      try {
+        if (dependencies.publish) {
+          await dependencies.publish({
+            operationId: `uncensored-confirm:${processed.item.fileId}`,
+            sourceVideoPath: processed.item.videoPath,
+            targetVideoPath: processed.outputVideoPath,
+            artifacts: [
+              ...[...nfoArtifacts].map(([targetPath, data]) => ({
+                targetPath,
+                content: { kind: "text" as const, data },
+              })),
+              ...artifacts.publicationArtifacts.map(({ targetPath, data }) => ({
+                targetPath,
+                content: { kind: "bytes" as const, data },
+              })),
+            ],
+            obsoletePaths: artifacts.obsoletePaths,
+            replaceExistingArtifacts: true,
+          });
+        }
         updatedItems.push({
           fileId: processed.item.fileId,
           sourceVideoPath: processed.item.videoPath,

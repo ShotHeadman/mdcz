@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import {
   POSTER_TAG_BADGE_ASPECT_RATIO,
@@ -325,9 +325,10 @@ export class PosterWatermarkService {
       }
 
       await pipeline.toFile(tempPath);
+      await rm(posterPath, { force: true });
       await rename(tempPath, posterPath);
     } finally {
-      await unlink(tempPath).catch(() => undefined);
+      await rm(tempPath, { force: true });
     }
   }
 }

@@ -1,12 +1,12 @@
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, normalize, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { toErrorMessage } from "@mdcz/shared/error";
 import {
   buildGeneratedVideoSidecarTargetPath,
   buildSubtitleSidecarTargetPath,
   type SubtitleSidecarMatch,
 } from "../media";
-import { moveFileSafely, pathExists } from "../utils/filesystem";
+import { isPathInside, moveFileSafely, pathExists } from "../utils/filesystem";
 import { inspectStrmTarget, isStrmFile, writeStrmTarget } from "../utils/strm";
 import type { SidecarResolver } from "./SidecarResolver";
 
@@ -99,10 +99,13 @@ export class FileMover {
   }
 
   async cleanupEmptyAncestors(dirPath: string, stopAt: string): Promise<void> {
-    const normalizedStop = normalize(resolve(stopAt));
-    let current = normalize(resolve(dirPath));
+    const normalizedStop = resolve(stopAt);
+    let current = resolve(dirPath);
 
-    while (current.length > normalizedStop.length && current.startsWith(normalizedStop)) {
+    while (true) {
+      if (!isPathInside(normalizedStop, current) || current === normalizedStop) {
+        break;
+      }
       try {
         const entries = await readdir(current);
         if (entries.length > 0) {

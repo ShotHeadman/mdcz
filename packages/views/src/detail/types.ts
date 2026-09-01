@@ -8,7 +8,9 @@ export interface DetailViewItem {
   minimalErrorView?: boolean;
   title?: string;
   path?: string;
-  nfoRootId?: string;
+  fileRef?: RootFileRef;
+  nfoRef?: RootFileRef;
+  assets?: AssetRef[];
   nfoPath?: string;
   actors?: string[];
   plot?: string;
@@ -27,5 +29,9 @@ export interface DetailViewItem {
   fanartUrl?: string;
   outputPath?: string;
   sceneImages?: string[];
+  trailerUrl?: string;
+  trailerFallbackUrls?: string[];
   errorMessage?: string;
 }
+
+import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";

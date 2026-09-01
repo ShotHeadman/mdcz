@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { deterministicMediaRootId } from "@mdcz/runtime/library";
+import { deterministicMediaRootId } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
@@ -13,7 +13,7 @@ import {
   releaseTestServer,
   startLocalHttpServer,
   syncMediaRootFromConfig,
-  waitForTaskStatus,
+  waitForScanTaskStatus,
 } from "./app.testSupport";
 import type { RuntimeActionService } from "./services/runtimeActionService";
 import { formatSseEvent } from "./taskEvents";
@@ -28,6 +28,14 @@ const readStreamChunk = async (reader: ReadableStreamDefaultReader<Uint8Array>):
   }
 
   return textDecoder.decode(chunk.value);
+};
+
+const readStreamUntil = async (reader: ReadableStreamDefaultReader<Uint8Array>, needle: string): Promise<string> => {
+  let buffer = "";
+  while (!buffer.includes(needle)) {
+    buffer += await readStreamChunk(reader);
+  }
+  return buffer;
 };
 
 const isWebhookTaskBody = (
@@ -121,7 +129,7 @@ describe("buildServer composition integration", () => {
     const { fastify, services } = await createTestServer();
     await fastify.ready();
     const taskEvents: string[] = [];
-    const unsubscribe = services.taskEvents.subscribe((event) => taskEvents.push(event.event));
+    const unsubscribe = services.taskEvents.subscribe((event) => taskEvents.push(event.kind));
     const current = await services.config.get();
 
     await writeFile(
@@ -145,13 +153,13 @@ describe("buildServer composition integration", () => {
     const completeResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/setup.complete",
-      payload: { password: "changed-password", mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+      payload: { password: "changed-password", mediaRoot: { displayName: "Media", hostPath: root } },
     });
     const statusResponse = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
     const repeatResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/setup.complete",
-      payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root, enabled: true } },
+      payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root } },
     });
     const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
     const config = await services.config.get();
@@ -169,7 +177,7 @@ describe("buildServer composition integration", () => {
     });
     expect(config.paths.mediaPath).toBe(root);
     expect(roots.roots).toHaveLength(1);
-    expect(roots.roots[0]).toMatchObject({ displayName: "Media", hostPath: root, enabled: true });
+    expect(roots.roots[0]).toMatchObject({ displayName: "Media", hostPath: root });
     expect(state).toEqual({ setupCompleted: true, adminPassword: "changed-password" });
     expect(repeatResponse.statusCode).toBe(403);
   });
@@ -331,11 +339,11 @@ describe("buildServer composition integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { network: { timeout: 25 }, scrape: { threadNumber: 4 } },
     });
-    const readPathResponse = await fastify.inject({
+    const readResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/config.read",
       headers: { authorization: `Bearer ${token}` },
-      payload: { path: "network.timeout" },
+      payload: {},
     });
     const resetPathResponse = await fastify.inject({
       method: "POST",
@@ -360,7 +368,7 @@ describe("buildServer composition integration", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().result.data.network.timeout).toBe(25);
     expect(response.json().result.data.scrape.threadNumber).toBe(4);
-    expect(readPathResponse.json().result.data).toBe(25);
+    expect(readResponse.json().result.data.network.timeout).toBe(25);
     expect(resetPathResponse.json().result.data.network.timeout).toBe(
       defaultsResponse.json().result.data.network.timeout,
     );
@@ -373,9 +381,10 @@ describe("buildServer composition integration", () => {
     });
   });
 
-  it("syncs the single enabled media root from paths.mediaPath", async () => {
+  it("adds configured media roots without disabling earlier roots", async () => {
     const firstRoot = await createTempRoot("config-media-root-a");
     const secondRoot = await createTempRoot("config-media-root-b");
+    const metadataPath = await createTempRoot("config-metadata-not-a-root");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
 
@@ -391,6 +400,12 @@ describe("buildServer composition integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { paths: { mediaPath: secondRoot } },
     });
+    const metadataResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { metadataPath, successOutputFolder: join(firstRoot, "offline-output") } },
+    });
     const rootsResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/mediaRoots.list",
@@ -400,14 +415,80 @@ describe("buildServer composition integration", () => {
     const roots = rootsResponse.json().result.data.roots;
     expect(firstResponse.statusCode).toBe(200);
     expect(secondResponse.statusCode).toBe(200);
-    expect(roots.filter((root: { enabled: boolean }) => root.enabled)).toEqual([
-      expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
-    ]);
+    expect(metadataResponse.statusCode).toBe(200);
     expect(roots).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot, enabled: false }),
+        expect.objectContaining({ id: deterministicMediaRootId(firstRoot), hostPath: firstRoot }),
+        expect.objectContaining({ id: deterministicMediaRootId(secondRoot), hostPath: secondRoot }),
       ]),
     );
+    expect(roots).toHaveLength(2);
+  });
+
+  it("prepares a missing output directory before registering its root", async () => {
+    const parent = await createTempRoot("workbench-output-parent");
+    const outputPath = join(parent, "nested", "JAV_output");
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/mediaRoots.prepareOutputDirectory",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { hostPath: outputPath },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.data).toMatchObject({
+      id: deterministicMediaRootId(outputPath),
+      hostPath: outputPath,
+      relativeDirectory: "",
+    });
+    const outputStats = await stat(outputPath);
+    expect(outputStats.isDirectory()).toBe(true);
+  });
+
+  it("rejects batch scrape requests without an explicit output root", async () => {
+    const { fastify } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        executionMode: "batch",
+        refs: [{ rootId: "root", relativePath: "movie.mp4" }],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toContain("outputRootId");
+  });
+
+  it("rejects an unavailable media path without committing unrelated configuration changes", async () => {
+    const root = await createTempRoot("config-media-root-rollback");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    await expect(services.config.update({ paths: { mediaPath: root } })).resolves.toMatchObject({
+      paths: { mediaPath: root },
+    });
+
+    const previous = await services.config.get();
+    const rootsBefore = await services.mediaRoots.list();
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { mediaPath: join(root, "offline") }, network: { timeout: 37 } },
+    });
+
+    expect(response.statusCode).toBe(500);
+    await expect(services.config.get()).resolves.toMatchObject({
+      paths: { mediaPath: previous.paths.mediaPath },
+      network: { timeout: previous.network.timeout },
+    });
+    await expect(services.mediaRoots.list()).resolves.toEqual(rootsBefore);
   });
 
   it("coalesces concurrent media root synchronization by deterministic id", async () => {
@@ -415,13 +496,13 @@ describe("buildServer composition integration", () => {
     const { services } = await createTestServer();
 
     const roots = await Promise.all([
-      services.mediaRoots.setPrimaryMediaRoot({ displayName: "First", hostPath: mediaPath, enabled: true }),
-      services.mediaRoots.setPrimaryMediaRoot({ displayName: "Second", hostPath: mediaPath, enabled: true }),
+      services.mediaRoots.ensurePath({ displayName: "First", hostPath: mediaPath }),
+      services.mediaRoots.ensurePath({ displayName: "Second", hostPath: mediaPath }),
     ]);
 
     expect(new Set(roots.map((root) => root.id))).toEqual(new Set([deterministicMediaRootId(mediaPath)]));
     await expect(services.mediaRoots.list()).resolves.toMatchObject({
-      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath, enabled: true })],
+      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath })],
     });
   });
 
@@ -504,7 +585,7 @@ describe("buildServer composition integration", () => {
       method: "POST",
       url: "/trpc/mediaRoots.create",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { displayName: "Media", hostPath: root },
     });
     const availabilityResponse = await fastify.inject({
       method: "GET",
@@ -523,8 +604,6 @@ describe("buildServer composition integration", () => {
       expect.objectContaining({
         id: rootId,
         hostPath: root,
-        enabled: true,
-        rootType: "mounted-filesystem",
       }),
     ]);
     expect(createResponse.statusCode).toBe(404);
@@ -583,6 +662,7 @@ describe("buildServer composition integration", () => {
       totalBytes: 33,
       outputAt: "2026-05-11T00:08:00.000Z",
       rootPath: null,
+      unresolvedRepairCount: 0,
     });
     const recentAcquisitions = overviewResponse.json().result.data.recentAcquisitions;
     expect(recentAcquisitions).toHaveLength(8);
@@ -613,6 +693,8 @@ describe("buildServer composition integration", () => {
         rootRelativePath: relativePath,
         number: id,
         createdAt: new Date(createdAt),
+        sourceRunId: `${id}-run`,
+        sourceOutcomeId: `${id}-outcome`,
       });
     }
 
@@ -639,12 +721,19 @@ describe("buildServer composition integration", () => {
 
     expect(firstPage).toMatchObject({
       entries: [
-        expect.objectContaining({ id: "entry-c", available: null }),
+        expect.objectContaining({
+          id: "entry-c",
+          available: null,
+          runId: "entry-c-run",
+          scrapeOutcomeId: "entry-c-outcome",
+        }),
         expect.objectContaining({ id: "entry-b", available: null }),
       ],
       hasMore: true,
       total: 3,
     });
+    expect(firstPage.entries[0]).not.toHaveProperty("taskId");
+    expect(firstPage.entries[0]).not.toHaveProperty("scrapeOutputId");
     expect(firstPage.nextCursor).toEqual(expect.any(String));
     expect(secondPage).toMatchObject({
       entries: [expect.objectContaining({ id: "entry-a", available: null })],
@@ -758,7 +847,7 @@ describe("buildServer composition integration", () => {
     });
     const taskId = startResponse.json().task.id;
 
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScanTaskStatus(fastify, token, taskId, "completed");
 
     const recentResponse = await fastify.inject({
       method: "GET",
@@ -810,7 +899,7 @@ describe("buildServer composition integration", () => {
     });
     const taskId = startResponse.json().task.id;
 
-    await waitForTaskStatus(fastify, token, taskId, "completed");
+    await waitForScanTaskStatus(fastify, token, taskId, "completed");
 
     await expect
       .poll(() =>
@@ -819,6 +908,16 @@ describe("buildServer composition integration", () => {
         ),
       )
       .toBe(true);
+    await expect
+      .poll(async () => {
+        const response = await fastify.inject({
+          method: "GET",
+          url: "/api/automation/webhooks/status",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return response.json().webhook.delivered;
+      })
+      .toBe(2);
     const statusResponse = await fastify.inject({
       method: "GET",
       url: "/api/automation/webhooks/status",
@@ -828,7 +927,7 @@ describe("buildServer composition integration", () => {
     expect(webhook.deliveries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          body: expect.objectContaining({ taskId, kind: "scan", status: "queued" }),
+          body: expect.objectContaining({ taskId, kind: "scan", status: "running" }),
           secret: "test-secret",
         }),
         expect.objectContaining({
@@ -842,7 +941,7 @@ describe("buildServer composition integration", () => {
       configured: true,
       failed: 0,
     });
-    expect(statusResponse.json().webhook.delivered).toBeGreaterThanOrEqual(2);
+    expect(statusResponse.json().webhook.delivered).toBe(2);
 
     await webhook.close();
   });
@@ -972,31 +1071,17 @@ describe("buildServer composition integration", () => {
       throw new Error("Expected SSE response body reader");
     }
 
-    const initialChunk = await readStreamChunk(reader);
-    expect(initialChunk).toContain(": connected\n\n");
-    expect(initialChunk).toContain('data: {"kind":"snapshot","tasks":[]}');
+    const readyEvent = formatSseEvent({ kind: "invalidate", resources: ["ready"] });
+    const preamble = await readStreamUntil(reader, readyEvent);
+    expect(preamble).toContain(": connected\n\n");
+    // No `id:` field: the stream has no replay, so a reconnect resyncs via the `ready` invalidation.
+    expect(preamble).not.toMatch(/^id:/mu);
     const listenerCountWithSse = services.taskEvents.listenerCount();
 
-    const event = services.taskEvents.publish({
-      kind: "task",
-      task: {
-        id: "task-1",
-        kind: "scan",
-        rootId: "root-1",
-        rootDisplayName: "Media",
-        status: "running",
-        createdAt: "2026-04-28T00:00:00.000Z",
-        updatedAt: "2026-04-28T00:00:00.000Z",
-        startedAt: "2026-04-28T00:00:00.000Z",
-        completedAt: null,
-        videoCount: 0,
-        directoryCount: 0,
-        error: null,
-        videos: [],
-      },
-    });
+    services.taskEvents.invalidate("scan");
 
-    expect(await readStreamChunk(reader)).toBe(formatSseEvent(event));
+    const scanEvent = formatSseEvent({ kind: "invalidate", resources: ["scan"] });
+    expect(await readStreamUntil(reader, scanEvent)).toBe(scanEvent);
 
     await reader.cancel();
     abortController.abort();

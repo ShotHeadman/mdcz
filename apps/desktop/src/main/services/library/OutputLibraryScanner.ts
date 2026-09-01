@@ -67,9 +67,21 @@ export class OutputLibraryScanner {
 
     try {
       const state = await this.persistenceService.getState();
-      const latestOutput = await state.repositories.library.latestScrapeOutput();
-      if (latestOutput) {
-        return createOutputLibrarySummaryFromScrapeOutput(latestOutput, scannedAt);
+      const latestRun = await state.repositories.scrapeRuns.getLatestFinalized();
+      const latestSummary = latestRun ? state.repositories.scrapeRuns.summary(latestRun) : null;
+      if (latestSummary) {
+        const outputRoot = latestSummary.outputRootId
+          ? await state.repositories.mediaRoots.get(latestSummary.outputRootId)
+          : null;
+        return createOutputLibrarySummaryFromScrapeOutput(
+          {
+            fileCount: latestSummary.successCount,
+            totalBytes: latestSummary.totalBytes,
+            completedAt: latestSummary.completedAt,
+            outputDirectory: outputRoot?.hostPath ?? null,
+          },
+          scannedAt,
+        );
       }
       const entries = await state.repositories.library.listEntries();
       return createOutputLibrarySummaryFromEntries(entries, scannedAt);

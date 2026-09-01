@@ -1,10 +1,13 @@
-import type { ScanTaskDto } from "@mdcz/shared/serverDtos";
+import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildFailedScrapeSnapshot } from "../../../../tests/unit/renderer/scrapeTestSupport";
 import { api, setAdminToken } from "../client";
 import { createWebDetailPort, createWebMaintenanceActionPort, createWebScrapeActionPort } from "./ports";
 
@@ -31,6 +34,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   setAdminToken(undefined);
   useWorkbenchTaskStore.getState().reset();
+  useScrapeStore.getState().reset();
+  useMaintenanceStore.getState().reset();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: originalLocalStorage,
@@ -67,13 +72,20 @@ describe("web detail action port", () => {
       undefined,
       {
         id: "root-1:ABC-001.mp4",
+        assets: [
+          {
+            type: "local",
+            kind: "poster",
+            file: { rootId: "metadata-root", relativePath: "JAV_output/ABC-001/poster.jpg" },
+          },
+        ],
         number: "ABC-001",
         path: "ABC-001.mp4",
         status: "success",
       },
     );
 
-    expect(poster).toBe("http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/ABC-001/poster.jpg?token=token-1");
+    expect(poster).toContain("/api/library/assets/metadata-root/JAV_output/ABC-001/poster.jpg");
     expect(remote).toBe("https://img.example/poster.jpg");
   });
 
@@ -176,7 +188,7 @@ describe("web detail action port", () => {
 });
 
 describe("web scrape action port", () => {
-  it("enables file deletion only for root-relative targets and calls safe server delete", async () => {
+  it("calls safe server delete for root-relative targets", async () => {
     const deleteFile = vi.spyOn(api.scrape, "deleteFile").mockResolvedValue({
       ok: true,
       rootId: "root-1",
@@ -188,30 +200,34 @@ describe("web scrape action port", () => {
       { filePath: "ABC-001-CD2.mp4", ref: { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" } },
     ];
 
-    expect(port.getDeleteFileAvailability?.([{ filePath: "/absolute/ABC-001.mp4" }])).toBe("hidden");
-    expect(port.getDeleteFileAvailability?.(safeTargets)).toBe("enabled");
-
     await port.deleteFile(safeTargets);
 
     expect(deleteFile).toHaveBeenNthCalledWith(1, { rootId: "root-1", relativePath: "ABC-001.mp4" });
     expect(deleteFile).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
   });
 
-  it("rejects delete calls when any target lacks a root-relative ref", async () => {
+  it("retries the scrape store run id and has no run after reset", async () => {
+    const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "retry-1" });
+    useScrapeStore.getState().setSnapshot(
+      buildFailedScrapeSnapshot({
+        task: { ...buildFailedScrapeSnapshot().task, id: "session-run" },
+      }),
+    );
     const port = createWebScrapeActionPort();
 
-    await expect(
-      port.deleteFile([
-        { filePath: "ABC-001.mp4", ref: { rootId: "root-1", relativePath: "ABC-001.mp4" } },
-        { filePath: "/absolute/ABC-001-CD2.mp4" },
-      ]),
-    ).rejects.toThrow("Web 删除文件需要媒体目录引用");
+    await expect(port.retryFailed()).resolves.toEqual({
+      message: "重试任务已启动：retry-1",
+    });
+    expect(retry).toHaveBeenCalledWith({ taskId: "session-run" });
+
+    useScrapeStore.getState().reset();
+    await expect(port.retryFailed()).rejects.toThrow("没有可重试的刮削任务");
   });
 });
 
 const createEntry = (): LocalScanEntry => ({
   fileId: "root-1:ABC-001.mp4",
-  rootRef: { rootId: "root-1", relativePath: "ABC-001.mp4" },
+  ref: { rootId: "root-1", relativePath: "ABC-001.mp4" },
   fileInfo: {
     filePath: "ABC-001.mp4",
     fileName: "ABC-001.mp4",
@@ -225,36 +241,37 @@ const createEntry = (): LocalScanEntry => ({
 
 describe("web maintenance action port", () => {
   it("stores maintenance task id in shared workbench state and reuses it across port instances", async () => {
-    const runningTask: ScanTaskDto = {
+    const session: MaintenanceActiveSessionSnapshot = {
       id: "maintenance-task-1",
-      kind: "maintenance",
       rootId: "root-1",
-      rootDisplayName: "Media",
+      presetId: "refresh_data",
+      phase: "preview",
       status: "running",
-      createdAt: "2026-05-12T00:00:00.000Z",
-      updatedAt: "2026-05-12T00:00:00.000Z",
-      startedAt: "2026-05-12T00:00:00.000Z",
-      completedAt: null,
-      videoCount: 1,
-      directoryCount: 0,
+      generation: 1,
+      refs: [{ rootId: "root-1", relativePath: "ABC-001.mp4" }],
+      timestamps: {
+        createdAt: new Date("2026-05-12T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-12T00:00:00.000Z"),
+        startedAt: new Date("2026-05-12T00:00:00.000Z"),
+        completedAt: null,
+      },
       error: null,
-      videos: ["ABC-001.mp4"],
+      previews: [],
+      currentBatch: null,
+      draft: { fieldSelections: {} },
+      totalEntries: 1,
+      completedEntries: 0,
+      successCount: 0,
+      failedCount: 0,
     };
-    vi.spyOn(api.maintenance, "start").mockResolvedValue(runningTask);
-    vi.spyOn(api.maintenance, "preview").mockResolvedValue({
-      task: runningTask,
-      items: [],
-      confirmationToken: "maintenance:maintenance-task-1",
-    });
-    const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({
-      ...runningTask,
-      status: "paused",
-    });
+    vi.spyOn(api.maintenance, "start").mockResolvedValue({ sessionId: session.id });
+    vi.spyOn(api.maintenance, "getActiveSession").mockResolvedValue(session);
+    const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({ sessionId: session.id });
 
-    await createWebMaintenanceActionPort().preview([createEntry()], "refresh_data");
+    await createWebMaintenanceActionPort().preview([createEntry().ref], "refresh_data");
     await createWebMaintenanceActionPort().pause();
 
-    expect(useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId).toBe("maintenance-task-1");
-    expect(pause).toHaveBeenCalledWith({ taskId: "maintenance-task-1" });
+    expect(selectMaintenanceSessionId(useMaintenanceStore.getState())).toBe("maintenance-task-1");
+    expect(pause).toHaveBeenCalledWith({ sessionId: "maintenance-task-1" });
   });
 });

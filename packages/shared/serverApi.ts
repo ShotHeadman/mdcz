@@ -1,4 +1,5 @@
 import type { Configuration } from "./config";
+import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
   AppEnsureWatermarkDirectoryResponse,
   AuthLoginInput,
@@ -28,12 +29,13 @@ import type {
   LogListInput,
   LogListResponse,
   MaintenanceApplyInput,
-  MaintenanceApplyResponse,
-  MaintenancePreviewResponse,
-  MaintenanceScanSelectedFilesInput,
-  MaintenanceScanSelectedFilesResponse,
+  MaintenanceDiscardSessionInput,
+  MaintenanceMutationAckDto,
+  MaintenanceSessionInput,
   MaintenanceStartInput,
-  MaintenanceTaskInput,
+  MaintenanceUpdateDraftInput,
+  MediaRootEnsurePathInput,
+  MediaRootEnsurePathResponse,
   MediaRootListResponse,
   NetworkCheckCookiesResponse,
   NfoReadInput,
@@ -54,14 +56,13 @@ import type {
   ScanTaskIdInput,
   ScanTaskListResponse,
   ScrapeConfirmUncensoredInput,
-  ScrapeRecoverableSessionResolveInput,
-  ScrapeRecoverableSessionResolveResponse,
-  ScrapeRecoverableSessionResponse,
+  ScrapeHistoryResponse,
+  ScrapeLiveRunsResponse,
+  ScrapeMutationAckDto,
+  ScrapePendingUncensoredConfirmationResponse,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
-  ScrapeResultListResponse,
   ScrapeStartInput,
-  ScrapeStartSelectedFilesInput,
   ScrapeTaskControlInput,
   ServerPathSuggestInput,
   ServerPathSuggestResponse,
@@ -108,11 +109,10 @@ export interface ServerApiContract {
     defaults(): Promise<Configuration>;
     export(): Promise<string>;
     import(input: ConfigImportInput): Promise<Configuration>;
-    read(input?: ConfigPathInput): Promise<Configuration>;
+    read(): Promise<Configuration>;
     previewNaming(input: ConfigPreviewInput): Promise<{ items: NamingPreviewItem[] }>;
-    reset(input?: ConfigPathInput): Promise<Configuration>;
+    reset(input?: Exclude<ConfigPathInput, undefined>): Promise<Configuration>;
     update(input: ConfigUpdateInput): Promise<Configuration>;
-    save(input: ConfigUpdateInput): Promise<Configuration>;
     profiles: {
       list(): Promise<ConfigProfileListResponse>;
       create(input: ConfigProfileNameInput): Promise<ConfigProfileNameResponse>;
@@ -133,19 +133,18 @@ export interface ServerApiContract {
     clearRuntime(): Promise<{ ok: true; cleared: number }>;
   };
   maintenance: {
-    scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse>;
-    apply(input: MaintenanceApplyInput): Promise<MaintenanceApplyResponse>;
-    pause(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
-    preview(input: MaintenanceTaskInput): Promise<MaintenancePreviewResponse>;
-    recover(): Promise<ScanTaskListResponse>;
-    resume(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
-    start(input: MaintenanceStartInput): Promise<ScanTaskDto>;
-    stop(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    execute(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto>;
+    pause(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
+    getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
+    updateDraft(input: MaintenanceUpdateDraftInput): Promise<MaintenanceMutationAckDto>;
+    discardSession(input?: MaintenanceDiscardSessionInput): Promise<MaintenanceMutationAckDto>;
+    resume(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
+    start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto>;
+    stop(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
   };
   library: {
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
-    search(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
@@ -157,6 +156,8 @@ export interface ServerApiContract {
     removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   mediaRoots: {
+    ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
+    prepareOutputDirectory(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
     list(): Promise<MediaRootListResponse>;
   };
   persistence: {
@@ -175,30 +176,21 @@ export interface ServerApiContract {
     start(input: ScanStartInput): Promise<ScanTaskDto>;
   };
   scrape: {
-    startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto>;
+    liveRuns(): Promise<ScrapeLiveRunsResponse>;
+    pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
-    listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse>;
-    getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
+    history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
     posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
     posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
-    pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    pause(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
-    resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
-    retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
-    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto>;
-    resolveRecoverableSession(
-      input?: ScrapeRecoverableSessionResolveInput,
-    ): Promise<ScrapeRecoverableSessionResolveResponse>;
-    start(input: ScrapeStartInput): Promise<ScanTaskDto>;
-    stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
-  };
-  tasks: {
-    detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;
-    events(input: ScanTaskIdInput): Promise<TaskEventListResponse>;
-    list(): Promise<ScanTaskListResponse>;
-    retry(input: ScanTaskIdInput): Promise<ScanTaskDto>;
+    resume(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
+    retry(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
+    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScrapeMutationAckDto>;
+    start(input: ScrapeStartInput): Promise<ScrapeMutationAckDto>;
+    stop(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
   };
   setup: {
     complete(input: SetupCompleteInput): Promise<AuthSessionDto>;

@@ -28,7 +28,7 @@ export const createPersistenceDatabase = (config: PersistenceDatabaseConfig): Pe
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("busy_timeout = 5000");
-  sqlite.pragma("synchronous = NORMAL");
+  sqlite.pragma("synchronous = FULL");
 
   const db = drizzle(sqlite, { schema });
 

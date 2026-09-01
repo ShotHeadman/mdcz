@@ -1,7 +1,10 @@
 import { homedir } from "node:os";
 import path from "node:path";
 import {
+  buildComputedConfiguration,
+  type ComputedConfiguration,
   type RuntimeConfigChangeEvent,
+  type RuntimeConfigChangeSource,
   type RuntimeConfigDiagnosticEvent,
   RuntimeConfigProfileStore,
   RuntimeConfigService,
@@ -72,6 +75,18 @@ export class ServerConfigService {
   private readonly config: RuntimeConfigService;
   private readonly changeListeners = new Set<(event: RuntimeConfigChangeEvent) => void>();
   private readonly diagnosticListeners = new Set<(event: RuntimeConfigDiagnosticEvent) => void>();
+  private beforeActiveConfigurationCommit:
+    | ((
+        configuration: Configuration,
+        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+      ) => Promise<void> | void)
+    | undefined;
+  private afterActiveConfigurationCommit:
+    | ((
+        configuration: Configuration,
+        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+      ) => Promise<void> | void)
+    | undefined;
 
   constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {
     this.config = new RuntimeConfigService({
@@ -80,6 +95,8 @@ export class ServerConfigService {
         dataDir: paths.dataDir,
       }),
       mapValidationError: (error) => new ServerConfigValidationError(error.message, error.fields, error.fieldErrors),
+      onBeforeCommit: (configuration, context) => this.beforeActiveConfigurationCommit?.(configuration, context),
+      onAfterCommit: (configuration, context) => this.afterActiveConfigurationCommit?.(configuration, context),
     });
     this.config.onChange((event) => {
       for (const listener of this.changeListeners) listener(event);
@@ -91,6 +108,24 @@ export class ServerConfigService {
 
   get runtimePaths(): ServerRuntimePaths {
     return this.paths;
+  }
+
+  setBeforeActiveConfigurationCommit(
+    callback: (
+      configuration: Configuration,
+      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+    ) => Promise<void> | void,
+  ): void {
+    this.beforeActiveConfigurationCommit = callback;
+  }
+
+  setAfterActiveConfigurationCommit(
+    callback: (
+      configuration: Configuration,
+      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
+    ) => Promise<void> | void,
+  ): void {
+    this.afterActiveConfigurationCommit = callback;
   }
 
   async load(): Promise<Configuration> {
@@ -107,6 +142,10 @@ export class ServerConfigService {
     return () => this.diagnosticListeners.delete(listener);
   }
 
+  reportDiagnostic(kind: RuntimeConfigDiagnosticEvent["kind"], error: unknown): void {
+    this.config.reportDiagnostic(kind, error);
+  }
+
   async startWatching(): Promise<void> {
     await this.config.startWatching();
   }
@@ -119,6 +158,10 @@ export class ServerConfigService {
   async get(propertyPath: string): Promise<unknown>;
   async get(propertyPath?: string): Promise<Configuration | unknown> {
     return propertyPath ? await this.config.get(propertyPath) : await this.config.get();
+  }
+
+  getComputed(): ComputedConfiguration {
+    return buildComputedConfiguration(this.config.current());
   }
 
   async save(configuration: Configuration): Promise<Configuration> {

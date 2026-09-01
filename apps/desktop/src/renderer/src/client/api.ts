@@ -1,5 +1,5 @@
 import { ipc } from "./ipc";
-import type { ConfigOutput, CreateSoftlinksBody, FileItem, ScrapeFileBody, UpdateConfigData } from "./types";
+import type { ConfigOutput, CreateSoftlinksBody, ScrapeFileBody, UpdateConfigData } from "./types";
 
 type ThrowOption = {
   throwOnError?: boolean;
@@ -21,7 +21,7 @@ export const scrapeSingleFile = async (options: { body: ScrapeFileBody } & Throw
   if (!path) {
     throw new Error("Path is required");
   }
-  const data = await ipc.scraper.start("single", [path]);
+  const data = await ipc.scraper.startSinglePath(path);
   return { data };
 };
 
@@ -39,26 +39,4 @@ export const createSymlink = async (options: { body: CreateSoftlinksBody } & Thr
   });
 
   return { data };
-};
-
-export const listEntries = async (options: { query: { path: string } } & ThrowOption) => {
-  const dirPath = options.query.path?.trim();
-  if (!dirPath) {
-    throw new Error("Path is required");
-  }
-
-  const response = await ipc.file.listEntries(dirPath);
-  return {
-    data: {
-      items: response.entries.map(
-        (entry): FileItem => ({
-          type: entry.type,
-          path: entry.path,
-          name: entry.name,
-          size: entry.size,
-          last_modified: entry.lastModified ?? null,
-        }),
-      ),
-    },
-  };
 };

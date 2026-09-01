@@ -10,15 +10,14 @@ import {
   DialogTitle,
   Input,
 } from "@mdcz/ui";
-import { Search, Trash2 } from "lucide-react";
+import { Search } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { type MediaBrowserFilter, type MediaBrowserItem, MediaBrowserList } from "../common";
 
 export interface ResultTreeManualUrlTarget {
   videoPaths: string[];
-  targets: Array<{ filePath: string; ref?: ScrapeFileRefDto }>;
+  targets: Array<{ filePath: string; ref: ScrapeFileRefDto }>;
   number: string;
-  canRequeueCurrentRun: boolean;
 }
 
 export interface ResultTreeViewProps {
@@ -27,7 +26,6 @@ export interface ResultTreeViewProps {
   stats: Array<{ label: string; value: string; tone?: "default" | "positive" | "negative" }>;
   manualUrlTarget: ResultTreeManualUrlTarget | null;
   scrapeStatus: "idle" | "running" | "stopping" | "paused";
-  onClearResults: () => void;
   onFilterChange: (filter: MediaBrowserFilter) => void;
   onManualUrlDialogOpenChange: (open: boolean) => void;
   onManualUrlSubmit: (target: ResultTreeManualUrlTarget, manualUrl: string) => Promise<void>;
@@ -40,7 +38,6 @@ export function ResultTreeView({
   stats,
   manualUrlTarget,
   scrapeStatus,
-  onClearResults,
   onFilterChange,
   onManualUrlDialogOpenChange,
   onManualUrlSubmit,
@@ -60,20 +57,7 @@ export function ResultTreeView({
             <span className="text-[13px] text-muted-foreground/40 tracking-wider">暂无结果</span>
           </div>
         }
-        headerTrailing={
-          headerTrailing ??
-          (items.length > 0 ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 hover:text-destructive"
-              onClick={onClearResults}
-              title="清空结果"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          ) : undefined)
-        }
+        headerTrailing={headerTrailing}
       />
       <ManualUrlRescrapeDialog
         target={manualUrlTarget}

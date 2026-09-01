@@ -28,6 +28,7 @@ export interface DownloadManagerOptions {
 
 interface DownloadExecutionOptions {
   movieBaseName?: string;
+  existingAssetDir?: string;
 }
 
 export class DownloadManager {
@@ -86,6 +87,20 @@ export class DownloadManager {
       await downloader.download(context);
     }
 
+    const downloadedPaths = new Set(assets.downloaded);
+    const existingKinds = [
+      assets.thumb && !downloadedPaths.has(assets.thumb) ? "thumb" : undefined,
+      assets.poster && !downloadedPaths.has(assets.poster) ? "poster" : undefined,
+      assets.fanart && !downloadedPaths.has(assets.fanart) ? "fanart" : undefined,
+      assets.trailer && !downloadedPaths.has(assets.trailer) ? "trailer" : undefined,
+      assets.sceneImages.length > 0 && assets.sceneImages.every((asset) => !downloadedPaths.has(asset))
+        ? "scene images"
+        : undefined,
+    ].filter((kind): kind is string => Boolean(kind));
+    if (existingKinds.length > 0) {
+      this.logger.info(`[${data.number}] Using existing local assets: ${existingKinds.join(", ")}`);
+    }
+
     return assets;
   }
 
@@ -101,6 +116,7 @@ export class DownloadManager {
 
     return {
       outputDir,
+      existingAssetDir: options.existingAssetDir ?? outputDir,
       movieBaseName,
       assetFileNames: buildMovieAssetFileNames(movieBaseName, config.naming.assetNamingMode),
       data,

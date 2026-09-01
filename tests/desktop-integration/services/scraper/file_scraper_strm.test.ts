@@ -3,11 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
-import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
-import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { LocalScanService } from "@mdcz/runtime/maintenance";
-import type { AggregationService, FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import type {
+  AggregationService,
+  DownloadManager,
+  FileOrganizer,
+  NfoGenerator,
+  OrganizePlan,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +24,13 @@ const createTempDir = async (): Promise<string> => {
   const dirPath = await mkdtemp(join(tmpdir(), "mdcz-file-scraper-"));
   tempDirs.push(dirPath);
   return dirPath;
+};
+
+const createTempFile = async (name: string): Promise<string> => {
+  const root = await createTempDir();
+  const filePath = join(root, name);
+  await writeFile(filePath, "video");
+  return filePath;
 };
 
 const createConfig = (downloadOverrides: Partial<typeof defaultConfiguration.download> = {}) =>
@@ -92,6 +104,7 @@ const createScraper = ({
     } as unknown as DownloadManager,
     fileOrganizer: {
       plan: vi.fn().mockReturnValue(plan),
+      resolveOutputPlan: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
       ensureOutputReady: vi.fn().mockResolvedValue(plan),
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer,
@@ -126,12 +139,13 @@ describe("FileScraper .strm support", () => {
     };
     const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
     const scraper = createScraper({ config, crawlerData, plan, writeNfo });
+    const sourcePath = await createTempFile("ABC-123.strm");
 
-    const result = await scraper.scrapeFile("/tmp/ABC-123.strm", { fileIndex: 1, totalFiles: 1 });
+    const result = await scraper.scrapeFile(sourcePath, { fileIndex: 1, totalFiles: 1 });
 
     expect(result.status).toBe("success");
-    expect(result.fileInfo.number).toBe("ABC-123");
-    expect(result.fileInfo.extension).toBe(".strm");
+    expect(result.fileName).toBe("ABC-123");
+    expect(result.crawlerData?.number).toBe("ABC-123");
     expect(writeNfo).toHaveBeenCalledTimes(1);
   });
 
@@ -164,11 +178,12 @@ describe("FileScraper .strm support", () => {
       };
       const writeNfo = vi.fn().mockResolvedValue(nfoPath);
       const scraper = createScraper({ config, crawlerData, plan, writeNfo });
+      const sourcePath = await createTempFile("ABC-123.strm");
 
-      const result = await scraper.scrapeFile("/tmp/ABC-123.strm", { fileIndex: 1, totalFiles: 1 });
+      const result = await scraper.scrapeFile(sourcePath, { fileIndex: 1, totalFiles: 1 });
 
       expect(writeNfo).not.toHaveBeenCalled();
-      expect(result.nfoPath).toBe(nfoPath);
+      expect(result.nfo?.relativePath).toBe(nfoPath);
       if (scenario.shouldSyncMovieAlias) {
         await expect(readFile(movieNfoPath, "utf8")).resolves.toBe(await readFile(nfoPath, "utf8"));
         continue;
@@ -195,6 +210,7 @@ describe("FileScraper .strm support", () => {
     const writeNfo = vi.fn().mockResolvedValue(nfoPath);
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
+      resolveOutputPlan: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
       ensureOutputReady: vi.fn().mockResolvedValue(plan),
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer;
@@ -227,7 +243,7 @@ describe("FileScraper .strm support", () => {
       signalService: new SignalService(null),
       localScanService,
     });
-
+    await writeFile(join(root, "ABC-123-U.strm"), "video");
     const result = await scraper.scrapeFile(join(root, "ABC-123-U.strm"), { fileIndex: 1, totalFiles: 1 });
 
     expect(fileOrganizer.plan).toHaveBeenCalledWith(
@@ -277,7 +293,7 @@ describe("FileScraper .strm support", () => {
       writeNfo,
       localScanService,
     });
-
+    await writeFile(join(root, "ABC-123.strm"), "video");
     await scraper.scrapeFile(join(root, "ABC-123.strm"), { fileIndex: 1, totalFiles: 1 });
 
     expect(writeNfo).toHaveBeenCalledWith(

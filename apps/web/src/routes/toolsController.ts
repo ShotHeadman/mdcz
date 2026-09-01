@@ -1,7 +1,6 @@
-import { type FormatBytesOptions, formatBytes as formatSharedBytes } from "@mdcz/shared/format";
 import type { EmbyConnectionCheckResult, JellyfinConnectionCheckResult } from "@mdcz/shared/ipcTypes";
 import type { ToolExecuteResponse } from "@mdcz/shared/serverDtos";
-import type { FileCleanerCandidateView, PersonServer, ToolRunState } from "@mdcz/views/tools";
+import type { PersonServer, ToolRunState } from "@mdcz/views/tools";
 
 export const toRunState = (mutation: {
   isPending: boolean;
@@ -13,14 +12,6 @@ export const toRunState = (mutation: {
   data: mutation.data?.data ?? mutation.data,
   error: mutation.error?.message,
 });
-
-export const formatToolBytes = (bytes: number, options: Pick<FormatBytesOptions, "fractionDigits"> = {}): string =>
-  formatSharedBytes(bytes, options);
-
-export const fileCleanerCandidatesFromResponse = (response: ToolExecuteResponse): FileCleanerCandidateView[] => {
-  const data = response.data as { files?: string[] } | undefined;
-  return (data?.files ?? []).map((path) => ({ path }));
-};
 
 export const toMediaServerCheckResult = (
   server: PersonServer,

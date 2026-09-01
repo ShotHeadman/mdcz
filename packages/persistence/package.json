@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@mdcz/media-store": "workspace:*",
+    "@mdcz/shared": "workspace:*",
     "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.45.2"
   },

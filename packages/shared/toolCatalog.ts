@@ -4,7 +4,6 @@ export type ToolId =
   | "amazon-poster"
   | "media-library-tools"
   | "symlink-manager"
-  | "file-cleaner"
   | "batch-nfo-translator";
 
 export type ToolOverviewLayout = "featuredThird" | "standardHalf" | "compactHalf" | "compactFull";
@@ -16,7 +15,7 @@ export interface ToolDefinition {
   detailTitle: string;
   detailDescription: string;
   overviewLayout: ToolOverviewLayout;
-  overviewIcon: "file" | "bug" | "amazon" | "folder" | "link" | "trash" | "translate" | "search";
+  overviewIcon: "file" | "bug" | "amazon" | "folder" | "link" | "translate" | "search";
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -66,21 +65,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     overviewIcon: "link",
   },
   {
-    id: "file-cleaner",
-    title: "文件清理",
-    description: "扫描并删除无用附件、临时文件和冗余产物。",
-    detailTitle: "文件清理",
-    detailDescription: "根据扩展名扫描目标目录，先预览待删文件，再批量确认清理。",
-    overviewLayout: "standardHalf",
-    overviewIcon: "trash",
-  },
-  {
     id: "batch-nfo-translator",
     title: "批量翻译 NFO",
     description: "扫描待翻译字段并批量回写标题、简介等文本。",
     detailTitle: "批量翻译 NFO",
     detailDescription: "扫描现有媒体库中的 NFO，使用当前 LLM 配置批量翻译标题和简介后回写。",
-    overviewLayout: "standardHalf",
+    overviewLayout: "compactFull",
     overviewIcon: "translate",
   },
 ] as const;

@@ -1,6 +1,7 @@
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
 import type {
   CrawlerData,
   FieldDiff,
@@ -9,12 +10,24 @@ import type {
   MaintenancePresetId,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { AggregationService, DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "../scrape";
+import type { PreparedPublicationPlan } from "../publication";
+import {
+  type AggregationService,
+  applyScrapeNetworkPolicy,
+  type DownloadManager,
+  type FileOrganizer,
+  type NfoGenerator,
+  type ScrapeNetworkPolicyClient,
+  type TranslateService,
+} from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
-import { buildCommittedCrawlerData, type MaintenanceFieldSelectionSide } from "./commit";
+import { buildCommittedCrawlerData } from "./applyData";
 import { LocalScanService } from "./LocalScanService";
-import { MaintenanceFileScraper, type MaintenanceFileScraperDependencies } from "./MaintenanceFileScraper";
-import type { MaintenanceSignalService } from "./output";
+import {
+  MaintenanceFileScraper,
+  type MaintenanceFileScraperDependencies,
+  type MaintenanceSignalService,
+} from "./MaintenanceFileScraper";
 import { getMaintenancePreset, supportsMaintenanceExecution } from "./presets";
 
 export interface MaintenanceRuntimeConfigProvider {
@@ -28,17 +41,14 @@ export interface MaintenanceRuntimeDependencies {
   config: MaintenanceRuntimeConfigProvider;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
+  /**
+   * All HTTP-owning maintenance dependencies must share this client. It is
+   * configured from the current scrape policy before preview or apply work.
+   */
+  networkPolicyClient?: ScrapeNetworkPolicyClient;
   nfoGenerator: NfoGenerator;
   signalService: MaintenanceSignalService;
   translateService: TranslateService;
-  useRootHostPathAsMediaPath?: boolean;
-}
-
-export interface MaintenanceRuntimePreviewInput {
-  root: MediaRoot;
-  presetId: MaintenancePresetId;
-  refs?: Array<{ relativePath: string }>;
-  signal?: AbortSignal;
 }
 
 export interface MaintenanceRuntimePreviewEntriesInput {
@@ -59,21 +69,6 @@ export interface MaintenanceRuntimePreviewItem {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
-}
-
-export interface MaintenanceRuntimeApplyInput {
-  root: MediaRoot;
-  presetId: MaintenancePresetId;
-  preview: {
-    relativePath: string;
-    proposedCrawlerData: CrawlerData | null;
-    fieldDiffs?: FieldDiff[];
-    fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-    imageAlternatives?: MaintenanceImageAlternatives;
-  };
-  progress?: { fileIndex: number; totalFiles: number };
-  signalService?: MaintenanceSignalService;
-  signal?: AbortSignal;
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
@@ -100,6 +95,7 @@ export interface MaintenanceRuntimeApplySuccess {
   unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
   outputRelativePath: string;
+  plan?: PreparedPublicationPlan;
 }
 
 export interface MaintenanceRuntimeApplyFailure {
@@ -139,9 +135,10 @@ export class MaintenanceRuntime {
 
   constructor(private readonly deps: MaintenanceRuntimeDependencies) {}
 
-  async scan(input: { root: MediaRoot; signal?: AbortSignal }): Promise<LocalScanEntry[]> {
-    const config = await this.getPresetConfig("read_local", input.root);
-    return await this.localScanService.scan(input.root.hostPath, config.paths.sceneImagesFolder, input.signal);
+  /** Applies the current per-site scrape policy to maintenance HTTP work. */
+  async applyNetworkPolicy(): Promise<void> {
+    if (!this.deps.networkPolicyClient) return;
+    applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
   }
 
   async scanRefs(input: {
@@ -151,28 +148,7 @@ export class MaintenanceRuntime {
   }): Promise<LocalScanEntry[]> {
     const config = await this.getPresetConfig("read_local", input.root);
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
-    return await this.localScanService.scanFiles(filePaths, config.paths.sceneImagesFolder, input.signal);
-  }
-
-  async scanFilePaths(input: {
-    filePaths: string[];
-    sceneImagesFolder?: string;
-    signal?: AbortSignal;
-  }): Promise<LocalScanEntry[]> {
-    const config = await this.deps.config.get();
-    return await this.localScanService.scanFiles(
-      input.filePaths,
-      input.sceneImagesFolder ?? config.paths.sceneImagesFolder,
-      input.signal,
-    );
-  }
-
-  async preview(input: MaintenanceRuntimePreviewInput): Promise<MaintenanceRuntimePreviewItem[]> {
-    const entries = input.refs?.length
-      ? await this.scanRefs({ root: input.root, refs: input.refs, signal: input.signal })
-      : await this.scan({ root: input.root, signal: input.signal });
-
-    return await this.previewEntries({ ...input, entries });
+    return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal);
   }
 
   async previewEntries(input: MaintenanceRuntimePreviewEntriesInput): Promise<MaintenanceRuntimePreviewItem[]> {
@@ -207,38 +183,6 @@ export class MaintenanceRuntime {
     return items;
   }
 
-  async apply(input: MaintenanceRuntimeApplyInput): Promise<MaintenanceRuntimeApplyResult> {
-    const preset = getMaintenancePreset(input.presetId);
-    if (!supportsMaintenanceExecution(preset)) {
-      return {
-        status: "success",
-        entry: (await this.scanRefs({ root: input.root, refs: [input.preview] }))[0],
-        outputRelativePath: input.preview.relativePath,
-      };
-    }
-
-    const entries = await this.scanRefs({ root: input.root, refs: [input.preview], signal: input.signal });
-    const entry = entries[0];
-    if (!entry) {
-      return { status: "failed", error: `维护文件不存在：${input.preview.relativePath}` };
-    }
-
-    return await this.applyEntry({
-      root: input.root,
-      presetId: input.presetId,
-      entry,
-      committed: {
-        fieldDiffs: input.preview.fieldDiffs,
-        fieldSelections: input.preview.fieldSelections,
-        imageAlternatives: input.preview.imageAlternatives,
-        crawlerData: input.preview.proposedCrawlerData ?? undefined,
-      },
-      signal: input.signal,
-      progress: input.progress,
-      signalService: input.signalService,
-    });
-  }
-
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {
     const preset = getMaintenancePreset(input.presetId);
     if (!supportsMaintenanceExecution(preset)) {
@@ -258,8 +202,6 @@ export class MaintenanceRuntime {
         : buildCommittedCrawlerData(
             entry,
             {
-              fileId: entry.fileId,
-              status: "ready",
               fieldDiffs: input.committed?.fieldDiffs ?? [],
               proposedCrawlerData: input.committed?.crawlerData,
               imageAlternatives: input.committed?.imageAlternatives,
@@ -283,6 +225,10 @@ export class MaintenanceRuntime {
     }
 
     const updatedEntry = result.updatedEntry ?? entry;
+    const plan = result.publicationPlan;
+    if (!plan && supportsMaintenanceExecution(preset)) {
+      return { status: "failed", error: "维护应用未生成发布计划" };
+    }
     return {
       status: "success",
       entry: updatedEntry,
@@ -291,6 +237,7 @@ export class MaintenanceRuntime {
       unchangedFieldDiffs: result.unchangedFieldDiffs,
       pathDiff: result.pathDiff,
       outputRelativePath: this.toRelativePath(input.root, updatedEntry.fileInfo.filePath),
+      plan,
     };
   }
 
@@ -340,13 +287,12 @@ export class MaintenanceRuntime {
   private async getPresetConfig(presetId: MaintenancePresetId, root: MediaRoot): Promise<Configuration> {
     const preset = getMaintenancePreset(presetId);
     const baseConfig = await this.deps.config.get();
-    const mediaPath = this.deps.useRootHostPathAsMediaPath === false ? baseConfig.paths.mediaPath : root.hostPath;
     return mergeDeep(
       {
         ...baseConfig,
         paths: {
           ...baseConfig.paths,
-          mediaPath,
+          mediaPath: root.hostPath,
         },
       },
       preset.configOverrides,
