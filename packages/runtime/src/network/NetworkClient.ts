@@ -17,7 +17,33 @@ const PROBE_RANGE_HEADER = "bytes=0-0";
 const IMAGE_METADATA_PROBE_BYTES = 64 * 1024;
 const IMAGE_METADATA_PROBE_RETRY_BYTES = 256 * 1024;
 type HeaderInit = ConstructorParameters<typeof Headers>[0];
-type ImpitResponse = Awaited<ReturnType<Impit["fetch"]>>;
+export interface RawNetworkResponse {
+  readonly status: number;
+  readonly statusText: string;
+  readonly headers: Headers;
+  readonly ok: boolean;
+  readonly url: string;
+  readonly body: ReadableStream<Uint8Array> | null;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  bytes(): Promise<Uint8Array>;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+  clone(): Response;
+  abort(): void;
+}
+
+export interface RawNetworkRequest {
+  url: string;
+  init: ImpitRequestInit & {
+    headers: Headers;
+    timeout: number;
+  };
+}
+
+export type RawNetworkDispatch = (
+  request: RawNetworkRequest,
+  dispatch: () => Promise<RawNetworkResponse>,
+) => Promise<RawNetworkResponse>;
 type ProbeMethod = "HEAD" | "GET";
 type ProbeOptions = Omit<ImpitRequestInit, "method"> & {
   method?: ProbeMethod;
@@ -56,6 +82,7 @@ export interface NetworkClientOptions {
   getRetryCount?: () => number | undefined;
   rateLimiter?: RateLimiter;
   siteRequestConfigs?: readonly SiteRequestConfig[];
+  rawDispatch?: RawNetworkDispatch;
 }
 
 export interface ProbeResult {
@@ -79,7 +106,7 @@ export interface NetworkJsonResponse<T = unknown> {
 interface RequestBehavior<TResult> {
   allowNonOkResponse?: boolean;
   retryLogPrefix?: string;
-  transformResponse?: (response: ImpitResponse) => Promise<TResult> | TResult;
+  transformResponse?: (response: RawNetworkResponse) => Promise<TResult> | TResult;
 }
 
 interface ImpitClientState {
@@ -97,6 +124,8 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
   private readonly siteRequestConfigs: SiteRequestConfig[] = [];
 
+  private readonly rawDispatch?: RawNetworkDispatch;
+
   private defaultClientState: ImpitClientState | null = null;
 
   constructor(options: NetworkClientOptions = {}) {
@@ -108,6 +137,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       getRetryCount: options.getRetryCount,
     };
     this.rateLimiter = options.rateLimiter ?? new RateLimiter(5);
+    this.rawDispatch = options.rawDispatch;
     this.registerSiteRequestConfigs(options.siteRequestConfigs ?? []);
   }
 
@@ -356,7 +386,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
   }
 
-  private toProbeResult(url: string, response: ImpitResponse): ProbeResult {
+  private toProbeResult(url: string, response: RawNetworkResponse): ProbeResult {
     return {
       status: response.status,
       ok: response.ok,
@@ -379,7 +409,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     url: string,
     init: Omit<ProbeOptions, "captureImageSize">,
     byteCount: number,
-  ): Promise<{ response: ImpitResponse; result: ProbeResult }> {
+  ): Promise<{ response: RawNetworkResponse; result: ProbeResult }> {
     const response = await this.requestForProbe(url, {
       ...init,
       method: "GET",
@@ -392,7 +422,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     };
   }
 
-  private shouldRetryProbeWithImageSize(response: ImpitResponse, result: ProbeResult, byteCount: number): boolean {
+  private shouldRetryProbeWithImageSize(response: RawNetworkResponse, result: ProbeResult, byteCount: number): boolean {
     if (this.hasProbeImageSize(result) || !result.ok || byteCount >= IMAGE_METADATA_PROBE_RETRY_BYTES) {
       return false;
     }
@@ -411,18 +441,18 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     );
   }
 
-  private async request(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
+  private async request(url: string, init: ImpitRequestInit): Promise<RawNetworkResponse> {
     return this.executeRequest(url, init);
   }
 
-  private async requestForProbe(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
+  private async requestForProbe(url: string, init: ImpitRequestInit): Promise<RawNetworkResponse> {
     return this.executeRequest(url, init, undefined, {
       allowNonOkResponse: true,
       retryLogPrefix: `probe ${url}`,
     });
   }
 
-  private async executeRequest<TResult = ImpitResponse>(
+  private async executeRequest<TResult = RawNetworkResponse>(
     url: string,
     init: ImpitRequestInit,
     client?: Impit,
@@ -437,7 +467,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
         const maxRetries = this.resolveRetryCount();
         let attempt = 0;
-        const transformResponse = behavior.transformResponse ?? ((response: ImpitResponse) => response as TResult);
+        const transformResponse = behavior.transformResponse ?? ((response: RawNetworkResponse) => response as TResult);
         const retryTransportError = async (error: unknown): Promise<void> => {
           if (isAbortError(error) || init.signal?.aborted) {
             throw error;
@@ -455,7 +485,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
         };
 
         while (true) {
-          let response: ImpitResponse;
+          let response: RawNetworkResponse;
           try {
             response = await this.fetchOnce(url, init, client);
           } catch (error) {
@@ -516,7 +546,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     });
   }
 
-  private async fetchOnce(url: string, init: ImpitRequestInit, client?: Impit): Promise<ImpitResponse> {
+  private async fetchOnce(url: string, init: ImpitRequestInit, client?: Impit): Promise<RawNetworkResponse> {
     if (init.signal?.aborted) {
       throw createAbortError();
     }
@@ -525,18 +555,20 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     const headers = new Headers(init.headers);
     this.applySiteRequestConfig(url, headers);
 
-    return currentClient.fetch(url, {
+    const finalInit = {
       ...init,
       timeout: init.timeout ?? this.resolveTimeoutMs(),
       headers,
-    });
+    };
+    const dispatch = async (): Promise<RawNetworkResponse> => await currentClient.fetch(url, finalInit);
+    return this.rawDispatch ? await this.rawDispatch({ url, init: finalInit }, dispatch) : await dispatch();
   }
 
-  private toHttpError(url: string, response: ImpitResponse): Error {
+  private toHttpError(url: string, response: RawNetworkResponse): Error {
     return new Error(`HTTP ${response.status} ${response.statusText} for ${url}`);
   }
 
-  private async parseJsonResponseBody<T>(response: ImpitResponse): Promise<T | string | null> {
+  private async parseJsonResponseBody<T>(response: RawNetworkResponse): Promise<T | string | null> {
     if (response.status === 204) {
       return null;
     }
@@ -560,7 +592,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return headers;
   }
 
-  private async toProbeResultWithImageSize(url: string, response: ImpitResponse): Promise<ProbeResult> {
+  private async toProbeResultWithImageSize(url: string, response: RawNetworkResponse): Promise<ProbeResult> {
     const result = this.toProbeResult(url, response);
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? null;
     if (contentType && !contentType.startsWith("image/")) {
@@ -579,7 +611,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
   }
 
-  private shouldReadProbeBody(response: ImpitResponse): boolean {
+  private shouldReadProbeBody(response: RawNetworkResponse): boolean {
     if (response.status === 206) {
       return true;
     }
@@ -597,7 +629,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   }
 
-  private parseResponseContentLength(response: ImpitResponse): number | null {
+  private parseResponseContentLength(response: RawNetworkResponse): number | null {
     const contentRange = response.headers.get("content-range");
     if (contentRange) {
       const match = contentRange.match(/\/(\d+)$/u);
@@ -612,7 +644,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return this.parseContentLength(response.headers.get("content-length"));
   }
 
-  private getRetryAfterDelayMs(response: ImpitResponse): number | null {
+  private getRetryAfterDelayMs(response: RawNetworkResponse): number | null {
     if (response.status !== RETRY_STATUS_CODE) {
       return null;
     }
@@ -626,7 +658,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return Math.min(parsed, RETRY_AFTER_CAP_MS);
   }
 
-  private shouldRetryResponse(response: ImpitResponse): boolean {
+  private shouldRetryResponse(response: RawNetworkResponse): boolean {
     if (response.status === RETRY_STATUS_CODE) {
       return this.getRetryAfterDelayMs(response) !== null;
     }
@@ -634,7 +666,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return RETRYABLE_STATUS_CODES.has(response.status);
   }
 
-  private getRetryDelayMs(response: ImpitResponse, attempt: number): number {
+  private getRetryDelayMs(response: RawNetworkResponse, attempt: number): number {
     const retryAfterMs = this.getRetryAfterDelayMs(response);
     if (retryAfterMs !== null) {
       return retryAfterMs;

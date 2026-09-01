@@ -182,8 +182,11 @@ export class FetchNetworkClient implements RuntimeNetworkClient {
   }
 }
 
+export * from "./CrawlerReplayNetworkClient";
 export * from "./cookieChecks";
 export * from "./cookieUtils";
+export * from "./crawlerCassette";
+export * from "./crawlerFixtureContext";
 export * from "./InMemoryCookieJar";
 export * from "./NetworkClient";
 export * from "./RateLimiter";

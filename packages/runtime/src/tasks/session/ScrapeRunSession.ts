@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
+import { runWithScrapeItemContext } from "../../network/crawlerFixtureContext";
 import { TaskExecutor } from "../executor";
 
 export const MAX_LIVE_SCRAPE_LOGS = 200;
@@ -25,6 +26,7 @@ export interface ScrapeRunItem<TManualScrape = unknown> {
   executionSource?: RootFileRef;
   replaceExistingTargets?: boolean;
   outputBaseDirectory?: string;
+  caseId?: string;
 }
 
 export interface ScrapeRunItemSnapshot<TManualScrape = unknown> extends ScrapeRunItem<TManualScrape> {
@@ -342,7 +344,11 @@ export class ScrapeRunSession<TManualScrape = unknown> {
           if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
           const release = this.options.acquireItem?.(item) ?? (() => undefined);
           try {
-            return { result: await this.options.executeItem(item, context.signal, attemptId), release };
+            const result = await runWithScrapeItemContext(
+              { itemId: item.id, relativePath: item.relativePath, caseId: item.caseId },
+              async () => await this.options.executeItem(item, context.signal, attemptId),
+            );
+            return { result, release };
           } catch (error) {
             release();
             throw error;

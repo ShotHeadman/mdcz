@@ -381,4 +381,31 @@ describe("NetworkClient retry policy", () => {
     expect(subdomainHeaders.get("referer")).toBe("https://www.javbus.com/");
     expect(subdomainHeaders.get("accept-language")).toContain("zh-CN");
   });
+
+  it("dispatches the final request after site headers are applied and before the response is consumed", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("raw body", { status: 200 }));
+    const dispatched: Array<{ url: string; method: string | undefined; referer: string | null; timeout: number }> = [];
+    const client = new NetworkClient({
+      timeoutMs: 4321,
+      rawDispatch: async (request, dispatch) => {
+        dispatched.push({
+          url: request.url,
+          method: request.init.method,
+          referer: request.init.headers.get("referer"),
+          timeout: request.init.timeout,
+        });
+        return await dispatch();
+      },
+    });
+
+    await expect(client.getText("https://example.com/final-request")).resolves.toBe("raw body");
+    expect(dispatched).toEqual([
+      {
+        url: "https://example.com/final-request",
+        method: "GET",
+        referer: "https://example.com/",
+        timeout: 4321,
+      },
+    ]);
+  });
 });
