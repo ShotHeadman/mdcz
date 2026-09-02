@@ -117,7 +117,7 @@ export const publishCrawlerRecordingStaging = async (options: {
   publishRoot: string;
   observations?: readonly CrawlerRecordingObservation[];
   redactor?: CrawlerCredentialRedactor;
-}): Promise<void> => {
+}): Promise<CrawlerCassette[]> => {
   const cassettes = await validateCrawlerRecordingStaging(options);
   for (const cassette of cassettes) {
     const source = resolveCrawlerCassetteDirectory(options.stagingRoot, cassette.website, cassette.caseId);
@@ -125,4 +125,5 @@ export const publishCrawlerRecordingStaging = async (options: {
     await rm(destination, { recursive: true, force: true });
     await cp(source, destination, { recursive: true });
   }
+  return cassettes;
 };

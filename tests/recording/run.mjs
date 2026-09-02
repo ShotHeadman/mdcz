@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -9,17 +10,40 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const pnpmCli = resolvePnpmCli(process.env.npm_execpath);
 const args = process.argv.slice(2);
 const mode = args[0] === "desktop" || args[0] === "webui" ? args[0] : "webui";
+const receiptPath =
+  process.env.MDCZ_RECORD_RECEIPT?.trim() || path.join(workspaceRoot, "test-results/recording/validated.json");
+const journeyOutput = path.resolve(
+  workspaceRoot,
+  process.env.MDCZ_RECORD_JOURNEY_OUTPUT?.trim() ||
+    path.join("tests", "recording", "journeys", "web-representative-batch.spec.ts"),
+);
 const env = {
   ...process.env,
   MDCZ_RECORD_CRAWLER: "1",
   MDCZ_RECORD_STAGING:
     process.env.MDCZ_RECORD_STAGING?.trim() || path.join(workspaceRoot, "test-results/recording/staging"),
   MDCZ_RECORD_PUBLISH: process.env.MDCZ_RECORD_PUBLISH?.trim() || path.join(workspaceRoot, "tests/fixtures/crawler"),
+  MDCZ_RECORD_MEDIA_STAGING:
+    process.env.MDCZ_RECORD_MEDIA_STAGING?.trim() || path.join(workspaceRoot, "test-results/recording/media-staging"),
+  MDCZ_RECORD_MEDIA_PUBLISH:
+    process.env.MDCZ_RECORD_MEDIA_PUBLISH?.trim() || path.join(workspaceRoot, "tests/fixtures/media"),
+  MDCZ_RECORD_MEDIA_BLOBS:
+    process.env.MDCZ_RECORD_MEDIA_BLOBS?.trim() || path.join(workspaceRoot, "tests/fixtures/media"),
+  MDCZ_RECORD_RECEIPT: receiptPath,
 };
 
-const run = (command, commandArgs) =>
+const resolveStagingRoot = (value) => {
+  const resolved = path.resolve(workspaceRoot, value);
+  const relative = path.relative(workspaceRoot, resolved);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Recording staging must stay inside the workspace: ${resolved}`);
+  }
+  return resolved;
+};
+
+const run = (command, commandArgs, childEnv = env) =>
   new Promise((resolve, reject) => {
-    const child = spawn(command, commandArgs, { cwd: workspaceRoot, env, stdio: "inherit" });
+    const child = spawn(command, commandArgs, { cwd: workspaceRoot, env: childEnv, stdio: "inherit" });
     const shutdown = () => child.kill("SIGTERM");
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
@@ -53,11 +77,18 @@ const waitForUrl = async (url, timeoutMs = 60_000) => {
 };
 
 console.log("Recording crawler fixtures from whatever items you scrape.");
+await Promise.all([
+  rm(receiptPath, { force: true }),
+  rm(resolveStagingRoot(env.MDCZ_RECORD_STAGING), { recursive: true, force: true }),
+  rm(resolveStagingRoot(env.MDCZ_RECORD_MEDIA_STAGING), { recursive: true, force: true }),
+]);
 
 if (mode === "desktop") {
-  console.log("Desktop recording starts the real app. Scrape any items, then stop the process to publish.");
-  await runPnpm(["dev:desktop"]);
+  console.log("Desktop recording starts the product through the Electron Playwright harness.");
+  await runPnpm(["build:desktop"]);
+  await run(process.execPath, ["tests/recording/desktop.mjs"], { ...env, PWDEBUG: "1" });
 } else {
+  await mkdir(path.dirname(journeyOutput), { recursive: true });
   const webui = spawn(
     /\.(?:c?js|mjs)$/iu.test(pnpmCli) ? process.execPath : pnpmCli,
     /\.(?:c?js|mjs)$/iu.test(pnpmCli) ? [pnpmCli, "dev:webui"] : ["dev:webui"],
@@ -66,12 +97,26 @@ if (mode === "desktop") {
   const shutdownWebui = () => {
     if (webui.exitCode === null) webui.kill("SIGTERM");
   };
+  const webuiExited = new Promise((resolve, reject) => {
+    webui.once("error", reject);
+    webui.once("exit", resolve);
+  });
   process.once("SIGINT", shutdownWebui);
   process.once("SIGTERM", shutdownWebui);
   try {
     await waitForUrl("http://127.0.0.1:5173");
-    await runPnpm(["exec", "playwright", "codegen", "http://127.0.0.1:5173"]);
+    await runPnpm(["exec", "playwright", "codegen", "--output", journeyOutput, "http://127.0.0.1:5173"]);
   } finally {
     shutdownWebui();
+    await webuiExited;
+    process.removeListener("SIGINT", shutdownWebui);
+    process.removeListener("SIGTERM", shutdownWebui);
   }
 }
+
+const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+if (receipt.schemaVersion !== 1 || !Array.isArray(receipt.files) || receipt.files.length === 0) {
+  throw new Error(`Recording validation receipt is invalid: ${receiptPath}`);
+}
+console.log(`Recording validated and published ${receipt.files.length} manifest file(s)`);
+if (mode === "webui") console.log(`Saved the Web Playwright journey to ${journeyOutput}`);

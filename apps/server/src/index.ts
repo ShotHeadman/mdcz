@@ -1,4 +1,4 @@
-import { finalizeCrawlerRecording } from "@mdcz/runtime/network";
+import { finalizeCrawlerFixtures } from "@mdcz/runtime/network";
 import { buildServer } from "./app";
 import { parseHost, parsePort } from "./config";
 
@@ -6,18 +6,31 @@ const startServer = async (): Promise<void> => {
   const port = parsePort(process.env.PORT);
   const host = parseHost(process.env.MDCZ_HOST);
   const { fastify } = buildServer();
+  let shutdownPromise: Promise<void> | undefined;
 
-  const shutdown = async (): Promise<void> => {
-    await finalizeCrawlerRecording();
-    await fastify.close();
+  const shutdown = (): Promise<void> => {
+    shutdownPromise ??= (async () => {
+      try {
+        await fastify.close();
+      } finally {
+        await finalizeCrawlerFixtures();
+      }
+    })();
+    return shutdownPromise;
   };
 
-  process.once("SIGINT", () => {
-    void shutdown().finally(() => process.exit(0));
-  });
-  process.once("SIGTERM", () => {
-    void shutdown().finally(() => process.exit(0));
-  });
+  const shutdownForSignal = (): void => {
+    void shutdown().then(
+      () => process.exit(0),
+      (error) => {
+        console.error(error);
+        process.exit(1);
+      },
+    );
+  };
+
+  process.once("SIGINT", shutdownForSignal);
+  process.once("SIGTERM", shutdownForSignal);
 
   await fastify.listen({
     host,

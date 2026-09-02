@@ -1,7 +1,7 @@
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets } from "@mdcz/shared/types";
-import type { RuntimeDownloadNetworkClient } from "../../network";
+import { type RuntimeDownloadNetworkClient, runWithMediaFixtureContext } from "../../network";
 import { type RuntimeLogger, runtimeLoggerService } from "../../shared";
 import type { ImageAlternatives } from "../aggregation";
 import { throwIfAborted } from "../utils/abort";
@@ -78,14 +78,13 @@ export class DownloadManager {
 
     throwIfAborted(plan.signal);
 
-    for (const downloader of this.downloaders) {
-      if (!downloader.shouldDownload(plan)) {
-        continue;
+    await runWithMediaFixtureContext(async () => {
+      for (const downloader of this.downloaders) {
+        if (!downloader.shouldDownload(plan)) continue;
+        throwIfAborted(plan.signal);
+        await downloader.download(context);
       }
-
-      throwIfAborted(plan.signal);
-      await downloader.download(context);
-    }
+    });
 
     const downloadedPaths = new Set(assets.downloaded);
     const existingKinds = [

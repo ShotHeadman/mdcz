@@ -191,5 +191,8 @@ export * from "./crawlerCredentials";
 export * from "./crawlerFixtureContext";
 export * from "./crawlerRecordingPublish";
 export * from "./InMemoryCookieJar";
+export * from "./MediaReplayNetworkClient";
+export * from "./mediaFixture";
+export * from "./mediaRecordingPublish";
 export * from "./NetworkClient";
 export * from "./RateLimiter";

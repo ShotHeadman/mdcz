@@ -12,13 +12,23 @@ const pnpmCli = resolvePnpmCli(process.env.npm_execpath);
 const rawPlaywrightArgs = process.argv.slice(2);
 const normalizedPlaywrightArgs = rawPlaywrightArgs[0] === "--" ? rawPlaywrightArgs.slice(1) : rawPlaywrightArgs;
 const liveMode = normalizedPlaywrightArgs.includes("--live");
-const playwrightArgs = normalizedPlaywrightArgs.filter((argument) => argument !== "--live");
+const fixtureMode = normalizedPlaywrightArgs.includes("--fixture");
+if (liveMode && fixtureMode) throw new Error("Choose either --live or --fixture, not both");
+const playwrightArgs = normalizedPlaywrightArgs.filter((argument) => argument !== "--live" && argument !== "--fixture");
 const workspacePackage = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
 const appVersion = typeof workspacePackage.version === "string" ? workspacePackage.version : "unknown";
 
 const playwrightTarget = resolvePlaywrightTarget(playwrightArgs);
 const isDesktopOnly = playwrightTarget === "desktop-electron";
 const layout = resolveE2ERunnerLayout(workspaceRoot, playwrightTarget);
+const fixtureEnv = fixtureMode
+  ? {
+      MDCZ_REPLAY_CRAWLER: "1",
+      MDCZ_REPLAY_CRAWLER_FIXTURES: path.join(workspaceRoot, "tests", "fixtures", "crawler"),
+      MDCZ_REPLAY_MEDIA_MANIFESTS: path.join(workspaceRoot, "tests", "fixtures", "media"),
+      MDCZ_REPLAY_MEDIA_BLOBS: path.join(workspaceRoot, ".test-fixtures", "media"),
+    }
+  : {};
 
 const run = (command, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -118,6 +128,7 @@ try {
     cwd: workspaceRoot,
     env: {
       ...process.env,
+      ...fixtureEnv,
       MDCZ_HOME: layout.serverRuntimeRoot,
       MDCZ_HOST: host,
       MDCZ_WEB_DIST_DIR: path.join(workspaceRoot, "apps", "server", "dist", "web"),
@@ -137,8 +148,10 @@ try {
   await runPnpm(["exec", "playwright", "test", "--config", "playwright.config.ts", ...playwrightArgs], {
     env: {
       ...process.env,
+      ...fixtureEnv,
       MDCZ_E2E_BASE_URL: baseURL,
-      MDCZ_E2E_LIVE: liveMode ? "1" : "0",
+      MDCZ_E2E_LIVE: liveMode || fixtureMode ? "1" : "0",
+      MDCZ_E2E_FIXTURE: fixtureMode ? "1" : "0",
       MDCZ_E2E_ADMIN_PASSWORD: "mdcz-e2e-admin-password",
       MDCZ_APP_VERSION: appVersion,
       MDCZ_E2E_DESKTOP_USER_DATA_DIR: layout.desktopUserDataDir,

@@ -11,7 +11,7 @@ import { TrayService } from "@main/services/TrayService";
 import { UpdateService } from "@main/services/UpdateService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
 import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
-import { createCrawlerNetworkClient, finalizeCrawlerRecording } from "@mdcz/runtime/network";
+import { createCrawlerNetworkClient, finalizeCrawlerFixtures } from "@mdcz/runtime/network";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { app, BrowserWindow } from "electron";
 
@@ -31,6 +31,8 @@ let serviceContainer: ServiceContainer | null = null;
 const trayService = new TrayService();
 const shortcutService = new ShortcutService();
 let cleanupPromise: Promise<void> | null = null;
+let cleanupFinished = false;
+let quitRequested = false;
 let disposeShortcutConfigListener: (() => void) | null = null;
 let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) => {
   signalService.forwardLoggerLog(payload);
@@ -38,7 +40,7 @@ let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) =
 
 const scheduleForceExit = (): void => {
   const timer = setTimeout(() => {
-    app.exit(0);
+    app.exit(typeof process.exitCode === "number" && process.exitCode !== 0 ? process.exitCode : 1);
   }, QUIT_FORCE_EXIT_TIMEOUT_MS);
   timer.unref?.();
 };
@@ -98,11 +100,18 @@ const cleanupResources = async (): Promise<void> => {
   cleanupPromise = (async () => {
     const logger = loggerService.getLogger("Main");
     try {
-      await finalizeCrawlerRecording();
       await serviceContainer?.shutdown();
     } catch (error) {
       const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
       logger.error(`Failed to shutdown services cleanly: ${message}`);
+      process.exitCode = 1;
+    }
+    try {
+      await finalizeCrawlerFixtures();
+    } catch (error) {
+      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      logger.error(`Failed to finalize network fixtures: ${message}`);
+      process.exitCode = 1;
     }
 
     disposeLoggerListener?.();
@@ -192,8 +201,21 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  app.on("before-quit", () => {
-    void cleanupResources();
+  app.on("before-quit", (event) => {
+    if (cleanupFinished) return;
+    event.preventDefault();
+    if (quitRequested) return;
+    quitRequested = true;
     scheduleForceExit();
+    void cleanupResources()
+      .catch((error) => {
+        const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        loggerService.getLogger("Main").error(`Failed to clean up main process resources: ${message}`);
+        process.exitCode = 1;
+      })
+      .finally(() => {
+        cleanupFinished = true;
+        app.quit();
+      });
   });
 }

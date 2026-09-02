@@ -33,10 +33,13 @@
     "test:coverage": "vitest run --coverage --project unit --project integration --project desktop-integration --project contract --silent",
     "test:coverage:desktop": "vitest run --config vitest.desktop-coverage.config.ts --coverage --silent",
     "test:e2e": "node tests/e2e/web/run.mjs",
+    "test:e2e:fixtures": "node tests/e2e/web/run.mjs --fixture",
     "test:live": "node tests/live/run-live.mjs",
     "record:webui": "node tests/recording/run.mjs webui",
     "record:desktop": "node tests/recording/run.mjs desktop",
     "record:publish": "node tests/recording/publish.mjs",
+    "fixtures:media:hydrate": "node tests/recording/hydrate-media.mjs",
+    "fixtures:media:verify": "node tests/recording/verify-media.mjs",
     "typecheck": "tsc -b --pretty false",
     "typecheck:apps": "pnpm --filter @mdcz/server --filter @mdcz/web typecheck",
     "format": "biome check --write"

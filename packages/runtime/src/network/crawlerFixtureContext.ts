@@ -11,6 +11,10 @@ export interface CrawlerSourceContext {
   website: Website;
 }
 
+export interface MediaFixtureContext {
+  active: true;
+}
+
 export interface CrawlerFixtureContext {
   item: ScrapeItemContext & { caseId: string };
   source: CrawlerSourceContext;
@@ -19,6 +23,7 @@ export interface CrawlerFixtureContext {
 interface ScrapeExecutionContext {
   item?: ScrapeItemContext & { active: boolean };
   source?: CrawlerSourceContext & { active: boolean };
+  media?: { active: boolean };
 }
 
 const scrapeExecutionStorage = new AsyncLocalStorage<ScrapeExecutionContext>();
@@ -48,6 +53,16 @@ export const runWithCrawlerSourceContext = async <T>(website: Website, run: () =
   }
 };
 
+export const runWithMediaFixtureContext = async <T>(run: () => Promise<T>): Promise<T> => {
+  const active = scrapeExecutionStorage.getStore();
+  const media = { active: true };
+  try {
+    return await scrapeExecutionStorage.run({ ...active, media }, run);
+  } finally {
+    media.active = false;
+  }
+};
+
 export const getScrapeItemContext = (): ScrapeItemContext | undefined => {
   const item = scrapeExecutionStorage.getStore()?.item;
   if (!item?.active) return undefined;
@@ -69,4 +84,11 @@ export const getCrawlerFixtureContext = (): CrawlerFixtureContext | undefined =>
     item: { itemId: active.item.itemId, relativePath: active.item.relativePath, caseId },
     source: { website: active.source.website },
   };
+};
+
+export const getMediaFixtureContext = (): (ScrapeItemContext & { caseId: string }) | undefined => {
+  const active = scrapeExecutionStorage.getStore();
+  const caseId = active?.item?.caseId?.trim();
+  if (!active?.item?.active || !active.media?.active || !caseId) return undefined;
+  return { itemId: active.item.itemId, relativePath: active.item.relativePath, caseId };
 };

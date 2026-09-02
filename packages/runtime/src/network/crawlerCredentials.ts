@@ -2,6 +2,7 @@ import type { CrawlerCredentialSeed } from "./crawlerCassette";
 
 const MIN_SECRET_LENGTH = 8;
 const TOKEN_QUERY_NAME = /token|csrf|auth|session|secret|password|passwd|access_key|api_key/iu;
+const FORM_CREDENTIAL = /(?:^|[&\s])([^=&\s]+)=([^&\s]+)/gu;
 
 export interface ObservedCredential {
   name: string;
@@ -90,6 +91,42 @@ export class CrawlerCredentialRedactor {
       const separator = pair.indexOf("=");
       if (separator <= 0) continue;
       this.register(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim(), "cookie");
+    }
+  }
+
+  observeRequestBody(bytes: Uint8Array, headers: Headers): void {
+    const text = Buffer.from(bytes).toString("utf8").trim();
+    if (!text) return;
+    const contentType = headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.includes("json") || text.startsWith("{") || text.startsWith("[")) {
+      try {
+        const visit = (value: unknown, key = "token"): void => {
+          if (typeof value === "string") {
+            if (TOKEN_QUERY_NAME.test(key)) this.register(key, value, "token");
+            return;
+          }
+          if (Array.isArray(value)) {
+            for (const item of value) visit(item, key);
+            return;
+          }
+          if (value && typeof value === "object") {
+            for (const [childKey, child] of Object.entries(value)) visit(child, childKey);
+          }
+        };
+        visit(JSON.parse(text));
+      } catch {
+        return;
+      }
+    }
+    for (const match of text.matchAll(FORM_CREDENTIAL)) {
+      const name = match[1] ?? "";
+      const value = match[2] ?? "";
+      if (!TOKEN_QUERY_NAME.test(name)) continue;
+      try {
+        this.register(name, decodeURIComponent(value), "token");
+      } catch {
+        this.register(name, value, "token");
+      }
     }
   }
 

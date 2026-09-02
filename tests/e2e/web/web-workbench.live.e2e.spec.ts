@@ -69,6 +69,7 @@ test.describe
     });
 
     test("refreshes seeded NFO data through the built Web product", async ({ page }, testInfo) => {
+      test.skip(process.env.MDCZ_E2E_FIXTURE === "1", "Fixture replay keeps one representative scrape journey");
       test.setTimeout(WORKBENCH_REFRESH_JOURNEY_TIMEOUT_MS);
       await runReportedWorkbenchJourney({
         testInfo,

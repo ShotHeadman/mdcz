@@ -2,6 +2,7 @@ import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import {
+  isAbsoluteHostPath,
   mergeMediaCandidates,
   resolveMediaCandidateScanPlan,
   resolveSuccessTargetDir,
@@ -180,11 +181,11 @@ export function WorkbenchSetupAdapter({
     }
 
     const nextScanDir = config.paths?.mediaPath?.trim() ?? "";
-    const nextTargetDir = resolveSuccessTargetDir(nextScanDir, config.paths?.successOutputFolder);
-    if (nextScanDir && !scanDir) {
+    const nextTargetDir = nextScanDir ? resolveSuccessTargetDir(nextScanDir, config.paths?.successOutputFolder) : "";
+    if (nextScanDir && (!scanDir || !isAbsoluteHostPath(scanDir))) {
       setScanDir(nextScanDir);
     }
-    if (mode === "scrape" && nextTargetDir && !targetDir) {
+    if (mode === "scrape" && nextTargetDir && (!targetDir || !isAbsoluteHostPath(targetDir))) {
       setTargetDir(nextTargetDir);
     }
     initializedRef.current = true;
@@ -207,7 +208,7 @@ export function WorkbenchSetupAdapter({
         return;
       }
       setScanDir(selectedPath);
-      if (mode === "scrape" && !targetDir) {
+      if (mode === "scrape" && (!targetDir || !isAbsoluteHostPath(targetDir))) {
         setTargetDir(resolveSuccessTargetDir(selectedPath, config?.paths?.successOutputFolder));
       }
     } catch (error) {
@@ -279,7 +280,7 @@ export function WorkbenchSetupAdapter({
       onBrowseTargetDir={mode === "scrape" ? handleChooseTargetDir : undefined}
       onScanDirChange={(value) => {
         setScanDir(value);
-        if (mode === "scrape" && !targetDir) {
+        if (mode === "scrape" && (!targetDir || !isAbsoluteHostPath(targetDir))) {
           setTargetDir(resolveSuccessTargetDir(value, config?.paths?.successOutputFolder));
         }
       }}

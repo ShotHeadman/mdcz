@@ -1,7 +1,8 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import type { Website } from "@mdcz/shared/enums";
+import { CrawlerReplayNetworkClient } from "./CrawlerReplayNetworkClient";
 import {
   type CrawlerCassette,
   type CrawlerCassetteInteraction,
@@ -13,8 +14,13 @@ import {
   sha256Hex,
 } from "./crawlerCassette";
 import { CrawlerCredentialRedactor } from "./crawlerCredentials";
-import { getCrawlerFixtureContext } from "./crawlerFixtureContext";
-import { type CrawlerRecordingObservation, publishCrawlerRecordingStaging } from "./crawlerRecordingPublish";
+import { getCrawlerFixtureContext, getMediaFixtureContext } from "./crawlerFixtureContext";
+import {
+  type CrawlerRecordingObservation,
+  publishCrawlerRecordingStaging,
+  validateCrawlerRecordingStaging,
+} from "./crawlerRecordingPublish";
+import { MediaFixtureRecorder } from "./MediaFixtureRecorder";
 import {
   NetworkClient,
   type NetworkClientOptions,
@@ -25,6 +31,10 @@ import {
 export interface CrawlerRecordNetworkClientOptions {
   stagingRoot: string;
   publishRoot: string;
+  mediaManifestStagingRoot?: string;
+  mediaManifestPublishRoot?: string;
+  mediaBlobRoot?: string;
+  receiptPath?: string;
   network?: Omit<NetworkClientOptions, "rawDispatch">;
 }
 
@@ -39,7 +49,7 @@ interface SessionState {
 }
 
 const sessionKey = (website: Website, caseId: string): string => `${website}\u0000${caseId}`;
-const recordingCaseIdBindings = new Map<string, string>();
+const fixtureCaseIdBindings = new Map<string, string>();
 
 const paddedSequence = (sequence: number): string => String(sequence).padStart(3, "0");
 
@@ -51,9 +61,12 @@ const captureResponseBytes = async (response: RawNetworkResponse): Promise<Uint8
 export class CrawlerRecordNetworkClient extends NetworkClient {
   private readonly stagingRoot: string;
   private readonly publishRoot: string;
+  private readonly mediaManifestStagingRoot: string;
   private readonly redactor = new CrawlerCredentialRedactor();
+  private readonly receiptPath: string | undefined;
   private readonly sessions = new Map<string, SessionState>();
   private readonly sequenceLocks = new Map<string, Promise<void>>();
+  private readonly mediaRecorder: MediaFixtureRecorder;
 
   constructor(options: CrawlerRecordNetworkClientOptions) {
     super({
@@ -62,6 +75,18 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     });
     this.stagingRoot = path.resolve(options.stagingRoot);
     this.publishRoot = path.resolve(options.publishRoot);
+    this.receiptPath = options.receiptPath ? path.resolve(options.receiptPath) : undefined;
+    this.mediaManifestStagingRoot = path.resolve(
+      options.mediaManifestStagingRoot ?? "test-results/recording/media-staging",
+    );
+    this.mediaRecorder = new MediaFixtureRecorder(
+      {
+        stagingRoot: this.mediaManifestStagingRoot,
+        publishRoot: path.resolve(options.mediaManifestPublishRoot ?? "tests/fixtures/media"),
+        blobRoot: path.resolve(options.mediaBlobRoot ?? "tests/fixtures/media"),
+      },
+      this.redactor,
+    );
   }
 
   observations(): CrawlerRecordingObservation[] {
@@ -73,14 +98,47 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
   }
 
   async finalize(): Promise<void> {
-    await Promise.all([...this.sessions.values()].map(async (session) => await session.writeChain));
-    await publishCrawlerRecordingStaging({
+    await Promise.all([
+      ...[...this.sessions.values()].map(async (session) => await session.writeChain),
+      this.mediaRecorder.flush(),
+    ]);
+    await Promise.all([...this.sessions.values()].map(async (session) => await this.refreshRedactions(session)));
+    const crawlerPublishOptions = {
       stagingRoot: this.stagingRoot,
       publishRoot: this.publishRoot,
       observations: this.observations(),
       redactor: this.redactor,
-    });
-    recordingCaseIdBindings.clear();
+    };
+    if (this.sessions.size + this.mediaRecorder.caseIds().length === 0) {
+      throw new Error("Recording did not capture any crawler or media interactions");
+    }
+    await Promise.all([validateCrawlerRecordingStaging(crawlerPublishOptions), this.mediaRecorder.validate()]);
+    const receiptFiles = await Promise.all([
+      ...this.observations().map(async ({ website, caseId }) => {
+        const filePath = path.join(resolveCrawlerCassetteDirectory(this.stagingRoot, website, caseId), "cassette.json");
+        return {
+          path: path.posix.join("crawler", website, caseId, "cassette.json"),
+          sha256: sha256Hex(await readFile(filePath)),
+        };
+      }),
+      ...this.mediaRecorder.caseIds().map(async (caseId) => {
+        const filePath = path.join(this.mediaManifestStagingRoot, caseId, "manifest.json");
+        return {
+          path: path.posix.join("media", caseId, "manifest.json"),
+          sha256: sha256Hex(await readFile(filePath)),
+        };
+      }),
+    ]);
+    if (this.receiptPath) {
+      await mkdir(path.dirname(this.receiptPath), { recursive: true });
+      await atomicWriteFile(
+        this.receiptPath,
+        `${JSON.stringify({ schemaVersion: 1, files: receiptFiles.sort((left, right) => left.path.localeCompare(right.path)) }, null, 2)}\n`,
+      );
+    }
+    await publishCrawlerRecordingStaging(crawlerPublishOptions);
+    await this.mediaRecorder.publish();
+    fixtureCaseIdBindings.clear();
   }
 
   private async dispatchAndRecord(
@@ -88,7 +146,10 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     dispatch: () => Promise<RawNetworkResponse>,
   ): Promise<RawNetworkResponse> {
     const context = getCrawlerFixtureContext();
-    if (!context) return await dispatch();
+    if (!context) {
+      const mediaContext = getMediaFixtureContext();
+      return mediaContext ? await this.mediaRecorder.dispatch(mediaContext, request, dispatch) : await dispatch();
+    }
 
     const { website } = context.source;
     const { caseId, relativePath } = context.item;
@@ -165,6 +226,7 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     this.redactor.observeUrl(request.url);
     this.redactor.observeHeaders(request.init.headers);
     const requestBodyBytes = await this.requestBodyBytes(request);
+    if (requestBodyBytes) this.redactor.observeRequestBody(requestBodyBytes, request.init.headers);
     if ("response" in outcome) this.redactor.observeHeaders(outcome.response.headers);
 
     const inspect = this.inspectionText(request, requestBodyBytes, outcome);
@@ -175,6 +237,14 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     const redactedUrl = this.redactor.redactString(request.url);
     const redactedRequestHeaders = this.redactHeaders(request.init.headers);
     const redactedRequestBody = requestBodyBytes ? this.redactor.redactBytes(requestBodyBytes) : null;
+    if (
+      requestBodyBytes &&
+      redactedRequestBody &&
+      requestBodyBytes.byteLength !== redactedRequestBody.byteLength &&
+      redactedRequestHeaders.has("content-length")
+    ) {
+      redactedRequestHeaders.set("content-length", String(redactedRequestBody.byteLength));
+    }
     const interaction: CrawlerCassetteInteraction = {
       sequence,
       request: {
@@ -254,6 +324,56 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     return encoded ? new Uint8Array(Buffer.from(encoded, "base64")) : null;
   }
 
+  private async refreshRedactions(session: SessionState): Promise<void> {
+    const directory = resolveCrawlerCassetteDirectory(this.stagingRoot, session.website, session.caseId);
+    for (const interaction of session.interactions.values()) {
+      const requestBody = interaction.request.bodyBase64 ? Buffer.from(interaction.request.bodyBase64, "base64") : null;
+      let responseBody: Uint8Array | null = null;
+      if (interaction.response) responseBody = await readFile(path.join(directory, interaction.response.bodyPath));
+      const inspect = [
+        interaction.request.url,
+        JSON.stringify(interaction.request.headers),
+        requestBody ? Buffer.from(requestBody).toString("utf8") : "",
+        interaction.response?.url ?? "",
+        JSON.stringify(interaction.response?.headers ?? []),
+        responseBody ? Buffer.from(responseBody).toString("utf8") : "",
+        interaction.transportError?.name ?? "",
+        interaction.transportError?.message ?? "",
+      ].join("\n");
+      for (const secret of this.redactor.secrets()) {
+        if (inspect.includes(secret.real)) session.observedReals.add(secret.real);
+      }
+
+      interaction.request.url = this.redactor.redactString(interaction.request.url);
+      const requestHeaders = this.redactHeaders(new Headers(interaction.request.headers));
+      if (requestBody) {
+        const redacted = this.redactor.redactBytes(requestBody);
+        interaction.request.bodyBase64 = Buffer.from(redacted).toString("base64");
+        if (requestBody.byteLength !== redacted.byteLength && requestHeaders.has("content-length")) {
+          requestHeaders.set("content-length", String(redacted.byteLength));
+        }
+      }
+      interaction.request.headers = headersToCassetteList(requestHeaders);
+
+      if (interaction.response && responseBody) {
+        const redacted = this.redactor.redactBytes(responseBody);
+        const responseHeaders = this.redactHeaders(new Headers(interaction.response.headers));
+        if (responseBody.byteLength !== redacted.byteLength && responseHeaders.has("content-length")) {
+          responseHeaders.set("content-length", String(redacted.byteLength));
+        }
+        interaction.response.url = this.redactor.redactString(interaction.response.url);
+        interaction.response.headers = headersToCassetteList(responseHeaders);
+        interaction.response.sha256 = sha256Hex(redacted);
+        await atomicWriteFile(path.join(directory, interaction.response.bodyPath), redacted);
+      }
+      if (interaction.transportError) {
+        interaction.transportError.name = this.redactor.redactString(interaction.transportError.name);
+        interaction.transportError.message = this.redactor.redactString(interaction.transportError.message);
+      }
+    }
+    await this.writeCassette(session);
+  }
+
   private async writeCassette(session: SessionState): Promise<void> {
     const interactions = [...session.interactions.entries()]
       .sort(([left], [right]) => left - right)
@@ -273,15 +393,31 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
 
 const DEFAULT_STAGING_ROOT = "test-results/recording/staging";
 const DEFAULT_PUBLISH_ROOT = "tests/fixtures/crawler";
+const DEFAULT_MEDIA_MANIFEST_STAGING_ROOT = "test-results/recording/media-staging";
+const DEFAULT_MEDIA_MANIFEST_PUBLISH_ROOT = "tests/fixtures/media";
+const DEFAULT_MEDIA_BLOB_ROOT = "tests/fixtures/media";
 
 interface ResolvedRecordingSettings {
   stagingRoot: string;
   publishRoot: string;
+  mediaManifestStagingRoot: string;
+  mediaManifestPublishRoot: string;
+  mediaBlobRoot: string;
+  receiptPath: string;
+}
+
+interface ResolvedReplaySettings {
+  crawlerFixturesRoot: string;
+  mediaManifestRoot: string;
+  mediaBlobRoot: string;
 }
 
 let envSettings: ResolvedRecordingSettings | undefined;
 let envSettingsResolved = false;
 let envRecorder: CrawlerRecordNetworkClient | undefined;
+let envReplaySettings: ResolvedReplaySettings | undefined;
+let envReplaySettingsResolved = false;
+let envReplay: CrawlerReplayNetworkClient | undefined;
 
 const envFlagEnabled = (value: string | undefined): boolean => {
   const normalized = value?.trim().toLowerCase();
@@ -295,6 +431,10 @@ export const resolveCrawlerRecordingSettingsFromEnv = (
   return {
     stagingRoot: env.MDCZ_RECORD_STAGING?.trim() || DEFAULT_STAGING_ROOT,
     publishRoot: env.MDCZ_RECORD_PUBLISH?.trim() || DEFAULT_PUBLISH_ROOT,
+    mediaManifestStagingRoot: env.MDCZ_RECORD_MEDIA_STAGING?.trim() || DEFAULT_MEDIA_MANIFEST_STAGING_ROOT,
+    mediaManifestPublishRoot: env.MDCZ_RECORD_MEDIA_PUBLISH?.trim() || DEFAULT_MEDIA_MANIFEST_PUBLISH_ROOT,
+    mediaBlobRoot: env.MDCZ_RECORD_MEDIA_BLOBS?.trim() || DEFAULT_MEDIA_BLOB_ROOT,
+    receiptPath: env.MDCZ_RECORD_RECEIPT?.trim() || "test-results/recording/validated.json",
   };
 };
 
@@ -306,11 +446,43 @@ const cachedRecordingSettings = (): ResolvedRecordingSettings | undefined => {
   return envSettings;
 };
 
+const resolveCrawlerReplaySettingsFromEnv = (
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedReplaySettings | undefined => {
+  if (!envFlagEnabled(env.MDCZ_REPLAY_CRAWLER)) return undefined;
+  return {
+    crawlerFixturesRoot: env.MDCZ_REPLAY_CRAWLER_FIXTURES?.trim() || "tests/fixtures/crawler",
+    mediaManifestRoot: env.MDCZ_REPLAY_MEDIA_MANIFESTS?.trim() || "tests/fixtures/media",
+    mediaBlobRoot: env.MDCZ_REPLAY_MEDIA_BLOBS?.trim() || "tests/fixtures/media",
+  };
+};
+
+const cachedReplaySettings = (): ResolvedReplaySettings | undefined => {
+  if (!envReplaySettingsResolved) {
+    envReplaySettingsResolved = true;
+    envReplaySettings = resolveCrawlerReplaySettingsFromEnv();
+  }
+  return envReplaySettings;
+};
+
 export const createCrawlerNetworkClient = (
   options: NetworkClientOptions = {},
   env: NodeJS.ProcessEnv = process.env,
 ): NetworkClient => {
   const settings = env === process.env ? cachedRecordingSettings() : resolveCrawlerRecordingSettingsFromEnv(env);
+  const replaySettings = env === process.env ? cachedReplaySettings() : resolveCrawlerReplaySettingsFromEnv(env);
+  if (settings && replaySettings) {
+    throw new Error("Crawler recording and replay cannot be enabled at the same time");
+  }
+  if (replaySettings) {
+    const replay = new CrawlerReplayNetworkClient({
+      fixturesRoot: replaySettings.crawlerFixturesRoot,
+      media: { manifestRoot: replaySettings.mediaManifestRoot, blobRoot: replaySettings.mediaBlobRoot },
+      network: options,
+    });
+    if (env === process.env) envReplay = replay;
+    return replay;
+  }
   if (!settings) return new NetworkClient(options);
   if (env === process.env) envSettings = settings;
   const recorder = new CrawlerRecordNetworkClient({ ...settings, network: options });
@@ -318,18 +490,23 @@ export const createCrawlerNetworkClient = (
   return recorder;
 };
 
-export const attachCrawlerRecordingCaseId = <T extends { relativePath: string; caseId?: string }>(item: T): T => {
-  if (!cachedRecordingSettings()) return item;
+export const attachCrawlerFixtureCaseId = <T extends { relativePath: string; caseId?: string }>(item: T): T => {
+  if (!cachedRecordingSettings() && !cachedReplaySettings()) return item;
   const relativePath = item.relativePath.replaceAll("\\", "/");
   const caseId = crawlerCaseIdFromRelativePath(relativePath);
-  const bound = recordingCaseIdBindings.get(caseId);
+  const bound = fixtureCaseIdBindings.get(caseId);
   if (bound && bound !== relativePath) {
-    throw new Error(`Recording caseId '${caseId}' is already used by ${bound}, not ${relativePath}`);
+    throw new Error(`Fixture caseId '${caseId}' is already used by ${bound}, not ${relativePath}`);
   }
-  recordingCaseIdBindings.set(caseId, relativePath);
+  fixtureCaseIdBindings.set(caseId, relativePath);
   return { ...item, caseId };
 };
 
-export const finalizeCrawlerRecording = async (): Promise<void> => {
-  await envRecorder?.finalize();
+export const finalizeCrawlerFixtures = async (): Promise<void> => {
+  try {
+    await envRecorder?.finalize();
+    await envReplay?.assertConsumed();
+  } finally {
+    fixtureCaseIdBindings.clear();
+  }
 };
