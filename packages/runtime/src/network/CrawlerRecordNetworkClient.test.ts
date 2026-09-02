@@ -1,12 +1,17 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CrawlerReplayNetworkClient } from "@mdcz/runtime/network";
+import { CrawlerReplayNetworkClient, MediaReplayNetworkClient } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CrawlerRecordNetworkClient } from "./CrawlerRecordNetworkClient";
 import { crawlerCaseIdFromRelativePath, loadCrawlerCassette } from "./crawlerCassette";
-import { runWithCrawlerSourceContext, runWithScrapeItemContext } from "./crawlerFixtureContext";
+import {
+  runWithCrawlerSourceContext,
+  runWithMediaFixtureContext,
+  runWithScrapeItemContext,
+} from "./crawlerFixtureContext";
+import { loadMockMediaBytes, MissingMediaBlobError } from "./mediaFixture";
 
 const { fetchMock, impitConstructorMock } = vi.hoisted(() => {
   const fetchMock = vi.fn();
@@ -47,8 +52,17 @@ const itemTwo = { itemId: "two", relativePath: "nested/two.mp4", caseId: "two" }
 const createRecorder = async () => {
   const stagingRoot = await tempDir("record-staging");
   const publishRoot = await tempDir("record-publish");
-  const recorder = new CrawlerRecordNetworkClient({ stagingRoot, publishRoot });
-  return { recorder, stagingRoot, publishRoot };
+  const mediaManifestStagingRoot = await tempDir("media-staging");
+  const mediaManifestPublishRoot = await tempDir("media-publish");
+  const mediaBlobRoot = await tempDir("media-blobs");
+  const recorder = new CrawlerRecordNetworkClient({
+    stagingRoot,
+    publishRoot,
+    mediaManifestStagingRoot,
+    mediaManifestPublishRoot,
+    mediaBlobRoot,
+  });
+  return { recorder, stagingRoot, publishRoot, mediaManifestStagingRoot, mediaManifestPublishRoot, mediaBlobRoot };
 };
 
 const recorded = async <T>(item: typeof itemOne, website: Website, run: () => Promise<T>): Promise<T> =>
@@ -106,24 +120,20 @@ describe("CrawlerRecordNetworkClient", () => {
     await expect(loadCrawlerCassette(stagingRoot, Website.DMM, "one")).rejects.toThrow();
   });
 
-  it("stores html, json, text, and binary bodies with the original bytes and matching extensions", async () => {
+  it("stores html, json, and text bodies with matching extensions", async () => {
     const html = "<html><body>detail</body></html>";
     const json = '{"title":"SSIS-497"}';
     const text = "plain-body";
     fetchMock
       .mockResolvedValueOnce(new Response(html, { status: 200, headers: { "content-type": "text/html" } }))
       .mockResolvedValueOnce(new Response(json, { status: 200, headers: { "content-type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(text, { status: 200, headers: { "content-type": "text/plain" } }))
-      .mockResolvedValueOnce(
-        new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg", "content-length": "8" } }),
-      );
+      .mockResolvedValueOnce(new Response(text, { status: 200, headers: { "content-type": "text/plain" } }));
 
     const { recorder, stagingRoot } = await createRecorder();
     await recorded(itemOne, Website.DMM, async () => {
       await recorder.getText("https://www.dmm.co.jp/html");
       await recorder.getJson("https://www.dmm.co.jp/json");
       await recorder.getText("https://www.dmm.co.jp/text");
-      await recorder.getContent("https://www.dmm.co.jp/cover.jpg");
     });
 
     const loaded = await loadCrawlerCassette(stagingRoot, Website.DMM, "one");
@@ -131,12 +141,23 @@ describe("CrawlerRecordNetworkClient", () => {
       "responses/001.html",
       "responses/002.json",
       "responses/003.txt",
-      "responses/004.jpg",
     ]);
     expect(Buffer.from(loaded.responseBodies.get(1) ?? []).toString("utf8")).toBe(html);
     expect(Buffer.from(loaded.responseBodies.get(2) ?? []).toString("utf8")).toBe(json);
     expect(Buffer.from(loaded.responseBodies.get(3) ?? []).toString("utf8")).toBe(text);
-    expect(Buffer.from(loaded.responseBodies.get(4) ?? [])).toEqual(Buffer.from(jpegBytes));
+  });
+
+  it.each([
+    ["image/jpeg", jpegBytes],
+    ["video/mp4", jpegBytes],
+    ["application/octet-stream", jpegBytes],
+  ])("refuses to write %s into crawler cassette responses", async (contentType, bytes) => {
+    fetchMock.mockResolvedValue(new Response(bytes, { status: 200, headers: { "content-type": contentType } }));
+    const { recorder, stagingRoot } = await createRecorder();
+    await expect(
+      recorded(itemOne, Website.DMM, async () => await recorder.getContent("https://www.dmm.co.jp/cover.jpg")),
+    ).rejects.toThrow(/Crawler cassette/u);
+    await expect(loadCrawlerCassette(stagingRoot, Website.DMM, "one")).rejects.toThrow();
   });
 
   it("replaces the same credential with one fake value across url, headers, and bodies", async () => {
@@ -226,5 +247,76 @@ describe("CrawlerRecordNetworkClient", () => {
     expect(loaded.cassette.interactions).toHaveLength(2);
     expect(loaded.cassette.interactions[0]?.transportError).toEqual({ name: "FetchError", message: "socket hang up" });
     expect(loaded.cassette.interactions[1]?.response?.bodyPath).toBe("responses/002.txt");
+  });
+
+  it("replays a recorded media blob, then falls back to built-in mock media when the blob is missing", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg", "content-length": "8" } }),
+    );
+    const { recorder, mediaManifestStagingRoot, mediaBlobRoot } = await createRecorder();
+    const downloaded = await runWithScrapeItemContext(
+      itemOne,
+      async () =>
+        await runWithMediaFixtureContext(async () => await recorder.getContent("https://cdn.example.com/poster.jpg")),
+    );
+    expect(Buffer.from(downloaded)).toEqual(Buffer.from(jpegBytes));
+
+    const replayExact = new MediaReplayNetworkClient({
+      caseId: "one",
+      manifestRoot: mediaManifestStagingRoot,
+      blobRoot: mediaBlobRoot,
+      fallbackToMock: true,
+    });
+    await expect(
+      runWithScrapeItemContext(
+        itemOne,
+        async () =>
+          await runWithMediaFixtureContext(
+            async () => await replayExact.getContent("https://cdn.example.com/poster.jpg"),
+          ),
+      ),
+    ).resolves.toEqual(downloaded);
+    await replayExact.assertConsumed("one");
+
+    await rm(path.join(mediaBlobRoot, "blobs"), { recursive: true, force: true });
+    const replayMock = new MediaReplayNetworkClient({
+      caseId: "one",
+      manifestRoot: mediaManifestStagingRoot,
+      blobRoot: mediaBlobRoot,
+      fallbackToMock: true,
+    });
+    const mocked = await runWithScrapeItemContext(
+      itemOne,
+      async () =>
+        await runWithMediaFixtureContext(async () => await replayMock.getContent("https://cdn.example.com/poster.jpg")),
+    );
+    expect(Buffer.from(mocked)).toEqual(Buffer.from(await loadMockMediaBytes("image")));
+  });
+
+  it("throws when private blobs are missing in strict replay mode", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg", "content-length": "8" } }),
+    );
+    const { recorder, mediaManifestStagingRoot, mediaBlobRoot } = await createRecorder();
+    await runWithScrapeItemContext(
+      itemOne,
+      async () =>
+        await runWithMediaFixtureContext(async () => await recorder.getContent("https://cdn.example.com/poster.jpg")),
+    );
+    await rm(path.join(mediaBlobRoot, "blobs"), { recursive: true, force: true });
+
+    const replay = new MediaReplayNetworkClient({
+      caseId: "one",
+      manifestRoot: mediaManifestStagingRoot,
+      blobRoot: mediaBlobRoot,
+      fallbackToMock: false,
+    });
+    await expect(
+      runWithScrapeItemContext(
+        itemOne,
+        async () =>
+          await runWithMediaFixtureContext(async () => await replay.getContent("https://cdn.example.com/poster.jpg")),
+      ),
+    ).rejects.toThrow(MissingMediaBlobError);
   });
 });

@@ -23,7 +23,7 @@ interface ReplayState {
 
 export interface CrawlerReplayNetworkClientOptions {
   fixturesRoot: string;
-  media?: { manifestRoot: string; blobRoot: string };
+  media?: { manifestRoot: string; blobRoot: string; mockMediaRoot?: string; fallbackToMock?: boolean };
   network?: Omit<NetworkClientOptions, "getRetryCount" | "rawDispatch">;
 }
 

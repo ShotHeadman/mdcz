@@ -4,6 +4,34 @@ import path from "node:path";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const safeSegment = (value) => typeof value === "string" && /^[a-z0-9][a-z0-9._-]*$/iu.test(value);
+const crawlerResponseTextExtensions = new Set([".html", ".json", ".txt"]);
+const mediaContentType = (headers) => {
+  const value = Array.isArray(headers)
+    ? headers.find((entry) => Array.isArray(entry) && String(entry[0]).toLowerCase() === "content-type")?.[1]
+    : undefined;
+  return typeof value === "string" ? (value.split(";")[0]?.trim().toLowerCase() ?? "") : "";
+};
+
+const assertCrawlerResponsePath = (relativePath) => {
+  const extension = path.posix.extname(relativePath.replaceAll("\\", "/")).toLowerCase();
+  if (!crawlerResponseTextExtensions.has(extension)) {
+    throw new Error(
+      `Crawler responses must be text (.html, .json, .txt), found ${relativePath}. Image and video downloads belong in media fixtures.`,
+    );
+  }
+};
+
+const listedFiles = async (root) => {
+  try {
+    return (await readdir(root, { withFileTypes: true, recursive: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.relative(root, path.join(entry.parentPath ?? entry.path, entry.name)).replaceAll("\\", "/"))
+      .sort();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+};
 
 const directories = async (root) => {
   try {
@@ -34,6 +62,13 @@ export const validateCrawlerFiles = async (root) => {
       for (const [index, interaction] of cassette.interactions.entries()) {
         if (interaction.sequence !== index + 1) throw new Error(`Crawler sequence mismatch at ${website}/${caseId}`);
         if (!interaction.response) continue;
+        assertCrawlerResponsePath(interaction.response.bodyPath);
+        const type = mediaContentType(interaction.response.headers);
+        if (type.startsWith("image/") || type.startsWith("video/") || type.startsWith("audio/")) {
+          throw new Error(
+            `Crawler cassette leaked media content-type ${type} at ${website}/${caseId}/${interaction.response.bodyPath}`,
+          );
+        }
         const responsePath = path.resolve(fixtureDir, interaction.response.bodyPath);
         if (!responsePath.startsWith(`${path.resolve(fixtureDir)}${path.sep}`)) {
           throw new Error(`Crawler response escapes fixture at ${website}/${caseId}`);
@@ -42,6 +77,9 @@ export const validateCrawlerFiles = async (root) => {
         if (sha256(bytes) !== interaction.response.sha256) {
           throw new Error(`Crawler response hash mismatch at ${website}/${caseId}/${interaction.response.bodyPath}`);
         }
+      }
+      for (const relative of await listedFiles(path.join(fixtureDir, "responses"))) {
+        assertCrawlerResponsePath(relative);
       }
       cassettes.push({ website, caseId });
     }
