@@ -161,15 +161,16 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
 
     const key = sessionKey(website, caseId);
     const sequence = await this.allocateSequence(key, website, caseId, relativePath);
+    let response: RawNetworkResponse;
     try {
-      const response = await dispatch();
-      const bytes = await captureResponseBytes(response);
-      await this.recordInteraction(key, sequence, request, { response, bytes });
-      return response;
+      response = await dispatch();
     } catch (error) {
       await this.recordInteraction(key, sequence, request, { error });
       throw error;
     }
+    const bytes = await captureResponseBytes(response);
+    await this.recordInteraction(key, sequence, request, { response, bytes });
+    return response;
   }
 
   private async allocateSequence(key: string, website: Website, caseId: string, relativePath: string): Promise<number> {

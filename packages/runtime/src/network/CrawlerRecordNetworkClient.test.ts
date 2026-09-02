@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CrawlerReplayNetworkClient, MediaReplayNetworkClient } from "@mdcz/runtime/network";
@@ -157,7 +157,7 @@ describe("CrawlerRecordNetworkClient", () => {
     await expect(
       recorded(itemOne, Website.DMM, async () => await recorder.getContent("https://www.dmm.co.jp/cover.jpg")),
     ).rejects.toThrow(/Crawler cassette/u);
-    await expect(loadCrawlerCassette(stagingRoot, Website.DMM, "one")).rejects.toThrow();
+    await expect(readdir(path.join(stagingRoot, "dmm", "one", "responses"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("replaces the same credential with one fake value across url, headers, and bodies", async () => {
