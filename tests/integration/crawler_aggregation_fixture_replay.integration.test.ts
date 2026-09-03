@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { NetworkReplayClient, runWithNetworkFixtureChannel, runWithScrapeItemContext } from "@mdcz/runtime/network";
+import { runWithNetworkChannel, runWithScrapeItem } from "@mdcz/runtime/network";
+import { NetworkReplayClient } from "@mdcz/runtime/network/NetworkFixtureClient";
 import { AggregationService } from "@mdcz/runtime/scrape";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
@@ -60,7 +61,7 @@ describe("Crawler aggregation real fixture replay integration", () => {
       const config = makeScrapeConfig([Website.DMM, Website.DMM_TV, Website.AVBASE]);
       const service = new AggregationService(provider);
 
-      const aggregated = await runWithScrapeItemContext(item, async () => {
+      const aggregated = await runWithScrapeItem(item, async () => {
         return await service.aggregate(number, config);
       });
 
@@ -92,8 +93,8 @@ describe("Crawler aggregation real fixture replay integration", () => {
       const mediaReplay = new NetworkReplayClient({ fixturesRoot });
 
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
-      await runWithScrapeItemContext(item, async () => {
-        await runWithNetworkFixtureChannel("media", async () => {
+      await runWithScrapeItem(item, async () => {
+        await runWithNetworkChannel("media", async () => {
           const content = await mediaReplay.getContent(interaction.request.url);
           expect(content.byteLength).toBeGreaterThan(0);
         });

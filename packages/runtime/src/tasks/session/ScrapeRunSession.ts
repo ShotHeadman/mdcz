@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
-import { runWithScrapeItemContext } from "../../network/networkFixtureContext";
+import { runWithScrapeItem } from "../../network/networkExecution";
 import { TaskExecutor } from "../executor";
 
 export const MAX_LIVE_SCRAPE_LOGS = 200;
@@ -344,7 +344,7 @@ export class ScrapeRunSession<TManualScrape = unknown> {
           if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
           const release = this.options.acquireItem?.(item) ?? (() => undefined);
           try {
-            const result = await runWithScrapeItemContext(
+            const result = await runWithScrapeItem(
               { itemId: item.id, relativePath: item.relativePath, caseId: item.caseId },
               async () => await this.options.executeItem(item, context.signal, attemptId),
             );

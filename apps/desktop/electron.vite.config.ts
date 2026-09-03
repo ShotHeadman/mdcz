@@ -18,6 +18,9 @@ const workspacePackages = [
 const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
+const networkComposition = process.env.MDCZ_NETWORK_FIXTURE_MODE
+  ? appResolve("src/main/networkFixtureComposition.ts")
+  : appResolve("src/main/networkComposition.ts");
 
 const desktopDistributionAssets = (): Plugin => ({
   name: "mdcz-desktop-distribution-assets",
@@ -42,6 +45,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: workspacePackages }), desktopDistributionAssets()],
     resolve: {
       alias: {
+        "@main/networkComposition": networkComposition,
         "@main": appResolve("src/main"),
         "@mdcz/persistence": workspaceResolve("packages/persistence/src/index.ts"),
         "@mdcz/runtime": workspaceResolve("packages/runtime/src"),

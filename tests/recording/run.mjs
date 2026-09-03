@@ -79,7 +79,7 @@ if (mode === "desktop") {
   await mkdir(path.dirname(journeyOutput), { recursive: true });
   const webui = spawn(
     /\.(?:c?js|mjs)$/iu.test(pnpmCli) ? process.execPath : pnpmCli,
-    /\.(?:c?js|mjs)$/iu.test(pnpmCli) ? [pnpmCli, "dev:webui"] : ["dev:webui"],
+    /\.(?:c?js|mjs)$/iu.test(pnpmCli) ? [pnpmCli, "dev:webui:fixture"] : ["dev:webui:fixture"],
     { cwd: workspaceRoot, env, stdio: "inherit" },
   );
   const shutdownWebui = () => {

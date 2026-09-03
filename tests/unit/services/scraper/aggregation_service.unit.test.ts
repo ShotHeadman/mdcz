@@ -1,7 +1,8 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse, FailureReason } from "@mdcz/runtime/crawler/base/types";
-import { getCrawlerSourceContext, NetworkClient, runWithScrapeItemContext } from "@mdcz/runtime/network";
+import { getCrawlerExecutionSource, NetworkClient, runWithScrapeItem } from "@mdcz/runtime/network";
+import { activateNetworkFixtureContext } from "@mdcz/runtime/network/networkFixtureContext";
 import { AggregationService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -141,6 +142,7 @@ describe("AggregationService", () => {
   };
 
   it("isolates each concurrent crawler in its Website source context", async () => {
+    activateNetworkFixtureContext();
     const provider = new MultiResultCrawlerProvider(
       makeSiteResults(
         [Website.DMM, { thumb_url: "https://dmm.example/thumb.jpg" }],
@@ -148,7 +150,7 @@ describe("AggregationService", () => {
       ),
     );
     const observed: Website[] = [];
-    const lateObserved: Array<ReturnType<typeof getCrawlerSourceContext>> = [];
+    const lateObserved: Array<ReturnType<typeof getCrawlerExecutionSource>> = [];
     let releaseLateReads!: () => void;
     const lateGate = new Promise<void>((resolve) => {
       releaseLateReads = resolve;
@@ -157,18 +159,18 @@ describe("AggregationService", () => {
     const originalCrawl = provider.crawl.bind(provider);
     provider.crawl = async (input) => {
       await Promise.resolve();
-      const source = getCrawlerSourceContext();
+      const source = getCrawlerExecutionSource();
       if (source) observed.push(source.website);
       lateReads.push(
         lateGate.then(() => {
-          lateObserved.push(getCrawlerSourceContext());
+          lateObserved.push(getCrawlerExecutionSource());
         }),
       );
       return await originalCrawl(input);
     };
     const config = makeConfig({ scrape: { sites: [Website.DMM, Website.JAVDB] } });
 
-    await runWithScrapeItemContext(
+    await runWithScrapeItem(
       { itemId: "item", relativePath: "movie.mp4", caseId: "movie-case" },
       async () => await new AggregationService(provider).aggregate("ABF-075", config),
     );
@@ -177,7 +179,7 @@ describe("AggregationService", () => {
 
     expect(observed).toEqual(expect.arrayContaining([Website.DMM, Website.JAVDB]));
     expect(lateObserved).toEqual([undefined, undefined]);
-    expect(getCrawlerSourceContext()).toBeUndefined();
+    expect(getCrawlerExecutionSource()).toBeUndefined();
   });
 
   it("records DMM blocked failures and uses avwikidb only when it is enabled", async () => {

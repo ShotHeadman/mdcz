@@ -14,7 +14,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { type ConfiguredMediaRootService, mediaPathOwnership } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
-import { attachNetworkFixtureCaseId, type NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import { commitScrapeTerminalResult, type ScrapeFileTransitions } from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
@@ -84,6 +84,8 @@ export class ScraperService {
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
+    private readonly prepareScrapeItem: <T extends { relativePath: string; caseId?: string }>(item: T) => T = (item) =>
+      item,
   ) {
     this.actorImageService = actorImageService;
     this.actorSourceProvider = actorSourceProvider;
@@ -352,7 +354,7 @@ export class ScraperService {
             }
           }
         }
-        return attachNetworkFixtureCaseId({
+        return this.prepareScrapeItem({
           id: item.id,
           rootId: item.rootId,
           relativePath: item.relativePath,

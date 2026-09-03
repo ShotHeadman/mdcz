@@ -7,7 +7,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { mediaPathOwnership, toLibraryAssets } from "@mdcz/runtime/library";
 import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
-import { attachNetworkFixtureCaseId, type NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   commitPublishedMedia,
   commitRegisteredPublication,
@@ -91,6 +91,7 @@ export interface ScrapeServiceResources {
   networkClient: NetworkClient;
   runtime: MountedRootScrapeRuntime;
   imageHostCooldownStore: Pick<PersistentCooldownStore, "clear">;
+  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
 }
 
 const createFailedResult = (
@@ -116,6 +117,7 @@ export class ScrapeService {
   private readonly posterCropAdapter: ServerPosterCropAdapter;
   private readonly runtime: MountedRootScrapeRuntime;
   private readonly imageHostCooldownStore: Pick<PersistentCooldownStore, "clear">;
+  private readonly prepareScrapeItem: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
   private workflow: ScrapeCoordinator<ScrapeStartInput, ScrapeRunManifest, ServerManualScrape> | null = null;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -131,6 +133,7 @@ export class ScrapeService {
     this.networkClient = resources.networkClient;
     this.runtime = resources.runtime;
     this.imageHostCooldownStore = resources.imageHostCooldownStore;
+    this.prepareScrapeItem = resources.prepareScrapeItem ?? ((item) => item);
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, this.nfoGenerator, this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,
@@ -583,7 +586,7 @@ export class ScrapeService {
             }
           }
         }
-        return attachNetworkFixtureCaseId({
+        return this.prepareScrapeItem({
           id: item.id,
           rootId: item.rootId,
           relativePath: item.relativePath,

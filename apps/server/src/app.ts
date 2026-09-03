@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { createNetworkClient, type NetworkClient } from "@mdcz/runtime/network";
+import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
@@ -47,6 +47,7 @@ export interface ServerResourceOverrides {
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
   mappingStore?: FileTranslationMappingStore;
+  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
 }
 
 export interface BuildServerOptions {
@@ -94,7 +95,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const mappingStore = options.resources?.mappingStore ?? createServerTranslationMappingStore(config);
   const networkClient =
     options.resources?.networkClient ??
-    createNetworkClient({
+    new NetworkClient({
       getProxyUrl: () => config.getComputed().proxyUrl,
       getTimeoutMs: () => config.getComputed().networkTimeoutMs,
       getRetryCount: () => config.getComputed().networkRetryCount,
@@ -135,6 +136,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         mappingStore,
       }),
       imageHostCooldownStore,
+      prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
   const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);
   const maintenance =

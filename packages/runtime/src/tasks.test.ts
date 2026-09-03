@@ -1,7 +1,8 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
-import { getScrapeItemContext } from "./network";
+import { getScrapeItemExecutionContext } from "./network";
+import { activateNetworkFixtureContext } from "./network/networkFixtureContext";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import { MAX_LIVE_SCRAPE_LOGS, ScrapeRunSession, TaskExecutor } from "./tasks";
 
@@ -120,12 +121,13 @@ const terminalResult = (
 
 describe("scrape run session", () => {
   it("isolates fixture case context for every concurrently executing item", async () => {
+    activateNetworkFixtureContext();
     const items = [
       { ...runItem("one"), caseId: "movie-one" },
       { ...runItem("two"), caseId: "movie-two" },
     ];
-    const observed: Array<ReturnType<typeof getScrapeItemContext>> = [];
-    const lateObserved: Array<ReturnType<typeof getScrapeItemContext>> = [];
+    const observed: Array<ReturnType<typeof getScrapeItemExecutionContext>> = [];
+    const lateObserved: Array<ReturnType<typeof getScrapeItemExecutionContext>> = [];
     const releaseLateReads = deferred<void>();
     const lateReads: Promise<void>[] = [];
     const session = new ScrapeRunSession({
@@ -135,10 +137,10 @@ describe("scrape run session", () => {
       admitItem,
       executeItem: async (item) => {
         await Promise.resolve();
-        observed.push(getScrapeItemContext());
+        observed.push(getScrapeItemExecutionContext());
         lateReads.push(
           releaseLateReads.promise.then(() => {
-            lateObserved.push(getScrapeItemContext());
+            lateObserved.push(getScrapeItemExecutionContext());
           }),
         );
         return terminalResult(item, "success");
@@ -159,7 +161,7 @@ describe("scrape run session", () => {
       ]),
     );
     expect(lateObserved).toEqual([undefined, undefined]);
-    expect(getScrapeItemContext()).toBeUndefined();
+    expect(getScrapeItemExecutionContext()).toBeUndefined();
   });
 
   it("keeps stable live snapshots while pausing after one committed item", async () => {

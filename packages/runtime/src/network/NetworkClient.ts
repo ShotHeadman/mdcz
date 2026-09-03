@@ -7,7 +7,7 @@ import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
-import { preserveScrapeExecutionContext } from "./networkFixtureContext";
+import { isUnrecoverableNetworkError, preserveNetworkExecutionContext } from "./networkExecution";
 import { RateLimiter } from "./RateLimiter";
 
 const RETRY_STATUS_CODE = 429;
@@ -461,7 +461,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   ): Promise<TResult> {
     return this.rateLimiter.schedule(
       url,
-      preserveScrapeExecutionContext(async () => {
+      preserveNetworkExecutionContext(async () => {
         if (init.signal?.aborted) {
           throw createAbortError();
         }
@@ -470,7 +470,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
         let attempt = 0;
         const transformResponse = behavior.transformResponse ?? ((response: RawNetworkResponse) => response as TResult);
         const retryTransportError = async (error: unknown): Promise<void> => {
-          if (isAbortError(error) || init.signal?.aborted) {
+          if (isAbortError(error) || isUnrecoverableNetworkError(error) || init.signal?.aborted) {
             throw error;
           }
           if (attempt >= maxRetries) {

@@ -4,6 +4,10 @@ import path from "node:path";
 import { z } from "zod";
 import type { RawNetworkRequest } from "./NetworkClient";
 
+export { fixtureCaseIdFromRelativePath } from "./networkFixtureCase";
+
+export const SHARED_NETWORK_FIXTURE_CASE_ID = "shared";
+
 const headerListSchema = z.array(z.tuple([z.string(), z.string()]));
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const requestSchema = z.object({
@@ -53,18 +57,6 @@ export const networkFixtureManifestSchema = z.object({
 export type NetworkFixtureManifest = z.infer<typeof networkFixtureManifestSchema>;
 export type NetworkFixtureInteraction = NetworkFixtureManifest["interactions"][number];
 export type NetworkFixtureCredentialSeed = NetworkFixtureManifest["credentialSeed"];
-
-export const fixtureCaseIdFromRelativePath = (relativePath: string): string => {
-  const base = path.posix.basename(relativePath.replaceAll("\\", "/").trim());
-  const stem = base.includes(".") ? base.replace(/\.[^.]+$/u, "") : base;
-  const caseId = stem
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9._-]+/gu, "-")
-    .replaceAll(/^[._-]+|[._-]+$/gu, "")
-    .replaceAll(/-{2,}/gu, "-");
-  if (!caseId) throw new Error(`Cannot derive fixture caseId from ${relativePath}`);
-  return caseId;
-};
 
 export const resolveNetworkFixtureDirectory = (fixturesRoot: string, caseId: string): string =>
   path.resolve(fixturesRoot, caseId);

@@ -3,7 +3,8 @@ import { FetchGateway } from "@mdcz/runtime/crawler";
 import { AvbaseCrawler } from "@mdcz/runtime/crawler/sites/avbase";
 import { DmmCrawler } from "@mdcz/runtime/crawler/sites/dmm";
 import { DmmTvCrawler } from "@mdcz/runtime/crawler/sites/dmm/dmm_tv";
-import { NetworkReplayClient, runWithCrawlerSourceContext, runWithScrapeItemContext } from "@mdcz/runtime/network";
+import { runWithCrawlerSource, runWithScrapeItem } from "@mdcz/runtime/network";
+import { NetworkReplayClient } from "@mdcz/runtime/network/NetworkFixtureClient";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -52,10 +53,10 @@ describe("Crawler actual fixture replay", () => {
       const replay = new NetworkReplayClient({ fixturesRoot });
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
 
-      const response = await runWithScrapeItemContext(
+      const response = await runWithScrapeItem(
         item,
         async () =>
-          await runWithCrawlerSourceContext(Website.DMM, async () => {
+          await runWithCrawlerSource(Website.DMM, async () => {
             const crawler = new DmmCrawler({ gateway: new FetchGateway(replay) });
             return await crawler.crawl({ number, site: Website.DMM });
           }),
@@ -83,10 +84,10 @@ describe("Crawler actual fixture replay", () => {
       });
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
 
-      const response = await runWithScrapeItemContext(
+      const response = await runWithScrapeItem(
         item,
         async () =>
-          await runWithCrawlerSourceContext(Website.DMM_TV, async () => {
+          await runWithCrawlerSource(Website.DMM_TV, async () => {
             const crawler = new DmmTvCrawler({ gateway: new FetchGateway(replay) });
             return await crawler.crawl({ number, site: Website.DMM_TV });
           }),
@@ -108,10 +109,10 @@ describe("Crawler actual fixture replay", () => {
       const replay = new NetworkReplayClient({ fixturesRoot });
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
 
-      const response = await runWithScrapeItemContext(
+      const response = await runWithScrapeItem(
         item,
         async () =>
-          await runWithCrawlerSourceContext(Website.AVBASE, async () => {
+          await runWithCrawlerSource(Website.AVBASE, async () => {
             const crawler = new AvbaseCrawler({ gateway: new FetchGateway(replay) });
             return await crawler.crawl({ number, site: Website.AVBASE });
           }),

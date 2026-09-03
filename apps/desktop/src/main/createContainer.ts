@@ -36,12 +36,14 @@ export interface CreateContainerOptions {
   windowService: WindowService;
   signalService: SignalService;
   networkClient: NetworkClient;
+  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
 }
 
 export const createContainer = ({
   windowService,
   signalService,
   networkClient,
+  prepareScrapeItem,
 }: CreateContainerOptions): ServiceContainer => {
   const fetchGateway = new FetchGateway(networkClient);
   const crawlerProvider = new CrawlerProvider({
@@ -108,6 +110,7 @@ export const createContainer = ({
     outputLibraryScanner,
     persistenceService,
     mediaRoots,
+    prepareScrapeItem,
   );
   const maintenanceService = new MaintenanceService({
     signalService,

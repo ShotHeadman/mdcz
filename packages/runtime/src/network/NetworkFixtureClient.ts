@@ -8,8 +8,8 @@ import {
   type RawNetworkResponse,
 } from "./NetworkClient";
 import { NetworkCredentialRedactor } from "./networkCredentials";
+import { getNetworkRequestExecutionContext, type NetworkRequestExecutionContext } from "./networkExecution";
 import {
-  fixtureCaseIdFromRelativePath,
   headersToFixtureList,
   loadNetworkFixture,
   type NetworkFixtureCredentialSeed,
@@ -20,9 +20,11 @@ import {
   resolveNetworkFixtureBlob,
   resolveNetworkFixtureDirectory,
   responseBodyExtension,
+  SHARED_NETWORK_FIXTURE_CASE_ID,
   sha256Hex,
 } from "./networkFixture";
-import { getNetworkFixtureContext, type NetworkFixtureContext } from "./networkFixtureContext";
+import { activateNetworkFixtureContext } from "./networkFixtureContext";
+import { NetworkFixtureReplayError } from "./networkFixtureError";
 import { ReplayResponse } from "./ReplayResponse";
 import { waitForReplayDelay } from "./replayDelay";
 
@@ -129,6 +131,7 @@ export class NetworkRecordClient extends NetworkClient {
   private readonly publishRoot: string;
   private readonly sessions = new Map<object, RecordingSession>();
   private nextSessionId = 0;
+  private readonly sharedExecution = {};
 
   constructor(options: NetworkRecordClientOptions) {
     super({
@@ -137,6 +140,7 @@ export class NetworkRecordClient extends NetworkClient {
     });
     this.stagingRoot = path.resolve(options.stagingRoot);
     this.publishRoot = path.resolve(options.publishRoot);
+    activateNetworkFixtureContext();
   }
 
   async finalize(): Promise<void> {
@@ -167,7 +171,7 @@ export class NetworkRecordClient extends NetworkClient {
     request: RawNetworkRequest,
     dispatch: () => Promise<RawNetworkResponse>,
   ): Promise<RawNetworkResponse> {
-    const context = getNetworkFixtureContext();
+    const context = getNetworkRequestExecutionContext();
     if (!context) return await dispatch();
     const session = this.session(context);
     const sequence = (session.nextSequenceByChannel.get(context.channel) ?? 0) + 1;
@@ -187,17 +191,19 @@ export class NetworkRecordClient extends NetworkClient {
     return response;
   }
 
-  private session(context: NetworkFixtureContext): RecordingSession {
-    const existing = this.sessions.get(context.execution);
+  private session(context: NetworkRequestExecutionContext): RecordingSession {
+    const execution = context.shared ? this.sharedExecution : context.execution;
+    const existing = this.sessions.get(execution);
     if (existing) return existing;
+    const caseId = context.shared ? SHARED_NETWORK_FIXTURE_CASE_ID : context.caseId;
     const session = {
-      caseId: context.caseId,
+      caseId,
       interactions: [],
       nextSequenceByChannel: new Map<string, number>(),
       redactor: new NetworkCredentialRedactor(),
-      stagingDirectory: path.join(this.stagingRoot, String(++this.nextSessionId), context.caseId),
+      stagingDirectory: path.join(this.stagingRoot, String(++this.nextSessionId), caseId),
     };
-    this.sessions.set(context.execution, session);
+    this.sessions.set(execution, session);
     return session;
   }
 
@@ -304,7 +310,7 @@ export class NetworkReplayClient extends NetworkClient {
   private readonly fixturesRoot: string;
   private readonly mockMediaRoot: string;
   private readonly delayMs: number;
-  private readonly fixtures = new Map<string, Promise<NetworkFixtureManifest>>();
+  private readonly fixtures = new Map<string, Promise<NetworkFixtureManifest | undefined>>();
   private readonly states = new WeakMap<object, Map<string, ReplayState>>();
 
   constructor(options: NetworkReplayClientOptions) {
@@ -317,30 +323,31 @@ export class NetworkReplayClient extends NetworkClient {
       ? path.resolve(options.mockMediaRoot)
       : path.resolve(this.fixturesRoot, "../mock-media");
     this.delayMs = options.delayMs ?? 0;
+    activateNetworkFixtureContext();
   }
 
   private async dispatchFixture(request: RawNetworkRequest): Promise<RawNetworkResponse> {
-    const context = getNetworkFixtureContext();
+    const context = getNetworkRequestExecutionContext();
     if (!context)
-      throw new Error("Network replay requires an active fixture channel; public network fallback is disabled");
-    const state = await this.getState(context);
-    const identity = await seedReplayRequest(request, state.manifest.credentialSeed);
-    const interaction = state.manifest.interactions.find(
-      (candidate) =>
-        candidate.channel === context.channel &&
-        !state.consumed.has(interactionKey(candidate)) &&
-        candidate.request.method.toUpperCase() === identity.method &&
-        candidate.request.url === identity.url &&
-        candidate.request.bodyBase64 === identity.bodyBase64 &&
-        JSON.stringify(candidate.request.headers) === JSON.stringify(identity.headers),
-    );
-    if (!interaction) {
-      throw new Error(
-        `Missing network fixture interaction for ${context.caseId}/${context.channel}: ${identity.method} ${identity.url}`,
+      throw new NetworkFixtureReplayError(
+        "Network replay requires an active fixture channel; public network fallback is disabled",
+      );
+    const caseState = await this.getState(context, context.caseId);
+    let matched = caseState && (await this.findInteraction(request, context.channel, caseState, true));
+    if (!matched) {
+      const sharedState = await this.getState(context, SHARED_NETWORK_FIXTURE_CASE_ID);
+      matched = sharedState && (await this.findInteraction(request, context.channel, sharedState, false));
+    }
+    if (!matched) {
+      const identity = await networkRequestIdentity(request);
+      throw new NetworkFixtureReplayError(
+        `Missing network fixture interaction for ${context.caseId}/${context.channel} (including shared): ${identity.method} ${identity.url}; record fixtures again`,
       );
     }
 
-    state.consumed.add(interactionKey(interaction));
+    const { fixtureCaseId, interaction, state, consume } = matched;
+
+    if (consume) state.consumed.add(interactionKey(interaction));
     await waitForReplayDelay(this.delayMs, request.init.signal);
     if (interaction.transportError) {
       const error = new Error(interaction.transportError.message);
@@ -348,7 +355,7 @@ export class NetworkReplayClient extends NetworkClient {
       throw error;
     }
     if (!interaction.response) throw new Error(`Network fixture interaction ${interaction.sequence} has no outcome`);
-    const bytes = await this.loadResponseBody(context.caseId, interaction);
+    const bytes = await this.loadResponseBody(fixtureCaseId, interaction);
     const headers = new Headers(interaction.response.headers);
     if (interaction.response.body.kind === "blob" && headers.has("content-length")) {
       headers.set("content-length", String(bytes.byteLength));
@@ -362,21 +369,47 @@ export class NetworkReplayClient extends NetworkClient {
     );
   }
 
-  private async getState(context: NetworkFixtureContext): Promise<ReplayState> {
+  private async findInteraction(
+    request: RawNetworkRequest,
+    channel: string,
+    state: ReplayState,
+    consume: boolean,
+  ): Promise<
+    { fixtureCaseId: string; interaction: NetworkFixtureInteraction; state: ReplayState; consume: boolean } | undefined
+  > {
+    const identity = await seedReplayRequest(request, state.manifest.credentialSeed);
+    const interaction = state.manifest.interactions.find(
+      (candidate) =>
+        candidate.channel === channel &&
+        (!consume || !state.consumed.has(interactionKey(candidate))) &&
+        candidate.request.method.toUpperCase() === identity.method &&
+        candidate.request.url === identity.url &&
+        candidate.request.bodyBase64 === identity.bodyBase64 &&
+        JSON.stringify(candidate.request.headers) === JSON.stringify(identity.headers),
+    );
+    return interaction ? { fixtureCaseId: state.manifest.caseId, interaction, state, consume } : undefined;
+  }
+
+  private async getState(context: NetworkRequestExecutionContext, caseId: string): Promise<ReplayState | undefined> {
     let executionStates = this.states.get(context.execution);
     if (!executionStates) {
       executionStates = new Map();
       this.states.set(context.execution, executionStates);
     }
-    const existing = executionStates.get(context.caseId);
+    const existing = executionStates.get(caseId);
     if (existing) return existing;
-    let fixture = this.fixtures.get(context.caseId);
+    let fixture = this.fixtures.get(caseId);
     if (!fixture) {
-      fixture = loadNetworkFixture(this.fixturesRoot, context.caseId);
-      this.fixtures.set(context.caseId, fixture);
+      fixture = loadNetworkFixture(this.fixturesRoot, caseId).catch((error: unknown) => {
+        if (isNotFound(error)) return undefined;
+        throw error;
+      });
+      this.fixtures.set(caseId, fixture);
     }
-    const state = { manifest: await fixture, consumed: new Set<string>() };
-    executionStates.set(context.caseId, state);
+    const manifest = await fixture;
+    if (!manifest) return undefined;
+    const state = { manifest, consumed: new Set<string>() };
+    executionStates.set(caseId, state);
     return state;
   }
 
@@ -405,53 +438,3 @@ export class NetworkReplayClient extends NetworkClient {
     return new Uint8Array(bytes);
   }
 }
-
-interface NetworkFixtureSettings {
-  mode: "record" | "replay";
-  root: string;
-  stagingRoot: string;
-  delayMs: number;
-}
-
-let envRecorder: NetworkRecordClient | undefined;
-
-const networkFixtureSettings = (env: NodeJS.ProcessEnv): NetworkFixtureSettings | undefined => {
-  const mode = env.MDCZ_NETWORK_FIXTURE_MODE?.trim();
-  if (!mode) return undefined;
-  if (mode !== "record" && mode !== "replay") throw new Error(`Invalid MDCZ_NETWORK_FIXTURE_MODE: ${mode}`);
-  const delayMs = Number(env.MDCZ_REPLAY_DELAY_MS ?? 0);
-  if (!Number.isFinite(delayMs) || delayMs < 0) {
-    throw new Error(`MDCZ_REPLAY_DELAY_MS must be a non-negative number, got ${env.MDCZ_REPLAY_DELAY_MS}`);
-  }
-  return {
-    mode,
-    root: env.MDCZ_NETWORK_FIXTURES_ROOT || "tests/fixtures/network",
-    stagingRoot: env.MDCZ_NETWORK_FIXTURE_STAGING || "test-results/recording/network",
-    delayMs,
-  };
-};
-
-export const createNetworkClient = (
-  options: NetworkClientOptions = {},
-  env: NodeJS.ProcessEnv = process.env,
-): NetworkClient => {
-  const fixture = networkFixtureSettings(env);
-  if (!fixture) return new NetworkClient(options);
-  if (fixture.mode === "record") {
-    const client = new NetworkRecordClient({
-      stagingRoot: fixture.stagingRoot,
-      publishRoot: fixture.root,
-      network: options,
-    });
-    if (env === process.env) envRecorder = client;
-    return client;
-  }
-  return new NetworkReplayClient({ fixturesRoot: fixture.root, delayMs: fixture.delayMs, network: options });
-};
-
-export const attachNetworkFixtureCaseId = <T extends { relativePath: string; caseId?: string }>(item: T): T =>
-  networkFixtureSettings(process.env) ? { ...item, caseId: fixtureCaseIdFromRelativePath(item.relativePath) } : item;
-
-export const finalizeNetworkFixtures = async (): Promise<void> => {
-  await envRecorder?.finalize();
-};

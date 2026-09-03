@@ -3,7 +3,7 @@ import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeCrawlerFailureReason, RuntimeCrawlerProvider } from "../crawler/types";
-import { runWithCrawlerSourceContext } from "../network/networkFixtureContext";
+import { runWithCrawlerSource } from "../network/networkExecution";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { buildCrawlerOptions } from "./crawlerOptions";
 import { FieldAggregator, summarizeFailedSiteResults } from "./fieldAggregation";
@@ -394,7 +394,7 @@ export class AggregationService {
     const timeoutMessage = `${site} exceeded crawler budget (${perCrawlerTimeoutMs}ms)`;
 
     try {
-      const response = await runWithCrawlerSourceContext(
+      const response = await runWithCrawlerSource(
         site,
         async () => await this.crawlerProvider.crawl({ number, site, options }),
       );

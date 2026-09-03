@@ -186,6 +186,5 @@ export * from "./cookieChecks";
 export * from "./cookieUtils";
 export * from "./InMemoryCookieJar";
 export * from "./NetworkClient";
-export * from "./NetworkFixtureClient";
-export * from "./networkFixtureContext";
+export * from "./networkExecution";
 export * from "./RateLimiter";
