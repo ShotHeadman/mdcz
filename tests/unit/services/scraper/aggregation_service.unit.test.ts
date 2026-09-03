@@ -1,7 +1,7 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse, FailureReason } from "@mdcz/runtime/crawler/base/types";
-import { NetworkClient } from "@mdcz/runtime/network";
+import { getCrawlerSourceContext, NetworkClient, runWithScrapeItemContext } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -167,6 +167,46 @@ describe("AggregationService", () => {
     expect(result?.stats.successCount).toBe(2);
     expect(result?.stats.failedCount).toBe(1);
     expect(result?.stats.skippedCount).toBe(0);
+  });
+
+  it("isolates each concurrent crawler in its Website source context", async () => {
+    const provider = new MultiResultCrawlerProvider(
+      makeSiteResults(
+        [Website.DMM, { thumb_url: "https://dmm.example/thumb.jpg" }],
+        [Website.JAVDB, { thumb_url: "https://javdb.example/thumb.jpg" }],
+      ),
+    );
+    const observed: Website[] = [];
+    const lateObserved: Array<ReturnType<typeof getCrawlerSourceContext>> = [];
+    let releaseLateReads!: () => void;
+    const lateGate = new Promise<void>((resolve) => {
+      releaseLateReads = resolve;
+    });
+    const lateReads: Promise<void>[] = [];
+    const originalCrawl = provider.crawl.bind(provider);
+    provider.crawl = async (input) => {
+      await Promise.resolve();
+      const source = getCrawlerSourceContext();
+      if (source) observed.push(source.website);
+      lateReads.push(
+        lateGate.then(() => {
+          lateObserved.push(getCrawlerSourceContext());
+        }),
+      );
+      return await originalCrawl(input);
+    };
+    const config = makeConfig({ scrape: { sites: [Website.DMM, Website.JAVDB] } });
+
+    await runWithScrapeItemContext(
+      { itemId: "item", relativePath: "movie.mp4", caseId: "movie-case" },
+      async () => await new AggregationService(provider).aggregate("ABF-075", config),
+    );
+    releaseLateReads();
+    await Promise.all(lateReads);
+
+    expect(observed).toEqual(expect.arrayContaining([Website.DMM, Website.JAVDB]));
+    expect(lateObserved).toEqual([undefined, undefined]);
+    expect(getCrawlerSourceContext()).toBeUndefined();
   });
 
   it("records DMM blocked failures and uses avwikidb only when it is enabled", async () => {

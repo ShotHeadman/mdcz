@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "caseId": "ipzz-907",
+  "website": "avbase",
+  "credentialSeed": {
+    "cookies": {},
+    "tokens": {}
+  },
+  "interactions": [
+    {
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works?q=IPZZ-907",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works?q=IPZZ-907",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-cache, no-store, max-age=0, must-revalidate"
+          ],
+          [
+            "cf-cache-status",
+            "BYPASS"
+          ],
+          [
+            "cf-ray",
+            "a34cf6838c552fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:46:48 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=aN56tNklMad%2B9STPQF48Q3zGB3UxvuqgZ%2FImURIcZ69aBeDudXteubkgMksryzupuGmTfKz4MUbIIHeehfuqrmuY%2Ful9sSekO5cDLO065%2Ba2uHD4wVn%2F%2FtQ06iZ9wQB61YYzbzfs4DORpxYU\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=14,cfOrigin;dur=175"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "bodyPath": "responses/001.html",
+        "sha256": "5b58b43270eec858353007561dc122ac9de9d1d12eac677083a90760d6ccc076"
+      }
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works/idp:IPZZ-907",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works/idp:IPZZ-907",
+        "headers": [
+          [
+            "age",
+            "5334"
+          ],
+          [
+            "cache-control",
+            "public, max-age=0"
+          ],
+          [
+            "cdn-cache-control",
+            "public, max-age=21600"
+          ],
+          [
+            "cf-cache-status",
+            "HIT"
+          ],
+          [
+            "cf-ray",
+            "a34cf68c198d2fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:46:49 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=pM9dO3JO9q6e3tNiNGG4Ngn3Ii7%2BhfW2se0lfl2%2FH3y012MQ3wrYv0jbaCPwStsr1MTw2BvgyPrsp9qQ9cZEQyE6h9tewU7Mp3bw3RscUHeHnsdFDwvkrI4cVlVhzvzx6NQqh5P8SALNO%2B2t\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"HIT\", cfEdge;dur=13,cfOrigin;dur=0"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "bodyPath": "responses/002.html",
+        "sha256": "dcd2c4c61580f953b980e4e125183639d7d4ce159309555fa98907dae4894afe"
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
+import { getScrapeItemContext } from "./network";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import { MAX_LIVE_SCRAPE_LOGS, ScrapeRunSession, TaskExecutor } from "./tasks";
 
@@ -118,6 +119,49 @@ const terminalResult = (
 });
 
 describe("scrape run session", () => {
+  it("isolates fixture case context for every concurrently executing item", async () => {
+    const items = [
+      { ...runItem("one"), caseId: "movie-one" },
+      { ...runItem("two"), caseId: "movie-two" },
+    ];
+    const observed: Array<ReturnType<typeof getScrapeItemContext>> = [];
+    const lateObserved: Array<ReturnType<typeof getScrapeItemContext>> = [];
+    const releaseLateReads = deferred<void>();
+    const lateReads: Promise<void>[] = [];
+    const session = new ScrapeRunSession({
+      runId: "fixture-context",
+      items,
+      concurrency: 2,
+      admitItem,
+      executeItem: async (item) => {
+        await Promise.resolve();
+        observed.push(getScrapeItemContext());
+        lateReads.push(
+          releaseLateReads.promise.then(() => {
+            lateObserved.push(getScrapeItemContext());
+          }),
+        );
+        return terminalResult(item, "success");
+      },
+      commitItem: async (_item, result) => result,
+      onSnapshot: () => undefined,
+    });
+
+    await session.start();
+    await session.waitForIdle();
+    releaseLateReads.resolve();
+    await Promise.all(lateReads);
+
+    expect(observed).toEqual(
+      expect.arrayContaining([
+        { itemId: "one", relativePath: "one.mp4", caseId: "movie-one" },
+        { itemId: "two", relativePath: "two.mp4", caseId: "movie-two" },
+      ]),
+    );
+    expect(lateObserved).toEqual([undefined, undefined]);
+    expect(getScrapeItemContext()).toBeUndefined();
+  });
+
   it("keeps stable live snapshots while pausing after one committed item", async () => {
     const first = deferred<ScrapeResult>();
     const started = deferred<void>();

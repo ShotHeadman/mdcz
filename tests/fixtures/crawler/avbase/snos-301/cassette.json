@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "caseId": "snos-301",
+  "website": "avbase",
+  "credentialSeed": {
+    "cookies": {},
+    "tokens": {}
+  },
+  "interactions": [
+    {
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works?q=SNOS-301",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works?q=SNOS-301",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-cache, no-store, max-age=0, must-revalidate"
+          ],
+          [
+            "cf-cache-status",
+            "BYPASS"
+          ],
+          [
+            "cf-ray",
+            "a34cf6863d6d2fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:46:48 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=%2Fm%2B2bHsCfGR8TRRdugW9gXUGRjhzxmC0xivi9ht2b9tzKNIcJvc3IWKT0uS39AkLTKDQpJ9mvoioPYateHopVVvM7B9BkwnoRnFCVrN5IdFm0o8qwe5iETGe8lKSCln%2FeH1snzwYNttjNxze\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=9,cfOrigin;dur=174"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "bodyPath": "responses/001.html",
+        "sha256": "4ed96c4023c5d10be70c14ef826827ee75888575b8c9f0cb53d958f628527e79"
+      }
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works/SNOS-301",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works/SNOS-301",
+        "headers": [
+          [
+            "cache-control",
+            "public, max-age=0"
+          ],
+          [
+            "cdn-cache-control",
+            "public, max-age=21600"
+          ],
+          [
+            "cf-cache-status",
+            "EXPIRED"
+          ],
+          [
+            "cf-ray",
+            "a34cf6922f472fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:46:50 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=6RkFeumqXve9DKa4fPjBIJAiS5capRsN8J8YGX4yIIYGmzUO1lJSeD5F%2FUdBjDfHEZPPwUvGdzgfjEcC5cQouabpCcrX0I4a0VJkdohv7dDaWxz%2FNm00dI28qZTLZ7CQkbwLUOCxuc%2Bq18K1\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"EXPIRED\", cfEdge;dur=35,cfOrigin;dur=185"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "bodyPath": "responses/002.html",
+        "sha256": "56fcce01929a2a417280cf925809e9669a8446d7e9ee7997320000bc42a47c21"
+      }
+    }
+  ]
+}

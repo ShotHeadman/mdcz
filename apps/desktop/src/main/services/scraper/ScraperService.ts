@@ -14,7 +14,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { type ConfiguredMediaRootService, mediaPathOwnership } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import { attachCrawlerFixtureCaseId, type NetworkClient } from "@mdcz/runtime/network";
 import { commitScrapeTerminalResult, type ScrapeFileTransitions } from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
@@ -352,7 +352,7 @@ export class ScraperService {
             }
           }
         }
-        return {
+        return attachCrawlerFixtureCaseId({
           id: item.id,
           rootId: item.rootId,
           relativePath: item.relativePath,
@@ -360,7 +360,7 @@ export class ScraperService {
           ...(executionSource ? { executionSource } : {}),
           ...(retrying ? { replaceExistingTargets: true } : {}),
           ...(retrying ? { outputBaseDirectory: resolveRootRelativePath(outputRoot, "") } : {}),
-        };
+        });
       }),
     );
     const itemIndexById = new Map(items.map((item, index) => [item.id, index + 1]));

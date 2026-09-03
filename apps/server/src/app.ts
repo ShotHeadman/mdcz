@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { NetworkClient } from "@mdcz/runtime/network";
+import { createCrawlerNetworkClient, type NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
@@ -94,7 +94,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const mappingStore = options.resources?.mappingStore ?? createServerTranslationMappingStore(config);
   const networkClient =
     options.resources?.networkClient ??
-    new NetworkClient({
+    createCrawlerNetworkClient({
       getProxyUrl: () => config.getComputed().proxyUrl,
       getTimeoutMs: () => config.getComputed().networkTimeoutMs,
       getRetryCount: () => config.getComputed().networkRetryCount,

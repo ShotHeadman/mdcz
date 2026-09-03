@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "caseId": "start-608",
+  "website": "avbase",
+  "credentialSeed": {
+    "cookies": {},
+    "tokens": {}
+  },
+  "interactions": [
+    {
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works?q=START-608",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works?q=START-608",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-cache, no-store, max-age=0, must-revalidate"
+          ],
+          [
+            "cf-cache-status",
+            "BYPASS"
+          ],
+          [
+            "cf-ray",
+            "a34cf7b71ed12fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:47:37 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=C5BtPEPP7CHkz7rE7TExGmo0NSQW019bVO0pHStHdi%2FHh8pS9Q5gLfZ%2ByXEqGgws%2FFdg2wGPtHjvxYvBn9KyzyBXHB%2FwJE%2FOJKhSU3kVxEvaPp2nHMigfnqfByf79AZV7JHdKxa7RYxh5q8x\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=23,cfOrigin;dur=195"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "bodyPath": "responses/001.html",
+        "sha256": "18e25814705e8ee1e8ef85e89b8897a02f7a12a2fc2705701fc3cef5f662bc17"
+      }
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works/sodcreate:START-608",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works/sodcreate:START-608",
+        "headers": [
+          [
+            "cache-control",
+            "public, max-age=0"
+          ],
+          [
+            "cdn-cache-control",
+            "public, max-age=21600"
+          ],
+          [
+            "cf-cache-status",
+            "EXPIRED"
+          ],
+          [
+            "cf-ray",
+            "a34cf7bd6fa82fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:47:38 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=URYoKDaDFSOSj0WFowLbHBQhjlpFZEa9VNJcpX65cHTymt%2BdxSGpWZnUsMsHBOrTeC1uIt3%2BT66H0O9C4mt%2BFntR754b5Dnf94B8lU8jYdN6Ufyaxz9NTsC0oU7ak%2FrmM4PKIzMC6ZAd5VsD\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"EXPIRED\", cfEdge;dur=15,cfOrigin;dur=252"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "bodyPath": "responses/002.html",
+        "sha256": "80393285a35096a398e6cea15c3a71928bd4f3d7ef0969de973505c9657db9ff"
+      }
+    }
+  ]
+}

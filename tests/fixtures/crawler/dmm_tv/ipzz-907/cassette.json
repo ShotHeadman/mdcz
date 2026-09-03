@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "caseId": "ipzz-907",
+  "website": "dmm_tv",
+  "credentialSeed": {
+    "cookies": {
+      "sort_search": "mdcz-test-cookie-sort_search"
+    },
+    "tokens": {}
+  },
+  "interactions": [
+    {
+      "sequence": 1,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiIxaXB6ejAwOTA3Iiwic2hvdWxkRmV0Y2hSZWxhdGVkVGFncyI6dHJ1ZX19"
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (2500 ms) exceeded."
+      }
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiIxaXB6ejAwOTA3Iiwic2hvdWxkRmV0Y2hSZWxhdGVkVGFncyI6dHJ1ZX19"
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "49"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Thu, 03 Sep 2026 05:55:26 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "bodyPath": "responses/002.json",
+        "sha256": "edc391758eb12d697f4fbe2f6b4671df52aeaced6884ba962572eb295062bbaa"
+      }
+    },
+    {
+      "sequence": 3,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiJpcHp6MDA5MDciLCJzaG91bGRGZXRjaFJlbGF0ZWRUYWdzIjp0cnVlfX0="
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "2679"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Thu, 03 Sep 2026 05:55:26 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "bodyPath": "responses/003.json",
+        "sha256": "d3fcd3508ea4850c056f1d9a2486be357e85d760403f288fc37e7ec229cf2706"
+      }
+    }
+  ]
+}

@@ -41,12 +41,18 @@ export const applyWorkbenchLiveScrapeConfig = async (input: {
       enableTranslation: false,
     },
     download: {
+      downloadThumb: false,
+      downloadPoster: false,
+      downloadFanart: false,
       downloadSceneImages: false,
       downloadTrailer: false,
       generateNfo: true,
     },
     personSync: {
       personImageSources: [] as string[],
+    },
+    behavior: {
+      updateCheck: false,
     },
     paths: {
       mediaPath: input.fixture.fixtureDir,
