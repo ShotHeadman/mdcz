@@ -1,4 +1,4 @@
-import type { CrawlerCredentialSeed } from "./crawlerCassette";
+import type { NetworkFixtureCredentialSeed } from "./networkFixture";
 
 const MIN_SECRET_LENGTH = 8;
 const TOKEN_QUERY_NAME = /token|csrf|auth|session|secret|password|passwd|access_key|api_key/iu;
@@ -38,7 +38,7 @@ const replaceAllBytes = (haystack: Uint8Array, needle: Uint8Array, replacement: 
   return new Uint8Array(Buffer.concat(parts));
 };
 
-export class CrawlerCredentialRedactor {
+export class NetworkCredentialRedactor {
   private readonly byReal = new Map<string, ObservedCredential>();
 
   register(name: string, real: string, kind: "cookie" | "token"): void {
@@ -126,7 +126,7 @@ export class CrawlerCredentialRedactor {
     return result;
   }
 
-  seed(reals = new Set(this.byReal.keys())): CrawlerCredentialSeed {
+  seed(reals = new Set(this.byReal.keys())): NetworkFixtureCredentialSeed {
     const cookies: Record<string, string> = {};
     const tokens: Record<string, string> = {};
     for (const secret of this.secrets()) {

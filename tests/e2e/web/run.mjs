@@ -23,10 +23,8 @@ const isDesktopOnly = playwrightTarget === "desktop-electron";
 const layout = resolveE2ERunnerLayout(workspaceRoot, playwrightTarget);
 const fixtureEnv = fixtureMode
   ? {
-      MDCZ_REPLAY_CRAWLER: "1",
-      MDCZ_REPLAY_CRAWLER_FIXTURES: path.join(workspaceRoot, "tests", "fixtures", "crawler"),
-      MDCZ_REPLAY_MEDIA_MANIFESTS: path.join(workspaceRoot, "tests", "fixtures", "media"),
-      MDCZ_REPLAY_MEDIA_BLOBS: path.join(workspaceRoot, ".test-fixtures", "media"),
+      MDCZ_NETWORK_FIXTURE_MODE: "replay",
+      MDCZ_NETWORK_FIXTURES_ROOT: path.join(workspaceRoot, "tests", "fixtures", "network"),
     }
   : {};
 

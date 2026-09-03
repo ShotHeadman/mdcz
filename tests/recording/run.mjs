@@ -17,16 +17,11 @@ const journeyOutput = path.resolve(
 );
 const env = {
   ...process.env,
-  MDCZ_RECORD_CRAWLER: "1",
-  MDCZ_RECORD_STAGING:
-    process.env.MDCZ_RECORD_STAGING?.trim() || path.join(workspaceRoot, "test-results/recording/staging"),
-  MDCZ_RECORD_PUBLISH: process.env.MDCZ_RECORD_PUBLISH?.trim() || path.join(workspaceRoot, "tests/fixtures/crawler"),
-  MDCZ_RECORD_MEDIA_STAGING:
-    process.env.MDCZ_RECORD_MEDIA_STAGING?.trim() || path.join(workspaceRoot, "test-results/recording/media-staging"),
-  MDCZ_RECORD_MEDIA_PUBLISH:
-    process.env.MDCZ_RECORD_MEDIA_PUBLISH?.trim() || path.join(workspaceRoot, "tests/fixtures/media"),
-  MDCZ_RECORD_MEDIA_BLOBS:
-    process.env.MDCZ_RECORD_MEDIA_BLOBS?.trim() || path.join(workspaceRoot, "tests/fixtures/media"),
+  MDCZ_NETWORK_FIXTURE_MODE: "record",
+  MDCZ_NETWORK_FIXTURE_STAGING:
+    process.env.MDCZ_NETWORK_FIXTURE_STAGING?.trim() || path.join(workspaceRoot, "test-results/recording/network"),
+  MDCZ_NETWORK_FIXTURES_ROOT:
+    process.env.MDCZ_NETWORK_FIXTURES_ROOT?.trim() || path.join(workspaceRoot, "tests/fixtures/network"),
 };
 
 const resolveStagingRoot = (value) => {
@@ -73,11 +68,8 @@ const waitForUrl = async (url, timeoutMs = 60_000) => {
   throw new Error(`Timed out waiting for ${url}`);
 };
 
-console.log("Recording crawler fixtures from whatever items you scrape.");
-await Promise.all([
-  rm(resolveStagingRoot(env.MDCZ_RECORD_STAGING), { recursive: true, force: true }),
-  rm(resolveStagingRoot(env.MDCZ_RECORD_MEDIA_STAGING), { recursive: true, force: true }),
-]);
+console.log("Recording network fixtures from whatever items you scrape.");
+await rm(resolveStagingRoot(env.MDCZ_NETWORK_FIXTURE_STAGING), { recursive: true, force: true });
 
 if (mode === "desktop") {
   console.log("Desktop recording starts the product through the Electron Playwright harness.");

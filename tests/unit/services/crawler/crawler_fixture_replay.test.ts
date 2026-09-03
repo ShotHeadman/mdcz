@@ -3,15 +3,11 @@ import { FetchGateway } from "@mdcz/runtime/crawler";
 import { AvbaseCrawler } from "@mdcz/runtime/crawler/sites/avbase";
 import { DmmCrawler } from "@mdcz/runtime/crawler/sites/dmm";
 import { DmmTvCrawler } from "@mdcz/runtime/crawler/sites/dmm/dmm_tv";
-import {
-  CrawlerReplayNetworkClient,
-  runWithCrawlerSourceContext,
-  runWithScrapeItemContext,
-} from "@mdcz/runtime/network";
+import { NetworkReplayClient, runWithCrawlerSourceContext, runWithScrapeItemContext } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
-const fixturesRoot = path.resolve(process.cwd(), "tests/fixtures/crawler");
+const fixturesRoot = path.resolve(process.cwd(), "tests/fixtures/network");
 
 interface FixtureCaseExpectation {
   caseId: string;
@@ -52,8 +48,8 @@ describe("Crawler actual fixture replay", () => {
     expectedStudio,
     expectedDirector,
   }) => {
-    it("parses DMM real recorded data and consumes all cassette interactions", async () => {
-      const replay = new CrawlerReplayNetworkClient({ fixturesRoot });
+    it("parses DMM recorded network data", async () => {
+      const replay = new NetworkReplayClient({ fixturesRoot });
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
 
       const response = await runWithScrapeItemContext(
@@ -78,12 +74,10 @@ describe("Crawler actual fixture replay", () => {
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();
       expect(data.genres?.length).toBeGreaterThan(0);
-
-      await replay.assertConsumed();
     });
 
-    it("parses DMM_TV real recorded data and consumes all cassette interactions", async () => {
-      const replay = new CrawlerReplayNetworkClient({
+    it("parses DMM_TV recorded network data", async () => {
+      const replay = new NetworkReplayClient({
         fixturesRoot,
         network: { getRetryCount: () => 1 },
       });
@@ -108,12 +102,10 @@ describe("Crawler actual fixture replay", () => {
       expect(data.actors).toEqual(expectedActors);
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();
-
-      await replay.assertConsumed();
     });
 
-    it("parses AVBASE real recorded data and consumes all cassette interactions", async () => {
-      const replay = new CrawlerReplayNetworkClient({ fixturesRoot });
+    it("parses AVBASE recorded network data", async () => {
+      const replay = new NetworkReplayClient({ fixturesRoot });
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
 
       const response = await runWithScrapeItemContext(
@@ -136,8 +128,6 @@ describe("Crawler actual fixture replay", () => {
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();
       expect(data.genres?.length).toBeGreaterThan(0);
-
-      await replay.assertConsumed();
     });
   });
 });

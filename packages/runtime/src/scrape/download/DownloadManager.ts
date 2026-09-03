@@ -1,7 +1,7 @@
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets } from "@mdcz/shared/types";
-import { type RuntimeDownloadNetworkClient, runWithMediaFixtureContext } from "../../network";
+import { type RuntimeDownloadNetworkClient, runWithNetworkFixtureChannel } from "../../network";
 import { type RuntimeLogger, runtimeLoggerService } from "../../shared";
 import type { ImageAlternatives } from "../aggregation";
 import { throwIfAborted } from "../utils/abort";
@@ -78,7 +78,7 @@ export class DownloadManager {
 
     throwIfAborted(plan.signal);
 
-    await runWithMediaFixtureContext(async () => {
+    await runWithNetworkFixtureChannel("media", async () => {
       for (const downloader of this.downloaders) {
         if (!downloader.shouldDownload(plan)) continue;
         throwIfAborted(plan.signal);

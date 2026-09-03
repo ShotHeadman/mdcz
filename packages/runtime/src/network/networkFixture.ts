@@ -1,47 +1,48 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Website } from "@mdcz/shared/enums";
 import { z } from "zod";
+import type { RawNetworkRequest } from "./NetworkClient";
 
 const headerListSchema = z.array(z.tuple([z.string(), z.string()]));
-
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const requestSchema = z.object({
   method: z.string().min(1),
   url: z.url(),
   headers: headerListSchema,
   bodyBase64: z.string().nullable(),
 });
-
+const bodySchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("file"),
+    path: z.string().min(1),
+    sha256: sha256Schema,
+    byteLength: z.int().nonnegative(),
+  }),
+  z.object({ kind: z.literal("blob"), sha256: sha256Schema, byteLength: z.int().nonnegative() }),
+]);
 const responseSchema = z.object({
-  status: z.int().min(200).max(599),
+  status: z.int().min(100).max(599),
   statusText: z.string(),
   url: z.url(),
   headers: headerListSchema,
-  bodyPath: z.string().min(1),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  body: bodySchema,
 });
-
-const transportErrorSchema = z.object({
-  name: z.string().min(1),
-  message: z.string(),
-});
-
 const interactionSchema = z
   .object({
+    channel: z.string().min(1),
     sequence: z.int().positive(),
     request: requestSchema,
     response: responseSchema.optional(),
-    transportError: transportErrorSchema.optional(),
+    transportError: z.object({ name: z.string().min(1), message: z.string() }).optional(),
   })
   .refine((interaction) => Boolean(interaction.response) !== Boolean(interaction.transportError), {
     message: "An interaction must contain exactly one response or transportError",
   });
 
-export const crawlerCassetteSchema = z.object({
+export const networkFixtureManifestSchema = z.object({
   schemaVersion: z.literal(1),
   caseId: z.string().min(1),
-  website: z.enum(Website),
   credentialSeed: z.object({
     cookies: z.record(z.string(), z.string()),
     tokens: z.record(z.string(), z.string()),
@@ -49,16 +50,11 @@ export const crawlerCassetteSchema = z.object({
   interactions: z.array(interactionSchema),
 });
 
-export type CrawlerCassette = z.infer<typeof crawlerCassetteSchema>;
-export type CrawlerCassetteInteraction = CrawlerCassette["interactions"][number];
-export type CrawlerCredentialSeed = CrawlerCassette["credentialSeed"];
+export type NetworkFixtureManifest = z.infer<typeof networkFixtureManifestSchema>;
+export type NetworkFixtureInteraction = NetworkFixtureManifest["interactions"][number];
+export type NetworkFixtureCredentialSeed = NetworkFixtureManifest["credentialSeed"];
 
-export interface LoadedCrawlerCassette {
-  cassette: CrawlerCassette;
-  responseBodies: ReadonlyMap<number, Uint8Array>;
-}
-
-export const crawlerCaseIdFromRelativePath = (relativePath: string): string => {
+export const fixtureCaseIdFromRelativePath = (relativePath: string): string => {
   const base = path.posix.basename(relativePath.replaceAll("\\", "/").trim());
   const stem = base.includes(".") ? base.replace(/\.[^.]+$/u, "") : base;
   const caseId = stem
@@ -66,13 +62,15 @@ export const crawlerCaseIdFromRelativePath = (relativePath: string): string => {
     .replaceAll(/[^a-z0-9._-]+/gu, "-")
     .replaceAll(/^[._-]+|[._-]+$/gu, "")
     .replaceAll(/-{2,}/gu, "-");
-  if (!caseId) throw new Error(`Cannot derive crawler caseId from ${relativePath}`);
+  if (!caseId) throw new Error(`Cannot derive fixture caseId from ${relativePath}`);
   return caseId;
 };
 
-export const resolveCrawlerCassetteDirectory = (fixturesRoot: string, website: Website, caseId: string): string => {
-  return path.resolve(fixturesRoot, website, caseId);
-};
+export const resolveNetworkFixtureDirectory = (fixturesRoot: string, caseId: string): string =>
+  path.resolve(fixturesRoot, caseId);
+
+export const resolveNetworkFixtureBlob = (fixturesRoot: string, sha256: string): string =>
+  path.resolve(fixturesRoot, "blobs", sha256);
 
 export const responseBodyExtension = (contentType: string | null): string => {
   const type = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
@@ -84,7 +82,7 @@ export const responseBodyExtension = (contentType: string | null): string => {
 
 export const sha256Hex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
-export const headersToCassetteList = (headers: Headers): Array<[string, string]> => {
+export const headersToFixtureList = (headers: Headers): Array<[string, string]> => {
   const entries = [...headers]
     .filter(([name]) => name.toLowerCase() !== "set-cookie")
     .map(([name, value]) => [name.toLowerCase(), value] as [string, string]);
@@ -102,43 +100,35 @@ export const rawRequestBodyToBase64 = async (body: unknown): Promise<string | nu
   if (typeof body === "string") return Buffer.from(body).toString("base64");
   if (body instanceof URLSearchParams) return Buffer.from(body.toString()).toString("base64");
   if (body instanceof ArrayBuffer) return Buffer.from(body).toString("base64");
-  if (ArrayBuffer.isView(body)) {
-    return Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString("base64");
-  }
+  if (ArrayBuffer.isView(body)) return Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString("base64");
   if (body instanceof Blob) return Buffer.from(await body.arrayBuffer()).toString("base64");
-  throw new Error(`Crawler cassette does not support request body type ${body.constructor?.name ?? typeof body}`);
+  throw new Error(`Network fixture does not support request body type ${body.constructor?.name ?? typeof body}`);
 };
 
-export const loadCrawlerCassette = async (
-  fixturesRoot: string,
-  website: Website,
-  caseId: string,
-): Promise<LoadedCrawlerCassette> => {
-  const directory = resolveCrawlerCassetteDirectory(fixturesRoot, website, caseId);
-  const cassettePath = path.join(directory, "cassette.json");
-  const cassette = crawlerCassetteSchema.parse(JSON.parse(await readFile(cassettePath, "utf8")));
+export const networkRequestIdentity = async (
+  request: RawNetworkRequest,
+): Promise<NetworkFixtureInteraction["request"]> => ({
+  method: (request.init.method ?? "GET").toUpperCase(),
+  url: request.url,
+  headers: headersToFixtureList(request.init.headers),
+  bodyBase64: await rawRequestBodyToBase64(request.init.body),
+});
 
-  if (cassette.website !== website || cassette.caseId !== caseId) {
-    throw new Error(
-      `Crawler cassette identity mismatch at ${cassettePath}: expected ${website}/${caseId}, got ${cassette.website}/${cassette.caseId}`,
-    );
+export const loadNetworkFixture = async (fixturesRoot: string, caseId: string): Promise<NetworkFixtureManifest> => {
+  const manifestPath = path.join(resolveNetworkFixtureDirectory(fixturesRoot, caseId), "manifest.json");
+  const manifest = networkFixtureManifestSchema.parse(JSON.parse(await readFile(manifestPath, "utf8")));
+  if (manifest.caseId !== caseId) {
+    throw new Error(`Network fixture identity mismatch at ${manifestPath}: expected ${caseId}, got ${manifest.caseId}`);
   }
-
-  const responseBodies = new Map<number, Uint8Array>();
-  for (const [index, interaction] of cassette.interactions.entries()) {
-    if (interaction.sequence !== index + 1) {
-      throw new Error(`Crawler cassette sequence must be contiguous at ${website}/${caseId}: ${interaction.sequence}`);
-    }
-    if (!interaction.response) continue;
-    const body = await readFile(path.join(directory, interaction.response.bodyPath));
-    const actualHash = sha256Hex(body);
-    if (actualHash !== interaction.response.sha256) {
+  const nextSequence = new Map<string, number>();
+  for (const interaction of manifest.interactions) {
+    const expected = (nextSequence.get(interaction.channel) ?? 0) + 1;
+    if (interaction.sequence !== expected) {
       throw new Error(
-        `Crawler cassette response hash mismatch at ${website}/${caseId}/${interaction.response.bodyPath}: expected ${interaction.response.sha256}, got ${actualHash}`,
+        `Network fixture sequence must be contiguous at ${caseId}/${interaction.channel}: ${interaction.sequence}`,
       );
     }
-    responseBodies.set(interaction.sequence, body);
+    nextSequence.set(interaction.channel, expected);
   }
-
-  return { cassette, responseBodies };
+  return manifest;
 };

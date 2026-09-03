@@ -11,7 +11,7 @@ import { TrayService } from "@main/services/TrayService";
 import { UpdateService } from "@main/services/UpdateService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
 import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
-import { createCrawlerNetworkClient, finalizeCrawlerFixtures } from "@mdcz/runtime/network";
+import { createNetworkClient, finalizeNetworkFixtures } from "@mdcz/runtime/network";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { app, BrowserWindow } from "electron";
 
@@ -20,7 +20,7 @@ const QUIT_FORCE_EXIT_TIMEOUT_MS = 15_000;
 runtimeLoggerService.setFactory((name) => loggerService.getLogger(name));
 
 const signalService = new SignalService();
-const sharedNetworkClient = createCrawlerNetworkClient({
+const sharedNetworkClient = createNetworkClient({
   getProxyUrl: () => configManager.getComputed().proxyUrl,
   getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
   getRetryCount: () => configManager.getComputed().networkRetryCount,
@@ -107,7 +107,7 @@ const cleanupResources = async (): Promise<void> => {
       process.exitCode = 1;
     }
     try {
-      await finalizeCrawlerFixtures();
+      await finalizeNetworkFixtures();
     } catch (error) {
       const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
       logger.error(`Failed to finalize network fixtures: ${message}`);

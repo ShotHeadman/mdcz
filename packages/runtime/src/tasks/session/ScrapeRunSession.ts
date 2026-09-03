@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
-import { runWithScrapeItemContext } from "../../network/crawlerFixtureContext";
+import { runWithScrapeItemContext } from "../../network/networkFixtureContext";
 import { TaskExecutor } from "../executor";
 
 export const MAX_LIVE_SCRAPE_LOGS = 200;

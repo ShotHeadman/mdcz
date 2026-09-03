@@ -7,7 +7,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { mediaPathOwnership, toLibraryAssets } from "@mdcz/runtime/library";
 import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
 import { MaintenanceArtifactResolver } from "@mdcz/runtime/maintenance/MaintenanceArtifactResolver";
-import { attachCrawlerFixtureCaseId, type NetworkClient } from "@mdcz/runtime/network";
+import { attachNetworkFixtureCaseId, type NetworkClient } from "@mdcz/runtime/network";
 import {
   commitPublishedMedia,
   commitRegisteredPublication,
@@ -583,7 +583,7 @@ export class ScrapeService {
             }
           }
         }
-        return attachCrawlerFixtureCaseId({
+        return attachNetworkFixtureCaseId({
           id: item.id,
           rootId: item.rootId,
           relativePath: item.relativePath,

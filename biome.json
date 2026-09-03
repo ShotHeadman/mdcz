@@ -41,7 +41,7 @@
     }
   },
   "files": {
-    "includes": ["**", "!.vscode", "!dist", "!out", "!coverage", "!tests/fixtures/crawler", "!tests/fixtures/media"]
+    "includes": ["**", "!.vscode", "!dist", "!out", "!coverage", "!tests/fixtures/network"]
   },
   "overrides": [
     {

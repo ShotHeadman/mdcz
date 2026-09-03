@@ -21,7 +21,7 @@ playwright-report*/
 test-results/
 .vitest-attachments/
 .test-fixtures/
-tests/fixtures/media/blobs/
+tests/fixtures/network/blobs/
 
 # Generated native bindings (Electron-ABI better_sqlite3.node from postinstall)
 apps/desktop/native/

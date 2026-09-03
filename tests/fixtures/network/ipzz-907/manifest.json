@@ -1,7 +1,560 @@
 {
   "schemaVersion": 1,
   "caseId": "ipzz-907",
+  "credentialSeed": {
+    "cookies": {
+      "sort_search": "mdcz-test-cookie-sort_search"
+    },
+    "tokens": {}
+  },
   "interactions": [
+    {
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works?q=IPZZ-907",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works?q=IPZZ-907",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-cache, no-store, max-age=0, must-revalidate"
+          ],
+          [
+            "cf-cache-status",
+            "BYPASS"
+          ],
+          [
+            "cf-ray",
+            "a34cf6838c552fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:46:48 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=aN56tNklMad%2B9STPQF48Q3zGB3UxvuqgZ%2FImURIcZ69aBeDudXteubkgMksryzupuGmTfKz4MUbIIHeehfuqrmuY%2Ful9sSekO5cDLO065%2Ba2uHD4wVn%2F%2FtQ06iZ9wQB61YYzbzfs4DORpxYU\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=14,cfOrigin;dur=175"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/avbase/001.html",
+          "sha256": "5b58b43270eec858353007561dc122ac9de9d1d12eac677083a90760d6ccc076",
+          "byteLength": 45128
+        }
+      },
+      "channel": "crawler:avbase"
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works/idp:IPZZ-907",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works/idp:IPZZ-907",
+        "headers": [
+          [
+            "age",
+            "5334"
+          ],
+          [
+            "cache-control",
+            "public, max-age=0"
+          ],
+          [
+            "cdn-cache-control",
+            "public, max-age=21600"
+          ],
+          [
+            "cf-cache-status",
+            "HIT"
+          ],
+          [
+            "cf-ray",
+            "a34cf68c198d2fbd-SIN"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Wed, 02 Sep 2026 13:46:49 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=pM9dO3JO9q6e3tNiNGG4Ngn3Ii7%2BhfW2se0lfl2%2FH3y012MQ3wrYv0jbaCPwStsr1MTw2BvgyPrsp9qQ9cZEQyE6h9tewU7Mp3bw3RscUHeHnsdFDwvkrI4cVlVhzvzx6NQqh5P8SALNO%2B2t\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"HIT\", cfEdge;dur=13,cfOrigin;dur=0"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/avbase/002.html",
+          "sha256": "dcd2c4c61580f953b980e4e125183639d7d4ce159309555fa98907dae4894afe",
+          "byteLength": 52023
+        }
+      },
+      "channel": "crawler:avbase"
+    },
+    {
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.dmm.co.jp/search/=/searchstr=ipzz00907/sort=ranking/",
+        "headers": [
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "referer",
+            "https://www.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.dmm.co.jp/search/=/searchstr=ipzz00907/sort=ranking/",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-store, no-cache, must-revalidate"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Thu, 03 Sep 2026 05:55:26 GMT"
+          ],
+          [
+            "expires",
+            "0"
+          ],
+          [
+            "link",
+            "</search/_next/static/media/4473ecc91f70f139-s.p.woff>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff\", </search/_next/static/media/463dafcda517f24f-s.p.woff>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff\", </search/_next/static/css/14392d5060132f6f.css>; rel=preload; as=\"style\""
+          ],
+          [
+            "set-cookie",
+            "sort_search=mdcz-test-cookie-sort_search; Path=/; Domain=.dmm.co.jp; HttpOnly"
+          ],
+          [
+            "vary",
+            "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch, Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 a0e6840b8e183d8f159cb194a62c98f8.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "wD4icSUtcl5ZgAjQbNvdffj1viILRqtIbQMEDp_9iZ0_QhOg_GPkqA=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P8"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-powered-by",
+            "Next.js"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm/001.html",
+          "sha256": "4631b35e6f497f7683708e075a0cf3cdf7844d7c4bf5f6089dfe5323fe2f33ea",
+          "byteLength": 63656
+        }
+      },
+      "channel": "crawler:dmm"
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiJpcHp6MDA5MDciLCJzaG91bGRGZXRjaFJlbGF0ZWRUYWdzIjp0cnVlfX0="
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "2679"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Thu, 03 Sep 2026 05:55:29 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm/002.json",
+          "sha256": "d3fcd3508ea4850c056f1d9a2486be357e85d760403f288fc37e7ec229cf2706",
+          "byteLength": 2679
+        }
+      },
+      "channel": "crawler:dmm"
+    },
+    {
+      "sequence": 1,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiIxaXB6ejAwOTA3Iiwic2hvdWxkRmV0Y2hSZWxhdGVkVGFncyI6dHJ1ZX19"
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (2500 ms) exceeded."
+      },
+      "channel": "crawler:dmm_tv"
+    },
+    {
+      "sequence": 2,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiIxaXB6ejAwOTA3Iiwic2hvdWxkRmV0Y2hSZWxhdGVkVGFncyI6dHJ1ZX19"
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "49"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Thu, 03 Sep 2026 05:55:26 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm_tv/002.json",
+          "sha256": "edc391758eb12d697f4fbe2f6b4671df52aeaced6884ba962572eb295062bbaa",
+          "byteLength": 49
+        }
+      },
+      "channel": "crawler:dmm_tv"
+    },
+    {
+      "sequence": 3,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiJpcHp6MDA5MDciLCJzaG91bGRGZXRjaFJlbGF0ZWRUYWdzIjp0cnVlfX0="
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "2679"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Thu, 03 Sep 2026 05:55:26 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm_tv/003.json",
+          "sha256": "d3fcd3508ea4850c056f1d9a2486be357e85d760403f288fc37e7ec229cf2706",
+          "byteLength": 2679
+        }
+      },
+      "channel": "crawler:dmm_tv"
+    },
     {
       "sequence": 1,
       "request": {
@@ -22,7 +575,8 @@
       "transportError": {
         "name": "TimeoutError",
         "message": "Request timeout (10000 ms) exceeded."
-      }
+      },
+      "channel": "media"
     },
     {
       "sequence": 2,
@@ -103,9 +657,13 @@
             "HIT"
           ]
         ],
-        "sha256": "ff8912fb93c6eec897d18f5b9ed79f40a17b8c1d20eba5c92577c317b574dab0",
-        "byteLength": 65536
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "ff8912fb93c6eec897d18f5b9ed79f40a17b8c1d20eba5c92577c317b574dab0",
+          "byteLength": 65536
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 3,
@@ -190,9 +748,13 @@
             "imgsrc"
           ]
         ],
-        "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
-        "byteLength": 2732
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
+          "byteLength": 2732
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 4,
@@ -273,9 +835,13 @@
             "HIT"
           ]
         ],
-        "sha256": "6a812ead58c00ee6d38be7f02d0f526cb573826413582c96af065b331dc22037",
-        "byteLength": 65536
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "6a812ead58c00ee6d38be7f02d0f526cb573826413582c96af065b331dc22037",
+          "byteLength": 65536
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 5,
@@ -360,9 +926,13 @@
             "imgsrc"
           ]
         ],
-        "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
-        "byteLength": 2732
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
+          "byteLength": 2732
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 6,
@@ -439,9 +1009,13 @@
             "HIT"
           ]
         ],
-        "sha256": "744d931404a57efa0b421e2cdde91ec1bf7dd0b8beca750146ba1cde45e57d15",
-        "byteLength": 918368
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "744d931404a57efa0b421e2cdde91ec1bf7dd0b8beca750146ba1cde45e57d15",
+          "byteLength": 918368
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 7,
@@ -518,9 +1092,13 @@
             "HIT"
           ]
         ],
-        "sha256": "e5ebd3e4f4792110e40872babef524d982c2f3c44c30879c7225aa71c404ea16",
-        "byteLength": 403602
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "e5ebd3e4f4792110e40872babef524d982c2f3c44c30879c7225aa71c404ea16",
+          "byteLength": 403602
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 8,
@@ -597,9 +1175,13 @@
             "HIT"
           ]
         ],
-        "sha256": "a4c5220937f3250f6e22f2f47cc071af03cc492588685d2faf23c39e97a3aad0",
-        "byteLength": 77403
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "a4c5220937f3250f6e22f2f47cc071af03cc492588685d2faf23c39e97a3aad0",
+          "byteLength": 77403
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 9,
@@ -676,9 +1258,13 @@
             "HIT"
           ]
         ],
-        "sha256": "677726352dc13a33e729dbebb420236a3c1da28136d37f3f6ff4491cf9be1958",
-        "byteLength": 96786
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "677726352dc13a33e729dbebb420236a3c1da28136d37f3f6ff4491cf9be1958",
+          "byteLength": 96786
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 10,
@@ -755,9 +1341,13 @@
             "HIT"
           ]
         ],
-        "sha256": "4acc2b97d316572f6b270eee6bca6b29298fa5433b7960e0ba306552f777f88d",
-        "byteLength": 66755
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "4acc2b97d316572f6b270eee6bca6b29298fa5433b7960e0ba306552f777f88d",
+          "byteLength": 66755
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 11,
@@ -834,9 +1424,13 @@
             "HIT"
           ]
         ],
-        "sha256": "18ebdf14df749b13ec7e38415363ec5ba5d2d5f85ad634bdf6d90b4d0af0355f",
-        "byteLength": 103828
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "18ebdf14df749b13ec7e38415363ec5ba5d2d5f85ad634bdf6d90b4d0af0355f",
+          "byteLength": 103828
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 12,
@@ -913,9 +1507,13 @@
             "MISS"
           ]
         ],
-        "sha256": "d94a66d03e42c3e55ec98ff99aceab0a18f5faccf586ca7d56b5cc3ee74bc1c6",
-        "byteLength": 87019
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "d94a66d03e42c3e55ec98ff99aceab0a18f5faccf586ca7d56b5cc3ee74bc1c6",
+          "byteLength": 87019
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 13,
@@ -992,9 +1590,13 @@
             "HIT"
           ]
         ],
-        "sha256": "323cf98efd6f357c7e86ed0831e8a1980e46d40300696a9786d2d64b2e13ca48",
-        "byteLength": 99606
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "323cf98efd6f357c7e86ed0831e8a1980e46d40300696a9786d2d64b2e13ca48",
+          "byteLength": 99606
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 14,
@@ -1071,9 +1673,13 @@
             "HIT"
           ]
         ],
-        "sha256": "fa825947324a90b181e7ff7827f8f44a0857055a1a0460fa50cedef3f544c74c",
-        "byteLength": 89879
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "fa825947324a90b181e7ff7827f8f44a0857055a1a0460fa50cedef3f544c74c",
+          "byteLength": 89879
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 15,
@@ -1150,9 +1756,13 @@
             "HIT"
           ]
         ],
-        "sha256": "80e3aafa0e4e87bcee41cb286a6c089d04a5e3a955ff30974ad2e12eff8c3a35",
-        "byteLength": 87034
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "80e3aafa0e4e87bcee41cb286a6c089d04a5e3a955ff30974ad2e12eff8c3a35",
+          "byteLength": 87034
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 16,
@@ -1229,9 +1839,13 @@
             "HIT"
           ]
         ],
-        "sha256": "8042ebdd99c7961b4eaf4e93dd13433f5f3929d89d79d8869173b9e34fb99402",
-        "byteLength": 91211
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "8042ebdd99c7961b4eaf4e93dd13433f5f3929d89d79d8869173b9e34fb99402",
+          "byteLength": 91211
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 17,
@@ -1308,9 +1922,13 @@
             "HIT"
           ]
         ],
-        "sha256": "b8ce83fcf7be20a3cc8062adf5156cdea336aa13a52bf7ce7ae3677a694ae4fa",
-        "byteLength": 92835
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "b8ce83fcf7be20a3cc8062adf5156cdea336aa13a52bf7ce7ae3677a694ae4fa",
+          "byteLength": 92835
+        }
+      },
+      "channel": "media"
     },
     {
       "sequence": 18,
@@ -1339,9 +1957,13 @@
             "video/mp4"
           ]
         ],
-        "sha256": "d607c28bd33d56e8bf78c337d2eca051772369781c9cfef256f729fcf6070682",
-        "byteLength": 44554584
-      }
+        "body": {
+          "kind": "blob",
+          "sha256": "d607c28bd33d56e8bf78c337d2eca051772369781c9cfef256f729fcf6070682",
+          "byteLength": 44554584
+        }
+      },
+      "channel": "media"
     }
   ]
 }

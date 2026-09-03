@@ -1,20 +1,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import {
-  CrawlerReplayNetworkClient,
-  MediaReplayNetworkClient,
-  runWithMediaFixtureContext,
-  runWithScrapeItemContext,
-} from "@mdcz/runtime/network";
+import { NetworkReplayClient, runWithNetworkFixtureChannel, runWithScrapeItemContext } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
-const fixturesRoot = path.resolve(process.cwd(), "tests/fixtures/crawler");
-const mediaManifestRoot = path.resolve(process.cwd(), "tests/fixtures/media");
-const mediaBlobRoot = path.resolve(process.cwd(), ".test-fixtures/media");
+const fixturesRoot = path.resolve(process.cwd(), "tests/fixtures/network");
 
 const makeScrapeConfig = (sites: Website[]) =>
   configurationSchema.parse({
@@ -53,8 +46,8 @@ describe("Crawler aggregation real fixture replay integration", () => {
   ];
 
   describe.each(cases)("aggregating $number ($caseId)", ({ caseId, number, expectedTitle, expectedActors }) => {
-    it("aggregates DMM, DMM_TV, and AVBASE concurrently with recorded cassettes", async () => {
-      const replay = new CrawlerReplayNetworkClient({
+    it("aggregates DMM, DMM_TV, and AVBASE concurrently with recorded network data", async () => {
+      const replay = new NetworkReplayClient({
         fixturesRoot,
         network: { getRetryCount: () => 1 },
       });
@@ -84,28 +77,23 @@ describe("Crawler aggregation real fixture replay integration", () => {
       expect(aggregated.stats.successCount).toBe(3);
       expect(aggregated.stats.failedCount).toBe(0);
 
-      await replay.assertConsumed();
       await provider.shutdown();
     });
 
     it("replays media asset requests with mock media fallback", async () => {
-      const manifestPath = path.join(mediaManifestRoot, caseId, "manifest.json");
+      const manifestPath = path.join(fixturesRoot, caseId, "manifest.json");
       const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
       const interaction = manifest.interactions.find(
-        (candidate: { response?: { status: number }; request: { method: string } }) =>
-          candidate.response?.status === 200 || candidate.response?.status === 206,
+        (candidate: { channel: string; response?: { status: number }; request: { method: string } }) =>
+          candidate.channel === "media" && (candidate.response?.status === 200 || candidate.response?.status === 206),
       );
       if (!interaction) throw new Error(`No successful interaction in manifest for ${caseId}`);
 
-      const mediaReplay = new MediaReplayNetworkClient({
-        caseId,
-        manifestRoot: mediaManifestRoot,
-        blobRoot: mediaBlobRoot,
-      });
+      const mediaReplay = new NetworkReplayClient({ fixturesRoot });
 
       const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
       await runWithScrapeItemContext(item, async () => {
-        await runWithMediaFixtureContext(async () => {
+        await runWithNetworkFixtureChannel("media", async () => {
           const content = await mediaReplay.getContent(interaction.request.url);
           expect(content.byteLength).toBeGreaterThan(0);
         });

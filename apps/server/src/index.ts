@@ -1,4 +1,4 @@
-import { finalizeCrawlerFixtures } from "@mdcz/runtime/network";
+import { finalizeNetworkFixtures } from "@mdcz/runtime/network";
 import { buildServer } from "./app";
 import { parseHost, parsePort } from "./config";
 
@@ -13,7 +13,7 @@ const startServer = async (): Promise<void> => {
       try {
         await fastify.close();
       } finally {
-        await finalizeCrawlerFixtures();
+        await finalizeNetworkFixtures();
       }
     })();
     return shutdownPromise;

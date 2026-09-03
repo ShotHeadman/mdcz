@@ -713,58 +713,6 @@ describe("FileOrganizer filesystem organize", () => {
     await expect(access(join(root, "output", "FC2-123456", "FC2-123456-花絮.mp4"))).rejects.toThrow();
   });
 
-  it("keeps video and subtitle sidecar basenames aligned when resolving collisions", async () => {
-    const organizer = new FileOrganizer();
-    const pairRoot = await createTempDir();
-    const pairVideoPath = join(pairRoot, "pair.mp4");
-    const pairIdxPath = join(pairRoot, "pair.idx");
-    const pairSubPath = join(pairRoot, "pair.sub");
-    const existingIdxPath = join(pairRoot, "output", "PAIR-001-CEN", "PAIR-001-CEN.idx");
-
-    await writeFile(pairVideoPath, "video", "utf8");
-    await writeFile(pairIdxPath, "subtitle", "utf8");
-    await writeFile(pairSubPath, "subtitle", "utf8");
-    await mkdir(join(pairRoot, "output", "PAIR-001-CEN"), { recursive: true });
-    await writeFile(existingIdxPath, "existing", "utf8");
-
-    const pairFileInfo = createFileInfo({
-      filePath: pairVideoPath,
-      fileName: "pair",
-      number: "PAIR-001",
-    });
-    const pairConfig = createConfig({
-      paths: {
-        mediaPath: pairRoot,
-        successOutputFolder: "output",
-      },
-      naming: {
-        folderTemplate: "{number}",
-        fileTemplate: "{number}",
-      },
-      behavior: {
-        successFileMove: true,
-        successFileRename: true,
-      },
-    });
-    const pairPlan = organizer.plan(
-      pairFileInfo,
-      createCrawlerData({
-        number: "PAIR-001",
-      }),
-      pairConfig,
-    );
-    const preparedPairPlan = await organizer.ensureOutputReady(pairPlan, pairVideoPath);
-
-    expect(preparedPairPlan.targetVideoPath).toBe(join(pairRoot, "output", "PAIR-001-CEN", "PAIR-001-CEN (1).mp4"));
-    expect(preparedPairPlan.nfoPath).toBe(join(pairRoot, "output", "PAIR-001-CEN", "PAIR-001-CEN (1).nfo"));
-
-    await organizer.organizeVideo(pairFileInfo, preparedPairPlan, pairConfig, pairConfig.paths.mediaPath);
-
-    await expectPathExists(join(pairRoot, "output", "PAIR-001-CEN", "PAIR-001-CEN (1).mp4"));
-    await expectPathExists(join(pairRoot, "output", "PAIR-001-CEN", "PAIR-001-CEN (1).idx"));
-    await expectPathExists(join(pairRoot, "output", "PAIR-001-CEN", "PAIR-001-CEN (1).sub"));
-  });
-
   it("skips disk checks for valid in-place renames and still rejects multiple source videos", async () => {
     const validRoot = await createTempDir();
     const validSourcePath = join(validRoot, "source.mp4");

@@ -7,7 +7,7 @@ import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
-import { preserveScrapeExecutionContext } from "./crawlerFixtureContext";
+import { preserveScrapeExecutionContext } from "./networkFixtureContext";
 import { RateLimiter } from "./RateLimiter";
 
 const RETRY_STATUS_CODE = 429;
