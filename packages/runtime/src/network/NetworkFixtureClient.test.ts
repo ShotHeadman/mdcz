@@ -110,6 +110,32 @@ describe("network fixtures", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects changed translation request bodies without public network fallback", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('{"output_text":"translated"}', { headers: { "content-type": "application/json" } }),
+    );
+    const { recorder, publishRoot } = await createRecorder();
+    await runWithScrapeItem(item, async () => {
+      await runWithNetworkChannel("translation", async () => {
+        await recorder.postJson("https://llm.example.com/responses", { model: "model-a", input: "prompt-a" });
+      });
+    });
+    await recorder.finalize();
+
+    const replay = new NetworkReplayClient({ fixturesRoot: publishRoot });
+    await expect(
+      runWithScrapeItem(item, async () => {
+        return await runWithNetworkChannel("translation", async () => {
+          return await replay.postJson("https://llm.example.com/responses", {
+            model: "model-a",
+            input: "prompt-b",
+          });
+        });
+      }),
+    ).rejects.toThrow(/including shared.*record fixtures again/u);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("redacts credentials before publishing", async () => {
     const cookie = "super-secret-session";
     const token = "query-token-abcdef";

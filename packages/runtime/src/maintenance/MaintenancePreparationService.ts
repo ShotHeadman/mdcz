@@ -8,6 +8,7 @@ import type {
   MaintenanceImageAlternatives,
   PathDiff,
 } from "@mdcz/shared/types";
+import { isUnrecoverableNetworkError } from "../network";
 import type { AggregationService, FileOrganizer, OrganizePlan, SourceMap, TranslateService } from "../scrape";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
@@ -246,7 +247,7 @@ export class MaintenancePreparationService {
     try {
       return await this.deps.translateService.translateCrawlerData(crawlerData, config, signal);
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error) || isUnrecoverableNetworkError(error)) {
         throw error;
       }
 

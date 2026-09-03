@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Configuration } from "@mdcz/shared/config";
 import PQueue from "p-queue";
+import { isUnrecoverableNetworkError } from "../../../network";
 import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
 import { isAbortError, throwIfAborted } from "../../utils/abort";
 import { getTargetLanguageLabel } from "../shared";
@@ -78,7 +79,7 @@ export class OpenAiTranslator {
 
     const content = await this.requestText(config, contractedPrompt, config.translate.llmTemperature, signal).catch(
       (error) => {
-        if (isAbortError(error)) {
+        if (isAbortError(error) || isUnrecoverableNetworkError(error)) {
           throw error;
         }
         this.logger.warn(`LLM translation failed: ${toErrorMessage(error)}`);
@@ -101,7 +102,7 @@ export class OpenAiTranslator {
 
     const contractedPrompt = buildTranslationPrompt(prompt);
     const content = await this.requestText(config, contractedPrompt, 0, signal).catch((error) => {
-      if (isAbortError(error)) {
+      if (isAbortError(error) || isUnrecoverableNetworkError(error)) {
         throw error;
       }
       this.logger.warn(`LLM term translation failed: ${toErrorMessage(error)}`);

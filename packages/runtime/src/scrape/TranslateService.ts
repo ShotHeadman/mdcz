@@ -1,6 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData } from "@mdcz/shared/types";
-import type { RuntimeNetworkClient, RuntimeRequestInit } from "../network";
+import { type RuntimeNetworkClient, type RuntimeRequestInit, runWithNetworkChannel } from "../network";
 import { detectLanguage, noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { ActorNameNormalizer } from "./translate/ActorNameNormalizer";
 import { GoogleTranslator } from "./translate/engines/GoogleTranslator";
@@ -68,43 +68,45 @@ export class TranslateService {
       return data;
     }
 
-    throwIfAborted(signal);
+    return await runWithNetworkChannel("translation", async () => {
+      throwIfAborted(signal);
 
-    const target = toTarget(config.translate.targetLanguage);
+      const target = toTarget(config.translate.targetLanguage);
 
-    const title_zh = toTranslatedFieldValue(
-      await this.translateText(data.title, target, config, signal, { field: "title", number: data.number }),
-    );
-    const plot_zh = data.plot
-      ? toTranslatedFieldValue(
-          await this.translateText(data.plot, target, config, signal, { field: "plot", number: data.number }),
-        )
-      : undefined;
+      const title_zh = toTranslatedFieldValue(
+        await this.translateText(data.title, target, config, signal, { field: "title", number: data.number }),
+      );
+      const plot_zh = data.plot
+        ? toTranslatedFieldValue(
+            await this.translateText(data.plot, target, config, signal, { field: "plot", number: data.number }),
+          )
+        : undefined;
 
-    throwIfAborted(signal);
+      throwIfAborted(signal);
 
-    const mappedActors = await Promise.all(
-      (data.actors ?? []).map((actor) => this.actorNameNormalizer.normalizeAlias(actor)),
-    );
-    const mappedActorProfiles = await Promise.all(
-      (data.actor_profiles ?? []).map((profile) => this.actorNameNormalizer.normalizeProfile(profile)),
-    );
-    const mappedGenres = await Promise.all(
-      (data.genres ?? []).map((genre) =>
-        this.genreTranslator.translateTerm(genre, target, config, this.translateText.bind(this), signal),
-      ),
-    );
+      const mappedActors = await Promise.all(
+        (data.actors ?? []).map((actor) => this.actorNameNormalizer.normalizeAlias(actor)),
+      );
+      const mappedActorProfiles = await Promise.all(
+        (data.actor_profiles ?? []).map((profile) => this.actorNameNormalizer.normalizeProfile(profile)),
+      );
+      const mappedGenres = await Promise.all(
+        (data.genres ?? []).map((genre) =>
+          this.genreTranslator.translateTerm(genre, target, config, this.translateText.bind(this), signal),
+        ),
+      );
 
-    throwIfAborted(signal);
+      throwIfAborted(signal);
 
-    return {
-      ...data,
-      title_zh,
-      plot_zh,
-      actors: mappedActors,
-      actor_profiles: mappedActorProfiles.length > 0 ? mappedActorProfiles : data.actor_profiles,
-      genres: mappedGenres,
-    };
+      return {
+        ...data,
+        title_zh,
+        plot_zh,
+        actors: mappedActors,
+        actor_profiles: mappedActorProfiles.length > 0 ? mappedActorProfiles : data.actor_profiles,
+        genres: mappedGenres,
+      };
+    });
   }
 
   async translateText(

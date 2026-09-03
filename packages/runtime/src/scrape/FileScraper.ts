@@ -16,6 +16,7 @@ import type {
   ScrapeResult,
   VideoMeta,
 } from "@mdcz/shared/types";
+import { isUnrecoverableNetworkError } from "../network";
 import {
   createPublicationPlan,
   type PreparedPublicationPlan,
@@ -188,7 +189,7 @@ export class FileScraper {
           signal,
         );
       } catch (error) {
-        if (isAbortError(error)) throw error;
+        if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
         this.deps.logger.warn(`Translation failed for ${aggregationResult.data.number}: ${toErrorMessage(error)}`);
         crawlerData = aggregationResult.data;
       }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { RuntimeNetworkClient } from "../../../network";
+import { isUnrecoverableNetworkError, type RuntimeNetworkClient } from "../../../network";
 import { toErrorMessage } from "../../../shared";
 import { isAbortError, throwIfAborted } from "../../utils/abort";
 import type { LanguageTarget } from "../types";
@@ -62,7 +62,7 @@ export class GoogleTranslator {
       const payload = await this.networkClient.getJson<unknown>(url.toString(), { signal });
       return extractGoogleTranslatedText(payload);
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error) || isUnrecoverableNetworkError(error)) {
         throw error;
       }
       this.logger.warn(`Google translation failed: ${toErrorMessage(error)}`);
