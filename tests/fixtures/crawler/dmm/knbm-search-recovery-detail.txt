@@ -1,7 +1,0 @@
-<html><body>
-  <h1><span>KNBM Search Recovery</span></h1>
-  <table>
-    <tr><th>鍑烘紨鑰?/th><td><a>Actor Recovery</a></td></tr>
-    <tr><th>銈搞儯銉炽儷</th><td><a>Tag Recovery</a></td></tr>
-  </table>
-</body></html>

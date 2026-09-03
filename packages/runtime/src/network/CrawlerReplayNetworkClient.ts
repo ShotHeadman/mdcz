@@ -24,7 +24,7 @@ interface ReplayState {
 export interface CrawlerReplayNetworkClientOptions {
   fixturesRoot: string;
   media?: { manifestRoot: string; blobRoot: string };
-  network?: Omit<NetworkClientOptions, "getRetryCount" | "rawDispatch">;
+  network?: Omit<NetworkClientOptions, "rawDispatch">;
 }
 
 const replayKey = (website: Website, caseId: string): string => `${website}\u0000${caseId}`;
@@ -98,7 +98,7 @@ export class CrawlerReplayNetworkClient extends NetworkClient {
   constructor(options: CrawlerReplayNetworkClientOptions) {
     super({
       ...options.network,
-      getRetryCount: () => 0,
+      getRetryCount: options.network?.getRetryCount ?? (() => 0),
       rawDispatch: async (request) => await this.dispatchFixture(request),
     });
     this.fixturesRoot = options.fixturesRoot;

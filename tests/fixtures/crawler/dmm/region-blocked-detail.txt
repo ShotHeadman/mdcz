@@ -1,4 +1,0 @@
-<html>
-  <head><title>このページはお住まいの地域からご利用になれません。 - FANZA</title></head>
-  <body><p>このサービスはお住まいの地域からはご利用になれません。</p></body>
-</html>

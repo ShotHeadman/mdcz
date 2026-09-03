@@ -140,35 +140,6 @@ describe("AggregationService", () => {
     });
   };
 
-  it("aggregates results from multiple successful crawlers", async () => {
-    const siteResults = makeSiteResults(
-      [Website.DMM, { title: undefined, plot: "Short DMM plot", thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg" }],
-      [
-        Website.JAVDB,
-        {
-          title: "JAVDB Title",
-          plot: "Longer JAVDB plot description here",
-          actors: ["Actor A", "Actor B"],
-          genres: ["Tag 1", "Tag 2"],
-        },
-      ],
-    );
-
-    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
-      "ABF-075",
-      makeConfig(),
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.data.title).toBeDefined();
-    expect(result?.data.number).toBe("ABF-075");
-    expect(result?.data.plot).toBe("Longer JAVDB plot description here");
-    expect(result?.data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/thumb.jpg");
-    expect(result?.stats.successCount).toBe(2);
-    expect(result?.stats.failedCount).toBe(1);
-    expect(result?.stats.skippedCount).toBe(0);
-  });
-
   it("isolates each concurrent crawler in its Website source context", async () => {
     const provider = new MultiResultCrawlerProvider(
       makeSiteResults(

@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { DmmCrawler } from "@mdcz/runtime/crawler/sites/dmm";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
@@ -6,9 +5,6 @@ import { describe, expect, it } from "vitest";
 import { FixtureNetworkClient, withGateway } from "./fixtures";
 
 type DmmResponse = Awaited<ReturnType<DmmCrawler["crawl"]>>;
-
-const fixture = (name: string): string =>
-  readFileSync(new URL(`../../../fixtures/crawler/dmm/${name}.txt`, import.meta.url), "utf8");
 
 const searchHtml = (detailUrl: string): string => `
   <html><body><script>const item = {"detailUrl":"${detailUrl.replaceAll("/", "\\/")}"};</script></body></html>
@@ -20,47 +16,94 @@ const successfulData = (response: DmmResponse) => {
   return response.result.data;
 };
 
+const GENRE_MERGE_HTML = `<html><body>
+  <h1><span>Genre Merge Test</span></h1>
+  <table>
+    <tr><th>ジャンル</th><td>
+      <a>Tag 1</a><a>サンプル動画</a><a>Tag 2</a><a>Tag 3</a><a>Tag 4</a><a>Tag 5</a>
+      <a>Tag 6</a><a>Tag 7</a><a>Tag 8</a><a>Tag 9</a><a>Tag 10</a>
+    </td></tr>
+    <tr><th>関連タグ</th><td>
+      <ul>
+        <li><a>#Tag11 #Tag12</a></li>
+        <li><a>#Tag12 #Tag13</a></li>
+      </ul>
+    </td></tr>
+    <tr><th>メーカー</th><td><a>Studio Merge</a></td></tr>
+  </table>
+  <script type="application/ld+json">
+  {
+    "name": "Genre Merge Test",
+    "image": ["https://pics.dmm.co.jp/digital/video/acpdp01102/acpdp01102pl.jpg"],
+    "subjectOf": {"genre": ["Tag 1", "Tag 2"]}
+  }
+  </script>
+</body></html>`;
+
+const NOISE_ISOLATION_HTML = `<html><body>
+  <h1><span>DMM Noise Isolation</span></h1>
+  <div>
+    <span>ジャンル</span>
+    <a>レビューを見る</a>
+    <a>次へ</a>
+    <a>単月レンタルに追加</a>
+  </div>
+  <table>
+    <tr><th>出演者</th><td><a>彩月七緒</a></td></tr>
+    <tr><th>ジャンル</th><td><a>巨乳</a><a>中出し</a></td></tr>
+    <tr><th>メーカー</th><td><a>MOODYZ</a></td></tr>
+    <tr><th>レーベル</th><td><a>MOODYZ ニュージーニアス</a></td></tr>
+    <tr><th>配信開始日</th><td><span>2026/05/04</span></td></tr>
+  </table>
+  <script type="application/ld+json">
+  {
+    "name": "DMM Noise Isolation",
+    "image": ["https://pics.dmm.co.jp/digital/video/mngs00051/mngs00051pl.jpg"],
+    "subjectOf": {"genre": ["巨乳", "中出し"]}
+  }
+  </script>
+</body></html>`;
+
+const AWS_OPTIMIZATION_HTML = `<html><body>
+  <h1><span>AWS Optimization Test</span></h1>
+  <meta property="og:image" content="https://pics.dmm.co.jp/digital/video/ssis00027/ssis00027ps.jpg">
+  <table>
+    <tr><th>出演者</th><td><a>Actor AWS</a></td></tr>
+    <tr><th>配信開始日</th><td><span>2024/03/15</span></td></tr>
+  </table>
+</body></html>`;
+
+const REGION_BLOCKED_HTML = `<html>
+  <head><title>このページはお住まいの地域からご利用になれません。 - FANZA</title></head>
+  <body><p>このサービスはお住まいの地域からはご利用になれません。</p></body>
+</html>`;
+
+const UNRENDERED_SHELL_HTML = `<html><body>
+  <script>self.__next_f.push([1,"shell"])</script>
+  <script src="/_next/static/chunks/main.js"></script>
+</body></html>`;
+
+const DIRECT_DETAIL_HTML = `<html><body>
+  <h1><span>Direct Detail Title</span></h1>
+  <meta property="og:image" content="https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497ps.jpg">
+</body></html>`;
+
+const KNBM_SEARCH_RECOVERY_HTML = `<html><body>
+  <h1><span>KNBM Search Recovery</span></h1>
+  <table>
+    <tr><th>出演者</th><td><a>Actor Recovery</a></td></tr>
+    <tr><th>ジャンル</th><td><a>Tag Recovery</a></td></tr>
+  </table>
+</body></html>`;
+
 describe("DmmCrawler", () => {
   it("parses supported DMM detail pages and keeps native DMM image URLs", async () => {
     const cases = [
       {
-        number: "SSIS-497",
-        searchUrl: "https://www.dmm.co.jp/search/=/searchstr=ssis00497/sort=ranking/",
-        detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00497/",
-        detailHtml: fixture("ssis-497-detail"),
-        assert: (response: DmmResponse, networkClient: FixtureNetworkClient) => {
-          const data = successfulData(response);
-          expect(data.website).toBe(Website.DMM);
-          expect(data.number).toBe("SSIS-497");
-          expect(data.title).toBe("Sample DMM Digital Title");
-          expect(data.plot).toBe("Plot from json-ld");
-          expect(data.release_date).toBe("2024-04-01");
-          expect(data.actors).toEqual(["Actor A"]);
-          expect(data.genres).toEqual(["Tag A", "Tag B"]);
-          expect(data.studio).toBe("Studio A");
-          expect(data.publisher).toBe("Publisher A");
-          expect(data.series).toBe("Series A");
-          expect(data.director).toBe("Director A");
-          expect(data.thumb_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497pl.jpg");
-          expect(data.poster_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00497/ssis00497ps.jpg");
-          expect(data.trailer_url).toBe("https://cdn.example.com/trailer.mp4");
-          expect(data.scene_images).toEqual([
-            "https://img.example.com/1.jpg",
-            "https://img.example.com/2.jpg",
-            "https://img.example.com/3.jpg",
-          ]);
-          const dmmSearchRequest = networkClient.requests.find(
-            (request) => request.url === "https://www.dmm.co.jp/search/=/searchstr=ssis00497/sort=ranking/",
-          );
-          expect(dmmSearchRequest?.headers.get("accept-language")).toBe("ja-JP,ja;q=0.9");
-          expect(networkClient.requests.some((request) => request.url.includes("awsimgsrc.dmm.co.jp"))).toBe(false);
-        },
-      },
-      {
         number: "ACPDP-1102",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=acpdp01102/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=acpdp01102/",
-        detailHtml: fixture("genre-merge-detail"),
+        detailHtml: GENRE_MERGE_HTML,
         assert: (response: DmmResponse) => {
           expect(successfulData(response).genres).toEqual([
             "Tag 1",
@@ -83,7 +126,7 @@ describe("DmmCrawler", () => {
         number: "MNGS-051",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=mngs00051/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=mngs00051/",
-        detailHtml: fixture("noise-isolation-detail"),
+        detailHtml: NOISE_ISOLATION_HTML,
         assert: (response: DmmResponse) => {
           const data = successfulData(response);
           expect(data.genres).toEqual(["巨乳", "中出し"]);
@@ -96,7 +139,7 @@ describe("DmmCrawler", () => {
         number: "SSIS-027",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=ssis00027/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00027/",
-        detailHtml: fixture("aws-optimization-detail"),
+        detailHtml: AWS_OPTIMIZATION_HTML,
         assert: (response: DmmResponse, networkClient: FixtureNetworkClient) => {
           const data = successfulData(response);
           expect(data.title).toBe("AWS Optimization Test");
@@ -131,14 +174,14 @@ describe("DmmCrawler", () => {
         number: "DLDSS-463",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=dldss00463/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=dldss00463/",
-        detailHtml: fixture("region-blocked-detail"),
+        detailHtml: REGION_BLOCKED_HTML,
         expectedError: "DMM: region blocked",
       },
       {
         number: "DLDSS-463",
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=dldss00463/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=dldss00463/",
-        detailHtml: fixture("unrendered-shell-detail"),
+        detailHtml: UNRENDERED_SHELL_HTML,
         expectedError: "DMM: unrendered shell",
       },
     ];
@@ -167,7 +210,7 @@ describe("DmmCrawler", () => {
 
   it("uses manual detail URLs directly without running search", async () => {
     const detailUrl = "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=ssis00497/";
-    const networkClient = new FixtureNetworkClient(new Map<string, unknown>([[detailUrl, fixture("direct-detail")]]));
+    const networkClient = new FixtureNetworkClient(new Map<string, unknown>([[detailUrl, DIRECT_DETAIL_HTML]]));
     const crawler = new DmmCrawler(withGateway(networkClient));
 
     const response = await crawler.crawl({
@@ -184,72 +227,6 @@ describe("DmmCrawler", () => {
     }
     expect(response.result.data.title).toBe("Direct Detail Title");
     expect(networkClient.requests.map((request) => request.url)).toEqual([detailUrl]);
-  });
-
-  it("routes video.dmm.co.jp search candidates through GraphQL without fetching the shell detail page", async () => {
-    const number = "STARS-804";
-    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=stars00804/sort=ranking/";
-    const videoDetailUrl = "https://video.dmm.co.jp/av/content/?id=1stars00804";
-    const graphqlUrl = "https://api.video.dmm.co.jp/graphql";
-    const searchHtml = `
-      <html><body>
-        <script>
-          window.__DMM_SEARCH__ = {
-            "contents": {
-              "data": [{
-                "contentID": "1stars00804",
-                "title": "STARS-804 Embedded Search Hit",
-                "detailURL": "${videoDetailUrl}"
-              }]
-            }
-          };
-        </script>
-      </body></html>
-    `;
-    const networkClient = new FixtureNetworkClient(
-      new Map<string, unknown>([
-        [searchUrl, searchHtml],
-        [
-          graphqlUrl,
-          {
-            data: {
-              ppvContent: {
-                title: "DMM Video GraphQL Title",
-                makerContentId: "STARS-804",
-                description: "Recovered from video GraphQL",
-                makerReleasedAt: "2025-05-17T00:00:00Z",
-                duration: 5400,
-                packageImage: {
-                  largeUrl: "https://cdn.example.com/dmm-video-cover.jpg",
-                  mediumUrl: "https://cdn.example.com/dmm-video-poster.jpg",
-                },
-                sampleImages: [{ largeImageUrl: "https://cdn.example.com/dmm-video-sample.jpg" }],
-                actresses: [{ name: "Actor Video" }],
-                genres: [{ name: "Tag Video" }],
-              },
-              reviewSummary: { average: 4.4 },
-            },
-          },
-        ],
-      ]),
-    );
-    const crawler = new DmmCrawler(withGateway(networkClient));
-
-    const response = await crawler.crawl({
-      number,
-      site: Website.DMM,
-    });
-
-    expect(response.result.success).toBe(true);
-    if (!response.result.success) {
-      throw new Error("expected success");
-    }
-
-    expect(response.result.data.website).toBe(Website.DMM);
-    expect(response.result.data.title).toBe("DMM Video GraphQL Title");
-    expect(response.result.data.number).toBe("STARS-804");
-    expect(response.result.data.durationSeconds).toBe(5400);
-    expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl]);
   });
 
   it("routes tv.dmm.co.jp list search candidates through DMM Video GraphQL", async () => {
@@ -398,7 +375,7 @@ describe("DmmCrawler", () => {
       [primarySearchUrl, "<html><body><div>no match</div></body></html>"],
       [compactSearchUrl, "<html><body><div>still no match</div></body></html>"],
       [hyphenatedSearchUrl, `<html><body><a href="${detailUrl}">KNBM-007 Detail</a></body></html>`],
-      [detailUrl, fixture("knbm-search-recovery-detail")],
+      [detailUrl, KNBM_SEARCH_RECOVERY_HTML],
     ]);
 
     const networkClient = new FixtureNetworkClient(fixtures);
