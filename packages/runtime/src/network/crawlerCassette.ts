@@ -87,38 +87,12 @@ export const resolveCrawlerCassetteDirectory = (fixturesRoot: string, website: W
   return path.resolve(fixturesRoot, website, caseId);
 };
 
-export const CRAWLER_CASSETTE_TEXT_EXTENSIONS = [".html", ".json", ".txt"] as const;
-
-export type CrawlerCassetteTextExtension = (typeof CRAWLER_CASSETTE_TEXT_EXTENSIONS)[number];
-
-const crawlerCassetteTextExtensionSet = new Set<string>(CRAWLER_CASSETTE_TEXT_EXTENSIONS);
-
-export const isCrawlerCassetteTextExtension = (value: string): value is CrawlerCassetteTextExtension =>
-  crawlerCassetteTextExtensionSet.has(value.toLowerCase());
-
-export const assertCrawlerCassetteResponsePath = (bodyPath: string): void => {
-  const extension = path.posix.extname(bodyPath.replaceAll("\\", "/")).toLowerCase();
-  if (!isCrawlerCassetteTextExtension(extension)) {
-    throw new Error(
-      `Crawler cassette responses must be text (.html, .json, .txt), found ${bodyPath}. Image and video downloads belong in media fixtures.`,
-    );
-  }
-};
-
-export const responseBodyExtension = (contentType: string | null, byteLength = 0): CrawlerCassetteTextExtension => {
+export const responseBodyExtension = (contentType: string | null): string => {
   const type = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
   if (type.includes("html")) return ".html";
   if (type.includes("json")) return ".json";
-  if (type.startsWith("text/") || type.includes("xml") || type.includes("javascript") || type.includes("urlencoded")) {
-    return ".txt";
-  }
-  if (!type && byteLength === 0) return ".txt";
-  if (type.startsWith("image/") || type.startsWith("video/") || type.startsWith("audio/")) {
-    throw new Error(`Crawler cassette rejects ${type} responses; record media downloads through MediaFixtureRecorder.`);
-  }
-  throw new Error(
-    `Crawler cassette only stores text (.html, .json, .txt); received ${type || "missing content-type"}.`,
-  );
+  if (type.startsWith("text/")) return ".txt";
+  return ".bin";
 };
 
 const resolveResponsePath = (directory: string, bodyPath: string): string => {
@@ -177,7 +151,6 @@ export const loadCrawlerCassette = async (
       throw new Error(`Crawler cassette sequence must be contiguous at ${website}/${caseId}: ${interaction.sequence}`);
     }
     if (!interaction.response) continue;
-    assertCrawlerCassetteResponsePath(interaction.response.bodyPath);
     const body = await readFile(resolveResponsePath(directory, interaction.response.bodyPath));
     const actualHash = sha256Hex(body);
     if (actualHash !== interaction.response.sha256) {

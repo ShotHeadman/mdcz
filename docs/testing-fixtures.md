@@ -3,7 +3,7 @@
 ## 目标
 
 测试必须同时满足：crawler 解析可重复、真实媒体问题可复现、默认测试不访问公网、大文件不进入 Git。
-任何 crawler replay 未命中都立即终止且禁止回退公网。媒体 blob 未 hydrate 时，标准测试回退到仓库内置微型 Mock 素材；像素/编码级断言则显式跳过。
+任何 crawler replay 未命中都立即终止且禁止回退公网。媒体 blob 未 hydrate 时，回放使用仓库内置微型 Mock 素材。
 
 caseId 从媒体相对路径的文件名自动派生，例如 `SSIS-497.mp4` 对应 `ssis-497`。同一次任务发现重复 caseId 时立即失败，不再维护独立录制 plan。
 
@@ -19,7 +19,7 @@ tests/fixtures/crawler/<website>/<caseId>/
 └── responses/          # 仅 .html / .json / .txt
 ```
 
-只覆盖 `crawlerProvider.crawl()` 范围内的原始请求与响应。Cassette 只验证文本元数据解析：HTML、JSON 与其它文本。`image/*`、`video/*` 以及未知二进制不得写入 `responses/`，发布前 `validateCrawlerFiles` 会阻断任何媒体文件。
+只覆盖 `crawlerProvider.crawl()` 范围内的原始请求与响应。Cassette 只保存 HTML、JSON 与其它文本；`image/*` 和 `video/*` 不写入 `responses/`，由媒体 manifest + blob 接管。
 
 poster、thumb、fanart、scene、trailer 下载以及翻译、人物同步不进入 source cassette。
 
@@ -60,8 +60,8 @@ tests/fixtures/mock-media/sample.mp4    # 约 0.5 秒 H.264/AAC 空白 MP4
 | 层级 | 命令 / 条件 | 媒体来源 |
 | :--- | :--- | :--- |
 | 核心流程与单元测试 | `pnpm test:unit` | crawler 文本 Cassette；不依赖真实 Blob |
-| 离线流程回放 | `pnpm test:e2e:fixtures` | manifest + 真实 Blob；缺失时自动回退 Mock |
-| 真实像素与编码深度测试 | 按需；`MDCZ_MEDIA_REPLAY_STRICT=1` | 必须 hydrate 私有 Blob，否则 `MissingMediaBlobError` / `it.skip` |
+| 离线流程回放 | `pnpm test:e2e:fixtures` | manifest + 真实 Blob；缺失时回退 Mock |
+| 真实像素与编码深度测试 | 按需，需 hydrate 私有 Blob | 真实 bytes |
 
 ## 录制边界
 
@@ -101,9 +101,7 @@ tests/fixtures/media/blobs/<sha256>
 
 使用 `MediaReplayNetworkClient` 加载 manifest 和本地 blob。crawler 输出中的远程 URL 保持不变，网络客户端在最终 dispatch 处返回本地 bytes，不需要常驻 HTTP server。
 
-- 本地存在 `blobs/<sha256>`：返回真实 bytes（字节精确匹配）。
-- 本地缺失：默认使用 `tests/fixtures/mock-media/` 中的对应占位文件，并改写 `content-length`，避免 `ENOENT`。
-- `MDCZ_MEDIA_REPLAY_STRICT=1` 或 `fallbackToMock: false`：抛出 `MissingMediaBlobError`，深度视觉/清晰度测试应 `it.skip` 并提示挂载私有网盘。
+本地存在 `blobs/<sha256>` 时返回真实 bytes；缺失时使用 `tests/fixtures/mock-media/` 中的对应占位文件。
 
 只有测试 redirect、Range、缓存头或浏览器原生加载时才启动进程内临时 HTTP server，或由 Playwright `page.route()` fulfill 原始 URL。
 
@@ -147,7 +145,7 @@ Cookie、Authorization、CSRF、query token、request-body token 和 Set-Cookie 
 
 - [x] item/source async context 与 raw dispatch
 - [x] source cassette schema、hash 校验、发布与 replay
-- [x] crawler cassette 拒绝媒体二进制，媒体由 manifest + blob 接管
+- [x] crawler cassette 不写入图片/视频，媒体由 manifest + blob 接管
 - [x] media download async context
 - [x] Git 内 media manifest 与 Git 外 content-addressed blob
 - [x] media recorder、校验、hydrate 和 replay client

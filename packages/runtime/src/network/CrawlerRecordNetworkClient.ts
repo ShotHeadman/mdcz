@@ -21,7 +21,6 @@ import {
   validateCrawlerRecordingStaging,
 } from "./crawlerRecordingPublish";
 import { MediaFixtureRecorder } from "./MediaFixtureRecorder";
-import { DEFAULT_MOCK_MEDIA_ROOT } from "./mediaFixture";
 import {
   NetworkClient,
   type NetworkClientOptions,
@@ -53,6 +52,11 @@ const sessionKey = (website: Website, caseId: string): string => `${website}\u00
 const fixtureCaseIdBindings = new Map<string, string>();
 
 const paddedSequence = (sequence: number): string => String(sequence).padStart(3, "0");
+
+const isCrawlerMediaResponse = (contentType: string | null): boolean => {
+  const type = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  return type.startsWith("image/") || type.startsWith("video/");
+};
 
 const captureResponseBytes = async (response: RawNetworkResponse): Promise<Uint8Array> => {
   const cloned = response.clone();
@@ -160,16 +164,17 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
     }
 
     const key = sessionKey(website, caseId);
-    const sequence = await this.allocateSequence(key, website, caseId, relativePath);
     let response: RawNetworkResponse;
     try {
       response = await dispatch();
     } catch (error) {
+      const sequence = await this.allocateSequence(key, website, caseId, relativePath);
       await this.recordInteraction(key, sequence, request, { error });
       throw error;
     }
-    const bytes = await captureResponseBytes(response);
-    await this.recordInteraction(key, sequence, request, { response, bytes });
+    if (isCrawlerMediaResponse(response.headers.get("content-type"))) return response;
+    const sequence = await this.allocateSequence(key, website, caseId, relativePath);
+    await this.recordInteraction(key, sequence, request, { response, bytes: await captureResponseBytes(response) });
     return response;
   }
 
@@ -271,7 +276,7 @@ export class CrawlerRecordNetworkClient extends NetworkClient {
       if (redactedBody.byteLength !== outcome.bytes.byteLength && redactedHeaders.has("content-length")) {
         redactedHeaders.set("content-length", String(redactedBody.byteLength));
       }
-      const extension = responseBodyExtension(outcome.response.headers.get("content-type"), redactedBody.byteLength);
+      const extension = responseBodyExtension(outcome.response.headers.get("content-type"));
       const bodyPath = path.posix.join("responses", `${paddedSequence(sequence)}${extension}`);
       const directory = resolveCrawlerCassetteDirectory(this.stagingRoot, session.website, session.caseId);
       await mkdir(path.join(directory, "responses"), { recursive: true });
@@ -412,8 +417,6 @@ interface ResolvedReplaySettings {
   crawlerFixturesRoot: string;
   mediaManifestRoot: string;
   mediaBlobRoot: string;
-  mockMediaRoot: string;
-  fallbackToMock: boolean;
 }
 
 let envSettings: ResolvedRecordingSettings | undefined;
@@ -458,8 +461,6 @@ const resolveCrawlerReplaySettingsFromEnv = (
     crawlerFixturesRoot: env.MDCZ_REPLAY_CRAWLER_FIXTURES?.trim() || "tests/fixtures/crawler",
     mediaManifestRoot: env.MDCZ_REPLAY_MEDIA_MANIFESTS?.trim() || "tests/fixtures/media",
     mediaBlobRoot: env.MDCZ_REPLAY_MEDIA_BLOBS?.trim() || "tests/fixtures/media",
-    mockMediaRoot: env.MDCZ_MOCK_MEDIA?.trim() || DEFAULT_MOCK_MEDIA_ROOT,
-    fallbackToMock: !envFlagEnabled(env.MDCZ_MEDIA_REPLAY_STRICT),
   };
 };
 
@@ -483,12 +484,7 @@ export const createCrawlerNetworkClient = (
   if (replaySettings) {
     const replay = new CrawlerReplayNetworkClient({
       fixturesRoot: replaySettings.crawlerFixturesRoot,
-      media: {
-        manifestRoot: replaySettings.mediaManifestRoot,
-        blobRoot: replaySettings.mediaBlobRoot,
-        mockMediaRoot: replaySettings.mockMediaRoot,
-        fallbackToMock: replaySettings.fallbackToMock,
-      },
+      media: { manifestRoot: replaySettings.mediaManifestRoot, blobRoot: replaySettings.mediaBlobRoot },
       network: options,
     });
     if (env === process.env) envReplay = replay;

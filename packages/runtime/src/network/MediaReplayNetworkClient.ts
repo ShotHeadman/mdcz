@@ -1,14 +1,5 @@
-import { runtimeLoggerService } from "../shared";
 import { getMediaFixtureContext } from "./crawlerFixtureContext";
-import {
-  DEFAULT_MOCK_MEDIA_ROOT,
-  type LoadedMediaFixture,
-  loadMediaFixture,
-  loadMockMediaBytes,
-  MissingMediaBlobError,
-  mediaRequestIdentity,
-  mockMediaKindFromContentType,
-} from "./mediaFixture";
+import { type LoadedMediaFixture, loadMediaFixture, loadMockMediaBytes, mediaRequestIdentity } from "./mediaFixture";
 import {
   NetworkClient,
   type NetworkClientOptions,
@@ -17,25 +8,18 @@ import {
 } from "./NetworkClient";
 import { ReplayResponse } from "./ReplayResponse";
 
-const mediaReplayLogger = runtimeLoggerService.getLogger("MediaReplayNetworkClient");
-
 export interface MediaReplayNetworkClientOptions {
   caseId?: string;
   manifestRoot: string;
   blobRoot: string;
-  mockMediaRoot?: string;
-  fallbackToMock?: boolean;
   network?: Omit<NetworkClientOptions, "getRetryCount" | "rawDispatch">;
 }
 
 export class MediaReplayNetworkClient extends NetworkClient {
   private readonly states = new Map<string, Promise<{ loaded: LoadedMediaFixture; consumedSequences: Set<number> }>>();
-  private readonly mockedHashes = new Set<string>();
   private readonly caseId: string | undefined;
   private readonly manifestRoot: string;
   private readonly blobRoot: string;
-  private readonly mockMediaRoot: string;
-  private readonly fallbackToMock: boolean;
 
   constructor(options: MediaReplayNetworkClientOptions) {
     super({
@@ -50,8 +34,6 @@ export class MediaReplayNetworkClient extends NetworkClient {
     this.caseId = options.caseId;
     this.manifestRoot = options.manifestRoot;
     this.blobRoot = options.blobRoot;
-    this.mockMediaRoot = options.mockMediaRoot ?? DEFAULT_MOCK_MEDIA_ROOT;
-    this.fallbackToMock = options.fallbackToMock ?? true;
   }
 
   async assertConsumed(caseId = this.caseId): Promise<void> {
@@ -96,18 +78,9 @@ export class MediaReplayNetworkClient extends NetworkClient {
     if (!response) throw new Error(`Media fixture interaction ${interaction.sequence} has no outcome`);
     let body = loaded.responseBodies.get(response.sha256);
     if (!body && response.byteLength === 0) body = new Uint8Array();
-    if (!body && !this.fallbackToMock) throw new MissingMediaBlobError(loaded.manifest.caseId, response.sha256);
     if (!body) {
-      const kind = mockMediaKindFromContentType(
-        response.headers.find(([name]) => name === "content-type")?.[1] ?? null,
-      );
-      if (!this.mockedHashes.has(response.sha256)) {
-        this.mockedHashes.add(response.sha256);
-        mediaReplayLogger.warn(
-          `Media blob ${response.sha256} is not hydrated for ${loaded.manifest.caseId}; using built-in mock ${kind} from ${this.mockMediaRoot}`,
-        );
-      }
-      body = await loadMockMediaBytes(kind, this.mockMediaRoot);
+      const type = response.headers.find(([name]) => name === "content-type")?.[1]?.toLowerCase() ?? "";
+      body = await loadMockMediaBytes(type.startsWith("video/") ? "video" : "image");
     }
     const headers = new Headers(response.headers);
     if (headers.has("content-length")) headers.set("content-length", String(body.byteLength));
@@ -117,9 +90,7 @@ export class MediaReplayNetworkClient extends NetworkClient {
   private async getState(caseId: string): Promise<{ loaded: LoadedMediaFixture; consumedSequences: Set<number> }> {
     let state = this.states.get(caseId);
     if (!state) {
-      state = loadMediaFixture(this.manifestRoot, this.blobRoot, caseId, {
-        requireBlobs: !this.fallbackToMock,
-      }).then((loaded) => ({
+      state = loadMediaFixture(this.manifestRoot, this.blobRoot, caseId).then((loaded) => ({
         loaded,
         consumedSequences: new Set<number>(),
       }));

@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CrawlerReplayNetworkClient, MediaReplayNetworkClient } from "@mdcz/runtime/network";
@@ -11,7 +11,7 @@ import {
   runWithMediaFixtureContext,
   runWithScrapeItemContext,
 } from "./crawlerFixtureContext";
-import { loadMockMediaBytes, MissingMediaBlobError } from "./mediaFixture";
+import { loadMockMediaBytes } from "./mediaFixture";
 
 const { fetchMock, impitConstructorMock } = vi.hoisted(() => {
   const fetchMock = vi.fn();
@@ -120,19 +120,23 @@ describe("CrawlerRecordNetworkClient", () => {
     await expect(loadCrawlerCassette(stagingRoot, Website.DMM, "one")).rejects.toThrow();
   });
 
-  it("stores html, json, and text bodies with matching extensions", async () => {
+  it("stores html, json, and text bodies, and skips image responses", async () => {
     const html = "<html><body>detail</body></html>";
     const json = '{"title":"SSIS-497"}';
     const text = "plain-body";
     fetchMock
       .mockResolvedValueOnce(new Response(html, { status: 200, headers: { "content-type": "text/html" } }))
       .mockResolvedValueOnce(new Response(json, { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(
+        new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg", "content-length": "8" } }),
+      )
       .mockResolvedValueOnce(new Response(text, { status: 200, headers: { "content-type": "text/plain" } }));
 
     const { recorder, stagingRoot } = await createRecorder();
     await recorded(itemOne, Website.DMM, async () => {
       await recorder.getText("https://www.dmm.co.jp/html");
       await recorder.getJson("https://www.dmm.co.jp/json");
+      await expect(recorder.getContent("https://www.dmm.co.jp/cover.jpg")).resolves.toEqual(jpegBytes);
       await recorder.getText("https://www.dmm.co.jp/text");
     });
 
@@ -145,19 +149,6 @@ describe("CrawlerRecordNetworkClient", () => {
     expect(Buffer.from(loaded.responseBodies.get(1) ?? []).toString("utf8")).toBe(html);
     expect(Buffer.from(loaded.responseBodies.get(2) ?? []).toString("utf8")).toBe(json);
     expect(Buffer.from(loaded.responseBodies.get(3) ?? []).toString("utf8")).toBe(text);
-  });
-
-  it.each([
-    ["image/jpeg", jpegBytes],
-    ["video/mp4", jpegBytes],
-    ["application/octet-stream", jpegBytes],
-  ])("refuses to write %s into crawler cassette responses", async (contentType, bytes) => {
-    fetchMock.mockResolvedValue(new Response(bytes, { status: 200, headers: { "content-type": contentType } }));
-    const { recorder, stagingRoot } = await createRecorder();
-    await expect(
-      recorded(itemOne, Website.DMM, async () => await recorder.getContent("https://www.dmm.co.jp/cover.jpg")),
-    ).rejects.toThrow(/Crawler cassette/u);
-    await expect(readdir(path.join(stagingRoot, "dmm", "one", "responses"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("replaces the same credential with one fake value across url, headers, and bodies", async () => {
@@ -249,51 +240,7 @@ describe("CrawlerRecordNetworkClient", () => {
     expect(loaded.cassette.interactions[1]?.response?.bodyPath).toBe("responses/002.txt");
   });
 
-  it("replays a recorded media blob, then falls back to built-in mock media when the blob is missing", async () => {
-    fetchMock.mockResolvedValue(
-      new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg", "content-length": "8" } }),
-    );
-    const { recorder, mediaManifestStagingRoot, mediaBlobRoot } = await createRecorder();
-    const downloaded = await runWithScrapeItemContext(
-      itemOne,
-      async () =>
-        await runWithMediaFixtureContext(async () => await recorder.getContent("https://cdn.example.com/poster.jpg")),
-    );
-    expect(Buffer.from(downloaded)).toEqual(Buffer.from(jpegBytes));
-
-    const replayExact = new MediaReplayNetworkClient({
-      caseId: "one",
-      manifestRoot: mediaManifestStagingRoot,
-      blobRoot: mediaBlobRoot,
-      fallbackToMock: true,
-    });
-    await expect(
-      runWithScrapeItemContext(
-        itemOne,
-        async () =>
-          await runWithMediaFixtureContext(
-            async () => await replayExact.getContent("https://cdn.example.com/poster.jpg"),
-          ),
-      ),
-    ).resolves.toEqual(downloaded);
-    await replayExact.assertConsumed("one");
-
-    await rm(path.join(mediaBlobRoot, "blobs"), { recursive: true, force: true });
-    const replayMock = new MediaReplayNetworkClient({
-      caseId: "one",
-      manifestRoot: mediaManifestStagingRoot,
-      blobRoot: mediaBlobRoot,
-      fallbackToMock: true,
-    });
-    const mocked = await runWithScrapeItemContext(
-      itemOne,
-      async () =>
-        await runWithMediaFixtureContext(async () => await replayMock.getContent("https://cdn.example.com/poster.jpg")),
-    );
-    expect(Buffer.from(mocked)).toEqual(Buffer.from(await loadMockMediaBytes("image")));
-  });
-
-  it("throws when private blobs are missing in strict replay mode", async () => {
+  it("replays missing media blobs with built-in mock media", async () => {
     fetchMock.mockResolvedValue(
       new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg", "content-length": "8" } }),
     );
@@ -309,14 +256,12 @@ describe("CrawlerRecordNetworkClient", () => {
       caseId: "one",
       manifestRoot: mediaManifestStagingRoot,
       blobRoot: mediaBlobRoot,
-      fallbackToMock: false,
     });
-    await expect(
-      runWithScrapeItemContext(
-        itemOne,
-        async () =>
-          await runWithMediaFixtureContext(async () => await replay.getContent("https://cdn.example.com/poster.jpg")),
-      ),
-    ).rejects.toThrow(MissingMediaBlobError);
+    const mocked = await runWithScrapeItemContext(
+      itemOne,
+      async () =>
+        await runWithMediaFixtureContext(async () => await replay.getContent("https://cdn.example.com/poster.jpg")),
+    );
+    expect(Buffer.from(mocked)).toEqual(Buffer.from(await loadMockMediaBytes("image")));
   });
 });
