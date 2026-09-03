@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { atomicCopyFile } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
-import type { RuntimeNetworkClient } from "../../network";
+import { isUnrecoverableNetworkError, type RuntimeNetworkClient } from "../../network";
 import { CachedAsyncResolver, toErrorMessage } from "../../shared";
 import { isAbortError, throwIfAborted } from "../utils/abort";
 import { pathExists } from "../utils/filesystem";
@@ -249,7 +249,7 @@ export class ActorImageFileStore {
         await rm(tempPath, { force: true }).catch(() => undefined);
       }
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error) || isUnrecoverableNetworkError(error)) {
         throw error;
       }
 

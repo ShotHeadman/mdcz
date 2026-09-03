@@ -1,6 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { ActorProfile } from "@mdcz/shared/types";
-import type { RuntimeNetworkClient } from "../network";
+import { type RuntimeNetworkClient, runWithNetworkChannel } from "../network";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { ActorImageFileStore, type ActorImageLookupOptions } from "./actorImage/ActorImageFileStore";
 import { ActorPhotoMaterializer } from "./actorImage/ActorPhotoMaterializer";
@@ -72,32 +72,34 @@ export class ActorImageService implements RuntimeActorImageService {
     configuration: Configuration,
     input: PrepareActorProfilesInput,
   ): Promise<ActorProfile[] | undefined> {
-    throwIfAborted(input.signal);
-
-    const seedProfilesByName = this.indexProfilesByName(input.actorProfiles);
-    const preparedProfiles: ActorProfile[] = [];
-    const seenActorNames = new Set<string>();
-
-    for (const rawActorName of input.actors) {
+    return await runWithNetworkChannel("actor", async () => {
       throwIfAborted(input.signal);
 
-      const actorName = rawActorName.trim();
-      const normalizedName = normalizeActorName(actorName);
-      if (!normalizedName || seenActorNames.has(normalizedName)) {
-        continue;
+      const seedProfilesByName = this.indexProfilesByName(input.actorProfiles);
+      const preparedProfiles: ActorProfile[] = [];
+      const seenActorNames = new Set<string>();
+
+      for (const rawActorName of input.actors) {
+        throwIfAborted(input.signal);
+
+        const actorName = rawActorName.trim();
+        const normalizedName = normalizeActorName(actorName);
+        if (!normalizedName || seenActorNames.has(normalizedName)) {
+          continue;
+        }
+        seenActorNames.add(normalizedName);
+
+        const preparedProfile = await this.prepareActorProfileForMovie(
+          configuration,
+          actorName,
+          seedProfilesByName.get(normalizedName),
+          input,
+        );
+        preparedProfiles.push(preparedProfile);
       }
-      seenActorNames.add(normalizedName);
 
-      const preparedProfile = await this.prepareActorProfileForMovie(
-        configuration,
-        actorName,
-        seedProfilesByName.get(normalizedName),
-        input,
-      );
-      preparedProfiles.push(preparedProfile);
-    }
-
-    return preparedProfiles.length > 0 ? preparedProfiles : undefined;
+      return preparedProfiles.length > 0 ? preparedProfiles : undefined;
+    });
   }
 
   private async prepareActorProfileForMovie(

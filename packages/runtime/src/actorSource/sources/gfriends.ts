@@ -1,4 +1,4 @@
-import type { NetworkClient } from "@mdcz/runtime/network";
+import { isUnrecoverableNetworkError, type NetworkClient, runWithSharedNetworkData } from "@mdcz/runtime/network";
 import { CachedAsyncResolver, toErrorMessage } from "@mdcz/runtime/shared";
 import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
@@ -100,6 +100,7 @@ export class GfriendsActorSource implements BaseActorSource {
         warnings: [],
       };
     } catch (error) {
+      if (isUnrecoverableNetworkError(error)) throw error;
       const message = toErrorMessage(error);
       return {
         source: this.name,
@@ -119,7 +120,9 @@ export class GfriendsActorSource implements BaseActorSource {
 
     return this.mapResolver.resolve(this.actorMapUrl, async () => {
       const rawBase = this.actorMapUrl.replace(/\/Filetree\.json$/u, "").replace(/\/+$/u, "");
-      const payload = await this.deps.networkClient.getJson<GfriendsResponse>(this.actorMapUrl);
+      const payload = await runWithSharedNetworkData(
+        async () => await this.deps.networkClient.getJson<GfriendsResponse>(this.actorMapUrl),
+      );
       const actorMap = new Map<string, GfriendsCandidate[]>();
 
       if (!payload.Content) {

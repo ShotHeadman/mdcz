@@ -1,3 +1,4 @@
+import { isUnrecoverableNetworkError } from "@mdcz/runtime/network";
 import {
   CachedAsyncResolver,
   hasActorProfileFieldValue,
@@ -176,6 +177,7 @@ export class ActorSourceProvider {
     try {
       return await source.lookup(configuration, query);
     } catch (error) {
+      if (isUnrecoverableNetworkError(error)) throw error;
       const message = `Actor source "${sourceName}" failed for ${query.name}: ${toErrorMessage(error)}`;
       this.logger.warn(message);
       return {

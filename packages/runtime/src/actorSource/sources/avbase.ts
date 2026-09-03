@@ -1,4 +1,4 @@
-import type { NetworkClient } from "@mdcz/runtime/network";
+import { isUnrecoverableNetworkError, type NetworkClient } from "@mdcz/runtime/network";
 import {
   buildUrl,
   getProperty,
@@ -267,6 +267,7 @@ export class AvbaseActorSource implements BaseActorSource {
         warnings: [],
       };
     } catch (error) {
+      if (isUnrecoverableNetworkError(error)) throw error;
       const message = toErrorMessage(error);
       return {
         source: this.name,

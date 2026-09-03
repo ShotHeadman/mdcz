@@ -1,3 +1,4 @@
+import { isUnrecoverableNetworkError } from "@mdcz/runtime/network";
 import { mergeActorProfiles, toErrorMessage } from "@mdcz/runtime/shared";
 import type { Configuration } from "@mdcz/shared/config";
 import { mergeActorSourceHints } from "../../sourceHints";
@@ -44,6 +45,7 @@ export class OfficialActorSource implements BaseActorSource {
           matchedResults.push(result);
         }
       } catch (error) {
+        if (isUnrecoverableNetworkError(error)) throw error;
         hadError = true;
         const message = toErrorMessage(error);
         warnings.push(`Failed to load official actor data from ${adapter.key}: ${message}`);

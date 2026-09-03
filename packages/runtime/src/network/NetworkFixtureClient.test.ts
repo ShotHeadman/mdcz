@@ -4,12 +4,13 @@ import path from "node:path";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NetworkRecordClient, NetworkReplayClient } from "./NetworkFixtureClient";
-import { loadNetworkFixture } from "./networkFixture";
 import {
-  runWithCrawlerSourceContext,
-  runWithNetworkFixtureChannel,
-  runWithScrapeItemContext,
-} from "./networkFixtureContext";
+  runWithCrawlerSource,
+  runWithNetworkChannel,
+  runWithScrapeItem,
+  runWithSharedNetworkData,
+} from "./networkExecution";
+import { loadNetworkFixture } from "./networkFixture";
 
 const { fetchMock, impitConstructorMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -41,7 +42,7 @@ const createRecorder = async () => {
 };
 
 const withCrawler = async <T>(network: () => Promise<T>): Promise<T> =>
-  await runWithScrapeItemContext(item, async () => await runWithCrawlerSourceContext(Website.DMM, network));
+  await runWithScrapeItem(item, async () => await runWithCrawlerSource(Website.DMM, network));
 
 describe("network fixtures", () => {
   it("records text and binary responses in one case manifest", async () => {
@@ -80,6 +81,33 @@ describe("network fixtures", () => {
 
     await expect(withCrawler(async () => await replay.getText("https://www.dmm.co.jp/detail"))).resolves.toBe("detail");
     await expect(withCrawler(async () => await replay.getText("https://www.dmm.co.jp/detail"))).resolves.toBe("detail");
+  });
+
+  it("records global data once and replays case data before reusable shared data", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response("shared roster", { headers: { "content-type": "text/plain" } }))
+      .mockResolvedValueOnce(new Response("case roster", { headers: { "content-type": "text/plain" } }));
+    const { recorder, publishRoot } = await createRecorder();
+    await runWithScrapeItem(item, async () => {
+      await runWithNetworkChannel("actor", async () => {
+        await runWithSharedNetworkData(async () => await recorder.getText("https://actors.example.com/roster"));
+        await recorder.getText("https://actors.example.com/roster");
+      });
+    });
+    await recorder.finalize();
+
+    expect((await loadNetworkFixture(publishRoot, "shared")).interactions).toHaveLength(1);
+    expect((await loadNetworkFixture(publishRoot, "one")).interactions).toHaveLength(1);
+
+    const replay = new NetworkReplayClient({ fixturesRoot: publishRoot });
+    await runWithScrapeItem(item, async () => {
+      await runWithNetworkChannel("actor", async () => {
+        await expect(replay.getText("https://actors.example.com/roster")).resolves.toBe("case roster");
+        await expect(replay.getText("https://actors.example.com/roster")).resolves.toBe("shared roster");
+        await expect(replay.getText("https://actors.example.com/roster")).resolves.toBe("shared roster");
+      });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("redacts credentials before publishing", async () => {
@@ -122,11 +150,8 @@ describe("network fixtures", () => {
       new Response(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]), { headers: { "content-type": "image/jpeg" } }),
     );
     const { recorder, publishRoot } = await createRecorder();
-    await runWithScrapeItemContext(item, async () => {
-      await runWithNetworkFixtureChannel(
-        "media",
-        async () => await recorder.getContent("https://cdn.example.com/poster.jpg"),
-      );
+    await runWithScrapeItem(item, async () => {
+      await runWithNetworkChannel("media", async () => await recorder.getContent("https://cdn.example.com/poster.jpg"));
     });
     await recorder.finalize();
     await rm(path.join(publishRoot, "blobs"), { recursive: true, force: true });
@@ -135,13 +160,10 @@ describe("network fixtures", () => {
       fixturesRoot: publishRoot,
       mockMediaRoot: path.resolve("tests/fixtures/mock-media"),
     });
-    const replayed = await runWithScrapeItemContext(
+    const replayed = await runWithScrapeItem(
       item,
       async () =>
-        await runWithNetworkFixtureChannel(
-          "media",
-          async () => await replay.getContent("https://cdn.example.com/poster.jpg"),
-        ),
+        await runWithNetworkChannel("media", async () => await replay.getContent("https://cdn.example.com/poster.jpg")),
     );
     expect(replayed).toEqual(new Uint8Array(await readFile(path.resolve("tests/fixtures/mock-media/sample.jpg"))));
   });

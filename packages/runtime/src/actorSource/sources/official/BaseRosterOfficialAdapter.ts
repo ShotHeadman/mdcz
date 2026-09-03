@@ -1,3 +1,4 @@
+import { runWithSharedNetworkData } from "@mdcz/runtime/network";
 import { CachedAsyncResolver } from "@mdcz/runtime/shared";
 import type { ActorSourceHint } from "../../types";
 import { createCacheBucket } from "./shared";
@@ -38,7 +39,7 @@ export abstract class BaseRosterOfficialAdapter<TRoster> implements OfficialSite
       this.rosterBucket = bucket;
     }
 
-    return await this.rosterResolver.resolve(this.key, loadRoster);
+    return await this.rosterResolver.resolve(this.key, async () => await runWithSharedNetworkData(loadRoster));
   }
 
   abstract matchesHints(hints: ActorSourceHint[]): boolean;
