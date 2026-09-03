@@ -232,6 +232,7 @@ interface ReplaySettings {
   crawlerFixturesRoot: string;
   mediaManifestRoot: string;
   mediaBlobRoot: string;
+  delayMs: number;
 }
 
 let envRecorder: CrawlerRecordNetworkClient | undefined;
@@ -250,14 +251,19 @@ const recordingSettings = (env: NodeJS.ProcessEnv): RecordingSettings | undefine
       }
     : undefined;
 
-const replaySettings = (env: NodeJS.ProcessEnv): ReplaySettings | undefined =>
-  enabled(env.MDCZ_REPLAY_CRAWLER)
-    ? {
-        crawlerFixturesRoot: env.MDCZ_REPLAY_CRAWLER_FIXTURES || "tests/fixtures/crawler",
-        mediaManifestRoot: env.MDCZ_REPLAY_MEDIA_MANIFESTS || "tests/fixtures/media",
-        mediaBlobRoot: env.MDCZ_REPLAY_MEDIA_BLOBS || "tests/fixtures/media",
-      }
-    : undefined;
+const replaySettings = (env: NodeJS.ProcessEnv): ReplaySettings | undefined => {
+  if (!enabled(env.MDCZ_REPLAY_CRAWLER)) return undefined;
+  const delayMs = Number(env.MDCZ_REPLAY_DELAY_MS ?? 0);
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    throw new Error(`MDCZ_REPLAY_DELAY_MS must be a non-negative number, got ${env.MDCZ_REPLAY_DELAY_MS}`);
+  }
+  return {
+    crawlerFixturesRoot: env.MDCZ_REPLAY_CRAWLER_FIXTURES || "tests/fixtures/crawler",
+    mediaManifestRoot: env.MDCZ_REPLAY_MEDIA_MANIFESTS || "tests/fixtures/media",
+    mediaBlobRoot: env.MDCZ_REPLAY_MEDIA_BLOBS || "tests/fixtures/media",
+    delayMs,
+  };
+};
 
 export const createCrawlerNetworkClient = (
   options: NetworkClientOptions = {},
@@ -275,6 +281,7 @@ export const createCrawlerNetworkClient = (
     const client = new CrawlerReplayNetworkClient({
       fixturesRoot: replay.crawlerFixturesRoot,
       media: { manifestRoot: replay.mediaManifestRoot, blobRoot: replay.mediaBlobRoot },
+      delayMs: replay.delayMs,
       network: options,
     });
     if (env === process.env) envReplay = client;

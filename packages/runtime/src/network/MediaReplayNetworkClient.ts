@@ -7,11 +7,13 @@ import {
   type RawNetworkResponse,
 } from "./NetworkClient";
 import { ReplayResponse } from "./ReplayResponse";
+import { waitForReplayDelay } from "./replayDelay";
 
 export interface MediaReplayNetworkClientOptions {
   caseId?: string;
   manifestRoot: string;
   blobRoot: string;
+  delayMs?: number;
   network?: Omit<NetworkClientOptions, "getRetryCount" | "rawDispatch">;
 }
 
@@ -20,6 +22,7 @@ export class MediaReplayNetworkClient extends NetworkClient {
   private readonly caseId: string | undefined;
   private readonly manifestRoot: string;
   private readonly blobRoot: string;
+  private readonly delayMs: number;
 
   constructor(options: MediaReplayNetworkClientOptions) {
     super({
@@ -34,6 +37,7 @@ export class MediaReplayNetworkClient extends NetworkClient {
     this.caseId = options.caseId;
     this.manifestRoot = options.manifestRoot;
     this.blobRoot = options.blobRoot;
+    this.delayMs = options.delayMs ?? 0;
   }
 
   async assertConsumed(): Promise<void> {
@@ -69,6 +73,7 @@ export class MediaReplayNetworkClient extends NetworkClient {
     }
 
     consumedSequences.add(interaction.sequence);
+    await waitForReplayDelay(this.delayMs, request.init.signal);
     if (interaction.transportError) {
       const error = new Error(interaction.transportError.message);
       error.name = interaction.transportError.name;

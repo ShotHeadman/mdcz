@@ -19,11 +19,7 @@ tests/fixtures/media/<caseId>/manifest.json
 tests/fixtures/media/blobs/<sha256>
 ```
 
-Blobs are ignored by Git. If a blob is absent, replay uses the small image or video in `tests/fixtures/mock-media/`. To use private real-media fixtures:
-
-```bash
-pnpm fixtures:media:hydrate /path/to/private-media
-```
+Recording writes blobs directly to `tests/fixtures/media/blobs`, but blobs are ignored by Git. If a blob is absent, replay uses the small image or video in `tests/fixtures/mock-media/`.
 
 `caseId` is derived from the media filename (`SSIS-497.mp4` becomes `ssis-497`). A scrape item may record separate cassettes for several websites under the same case.
 
@@ -42,9 +38,12 @@ Responses are written to `test-results/recording`, then the cases touched by the
 
 ```bash
 pnpm test:e2e:fixtures
+pnpm replay:desktop
 ```
 
 Replay matches requests within the active item and website contexts. A missing interaction fails immediately; public-network fallback is disabled. Shutdown also fails if a loaded cassette still has unconsumed interactions.
+
+`replay:desktop` adds a 2-second delay before each recorded crawler or media response so pause, resume, and stop can be exercised manually. Override it by starting the desktop app with a different non-negative `MDCZ_REPLAY_DELAY_MS` value.
 
 The fixture E2E journey disables translation, media downloads, person images, and update checks. Media replay remains available for focused download or visual tests that explicitly enable those features.
 

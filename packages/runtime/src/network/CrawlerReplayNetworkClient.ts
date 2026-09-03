@@ -15,6 +15,7 @@ import {
   type RawNetworkResponse,
 } from "./NetworkClient";
 import { ReplayResponse } from "./ReplayResponse";
+import { waitForReplayDelay } from "./replayDelay";
 
 interface ReplayState {
   loaded: LoadedCrawlerCassette;
@@ -24,6 +25,7 @@ interface ReplayState {
 export interface CrawlerReplayNetworkClientOptions {
   fixturesRoot: string;
   media?: { manifestRoot: string; blobRoot: string };
+  delayMs?: number;
   network?: Omit<NetworkClientOptions, "rawDispatch">;
 }
 
@@ -92,6 +94,7 @@ const seedReplayRequest = (request: RawNetworkRequest, encodedBody: string | nul
 
 export class CrawlerReplayNetworkClient extends NetworkClient {
   private readonly fixturesRoot: string;
+  private readonly delayMs: number;
   private readonly states = new Map<string, Promise<ReplayState>>();
   private readonly mediaReplay: MediaReplayNetworkClient | undefined;
 
@@ -102,7 +105,10 @@ export class CrawlerReplayNetworkClient extends NetworkClient {
       rawDispatch: async (request) => await this.dispatchFixture(request),
     });
     this.fixturesRoot = options.fixturesRoot;
-    this.mediaReplay = options.media ? new MediaReplayNetworkClient(options.media) : undefined;
+    this.delayMs = options.delayMs ?? 0;
+    this.mediaReplay = options.media
+      ? new MediaReplayNetworkClient({ ...options.media, delayMs: this.delayMs })
+      : undefined;
   }
 
   async assertConsumed(): Promise<void> {
@@ -161,6 +167,7 @@ export class CrawlerReplayNetworkClient extends NetworkClient {
     }
 
     state.consumedSequences.add(interaction.sequence);
+    await waitForReplayDelay(this.delayMs, request.init.signal);
     if (interaction.transportError) {
       const error = new Error(interaction.transportError.message);
       error.name = interaction.transportError.name;
