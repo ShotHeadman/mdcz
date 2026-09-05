@@ -120,7 +120,7 @@ export function PosterCropDialog({
             <div className="space-y-3">
               <div
                 ref={canvasRef}
-                className="relative mx-auto max-h-[58vh] w-full max-w-3xl overflow-hidden rounded-quiet-lg bg-black/90 select-none"
+                className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-quiet-lg bg-black/90 select-none"
                 style={{ aspectRatio: `${session.width} / ${session.height}` }}
               >
                 <img
