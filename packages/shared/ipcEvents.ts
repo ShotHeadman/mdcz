@@ -1,4 +1,10 @@
 import { IpcChannel } from "./IpcChannel";
+import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
+import type { ScrapeRunSnapshotDto } from "./serverDtos";
+
+export type TaskSnapshotPayload =
+  | { resource: "maintenance"; snapshot: MaintenanceActiveSessionSnapshot | null }
+  | { resource: "scrape"; snapshot: ScrapeRunSnapshotDto | null };
 
 export type RendererShortcutAction =
   | "start-or-stop-scrape"
@@ -25,6 +31,7 @@ export interface ShortcutPayload {
 }
 
 export type EventPayloadByChannel = {
+  [IpcChannel.Event_TaskSnapshot]: TaskSnapshotPayload;
   [IpcChannel.Event_Log]: LogPayload;
   [IpcChannel.Event_Invalidate]: InvalidatePayload;
   [IpcChannel.Event_Shortcut]: ShortcutPayload;
@@ -33,6 +40,7 @@ export type EventPayloadByChannel = {
 export type EventChannel = keyof EventPayloadByChannel;
 
 export const IPC_EVENT_CHANNELS = [
+  IpcChannel.Event_TaskSnapshot,
   IpcChannel.Event_Log,
   IpcChannel.Event_Invalidate,
   IpcChannel.Event_Shortcut,

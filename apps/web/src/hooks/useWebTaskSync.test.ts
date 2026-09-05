@@ -12,6 +12,18 @@ const deferred = <T>() => {
 };
 
 describe("createRefreshCoordinator", () => {
+  it("applies pushed snapshots and ignores an older in-flight read", async () => {
+    const pending = deferred<number>();
+    const apply = vi.fn();
+    const coordinator = createRefreshCoordinator({ apply, read: () => pending.promise });
+    const request = coordinator.request();
+    coordinator.receive(2);
+    pending.resolve(1);
+    await request;
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(2);
+  });
+
   it("serializes refreshes and discards a response superseded while in flight", async () => {
     const first = deferred<number>();
     const second = deferred<number>();

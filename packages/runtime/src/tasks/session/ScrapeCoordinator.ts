@@ -42,7 +42,7 @@ export interface ScrapeHostPort<TStart, TRun, TManualScrape = unknown> {
   create(input: TStart): Promise<TRun>;
   runId(run: TRun): string;
   createExecution(run: TRun, reporter: ScrapeWorkflowReporter): Promise<ScrapeHostExecution<TManualScrape>>;
-  onInvalidate(): void;
+  onInvalidate(runs: Array<{ run: TRun; snapshot: ScrapeRunSnapshot<TManualScrape>; startedAt: Date | null }>): void;
   onTerminal?(run: TRun, snapshot: ScrapeRunSnapshot<TManualScrape>): Promise<void> | void;
   onError?(runId: string, error: unknown): Promise<void> | void;
 }
@@ -75,7 +75,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
         await entry.session.abortForShutdown();
         this.repairRequired = error instanceof Error ? error.message : String(error);
         this.entries.delete(entry.id);
-        this.host.onInvalidate();
+        this.host.onInvalidate(this.liveRuns());
       },
     });
   }
@@ -124,7 +124,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     this.removeReady(runId);
     entry.state = "paused";
     const snapshot = await entry.session.pause();
-    this.host.onInvalidate();
+    this.host.onInvalidate(this.liveRuns());
     return { ...snapshot, status: "paused" };
   }
 
@@ -138,13 +138,13 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     if (this.activeRunId === runId && entry.session.snapshot().status === "paused") {
       entry.state = "running";
       await entry.session.resume();
-      this.host.onInvalidate();
+      this.host.onInvalidate(this.liveRuns());
       return this.entrySnapshot(entry);
     }
 
     entry.state = "queued";
     this.readyRunIds.push(runId);
-    this.host.onInvalidate();
+    this.host.onInvalidate(this.liveRuns());
     this.scheduler.drain();
     return this.entrySnapshot(entry);
   }
@@ -153,7 +153,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     const entry = this.requireLive(runId);
     entry.state = "stopping";
     this.removeReady(runId);
-    this.host.onInvalidate();
+    this.host.onInvalidate(this.liveRuns());
     const snapshot = await entry.session.stop();
     await this.settle(entry, snapshot);
     return snapshot;
@@ -174,7 +174,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     await this.store.interruptUnfinished();
     this.entries.clear();
     this.activeRunId = null;
-    this.host.onInvalidate();
+    this.host.onInvalidate(this.liveRuns());
   }
 
   private async enqueue(run: TRun): Promise<ScrapeRunSnapshot<TManualScrape>> {
@@ -197,7 +197,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
       admitItem: execution.admitItem,
       executeItem: execution.executeItem,
       commitItem: execution.commitItem,
-      onSnapshot: () => this.host.onInvalidate(),
+      onSnapshot: () => this.host.onInvalidate(this.liveRuns()),
     });
     Object.assign(entry, {
       id,
@@ -209,7 +209,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     } satisfies WorkflowEntry<TRun, TManualScrape>);
     this.entries.set(id, entry);
     this.readyRunIds.push(id);
-    this.host.onInvalidate();
+    this.host.onInvalidate(this.liveRuns());
     this.scheduler.drain();
     return this.entrySnapshot(entry);
   }
@@ -223,7 +223,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
       entry.state = "running";
       entry.startedAt ??= new Date();
       this.activeRunId = runId;
-      this.host.onInvalidate();
+      this.host.onInvalidate(this.liveRuns());
       return entry;
     }
     return null;
@@ -281,7 +281,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown> {
     if (snapshot.status === "interrupted") {
       this.repairRequired = snapshot.error ?? `Scrape run was interrupted: ${entry.id}`;
     }
-    this.host.onInvalidate();
+    this.host.onInvalidate(this.liveRuns());
   }
 
   private entrySnapshot(entry: WorkflowEntry<TRun, TManualScrape>): ScrapeRunSnapshot<TManualScrape> {

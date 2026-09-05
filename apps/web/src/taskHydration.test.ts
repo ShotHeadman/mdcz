@@ -11,6 +11,7 @@ import { applyScrapeLiveRunsSnapshot, selectActiveLiveScrapeRun } from "./taskHy
 describe("applyScrapeLiveRunsSnapshot", () => {
   beforeEach(() => {
     useScrapeStore.getState().reset();
+    useScrapeStore.setState({ retiredTaskIds: [] });
     useUIStore.getState().setSelectedResultId(null);
   });
 

@@ -94,23 +94,22 @@ describe("startSelectedScrape", () => {
     getStatus.mockReset();
     start.mockReset();
     useScrapeStore.getState().reset();
+    useScrapeStore.setState({ retiredTaskIds: [] });
   });
 
-  it("hydrates the new task by id even when it has already completed", async () => {
+  it("returns the launch snapshot without fetching task status again", async () => {
     const snapshot = buildScrapeSnapshot({
       task: { ...buildScrapeSnapshot().task, id: "fast-run" },
     });
-    start.mockResolvedValue({ taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削" });
-    getStatus.mockResolvedValue(snapshot);
+    start.mockResolvedValue({ taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削", snapshot });
 
     await expect(
       startSelectedScrape([{ rootId: "root-1", relativePath: "ABC-001.mp4" }], "output-root"),
     ).resolves.toEqual({
-      data: { taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削" },
+      data: { taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削", snapshot },
     });
 
-    expect(getStatus).toHaveBeenCalledWith("fast-run");
-    expect(useScrapeStore.getState().snapshot).toBe(snapshot);
+    expect(getStatus).not.toHaveBeenCalled();
   });
 });
 
@@ -118,6 +117,7 @@ describe("retryScrapeSelection", () => {
   beforeEach(() => {
     retry.mockReset();
     useScrapeStore.getState().reset();
+    useScrapeStore.setState({ retiredTaskIds: [] });
   });
 
   it("retries this session's finished run id", async () => {
@@ -130,6 +130,7 @@ describe("retryScrapeSelection", () => {
       taskId: "task-1",
       totalFiles: 2,
       message: "重试任务已启动，共 2 个文件",
+      snapshot: buildScrapeSnapshot(),
     });
 
     await expect(retryScrapeSelection()).resolves.toEqual({
@@ -137,6 +138,7 @@ describe("retryScrapeSelection", () => {
         taskId: "task-1",
         totalFiles: 2,
         message: "重试任务已启动，共 2 个文件",
+        snapshot: buildScrapeSnapshot(),
       },
     });
 

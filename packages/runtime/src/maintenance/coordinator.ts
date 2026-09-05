@@ -59,11 +59,11 @@ export interface MaintenanceLibraryPort {
 }
 
 export type MaintenanceCoordinatorEvent =
-  | { kind: "session-changed"; session: MaintenanceSessionSnapshot }
+  | { kind: "session-changed"; session: MaintenanceActiveSessionSnapshot }
   | { kind: "log"; sessionId: string; event: MaintenanceSessionEvent };
 
 export interface MaintenanceRunHandle<TResult> {
-  session: MaintenanceSessionSnapshot;
+  session: MaintenanceActiveSessionSnapshot;
   completion: Promise<TResult>;
 }
 
@@ -232,7 +232,7 @@ export class MaintenanceSessionCoordinator {
     await this.publishStatus(this.session, "queued", `Maintenance session queued. Preset: ${input.presetId}`);
     await this.publishLog(this.session, "preset", `Maintenance preset: ${input.presetId}`);
     await this.startCurrentPhase(this.session.id, generation);
-    return { session: this.session.statusSnapshot(), completion: this.waitForPreview(this.session.id) };
+    return { session: this.session.snapshot(), completion: this.waitForPreview(this.session.id) };
   }
 
   async readPreview(sessionId: string): Promise<MaintenancePreviewBatch> {
@@ -287,7 +287,7 @@ export class MaintenanceSessionCoordinator {
       throw error;
     }
     return {
-      session: session.statusSnapshot(),
+      session: session.snapshot(),
       completion: this.waitForApply(session.id, apply.batchId, new Set(previewIds)),
     };
   }
@@ -741,7 +741,7 @@ export class MaintenanceSessionCoordinator {
   }
 
   private async publishChanged(session: MaintenanceSession): Promise<void> {
-    await this.deps.events?.publish({ kind: "session-changed", session: session.statusSnapshot() });
+    await this.deps.events?.publish({ kind: "session-changed", session: session.snapshot() });
     this.notify(session.id);
   }
 

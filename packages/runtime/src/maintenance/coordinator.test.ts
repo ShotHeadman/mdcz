@@ -132,6 +132,15 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const batch = await handle.completion;
 
+    expect(handle.session).toMatchObject({ phase: "preview", refs: [ref("one.mp4")] });
+    expect(fixture.events).toContainEqual({
+      kind: "session-changed",
+      session: expect.objectContaining({
+        status: "completed",
+        completedEntries: 1,
+        previews: [expect.objectContaining({ relativePath: "one.mp4" })],
+      }),
+    });
     expect(scanRefs).toHaveBeenCalledTimes(1);
     expect(batch.items.map((item) => item.relativePath)).toEqual(["one.mp4"]);
     await fixture.coordinator.close();
@@ -265,10 +274,13 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await started;
     const pausing = fixture.coordinator.pause(handle.session.id);
+    const signal = vi.mocked(fixture.runtime.previewEntries).mock.calls[0]?.[0].signal;
+    expect(signal?.aborted).toBe(false);
     releaseFirst();
     await expect(pausing).resolves.toMatchObject({ status: "paused" });
     expect((await fixture.coordinator.readPreview(handle.session.id)).items).toHaveLength(1);
     expect(vi.mocked(fixture.runtime.previewEntries)).toHaveBeenCalledTimes(1);
+    expect(signal?.aborted).toBe(false);
 
     await expect(fixture.coordinator.resume(handle.session.id)).resolves.toMatchObject({ status: "running" });
     const batch = await handle.completion;
@@ -319,6 +331,16 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(snapshot?.currentBatch?.items).toHaveLength(3);
     expect(snapshot?.currentBatch?.items.every((item) => item.status === "skipped")).toBe(true);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fixture.runtime.applyEntry).mock.calls[0]?.[0].signal?.aborted).toBe(true);
+    expect(fixture.events).toContainEqual({
+      kind: "session-changed",
+      session: expect.objectContaining({
+        status: "failed",
+        currentBatch: expect.objectContaining({
+          items: expect.arrayContaining([expect.objectContaining({ status: "skipped" })]),
+        }),
+      }),
+    });
     await fixture.coordinator.close();
   });
 

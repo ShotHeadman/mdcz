@@ -9,10 +9,13 @@ export type ScraperStartInput =
   | { mode: "single"; ref: RootFileRef };
 
 export type ScraperIpcContract = {
-  [IpcChannel.Scraper_Start]: IpcProcedure<ScraperStartInput, { taskId: string; totalFiles: number; message: string }>;
+  [IpcChannel.Scraper_Start]: IpcProcedure<
+    ScraperStartInput,
+    { taskId: string; totalFiles: number; message: string; snapshot: ScrapeRunSnapshotDto }
+  >;
   [IpcChannel.Scraper_StartSinglePath]: IpcProcedure<
     { path: string },
-    { taskId: string; totalFiles: number; message: string }
+    { taskId: string; totalFiles: number; message: string; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_Stop]: IpcProcedure<void, { success: true; pendingCount: number }>;
   [IpcChannel.Scraper_Pause]: IpcProcedure<void, { success: true }>;
@@ -20,7 +23,7 @@ export type ScraperIpcContract = {
   [IpcChannel.Scraper_GetStatus]: IpcProcedure<{ taskId?: string }, ScrapeRunSnapshotDto | null>;
   [IpcChannel.Scraper_Retry]: IpcProcedure<
     { runId: string; itemIds?: string[] },
-    { taskId: string; totalFiles: number; message: string }
+    { taskId: string; totalFiles: number; message: string; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<{ items?: UncensoredConfirmItem[] }, UncensoredConfirmResponse>;
 };

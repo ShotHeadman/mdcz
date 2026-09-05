@@ -42,7 +42,7 @@ export const createMaintenanceHandlers = (
 
           const handle = await maintenanceService.startPreview(refs, presetId);
           void handle.completion.catch(() => undefined);
-          return { sessionId: handle.session.id };
+          return { sessionId: handle.session.id, snapshot: handle.session };
         } catch (error) {
           logger.error("Maintenance preview failed");
           throw asSerializableIpcError(error);
@@ -62,7 +62,7 @@ export const createMaintenanceHandlers = (
 
         const handle = await maintenanceService.execute(selections as MaintenanceApplySelection[], presetId);
 
-        return { sessionId: handle.session.id };
+        return { sessionId: handle.session.id, snapshot: handle.session };
       } catch (error) {
         logger.error("Maintenance execute failed");
         throw asSerializableIpcError(error);

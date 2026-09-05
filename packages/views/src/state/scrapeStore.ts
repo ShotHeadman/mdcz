@@ -7,6 +7,7 @@ export type ScrapeOutcome = "completed" | "failed" | "stopped" | "interrupted" |
 
 interface ScrapeState {
   snapshot: ScrapeRunSnapshotDto | null;
+  retiredTaskIds: string[];
   pending: boolean;
   error: string | null;
   setSnapshot(snapshot: ScrapeRunSnapshotDto | null): void;
@@ -17,6 +18,7 @@ interface ScrapeState {
 
 const initialState = () => ({
   snapshot: null as ScrapeRunSnapshotDto | null,
+  retiredTaskIds: [] as string[],
   pending: false,
   error: null as string | null,
 });
@@ -26,9 +28,15 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
   setSnapshot: (snapshot) => {
     if (!snapshot) return;
     set((state) => {
+      if (state.retiredTaskIds.includes(snapshot.task.id)) return state;
       const previous = state.snapshot;
       if (!previous || previous.task.id !== snapshot.task.id) {
-        return { snapshot, pending: false, error: null };
+        return {
+          snapshot,
+          retiredTaskIds: previous ? [...state.retiredTaskIds, previous.task.id] : state.retiredTaskIds,
+          pending: false,
+          error: null,
+        };
       }
 
       const incomingById = new Map(snapshot.items.map((item) => [item.id, item]));
@@ -41,8 +49,22 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
   },
   setPending: (pending) => set({ pending }),
   setError: (error) => set({ error, pending: false }),
-  reset: () => set(initialState()),
+  reset: () =>
+    set((state) => ({
+      ...initialState(),
+      retiredTaskIds: state.snapshot ? [...state.retiredTaskIds, state.snapshot.task.id] : state.retiredTaskIds,
+    })),
 }));
+
+export const beginScrapeTask = (retryTaskId?: string): void =>
+  useScrapeStore.setState((state) => ({
+    snapshot: null,
+    pending: true,
+    error: null,
+    retiredTaskIds: [...new Set([...state.retiredTaskIds, ...(state.snapshot ? [state.snapshot.task.id] : [])])].filter(
+      (id) => id !== retryTaskId,
+    ),
+  }));
 
 const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
   ...(item.resultId ? { resultId: item.resultId } : {}),

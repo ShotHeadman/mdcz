@@ -1,4 +1,5 @@
 export enum IpcChannel {
+  Event_TaskSnapshot = "event:task-snapshot",
   Config_Get = "config:get",
   Config_GetDefaults = "config:get-defaults",
   Config_Save = "config:save",

@@ -41,12 +41,14 @@ export const useIpcSync = (queryClient: QueryClient) => {
     const refreshAll = async () => await Promise.all([scrape.request(), maintenance.request()]);
 
     const unsubscribers = [
+      ipc.on.taskSnapshot((payload) => {
+        if (payload.resource === "maintenance") maintenance.receive(payload.snapshot);
+        else scrape.receive(payload.snapshot);
+      }),
       ipc.on.log((payload) => {
         useLogStore.getState().addLog(createRuntimeLog(payload.level ?? "info", payload.text, payload.timestamp));
       }),
       ipc.on.invalidate((payload) => {
-        if (payload.resources.includes("scrape")) void scrape.request();
-        if (payload.resources.includes("maintenance")) void maintenance.request();
         if (payload.resources.includes("overview")) {
           void queryClient.invalidateQueries({ queryKey: overviewKeys.all });
         }

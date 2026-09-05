@@ -4,19 +4,41 @@ import type { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { InvalidatePayload, LogPayload, ShortcutPayload } from "@mdcz/shared/ipcEvents";
+import type { InvalidatePayload, LogPayload, ShortcutPayload, TaskSnapshotPayload } from "@mdcz/shared/ipcEvents";
 import type { BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { LibraryListInput, MediaRootEnsurePathInput, MediaRootEnsurePathResponse } from "@mdcz/shared/serverDtos";
+import type {
+  LibraryListInput,
+  MediaRootEnsurePathInput,
+  MediaRootEnsurePathResponse,
+  ScrapeRunSnapshotDto,
+} from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId, MediaCandidate, UncensoredConfirmItem } from "@mdcz/shared/types";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import { beginScrapeTask, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 
 type Unsubscribe = () => void;
 
 const client = createClient<IpcRouterContract>({
   ipcInvoke: (channel, payload) => window.api.invoke(channel as IpcChannel, payload),
 });
+
+const launchScrape = async <T extends { snapshot: ScrapeRunSnapshotDto }>(
+  launch: () => Promise<T>,
+  retryTaskId?: string,
+): Promise<T> => {
+  beginScrapeTask(retryTaskId);
+  try {
+    const response = await launch();
+    if (!useScrapeStore.getState().snapshot) useScrapeStore.getState().setSnapshot(response.snapshot);
+    return response;
+  } catch (error) {
+    useScrapeStore.getState().setError(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+};
 
 export const ipc = {
   app: {
@@ -61,14 +83,17 @@ export const ipc = {
       client[IpcChannel.Config_ImportProfile]({ filePath, name, overwrite }),
   },
   scraper: {
-    start: (input: ScraperStartInput) => client[IpcChannel.Scraper_Start](input),
-    startSinglePath: (path: string) => client[IpcChannel.Scraper_StartSinglePath]({ path }),
+    start: (input: ScraperStartInput) => launchScrape(() => client[IpcChannel.Scraper_Start](input)),
+    startSinglePath: (path: string) => launchScrape(() => client[IpcChannel.Scraper_StartSinglePath]({ path })),
     stop: () => client[IpcChannel.Scraper_Stop](undefined),
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
     getStatus: (taskId?: string) => client[IpcChannel.Scraper_GetStatus]({ taskId }),
     retry: (runId: string, itemIds?: readonly string[]) =>
-      client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
+      launchScrape(
+        () => client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
+        runId,
+      ),
     confirmUncensored: (items: UncensoredConfirmItem[]) => client[IpcChannel.Scraper_ConfirmUncensored]({ items }),
   },
   crawler: {
@@ -130,10 +155,20 @@ export const ipc = {
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
   maintenance: {
-    preview: (refs: RootFileRef[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_StartPreview]({ refs, presetId }),
-    execute: (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) =>
-      client[IpcChannel.Maintenance_Apply]({ selections, presetId }),
+    preview: async (refs: RootFileRef[], presetId: MaintenancePresetId) => {
+      const previous = useMaintenanceStore.getState().snapshot;
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ refs, presetId });
+      if (useMaintenanceStore.getState().snapshot === previous)
+        useMaintenanceStore.getState().setSnapshot(response.snapshot);
+      return response;
+    },
+    execute: async (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) => {
+      const previous = useMaintenanceStore.getState().snapshot;
+      const response = await client[IpcChannel.Maintenance_Apply]({ selections, presetId });
+      if (useMaintenanceStore.getState().snapshot === previous)
+        useMaintenanceStore.getState().setSnapshot(response.snapshot);
+      return response;
+    },
     stop: () => client[IpcChannel.Maintenance_Stop](undefined),
     pause: () => client[IpcChannel.Maintenance_Pause](undefined),
     resume: () => client[IpcChannel.Maintenance_Resume](undefined),
@@ -143,6 +178,8 @@ export const ipc = {
     discardSession: () => client[IpcChannel.Maintenance_DiscardSession](undefined),
   },
   on: {
+    taskSnapshot: (callback: (payload: TaskSnapshotPayload) => void): Unsubscribe =>
+      window.api.on(IpcChannel.Event_TaskSnapshot, callback),
     log: (callback: (payload: LogPayload) => void): Unsubscribe => window.api.on(IpcChannel.Event_Log, callback),
     invalidate: (callback: (payload: InvalidatePayload) => void): Unsubscribe =>
       window.api.on(IpcChannel.Event_Invalidate, callback),

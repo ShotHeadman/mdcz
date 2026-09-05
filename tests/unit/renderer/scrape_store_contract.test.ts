@@ -10,6 +10,7 @@ import { buildFailedScrapeSnapshot, buildScrapeLiveItem, buildScrapeSnapshot } f
 describe("scrape store contract", () => {
   beforeEach(() => {
     useScrapeStore.getState().reset();
+    useScrapeStore.setState({ retiredTaskIds: [] });
   });
 
   it("keeps the derived results snapshot stable until the scrape snapshot changes", () => {
@@ -58,6 +59,8 @@ describe("scrape store contract", () => {
     expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(false);
     expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
+    useScrapeStore.getState().setSnapshot(buildFailedScrapeSnapshot());
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
   });
 
   it("exposes the current scrape task id from the store", () => {
@@ -80,6 +83,12 @@ describe("scrape store contract", () => {
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("paused-1");
 
     useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("task-1");
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...buildScrapeSnapshot().task, id: "running-1" },
+      }),
+    );
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("task-1");
   });
 

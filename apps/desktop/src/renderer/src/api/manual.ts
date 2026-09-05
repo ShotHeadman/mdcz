@@ -48,9 +48,6 @@ export const startSelectedScrape = async (
   }
 
   const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId, outputRelativeDirectory });
-  const snapshot = await ipc.scraper.getStatus(data.taskId);
-  if (!snapshot) throw new Error(`Scrape task disappeared after start: ${data.taskId}`);
-  useScrapeStore.getState().setSnapshot(snapshot);
   return { data };
 };
 

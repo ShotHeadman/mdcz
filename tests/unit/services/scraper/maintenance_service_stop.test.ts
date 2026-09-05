@@ -13,7 +13,9 @@ import { ActorImageService } from "@mdcz/runtime/scrape";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-class CaptureSignalService extends SignalService {}
+class CaptureSignalService extends SignalService {
+  override publishTaskSnapshot = vi.fn<SignalService["publishTaskSnapshot"]>();
+}
 
 const tempPaths: string[] = [];
 const fixtureCleanups: Array<() => Promise<void>> = [];
@@ -116,6 +118,15 @@ describe("desktop maintenance facade", () => {
     const previewHandle = await fixture.service.startPreview([fixture.entry.ref], "refresh_data");
     const preview = (await previewHandle.completion).items[0];
     expect(preview).toBeDefined();
+    expect(previewHandle.session).toMatchObject({ phase: "preview", refs: [fixture.entry.ref] });
+    expect(fixture.signalService.publishTaskSnapshot).toHaveBeenCalledWith({
+      resource: "maintenance",
+      snapshot: expect.objectContaining({
+        status: "completed",
+        completedEntries: 1,
+        previews: [expect.objectContaining({ id: preview?.id })],
+      }),
+    });
 
     let release!: () => void;
     const deferred = new Promise<void>((resolve) => {
@@ -139,5 +150,9 @@ describe("desktop maintenance facade", () => {
     release();
     await handle.completion;
     expect(vi.mocked(fixture.runtime.applyEntry).mock.calls[0]?.[0].committed?.crawlerData?.title).toBe("old title");
+    expect(fixture.signalService.publishTaskSnapshot).toHaveBeenLastCalledWith({
+      resource: "maintenance",
+      snapshot: expect.objectContaining({ phase: "apply", status: "failed", completedEntries: 1 }),
+    });
   });
 });

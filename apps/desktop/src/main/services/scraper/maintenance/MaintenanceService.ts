@@ -169,6 +169,7 @@ export class MaintenanceService {
 
   async discardSession(): Promise<void> {
     await this.coordinator.discardSession((await this.getActiveSession())?.id);
+    this.signalService.publishTaskSnapshot({ resource: "maintenance", snapshot: null });
   }
 
   async waitForIdle(): Promise<void> {
@@ -192,6 +193,8 @@ export class MaintenanceService {
         this.signalService.showLogText(event.event.message);
         return;
       case "session-changed":
+        this.signalService.publishTaskSnapshot({ resource: "maintenance", snapshot: event.session });
+        this.signalService.invalidate("maintenance");
         return;
     }
   }

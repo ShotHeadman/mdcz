@@ -1,6 +1,7 @@
-export interface RefreshCoordinator {
+export interface RefreshCoordinator<T> {
   dispose(): void;
   request(): Promise<void>;
+  receive(response: T): void;
 }
 
 export const createRefreshCoordinator = <T>(input: {
@@ -8,7 +9,7 @@ export const createRefreshCoordinator = <T>(input: {
   onError?(error: unknown): void;
   onSuccess?(): void;
   read(): Promise<T>;
-}): RefreshCoordinator => {
+}): RefreshCoordinator<T> => {
   let disposed = false;
   let dirty = false;
   let inFlight = false;
@@ -27,6 +28,7 @@ export const createRefreshCoordinator = <T>(input: {
           input.apply(response);
           input.onSuccess?.();
         } catch (error) {
+          if (disposed || version !== requestedVersion) continue;
           input.onError?.(error);
           dirty = true;
           return;
@@ -39,6 +41,13 @@ export const createRefreshCoordinator = <T>(input: {
   };
 
   return {
+    receive: (response) => {
+      if (disposed) return;
+      requestedVersion += 1;
+      dirty = false;
+      input.apply(response);
+      input.onSuccess?.();
+    },
     request: async () => {
       dirty = true;
       requestedVersion += 1;

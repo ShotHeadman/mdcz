@@ -36,6 +36,8 @@ afterEach(() => {
   useWorkbenchTaskStore.getState().reset();
   useScrapeStore.getState().reset();
   useMaintenanceStore.getState().reset();
+  useScrapeStore.setState({ retiredTaskIds: [] });
+  useMaintenanceStore.setState({ retiredSessionIds: [] });
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: originalLocalStorage,

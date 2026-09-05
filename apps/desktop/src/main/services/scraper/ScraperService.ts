@@ -49,6 +49,7 @@ import { translationMappingStore } from "./translationMappingStore";
 export interface StartScrapeResult {
   taskId: string;
   totalFiles: number;
+  snapshot: ScrapeRunSnapshotDto;
 }
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -97,7 +98,13 @@ export class ScraperService {
       create: async (input) => await this.createRun(input),
       runId: (run) => run.id,
       createExecution: async (run, reporter) => await this.createExecution(run, reporter),
-      onInvalidate: () => this.signalService.invalidate("scrape"),
+      onInvalidate: (runs) => {
+        const live = runs[0];
+        this.signalService.publishTaskSnapshot({
+          resource: "scrape",
+          snapshot: live ? this.toSnapshotDto(live.run, live.snapshot, live.startedAt) : this.terminalSnapshot,
+        });
+      },
       onTerminal: async (run, snapshot) => this.handleTerminalRun(run, snapshot),
       onError: async (runId, error) => {
         this.logger.error(`Scrape execution failed for ${runId}`, error);
@@ -105,7 +112,7 @@ export class ScraperService {
     };
   }
 
-  async getSnapshot(taskId?: string): Promise<ScrapeRunSnapshotDto | null> {
+  getSnapshot(taskId?: string): ScrapeRunSnapshotDto | null {
     const live = this.workflow?.liveRuns()[0];
     if (live) return this.toSnapshotDto(live.run, live.snapshot, live.startedAt);
     return taskId && this.terminalSnapshot?.task.id === taskId ? this.terminalSnapshot : null;
@@ -177,10 +184,13 @@ export class ScraperService {
     this.clearImageHostCooldownsForRetry();
     this.configureRuntimeSettings(configuration);
     const snapshot = await (await this.coordinator()).retry(runId, itemIds);
+    const initialSnapshot = this.getSnapshot(snapshot.runId);
+    if (!initialSnapshot) throw new Error(`Scrape task disappeared after retry: ${snapshot.runId}`);
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();
     return {
       taskId: snapshot.runId,
+      snapshot: initialSnapshot,
       totalFiles: snapshot.items.filter((item) => item.status === "pending" || item.status === "processing").length,
     };
   }
@@ -188,9 +198,11 @@ export class ScraperService {
   private async begin(input: DesktopScrapeStart): Promise<StartScrapeResult> {
     this.configureRuntimeSettings(input.configuration);
     const snapshot = await (await this.coordinator()).start(input);
+    const initialSnapshot = this.getSnapshot(snapshot.runId);
+    if (!initialSnapshot) throw new Error(`Scrape task disappeared after start: ${snapshot.runId}`);
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();
-    return { taskId: snapshot.runId, totalFiles: snapshot.items.length };
+    return { taskId: snapshot.runId, totalFiles: snapshot.items.length, snapshot: initialSnapshot };
   }
 
   private async coordinator(): Promise<ScrapeCoordinator<DesktopScrapeStart, ScrapeRunManifest, ManualScrapeOptions>> {
@@ -221,7 +233,6 @@ export class ScraperService {
       signalService: {
         setProgress: (value: number, current: number, total: number) => {
           recordProgress(value, current, total);
-          this.signalService.setProgress(value, current, total);
         },
         showFailedInfo: this.signalService.showFailedInfo.bind(this.signalService),
         showLogText: this.signalService.showLogText.bind(this.signalService),
@@ -459,6 +470,7 @@ export class ScraperService {
 
   private handleTerminalRun(manifest: ScrapeRunManifest, snapshot: ScrapeRunSnapshot<ManualScrapeOptions>): void {
     this.terminalSnapshot = this.toSnapshotDto(manifest, snapshot, manifest.startedAt);
+    this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot: this.terminalSnapshot });
     this.logger.info(`Scrape run finished: ${snapshot.runId}`);
     this.outputLibraryScanner.invalidate();
     this.aggregationService.clearCache();

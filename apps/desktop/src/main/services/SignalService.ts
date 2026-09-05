@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
-import type { EventChannel, EventPayloadByChannel } from "@mdcz/shared/ipcEvents";
+import type { EventChannel, EventPayloadByChannel, TaskSnapshotPayload } from "@mdcz/shared/ipcEvents";
 import type { BrowserWindow } from "electron";
 import { type LoggerEventPayload, loggerService } from "./LoggerService";
 
@@ -57,6 +57,10 @@ export class SignalService extends EventEmitter {
 
   invalidate(...resources: Array<"scrape" | "maintenance" | "overview">): void {
     this.send(IpcChannel.Event_Invalidate, { resources: [...new Set(resources)] });
+  }
+
+  publishTaskSnapshot(payload: TaskSnapshotPayload): void {
+    this.send(IpcChannel.Event_TaskSnapshot, payload);
   }
 
   private send<TChannel extends EventChannel>(channel: TChannel, payload: EventPayloadByChannel[TChannel]): void {

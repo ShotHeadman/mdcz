@@ -136,7 +136,13 @@ export class MaintenanceService {
   private async publishCoordinatorEvent(event: MaintenanceCoordinatorEvent): Promise<void> {
     switch (event.kind) {
       case "session-changed":
-        this.taskEvents.lifecycle(await this.toLifecycleEvent(event.session));
+        this.taskEvents.lifecycle(
+          await this.toLifecycleEvent({
+            ...event.session,
+            startedAt: event.session.timestamps.startedAt,
+            completedAt: event.session.timestamps.completedAt,
+          }),
+        );
         this.taskEvents.invalidate("maintenance");
         return;
       case "log": {

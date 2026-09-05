@@ -60,7 +60,7 @@ const createHost = (
     executeItem,
     commitItem: async (_item, result) => result,
   }),
-  onInvalidate: () => undefined,
+  onInvalidate: vi.fn(),
 });
 
 describe("ScrapeCoordinator", () => {
@@ -84,6 +84,14 @@ describe("ScrapeCoordinator", () => {
     expect(store.retry).toHaveBeenCalledWith("run-1");
     expect(host.create).not.toHaveBeenCalled();
     expect(snapshot.runId).toBe("run-1");
+    expect(host.onInvalidate).toHaveBeenCalledWith([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          runId: "run-1",
+          items: [expect.objectContaining({ status: "failed" })],
+        }),
+      }),
+    ]);
   });
 
   it("rejects retry until the same run has settled", async () => {

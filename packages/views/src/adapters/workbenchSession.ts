@@ -176,7 +176,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
 
     await options.port.preview(refs, options.presetId);
     await options.onRefreshConfig?.();
-    options.toast.success("维护预览已生成");
+    options.toast.success("维护预览已启动");
   } catch (error) {
     if (options.toErrorMessage(error) === "Operation aborted") {
       executionStore.setPending(false);
