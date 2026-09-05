@@ -5,10 +5,6 @@ import {
   POSTER_TAG_BADGE_ASPECT_RATIO,
   POSTER_TAG_BADGE_IMAGE_EXTENSIONS,
   POSTER_TAG_BADGE_IMAGE_FILENAMES,
-  POSTER_TAG_BADGE_MAX_WIDTH,
-  POSTER_TAG_BADGE_MAX_WIDTH_RATIO,
-  POSTER_TAG_BADGE_MIN_WIDTH,
-  POSTER_TAG_BADGE_WIDTH_RATIO,
   type PosterTagBadgePosition,
 } from "@mdcz/shared/posterBadges";
 import sharp from "sharp";
@@ -16,6 +12,7 @@ import type { PosterBadgeDefinition } from "./posterBadges";
 import { resolveWatermarkDirectory } from "./watermarkDirectory";
 
 const BADGE_GAP_RATIO = 0.1;
+const BADGE_HEIGHT_RATIO = 0.08;
 const FONT_STACK = [
   "'Microsoft YaHei'",
   "'PingFang SC'",
@@ -122,17 +119,9 @@ export const resolveBadgeOverlayLayout = (
 ): BadgeOverlayLayout => {
   const maxPosterWidth = Math.max(1, Math.round(posterWidth));
   const maxPosterHeight = Math.max(1, Math.round(posterHeight));
-  const maxCoverageWidth = Math.max(1, Math.round(posterWidth * POSTER_TAG_BADGE_MAX_WIDTH_RATIO));
-  let badgeWidth = Math.min(
-    clamp(
-      Math.round(posterWidth * POSTER_TAG_BADGE_WIDTH_RATIO),
-      POSTER_TAG_BADGE_MIN_WIDTH,
-      POSTER_TAG_BADGE_MAX_WIDTH,
-    ),
-    maxPosterWidth,
-    maxCoverageWidth,
-  );
-  let badgeHeight = Math.max(1, Math.round(badgeWidth / POSTER_TAG_BADGE_ASPECT_RATIO));
+  const referenceSize = Math.min(maxPosterWidth, maxPosterHeight);
+  let badgeHeight = clamp(Math.round(referenceSize * BADGE_HEIGHT_RATIO), 28, 64);
+  let badgeWidth = Math.min(Math.round(badgeHeight * POSTER_TAG_BADGE_ASPECT_RATIO), maxPosterWidth);
   let badgeGap = badgeCount > 1 ? Math.max(1, Math.round(badgeHeight * BADGE_GAP_RATIO)) : 0;
   let overlayHeight = badgeHeight * badgeCount + badgeGap * Math.max(0, badgeCount - 1);
 

@@ -7,9 +7,7 @@ import {
   POSTER_TAG_BADGE_ASPECT_WIDTH,
   POSTER_TAG_BADGE_IMAGE_EXTENSIONS,
   POSTER_TAG_BADGE_IMAGE_FILENAMES,
-  POSTER_TAG_BADGE_MAX_WIDTH,
   POSTER_TAG_BADGE_MAX_WIDTH_RATIO,
-  POSTER_TAG_BADGE_MIN_WIDTH,
   POSTER_TAG_BADGE_POSITION_LABELS,
   POSTER_TAG_BADGE_POSITION_OPTIONS,
   POSTER_TAG_BADGE_TYPE_LABELS,
@@ -517,7 +515,7 @@ function PosterBadgeImageOverridesField() {
       <BaseField
         name="download.tagBadgeImageOverrides"
         label="覆盖角标图片"
-        description="开启后，放在 userdata/watermark 中的匹配图片会替换内建角标样式。"
+        description="开启后，使用用户数据目录 watermark 文件夹中的匹配图片替换内建角标。"
         commitMode="immediate"
       >
         {(field) => (
@@ -567,12 +565,7 @@ function PosterBadgeImageOverridesField() {
             </div>
             <div className="space-y-1 text-xs leading-5 text-muted-foreground">
               <p>支持格式：{TAG_BADGE_IMAGE_EXTENSION_LABEL}。</p>
-              <p>
-                推荐比例：{TAG_BADGE_IMAGE_RATIO_LABEL}，推荐素材尺寸 {TAG_BADGE_IMAGE_DEFAULT_SIZE_LABEL}
-                。角标槽位宽度约为海报宽度的 {TAG_BADGE_IMAGE_WIDTH_PERCENT_LABEL}，并限制在{" "}
-                {POSTER_TAG_BADGE_MIN_WIDTH}-{POSTER_TAG_BADGE_MAX_WIDTH}px；低分辨率海报会继续压到不超过海报宽度的{" "}
-                {TAG_BADGE_IMAGE_MAX_WIDTH_PERCENT_LABEL}，高度按比例计算。
-              </p>
+              <p>推荐比例：{TAG_BADGE_IMAGE_RATIO_LABEL}。角标高度按海报短边约 8% 计算，并限制在 28-64px。</p>
               <p>图片会按角标槽位等比缩放，不会拉伸；方形图片会以槽位高度 x 槽位高度靠左放置。</p>
               <p>建议使用透明 PNG 或 WebP。图片过大时会自动缩小，损坏或无法读取的图片会回退到内建角标。</p>
             </div>
