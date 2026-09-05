@@ -97,6 +97,7 @@ interface PlannedPublication {
   backupPath: string | null;
   targetExisted: boolean;
   stage: () => Promise<void>;
+  sourcePath?: string;
 }
 
 export const commitPublishedMedia = async <TResult>(
@@ -154,6 +155,16 @@ export const commitPublishedMedia = async <TResult>(
           await recordRepair(plan, options.repairIssues, item.ref, restoreError);
         } catch (repairError) {
           secondary.push(repairError);
+        }
+      }
+    }
+    for (const item of planned) {
+      if (item.sourcePath) {
+        try {
+          await fileSystem.rename(item.temporaryPath, item.sourcePath);
+        } catch (restoreError) {
+          secondary.push(restoreError);
+          await recordRepair(plan, options.repairIssues, item.ref, restoreError);
         }
       }
     }
@@ -237,6 +248,7 @@ export const commitPublishedMedia = async <TResult>(
           temporaryPath,
           backupPath: targetExisted ? createTargetBackupPath(targetPath, plan.operationId) : null,
           targetExisted,
+          sourcePath,
           stage: async () => {
             const sourceNow = await fileSystem.stat(sourcePath);
             const observed = observedAt(resolved.observed, sourcePath);
@@ -251,7 +263,12 @@ export const commitPublishedMedia = async <TResult>(
               );
             }
             const copyStartedAt = startPhase("video-copy");
-            await fileSystem.copyFile(sourcePath, temporaryPath);
+            try {
+              await fileSystem.rename(sourcePath, temporaryPath);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+              await fileSystem.copyFile(sourcePath, temporaryPath);
+            }
             recordPhase("video-copy", copyStartedAt);
             const flushStartedAt = startPhase("flush");
             await fileSystem.flush?.(temporaryPath);
@@ -295,11 +312,12 @@ export const commitPublishedMedia = async <TResult>(
     journalOpen = true;
 
     for (const item of planned) await item.stage();
-    const staged = await preflightPublication(plan, options, fileSystem, resolved.observed);
+    // Video staging moves the source atomically, so the source observation from the
+    // initial preflight is intentionally invalidated. Targets are revalidated below.
 
     const renameStartedAt = startPhase("rename");
     for (const item of planned) {
-      const expectedTarget = observedAt(staged.observed, item.targetPath);
+      const expectedTarget = observedAt(resolved.observed, item.targetPath);
       if (!expectedTarget) throw new Error(`Publication target was not observed: ${item.targetPath}`);
       assertPublicationFileUnchanged(expectedTarget, await observePublicationFile(fileSystem, item.targetPath));
       if (item.targetExisted && item.backupPath) {
