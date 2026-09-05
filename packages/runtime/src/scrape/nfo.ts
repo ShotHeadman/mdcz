@@ -579,6 +579,8 @@ export const parseNfo = (xml: string, fallbackPath: string): CrawlerData => {
     release_date: readTag(xml, "premiered"),
     thumb_url: readTag(xml, "thumb"),
     poster_url: readTag(xml, "poster"),
+    trailer_url: readTag(xml, "trailer"),
+    trailer_source_url: readTag(xml, "trailer_source_url"),
     scene_images: [],
     website: uniqueid.website ?? Website.JAVDB,
   };

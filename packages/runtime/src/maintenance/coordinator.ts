@@ -222,12 +222,16 @@ export class MaintenanceSessionCoordinator {
     }
     const generation = (this.session?.generation ?? 0) + 1;
     this.session?.invalidate();
+    const entries = (await scanRefs(this.deps.runtime, this.deps.roots, refs)).sort((left, right) =>
+      refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
+    );
     this.session = new MaintenanceSession({
       id: randomUUID(),
       rootId: input.rootId,
       presetId: input.presetId,
       generation,
       refs,
+      initialEntries: entries,
     });
     await this.publishStatus(this.session, "queued", `Maintenance session queued. Preset: ${input.presetId}`);
     await this.publishLog(this.session, "preset", `Maintenance preset: ${input.presetId}`);
@@ -397,16 +401,29 @@ export class MaintenanceSessionCoordinator {
     this.active = { sessionId, generation, executor: { pause: () => undefined, stop: () => scanController.abort() } };
     try {
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
-      const persistedRefs = [...initial.refs];
-      const entries = (await scanRefs(this.deps.runtime, this.deps.roots, persistedRefs, scanController.signal)).sort(
-        (left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
-      );
+      const existingEntries = initial.activePreviews().flatMap((preview) => (preview.entry ? [preview.entry] : []));
+      const entries =
+        existingEntries.length === initial.refs.length
+          ? existingEntries
+          : (await scanRefs(this.deps.runtime, this.deps.roots, [...initial.refs], scanController.signal)).sort(
+              (left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
+            );
       let current = this.assertCurrent(sessionId, generation, ["running", "paused"]);
       if (current.status === "paused") return;
-      const committedPaths = new Set(current.snapshot().previews.map(refKey));
+      const committedPaths = new Set(
+        current
+          .snapshot()
+          .previews.filter((preview) => preview.status === "ready" || preview.status === "blocked")
+          .map(refKey),
+      );
       const pending = entries.filter((entry) => !committedPaths.has(refKey(entry.ref)));
       await this.executeItems<LocalScanEntry, PreviewExecutionResult>(sessionId, generation, pending, {
         runItem: async (entry, context) => {
+          this.assertCurrent(sessionId, generation, ["running"]);
+          const activeSession = this.require(sessionId);
+          activeSession.markPreviewProcessing(generation, entry.ref.rootId, entry.ref.relativePath);
+          await this.publishChanged(activeSession);
+
           const root = await this.deps.roots.get(entry.ref.rootId);
           try {
             const active = this.assertCurrent(sessionId, generation, ["running"]);
@@ -622,7 +639,7 @@ export class MaintenanceSessionCoordinator {
     librarySource: MaintenanceLibrarySource | null,
   ): void {
     const session = this.assertCurrent(sessionId, generation, ["running", "paused"]);
-    session.addPreview(generation, {
+    session.commitPreview(generation, {
       rootId: item.rootId,
       relativePath: item.relativePath,
       status: item.status,

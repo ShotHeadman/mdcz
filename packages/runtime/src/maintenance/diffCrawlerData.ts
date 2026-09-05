@@ -34,10 +34,11 @@ const VALUE_FIELDS: DiffableField[] = [
   { key: "series", label: "系列" },
   { key: "release_date", label: "发行日期" },
   { key: "rating", label: "评分" },
-  { key: "trailer_url", label: "预告片" },
   { key: "durationSeconds", label: "时长" },
   { key: "content_type", label: "内容类型" },
 ];
+
+const TRAILER_FIELDS: DiffableField[] = [{ key: "trailer_url", label: "预告片" }];
 
 const VALUE_SOURCE_FIELD_MAP = {
   trailer_url: "trailer_source_url",
@@ -374,6 +375,15 @@ export function partitionCrawlerDataWithOptions(
 
   for (const { key, label } of IMAGE_COLLECTION_FIELDS) {
     const diff = buildImageCollectionFieldDiff(key as "scene_images", label, oldData, newData, entry);
+    if (!diff.changed && !hasPreviewContent(diff, "old")) {
+      continue;
+    }
+
+    (diff.changed ? fieldDiffs : unchangedFieldDiffs).push(diff);
+  }
+
+  for (const { key, label } of TRAILER_FIELDS) {
+    const diff = buildSourceAwareValueDiff(key as keyof typeof VALUE_SOURCE_FIELD_MAP, label, oldData, newData);
     if (!diff.changed && !hasPreviewContent(diff, "old")) {
       continue;
     }

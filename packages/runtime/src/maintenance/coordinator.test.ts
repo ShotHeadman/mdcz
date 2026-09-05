@@ -136,9 +136,23 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(fixture.events).toContainEqual({
       kind: "session-changed",
       session: expect.objectContaining({
+        status: "queued",
+        previews: [expect.objectContaining({ relativePath: "one.mp4", status: "pending" })],
+      }),
+    });
+    expect(fixture.events).toContainEqual({
+      kind: "session-changed",
+      session: expect.objectContaining({
+        status: "running",
+        previews: [expect.objectContaining({ relativePath: "one.mp4", status: "processing" })],
+      }),
+    });
+    expect(fixture.events).toContainEqual({
+      kind: "session-changed",
+      session: expect.objectContaining({
         status: "completed",
         completedEntries: 1,
-        previews: [expect.objectContaining({ relativePath: "one.mp4" })],
+        previews: [expect.objectContaining({ relativePath: "one.mp4", status: "ready" })],
       }),
     });
     expect(scanRefs).toHaveBeenCalledTimes(1);

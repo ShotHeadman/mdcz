@@ -33,7 +33,7 @@ export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
   error: string | null;
 }
 
-export type MaintenanceSessionPreviewStatus = "ready" | "blocked" | "applied" | "failed";
+export type MaintenanceSessionPreviewStatus = "pending" | "processing" | "ready" | "blocked" | "applied" | "failed";
 
 export interface MaintenanceSessionPreview {
   id: string;

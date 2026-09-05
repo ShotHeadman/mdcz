@@ -8,6 +8,7 @@ import type {
   LocalScanEntry,
   MaintenanceImageAlternatives,
   MaintenancePresetId,
+  MaintenancePreviewStatus,
   PathDiff,
 } from "@mdcz/shared/types";
 import type { PreparedPublicationPlan } from "../publication";
@@ -62,7 +63,7 @@ export interface MaintenanceRuntimePreviewItem {
   entry: LocalScanEntry;
   rootId: string;
   relativePath: string;
-  status: "ready" | "blocked";
+  status: MaintenancePreviewStatus;
   error: string | null;
   fieldDiffs: FieldDiff[];
   unchangedFieldDiffs: FieldDiff[];

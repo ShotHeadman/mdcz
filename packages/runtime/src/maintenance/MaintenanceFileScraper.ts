@@ -249,6 +249,7 @@ export class MaintenanceFileScraper {
             ...assets.sceneImages.map((targetPath) => ({ kind: "scene", targetPath })),
           ],
           obsoletePaths,
+          replaceExistingTargetPaths: [outputVideoPath, ...artifacts.map((artifact) => artifact.targetPath)],
         },
       };
     } catch (error) {

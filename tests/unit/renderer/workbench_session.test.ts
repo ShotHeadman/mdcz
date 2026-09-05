@@ -65,7 +65,7 @@ describe("workbench session scrape setup", () => {
     expect(selectMaintenanceEntries(useMaintenanceStore.getState())).toEqual([]);
 
     for (const ref of refs) {
-      session.addPreview(1, {
+      session.commitPreview(1, {
         ...ref,
         status: "ready",
         error: null,

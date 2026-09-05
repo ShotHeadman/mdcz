@@ -211,12 +211,12 @@ describe("ScraperService.getSnapshot", () => {
     await host.onTerminal({ ...run, startedAt, completedAt, disposition: "completed" }, terminalSnapshot);
     Object.assign(service, { workflow: null });
 
-    await expect(service.getSnapshot("live-run")).resolves.toMatchObject({
+    expect(service.getSnapshot("live-run")).toMatchObject({
       task: { id: "live-run", status: "completed", continuity: "final" },
       progress: { percent: 100, completedItems: 1, totalItems: 1 },
       items: [{ id: "item-1", status: "success" }],
     });
-    await expect(service.getSnapshot("another-run")).resolves.toBeNull();
-    await expect(service.getSnapshot()).resolves.toBeNull();
+    expect(service.getSnapshot("another-run")).toBeNull();
+    expect(service.getSnapshot()).toBeNull();
   });
 });

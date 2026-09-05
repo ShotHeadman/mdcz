@@ -53,7 +53,9 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   const previewing = executionStatus === "previewing";
   const canPauseMaintenance =
     executionStatus === "previewing" || executionStatus === "executing" || executionStatus === "paused";
-  const hasPreviewResults = Object.keys(previewResults).length > 0;
+  const hasPreviewResults = Object.values(previewResults).some(
+    (preview) => preview.status === "ready" || preview.status === "blocked",
+  );
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedIds.includes(entry.fileId)),
     [entries, selectedIds],

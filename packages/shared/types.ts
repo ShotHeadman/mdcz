@@ -238,7 +238,7 @@ export interface PathDiff {
   changed: boolean;
 }
 
-export type MaintenancePreviewStatus = "ready" | "blocked";
+export type MaintenancePreviewStatus = "pending" | "processing" | "ready" | "blocked";
 
 export interface MaintenancePreviewItem {
   fileId: FileId;

@@ -265,7 +265,7 @@ describe("BatchTranslateToolService", () => {
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
     expect(ensurePathRecord).toHaveBeenCalledOnce();
-    expect(ensurePathRecord).toHaveBeenCalledWith({ hostPath: "/library" });
+    expect(ensurePathRecord).toHaveBeenCalledWith({ hostPath: resolve("/library") });
     expect(generateText).toHaveBeenCalledTimes(1);
     expect(generateText).toHaveBeenCalledWith(
       expect.objectContaining({

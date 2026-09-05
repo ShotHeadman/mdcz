@@ -69,7 +69,10 @@ const buildMaintenanceSnapshotView = (snapshot: MaintenanceActiveSessionSnapshot
         const item: MaintenancePreviewItem = {
           fileId: previewFileId(preview),
           previewId: preview.id,
-          status: preview.status === "ready" ? "ready" : "blocked",
+          status:
+            preview.status === "ready" || preview.status === "processing" || preview.status === "pending"
+              ? preview.status
+              : "blocked",
           ...(preview.error ? { error: preview.error } : {}),
           ...(preview.fieldDiffs.length ? { fieldDiffs: preview.fieldDiffs } : {}),
           ...(preview.unchangedFieldDiffs.length ? { unchangedFieldDiffs: preview.unchangedFieldDiffs } : {}),

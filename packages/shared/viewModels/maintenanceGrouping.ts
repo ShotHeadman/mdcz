@@ -86,6 +86,10 @@ const getMaintenanceEntryStatus = (
     return "success";
   }
 
+  if (preview?.status === "processing" || preview?.status === "pending") {
+    return "processing";
+  }
+
   if (preview?.status === "blocked") {
     return "failed";
   }
@@ -133,7 +137,13 @@ const getMaintenanceEntryErrorText = (
     return result.error ?? preview?.error ?? entry.scanError;
   }
 
-  if (result?.status === "success" || result?.status === "processing" || result?.status === "pending") {
+  if (
+    result?.status === "success" ||
+    result?.status === "processing" ||
+    result?.status === "pending" ||
+    preview?.status === "processing" ||
+    preview?.status === "pending"
+  ) {
     return undefined;
   }
 
@@ -220,11 +230,13 @@ const buildPreviewState = (
   const ready =
     group.previewItems.length === group.items.length &&
     group.previewItems.every((preview) => preview.status === "ready");
+  const blockedPreview = group.previewItems.find((preview) => preview.status === "blocked");
+  const hasPreview = ready || Boolean(blockedPreview);
 
   return {
-    hasPreview: group.previewItems.length > 0,
+    hasPreview,
     ready,
-    blockedPreview: group.previewItems.find((preview) => preview.status === "blocked"),
+    blockedPreview,
     diffCount: Math.max(0, ...group.previewItems.map((preview) => preview.fieldDiffs?.length ?? 0)),
     changedPathItems,
     hasPathChange: changedPathItems.length > 0,

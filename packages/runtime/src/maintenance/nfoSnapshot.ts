@@ -206,7 +206,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       thumb_source_url: toStringValue(mdczNode?.thumb_source_url),
       poster_source_url: toStringValue(mdczNode?.poster_source_url),
       fanart_source_url: toStringValue(mdczNode?.fanart_source_url),
-      trailer_source_url: toStringValue(mdczNode?.trailer_source_url),
+      trailer_source_url: toStringValue(mdczNode?.trailer_source_url) ?? toStringValue(movieNode.trailer_source_url),
       scene_images: toStringArray(mdczSceneImagesNode?.image),
       trailer_url: toStringValue(movieNode.trailer),
       website: identifier.website,

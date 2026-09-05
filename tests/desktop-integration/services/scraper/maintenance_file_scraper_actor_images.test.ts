@@ -155,6 +155,10 @@ describe("MaintenanceFileScraper asset replacement", () => {
     expect(result.status).toBe("success");
     expect(result.updatedEntry?.assets.trailer).toBeUndefined();
     expect(result.publicationPlan?.obsoletePaths).toContain(oldTrailerPath);
+    expect(result.publicationPlan?.replaceExistingTargetPaths).toBeDefined();
+    expect(result.publicationPlan?.replaceExistingTargetPaths).toContain(
+      join(root, "output", "ABC-123", "ABC-123.mp4"),
+    );
     await expect(readFile(oldTrailerPath, "utf8")).resolves.toBe("old-trailer");
   });
 });

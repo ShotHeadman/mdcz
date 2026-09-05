@@ -25,6 +25,8 @@ describe("maintenance NFO snapshot identifiers", () => {
         <title>External Title</title>
         <num>ABP-123</num>
         <thumb aspect="poster">poster.jpg</thumb>
+        <trailer>https://example.com/trailer.mp4</trailer>
+        <trailer_source_url>https://example.com/source.mp4</trailer_source_url>
         <website>https://javdb.com/v/example</website>
       </movie>
     `);
@@ -33,6 +35,8 @@ describe("maintenance NFO snapshot identifiers", () => {
       title: "External Title",
       number: "ABP-123",
       poster_url: "poster.jpg",
+      trailer_url: "https://example.com/trailer.mp4",
+      trailer_source_url: "https://example.com/source.mp4",
       website: undefined,
     });
   });

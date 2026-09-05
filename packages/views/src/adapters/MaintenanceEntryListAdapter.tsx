@@ -102,10 +102,11 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       setActiveId: state.setActiveId,
     })),
   );
-  const { itemResults, executionStatus } = useMaintenanceStore(
+  const { itemResults, executionStatus, pending } = useMaintenanceStore(
     useShallow((state) => ({
       itemResults: selectMaintenanceItemResults(state),
       executionStatus: selectMaintenanceExecutionStatus(state),
+      pending: state.pending,
     })),
   );
   const previewResults = useMaintenanceStore(selectMaintenancePreviewResults);
@@ -170,6 +171,7 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
   return (
     <MaintenanceEntryListView
       items={items}
+      loading={pending || executionStatus === "previewing"}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
       showSelection={showsSelection}

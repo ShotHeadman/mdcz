@@ -259,7 +259,12 @@ export class MaintenancePreparationService {
 
   private buildDiffBaseline(entry: LocalScanEntry, crawlerData: CrawlerData | undefined): CrawlerData | undefined {
     if (entry.crawlerData) {
-      return entry.crawlerData;
+      return {
+        ...entry.crawlerData,
+        trailer_url:
+          entry.crawlerData.trailer_url ||
+          (entry.assets.trailer ? entry.assets.trailer.split(/[\\/]/u).pop() : undefined),
+      };
     }
 
     if (!crawlerData) {

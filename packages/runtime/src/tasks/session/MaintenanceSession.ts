@@ -12,7 +12,7 @@ import type {
   MaintenanceSessionSnapshot,
   MaintenanceSessionStatus,
 } from "@mdcz/shared/maintenanceTasks";
-import type { MaintenancePresetId } from "@mdcz/shared/types";
+import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 
 export const ACTIVE_MAINTENANCE_STATUSES: readonly MaintenanceSessionStatus[] = [
   "queued",
@@ -56,6 +56,7 @@ export class MaintenanceSession {
     refs: readonly MaintenanceSessionRef[];
     generation: number;
     now?: Date;
+    initialEntries?: readonly LocalScanEntry[];
   }) {
     const now = input.now ?? new Date();
     this.id = input.id;
@@ -64,6 +65,9 @@ export class MaintenanceSession {
     this.generationValue = input.generation;
     this.refsValue = input.refs.map((ref) => ({ ...ref }));
     this.timestamps = { createdAt: now, updatedAt: now, startedAt: null, completedAt: null };
+    if (input.initialEntries) {
+      this.populateInitialEntries(input.initialEntries, now);
+    }
   }
 
   get phase(): "preview" | "apply" {
@@ -179,19 +183,67 @@ export class MaintenanceSession {
     this.timestamps = { ...this.timestamps, completedAt: now, updatedAt: now };
   }
 
-  addPreview(
+  private populateInitialEntries(entries: readonly LocalScanEntry[], now: Date): void {
+    for (const entry of entries) {
+      const item: MaintenanceSessionPreview = {
+        id: randomUUID(),
+        sessionId: this.id,
+        rootId: entry.ref.rootId,
+        relativePath: entry.ref.relativePath,
+        presetId: this.presetId,
+        status: "pending",
+        error: null,
+        fieldDiffs: [],
+        unchangedFieldDiffs: [],
+        pathDiff: null,
+        proposedCrawlerData: null,
+        entry,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.previews.set(item.id, item);
+    }
+  }
+
+  markPreviewProcessing(
+    generation: number,
+    rootId: string,
+    relativePath: string,
+  ): MaintenanceSessionPreview | undefined {
+    this.assertGeneration(generation, ["running"]);
+    const preview = [...this.previews.values()].find(
+      (item) => item.rootId === rootId && item.relativePath === relativePath,
+    );
+    if (!preview) return undefined;
+    preview.status = "processing";
+    preview.updatedAt = new Date();
+    this.touch(preview.updatedAt);
+    return this.clonePreview(preview);
+  }
+
+  commitPreview(
     generation: number,
     preview: Omit<MaintenanceSessionPreview, "id" | "sessionId" | "presetId" | "createdAt" | "updatedAt">,
-  ): void {
-    this.assertGeneration(generation, ["running", "paused"]);
-    if (
-      [...this.previews.values()].some(
-        (existing) => existing.rootId === preview.rootId && existing.relativePath === preview.relativePath,
-      )
-    ) {
-      throw new Error(`维护预览路径重复：${preview.rootId}:${preview.relativePath}`);
-    }
+  ): MaintenanceSessionPreview {
+    this.assertGeneration(generation, ["running", "paused", "stopping"]);
+    const existing = [...this.previews.values()].find(
+      (item) => item.rootId === preview.rootId && item.relativePath === preview.relativePath,
+    );
     const now = new Date();
+    if (existing) {
+      existing.status = preview.status;
+      existing.error = preview.error ?? null;
+      existing.fieldDiffs = preview.fieldDiffs;
+      existing.unchangedFieldDiffs = preview.unchangedFieldDiffs;
+      existing.pathDiff = preview.pathDiff ?? null;
+      existing.proposedCrawlerData = preview.proposedCrawlerData ?? null;
+      existing.imageAlternatives = preview.imageAlternatives;
+      existing.entry = preview.entry ?? existing.entry;
+      existing.librarySource = preview.librarySource ?? existing.librarySource;
+      existing.updatedAt = now;
+      this.touch(now);
+      return this.clonePreview(existing);
+    }
     const item: MaintenanceSessionPreview = {
       ...preview,
       id: randomUUID(),
@@ -202,6 +254,7 @@ export class MaintenanceSession {
     };
     this.previews.set(item.id, item);
     this.touch(now);
+    return this.clonePreview(item);
   }
 
   preview(previewId: string): MaintenanceSessionPreview | undefined {
@@ -284,6 +337,21 @@ export class MaintenanceSession {
       .map((preview) => this.clonePreview(preview));
   }
 
+  activePreviews(): MaintenanceSessionPreview[] {
+    return [...this.previews.values()]
+      .filter(
+        (preview) =>
+          preview.status === "ready" ||
+          preview.status === "blocked" ||
+          preview.status === "pending" ||
+          preview.status === "processing",
+      )
+      .sort((left, right) =>
+        `${left.rootId}\0${left.relativePath}`.localeCompare(`${right.rootId}\0${right.relativePath}`, "zh-CN"),
+      )
+      .map((preview) => this.clonePreview(preview));
+  }
+
   applyLogs(): MaintenanceSessionApplyLog[] {
     if (!this.currentBatch) return [];
     return [...this.currentBatch.items.values()]
@@ -313,9 +381,10 @@ export class MaintenanceSession {
   progress(): MaintenanceSessionProgress {
     if (this.phaseValue === "preview") {
       const previews = [...this.previews.values()];
+      const completed = previews.filter((preview) => preview.status === "ready" || preview.status === "blocked");
       return {
         totalEntries: this.refsValue.length,
-        completedEntries: previews.length,
+        completedEntries: completed.length,
         successCount: previews.filter((preview) => preview.status === "ready").length,
         failedCount: previews.filter((preview) => preview.status === "blocked").length,
       };
@@ -361,7 +430,7 @@ export class MaintenanceSession {
         completedAt: this.timestamps.completedAt ? new Date(this.timestamps.completedAt) : null,
       },
       error: this.errorValue,
-      previews: this.editablePreviews(),
+      previews: this.activePreviews(),
       currentBatch: this.currentBatch
         ? {
             id: this.currentBatch.id,
