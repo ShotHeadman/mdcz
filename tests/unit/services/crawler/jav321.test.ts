@@ -65,7 +65,7 @@ describe("Jav321Crawler", () => {
           `,
           ],
         ]),
-        expectedNumber: "abf-075",
+        expectedNumber: "ABF-075",
         expectedActors: ["瀧本雫葉"],
       },
       {
