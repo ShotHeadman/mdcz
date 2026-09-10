@@ -1,4 +1,3 @@
-import { lstat } from "node:fs/promises";
 import path from "node:path";
 import {
   listRootFiles,
@@ -10,7 +9,6 @@ import {
 import type { ScanTask } from "@mdcz/persistence";
 import { TaskScheduler } from "@mdcz/runtime/tasks";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
-import { isHostPathWithinDirectory } from "@mdcz/shared/mediaCandidate";
 import type {
   LogListResponse,
   ScanCandidatesInput,
@@ -163,39 +161,34 @@ export class ScanQueueService {
     const supported = new Set(
       (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
     );
-    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), true);
-    const candidates = await Promise.all(
-      files
-        .filter((file) => {
-          if (hasLiteralFilenameToken(path.basename(file.relativePath), configuration.scrape.filenameBlacklistTokens)) {
-            return false;
-          }
-          const extension = path.extname(file.relativePath).replace(/^\./u, "").toLowerCase();
-          if (excludeDirPaths.some((directoryPath) => isHostPathWithinDirectory(file.absolutePath, directoryPath))) {
-            return false;
-          }
-          return supported.size > 0
-            ? supported.has(extension) && isPrimaryVideoFileName(path.basename(file.relativePath))
-            : isPrimaryVideoFileName(path.basename(file.relativePath));
-        })
-        .map(async (file) => {
-          const stats = await lstat(file.absolutePath).catch(() => null);
-          if (stats?.isSymbolicLink()) {
-            return null;
-          }
-          const resolved = resolveRootFile(roots, file.absolutePath);
-          return {
-            path: file.absolutePath,
-            name: path.basename(file.relativePath),
-            size: file.size,
-            lastModified: file.modifiedAt?.toISOString() ?? null,
-            extension: path.extname(file.relativePath).replace(/^\./u, "").toLowerCase(),
-            ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
-          };
-        }),
-    );
+    const warnings = { count: 0, paths: [] as string[] };
+    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, undefined, {
+      warnings,
+      excludeDirectoryPaths: excludeDirPaths,
+      excludeFileSymlinks: true,
+      filterFile: (filePath) => {
+        const name = path.basename(filePath);
+        const extension = path.extname(filePath).replace(/^\./u, "").toLowerCase();
+        return (
+          !hasLiteralFilenameToken(name, configuration.scrape.filenameBlacklistTokens) &&
+          isPrimaryVideoFileName(name) &&
+          (supported.size === 0 || supported.has(extension))
+        );
+      },
+    });
     return {
-      candidates: candidates.filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate)),
+      warnings,
+      candidates: files.map((file) => {
+        const resolved = resolveRootFile(roots, file.absolutePath);
+        return {
+          path: file.absolutePath,
+          name: path.basename(file.relativePath),
+          size: file.size,
+          lastModified: file.modifiedAt?.toISOString() ?? null,
+          extension: path.extname(file.relativePath).replace(/^\./u, "").toLowerCase(),
+          ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
+        };
+      }),
     };
   }
 

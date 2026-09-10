@@ -1,13 +1,13 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, parse, relative, resolve } from "node:path";
-import { deterministicMediaRootId, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
+import { deterministicMediaRootId, isPathInside, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
 import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../scrape";
 import { throwIfAborted } from "../scrape/utils/abort";
-import { DEFAULT_VIDEO_EXTENSIONS, isPathInside, listVideoFiles } from "../scrape/utils/filesystem";
+import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "../scrape/utils/filesystem";
 import { parseFileInfo } from "../scrape/utils/number";
 import { runtimeLoggerService } from "../shared";
 import { resolveLocalAssetReference, uniqueDefinedPaths } from "./localAssetReferences";

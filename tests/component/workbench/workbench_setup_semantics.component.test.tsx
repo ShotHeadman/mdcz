@@ -1,12 +1,126 @@
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
-import type { MaintenancePresetId } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
+import {
+  type CandidateScanResult,
+  WorkbenchSetupAdapter,
+  type WorkbenchSetupPort,
+} from "@mdcz/views/adapters/WorkbenchSetupAdapter";
 import { MediaBrowserList } from "@mdcz/views/common";
 import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
+import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
 import { expect, test, vi } from "vitest";
+import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 const rootDir = "/media";
+
+test("serializes latest scan intent, ignores stale results, and starts only the selected snapshot", async () => {
+  useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
+  const config = {
+    ...defaultConfiguration,
+    paths: {
+      ...defaultConfiguration.paths,
+      mediaPath: rootDir,
+      successOutputFolder: "/output",
+      defaultScanExcludeDirs: [],
+      softlinkPath: "/extras",
+    },
+    behavior: { ...defaultConfiguration.behavior, scrapeSoftlinkPath: true },
+  };
+  const requests: Array<{ resolve: (result: CandidateScanResult) => void; reject: (error: Error) => void }> = [];
+  const scanCandidates = vi.fn(
+    () => new Promise<CandidateScanResult>((resolve, reject) => requests.push({ resolve, reject })),
+  );
+  const port: WorkbenchSetupPort = { isServer: true, browseDirectory: async () => null, scanCandidates };
+  const onStart = vi.fn(async () => undefined);
+  const props = { config, port, onStartScrape: onStart, onStartMaintenance: onStart };
+  const screen = await render(<WorkbenchSetupAdapter {...props} mode="scrape" configLoading />);
+  expect(scanCandidates).not.toHaveBeenCalled();
+  await screen.rerender(<WorkbenchSetupAdapter {...props} mode="scrape" />);
+  await expect.poll(() => requests.length).toBe(1);
+  expect(scanCandidates).toHaveBeenLastCalledWith(rootDir, false, []);
+  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
+  expect(requests).toHaveLength(1);
+  const input = screen.getByPlaceholder("请选择需要扫描的媒体目录");
+  await input.fill("/next");
+  expect(requests).toHaveLength(1);
+  await expect.element(screen.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  await userEvent.keyboard("{Enter}");
+  expect(requests).toHaveLength(1);
+  requests[0].resolve({ candidates: [], supportedExtensions: ["mp4"] });
+  await expect.poll(() => requests.length).toBe(2);
+  expect(scanCandidates).toHaveBeenLastCalledWith("/next", true, []);
+  requests[1].resolve({ candidates: [], supportedExtensions: ["mp4"] });
+  await expect.poll(() => requests.length).toBe(3);
+  expect(scanCandidates).toHaveBeenLastCalledWith("/extras", true, []);
+  await screen.rerender(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
+  expect(requests).toHaveLength(3);
+  requests[2].reject(new Error("obsolete request failure"));
+  await expect.poll(() => requests.length).toBe(4);
+  expect(scanCandidates).toHaveBeenLastCalledWith("/next", true, []);
+  expect(useWorkbenchSetupStore.getState().scanStatus).toBe("scanning");
+  expect(useWorkbenchSetupStore.getState().scanError).toBe("");
+  const candidate = (name: string): MediaCandidate => ({
+    path: `/next/${name}.mp4`,
+    name: `${name}.mp4`,
+    size: 10,
+    extension: "mp4",
+    lastModified: null,
+    ref: { rootId: "next", relativePath: `${name}.mp4` },
+  });
+  const first = candidate("ONE-001");
+  const second = candidate("TWO-002");
+  const added = candidate("NEW-003");
+  requests[3].resolve({ candidates: [first, second], supportedExtensions: ["mp4"] });
+  await expect.element(screen.getByText("已选 2 / 2 个文件")).toBeVisible();
+  await screen.getByRole("checkbox", { name: /TWO-002/ }).click();
+  await input.fill("/next/");
+  await userEvent.keyboard("{Enter}");
+  expect(requests).toHaveLength(4);
+  await expect.element(screen.getByText("已选 1 / 2 个文件")).toBeVisible();
+  await screen.getByRole("button", { name: "重新扫描" }).click();
+  await expect.poll(() => requests.length).toBe(5);
+  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
+  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
+  expect(requests).toHaveLength(5);
+  requests[4].resolve({ candidates: [], supportedExtensions: ["mp4"] });
+  await expect.poll(() => requests.length).toBe(6);
+  expect(useWorkbenchSetupStore.getState().candidates).toEqual([first, second]);
+  expect(scanCandidates).toHaveBeenLastCalledWith("/next", true, []);
+  requests[5].resolve({ candidates: [first, second, added], supportedExtensions: ["mp4"] });
+  await expect.element(screen.getByText("已选 1 / 3 个文件")).toBeVisible();
+  await screen.getByRole("button", { name: "开始", exact: true }).click();
+  expect(onStart).toHaveBeenCalledWith([first], "read_local", undefined);
+  await input.fill("/uncommitted");
+  await expect.element(screen.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "重新扫描" })).toBeDisabled();
+  expect(requests).toHaveLength(6);
+  await input.fill("/next");
+  await userEvent.keyboard("{Enter}");
+  expect(requests).toHaveLength(6);
+  await screen.getByRole("button", { name: "重新扫描" }).click();
+  await expect.poll(() => requests.length).toBe(7);
+  requests[6].reject(new Error("mount I/O failed"));
+  await expect.element(screen.getByText("mount I/O failed")).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  await screen.getByRole("button", { name: "重新扫描" }).click();
+  await expect.poll(() => requests.length).toBe(8);
+  await screen.unmount();
+  const remounted = await render(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
+  expect(requests).toHaveLength(8);
+  await expect.element(remounted.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  requests[7].reject(new Error("unmounted request failure"));
+  await expect.poll(() => requests.length).toBe(9);
+  expect(useWorkbenchSetupStore.getState().scanStatus).toBe("scanning");
+  expect(useWorkbenchSetupStore.getState().scanError).toBe("");
+  requests[8].resolve({ candidates: [first], supportedExtensions: ["mp4"] });
+  await expect.element(remounted.getByText("已选 1 / 1 个文件")).toBeVisible();
+  expect(useWorkbenchSetupStore.getState().scanError).toBe("");
+  await remounted.unmount();
+  useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
+});
 
 test("shows the complete startup rejection in one dialog", async () => {
   const onClose = vi.fn();

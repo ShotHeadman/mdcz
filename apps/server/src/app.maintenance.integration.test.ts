@@ -326,7 +326,7 @@ describe("buildServer maintenance integration", () => {
       naming: { folderTemplate: "{studio}/{number}", fileTemplate: "{number}_new", assetNamingMode: "followVideo" },
       download: { nfoNaming: "filename" },
     });
-    const relativePath = join(sourceRelative, "ABC-125.mp4");
+    const relativePath = join(sourceRelative, "ABC-125.mp4").replaceAll("\\", "/");
     const { session, sessionId } = await startMaintenancePreview(
       fastify,
       token,

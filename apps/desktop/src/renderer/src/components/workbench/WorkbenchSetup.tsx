@@ -7,7 +7,8 @@ const createDesktopSetupPort = (): WorkbenchSetupPort => ({
     const selection = await ipc.file.browse("directory");
     return selection.paths?.[0]?.trim() || null;
   },
-  scanCandidates: async (scanDir, excludeDirPaths) => await ipc.file.listMediaCandidates(scanDir, excludeDirPaths),
+  scanCandidates: async (scanDir, recursive, excludeDirPaths) =>
+    await ipc.file.listMediaCandidates(scanDir, recursive, excludeDirPaths),
 });
 
 export default function WorkbenchSetup(props: Omit<WorkbenchSetupAdapterProps, "port">) {

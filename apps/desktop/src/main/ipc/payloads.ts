@@ -79,6 +79,7 @@ export const translateTestLlmInputSchema = z.object({
 });
 
 export const fileListMediaCandidatesInputSchema = z.object({
+  recursive: z.boolean(),
   dirPath: optionalString,
   excludeDirPaths: optionalPathList,
 });

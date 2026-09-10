@@ -1,12 +1,13 @@
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { isPathInside } from "@mdcz/media-store";
 import { toErrorMessage } from "@mdcz/shared/error";
 import {
   buildGeneratedVideoSidecarTargetPath,
   buildSubtitleSidecarTargetPath,
   type SubtitleSidecarMatch,
 } from "../media";
-import { isPathInside, moveFileSafely, pathExists } from "../utils/filesystem";
+import { moveFileSafely, pathExists } from "../utils/filesystem";
 import { inspectStrmTarget, isStrmFile, writeStrmTarget } from "../utils/strm";
 import type { SidecarResolver } from "./SidecarResolver";
 

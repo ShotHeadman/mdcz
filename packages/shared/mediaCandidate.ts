@@ -4,6 +4,7 @@ import type { MediaCandidate } from "./types";
 export type WorkbenchSetupMode = "scrape" | "maintenance";
 
 export interface MediaCandidateScanPlan {
+  recursive: boolean;
   excludeDirPaths: string[];
   extraScanDirs: string[];
   scanKey: string;
@@ -87,46 +88,42 @@ const dedupePathsByComparableKey = (paths: ReadonlyArray<string | undefined>): s
 export const resolveMediaCandidateScanPlan = (
   mode: WorkbenchSetupMode,
   scanDir: string,
+  recursive: boolean,
   config?: Configuration,
 ): MediaCandidateScanPlan => {
-  if (mode !== "scrape") {
-    return {
-      extraScanDirs: [],
-      excludeDirPaths: [],
-      scanKey: "",
-    };
-  }
-
-  const defaultExcludeDirPaths = resolveConfiguredDirs(scanDir, config?.paths?.defaultScanExcludeDirs);
+  const defaultExcludeDirPaths =
+    mode === "scrape" ? resolveConfiguredDirs(scanDir, config?.paths?.defaultScanExcludeDirs) : [];
   const softlinkDirPath =
-    config?.behavior?.scrapeSoftlinkPath && scanDir.trim()
+    mode === "scrape" && config?.behavior?.scrapeSoftlinkPath && scanDir.trim()
       ? resolveConfiguredDir(scanDir, config?.paths?.softlinkPath)
       : undefined;
 
   const excludeDirPaths = dedupePathsByComparableKey(defaultExcludeDirPaths);
   const extraScanDirs =
-    softlinkDirPath && normalizeComparableHostPath(softlinkDirPath) !== normalizeComparableHostPath(scanDir)
+    softlinkDirPath &&
+    normalizeComparableHostPath(softlinkDirPath) !== normalizeComparableHostPath(scanDir) &&
+    !(
+      recursive &&
+      !/(^|[\\/])\.{1,2}([\\/]|$)/u.test(softlinkDirPath) &&
+      isHostPathWithinDirectory(softlinkDirPath, scanDir) &&
+      !excludeDirPaths.some((excluded) => isHostPathWithinDirectory(softlinkDirPath, excluded))
+    )
       ? [softlinkDirPath]
       : [];
 
   return {
+    recursive,
     excludeDirPaths,
     extraScanDirs,
-    scanKey: [...excludeDirPaths, ...extraScanDirs].map(normalizeComparableHostPath).join("|"),
+    scanKey: JSON.stringify([
+      mode,
+      normalizeComparableHostPath(scanDir),
+      recursive,
+      excludeDirPaths.map(normalizeComparableHostPath),
+      extraScanDirs.map(normalizeComparableHostPath),
+      config?.scrape?.filenameBlacklistTokens,
+    ]),
   };
-};
-
-export const filterMediaCandidates = (
-  candidates: MediaCandidate[],
-  directoryPaths: readonly string[],
-): MediaCandidate[] => {
-  if (directoryPaths.length === 0) {
-    return candidates;
-  }
-
-  return candidates.filter(
-    (candidate) => !directoryPaths.some((directoryPath) => isHostPathWithinDirectory(candidate.path, directoryPath)),
-  );
 };
 
 export const mergeMediaCandidates = (...candidateGroups: MediaCandidate[][]): MediaCandidate[] => {

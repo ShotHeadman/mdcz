@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { isPathInside } from "@mdcz/media-store";
 
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
@@ -7,7 +8,7 @@ import { findSubtitleSidecars, isGeneratedSidecarVideo, type SubtitleSidecarMatc
 import { FileMover } from "./organize/FileMover";
 import { NamingEngine } from "./organize/NamingEngine";
 import { SidecarResolver } from "./organize/SidecarResolver";
-import { ensureParentDirectory, isPathInside, listVideoFiles } from "./utils/filesystem";
+import { ensureParentDirectory, listVideoFiles } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
 
 export interface OrganizePlan {

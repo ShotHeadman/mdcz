@@ -71,16 +71,6 @@ export const createFileHandlers = (
       roots: await mediaRoots.listRoots(),
     };
   };
-  const assertDirectory = async (dirPath: string): Promise<void> => {
-    try {
-      const stats = await stat(dirPath);
-      if (!stats.isDirectory()) {
-        throw new Error("Not a directory");
-      }
-    } catch {
-      throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, `Directory not found: ${dirPath}`);
-    }
-  };
 
   return {
     [IpcChannel.File_ListMediaCandidates]: t.procedure.input(fileListMediaCandidatesInputSchema).action(
@@ -89,6 +79,7 @@ export const createFileHandlers = (
       }): Promise<{
         candidates: MediaCandidate[];
         supportedExtensions: string[];
+        warnings: { count: number; paths: string[] };
       }> => {
         try {
           const dirPath = input?.dirPath?.trim();
@@ -98,54 +89,32 @@ export const createFileHandlers = (
             throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, "Directory path is required");
           }
 
-          await assertDirectory(dirPath);
           const configuration = await configManager.getValidated();
           await ensurePath(dirPath);
           const registeredRoots = await mediaRoots.listRoots();
 
-          const discoveredPaths = await listVideoFiles(
-            dirPath,
-            true,
-            DEFAULT_VIDEO_EXTENSIONS,
-            undefined,
-            excludeDirPaths,
-          );
-          const uniquePaths = [
-            ...new Set(
-              discoveredPaths.filter(
-                (filePath) =>
-                  isPrimaryVideoFileName(filePath) &&
-                  !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens),
-              ),
-            ),
-          ];
           const candidates: MediaCandidate[] = [];
-
-          for (const filePath of uniquePaths) {
-            try {
-              const stats = await stat(filePath);
-              if (!stats.isFile()) {
-                continue;
-              }
-
-              const name = filePath.split(/[\\/]+/u).at(-1) ?? filePath;
+          const warnings = { count: 0, paths: [] as string[] };
+          await listVideoFiles(dirPath, input.recursive, DEFAULT_VIDEO_EXTENSIONS, undefined, excludeDirPaths, {
+            warnings,
+            filterFile: (filePath) =>
+              isPrimaryVideoFileName(filePath) &&
+              !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens),
+            onFile: (filePath, stats) => {
               const resolved = resolveRootFile(registeredRoots, filePath);
-
               candidates.push({
                 path: filePath,
-                name,
+                name: basename(filePath),
                 size: stats.size,
                 lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
-                extension: extname(filePath).toLowerCase(),
+                extension: extname(filePath).replace(/^\./u, "").toLowerCase(),
                 ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
               });
-            } catch {
-              // Skip inaccessible entries and keep scanning.
-            }
-          }
+            },
+          });
 
           candidates.sort((a, b) => a.ref.relativePath.localeCompare(b.ref.relativePath, "zh-CN"));
-          return { candidates, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
+          return { candidates, warnings, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
         } catch (error) {
           throw asSerializableIpcError(error);
         }

@@ -211,7 +211,9 @@ describe("mounted filesystem helpers", () => {
     await atomicWriteRootFile(root, "linked/target.mp4", "video");
     await mkdir(path.join(root.hostPath, "links"), { recursive: true });
     try {
-      await symlink(path.join(root.hostPath, "linked"), path.join(root.hostPath, "links", "linked-dir"), "dir");
+      const linkType = process.platform === "win32" ? "junction" : "dir";
+      await symlink(path.join(root.hostPath, "linked"), path.join(root.hostPath, "links", "linked-dir"), linkType);
+      await symlink(root.hostPath, path.join(root.hostPath, "linked", "back"), linkType);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EPERM") {
         return;
@@ -219,12 +221,12 @@ describe("mounted filesystem helpers", () => {
       throw error;
     }
 
-    await expect(listRootFiles(root, "", true)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ relativePath: "movie.mkv" }),
-        expect.objectContaining({ relativePath: "links/linked-dir/target.mp4" }),
-      ]),
-    );
+    const files = await listRootFiles(root, "", true);
+    expect(files.map((file) => file.relativePath).sort()).toEqual([
+      "linked/target.mp4",
+      "links/linked-dir/target.mp4",
+      "movie.mkv",
+    ]);
   });
 
   it("maps missing filesystem paths to stable missing-path errors", async () => {

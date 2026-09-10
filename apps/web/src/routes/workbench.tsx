@@ -51,14 +51,16 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
       path,
       intent: kind === "scan" ? "workbench-scan" : "workbench-output",
     }),
-  scanCandidates: async (scanDir, excludeDirPaths) => {
+  scanCandidates: async (scanDir, recursive, excludeDirPaths) => {
     const result = await api.scans.candidates({
       scanDir,
+      recursive,
       excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
       supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
     });
     return {
       candidates: result.candidates,
+      warnings: result.warnings,
       supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
     };
   },
