@@ -1,5 +1,3 @@
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
 import {
   createPersistenceDatabase,
   LibraryRepairIssueRepository,
@@ -13,6 +11,8 @@ import {
 } from "@mdcz/persistence";
 import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
 import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
+import type Database from "better-sqlite3";
+import { acquireDatabaseLease } from "../databaseFiles";
 
 import type { ServerRuntimePaths } from "./configService";
 
@@ -34,6 +34,7 @@ export class ServerPersistenceService {
   private state: ServerPersistenceState | null = null;
   private initializePromise: Promise<ServerPersistenceState> | null = null;
   private closed = false;
+  private lease: Database.Database | null = null;
 
   constructor(private readonly paths: Pick<ServerRuntimePaths, "databasePath">) {}
 
@@ -63,10 +64,10 @@ export class ServerPersistenceService {
   }
 
   private async open(): Promise<ServerPersistenceState> {
-    await mkdir(dirname(this.paths.databasePath), { recursive: true });
-    const database = createPersistenceDatabase({ path: this.paths.databasePath });
-
+    this.lease = acquireDatabaseLease(this.paths.databasePath);
+    let database: PersistenceDatabase | undefined;
     try {
+      database = createPersistenceDatabase({ path: this.paths.databasePath });
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
@@ -91,7 +92,9 @@ export class ServerPersistenceService {
       };
       return this.state;
     } catch (error) {
-      database.close();
+      database?.close();
+      this.lease.close();
+      this.lease = null;
       throw error;
     }
   }
@@ -102,8 +105,17 @@ export class ServerPersistenceService {
 
   async close(): Promise<void> {
     this.closed = true;
-    this.state?.database.close();
-    this.state = null;
-    this.initializePromise = null;
+    try {
+      await this.initializePromise;
+    } finally {
+      try {
+        this.state?.database.close();
+      } finally {
+        this.lease?.close();
+        this.lease = null;
+        this.state = null;
+        this.initializePromise = null;
+      }
+    }
   }
 }

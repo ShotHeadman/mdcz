@@ -125,7 +125,12 @@ export const createTempRoot = async (prefix: string): Promise<string> => {
   return directory.path;
 };
 
-export const loginAsAdmin = async (fastify: FastifyInstance, password = "admin"): Promise<string> => {
+export const loginAsAdmin = async (fastify: FastifyInstance, password = "test-admin-password"): Promise<string> => {
+  const app = [...activeServers.keys()].find((server) => server.fastify === fastify);
+  if (!app) throw new Error("Untracked test server");
+  if ((await app.services.auth.status()).setupRequired) {
+    await app.services.auth.completeSetup({ password });
+  }
   const response = await fastify.inject({
     method: "POST",
     url: "/trpc/auth.login",

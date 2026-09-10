@@ -66,44 +66,10 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 
 ### Docker 部署（推荐 NAS / 服务器）
 
-#### Docker Run
+推荐使用仓库提供的 [compose.yaml](compose.yaml) 进行部署，详细步骤请参考 [Docker 部署与维护指南](docker/README.md)。
 
-```bash
-docker run -d \
-  --name mdcz \
-  -p 3838:3838 \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -e UMASK=022 \
-  -v /path/to/data:/data \
-  -v /path/to/media:/media \
-  --restart unless-stopped \
-  ghcr.io/shotheadman/mdcz:latest
-```
-
-#### Docker Compose
-
-```yaml
-services:
-  mdcz:
-    image: ghcr.io/shotheadman/mdcz:latest
-    container_name: mdcz
-    restart: unless-stopped
-    ports:
-      - "3838:3838"
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - UMASK=022
-    volumes:
-      - ./data:/data
-      - /path/to/media:/media
-```
-
-运行后在浏览器访问 `http://localhost:3838`。
-
-> [!TIP]
-> **权限说明**：通过 `PUID`、`PGID` 与 `UMASK` 对齐宿主机权限（默认 `1000`、`1000`、`022`）。容器仅调整 `/data` 挂载点自身，不会递归修改已有文件所有权。如需补充从属组权限可使用 Docker `--group-add <gid>` 参数。
+- **快速上手**：将配置模板复制为 `.env`，填写真实版本号与媒体路径后，执行 `docker compose up -d` 即可启动。
+- **首次访问**：浏览器打开 `http://<服务器IP>:3838`（默认绑定 `127.0.0.1`，NAS 局域网访问请在 `.env` 中调整绑定 IP）。系统无默认密码，首次访问直接按提示设置管理员密码，随后即可在设置中添加媒体库。
 
 ### 源码运行
 

@@ -25,6 +25,6 @@ if [ ! -f "$DIR/.env" ] && [ -f "$DIR/.env.example" ]; then
   echo "Created .env from .env.example."
 fi
 
-npm install --omit=dev --no-audit --no-fund --no-package-lock
+corepack pnpm@10.28.2 install --prod --frozen-lockfile
 
 echo "MDCz WebUI dependencies are ready. Start with: ./start.sh"

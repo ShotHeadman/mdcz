@@ -50,7 +50,6 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
             <FormField
               control={form.control}
               name="password"
-              rules={{ required: "请输入管理员密码" }}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>密码</FormLabel>
@@ -61,7 +60,7 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
                 </FormItem>
               )}
             />
-            <Button disabled={isPending || !form.watch("password")} type="submit">
+            <Button disabled={isPending} type="submit">
               {isPending ? "正在登录..." : "登录"}
             </Button>
           </form>

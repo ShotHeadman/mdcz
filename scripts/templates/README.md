@@ -10,23 +10,14 @@ bundle for users who prefer a local Node.js service.
 
 ## Quick Start With Docker
 
-```bash
-docker run -d \
-  --name mdcz \
-  -p 3838:3838 \
-  -v mdcz-data:/data \
-  --restart unless-stopped \
-  ghcr.io/shotheadman/mdcz:latest
-```
-
-Open <http://localhost:3838>. Persistent state lives in the `mdcz-data`
-volume (`/data` inside the container).
+Use the maintained [Compose file](https://github.com/ShotHeadman/mdcz/blob/main/compose.yaml) and
+[deployment guide](https://github.com/ShotHeadman/mdcz/blob/main/docker/README.md).
 
 ## No-Docker Portable
 
 Requires Node.js 24 or newer. The install scripts check the local Node version;
 when a compatible Node is already installed, they skip any Node setup and only
-install runtime dependencies.
+install runtime dependencies from the bundled pnpm lockfile. Corepack must be available.
 
 ```bash
 tar -xzf mdcz-<version>.tar.gz
@@ -105,3 +96,28 @@ location /events/tasks {
 2. Replace the bundle (or pull the new image).
 3. Re-run `./install.sh` or `.\install.ps1` for portable / systemd installs.
 4. Start the service again. Migrations run automatically on boot.
+
+## Authentication and data maintenance
+
+There is no default password. With no `MDCZ_ADMIN_PASSWORD`, set an administrator password directly
+in the WebUI on first visit, then add media directories in settings.
+`auth-state.json` stores only a salted scrypt password hash. An environment password overrides it without changing the file.
+Old plaintext auth files are not migrated: stop the server, remove the old auth file after backing it up securely,
+restart and set an administrator password in the WebUI. Database and media data are unaffected.
+
+Store the active database on a local filesystem, not NFS/SMB. Only one server may own a database at a time;
+the `.lock.sqlite` file is an OS-lock carrier and must not be deleted while a server is running.
+Use the same environment (including any path overrides) for maintenance commands:
+
+```bash
+node --env-file=.env server.js doctor
+node --env-file=.env server.js database backup /safe/backups/mdcz.sqlite
+node --env-file=.env server.js database verify /safe/backups/mdcz.sqlite
+# Stop the service before restoring:
+node --env-file=.env server.js database restore /safe/backups/mdcz.sqlite --confirm
+```
+
+Database backup is online and consistent. It excludes TOML profiles and `auth-state.json`; back up the configuration directory separately.
+For a complete coordinated backup, stop the server and archive the configuration and data directories together.
+Restore creates a pre-restore database backup before replacing an existing database. Restoring a database does not undo media file operations.
+Before upgrades, save both configuration and data. Rolling back an image alone does not roll back the database schema.

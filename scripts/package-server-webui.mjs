@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parse, stringify } from "yaml";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const releaseDir = resolve(repoRoot, "release");
@@ -38,19 +39,9 @@ const run = (command, args) =>
     });
   });
 
-const dependencyVersion = (name, ...manifests) => {
-  for (const manifest of manifests) {
-    const version = manifest.dependencies?.[name] ?? manifest.optionalDependencies?.[name];
-    if (version) {
-      return version;
-    }
-  }
-  throw new Error(`Missing release dependency version for ${name}`);
-};
-
 const rootPackage = await readJson("package.json");
 const serverPackage = await readJson("apps/server/package.json");
-const runtimePackage = await readJson("packages/runtime/package.json");
+const lockfile = parse(await readFile(resolve(repoRoot, "pnpm-lock.yaml"), "utf8"));
 
 const releaseVersion =
   process.env.MDCZ_RELEASE_VERSION?.trim() ||
@@ -102,20 +93,27 @@ const releasePackage = {
   scripts: {
     start: "node server.js",
   },
-  dependencies: {
-    "@trpc/server": dependencyVersion("@trpc/server", serverPackage),
-    "better-sqlite3": dependencyVersion("better-sqlite3", serverPackage),
-    "drizzle-orm": dependencyVersion("drizzle-orm", serverPackage),
-    fastify: dependencyVersion("fastify", serverPackage),
-    impit: dependencyVersion("impit", runtimePackage),
-    sharp: dependencyVersion("sharp", serverPackage, runtimePackage),
-  },
+  dependencies: Object.fromEntries(
+    Object.entries(serverPackage.dependencies).filter(([, version]) => !version.startsWith("workspace:")),
+  ),
   engines: {
     node: ">=24",
+  },
+  pnpm: {
+    onlyBuiltDependencies: ["better-sqlite3", "impit"],
+    ignoredBuiltDependencies: ["sharp"],
   },
 };
 
 await writeFile(resolve(stagingDir, "package.json"), `${JSON.stringify(releasePackage, null, 2)}\n`);
+const lockedDependencies = {};
+for (const [name, specifier] of Object.entries(releasePackage.dependencies)) {
+  const locked = lockfile.importers["apps/server"].dependencies[name];
+  if (!locked || locked.specifier !== specifier) throw new Error(`Runtime dependency is not locked: ${name}`);
+  lockedDependencies[name] = locked;
+}
+lockfile.importers = { ".": { dependencies: lockedDependencies } };
+await writeFile(resolve(stagingDir, "pnpm-lock.yaml"), stringify(lockfile));
 
 if (stagingOnly) {
   console.log(`Staged ${stagingDir}`);

@@ -46,16 +46,14 @@ const scrapeLaunchProcedure = protectedProcedure;
 export const appRouter = t.router({
   auth: t.router({
     setup: t.procedure.query(async ({ ctx }) => {
-      const setupStatus = await ctx.services.mediaRoots.setupStatus();
-      return await ctx.services.auth.setup(setupStatus.mediaRootCount);
+      return await ctx.services.auth.status();
     }),
     login: t.procedure
       .input(authLoginInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.auth.login(input.password)),
     logout: t.procedure.mutation(({ ctx }) => ctx.services.auth.logout(ctx.token)),
     status: t.procedure.query(async ({ ctx }) => {
-      const setupStatus = await ctx.services.mediaRoots.setupStatus();
-      return await ctx.services.auth.status(ctx.token, setupStatus.mediaRootCount);
+      return await ctx.services.auth.status(ctx.token);
     }),
   }),
   app: t.router({
@@ -322,22 +320,15 @@ export const appRouter = t.router({
   }),
   setup: t.router({
     complete: setupProcedure.input(setupCompleteInputSchema).mutation(async ({ ctx, input }) => {
-      ctx.services.auth.assertValidSetupPassword(input.password);
-      await ctx.services.mediaRoots.ensurePath({
-        displayName: input.mediaRoot.displayName,
-        hostPath: input.mediaRoot.hostPath,
-      });
-      await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
-      return await ctx.services.auth.completeSetup(input.password);
+      return await ctx.services.auth.completeSetup(input);
     }),
     status: t.procedure.query(async ({ ctx }) => {
       const mediaRootStatus = await ctx.services.mediaRoots.setupStatus();
-      const authStatus = await ctx.services.auth.status(ctx.token, mediaRootStatus.mediaRootCount);
+      const authStatus = await ctx.services.auth.status(ctx.token);
       return {
         configured: !authStatus.setupRequired,
         setupRequired: Boolean(authStatus.setupRequired),
         mediaRootCount: mediaRootStatus.mediaRootCount,
-        usingDefaultPassword: Boolean(authStatus.usingDefaultPassword),
         environmentPasswordConfigured: Boolean(authStatus.environmentPasswordConfigured),
       };
     }),

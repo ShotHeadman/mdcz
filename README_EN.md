@@ -66,44 +66,10 @@ Download the pre-built installer for your operating system from the [Releases](h
 
 ### Docker (Recommended for NAS / Server)
 
-#### Docker Run
+We recommend deploying with the maintained [compose.yaml](compose.yaml). See the [deployment and maintenance guide](docker/README.md) for detailed configuration, permissions, backups, and upgrades.
 
-```bash
-docker run -d \
-  --name mdcz \
-  -p 3838:3838 \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -e UMASK=022 \
-  -v /path/to/data:/data \
-  -v /path/to/media:/media \
-  --restart unless-stopped \
-  ghcr.io/shotheadman/mdcz:latest
-```
-
-#### Docker Compose
-
-```yaml
-services:
-  mdcz:
-    image: ghcr.io/shotheadman/mdcz:latest
-    container_name: mdcz
-    restart: unless-stopped
-    ports:
-      - "3838:3838"
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - UMASK=022
-    volumes:
-      - ./data:/data
-      - /path/to/media:/media
-```
-
-Access the WebUI at `http://localhost:3838`.
-
-> [!TIP]
-> **NAS Permission Notice**: Use `PUID`, `PGID`, and `UMASK` to align container permissions with your host user (defaults: `1000`, `1000`, `022`). The container only manages the `/data` mount and does not recursively alter ownership of existing media files. Use `--group-add <gid>` if supplementary group permissions are required.
+- **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure your version and media path, and run `docker compose up -d`.
+- **First Visit**: Open `http://<server-ip>:3838` in your browser (defaults to `127.0.0.1`; set `MDCZ_BIND_IP` in `.env` for LAN access). There is no default password; set the administrator password directly in the WebUI on first visit, then add your media directory under `/media` in settings.
 
 ### Local Development
 

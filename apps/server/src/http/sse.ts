@@ -10,6 +10,7 @@ export async function writeTaskEventsStream(
   raw: ServerResponse,
   origin?: string,
   requestHost?: string,
+  shutdownSignal?: AbortSignal,
 ): Promise<void> {
   let closed = false;
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -44,12 +45,19 @@ export async function writeTaskEventsStream(
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     unsubscribe?.();
     raw.removeListener("close", onClose);
+    shutdownSignal?.removeEventListener("abort", closeStream);
   };
 
   const closeStream = (): void => {
     cleanup();
     if (!raw.writableEnded) raw.end();
   };
+
+  if (shutdownSignal?.aborted) {
+    raw.end();
+    return;
+  }
+  shutdownSignal?.addEventListener("abort", closeStream, { once: true });
 
   raw.on("close", onClose);
   unsubscribe = services.taskEvents.subscribe(writeNotification);

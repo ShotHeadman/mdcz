@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { ServerResponse } from "node:http";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ServerServices } from "../services";
 import { createTaskEventBus, formatSseEvent } from "../taskEvents";
 import { writeTaskEventsStream } from "./sse";
@@ -17,7 +17,7 @@ const createFakeResponse = (onWriteHead: () => void): { raw: ServerResponse; chu
       chunks.push(chunk);
       return true;
     },
-    end: () => {},
+    end: vi.fn(),
   }) as unknown as ServerResponse & { emit(event: "close"): boolean };
   return { raw, chunks };
 };
@@ -27,8 +27,10 @@ describe("task events SSE stream", () => {
     const taskEvents = createTaskEventBus();
     const { raw, chunks } = createFakeResponse(() => taskEvents.invalidate("scrape-history"));
 
-    await writeTaskEventsStream({ taskEvents } as ServerServices, raw);
-    raw.emit("close");
+    const shutdown = new AbortController();
+    await writeTaskEventsStream({ taskEvents } as ServerServices, raw, undefined, undefined, shutdown.signal);
+    shutdown.abort();
+    expect(raw.end).toHaveBeenCalledOnce();
 
     expect(chunks).toEqual([
       ": connected\n\n",

@@ -33,12 +33,11 @@ export const mapConfigError = (error: unknown): never => {
 };
 
 export const setupProcedure = t.procedure.use(async ({ ctx, next }) => {
-  const setupStatus = await ctx.services.mediaRoots.setupStatus();
-  const authStatus = await ctx.services.auth.status(ctx.token, setupStatus.mediaRootCount);
+  const authStatus = await ctx.services.auth.status(ctx.token);
   if (!authStatus.setupRequired) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "初始化已完成",
+      message: "系统已完成初始化，请直接登录",
     });
   }
   return next({ ctx });

@@ -181,23 +181,32 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const fastify = Fastify({
     logger: false,
   });
+  const shutdownController = new AbortController();
 
   fastify.addHook("onReady", async () => {
-    await services.config.load();
     await services.persistence.initialize();
+    await services.config.load();
     await services.scans.recoverInterrupted();
+    await services.auth.status();
+  });
+
+  fastify.addHook("preClose", async () => {
+    shutdownController.abort();
   });
 
   let closed = false;
   fastify.addHook("onClose", async () => {
     if (closed) return;
     closed = true;
-    await services.scans.close();
-    await services.scrape.close();
-    await services.maintenance.close();
-    await crawlerProvider.shutdown();
-    await imageHostCooldownStore.flush();
-    await services.persistence.close();
+    const results = await Promise.allSettled([
+      services.scans.close(),
+      services.scrape.close(),
+      services.maintenance.close(),
+    ]);
+    results.push(...(await Promise.allSettled([crawlerProvider.shutdown(), imageHostCooldownStore.flush()])));
+    results.push(...(await Promise.allSettled([services.persistence.close()])));
+    const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    if (errors.length) throw new AggregateError(errors, "Server shutdown failed");
   });
 
   fastify.addHook("onRequest", async (request, reply) => {
@@ -214,6 +223,19 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     fastify.get("/", async () => createHealthPayload());
   }
   fastify.get("/health", async () => createHealthPayload());
+  fastify.get("/ready", async (_request, reply) => {
+    if (shutdownController.signal.aborted || !services.persistence.initialized) {
+      return reply.code(503).send({ status: "unavailable" });
+    }
+    try {
+      const { database } = await services.persistence.getState();
+      database.sqlite.prepare("SELECT count(*) FROM media_roots").get();
+      return { status: "ready" };
+    } catch (error) {
+      runtimeLogs.getLogger("readiness").error(String(error));
+      return reply.code(503).send({ status: "unavailable" });
+    }
+  });
 
   fastify.get("/api/automation/library/recent", async (request) => {
     services.auth.assertAuthenticated(getBearerToken(request));
@@ -244,7 +266,13 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.get("/events/tasks", async (request, reply) => {
     services.auth.assertAuthenticated(getBearerToken(request));
     reply.hijack();
-    await writeTaskEventsStream(services, reply.raw, request.headers.origin, request.headers.host);
+    await writeTaskEventsStream(
+      services,
+      reply.raw,
+      request.headers.origin,
+      request.headers.host,
+      shutdownController.signal,
+    );
   });
 
   registerLibraryAssets(fastify, services);

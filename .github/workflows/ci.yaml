@@ -16,14 +16,41 @@ on:
       - "biome.json"
       - "vitest.config.ts"
       - "tsconfig*.json"
+      - "docker/**"
+      - "scripts/**"
+      - ".dockerignore"
+      - "compose.yaml"
   pull_request:
     branches: [main]
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  docker:
+    name: Docker (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          load: true
+          tags: mdcz:identity-test
+          cache-from: type=gha,scope=${{ matrix.runner }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.runner }}
+      - run: sh docker/test-identity.sh
+        env:
+          MDCZ_DOCKER_SKIP_BUILD: "1"
+
   static:
     name: Static Quality
     runs-on: ubuntu-latest
@@ -67,5 +94,4 @@ jobs:
 
       - name: Build Desktop and WebUI
         run: pnpm build:desktop && pnpm build:webui
-
 
