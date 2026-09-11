@@ -106,7 +106,6 @@ pnpm dev:desktop    # 启动桌面端模式
 ## 上游与致谢
 
 - 上游项目：[MDCx](https://github.com/sqzw-x/mdcx)，感谢原作者的卓越贡献。
-- 社区讨论：[LINUXDO](https://linux.do)。
 
 ---
 
