@@ -113,6 +113,7 @@ for (const [name, specifier] of Object.entries(releasePackage.dependencies)) {
   lockedDependencies[name] = locked;
 }
 lockfile.importers = { ".": { dependencies: lockedDependencies } };
+delete lockfile.catalogs;
 await writeFile(resolve(stagingDir, "pnpm-lock.yaml"), stringify(lockfile));
 
 if (stagingOnly) {

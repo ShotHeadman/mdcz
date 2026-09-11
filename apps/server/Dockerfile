@@ -2,6 +2,8 @@
 
 # stage 1: build webui artifacts + staging dir via package script
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    SKIP_INSTALL_SIMPLE_GIT_HOOKS=1
 WORKDIR /repo
 RUN --mount=type=cache,target=/root/.cache/node/corepack,sharing=locked \
     corepack enable && corepack prepare pnpm@10.28.2 --activate
