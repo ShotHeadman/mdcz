@@ -17,6 +17,12 @@ on:
       - "tsconfig.json"
       - "tsconfig.node.json"
       - "tsconfig.web.json"
+      - "tsconfig.desktop-renderer.json"
+      - "tsconfig.test.json"
+      - "docker/**"
+      - ".dockerignore"
+      - "compose.yaml"
+      - ".github/workflows/promote-image.yml"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +30,11 @@ permissions:
   packages: write
 
 jobs:
+  checks:
+    uses: ./.github/workflows/ci.yaml
+
   version:
+    needs: checks
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
@@ -76,8 +86,7 @@ jobs:
         if: steps.check.outputs.skipped == 'false'
         id: bump
         run: |
-          NEW_VERSION=$(npm version ${{ steps.bump-type.outputs.type }} --no-git-tag-version)
-          pnpm --filter @mdcz/desktop exec npm version "$NEW_VERSION" --no-git-tag-version
+          NEW_VERSION=$(node scripts/bump-version.mjs ${{ steps.bump-type.outputs.type }})
           echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
           echo "tag=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -162,6 +171,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read source revision
+        id: source
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v7
         with:
@@ -171,9 +184,9 @@ jobs:
           push: true
           build-args: |
             MDCZ_RELEASE_VERSION=${{ needs.version.outputs.version }}
+            MDCZ_REVISION=${{ steps.source.outputs.revision }}
           tags: |
             ghcr.io/shotheadman/mdcz:${{ needs.version.outputs.version }}
-            ghcr.io/shotheadman/mdcz:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

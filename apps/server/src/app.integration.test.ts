@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -14,6 +14,7 @@ import {
   syncMediaRootFromConfig,
   waitForScanTaskStatus,
 } from "./app.testSupport";
+import { AuthService } from "./services/authService";
 import type { RuntimeActionService } from "./services/runtimeActionService";
 import { formatSseEvent } from "./taskEvents";
 
@@ -124,98 +125,95 @@ beforeEach(() => {
 });
 
 describe("buildServer composition integration", () => {
-  it("completes first-run setup without a prior session and persists completion", async () => {
-    const root = await createTempRoot("setup-root");
+  it("publishes one durable hashed credential under concurrent first-run setup", async () => {
     const { fastify, services } = await createTestServer();
-
-    const completeResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/setup.complete",
-      payload: { password: "changed-password", mediaRoot: { displayName: "Media", hostPath: root } },
+    const password = "changed-password";
+    const statePath = join(services.config.runtimePaths.configDir, "auth-state.json");
+    const results = await Promise.all(
+      [password, "another-password"].map((value) =>
+        fastify.inject({
+          method: "POST",
+          url: "/trpc/setup.complete",
+          payload: { password: value },
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.statusCode === 200)).toHaveLength(1);
+    expect(results.filter((result) => [403, 409].includes(result.statusCode))).toHaveLength(1);
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    await expect(services.auth.completeSetup({ password: "replacement" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toEqual(state);
+    expect(Object.keys(state)).toEqual(["passwordHash"]);
+    expect(state.passwordHash).toMatch(/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
+    if (process.platform !== "win32") expect((await stat(statePath)).mode & 0o777).toBe(0o600);
+    const status = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
+    expect(status.json().result.data).toMatchObject({ configured: true, setupRequired: false, mediaRootCount: 0 });
+    const restartedAuth = new AuthService(services.config.runtimePaths, "");
+    const winningPassword = results[0].statusCode === 200 ? password : "another-password";
+    if (process.platform !== "win32") await chmod(statePath, 0o400);
+    try {
+      await expect(restartedAuth.status()).resolves.toMatchObject({ setupRequired: false });
+      await expect(restartedAuth.login(winningPassword)).resolves.toMatchObject({ authenticated: true });
+      if (process.platform !== "win32") expect((await stat(statePath)).mode & 0o777).toBe(0o400);
+    } finally {
+      if (process.platform !== "win32") await chmod(statePath, 0o600);
+    }
+    await expect(restartedAuth.login("admin")).rejects.toThrow("管理员密码错误");
+    const other = await createTestServer();
+    await other.services.auth.completeSetup({
+      password: winningPassword,
     });
-    const statusResponse = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
-    const repeatResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/setup.complete",
-      payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root } },
-    });
-    const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
-    const config = await services.config.get();
-    const roots = await services.mediaRoots.list();
-
-    expect(completeResponse.statusCode).toBe(200);
-    expect(completeResponse.json().result.data).toMatchObject({ authenticated: true });
-    expect(completeResponse.json().result.data.token).toEqual(expect.any(String));
-    expect(statusResponse.statusCode).toBe(200);
-    expect(statusResponse.json().result.data).toMatchObject({
-      configured: true,
-      setupRequired: false,
-      mediaRootCount: 1,
-      usingDefaultPassword: false,
-    });
-    expect(config.paths.mediaPath).toBe(root);
-    expect(roots.roots).toHaveLength(1);
-    expect(roots.roots[0]).toMatchObject({ displayName: "Media", hostPath: root });
-    expect(state).toEqual({ setupCompleted: true, adminPassword: "changed-password" });
-    expect(repeatResponse.statusCode).toBe(403);
+    const otherState = JSON.parse(
+      await readFile(join(other.services.config.runtimePaths.configDir, "auth-state.json"), "utf8"),
+    );
+    expect(otherState.passwordHash).not.toBe(state.passwordHash);
+    await writeFile(statePath, "{}", "utf8");
+    await expect(restartedAuth.status()).rejects.toThrow("Invalid auth-state.json");
   });
 
-  it("rejects completing setup with the default admin password", async () => {
-    const root = await createTempRoot("default-setup-root");
+  it.each([
+    "",
+    "a",
+    "admin",
+    "  ",
+    "密码",
+    "x".repeat(1025),
+  ])("accepts setup and login without password policy restrictions (case %#)", async (password) => {
     const { fastify } = await createTestServer();
-
     const response = await fastify.inject({
       method: "POST",
       url: "/trpc/setup.complete",
-      payload: { password: "admin", mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+      payload: { password },
     });
-
-    expect(response.statusCode).toBe(500);
-    expect(response.json().error.message).toContain("不能使用默认管理员密码");
+    expect(response.statusCode).toBe(200);
+    const login = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password },
+    });
+    expect(login.statusCode).toBe(200);
   });
 
-  it("keeps an environment password server-side and completes setup without a password field", async () => {
-    const root = await createTempRoot("environment-setup-root");
-    const environmentPassword = "environment-only-password";
+  it("uses an environment password without persisting it or reopening setup for an empty media library", async () => {
+    const environmentPassword = "a";
     const { fastify, services } = await createTestServer({ environmentPassword });
-
-    const authSetupResponse = await fastify.inject({ method: "GET", url: "/trpc/auth.setup" });
-    const setupStatusResponse = await fastify.inject({ method: "GET", url: "/trpc/setup.status" });
-    const completeResponse = await fastify.inject({
+    const status = await fastify.inject({ method: "GET", url: "/trpc/auth.setup" });
+    expect(status.json().result.data).toEqual({
+      authenticated: false,
+      setupRequired: false,
+      environmentPasswordConfigured: true,
+    });
+    const denied = await fastify.inject({
       method: "POST",
       url: "/trpc/setup.complete",
-      payload: { mediaRoot: { displayName: "Media", hostPath: root, enabled: true } },
+      payload: { password: "another-password" },
     });
-    const wrongLoginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: "wrong-password" },
+    expect(denied.statusCode).toBe(403);
+    await expect(services.auth.login("wrong-password")).rejects.toThrow("管理员密码错误");
+    await expect(services.auth.login(environmentPassword)).resolves.toMatchObject({ authenticated: true });
+    await expect(readFile(join(services.config.runtimePaths.configDir, "auth-state.json"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
-    const correctLoginResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/auth.login",
-      payload: { password: environmentPassword },
-    });
-    const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
-
-    expect(authSetupResponse.statusCode).toBe(200);
-    expect(authSetupResponse.body).not.toContain(environmentPassword);
-    expect(authSetupResponse.json().result.data).toEqual({
-      authenticated: false,
-      setupRequired: true,
-      usingDefaultPassword: false,
-      environmentPasswordConfigured: true,
-    });
-    expect(setupStatusResponse.json().result.data).toMatchObject({
-      setupRequired: true,
-      usingDefaultPassword: false,
-      environmentPasswordConfigured: true,
-    });
-    expect(completeResponse.statusCode).toBe(200);
-    expect(completeResponse.json().result.data).toMatchObject({ authenticated: true });
-    expect(wrongLoginResponse.statusCode).toBe(500);
-    expect(correctLoginResponse.statusCode).toBe(200);
-    expect(state).toEqual({ setupCompleted: true });
   });
 
   it("mounts tRPC config read and export procedures", async () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Stats } from "node:fs";
 import {
   copyFile,
   stat as fsStat,
@@ -14,7 +15,7 @@ import {
 import path from "node:path";
 
 import { toStorageError } from "./errors";
-import type { MediaRoot } from "./mediaRoot";
+import { isPathInside, type MediaRoot } from "./mediaRoot";
 import { normalizeRootRelativePath, type RootRelativePath, resolveRootRelativePath } from "./rootRelativePath";
 
 export interface StorageEntry {
@@ -84,99 +85,184 @@ export interface RootFileWalkEntry {
   modifiedAt: Date;
 }
 
-const resolveDirectoryKey = async (dirPath: string): Promise<string> => {
-  try {
-    return await realpath(dirPath);
-  } catch {
-    return dirPath;
-  }
-};
+export interface FileWalkOptions {
+  filterFile?: (absolutePath: string) => boolean;
+  excludeDirectoryPaths?: readonly string[];
+  excludeFileSymlinks?: boolean;
+  deduplicateDirectories?: boolean;
+  warnings?: { count: number; paths: string[] };
+  // Metadata consumers collect their own results; callback scans return no paths.
+  onFile?: (filePath: string, stats: Stats) => void;
+  onDiagnostic?: (message: string) => void;
+}
 
-const walkRootDirectory = async (
-  root: MediaRoot,
-  relativePath: string,
-  recursive: boolean,
-  visitedDirs: Set<string>,
-  ancestorDirs: Set<string>,
-  allowVisitedTarget = false,
+export const walkFiles = async (
+  rootPath: string,
+  recursive = false,
   signal?: AbortSignal,
-): Promise<RootFileWalkEntry[]> => {
+  options: FileWalkOptions = {},
+): Promise<string[]> => {
   signal?.throwIfAborted();
-  const absolutePath = resolveRootRelativePath(root, relativePath);
-  const dirKey = await resolveDirectoryKey(absolutePath);
-  if (ancestorDirs.has(dirKey) || (!allowVisitedTarget && visitedDirs.has(dirKey))) {
-    return [];
-  }
-  visitedDirs.add(dirKey);
-  const nextAncestorDirs = new Set(ancestorDirs).add(dirKey);
-
-  const entries = await readdir(absolutePath, { withFileTypes: true });
-  const files: RootFileWalkEntry[] = [];
-
-  for (const entry of entries) {
+  const started = performance.now();
+  let directories = 0;
+  let candidates = 0;
+  const visitedDirectories = new Set<string>();
+  const files: string[] = [];
+  const warnings = options.warnings ?? { count: 0, paths: [] as string[] };
+  const skip = (error: unknown, target: string): boolean => {
     signal?.throwIfAborted();
-    const entryRelativePath = normalizeRootRelativePath(path.posix.join(relativePath, entry.name));
-    const entryAbsolutePath = resolveRootRelativePath(root, entryRelativePath);
-
-    try {
+    if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM", "ELOOP"].includes((error as NodeJS.ErrnoException)?.code ?? ""))
+      return false;
+    warnings.count += 1;
+    if (warnings.paths.length < 5) warnings.paths.push(target);
+    return true;
+  };
+  const keys = new Map<string, Promise<string>>();
+  const directoryKey = (target: string) => {
+    signal?.throwIfAborted();
+    let pending = keys.get(target);
+    if (!pending) {
+      pending = realpath(target);
+      keys.set(target, pending);
+    }
+    return pending;
+  };
+  const excluded: string[] = [];
+  const lexicalExcluded = (options.excludeDirectoryPaths ?? [])
+    .map((target) => path.resolve(target))
+    .filter((target) => path.relative(rootPath, target) !== "");
+  const queue: Array<() => Promise<void>> = [];
+  const visit = async (absolutePath: string, ancestors: ReadonlySet<string>, isRoot: boolean) => {
+    // Skip excluded names before I/O, then reject aliases of excluded targets.
+    if (!isRoot && lexicalExcluded.some((target) => isPathInside(target, absolutePath))) return;
+    const key = await directoryKey(absolutePath);
+    if (ancestors.has(key) || (options.deduplicateDirectories && visitedDirectories.has(key))) return;
+    if (!isRoot && excluded.some((target) => isPathInside(target, key))) return;
+    if (options.deduplicateDirectories) visitedDirectories.add(key);
+    const nextAncestors = options.deduplicateDirectories ? ancestors : new Set(ancestors).add(key);
+    signal?.throwIfAborted();
+    const entries = await readdir(absolutePath, { withFileTypes: true });
+    signal?.throwIfAborted();
+    directories += 1;
+    for (const entry of entries) {
+      const entryAbsolutePath = path.join(absolutePath, entry.name);
       if (entry.isDirectory()) {
-        if (recursive) {
-          files.push(
-            ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, false, signal)),
+        if (recursive)
+          queue.push(() =>
+            visit(entryAbsolutePath, nextAncestors, false).catch((error) => {
+              if (!skip(error, entryAbsolutePath)) throw error;
+            }),
           );
-        }
         continue;
       }
-
-      if (entry.isFile() || entry.isSymbolicLink()) {
-        const stats = await fsStat(entryAbsolutePath);
-        if (stats.isDirectory()) {
-          if (recursive) {
-            files.push(
-              ...(await walkRootDirectory(root, entryRelativePath, true, visitedDirs, nextAncestorDirs, true, signal)),
-            );
-          }
-          continue;
-        }
-
-        if (stats.isFile()) {
-          files.push({
-            absolutePath: entryAbsolutePath,
-            relativePath: entryRelativePath,
-            size: stats.size,
-            modifiedAt: stats.mtime,
-          });
-        }
+      const accepted = !options.filterFile || options.filterFile(entryAbsolutePath);
+      if (entry.isFile() && !accepted) continue;
+      if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+      if (entry.isFile() && !options.onFile) {
+        candidates += 1;
+        files.push(entryAbsolutePath);
+        continue;
       }
-    } catch {
-      signal?.throwIfAborted();
-      // Keep mounted filesystem scans resilient to inaccessible entries.
+      queue.push(async () => {
+        try {
+          signal?.throwIfAborted();
+          const stats = await fsStat(entryAbsolutePath);
+          signal?.throwIfAborted();
+          if (stats.isDirectory()) {
+            if (recursive)
+              queue.push(() =>
+                visit(entryAbsolutePath, nextAncestors, false).catch((error) => {
+                  if (!skip(error, entryAbsolutePath)) throw error;
+                }),
+              );
+            return;
+          }
+          if (stats.isFile() && accepted && !(entry.isSymbolicLink() && options.excludeFileSymlinks)) {
+            candidates += 1;
+            if (options.onFile) options.onFile(entryAbsolutePath, stats);
+            else files.push(entryAbsolutePath);
+          }
+        } catch (error) {
+          if (!skip(error, entryAbsolutePath)) throw error;
+        }
+      });
     }
+  };
+  try {
+    const rootKey = await directoryKey(rootPath);
+    for (const target of recursive ? lexicalExcluded : []) {
+      try {
+        const key = await directoryKey(target);
+        if (key !== rootKey) excluded.push(key);
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException)?.code ?? "")) continue;
+        if (!skip(error, target)) throw error;
+      }
+    }
+    queue.push(() => visit(rootPath, new Set(), true));
+    await new Promise<void>((resolveDone, reject) => {
+      let active = 0;
+      let cursor = 0;
+      let failed = false;
+      let failure: unknown;
+      const pump = () => {
+        while (!failed && active < 4 && cursor < queue.length) {
+          const task = queue[cursor++];
+          if (!task) throw new Error("Missing filesystem task");
+          active += 1;
+          void task()
+            .catch((error) => {
+              failed = true;
+              failure = error;
+            })
+            .finally(() => {
+              active -= 1;
+              pump();
+            });
+        }
+        if (active === 0) {
+          if (failed) reject(failure);
+          else resolveDone();
+        }
+      };
+      pump();
+    });
+    signal?.throwIfAborted();
+    return options.onFile ? files : files.sort((a, b) => a.localeCompare(b, "zh-CN"));
+  } finally {
+    options.onDiagnostic?.(
+      `扫描汇总 ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count })}`,
+    );
   }
-
-  signal?.throwIfAborted();
-  return files;
 };
+
+export type RootFileWalkOptions = Omit<FileWalkOptions, "onFile">;
 
 export const listRootFiles = async (
   root: MediaRoot,
   relativePath = "",
   recursive = false,
   signal?: AbortSignal,
+  options: RootFileWalkOptions = {},
 ): Promise<RootFileWalkEntry[]> => {
-  const normalizedRelativePath = normalizeRootRelativePath(relativePath);
-
+  const rootPath = resolveRootRelativePath(root, relativePath);
+  const files: RootFileWalkEntry[] = [];
   try {
-    return await walkRootDirectory(
-      root,
-      normalizedRelativePath,
-      recursive,
-      new Set<string>(),
-      new Set<string>(),
-      false,
-      signal,
-    );
+    await walkFiles(rootPath, recursive, signal, {
+      ...options,
+      onFile: (absolutePath, stats) => {
+        files.push({
+          absolutePath,
+          relativePath: normalizeRootRelativePath(path.relative(root.hostPath, absolutePath)),
+          size: stats.size,
+          modifiedAt: stats.mtime,
+        });
+      },
+    });
+    return files.sort((a, b) => a.relativePath.localeCompare(b.relativePath, "zh-CN"));
   } catch (error) {
+    signal?.throwIfAborted();
     throw toStorageError(error, relativePath);
   }
 };

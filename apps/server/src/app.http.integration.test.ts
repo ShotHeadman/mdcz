@@ -19,11 +19,14 @@ describe("buildServer HTTP integration", () => {
 
     const rootResponse = await fastify.inject({ method: "GET", url: "/" });
     const healthResponse = await fastify.inject({ method: "GET", url: "/health" });
+    const readyResponse = await fastify.inject({ method: "GET", url: "/ready" });
 
     expect(rootResponse.statusCode).toBe(200);
     expect(rootResponse.json()).toEqual(expectedHealthPayload);
     expect(healthResponse.statusCode).toBe(200);
     expect(healthResponse.json()).toEqual(expectedHealthPayload);
+    expect(readyResponse.statusCode).toBe(200);
+    expect(readyResponse.json()).toEqual({ status: "ready" });
   });
 
   it("mounts a tRPC health procedure", async () => {
@@ -48,7 +51,7 @@ describe("buildServer HTTP integration", () => {
       payload: { password: "wrong-password" },
     });
 
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(401);
     expect(response.json().error.message).toContain("管理员密码错误");
   });
 
@@ -126,7 +129,6 @@ describe("buildServer HTTP integration", () => {
     expect(response.json().result.data).toEqual({
       authenticated: false,
       setupRequired: true,
-      usingDefaultPassword: true,
       environmentPasswordConfigured: false,
     });
   });

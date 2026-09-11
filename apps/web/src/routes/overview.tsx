@@ -16,11 +16,11 @@ import { ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 
 export const hasWorkbenchOutput = (input: {
-  configured: boolean;
+  mediaRootCount: number;
   output?: { fileCount: number; totalBytes: number; rootPath: string | null } | null;
   recentCount: number;
 }): boolean =>
-  input.configured ||
+  input.mediaRootCount > 0 ||
   Boolean(input.output?.rootPath) ||
   (input.output?.fileCount ?? 0) > 0 ||
   (input.output?.totalBytes ?? 0) > 0 ||
@@ -39,7 +39,7 @@ export function OverviewPage() {
   const output = overviewQ.data?.output;
   const recent = overviewQ.data?.recentAcquisitions ?? [];
   const configured = hasWorkbenchOutput({
-    configured: Boolean(setupQ.data?.configured),
+    mediaRootCount: setupQ.data?.mediaRootCount ?? 0,
     output,
     recentCount: recent.length,
   });
@@ -54,9 +54,9 @@ export function OverviewPage() {
             hasConfiguredOutput={configured}
             isError={overviewQ.isError}
             isLoading={setupQ.isLoading || overviewQ.isLoading}
-            labels={{ startAction: "去工作台", setupAction: "去初始化" }}
+            labels={{ startAction: "去工作台", setupAction: "前往设置" }}
             onSetup={() => {
-              void navigate({ to: "/setup" });
+              void navigate({ to: "/settings" });
             }}
             onStart={() => {
               void navigate({ to: "/workbench" });

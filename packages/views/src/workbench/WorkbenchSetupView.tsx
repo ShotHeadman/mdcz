@@ -13,6 +13,11 @@ export interface WorkbenchSetupViewProps {
   mode: WorkbenchSetupMode;
   configLoading?: boolean;
   scanDir: string;
+  recursive?: boolean;
+  onRecursiveChange?: (recursive: boolean) => void;
+  onCommitScanDir?: () => void;
+  extraScanDirs?: string[];
+  warnings?: { count: number; paths: string[] };
   targetDir?: string;
   candidates: MediaCandidate[];
   selectedPaths: string[];
@@ -35,6 +40,7 @@ export interface WorkbenchSetupViewProps {
   onBrowseTargetDir?: () => void;
   onScanDirChange?: (value: string) => void;
   onTargetDirChange?: (value: string) => void;
+  refreshDisabled?: boolean;
   onRefreshScan: () => void;
   onPresetChange: (presetId: MaintenancePresetId) => void;
   onStart: () => void;
@@ -89,6 +95,7 @@ function PathControl({
   placeholder,
   onBrowse,
   onChange,
+  onCommit,
   supportsBrowse,
   loadSuggestions,
 }: {
@@ -97,6 +104,7 @@ function PathControl({
   placeholder: string;
   onBrowse: () => void;
   onChange?: (value: string) => void;
+  onCommit?: () => void;
   supportsBrowse?: boolean;
   loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
 }) {
@@ -111,6 +119,10 @@ function PathControl({
           loadSuggestions={loadSuggestions}
           inputClassName="h-auto min-w-0 flex-1 truncate rounded-quiet-sm border-0 bg-surface-low px-4 py-3 font-mono text-xs leading-4 text-foreground/90 shadow-none placeholder:text-foreground/90 focus-visible:border-transparent focus-visible:ring-0"
           onChange={onChange}
+          onBlur={onCommit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.defaultPrevented && !event.nativeEvent.isComposing) onCommit?.();
+          }}
         />
         {(supportsBrowse ?? true) ? (
           <Button type="button" className="h-11 rounded-quiet-sm px-4 text-xs font-bold" onClick={onBrowse}>
@@ -119,6 +131,21 @@ function PathControl({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ScanningStatus({ scopeLabel }: { scopeLabel: string }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <p role="status" className="mt-2 text-xs text-muted-foreground">
+      正在扫描（{scopeLabel}）· 已等待 {elapsedSeconds} 秒
+    </p>
   );
 }
 
@@ -149,7 +176,7 @@ function MediaRow({
             </div>
           ) : null}
         </div>
-        <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension}</div>
+        <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension.replace(/^\./u, "")}</div>
         <div className={MEDIA_ROW_META_CLASS}>{formatBytes(candidate.size, { trimTrailingZeros: true })}</div>
       </label>
     </div>
@@ -160,6 +187,11 @@ export function WorkbenchSetupView({
   mode,
   configLoading = false,
   scanDir,
+  recursive = false,
+  onRecursiveChange,
+  onCommitScanDir,
+  extraScanDirs = [],
+  warnings,
   targetDir = "",
   candidates,
   selectedPaths,
@@ -182,6 +214,7 @@ export function WorkbenchSetupView({
   onBrowseTargetDir,
   onScanDirChange,
   onTargetDirChange,
+  refreshDisabled = false,
   onRefreshScan,
   onPresetChange,
   onStart,
@@ -189,6 +222,8 @@ export function WorkbenchSetupView({
   onToggleAll,
 }: WorkbenchSetupViewProps) {
   const selectedPathSet = new Set(selectedPaths);
+  const recursiveId = useId();
+  const scopeLabel = recursive ? "含子目录" : "仅当前目录";
   const allSelected = candidates.length > 0 && selectedPaths.length === candidates.length;
   const someSelected = selectedPaths.length > 0 && selectedPaths.length < candidates.length;
   const showScanFeedback = useDelayedFlag(scanning, SCAN_FEEDBACK_DELAY_MS);
@@ -216,6 +251,7 @@ export function WorkbenchSetupView({
                 placeholder={configLoading ? "正在读取配置..." : "请选择需要扫描的媒体目录"}
                 onBrowse={onBrowseScanDir}
                 onChange={onScanDirChange}
+                onCommit={onCommitScanDir}
                 supportsBrowse={!isServer}
                 loadSuggestions={onSuggestScanDir ? (value) => onSuggestScanDir({ path: value }) : undefined}
               />
@@ -231,6 +267,25 @@ export function WorkbenchSetupView({
                 />
               ) : null}
             </div>
+            <label htmlFor={recursiveId} className="mt-4 flex items-center gap-2 text-sm">
+              <Checkbox
+                id={recursiveId}
+                checked={recursive}
+                onCheckedChange={(checked) => onRecursiveChange?.(checked === true)}
+              />
+              包含子目录
+            </label>
+            {extraScanDirs.length > 0 ? (
+              <p className="mt-2 break-all text-xs text-muted-foreground">
+                额外扫描目录（{scopeLabel}）：{extraScanDirs.join("、")}
+              </p>
+            ) : null}
+            {scanning ? <ScanningStatus scopeLabel={scopeLabel} /> : null}
+            {!scanning && scanStatus === "success" && warnings && warnings.count > 0 ? (
+              <p role="status" className="mt-2 break-all text-sm text-amber-600">
+                部分路径无法访问，已跳过 {warnings.count} 项：{warnings.paths.join("、")}
+              </p>
+            ) : null}
           </section>
 
           {mode === "maintenance" ? (
@@ -287,7 +342,7 @@ export function WorkbenchSetupView({
                     variant="ghost"
                     size="sm"
                     className="rounded-quiet-sm"
-                    disabled={scanning}
+                    disabled={scanning || refreshDisabled}
                     onClick={onRefreshScan}
                   >
                     <RefreshCw className={cn("h-4 w-4", scanning && "animate-spin")} />
@@ -315,7 +370,7 @@ export function WorkbenchSetupView({
               {scanning && candidates.length === 0 && showScanFeedback ? (
                 <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                   <Loader2 className="h-8 w-8 animate-spin" />
-                  <div className="text-sm font-medium">正在递归扫描媒体文件</div>
+                  <div className="text-sm font-medium">正在扫描媒体文件（{scopeLabel}）</div>
                   <div className="max-w-md break-all font-mono text-xs">{scanDir}</div>
                 </div>
               ) : null}
@@ -349,7 +404,9 @@ export function WorkbenchSetupView({
               {!scanning && scanStatus === "success" && scanDir && candidates.length === 0 ? (
                 <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                   <FolderOpen className="h-8 w-8" />
-                  <div className="text-sm font-medium">未找到支持的媒体文件</div>
+                  <div className="text-sm font-medium">
+                    {recursive ? "未找到支持的视频" : "当前目录未找到视频，可勾选“包含子目录”"}
+                  </div>
                   <div className="max-w-xl break-all font-mono text-xs">{scanDir}</div>
                   {supportedExtensions.length > 0 ? (
                     <div className="text-xs">支持类型: {supportedExtensions.join(", ")}</div>
@@ -379,7 +436,7 @@ export function WorkbenchSetupView({
       {scanDir ? (
         <FloatingWorkbenchBar contentClassName="mx-auto flex w-fit max-w-[min(92vw,26rem)] items-center justify-between gap-3 px-3 py-2.5 md:max-w-[26rem] md:px-4">
           <div className="min-w-0 font-numeric text-sm font-extrabold tracking-tight">
-            {selectedPaths.length} / {candidates.length} 个文件
+            已选 {selectedPaths.length} / {candidates.length} 个文件
             {selectedSize > 0 ? (
               <span className="ml-2 text-xs font-bold text-muted-foreground">
                 {formatBytes(selectedSize, { trimTrailingZeros: true })}

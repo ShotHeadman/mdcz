@@ -12,42 +12,11 @@ node dist/server.js
 
 The server listens on `127.0.0.1:3838` by default and serves the WebUI from the same origin. Open `http://127.0.0.1:3838` after startup. Use `pnpm build:server` only when you need the Node server bundle without rebuilding or embedding the WebUI static files.
 
-## Deploy (Docker - recommended for self-hosters)
+## Deploy (Docker — recommended for self-hosters)
 
-```bash
-docker run -d \
-  --name mdcz \
-  -p 3838:3838 \
-  -v mdcz-data:/data \
-  --restart unless-stopped \
-  ghcr.io/shotheadman/mdcz:latest
-```
-
-The image (`linux/amd64` + `linux/arm64`) is published from `apps/server/Dockerfile` on every release. State persists in the `mdcz-data` volume (`/data`).
-
-For bind mounts on Unraid, Synology, and other NAS systems, set the container
-identity to the numeric owner of the host directories:
-
-```bash
-docker run -d \
-  --name mdcz \
-  -p 3838:3838 \
-  -e PUID=1026 \
-  -e PGID=100 \
-  -e UMASK=002 \
-  -v /volume1/docker/mdcz:/data \
-  -v /volume1/media:/media \
-  --restart unless-stopped \
-  ghcr.io/shotheadman/mdcz:latest
-```
-
-`PUID` and `PGID` default to `1000`; `UMASK` defaults to `022`. All three
-values are optional. IDs must be positive decimal numbers and `UMASK` must be
-an octal value from `0000` through `0777`. The image adjusts only the `/data`
-mountpoint itself; it never recursively changes existing data or media
-ownership. Ensure the host media tree is already accessible to the configured
-identity. Docker `--group-add <gid>` can grant an additional host group when
-required.
+Use the maintained [Compose file](../../compose.yaml) and [deployment guide](../../docker/README.md).
+The image supports Linux amd64 and arm64, stores application state in `/data`, and uses `/media` for mounted movies.
+The guide covers initialization, NAS permissions, health checks, proxying, backups, upgrades and offline recovery.
 
 ## Release Artifact
 
@@ -58,7 +27,7 @@ The archive contains:
 - `server.js` - Node server entrypoint;
 - `web/` - bundled WebUI static files served by the server;
 - `persistence/drizzle/` - SQLite migration files;
-- `package.json` - minimal runtime dependency manifest with `npm start`;
+- `package.json` - runtime dependency manifest and `pnpm-lock.yaml` with `pnpm start`;
 - `.env.example` - deployment environment reference;
 - `install.sh` / `install.ps1` - setup helpers that check for Node 24+, skip Node setup when it is already installed, create `.env` if needed, and install runtime dependencies;
 - `start.sh` / `start.bat` - launchers that load `./.env` (POSIX) and apply defaults;
@@ -85,10 +54,10 @@ For the systemd / AUR / Deb path, see the bundled `README.md` and `systemd/mdcz.
 | `PORT` | HTTP port. | `3838` |
 | `MDCZ_HOST` | Bind address for the HTTP listener. Set to `0.0.0.0` to expose to the network (the Docker image already does this). | `127.0.0.1` |
 | `MDCZ_HOME` | Base directory for server config and data. | Linux: `$XDG_STATE_HOME/mdcz` or `~/.local/state/mdcz`; other platforms: `~/.mdcz` |
-| `MDCZ_CONFIG_DIR` | Directory for TOML profiles and auth state. | `$MDCZ_HOME/config` |
+| `MDCZ_CONFIG_DIR` | Directory for TOML profiles and the hashed administrator credential. | `$MDCZ_HOME/config` |
 | `MDCZ_DATA_DIR` | Directory for server data. | `$MDCZ_HOME/data` |
 | `MDCZ_DATABASE_PATH` | SQLite database path. | `$MDCZ_DATA_DIR/mdcz.sqlite` |
-| `MDCZ_ADMIN_PASSWORD` | Overrides the persisted single-admin password. | unset |
+| `MDCZ_ADMIN_PASSWORD` | Overrides the persisted single-admin password. Never persisted. | unset |
 | `MDCZ_WEB_DIST_DIR` | Static WebUI bundle directory. | `dist/web` in repo builds, `web` in release bundles |
 | `MDCZ_SERVER_BUILD` | Optional build label shown on About. | unset |
 | `MDCZ_WEB_BUILD` | Optional Web build label shown on About. | unset |

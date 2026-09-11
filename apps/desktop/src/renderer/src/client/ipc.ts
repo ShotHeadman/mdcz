@@ -12,11 +12,10 @@ import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type {
   LibraryListInput,
   MediaRootEnsurePathInput,
-  MediaRootEnsurePathResponse,
   ScrapeConfirmUncensoredInput,
   ScrapeRunSnapshotDto,
 } from "@mdcz/shared/serverDtos";
-import type { CrawlerData, MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
+import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { runScrapeRequest, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 
@@ -59,10 +58,9 @@ export const ipc = {
     delete: (input: { deleteMode?: "none" | "assets" | "all"; id: string }) => client[IpcChannel.Library_Delete](input),
   },
   mediaRoots: {
-    ensurePath: (input: MediaRootEnsurePathInput) =>
-      client[IpcChannel.MediaRoots_EnsurePath](input) as Promise<MediaRootEnsurePathResponse>,
+    ensurePath: (input: MediaRootEnsurePathInput) => client[IpcChannel.MediaRoots_EnsurePath](input),
     prepareOutputDirectory: (input: MediaRootEnsurePathInput) =>
-      client[IpcChannel.MediaRoots_PrepareOutputDirectory](input) as Promise<MediaRootEnsurePathResponse>,
+      client[IpcChannel.MediaRoots_PrepareOutputDirectory](input),
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
@@ -105,16 +103,13 @@ export const ipc = {
     testLlm: (input: TranslateTestLlmInput) => client[IpcChannel.Translate_TestLlm](input),
   },
   file: {
-    listMediaCandidates: (dirPath: string, excludeDirPaths?: readonly string[]) =>
+    listMediaCandidates: (dirPath: string, recursive: boolean, excludeDirPaths?: readonly string[]) =>
       client[IpcChannel.File_ListMediaCandidates]({
         dirPath,
+        recursive,
         excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
-      }) as Promise<{
-        candidates: MediaCandidate[];
-        supportedExtensions: string[];
-      }>,
-    exists: (path: LocalFileTarget) =>
-      client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean; url?: string }>,
+      }),
+    exists: (path: LocalFileTarget) => client[IpcChannel.File_Exists]({ path }),
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (targets: RootFileRef[], containingFolder?: boolean) =>

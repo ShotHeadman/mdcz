@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type FileUtilsModule = typeof import("@mdcz/runtime/scrape/utils/filesystem");
@@ -42,33 +42,130 @@ describe("recursive file walking", () => {
     vi.restoreAllMocks();
   });
 
-  it.each([
-    ["runtime", "@mdcz/runtime/scrape/utils/filesystem"],
-  ])("skips missing nested directories in %s scans", async (_label, modulePath) => {
+  it("skips missing children but rejects I/O failures and inaccessible roots", async () => {
     const root = join("library");
     const missingAssetDir = join(root, "extrafanart");
     const videoPath = join(root, "ABC-123.mp4");
-    const fileUtils = await importFileUtilsWithReaddir(modulePath, async (dirPath) => {
+    let code = "ENOENT";
+    let failRoot = false;
+    const fileUtils = await importFileUtilsWithReaddir("@mdcz/runtime/scrape/utils/filesystem", async (dirPath) => {
+      if (failRoot) throw createNodeError(code);
       if (dirPath === root) {
         return [createDirent("ABC-123.mp4", "file"), createDirent("extrafanart", "directory")];
       }
 
       if (dirPath === missingAssetDir) {
-        throw createNodeError("ENOENT");
+        throw createNodeError(code);
       }
 
       return [];
     });
 
-    await expect(fileUtils.listVideoFiles(root, true)).resolves.toEqual([videoPath]);
+    const warnings = { count: 0, paths: [] as string[] };
+    await expect(fileUtils.listVideoFiles(root, true, undefined, undefined, [], { warnings })).resolves.toEqual([
+      videoPath,
+    ]);
+    expect(warnings).toEqual({ count: 1, paths: [missingAssetDir] });
+    code = "EIO";
+    await expect(fileUtils.listVideoFiles(root, true)).rejects.toMatchObject({ code });
+    code = "ENOENT";
+    failRoot = true;
+    await expect(fileUtils.listVideoFiles(root, true)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("still rejects when the scan root cannot be read", async () => {
-    const root = join("missing-root");
-    const fileUtils = await importFileUtilsWithReaddir("@mdcz/runtime/scrape/utils/filesystem", async () => {
-      throw createNodeError("ENOENT");
-    });
-
-    await expect(fileUtils.listVideoFiles(root, true)).rejects.toMatchObject({ code: "ENOENT" });
+  it.each([
+    "runtime",
+    "media-store",
+  ])("bounds shared I/O and prunes depth, exclusions and non-video metadata in %s", async (backend) => {
+    vi.resetModules();
+    const rootPath = resolve("scan-fixture");
+    const excluded = join(rootPath, "excluded");
+    const missingOutput = join(rootPath, "JAV_output");
+    const alias = join(rootPath, "alias");
+    let active = 0;
+    let maximum = 0;
+    const calls: Array<[string, string]> = [];
+    const io = async <T>(operation: string, path: string, value: T): Promise<T> => {
+      calls.push([operation, path]);
+      maximum = Math.max(maximum, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return value;
+    };
+    vi.doMock("node:fs/promises", async () => ({
+      ...(await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")),
+      realpath: async (path: string) => {
+        const key = await io("realpath", path, path === alias ? join(rootPath, "dir0") : path);
+        if (path === excluded) throw createNodeError("EACCES");
+        if (path === missingOutput) throw createNodeError("ENOENT");
+        return key;
+      },
+      readdir: (path: string) =>
+        io(
+          "readdir",
+          path,
+          path === rootPath
+            ? [
+                createDirent("root.mp4", "file"),
+                createDirent("notes.txt", "file"),
+                createDirent("excluded", "directory"),
+                createDirent("alias", "symlink"),
+                ...Array.from({ length: 8 }, (_, i) => createDirent(`dir${i}`, "directory")),
+              ]
+            : [createDirent("movie.mp4", "file"), createDirent("poster.jpg", "file")],
+        ),
+      stat: (path: string) =>
+        io("stat", path, {
+          isFile: () => path !== alias,
+          isDirectory: () => path === alias,
+          size: 1,
+          mtime: new Date(0),
+        }),
+    }));
+    const runtime = await import("@mdcz/runtime/scrape/utils/filesystem");
+    const storage = await import("@mdcz/media-store");
+    const root = storage.createMediaRoot({ hostPath: rootPath, displayName: "scan" });
+    const scan = async (recursive: boolean, signal?: AbortSignal) => {
+      const warnings = { count: 0, paths: [] as string[] };
+      if (backend === "media-store") {
+        const files = await storage.listRootFiles(root, "", recursive, signal, {
+          excludeDirectoryPaths: [excluded, missingOutput],
+          filterFile: (path) => path.endsWith(".mp4"),
+          warnings,
+        });
+        expect(warnings.count).toBe(recursive ? 1 : 0);
+        return files;
+      }
+      const files: string[] = [];
+      const onDiagnostic = vi.fn();
+      const paths = await runtime.listVideoFiles(rootPath, recursive, undefined, signal, [excluded, missingOutput], {
+        onFile: (path) => files.push(path),
+        onDiagnostic,
+        warnings,
+      });
+      expect(warnings.count).toBe(recursive ? 1 : 0);
+      expect(paths).toEqual([]);
+      expect(onDiagnostic).toHaveBeenCalledWith(expect.stringContaining(`"candidates":${files.length}`));
+      return files;
+    };
+    expect(await scan(true)).toHaveLength(backend === "runtime" ? 9 : 10);
+    expect(
+      calls.filter(([op, path]) => op === "readdir" && [alias, join(rootPath, "dir0")].includes(path)),
+    ).toHaveLength(backend === "runtime" ? 1 : 2);
+    expect(maximum).toBe(4);
+    expect(active).toBe(0);
+    expect(calls.filter(([op]) => op === "stat")).toHaveLength(backend === "runtime" ? 10 : 11);
+    expect(calls.filter(([op, path]) => op === "realpath" && path === rootPath)).toHaveLength(1);
+    expect(calls.some(([op, path]) => op === "readdir" && path === excluded)).toBe(false);
+    calls.length = 0;
+    expect(await scan(false)).toHaveLength(1);
+    expect(calls.filter(([op]) => op === "readdir")).toEqual([["readdir", rootPath]]);
+    expect(calls.filter(([op]) => op === "realpath")).toEqual([["realpath", rootPath]]);
+    const controller = new AbortController();
+    const reason = new Error("stop scan");
+    controller.abort(reason);
+    if (backend === "runtime")
+      await expect(scan(true, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    else await expect(scan(true, controller.signal)).rejects.toBe(reason);
   });
 });

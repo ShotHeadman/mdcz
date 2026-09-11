@@ -6,9 +6,10 @@ import type { CrawlerData, MediaCandidate } from "../types";
 
 export type FileIpcContract = {
   [IpcChannel.File_ListMediaCandidates]: IpcProcedure<
-    { dirPath?: string; excludeDirPaths?: string[] },
+    { dirPath?: string; recursive: boolean; excludeDirPaths?: string[] },
     {
       candidates: MediaCandidate[];
+      warnings: { count: number; paths: string[] };
       supportedExtensions: string[];
     }
   >;

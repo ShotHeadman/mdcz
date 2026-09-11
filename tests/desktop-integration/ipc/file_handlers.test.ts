@@ -129,7 +129,9 @@ describe("createFileHandlers", () => {
       return root;
     });
     const handlers = createFileHandlers(createContext({ ensurePath, list: async () => registeredRoots }));
-    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
+    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(
+      actionArgs({ recursive: true, dirPath: root }),
+    );
 
     expect(ensurePath).toHaveBeenCalledWith(root, undefined);
     expect(result.supportedExtensions).toEqual(expect.arrayContaining(["mp4", "mkv", "strm"]));
@@ -137,18 +139,23 @@ describe("createFileHandlers", () => {
       expect.objectContaining({
         path: rootVideo,
         name: "ABC-123.mp4",
-        extension: ".mp4",
+        extension: "mp4",
         ref: { rootId: "scan-root", relativePath: "ABC-123.mp4" },
         size: 7,
       }),
       expect.objectContaining({
         path: nestedVideo,
         name: "DEF-456.mkv",
-        extension: ".mkv",
+        extension: "mkv",
         ref: { rootId: "scan-root", relativePath: "nested/DEF-456.mkv" },
         size: 7,
       }),
     ]);
+    const shallow = await handlers[IpcChannel.File_ListMediaCandidates].action(
+      actionArgs({ dirPath: root, recursive: false }),
+    );
+    expect(shallow.candidates.map((candidate) => candidate.path)).toEqual([rootVideo]);
+    expect(shallow.warnings.count).toBe(0);
   });
   it("excludes blacklisted basenames using case-insensitive literal token matching", async () => {
     const root = await createTempDir();
@@ -168,7 +175,9 @@ describe("createFileHandlers", () => {
     });
 
     const handlers = createFileHandlers(createContext());
-    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(actionArgs({ dirPath: root }));
+    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(
+      actionArgs({ recursive: true, dirPath: root }),
+    );
 
     expect(result.candidates.map((candidate) => candidate.name)).toEqual(["ABC-123.mp4", "Ads-2024-GHI-789.mp4"]);
   });
@@ -187,7 +196,7 @@ describe("createFileHandlers", () => {
 
     const handlers = createFileHandlers(createContext());
     const result = await handlers[IpcChannel.File_ListMediaCandidates].action(
-      actionArgs({ dirPath: root, excludeDirPaths: [outputDir] }),
+      actionArgs({ recursive: true, dirPath: root, excludeDirPaths: [outputDir] }),
     );
 
     expect(result.candidates).toHaveLength(1);
@@ -207,7 +216,7 @@ describe("createFileHandlers", () => {
 
     const handlers = createFileHandlers(createContext());
     const result = await handlers[IpcChannel.File_ListMediaCandidates].action(
-      actionArgs({ dirPath: root, excludeDirPaths: [root] }),
+      actionArgs({ recursive: true, dirPath: root, excludeDirPaths: [root] }),
     );
 
     expect(result.candidates).toHaveLength(1);

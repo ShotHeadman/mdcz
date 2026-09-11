@@ -2,6 +2,8 @@
 
 # stage 1: build webui artifacts + staging dir via package script
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    SKIP_INSTALL_SIMPLE_GIT_HOOKS=1
 WORKDIR /repo
 RUN --mount=type=cache,target=/root/.cache/node/corepack,sharing=locked \
     corepack enable && corepack prepare pnpm@10.28.2 --activate
@@ -29,14 +31,19 @@ RUN MDCZ_RELEASE_VERSION="${MDCZ_RELEASE_VERSION}" node scripts/package-server-w
 # stage 2: install runtime deps inside the staging tree
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 COPY --from=builder /repo/release/staging/mdcz-* /app/
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm install --omit=dev --no-audit --no-fund --no-package-lock
+RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
+    CI=true pnpm install --prod --frozen-lockfile --store-dir=/pnpm/store
 
 # stage 3: minimal runtime
 FROM node:24-bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/ShotHeadman/mdcz"
 LABEL org.opencontainers.image.licenses="GPL-3.0-only"
+ARG MDCZ_RELEASE_VERSION=docker
+ARG MDCZ_REVISION=unknown
+LABEL org.opencontainers.image.version=$MDCZ_RELEASE_VERSION \
+      org.opencontainers.image.revision=$MDCZ_REVISION
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gosu \
@@ -52,6 +59,8 @@ ENV NODE_ENV=production \
 # this, /data and /media are root-owned and the non-root runtime cannot write.
 RUN mkdir -p /data /media && chown node:node /data /media
 EXPOSE 3838
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD node -e 'fetch("http://127.0.0.1:" + process.env.PORT + "/ready", {signal: AbortSignal.timeout(4000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
 VOLUME /data
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server.js"]

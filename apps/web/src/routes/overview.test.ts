@@ -3,16 +3,16 @@ import { hasWorkbenchOutput } from "./overview";
 
 describe("web overview output state", () => {
   it("treats recent acquisitions as completed output evidence", () => {
-    expect(hasWorkbenchOutput({ configured: false, output: null, recentCount: 1 })).toBe(true);
+    expect(hasWorkbenchOutput({ mediaRootCount: 0, output: null, recentCount: 1 })).toBe(true);
   });
 
-  it("does not mark an empty unconfigured overview as output-ready", () => {
+  it.each([0, 1])("uses media roots to determine readiness for an empty overview (%i roots)", (mediaRootCount) => {
     expect(
       hasWorkbenchOutput({
-        configured: false,
+        mediaRootCount,
         output: { fileCount: 0, totalBytes: 0, rootPath: null },
         recentCount: 0,
       }),
-    ).toBe(false);
+    ).toBe(mediaRootCount > 0);
   });
 });

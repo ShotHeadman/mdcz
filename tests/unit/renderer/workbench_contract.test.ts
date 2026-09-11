@@ -1,8 +1,4 @@
-import {
-  filterMediaCandidates,
-  mergeMediaCandidates,
-  resolveMediaCandidateScanPlan,
-} from "@mdcz/shared/mediaCandidate";
+import { mergeMediaCandidates, resolveMediaCandidateScanPlan } from "@mdcz/shared/mediaCandidate";
 import type { MediaCandidate } from "@mdcz/shared/types";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import type { ConfigOutput } from "@renderer/client/types";
@@ -41,13 +37,14 @@ const createCandidate = (path: string): MediaCandidate => ({
 const resetWorkbenchSetupStore = () => {
   useWorkbenchSetupStore.setState({
     scanDir: "",
+    recursive: false,
+    committedPlanKey: null,
+    warnings: { count: 0, paths: [] },
     targetDir: "",
     candidates: [],
     selectedPaths: [],
     scanStatus: "idle",
     scanError: "",
-    lastScannedDir: "",
-    lastScannedPlanKey: "",
     supportedExtensions: [],
   });
 };
@@ -58,16 +55,34 @@ describe("workbench setup contract", () => {
   });
 
   it("plans normal scrape scans from configured paths and excludes output folders", () => {
-    const plan = resolveMediaCandidateScanPlan("scrape", rootDir, createConfig());
+    const plan = resolveMediaCandidateScanPlan("scrape", rootDir, false, createConfig());
 
     expect(plan.excludeDirPaths).toEqual([successDir, failedDir]);
     expect(plan.extraScanDirs).toEqual([softlinkDir]);
+    expect(plan.recursive).toBe(false);
+    expect(resolveMediaCandidateScanPlan("scrape", rootDir, true, createConfig()).scanKey).not.toBe(plan.scanKey);
+    expect(resolveMediaCandidateScanPlan("maintenance", rootDir, false, createConfig()).scanKey).not.toBe(plan.scanKey);
+
+    for (const [directory, recursive, expected] of [
+      [`${rootDir}/links`, true, []],
+      [`${rootDir}/links`, false, [`${rootDir}/links`]],
+      [`${rootDir}/failed`, true, [`${rootDir}/failed`]],
+      [`${rootDir}/failed/links`, true, [`${rootDir}/failed/links`]],
+      [`${rootDir}/../outside`, true, [`${rootDir}/../outside`]],
+      [softlinkDir, true, [softlinkDir]],
+      [rootDir, true, []],
+    ] as const) {
+      const config = createConfig();
+      config.paths.softlinkPath = directory;
+      expect(resolveMediaCandidateScanPlan("scrape", rootDir, recursive, config).extraScanDirs).toEqual(expected);
+    }
   });
 
   it("uses only configured scan exclude directories", () => {
     const plan = resolveMediaCandidateScanPlan(
       "scrape",
       rootDir,
+      false,
       createConfig({
         paths: {
           mediaPath: rootDir,
@@ -88,6 +103,7 @@ describe("workbench setup contract", () => {
     const plan = resolveMediaCandidateScanPlan(
       "scrape",
       rootDir,
+      false,
       createConfig({
         paths: {
           mediaPath: rootDir,
@@ -103,15 +119,9 @@ describe("workbench setup contract", () => {
     expect(plan.excludeDirPaths).toEqual([failedDir]);
   });
 
-  it("filters output-folder candidates and dedupes merged scan roots", () => {
+  it("dedupes merged scan roots across case and aliases", () => {
     const keptVideo = createCandidate(
       process.platform === "win32" ? "D:\\media\\library\\ABC-123.mp4" : "/media/library/ABC-123.mp4",
-    );
-    const failedVideo = createCandidate(
-      process.platform === "win32" ? "D:\\media\\failed\\XYZ-999.mp4" : "/media/failed/XYZ-999.mp4",
-    );
-    const successVideo = createCandidate(
-      process.platform === "win32" ? "D:\\media\\JAV_output\\DONE-001.mp4" : "/media/JAV_output/DONE-001.mp4",
     );
     const duplicate = createCandidate(
       process.platform === "win32" ? "D:\\MEDIA\\library\\ABC-123.mp4" : keptVideo.path,
@@ -120,7 +130,6 @@ describe("workbench setup contract", () => {
       process.platform === "win32" ? "D:\\softlink\\SOFT-001.mp4" : "/softlink/SOFT-001.mp4",
     );
 
-    expect(filterMediaCandidates([keptVideo, failedVideo, successVideo], [successDir, failedDir])).toEqual([keptVideo]);
     expect(mergeMediaCandidates([keptVideo], [duplicate, softlinkVideo])).toEqual([keptVideo, softlinkVideo]);
     expect(
       mergeMediaCandidates([createCandidate("D:\\media\\ABC-123.mp4")], [createCandidate("d:/MEDIA/abc-123.mp4")]),
@@ -131,20 +140,39 @@ describe("workbench setup contract", () => {
     const first = createCandidate(process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4");
     const second = createCandidate(process.platform === "win32" ? "D:\\media\\XYZ-999.mp4" : "/media/XYZ-999.mp4");
 
-    useWorkbenchSetupStore.getState().applyScanResult(rootDir, "", [first, second], [".mp4"]);
+    useWorkbenchSetupStore.getState().setScanDir(rootDir);
+    useWorkbenchSetupStore.getState().applyScanResult("", [first, second], [".mp4"]);
     useWorkbenchSetupStore.getState().toggleSelectedPath(second.path);
-    useWorkbenchSetupStore.getState().beginScan(rootDir, "");
+    const committed = useWorkbenchSetupStore.getState();
+    committed.setScanDir(`${rootDir}/`);
+    expect(useWorkbenchSetupStore.getState()).toBe(committed);
+    expect(resolveMediaCandidateScanPlan("scrape", `${rootDir}/`, false, createConfig()).scanKey).toBe(
+      resolveMediaCandidateScanPlan("scrape", rootDir, false, createConfig()).scanKey,
+    );
+    useWorkbenchSetupStore.getState().beginScan();
 
     const state = useWorkbenchSetupStore.getState();
     expect(state.scanStatus).toBe("scanning");
     expect(state.candidates).toEqual([first, second]);
     expect(state.selectedPaths).toEqual([first.path]);
+    const added = createCandidate(`${rootDir}/NEW-001.mp4`);
+    state.applyScanResult("", [first, second, added], [".mp4"]);
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([first.path]);
+    state.applyScanResult("", [second, added], [".mp4"]);
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([]);
+    state.beginScan();
+    state.failScan("temporary failure");
+    state.beginScan();
+    state.applyScanResult("recursive", [second, added], [".mp4"]);
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([second.path, added.path]);
   });
 
   it("still clears the file list immediately when the scan directory changes", () => {
+    useWorkbenchSetupStore.getState().setScanDir("/");
+    expect(useWorkbenchSetupStore.getState().scanDir).toBe("/");
     const candidate = createCandidate(process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4");
 
-    useWorkbenchSetupStore.getState().applyScanResult(rootDir, "", [candidate], [".mp4"]);
+    useWorkbenchSetupStore.getState().applyScanResult("", [candidate], [".mp4"]);
     useWorkbenchSetupStore.getState().setScanDir(process.platform === "win32" ? "D:\\next-media" : "/next-media");
 
     const state = useWorkbenchSetupStore.getState();

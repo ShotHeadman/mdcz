@@ -60,6 +60,7 @@ export function PathAutocompleteInput({
   id,
   onChange,
   onBlur,
+  onKeyDown,
   placeholder,
   readOnly,
   className,
@@ -163,6 +164,7 @@ export function PathAutocompleteInput({
     }
 
     if (!showPanel) {
+      onKeyDown?.(event);
       return;
     }
 
@@ -178,6 +180,8 @@ export function PathAutocompleteInput({
     } else if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
+    } else {
+      onKeyDown?.(event);
     }
   };
 

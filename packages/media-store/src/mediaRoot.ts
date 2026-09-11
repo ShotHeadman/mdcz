@@ -36,9 +36,9 @@ export const deterministicMediaRootId = (hostPath: string): string => {
   return `path-${createHash("sha256").update(identity).digest("hex").slice(0, 24)}`;
 };
 
-const isWithin = (rootPath: string, candidatePath: string): boolean => {
+export const isPathInside = (rootPath: string, candidatePath: string): boolean => {
   const relative = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`));
 };
 
 export const findEnclosingMediaRoot = <T extends Pick<MediaRoot, "hostPath">>(
@@ -47,6 +47,6 @@ export const findEnclosingMediaRoot = <T extends Pick<MediaRoot, "hostPath">>(
 ): T | undefined => {
   const normalized = normalizeHostPath(hostPath);
   return [...roots]
-    .filter((root) => isWithin(root.hostPath, normalized))
+    .filter((root) => isPathInside(root.hostPath, normalized))
     .sort((left, right) => right.hostPath.length - left.hostPath.length)[0];
 };

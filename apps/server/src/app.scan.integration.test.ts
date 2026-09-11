@@ -165,18 +165,18 @@ describe("buildServer scan integration", () => {
     const response = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(
-        JSON.stringify({ scanDir: mediaDirectory.path, supportedExtensions: ["mp4"] }),
+        JSON.stringify({ recursive: true, scanDir: mediaDirectory.path, supportedExtensions: ["mp4"] }),
       )}`,
       headers: { authorization: `Bearer ${token}` },
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().result.data.candidates).toEqual([
+      expect.objectContaining({ name: "kept.mp4" }),
       expect.objectContaining({
         name: "done.mp4",
         ref: { relativePath: "JAV_output/done.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },
       }),
-      expect.objectContaining({ name: "kept.mp4" }),
       expect.objectContaining({ name: "ads-2024.mp4" }),
       expect.objectContaining({
         name: "movie.mp4",
@@ -186,11 +186,18 @@ describe("buildServer scan integration", () => {
     await services.config.update({ scrape: { filenameBlacklistTokens: [] } });
     const refreshedResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ scanDir: mediaDirectory.path }))}`,
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: true, scanDir: mediaDirectory.path }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(refreshedResponse.statusCode).toBe(200);
     expect(refreshedResponse.json().result.data.candidates).toHaveLength(6);
+    const shallowResponse = await fastify.inject({
+      method: "GET",
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: false, scanDir: mediaDirectory.path }))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(shallowResponse.statusCode).toBe(200);
+    expect(shallowResponse.json().result.data.candidates).toEqual([]);
   });
 
   it("reuses the enclosing root for a nested scan directory so candidates cannot escape it", async () => {
@@ -205,7 +212,7 @@ describe("buildServer scan integration", () => {
     const parentRootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
     const response = await fastify.inject({
       method: "GET",
-      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ scanDir: selectedDirectory }))}`,
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: true, scanDir: selectedDirectory }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
 
@@ -227,7 +234,7 @@ describe("buildServer scan integration", () => {
 
     const response = await fastify.inject({
       method: "GET",
-      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ scanDir: mediaDirectory.path }))}`,
+      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: true, scanDir: mediaDirectory.path }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
 

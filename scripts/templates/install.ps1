@@ -26,6 +26,7 @@ if (-not (Test-Path -LiteralPath $envPath) -and (Test-Path -LiteralPath $example
   Write-Host "Created .env from .env.example."
 }
 
-npm install --omit=dev --no-audit --no-fund --no-package-lock
+corepack pnpm@10.28.2 install --prod --frozen-lockfile
+if ($LASTEXITCODE -ne 0) { throw "Runtime dependency installation failed" }
 
 Write-Host "MDCz WebUI dependencies are ready. Start with: .\start.bat"

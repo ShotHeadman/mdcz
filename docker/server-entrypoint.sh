@@ -51,16 +51,25 @@ configure_supplementary_groups() {
   done
 }
 
-PUID="${PUID-1000}"
-PGID="${PGID-1000}"
+if [ "$(id -u)" -eq 0 ]; then
+  PUID="${PUID-1000}"
+  PGID="${PGID-1000}"
+else
+  PUID="${PUID-$(id -u)}"
+  PGID="${PGID-$(id -g)}"
+fi
 UMASK="${UMASK-022}"
 
 validate_id PUID "$PUID"
 validate_id PGID "$PGID"
 validate_umask
 
-[ "$(id -u)" -eq 0 ] \
-  || fail "the container entrypoint must start as root so it can apply PUID and PGID"
+if [ "$(id -u)" -ne 0 ]; then
+  [ "$(id -u)" -eq "$PUID" ] && [ "$(id -g)" -eq "$PGID" ] \
+    || fail "PUID/PGID must match --user when starting without root"
+  umask "$UMASK"
+  exec "$@"
+fi
 
 configure_supplementary_groups
 

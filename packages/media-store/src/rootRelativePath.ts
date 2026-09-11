@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { StorageError, storageErrorCodes } from "./errors";
-import { findEnclosingMediaRoot, type MediaRoot } from "./mediaRoot";
+import { findEnclosingMediaRoot, isPathInside, type MediaRoot } from "./mediaRoot";
 
 export type RootRelativePath = string & { readonly __rootRelativePath: unique symbol };
 
@@ -28,11 +28,7 @@ export const resolveRootRelativePath = (root: Pick<MediaRoot, "hostPath">, relat
 };
 
 export const assertInsideRoot = (root: Pick<MediaRoot, "hostPath">, candidatePath: string): void => {
-  const rootPath = path.resolve(root.hostPath);
-  const resolvedCandidate = path.resolve(candidatePath);
-  const relative = path.relative(rootPath, resolvedCandidate);
-
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+  if (isPathInside(root.hostPath, candidatePath)) {
     return;
   }
 

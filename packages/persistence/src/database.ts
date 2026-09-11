@@ -25,16 +25,17 @@ export const createPersistenceDatabase = (config: PersistenceDatabaseConfig): Pe
     readonly: config.readonly ?? false,
     ...(config.nativeBinding ? { nativeBinding: config.nativeBinding } : {}),
   });
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  sqlite.pragma("busy_timeout = 5000");
-  sqlite.pragma("synchronous = FULL");
-
-  const db = drizzle(sqlite, { schema });
-
-  return {
-    sqlite,
-    db,
-    close: () => sqlite.close(),
-  };
+  try {
+    if (!config.readonly) {
+      const mode = sqlite.pragma("journal_mode = WAL", { simple: true });
+      if (config.path !== ":memory:" && mode !== "wal") throw new Error(`SQLite WAL is unavailable: ${config.path}`);
+    }
+    sqlite.pragma("foreign_keys = ON");
+    sqlite.pragma("busy_timeout = 5000");
+    sqlite.pragma("synchronous = FULL");
+    return { sqlite, db: drizzle(sqlite, { schema }), close: () => sqlite.close() };
+  } catch (error) {
+    sqlite.close();
+    throw error;
+  }
 };

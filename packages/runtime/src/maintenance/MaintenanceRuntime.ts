@@ -1,5 +1,5 @@
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { isPathInside, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import type {
   CrawlerData,
@@ -21,7 +21,6 @@ import {
   type TranslateService,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
-import { isPathInside } from "../scrape/utils/filesystem";
 import { LocalScanService } from "./LocalScanService";
 import {
   MaintenanceFileScraper,

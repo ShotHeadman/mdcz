@@ -23,6 +23,11 @@ export const startServer = async (
   };
 
   const shutdownForSignal = (): void => {
+    const deadline = setTimeout(() => {
+      console.error("Server shutdown exceeded 25 seconds; interrupted work will be recovered on restart");
+      process.exit(1);
+    }, 25_000);
+    deadline.unref();
     void shutdown().then(
       () => process.exit(0),
       (error) => {
@@ -35,6 +40,15 @@ export const startServer = async (
   process.once("SIGINT", shutdownForSignal);
   process.once("SIGTERM", shutdownForSignal);
 
-  await fastify.listen({ host, port });
+  try {
+    await fastify.listen({ host, port });
+  } catch (error) {
+    try {
+      await shutdown();
+    } catch (closeError) {
+      throw new AggregateError([error, closeError], "Server startup failed");
+    }
+    throw error;
+  }
   console.log(`MDCz server listening on http://${host}:${port}`);
 };
