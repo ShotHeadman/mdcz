@@ -48,7 +48,11 @@ export const createScraperHandlers = (
         async () => {
           return withLaunchMessage(
             await scraperService.start(input),
-            input.mode === "selection" ? "已启动选中文件刮削" : "单文件刮削任务已启动",
+            input.mode === "directory"
+              ? "目录刮削任务已提交"
+              : input.mode === "selection"
+                ? "已启动选中文件刮削"
+                : "单文件刮削任务已启动",
           );
         },
         { mapError: toScraperServiceIpcError },
@@ -87,8 +91,11 @@ export const createScraperHandlers = (
       withIpcErrorHandling(
         "retry files",
         async () => {
-          const result = await scraperService.retry(input.runId, input.itemIds);
-          return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
+          const result = await scraperService.retry(input.runId, input.itemIds, input.rediscover);
+          return withLaunchMessage(
+            result,
+            result.totalFiles === null ? "目录任务已重新提交" : `重试任务已启动，共 ${result.totalFiles} 个文件`,
+          );
         },
         { mapError: toScraperServiceIpcError },
       ),

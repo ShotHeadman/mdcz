@@ -150,6 +150,45 @@ beforeEach(() => {
 });
 
 describe("buildServer maintenance integration", () => {
+  it.each([
+    "files",
+    "empty",
+    "missing",
+  ] as const)("discovers directory scopes inside the accepted maintenance session (%s)", async (kind) => {
+    const directory = await createTempRoot("maintenance-directory");
+    const source = join(directory, "source");
+    if (kind !== "missing") await mkdir(source);
+    if (kind === "files") await writeMaintenanceInput(source, "ABC-123", "Local movie");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { source: { kind: "directory", scanDir: source, recursive: true }, presetId: "read_local" },
+    });
+    expect(response.statusCode).toBe(200);
+    const sessionId = response.json().result.data.sessionId;
+    await expect
+      .poll(async () => (await services.maintenance.getActiveSession())?.status)
+      .toBe(kind === "missing" ? "failed" : "completed");
+    const session = await services.maintenance.getActiveSession();
+    expect(session).toMatchObject({
+      id: sessionId,
+      phase: "preview",
+      totalEntries: kind === "missing" ? null : kind === "files" ? 1 : 0,
+      directoryScope: { scanDir: source, recursive: true },
+    });
+    expect(session?.refs.map((ref) => ref.relativePath)).toEqual(kind === "files" ? ["ABC-123.mp4"] : []);
+    const stored = (await services.persistence.getState()).repositories.maintenanceDirectories.latest();
+    if (!stored) throw new Error("Directory checkpoint was not persisted");
+    expect(JSON.parse(stored.snapshotJson)).toMatchObject({
+      id: sessionId,
+      status: kind === "missing" ? "failed" : "completed",
+      directoryScope: { scanDir: source },
+    });
+    expect(stored?.configurationJson).toBeDefined();
+  });
   it("creates exactly one preview per selected ref", async () => {
     const root = await createTempRoot("maintenance-two-selected-root");
     await writeMaintenanceInput(root, "ABC-201", "Local Title ABC-201");

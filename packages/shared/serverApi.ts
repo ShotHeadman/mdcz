@@ -169,6 +169,7 @@ export interface ServerApiContract {
     execute(input: ToolExecuteInput): Promise<ToolExecuteResponse>;
   };
   scans: {
+    cancelCandidates(input: { scanId: string }): Promise<{ ok: true }>;
     candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse>;
     detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;
     events(input: ScanTaskIdInput): Promise<TaskEventListResponse>;

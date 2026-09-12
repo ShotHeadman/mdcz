@@ -154,6 +154,7 @@ export const selectMaintenanceExecutionStatus = (state: MaintenanceState): Maint
   const session = state.snapshot;
   if (!session) return state.pending ? "previewing" : "idle";
   if (session.status === "paused" || session.status === "stopping") return session.status;
+  if (session.status === "discovering") return "scanning";
   if (session.status === "queued" || session.status === "running") {
     return session.phase === "preview" ? "previewing" : "executing";
   }

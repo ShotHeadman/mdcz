@@ -5,8 +5,9 @@ import type { NormalizedCropRegion } from "../posterCrop";
 import type { CrawlerData, MediaCandidate } from "../types";
 
 export type FileIpcContract = {
+  [IpcChannel.File_CancelMediaCandidates]: IpcProcedure<{ scanId: string }, void>;
   [IpcChannel.File_ListMediaCandidates]: IpcProcedure<
-    { dirPath?: string; recursive: boolean; excludeDirPaths?: string[] },
+    { scanId?: string; dirPath?: string; recursive: boolean; excludeDirPaths?: string[] },
     {
       candidates: MediaCandidate[];
       warnings: { count: number; paths: string[] };

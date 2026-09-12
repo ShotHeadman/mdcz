@@ -1,4 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import {
@@ -30,7 +31,9 @@ export interface WorkbenchSetupPort {
     scanDir: string,
     recursive: boolean,
     excludeDirPaths?: readonly string[],
+    scanId?: string,
   ): Promise<CandidateScanResult>;
+  cancelCandidates(scanId: string): Promise<void>;
   isServer?: boolean;
   suggestDirectory?: (input: { kind: "scan" | "target"; path: string }) => Promise<ServerPathSuggestResponse>;
 }
@@ -40,6 +43,7 @@ export interface WorkbenchSetupAdapterProps {
   config?: Configuration;
   configLoading?: boolean;
   port: WorkbenchSetupPort;
+  onStartDirectory: (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => Promise<void>;
   onStartScrape: (candidates: MediaCandidate[], targetDir: string) => Promise<void>;
   onStartMaintenance: (
     candidates: MediaCandidate[],
@@ -54,20 +58,28 @@ const toPathAutocompleteResult = (result: ServerPathSuggestResponse): PathAutoco
   entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
 });
 
-// Match the session-scoped setup store: unmounting cannot stop backend filesystem I/O.
-let scanInFlight = false;
-let pendingScan: (() => Promise<void>) | null = null;
+let activePreview: { id: string; port: WorkbenchSetupPort; completion: Promise<void> } | null = null;
+
+const stopPreview = async () => {
+  const current = activePreview;
+  if (!current) return;
+  await current.port.cancelCandidates(current.id);
+  await current.completion;
+};
 
 export function WorkbenchSetupAdapter({
   mode,
   config,
   configLoading = false,
   port,
+  onStartDirectory,
   onStartScrape,
   onStartMaintenance,
 }: WorkbenchSetupAdapterProps) {
   const {
     scanDir,
+    previewMode,
+    setPreviewMode,
     recursive,
     warnings,
     setRecursive,
@@ -121,9 +133,8 @@ export function WorkbenchSetupAdapter({
     startPending ||
     !scanReady ||
     draftDirty ||
-    committedPlanKey !== scanPlan.scanKey ||
-    scanStatus !== "success" ||
-    selectedCandidates.length === 0 ||
+    (previewMode &&
+      (committedPlanKey !== scanPlan.scanKey || scanStatus !== "success" || selectedCandidates.length === 0)) ||
     (needsTarget && !targetDir.trim());
   const runSummary =
     candidates.length > 0
@@ -136,14 +147,18 @@ export function WorkbenchSetupAdapter({
   const runScan = useCallback(async () => {
     if (!scanReady) return;
     const requestId = ++scanRequestRef.current;
+    await stopPreview();
+    if (requestId !== scanRequestRef.current) return;
+    setPreviewMode(true);
     beginScan();
-    pendingScan = async () => {
+    const id = crypto.randomUUID();
+    const completion = (async () => {
       const isCurrentScan = () => scanRequestRef.current === requestId;
       try {
         const results: CandidateScanResult[] = [];
         for (const directory of [scanDir, ...scanPlan.extraScanDirs]) {
           if (!isCurrentScan()) return;
-          results.push(await port.scanCandidates(directory, recursive, scanPlan.excludeDirPaths));
+          results.push(await port.scanCandidates(directory, recursive, scanPlan.excludeDirPaths, id));
         }
         if (!isCurrentScan()) return;
         applyScanResult(
@@ -157,20 +172,13 @@ export function WorkbenchSetupAdapter({
         );
       } catch (error) {
         if (isCurrentScan()) failScan(toErrorMessage(error));
+      } finally {
+        if (activePreview?.id === id) activePreview = null;
       }
-    };
-    if (scanInFlight) return;
-    scanInFlight = true;
-    try {
-      while (pendingScan) {
-        const scan = pendingScan;
-        pendingScan = null;
-        await scan();
-      }
-    } finally {
-      scanInFlight = false;
-    }
-  }, [applyScanResult, beginScan, failScan, port, recursive, scanDir, scanPlan, scanReady]);
+    })();
+    activePreview = { id, port, completion };
+    await completion;
+  }, [applyScanResult, beginScan, failScan, port, recursive, scanDir, scanPlan, scanReady, setPreviewMode]);
 
   useEffect(() => {
     if (!config || initializedRef.current) {
@@ -194,15 +202,13 @@ export function WorkbenchSetupAdapter({
   }, [config, mode, scanDir, setScanDir, setTargetDir, targetDir]);
 
   useEffect(() => {
-    const state = useWorkbenchSetupStore.getState();
-    if (scanReady && !(state.scanStatus === "success" && state.committedPlanKey === scanPlan.scanKey)) {
-      void runScan();
-    }
     return () => {
       scanRequestRef.current += 1;
-      pendingScan = null;
+      void stopPreview().catch((error) => toast.error(`停止预览失败: ${toErrorMessage(error)}`));
+      if (useWorkbenchSetupStore.getState().scanStatus === "scanning")
+        useWorkbenchSetupStore.setState({ scanStatus: "idle" });
     };
-  }, [runScan, scanReady]);
+  }, [scanPlan.scanKey, draftDir]);
 
   const handleChooseScanDir = async () => {
     try {
@@ -243,7 +249,11 @@ export function WorkbenchSetupAdapter({
 
     setStartPending(true);
     try {
-      if (mode === "maintenance") {
+      if (!previewMode) {
+        scanRequestRef.current += 1;
+        await stopPreview();
+        await onStartDirectory({ kind: "directory", scanDir, recursive }, needsTarget ? targetDir : scanDir, presetId);
+      } else if (mode === "maintenance") {
         await onStartMaintenance(selectedCandidates, presetId, needsTarget ? targetDir : undefined);
       } else {
         await onStartScrape(selectedCandidates, targetDir);
@@ -256,6 +266,16 @@ export function WorkbenchSetupAdapter({
   return (
     <WorkbenchSetupView
       mode={mode}
+      previewMode={previewMode}
+      onExitPreview={() => {
+        scanRequestRef.current += 1;
+        void stopPreview()
+          .then(() => {
+            setPreviewMode(false);
+            useWorkbenchSetupStore.setState({ scanStatus: "idle" });
+          })
+          .catch((error) => toast.error(toErrorMessage(error)));
+      }}
       configLoading={configLoading}
       scanDir={draftDir}
       recursive={recursive}

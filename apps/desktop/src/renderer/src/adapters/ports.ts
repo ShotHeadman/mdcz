@@ -127,6 +127,9 @@ export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
     );
     return { message: response.message };
   },
+  rerunDirectory: async (runId) => {
+    await ipc.scraper.rerunDirectory(runId);
+  },
   retryFailed: async (itemIds) => {
     const response = await retryScrapeSelection(itemIds);
     return {
@@ -156,6 +159,7 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
+  rerunDirectory: async (sessionId) => await ipc.maintenance.rerunDirectory(sessionId),
   getActiveSession: () => ipc.maintenance.getActiveSession(),
   updateDraft: async (previewId, draft) => {
     await ipc.maintenance.updateDraft({ previewId, ...draft });

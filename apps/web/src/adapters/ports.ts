@@ -199,6 +199,10 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     requestScrapeLiveRunsRefresh();
     return { message: `按 URL 刮削任务已启动：${snapshot.runId}` };
   },
+  rerunDirectory: async (taskId) => {
+    await api.scrape.retry({ taskId, rediscover: true });
+    requestScrapeLiveRunsRefresh();
+  },
   retryFailed: async (itemIds) => {
     const runId = selectScrapeTaskId(useScrapeStore.getState());
     if (!runId) throw new Error("没有可重试的刮削任务");
@@ -231,6 +235,10 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   return {
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
+    },
+    rerunDirectory: async (rerunSessionId) => {
+      await api.maintenance.start({ rerunSessionId });
+      applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
     },
     getActiveSession: async () => await api.maintenance.getActiveSession(),
     updateDraft: async (previewId, draft) => {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readdir, readFile, rmdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, posix } from "node:path";
 import type { ServiceContainer } from "@main/container";
@@ -12,11 +13,11 @@ import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   commitPublishedMedia,
   commitRegisteredPublication,
-  publicationPathKey,
   registeredOutputPaths,
   resolveRegisteredNfoPaths,
 } from "@mdcz/runtime/publication";
 import {
+  createMediaFileFilter,
   findExistingNfoPath,
   getNfoReadCandidates,
   getNfoWritePaths,
@@ -25,14 +26,14 @@ import {
   PosterCropService,
   resolveFilenameNfoPath,
 } from "@mdcz/runtime/scrape";
-import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
+import { CandidatePreview } from "@mdcz/runtime/tasks";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { MediaCandidate } from "@mdcz/shared/types";
-import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { dialog } from "electron";
+import { z } from "zod";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { resolveLocalFileTarget } from "../localFileTarget";
 import {
@@ -53,6 +54,7 @@ export const createFileHandlers = (
   context: ServiceContainer,
 ): Pick<
   IpcRouterContract,
+  | typeof IpcChannel.File_CancelMediaCandidates
   | typeof IpcChannel.File_ListMediaCandidates
   | typeof IpcChannel.File_Exists
   | typeof IpcChannel.File_Browse
@@ -62,6 +64,7 @@ export const createFileHandlers = (
   | typeof IpcChannel.File_PosterCropSession
   | typeof IpcChannel.File_PosterCropSave
 > => {
+  const previews = new CandidatePreview();
   const { windowService, persistenceService } = context;
   const posterCropService = new PosterCropService();
   const mediaRoots = context.mediaRoots ?? createDesktopMediaRootService(persistenceService);
@@ -92,6 +95,9 @@ export const createFileHandlers = (
   };
 
   return {
+    [IpcChannel.File_CancelMediaCandidates]: t.procedure
+      .input(z.object({ scanId: z.string().min(1) }))
+      .action(async ({ input }) => await previews.cancel(input.scanId)),
     [IpcChannel.File_ListMediaCandidates]: t.procedure.input(fileListMediaCandidatesInputSchema).action(
       async ({
         input,
@@ -99,52 +105,50 @@ export const createFileHandlers = (
         candidates: MediaCandidate[];
         supportedExtensions: string[];
         warnings: { count: number; paths: string[] };
-      }> => {
-        try {
-          const dirPath = input?.dirPath?.trim();
-          const excludeDirPaths =
-            input?.excludeDirPaths?.map((path) => path.trim()).filter((path): path is string => Boolean(path)) ?? [];
-          if (!dirPath) {
-            throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, "Directory path is required");
+      }> =>
+        previews.run(input.scanId ?? randomUUID(), async (signal) => {
+          try {
+            const dirPath = input?.dirPath?.trim();
+            const excludeDirPaths =
+              input?.excludeDirPaths?.map((path) => path.trim()).filter((path): path is string => Boolean(path)) ?? [];
+            if (!dirPath) {
+              throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, "Directory path is required");
+            }
+
+            const configuration = await configManager.getValidated();
+            if (configuration.paths.metadataPath.trim()) excludeDirPaths.push(configuration.paths.metadataPath.trim());
+            await ensurePath(dirPath);
+            const registeredRoots = await mediaRoots.listRoots();
+
+            const generatedStrms = await registeredOutputPaths(
+              (await persistenceService.getState()).repositories.library,
+              (id) => mediaRoots.get(id),
+              "strm",
+            );
+            const candidates: MediaCandidate[] = [];
+            const warnings = { count: 0, paths: [] as string[] };
+            await listVideoFiles(dirPath, input.recursive, DEFAULT_VIDEO_EXTENSIONS, signal, excludeDirPaths, {
+              warnings,
+              filterFile: createMediaFileFilter(configuration, generatedStrms),
+              onFile: (filePath, stats) => {
+                const resolved = resolveRootFile(registeredRoots, filePath);
+                candidates.push({
+                  path: filePath,
+                  name: basename(filePath),
+                  size: stats.size,
+                  lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
+                  extension: extname(filePath).replace(/^\./u, "").toLowerCase(),
+                  ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
+                });
+              },
+            });
+
+            candidates.sort((a, b) => a.ref.relativePath.localeCompare(b.ref.relativePath, "zh-CN"));
+            return { candidates, warnings, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
+          } catch (error) {
+            throw asSerializableIpcError(error);
           }
-
-          const configuration = await configManager.getValidated();
-          if (configuration.paths.metadataPath.trim()) excludeDirPaths.push(configuration.paths.metadataPath.trim());
-          await ensurePath(dirPath);
-          const registeredRoots = await mediaRoots.listRoots();
-
-          const generatedStrms = await registeredOutputPaths(
-            (await persistenceService.getState()).repositories.library,
-            (id) => mediaRoots.get(id),
-            "strm",
-          );
-          const candidates: MediaCandidate[] = [];
-          const warnings = { count: 0, paths: [] as string[] };
-          await listVideoFiles(dirPath, input.recursive, DEFAULT_VIDEO_EXTENSIONS, undefined, excludeDirPaths, {
-            warnings,
-            filterFile: (filePath) =>
-              isPrimaryVideoFileName(filePath) &&
-              !generatedStrms.has(publicationPathKey(filePath)) &&
-              !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens),
-            onFile: (filePath, stats) => {
-              const resolved = resolveRootFile(registeredRoots, filePath);
-              candidates.push({
-                path: filePath,
-                name: basename(filePath),
-                size: stats.size,
-                lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtime.toISOString() : null,
-                extension: extname(filePath).replace(/^\./u, "").toLowerCase(),
-                ref: { rootId: resolved.root.id, relativePath: resolved.relativePath },
-              });
-            },
-          });
-
-          candidates.sort((a, b) => a.ref.relativePath.localeCompare(b.ref.relativePath, "zh-CN"));
-          return { candidates, warnings, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
-        } catch (error) {
-          throw asSerializableIpcError(error);
-        }
-      },
+        }),
     ),
     [IpcChannel.File_Exists]: t.procedure.input(fileExistsInputSchema).action(async ({ input }) => {
       try {

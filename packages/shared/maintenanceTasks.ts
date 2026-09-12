@@ -1,3 +1,4 @@
+import type { DirectoryTaskScope, DiscoveryProgress } from "./directoryTasks";
 import type { RootFileRef } from "./mediaRef";
 import type {
   CrawlerData,
@@ -10,13 +11,22 @@ import type {
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
 
-export type MaintenanceSessionStatus = "queued" | "running" | "paused" | "stopping" | "completed" | "failed";
+export type MaintenanceSessionStatus =
+  | "queued"
+  | "discovering"
+  | "running"
+  | "paused"
+  | "stopping"
+  | "completed"
+  | "failed"
+  | "stopped"
+  | "interrupted";
 export type MaintenanceSessionPhase = "preview" | "apply";
 
 export type MaintenanceSessionRef = RootFileRef;
 
 export interface MaintenanceSessionProgress {
-  totalEntries: number;
+  totalEntries: number | null;
   completedEntries: number;
   successCount: number;
   failedCount: number;
@@ -121,6 +131,9 @@ export interface MaintenanceSessionDraft {
 }
 
 export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProgress {
+  directoryScope?: DirectoryTaskScope;
+  discovery?: DiscoveryProgress;
+  manifestFixed?: boolean;
   id: string;
   rootId: string;
   outputRootId: string;

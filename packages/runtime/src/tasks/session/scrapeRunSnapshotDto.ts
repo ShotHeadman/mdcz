@@ -1,4 +1,5 @@
 import path from "node:path";
+import { type DiscoveryProgress, directoryTaskScopeSchema } from "@mdcz/shared/directoryTasks";
 import type { AssetRef } from "@mdcz/shared/mediaRef";
 import type {
   AmbiguousUncensoredItemDto,
@@ -10,6 +11,9 @@ import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
 import type { ScrapeRunItemSnapshot, ScrapeRunLiveStatus, ScrapeRunSnapshot } from "./ScrapeRunSession";
 
 export interface ScrapeSnapshotManifest {
+  directoryScopeJson?: string | null;
+  discoveryJson?: string | null;
+  manifestFixedAt?: Date | null;
   id: string;
   rootId: string;
   createdAt: Date;
@@ -93,14 +97,26 @@ export const toScrapeRunSnapshotDto = (input: {
       updatedAt: updatedAt.toISOString(),
       startedAt: input.startedAt?.toISOString() ?? null,
       completedAt: completedAt?.toISOString() ?? null,
-      totalItems: input.snapshot.items.length,
+      totalItems:
+        input.manifest.directoryScopeJson && !input.manifest.manifestFixedAt
+          ? null
+          : input.snapshot.progress.totalItems,
       successCount: input.snapshot.items.filter((item) => item.status === "success").length,
       failedCount: input.snapshot.items.filter((item) => item.status === "failed").length,
       skippedCount: input.snapshot.items.filter((item) => item.status === "skipped").length,
       error: input.snapshot.error,
       continuity: input.snapshot.status === "interrupted" ? "interrupted" : terminal ? "final" : "live",
     },
-    progress: { ...input.snapshot.progress },
+    directorySource: input.manifest.directoryScopeJson
+      ? directoryTaskScopeSchema.parse(JSON.parse(input.manifest.directoryScopeJson))
+      : null,
+    discovery:
+      input.snapshot.discovery ??
+      (input.manifest.discoveryJson ? (JSON.parse(input.manifest.discoveryJson) as DiscoveryProgress) : null),
+    progress:
+      input.manifest.directoryScopeJson && !input.manifest.manifestFixedAt
+        ? { ...input.snapshot.progress, percent: null, totalItems: null }
+        : { ...input.snapshot.progress },
     items: input.snapshot.items.map((item) => liveItemToDto(input.manifest, item)),
     latestStage: input.snapshot.latestStage
       ? {

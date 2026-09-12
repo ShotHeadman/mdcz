@@ -48,6 +48,7 @@ const createFixture = async () => {
   await writeFile(filePath, "video");
   const entry = createEntry(filePath);
   const runtime = {
+    getConfiguration: vi.fn(async () => defaultConfiguration),
     scanRefs: vi.fn(async () => [entry]),
     previewEntries: vi.fn(async ({ root }: { root: { id: string } }) => [
       {

@@ -19,6 +19,7 @@ import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
 
 export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
+  const snapshot = useMaintenanceStore((state) => state.snapshot);
   const { entries, activeId, presetId } = useMaintenanceStore(
     useShallow((state) => ({
       entries: selectMaintenanceEntries(state),
@@ -100,22 +101,51 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     <MaintenanceWorkbenchFrame
       list={<MaintenanceEntryListAdapter port={ports.maintenance} />}
       detail={
-        <DetailPanelAdapter
-          port={ports.detail}
-          item={detailItem}
-          compare={
-            usesDiffView
-              ? {
-                  result: compareResult,
-                  badgeLabel: "数据对比",
-                  entry: detailEntry ?? undefined,
-                  preview: detailPreview,
-                  fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
-                  onFieldSelectionChange: handleFieldSelectionChange,
-                }
-              : undefined
-          }
-        />
+        entries.length === 0 && snapshot ? (
+          <div role="status" className="space-y-4 p-8">
+            <h2 className="text-lg font-semibold">
+              {snapshot.status === "discovering"
+                ? "正在发现维护文件"
+                : snapshot.status === "queued"
+                  ? "维护任务已排队"
+                  : snapshot.status === "stopping"
+                    ? "正在停止，等待活动文件操作退出"
+                    : snapshot.status === "completed"
+                      ? snapshot.totalEntries === 0
+                        ? "未发现可维护视频"
+                        : "维护任务已完成"
+                      : (snapshot.error ?? "正在读取本地文件")}
+            </h2>
+            <p className="break-all text-sm">{snapshot.directoryScope?.scanDir}</p>
+            {snapshot.discovery ? (
+              <>
+                <p>
+                  已遍历 {snapshot.discovery.directories} 个目录，发现 {snapshot.discovery.candidates} 个视频，跳过{" "}
+                  {snapshot.discovery.skipped} 项
+                </p>
+                <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>
+                <p className="break-all text-amber-600">{snapshot.discovery.warnings.join("、")}</p>
+              </>
+            ) : null}
+          </div>
+        ) : (
+          <DetailPanelAdapter
+            port={ports.detail}
+            item={detailItem}
+            compare={
+              usesDiffView
+                ? {
+                    result: compareResult,
+                    badgeLabel: "数据对比",
+                    entry: detailEntry ?? undefined,
+                    preview: detailPreview,
+                    fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
+                    onFieldSelectionChange: handleFieldSelectionChange,
+                  }
+                : undefined
+            }
+          />
+        )
       }
       batchBar={<MaintenanceBatchBarAdapter port={ports.maintenance} />}
     />

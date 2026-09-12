@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
+import { type Configuration, configurationSchema } from "@mdcz/shared/config";
+import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -212,11 +214,34 @@ export class MaintenanceSessionCoordinator {
   private closing = false;
   private closePromise: Promise<void> | null = null;
   private previewStarting = false;
+  private directoryConfiguration?: Configuration;
+  private recovered: Promise<{
+    snapshot: MaintenanceActiveSessionSnapshot;
+    configuration: Configuration;
+  } | null> | null = null;
+  private savedManifestFixed = false;
+  private pendingPreviewSetup: {
+    root: MediaRoot;
+    outputRoot: MediaRoot;
+    outputRelativeDirectory: string;
+    configuration?: Configuration;
+  } | null = null;
 
   constructor(
     private readonly deps: {
+      directoryTasks?: {
+        save(record: { id: string; snapshotJson: string; configurationJson: string }): Promise<void>;
+        latest(): Promise<{ id: string; snapshotJson: string; configurationJson: string } | null>;
+        discard(id: string): Promise<void>;
+      };
       roots: MaintenanceRootPort;
       runtime: MaintenanceRuntime;
+      discoverDirectory?: (
+        scope: DirectoryTaskScope,
+        configuration: Configuration,
+        signal: AbortSignal,
+        onProgress: (progress: DiscoveryProgress) => void,
+      ) => Promise<MaintenanceSessionRef[]>;
       library: MaintenanceLibraryPort;
       events?: { publish(event: MaintenanceCoordinatorEvent): void | Promise<void> };
       acquireAll?: (refs: readonly RootFileRef[], owner: string) => () => void;
@@ -226,6 +251,8 @@ export class MaintenanceSessionCoordinator {
   }
 
   async startPreview(input: {
+    directoryScope?: DirectoryTaskScope;
+    configuration?: Configuration;
     rootId: string;
     presetId: MaintenancePresetId;
     refs: readonly MaintenanceSessionRef[];
@@ -233,7 +260,7 @@ export class MaintenanceSessionCoordinator {
     outputRelativeDirectory?: string;
   }): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     this.assertOpen();
-    if (input.refs.length === 0) throw new Error("维护文件不能为空");
+    if (input.refs.length === 0 && !input.directoryScope) throw new Error("维护文件不能为空");
     if (this.previewStarting || this.session?.isActive()) {
       throw new Error("已有活动的维护会话，请先完成或停止当前会话");
     }
@@ -243,21 +270,17 @@ export class MaintenanceSessionCoordinator {
       const root = await this.deps.roots.get(input.rootId);
       const outputRoot = input.outputRootId ? await this.deps.roots.get(input.outputRootId) : root;
       const outputRelativeDirectory = input.outputRelativeDirectory ?? "";
-      this.runtime = await this.deps.runtime.createSession({
-        root,
-        outputRoot,
-        outputRelativeDirectory,
-        registerRoot: async (hostPath) => await this.deps.roots.ensurePathRecord({ hostPath }),
-      });
+      this.pendingPreviewSetup = { root, outputRoot, outputRelativeDirectory, configuration: input.configuration };
       for (const rootId of new Set(refs.map((ref) => ref.rootId))) await this.deps.roots.get(rootId);
       this.assertOpen();
       const generation = (this.session?.generation ?? 0) + 1;
       this.session?.invalidate();
-      const entries = (await scanRefs(this.runtime, this.deps.roots, this.deps.library, refs)).sort((left, right) =>
-        refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
-      );
       this.assertOpen();
+      this.directoryConfiguration = input.configuration;
+      this.savedManifestFixed = false;
+      this.recovered = Promise.resolve(null);
       this.session = new MaintenanceSession({
+        directoryScope: input.directoryScope,
         id: randomUUID(),
         rootId: input.rootId,
         presetId: input.presetId,
@@ -265,7 +288,6 @@ export class MaintenanceSessionCoordinator {
         refs,
         outputRootId: outputRoot.id,
         outputRelativeDirectory,
-        initialEntries: entries,
       });
       await this.publishStatus(this.session, "queued", `Maintenance session queued. Preset: ${input.presetId}`);
       await this.publishLog(this.session, "preset", `Maintenance preset: ${input.presetId}`);
@@ -286,7 +308,11 @@ export class MaintenanceSessionCoordinator {
       const revision = this.revision;
       const batch = await this.readPreview(sessionId);
       if (batch.session.status === "completed") return batch;
-      if (batch.session.status === "failed") {
+      if (
+        batch.session.status === "failed" ||
+        batch.session.status === "stopped" ||
+        batch.session.status === "interrupted"
+      ) {
         if (batch.session.error === PREVIEW_ALL_FAILED) return batch;
         throw new Error(batch.session.error ?? "维护预览失败");
       }
@@ -350,6 +376,7 @@ export class MaintenanceSessionCoordinator {
 
   async pause(sessionId: string): Promise<MaintenanceSessionSnapshot> {
     const session = this.require(sessionId);
+    if (session.status === "discovering") throw new Error("文件发现阶段不支持暂停，请停止任务");
     if (!session.pause()) return session.statusSnapshot();
     await this.publishStatus(session, "paused", "Maintenance session paused");
     this.activeFor(session.id, session.generation)?.executor.pause();
@@ -386,7 +413,7 @@ export class MaintenanceSessionCoordinator {
 
   private async terminate(sessionId: string, reason: string, itemReason: string): Promise<MaintenanceSessionSnapshot> {
     const current = this.require(sessionId);
-    if (current.status === "completed" || current.status === "failed") return current.statusSnapshot();
+    if (!current.isActive()) return current.statusSnapshot();
     const generation = current.beginStopping(reason);
     const errors: unknown[] = [];
     this.active?.executor.stop();
@@ -404,7 +431,7 @@ export class MaintenanceSessionCoordinator {
       errors.push(error);
     }
     try {
-      await this.finishSession(latest.id, generation, "failed", reason);
+      await this.finishSession(latest.id, generation, reason === INTERRUPTED ? "interrupted" : "stopped", reason);
     } catch (error) {
       errors.push(error);
     } finally {
@@ -417,7 +444,45 @@ export class MaintenanceSessionCoordinator {
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
-    return this.session?.snapshot() ?? null;
+    if (this.session) return this.session.snapshot();
+    this.recovered ??= (this.deps.directoryTasks?.latest() ?? Promise.resolve(null)).then((row) => {
+      if (!row) return null;
+      const snapshot = JSON.parse(row.snapshotJson) as MaintenanceActiveSessionSnapshot;
+      snapshot.timestamps = {
+        createdAt: new Date(snapshot.timestamps.createdAt),
+        updatedAt: new Date(snapshot.timestamps.updatedAt),
+        startedAt: snapshot.timestamps.startedAt ? new Date(snapshot.timestamps.startedAt) : null,
+        completedAt: snapshot.timestamps.completedAt ? new Date(snapshot.timestamps.completedAt) : null,
+      };
+      const unfinished = ["queued", "discovering", "running", "paused", "stopping"].includes(snapshot.status);
+      const previewNeedsRestart =
+        snapshot.phase === "preview" && snapshot.status === "completed" && snapshot.previews.length > 0;
+      if (unfinished || previewNeedsRestart) {
+        snapshot.status = "interrupted";
+        snapshot.error = "维护后端已重启，请基于原目录范围重新运行";
+        snapshot.timestamps.updatedAt = snapshot.timestamps.completedAt = new Date();
+      }
+      snapshot.previews = [];
+      snapshot.currentBatch = null;
+      return { snapshot, configuration: configurationSchema.parse(JSON.parse(row.configurationJson)) };
+    });
+    return (await this.recovered)?.snapshot ?? null;
+  }
+
+  async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
+    const snapshot = await this.getActiveSession();
+    if (!snapshot || snapshot.id !== sessionId || !snapshot.directoryScope) throw new Error("维护目录任务不存在");
+    const configuration = this.directoryConfiguration ?? (await this.recovered)?.configuration;
+    if (!configuration) throw new Error("维护目录配置不存在");
+    return await this.startPreview({
+      directoryScope: snapshot.directoryScope,
+      configuration,
+      rootId: snapshot.rootId,
+      outputRootId: snapshot.outputRootId,
+      outputRelativeDirectory: snapshot.outputRelativeDirectory,
+      presetId: snapshot.presetId,
+      refs: [],
+    });
   }
 
   async updateDraft(input: {
@@ -432,10 +497,17 @@ export class MaintenanceSessionCoordinator {
   }
 
   async discardSession(sessionId?: string): Promise<void> {
-    if (!this.session) return;
+    if (!this.session) {
+      const recovered = await this.getActiveSession();
+      if (recovered) await this.deps.directoryTasks?.discard(recovered.id);
+      this.recovered = Promise.resolve(null);
+      return;
+    }
     if (sessionId && this.session.id !== sessionId) throw new Error("维护会话已变化");
     if (this.session.isActive()) throw new Error("维护会话仍在运行，请先停止后再返回设置");
     const id = this.session.id;
+    if (this.session.directoryScope) await this.deps.directoryTasks?.discard(id);
+    this.recovered = Promise.resolve(null);
     this.session.invalidate();
     this.releasePaths();
     this.session = null;
@@ -462,7 +534,6 @@ export class MaintenanceSessionCoordinator {
     const session = this.assertCurrent(sessionId, generation, ["queued", "paused"]);
     const expectedStatus = session.status;
     if (this.executionPromise) throw new Error("Maintenance coordinator already has an active executor");
-    await this.runtime.applyNetworkPolicy?.();
     if (!this.isCurrent(sessionId, generation) || this.require(sessionId).status !== expectedStatus) return;
     session.startRunning(generation);
     await this.publishStatus(session, "running", message ?? `Starting maintenance ${session.phase}`);
@@ -482,7 +553,48 @@ export class MaintenanceSessionCoordinator {
     const scanController = new AbortController();
     this.active = { sessionId, generation, executor: { pause: () => undefined, stop: () => scanController.abort() } };
     try {
-      const initial = this.assertCurrent(sessionId, generation, ["running"]);
+      let initial = this.assertCurrent(sessionId, generation, ["running"]);
+      if (initial.directoryScope && !initial.snapshot().manifestFixed) {
+        initial.startDiscovery(generation);
+        await this.publishChanged(initial);
+      }
+      const setup = this.pendingPreviewSetup;
+      if (setup) {
+        this.runtime = await this.deps.runtime.createSession({
+          ...setup,
+          registerRoot: async (hostPath) => await this.deps.roots.ensurePathRecord({ hostPath }),
+        });
+        this.pendingPreviewSetup = null;
+      }
+      scanController.signal.throwIfAborted();
+      if (initial.directoryScope && !initial.snapshot().manifestFixed) {
+        if (!this.deps.discoverDirectory || !setup?.configuration) throw new Error("维护目录发现缺少配置");
+        let progressNotification = Promise.resolve();
+        let progressError: unknown;
+        const refs = await this.deps.discoverDirectory(
+          initial.directoryScope,
+          setup.configuration,
+          scanController.signal,
+          (progress) => {
+            initial.recordDiscovery(generation, progress);
+            progressNotification = progressNotification
+              .then(async () => {
+                if (!scanController.signal.aborted) await this.publishChanged(initial);
+              })
+              .catch((error) => {
+                progressError = error;
+              });
+          },
+        );
+        await progressNotification;
+        if (progressError) throw progressError;
+        scanController.signal.throwIfAborted();
+        initial.fixDiscoveredRefs(generation, refs);
+        await this.publishChanged(initial);
+      }
+      await this.runtime.applyNetworkPolicy?.();
+      initial = this.assertCurrent(sessionId, generation, ["running", "paused"]);
+      if (initial.status === "paused") return;
       const existingEntries = initial.activePreviews().flatMap((preview) => (preview.entry ? [preview.entry] : []));
       const entries =
         existingEntries.length === initial.refs.length
@@ -492,6 +604,10 @@ export class MaintenanceSessionCoordinator {
             ).sort((left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"));
       let current = this.assertCurrent(sessionId, generation, ["running", "paused"]);
       if (current.status === "paused") return;
+      if (!current.activePreviews().length && entries.length) {
+        current.initializeEntries(generation, entries);
+        await this.publishChanged(current);
+      }
       const committedPaths = new Set(
         current
           .snapshot()
@@ -576,6 +692,7 @@ export class MaintenanceSessionCoordinator {
 
   private async runApply(sessionId: string, generation: number): Promise<void> {
     try {
+      await this.runtime.applyNetworkPolicy?.();
       const initial = this.assertCurrent(sessionId, generation, ["running"]);
       const pending = initial.pendingBatchItems();
       await this.executeItems<MaintenanceBatchItem, ApplyExecutionResult>(sessionId, generation, pending, {
@@ -818,7 +935,7 @@ export class MaintenanceSessionCoordinator {
     for (;;) {
       const revision = this.revision;
       const session = this.require(sessionId);
-      if (session.status === "completed" || session.status === "failed") {
+      if (["completed", "failed", "stopped", "interrupted"].includes(session.status)) {
         if (session.snapshot().currentBatch?.id !== batchId) throw new Error("维护批次已变化");
         return {
           session: session.statusSnapshot(),
@@ -834,10 +951,10 @@ export class MaintenanceSessionCoordinator {
   private async finishSession(
     sessionId: string,
     generation: number,
-    status: "completed" | "failed",
+    status: "completed" | "failed" | "stopped" | "interrupted",
     error: string | null,
   ): Promise<void> {
-    const session = this.assertCurrent(sessionId, generation, ["running", "stopping"]);
+    const session = this.assertCurrent(sessionId, generation, ["running", "discovering", "stopping"]);
     session.finish(generation, status, error);
     this.releasePaths();
     const progress = session.progress();
@@ -860,7 +977,7 @@ export class MaintenanceSessionCoordinator {
   private async failSession(sessionId: string, generation: number, error: string): Promise<void> {
     if (!this.isCurrent(sessionId, generation)) return;
     const session = this.require(sessionId);
-    if (session.status !== "running" && session.status !== "stopping") return;
+    if (session.status !== "running" && session.status !== "discovering" && session.status !== "stopping") return;
     await this.finishSession(sessionId, generation, "failed", error);
   }
 
@@ -894,7 +1011,20 @@ export class MaintenanceSessionCoordinator {
   }
 
   private async publishChanged(session: MaintenanceSession): Promise<void> {
-    await this.deps.events?.publish({ kind: "session-changed", session: session.snapshot() });
+    const snapshot = session.snapshot();
+    if (
+      session.directoryScope &&
+      (session.status === "queued" || !session.isActive() || (!this.savedManifestFixed && snapshot.manifestFixed))
+    ) {
+      if (!this.directoryConfiguration) throw new Error("维护目录配置不存在");
+      await this.deps.directoryTasks?.save({
+        id: snapshot.id,
+        snapshotJson: JSON.stringify(snapshot),
+        configurationJson: JSON.stringify(this.directoryConfiguration),
+      });
+      this.savedManifestFixed = snapshot.manifestFixed === true;
+    }
+    await this.deps.events?.publish({ kind: "session-changed", session: snapshot });
     this.notify(session.id);
   }
 

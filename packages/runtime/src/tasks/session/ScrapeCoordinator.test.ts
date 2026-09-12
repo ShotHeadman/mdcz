@@ -42,6 +42,7 @@ const waitForAbort = async (signal: AbortSignal, gate: Promise<void>): Promise<v
 };
 
 const createStore = (run: Run): ScrapeRunStore<Run> => ({
+  rerunDirectory: vi.fn(async () => run),
   retry: vi.fn(async () => run),
   finalize: vi.fn(async () => run),
   interruptUnfinished: vi.fn(),
@@ -54,6 +55,7 @@ const createHost = (
 ): ScrapeHostPort<string, Run, undefined> => ({
   create: vi.fn(async () => run),
   runId: (entry) => entry.id,
+  describe: (entry) => ({ executionGeneration: 0, totalItems: entry.items.length }),
   createExecution: async (entry) => ({
     items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
     concurrency,
@@ -68,6 +70,81 @@ const createHost = (
 });
 
 describe("ScrapeCoordinator", () => {
+  it.each([
+    "files",
+    "empty",
+    "failed",
+    "stopped",
+    "interrupted",
+  ] as const)("accepts and settles directory discovery before a file session exists (%s)", async (outcome) => {
+    const run: Run = { id: "directory", items: [{ id: "one", rootId: "root", relativePath: "one.mp4" }] };
+    const store = createStore(run);
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    let fixed = false;
+    let discoverySignal: AbortSignal | undefined;
+    const execute = vi.fn(async (item: ScrapeRunItem) => resultFor(item, "success"));
+    const host = createHost(run, execute);
+    host.describe = (entry) => ({ executionGeneration: 0, totalItems: fixed ? entry.items.length : null });
+    host.discover = vi.fn(async (entry, signal, report) => {
+      discoverySignal = signal;
+      report({ directories: 3, candidates: 1, skipped: 0, elapsedMs: 10, currentPath: "/media/sub", warnings: [] });
+      entered.resolve();
+      await release.promise;
+      signal.throwIfAborted();
+      if (outcome === "failed") throw new Error("mount unavailable");
+      fixed = true;
+      return { ...entry, items: outcome === "empty" ? [] : entry.items };
+    });
+    const createExecution = vi.fn(host.createExecution);
+    host.createExecution = createExecution;
+    const coordinator = new ScrapeCoordinator(store, host);
+    const accepted = await coordinator.start("directory");
+    expect(accepted.progress.totalItems).toBeNull();
+    await entered.promise;
+    expect(coordinator.liveRuns()[0].snapshot).toMatchObject({
+      status: "discovering",
+      progress: { percent: null, totalItems: null },
+      discovery: { directories: 3, candidates: 1 },
+    });
+    expect(createExecution).not.toHaveBeenCalled();
+    await expect(coordinator.pause(run.id)).rejects.toThrow("不支持暂停");
+    if (outcome === "stopped") {
+      vi.mocked(host.create).mockResolvedValueOnce({ ...run, id: "queued-directory" });
+      const queued = await coordinator.start("second");
+      expect(queued).toMatchObject({ runId: "queued-directory", status: "queued", progress: { totalItems: null } });
+      await coordinator.stop(queued.runId);
+      expect(host.discover).toHaveBeenCalledTimes(1);
+      expect(store.finalize).toHaveBeenCalledWith(
+        expect.objectContaining({ runId: queued.runId, disposition: "stopped" }),
+      );
+    }
+    const termination =
+      outcome === "stopped"
+        ? coordinator.stop(run.id)
+        : outcome === "interrupted"
+          ? coordinator.abortForShutdown()
+          : null;
+    if (termination) expect(discoverySignal?.aborted).toBe(true);
+    release.resolve();
+    await termination;
+    await coordinator.waitForIdle();
+    expect(coordinator.liveRuns()).toEqual([]);
+    expect(execute).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
+    expect(createExecution).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
+    if (outcome === "interrupted") {
+      expect(store.interruptUnfinished).toHaveBeenCalledOnce();
+      expect(store.finalize).not.toHaveBeenCalled();
+    } else {
+      expect(store.finalize).toHaveBeenCalledTimes(outcome === "stopped" ? 2 : 1);
+      expect(store.finalize).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: run.id,
+          disposition: outcome === "files" || outcome === "empty" ? "completed" : outcome,
+        }),
+      );
+    }
+  });
   it("shares stop completion while an admitted publication is committing", async () => {
     const run: Run = {
       id: "stop-commit",

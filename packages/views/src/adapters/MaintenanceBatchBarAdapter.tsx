@@ -13,13 +13,18 @@ import {
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
 import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { type MaintenanceBatchBarPreviewGroup, MaintenanceBatchBarView } from "../maintenance";
 import type { MaintenanceActionPort } from "./ports";
 
 export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPort }) {
+  const rerunning = useRef(false);
+  const directorySessionId = useMaintenanceStore((state) =>
+    state.snapshot?.directoryScope ? state.snapshot.id : null,
+  );
+  const totalUnknown = useMaintenanceStore((state) => state.snapshot?.totalEntries === null);
   const isScraping = useScrapeStore(selectIsScraping);
   const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceStore(
     useShallow((state) => ({
@@ -227,11 +232,25 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       onPauseToggle={() => void handlePauseToggle()}
       onPreview={handlePreview}
       onReturnToSetup={() => void handleReturnToSetup()}
+      onRerunDirectory={
+        directorySessionId && port.rerunDirectory
+          ? () => {
+              if (rerunning.current) return;
+              rerunning.current = true;
+              void port
+                .rerunDirectory?.(directorySessionId)
+                .catch((error) => toast.error(toErrorMessage(error)))
+                .finally(() => {
+                  rerunning.current = false;
+                });
+            }
+          : undefined
+      }
       onStop={() => void handleStop()}
       paused={paused}
       presetLabel={presetMeta.label}
       previewPending={previewPending}
-      progressValue={progressValue}
+      progressValue={totalUnknown ? null : progressValue}
       readyCount={previewSummary.readyCount}
       recentResults={Object.values(itemResults)}
       selectedCount={selectedCount}

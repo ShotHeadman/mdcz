@@ -58,6 +58,7 @@ export const resolveBatchRescrapeOutput = (
 };
 
 export interface ScrapeActionPort {
+  rerunDirectory?(runId: string): Promise<void>;
   rescrapeByUrl(targets: ScrapeActionTarget[], manualUrl: string): Promise<{ message: string }>;
   retryFailed(itemIds?: readonly string[]): Promise<{ message: string }>;
   deleteFile?(targets: ScrapeActionTarget[]): Promise<void>;
@@ -69,6 +70,7 @@ export interface ScrapeActionPort {
 }
 
 export interface MaintenanceActionPort {
+  rerunDirectory?(sessionId: string): Promise<void>;
   openFolder?(filePath: string): Promise<void> | void;
   play?(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;

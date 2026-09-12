@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
+import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { Website } from "./enums";
 import {
   LLM_API_FORMAT_OPTIONS,
@@ -127,6 +128,7 @@ export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
 export const taskStatusSchema = z.enum([
   "queued",
+  "discovering",
   "running",
   "paused",
   "stopping",
@@ -216,7 +218,7 @@ export const scrapeRunTaskSchema = z.object({
   updatedAt: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
-  totalItems: z.number().int().nonnegative(),
+  totalItems: z.number().int().nonnegative().nullable(),
   successCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
@@ -246,7 +248,10 @@ export const scanStartInputSchema = z.object({
 
 export type ScanStartInput = z.infer<typeof scanStartInputSchema>;
 
+export const cancelCandidatesInputSchema = z.object({ scanId: z.string().min(1) });
+
 export const scanCandidatesInputSchema = z.object({
+  scanId: z.string().min(1).optional(),
   recursive: z.boolean(),
   excludeDirPaths: z.array(z.string().trim().min(1)).optional(),
   scanDir: z.string().trim().min(1),
@@ -296,7 +301,8 @@ const scrapeSingleStartInputSchema = z.object({
   manualUrl: z.string().trim().min(1).optional(),
 });
 
-export const scrapeStartInputSchema = z.discriminatedUnion("executionMode", [
+export const scrapeStartInputSchema = z.union([
+  z.object({ executionMode: z.literal("batch"), source: directorySourceSchema, targetDir: z.string().trim().min(1) }),
   scrapeBatchStartInputSchema,
   scrapeSingleStartInputSchema,
 ]);
@@ -304,6 +310,7 @@ export const scrapeStartInputSchema = z.discriminatedUnion("executionMode", [
 export type ScrapeStartInput = z.output<typeof scrapeStartInputSchema>;
 
 export const scrapeTaskControlInputSchema = z.object({
+  rediscover: z.boolean().optional(),
   taskId: z.string().trim().min(1),
   itemIds: z.array(z.string().trim().min(1)).min(1).optional(),
 });
@@ -501,13 +508,21 @@ export const fileActionResponseSchema = z.object({
 
 export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
 
-export const maintenanceStartInputSchema = z.object({
-  rootId: z.string().trim().min(1),
-  presetId: maintenancePresetIdSchema,
-  refs: z.array(scrapeFileRefSchema).min(1),
-  outputRootId: z.string().trim().min(1).optional(),
-  outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
-});
+export const maintenanceStartInputSchema = z.union([
+  z.object({ rerunSessionId: z.string().min(1) }),
+  z.object({
+    source: directorySourceSchema,
+    targetDir: z.string().trim().min(1).optional(),
+    presetId: maintenancePresetIdSchema,
+  }),
+  z.object({
+    rootId: z.string().trim().min(1),
+    presetId: maintenancePresetIdSchema,
+    refs: z.array(scrapeFileRefSchema).min(1),
+    outputRootId: z.string().trim().min(1).optional(),
+    outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
+  }),
+]);
 
 export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
 
@@ -569,10 +584,21 @@ export type LogListResponse = z.infer<typeof logListResponseSchema>;
 export const scrapeRunSnapshotSchema = z.object({
   task: scrapeRunTaskSchema,
   progress: z.object({
-    percent: z.number().min(0).max(100),
+    percent: z.number().min(0).max(100).nullable(),
     completedItems: z.number().int().nonnegative(),
-    totalItems: z.number().int().nonnegative(),
+    totalItems: z.number().int().nonnegative().nullable(),
   }),
+  directorySource: directoryTaskScopeSchema.nullable(),
+  discovery: z
+    .object({
+      directories: z.number(),
+      candidates: z.number(),
+      skipped: z.number(),
+      elapsedMs: z.number(),
+      currentPath: z.string().nullable(),
+      warnings: z.array(z.string()),
+    })
+    .nullable(),
   items: z.array(scrapeLiveItemSchema),
   latestStage: z
     .object({

@@ -2,6 +2,7 @@ import {
   createPersistenceDatabase,
   LibraryRepairIssueRepository,
   LibraryRepository,
+  MaintenanceDirectoryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   PublicationJournalRepository,
@@ -23,6 +24,7 @@ export interface ServerPersistenceRepositories {
   publicationJournal: PublicationJournalPort;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
+  maintenanceDirectories: MaintenanceDirectoryRepository;
 }
 
 export interface ServerPersistenceState {
@@ -89,6 +91,7 @@ export class ServerPersistenceService {
           publicationJournal,
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
+          maintenanceDirectories: new MaintenanceDirectoryRepository(database),
         },
       };
       return this.state;

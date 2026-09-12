@@ -31,6 +31,16 @@ export const createMaintenanceHandlers = (
       .input(maintenanceStartPreviewInputSchema)
       .action(async ({ input }) => {
         try {
+          if ("rerunSessionId" in input) {
+            const handle = await maintenanceService.rerunDirectory(input.rerunSessionId);
+            void handle.completion.catch(() => undefined);
+            return { sessionId: handle.session.id, snapshot: handle.session };
+          }
+          if ("source" in input) {
+            const handle = await maintenanceService.startDirectory(input.source, input.presetId, input.targetDir);
+            void handle.completion.catch(() => undefined);
+            return { sessionId: handle.session.id, snapshot: handle.session };
+          }
           const refs = input?.refs;
           const presetId = input?.presetId;
           if (!refs || !Array.isArray(refs) || refs.length === 0) {

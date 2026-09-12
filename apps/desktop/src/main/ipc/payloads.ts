@@ -1,3 +1,4 @@
+import { directorySourceSchema } from "@mdcz/shared/directoryTasks";
 import { Website } from "@mdcz/shared/enums";
 import {
   LLM_API_FORMAT_OPTIONS,
@@ -39,6 +40,7 @@ export const configImportProfileInputSchema = z.object({
 });
 
 export const scraperStartInputSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("directory"), source: directorySourceSchema, targetDir: z.string().trim().min(1) }),
   z.object({
     mode: z.literal("selection"),
     refs: z.array(rootFileRefSchema).min(1),
@@ -55,6 +57,7 @@ export const scraperStartInputSchema = z.discriminatedUnion("mode", [
 export const scraperStartSinglePathInputSchema = z.object({ path: z.string().trim().min(1) });
 export const scraperGetStatusInputSchema = z.object({ taskId: z.string().trim().min(1).optional() });
 export const scraperRetryInputSchema = z.object({
+  rediscover: z.boolean().optional(),
   runId: z.string().min(1),
   itemIds: z.array(z.string().min(1)).min(1).optional(),
 });
@@ -79,6 +82,7 @@ export const translateTestLlmInputSchema = z.object({
 });
 
 export const fileListMediaCandidatesInputSchema = z.object({
+  scanId: z.string().min(1).optional(),
   recursive: z.boolean(),
   dirPath: optionalString,
   excludeDirPaths: optionalPathList,
@@ -147,12 +151,20 @@ export const toolBatchTranslateApplyInputSchema = z.object({
 });
 export const toolMediaServerModeInputSchema = z.object({ mode: z.enum(["all", "missing"]).optional() });
 
-export const maintenanceStartPreviewInputSchema = z.object({
-  refs: z.array(rootFileRefSchema).optional(),
-  presetId: maintenancePresetIdSchema.optional(),
-  outputRootId: z.string().trim().min(1).optional(),
-  outputRelativeDirectory: z.string().optional(),
-});
+export const maintenanceStartPreviewInputSchema = z.union([
+  z.object({ rerunSessionId: z.string().min(1) }),
+  z.object({
+    source: directorySourceSchema,
+    targetDir: z.string().trim().min(1).optional(),
+    presetId: maintenancePresetIdSchema,
+  }),
+  z.object({
+    refs: z.array(rootFileRefSchema).optional(),
+    presetId: maintenancePresetIdSchema.optional(),
+    outputRootId: z.string().trim().min(1).optional(),
+    outputRelativeDirectory: z.string().optional(),
+  }),
+]);
 export const maintenanceApplyInputSchema = z.object({
   selections: z
     .array(

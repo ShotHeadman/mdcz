@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   listRootFiles,
@@ -8,8 +9,8 @@ import {
 } from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
 import { publicationPathKey, registeredOutputPaths } from "@mdcz/runtime/publication";
-import { TaskScheduler } from "@mdcz/runtime/tasks";
-import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
+import { createMediaFileFilter } from "@mdcz/runtime/scrape";
+import { CandidatePreview, TaskScheduler } from "@mdcz/runtime/tasks";
 import type {
   LogListResponse,
   ScanCandidatesInput,
@@ -44,6 +45,7 @@ const SCAN_SERVICE_CLOSED_MESSAGE = "扫描服务已关闭，任务已中断；�
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 export class ScanQueueService {
+  private readonly previews = new CandidatePreview();
   private readonly scheduler: TaskScheduler<ScanTask>;
   private readonly queuedTaskIds: string[] = [];
   private activeScan: { taskId: string; controller: AbortController } | null = null;
@@ -151,7 +153,18 @@ export class ScanQueueService {
     }
   }
 
+  async cancelCandidates(scanId: string): Promise<void> {
+    await this.previews.cancel(scanId);
+  }
+
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
+    return await this.previews.run(
+      input.scanId ?? randomUUID(),
+      async (signal) => await this.scanCandidates(input, signal),
+    );
+  }
+
+  private async scanCandidates(input: ScanCandidatesInput, signal: AbortSignal): Promise<ScanCandidatesResponse> {
     if (this.closing) throw new Error("Scan queue is closing");
     const configuration = await this.config.get();
     const hostPath = normalizeHostPath(input.scanDir);
@@ -161,7 +174,7 @@ export class ScanQueueService {
     const roots = await this.mediaRoots.listRoots();
     const root = resolveRootFile(roots, hostPath).root;
     const supported = new Set(
-      (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
+      (input.supportedExtensions ?? []).map((extension) => `.${extension.replace(/^\./u, "").toLowerCase()}`),
     );
     const warnings = { count: 0, paths: [] as string[] };
     const generatedStrms = await registeredOutputPaths(
@@ -169,20 +182,11 @@ export class ScanQueueService {
       (id) => this.mediaRoots.get(id),
       "strm",
     );
-    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, undefined, {
+    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, signal, {
       warnings,
       excludeDirectoryPaths: excludeDirPaths,
       excludeFileSymlinks: true,
-      filterFile: async (filePath) => {
-        const name = path.basename(filePath);
-        const extension = path.extname(filePath).replace(/^\./u, "").toLowerCase();
-        return (
-          !hasLiteralFilenameToken(name, configuration.scrape.filenameBlacklistTokens) &&
-          isPrimaryVideoFileName(name) &&
-          !generatedStrms.has(publicationPathKey(filePath)) &&
-          (supported.size === 0 || supported.has(extension))
-        );
-      },
+      filterFile: createMediaFileFilter(configuration, generatedStrms, supported.size ? supported : undefined),
     });
     return {
       warnings,

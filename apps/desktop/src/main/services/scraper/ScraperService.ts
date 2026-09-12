@@ -14,15 +14,21 @@ import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { type ConfiguredMediaRootService, mediaPathOwnership } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { commitScrapeTerminalResult, type ScrapeFileTransitions } from "@mdcz/runtime/publication";
+import {
+  commitScrapeTerminalResult,
+  registeredOutputPaths,
+  type ScrapeFileTransitions,
+} from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
   type ActorImageService,
   AggregationService,
   applyScrapeNetworkPolicy,
   buildScrapePublicationKey,
+  createDirectoryScope,
   createScrapeExecutionPolicy,
   DownloadManager,
+  discoverDirectoryFiles,
   type FileScrapeResult,
   NfoGenerator,
   type PreparedFileScrape,
@@ -43,6 +49,9 @@ import {
   toScrapeResultFromOutcome,
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
+import { configurationSchema } from "@mdcz/shared/config";
+import type { DirectoryTaskScope } from "@mdcz/shared/directoryTasks";
+import { directoryTaskScopeSchema } from "@mdcz/shared/directoryTasks";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
@@ -57,12 +66,14 @@ import { translationMappingStore } from "./translationMappingStore";
 
 export interface StartScrapeResult {
   taskId: string;
-  totalFiles: number;
+  totalFiles: number | null;
   snapshot: ScrapeRunSnapshotDto;
 }
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 interface DesktopScrapeStart {
+  directoryScope?: DirectoryTaskScope;
+  rootId?: string;
   refs: RootFileRef[];
   mode: ScrapeExecutionMode;
   configuration: Configuration;
@@ -111,6 +122,31 @@ export class ScraperService {
     this.host = {
       create: async (input) => await this.createRun(input),
       runId: (run) => run.id,
+      describe: (run) => ({
+        executionGeneration: run.executionGeneration,
+        totalItems: run.manifestFixedAt ? run.items.length : null,
+      }),
+      discover: async (run, signal, onProgress) => {
+        if (!run.directoryScopeJson || !run.configurationJson)
+          throw new Error("Directory run is missing its scope or configuration");
+        const repository = (await this.persistenceService.getState()).repositories;
+        const generatedStrms = await registeredOutputPaths(repository.library, (id) => this.mediaRoots.get(id), "strm");
+        const found = await discoverDirectoryFiles({
+          scope: directoryTaskScopeSchema.parse(JSON.parse(run.directoryScopeJson)),
+          configuration: configurationSchema.parse(JSON.parse(run.configurationJson)),
+          mediaRoots: this.mediaRoots,
+          generatedStrms,
+          signal,
+          onProgress,
+          platform: "desktop",
+        });
+        return await repository.scrapeRuns.fixManifest({
+          runId: run.id,
+          signal,
+          discoveryJson: JSON.stringify(found.discovery),
+          items: found.refs.map((ref, ordinal) => ({ ...ref, ordinal })),
+        });
+      },
       createExecution: async (run, reporter) => await this.createExecution(run, reporter),
       onInvalidate: (runs) => {
         const live = runs[0];
@@ -126,10 +162,16 @@ export class ScraperService {
     };
   }
 
-  getSnapshot(taskId?: string): ScrapeRunSnapshotDto | null {
-    const live = this.workflow?.liveRuns()[0];
+  async getSnapshot(taskId?: string): Promise<ScrapeRunSnapshotDto | null> {
+    const runs = this.workflow?.liveRuns() ?? [];
+    const live = taskId ? runs.find(({ run }) => run.id === taskId) : runs[0];
     if (live) return this.toSnapshotDto(live.run, live.snapshot, live.startedAt);
-    return taskId && this.terminalSnapshot?.task.id === taskId ? this.terminalSnapshot : null;
+    if (this.terminalSnapshot && (!taskId || this.terminalSnapshot.task.id === taskId)) return this.terminalSnapshot;
+    const repository = (await this.persistenceService.getState()).repositories.scrapeRuns;
+    const manifest = await repository.getLatestFinalized();
+    if (!manifest?.directoryScopeJson || (taskId && manifest.id !== taskId)) return null;
+    this.terminalSnapshot = await this.rebuildTerminalSnapshot(manifest.id);
+    return this.terminalSnapshot;
   }
 
   async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<UncensoredConfirmResponse> {
@@ -147,7 +189,21 @@ export class ScraperService {
   }
 
   async start(input: ScraperStartInput): Promise<StartScrapeResult> {
-    const configuration = await configManager.getValidated();
+    const configuration = structuredClone(await configManager.getValidated());
+    if (input.mode === "directory") {
+      const directoryScope = createDirectoryScope(input.source, input.targetDir, configuration);
+      const root = await this.mediaRoots.registerPathIntent(directoryScope.scanDir);
+      const output = await this.mediaRoots.registerPathIntent(directoryScope.targetDir);
+      return await this.begin({
+        directoryScope,
+        rootId: root.id,
+        refs: [],
+        mode: "batch",
+        configuration,
+        outputRootId: output.id,
+        outputRelativeDirectory: toRootRelativePath(output, directoryScope.targetDir),
+      });
+    }
     const refs = input.mode === "single" ? [input.ref] : input.refs;
     if (refs.length === 0) throw new ScraperServiceError("NO_FILES", "No files selected");
     return await this.begin({
@@ -206,29 +262,33 @@ export class ScraperService {
     if (live?.snapshot.status === "paused") await this.workflow?.resume(live.run.id);
   }
 
-  async retry(runId: string, itemIds?: readonly string[]): Promise<StartScrapeResult> {
+  async retry(runId: string, itemIds?: readonly string[], rediscover = false): Promise<StartScrapeResult> {
     if (!runId.trim()) throw new ScraperServiceError("NO_FILES", "No scrape run selected for retry");
     const configuration = await configManager.getValidated();
     this.clearImageHostCooldownsForRetry();
     this.configureRuntimeSettings(configuration);
-    const snapshot = await (await this.coordinator()).retry(runId, itemIds);
-    const initialSnapshot = this.getSnapshot(snapshot.runId);
+    const workflow = await this.coordinator();
+    const snapshot = rediscover ? await workflow.rerunDirectory(runId) : await workflow.retry(runId, itemIds);
+    const initialSnapshot = await this.getSnapshot(snapshot.runId);
     if (!initialSnapshot) throw new Error(`Scrape task disappeared after retry: ${snapshot.runId}`);
     this.signalService.invalidate("scrape", "overview");
     return {
       taskId: snapshot.runId,
       snapshot: initialSnapshot,
-      totalFiles: snapshot.items.filter((item) => item.status === "pending" || item.status === "processing").length,
+      totalFiles:
+        snapshot.progress.totalItems === null
+          ? null
+          : snapshot.items.filter((item) => item.status === "pending" || item.status === "processing").length,
     };
   }
 
   private async begin(input: DesktopScrapeStart): Promise<StartScrapeResult> {
     this.configureRuntimeSettings(input.configuration);
     const snapshot = await (await this.coordinator()).start(input);
-    const initialSnapshot = this.getSnapshot(snapshot.runId);
+    const initialSnapshot = await this.getSnapshot(snapshot.runId);
     if (!initialSnapshot) throw new Error(`Scrape task disappeared after start: ${snapshot.runId}`);
     this.signalService.invalidate("scrape", "overview");
-    return { taskId: snapshot.runId, totalFiles: snapshot.items.length, snapshot: initialSnapshot };
+    return { taskId: snapshot.runId, totalFiles: snapshot.progress.totalItems, snapshot: initialSnapshot };
   }
 
   private async coordinator(): Promise<
@@ -278,7 +338,7 @@ export class ScraperService {
   }
 
   private async createRun(input: DesktopScrapeStart): Promise<ScrapeRunManifest> {
-    const rootId = input.refs[0]?.rootId;
+    const rootId = input.rootId ?? input.refs[0]?.rootId;
     if (!rootId) throw new ScraperServiceError("NO_FILES", "No files selected");
     const state = await this.persistenceService.getState();
     return await state.repositories.scrapeRuns.create({
@@ -286,6 +346,8 @@ export class ScraperService {
       outputRootId: input.outputRootId,
       outputRelativeDirectory: input.outputRelativeDirectory || null,
       executionMode: input.mode,
+      configurationJson: JSON.stringify(input.configuration),
+      directoryScopeJson: input.directoryScope ? JSON.stringify(input.directoryScope) : undefined,
       items: input.refs.map((ref, ordinal) => ({
         ordinal,
         rootId: ref.rootId,
@@ -299,7 +361,7 @@ export class ScraperService {
     manifest: ScrapeRunManifest,
     reporter: ScrapeWorkflowReporter,
   ): Promise<ScrapeHostExecution<ManualScrapeOptions, PreparedFileScrape>> {
-    const configuration = await configManager.getValidated();
+    const configuration = configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null"));
     this.configureRuntimeSettings(configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
     const state = await this.persistenceService.getState();

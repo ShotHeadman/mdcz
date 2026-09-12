@@ -183,11 +183,6 @@ export class ServerPathService {
         }
 
         const entryPath = this.pathApi.join(directoryPath, entry.name);
-        const stats = await this.safeLstat(entryPath);
-        if (!stats?.isDirectory() || stats.isSymbolicLink()) {
-          continue;
-        }
-
         suggestions.push(this.createEntry(entryPath, entry.name));
         if (suggestions.length >= MAX_ENTRIES) {
           break;

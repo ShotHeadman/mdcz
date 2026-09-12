@@ -46,6 +46,10 @@ export interface ScrapeItemOutcomeRecord {
 }
 
 export interface ScrapeRunRecord {
+  directoryScopeJson: string | null;
+  configurationJson: string | null;
+  manifestFixedAt: Date | null;
+  discoveryJson: string | null;
   id: string;
   executionGeneration: number;
   revision: number;
@@ -84,6 +88,8 @@ export interface ScrapeRunSummaryRecord {
 }
 
 export interface CreateScrapeRunInput {
+  directoryScopeJson?: string;
+  configurationJson?: string;
   id?: string;
   rootId: string;
   outputRootId?: string | null;
@@ -137,6 +143,7 @@ export interface ReviseScrapeSuccessInput {
 }
 
 export interface FinalizeScrapeRunInput {
+  discoveryJson?: string;
   runId: string;
   revision?: number;
   disposition: ScrapeRunDisposition;
@@ -158,6 +165,12 @@ export class ScrapeRunRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
   async create(input: CreateScrapeRunInput): Promise<ScrapeRunRecord> {
+    if (
+      input.directoryScopeJson &&
+      (input.items.length > 0 || input.executionMode !== "batch" || !input.configurationJson)
+    ) {
+      throw new Error("Directory runs require a configuration and an unfixed batch manifest");
+    }
     const id = input.id ?? randomUUID();
     const createdAt = input.createdAt ?? new Date();
     this.database.sqlite.transaction(() => {
@@ -169,23 +182,27 @@ export class ScrapeRunRepository {
           outputRootId: input.outputRootId ?? null,
           outputRelativeDirectory: input.outputRelativeDirectory || null,
           executionMode: input.executionMode,
+          directoryScopeJson: input.directoryScopeJson ?? null,
+          configurationJson: input.configurationJson ?? null,
+          manifestFixedAt: input.directoryScopeJson ? null : createdAt,
           createdAt,
         })
         .run();
-      this.database.db
-        .insert(scrapeRunItems)
-        .values(
-          input.items.map((item) => ({
-            id: item.id ?? randomUUID(),
-            runId: id,
-            ordinal: item.ordinal,
-            rootId: item.rootId,
-            relativePath: item.relativePath,
-            manualUrl: item.manualUrl ?? null,
-            uncensoredChoice: item.uncensoredChoice ?? null,
-          })),
-        )
-        .run();
+      if (input.items.length)
+        this.database.db
+          .insert(scrapeRunItems)
+          .values(
+            input.items.map((item) => ({
+              id: item.id ?? randomUUID(),
+              runId: id,
+              ordinal: item.ordinal,
+              rootId: item.rootId,
+              relativePath: item.relativePath,
+              manualUrl: item.manualUrl ?? null,
+              uncensoredChoice: item.uncensoredChoice ?? null,
+            })),
+          )
+          .run();
     })();
     return await this.get(id);
   }
@@ -215,6 +232,10 @@ export class ScrapeRunRepository {
       .orderBy(asc(scrapeRunItems.ordinal), asc(scrapeAttempts.attempt))
       .all();
     return {
+      directoryScopeJson: run.directoryScopeJson,
+      configurationJson: run.configurationJson,
+      manifestFixedAt: run.manifestFixedAt,
+      discoveryJson: run.discoveryJson,
       id: run.id,
       executionGeneration: run.executionGeneration,
       revision: run.revision,
@@ -246,6 +267,37 @@ export class ScrapeRunRepository {
         completedAt: outcome.completedAt,
       })),
     };
+  }
+
+  async fixManifest(input: {
+    runId: string;
+    items: CreateScrapeRunInput["items"];
+    discoveryJson: string;
+    signal: AbortSignal;
+  }): Promise<ScrapeRunRecord> {
+    this.database.sqlite.transaction(() => {
+      input.signal.throwIfAborted();
+      const run = this.database.db.select().from(scrapeRuns).where(eq(scrapeRuns.id, input.runId)).get();
+      if (!run || run.disposition || run.manifestFixedAt || !run.directoryScopeJson)
+        throw new Error(`Cannot fix scrape manifest: ${input.runId}`);
+      if (input.items.length)
+        this.database.db
+          .insert(scrapeRunItems)
+          .values(
+            input.items.map((item) => ({
+              ...item,
+              id: item.id ?? randomUUID(),
+              runId: input.runId,
+            })),
+          )
+          .run();
+      this.database.db
+        .update(scrapeRuns)
+        .set({ manifestFixedAt: new Date(), discoveryJson: input.discoveryJson })
+        .where(eq(scrapeRuns.id, input.runId))
+        .run();
+    })();
+    return await this.get(input.runId);
   }
 
   async getLatestFinalized(): Promise<FinalizedScrapeRunRecord | null> {
@@ -468,7 +520,10 @@ export class ScrapeRunRepository {
       const attempt = latestAttemptByItemId.get(item.id);
       return attempt && outcomeByAttemptId.has(attempt.id);
     }).length;
-    if (input.disposition !== "interrupted" && settledItems !== run.items.length) {
+    if (
+      (input.disposition === "completed" && (!run.manifestFixedAt || settledItems !== run.items.length)) ||
+      (input.disposition !== "interrupted" && run.attempts.some((attempt) => !outcomeByAttemptId.has(attempt.id)))
+    ) {
       throw new Error(
         `Cannot finalize scrape run ${run.id}: ${run.items.length - settledItems} item(s) lack an outcome`,
       );
@@ -479,13 +534,14 @@ export class ScrapeRunRepository {
         ? "interrupted"
         : input.disposition === "stopped"
           ? "stopped"
-          : latest.some((outcome) => outcome.outcome !== "success")
+          : input.disposition === "failed" || latest.some((outcome) => outcome.outcome !== "success")
             ? "failed"
             : "completed";
     this.database.db
       .update(scrapeRuns)
       .set({
         disposition: projectedDisposition,
+        ...(input.discoveryJson ? { discoveryJson: input.discoveryJson } : {}),
         revision: input.revision ?? run.revision + 1,
         startedAt: input.startedAt ?? null,
         completedAt: input.completedAt ?? new Date(),
@@ -531,8 +587,26 @@ export class ScrapeRunRepository {
     })();
   }
 
+  async rerunDirectory(runId: string): Promise<ScrapeRunRecord> {
+    const run = await this.get(runId);
+    if (!run.disposition || !run.directoryScopeJson || !run.configurationJson)
+      throw new Error(`Directory run cannot be rerun: ${runId}`);
+    return await this.create({
+      rootId: run.rootId,
+      outputRootId: run.requestedOutputRootId,
+      outputRelativeDirectory: run.requestedOutputRelativeDirectory,
+      executionMode: "batch",
+      directoryScopeJson: run.directoryScopeJson,
+      configurationJson: run.configurationJson,
+      items: [],
+    });
+  }
+
   async retry(runId: string, itemIds?: readonly string[], admittedAt = new Date()): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
+    if (run.directoryScopeJson && !run.manifestFixedAt && run.disposition && !itemIds) {
+      return await this.rerunDirectory(runId);
+    }
     if (!run.disposition || run.disposition === "interrupted") {
       throw new Error(`Only completed, failed, or stopped scrape runs can be retried: ${run.id}`);
     }
@@ -547,12 +621,9 @@ export class ScrapeRunRepository {
         })()
       : run.items.filter((item) => {
           const outcome = outcomesByItemId.get(item.id);
-          return outcome?.outcome === "failed" || outcome?.outcome === "skipped";
+          return !outcome || outcome.outcome === "failed" || outcome.outcome === "skipped";
         });
     if (items.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
-    for (const item of items) {
-      if (!outcomesByItemId.has(item.id)) throw new Error(`Scrape item has no settled outcome to retry: ${item.id}`);
-    }
     this.database.sqlite.transaction(() => {
       for (const item of items) this.admitAttempt(item.id, admittedAt);
       this.database.db

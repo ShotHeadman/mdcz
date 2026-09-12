@@ -1,3 +1,4 @@
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
@@ -14,6 +15,7 @@ import {
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import { ScrapeStartErrorDialog, UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import {
   runScrapeRequest,
   selectIsScraping,
@@ -51,8 +53,12 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
       path,
       intent: kind === "scan" ? "workbench-scan" : "workbench-output",
     }),
-  scanCandidates: async (scanDir, recursive, excludeDirPaths) => {
+  cancelCandidates: async (scanId) => {
+    await api.scans.cancelCandidates({ scanId });
+  },
+  scanCandidates: async (scanDir, recursive, excludeDirPaths, scanId) => {
     const result = await api.scans.candidates({
+      scanId,
       scanDir,
       recursive,
       excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
@@ -119,6 +125,29 @@ function WorkbenchPage() {
       setUncensoredDialogOpen(true);
     }
   }, [hydrationState.shouldOpenUncensoredDialog]);
+
+  const handleStartDirectory = async (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => {
+    try {
+      if (workbenchMode === "maintenance") {
+        if (isScraping) throw new Error("请先停止当前刮削任务");
+        changeMaintenancePreset(presetId);
+        useMaintenanceStore.getState().setPending(true);
+        await api.maintenance.start({ source, targetDir, presetId });
+        useMaintenanceStore.getState().setSnapshot(await api.maintenance.getActiveSession());
+      } else {
+        activateNewScrapeTask();
+        await runScrapeRequest(async () => {
+          await api.scrape.start({ executionMode: "batch", source, targetDir });
+          requestScrapeLiveRunsRefresh();
+        });
+      }
+      toast.success("目录任务已提交");
+    } catch (error) {
+      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setError(toErrorMessage(error));
+      else useScrapeStore.getState().setError(toErrorMessage(error));
+      setStartError(error);
+    }
+  };
 
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
     try {
@@ -251,6 +280,7 @@ function WorkbenchPage() {
             config={configQ.data}
             configLoading={configQ.isLoading}
             port={setupPort}
+            onStartDirectory={handleStartDirectory}
             onStartScrape={handleStartSelectedScrape}
             onStartMaintenance={handleStartSelectedMaintenance}
           />

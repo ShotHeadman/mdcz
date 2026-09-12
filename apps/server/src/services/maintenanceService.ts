@@ -1,9 +1,12 @@
+import { toRootRelativePath } from "@mdcz/media-store";
 import {
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
+import { registeredOutputPaths } from "@mdcz/runtime/publication";
+import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
   MaintenanceApplyInput,
@@ -29,12 +32,35 @@ export class MaintenanceService {
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
+      directoryTasks: {
+        save: async (record) => (await this.persistence.getState()).repositories.maintenanceDirectories.save(record),
+        latest: async () => (await this.persistence.getState()).repositories.maintenanceDirectories.latest(),
+        discard: async (id) => (await this.persistence.getState()).repositories.maintenanceDirectories.discard(id),
+      },
       roots: {
         get: async (rootId) => await this.mediaRoots.get(rootId),
         list: async () => await this.mediaRoots.listRoots(),
         ensurePathRecord: async (input) => await this.mediaRoots.ensurePathRecord(input),
       },
       runtime: this.runtime,
+      discoverDirectory: async (scope, configuration, signal, onProgress) => {
+        const generatedStrms = await registeredOutputPaths(
+          (await this.persistence.getState()).repositories.library,
+          (id) => this.mediaRoots.get(id),
+          "strm",
+        );
+        return (
+          await discoverDirectoryFiles({
+            scope,
+            configuration,
+            signal,
+            onProgress,
+            generatedStrms,
+            mediaRoots: this.mediaRoots,
+            platform: "server",
+          })
+        ).refs;
+      },
       library: createMaintenanceLibraryPort({
         getRepositories: async () => {
           const { repositories } = await this.persistence.getState();
@@ -52,8 +78,35 @@ export class MaintenanceService {
   }
 
   async start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto> {
+    if ("rerunSessionId" in input) {
+      const handle = await this.coordinator.rerunDirectory(input.rerunSessionId);
+      void handle.completion.catch(() => undefined);
+      return { sessionId: handle.session.id };
+    }
+    const configuration = await this.runtime.getConfiguration();
+    if ("source" in input) {
+      const directoryScope = createDirectoryScope(
+        input.source,
+        input.targetDir ?? input.source.scanDir,
+        configuration,
+        "maintenance",
+      );
+      const root = await this.mediaRoots.registerPathIntent(directoryScope.scanDir);
+      const output = await this.mediaRoots.registerPathIntent(directoryScope.targetDir);
+      const handle = await this.coordinator.startPreview({
+        rootId: root.id,
+        presetId: input.presetId,
+        refs: [],
+        outputRootId: output.id,
+        outputRelativeDirectory: toRootRelativePath(output, directoryScope.targetDir),
+        directoryScope,
+        configuration,
+      });
+      void handle.completion.catch(() => undefined);
+      return { sessionId: handle.session.id };
+    }
     const root = await this.mediaRoots.get(input.rootId);
-    const handle = await this.coordinator.startPreview({ ...input, rootId: root.id });
+    const handle = await this.coordinator.startPreview({ ...input, rootId: root.id, configuration });
     void handle.completion.catch(() => undefined);
     return { sessionId: handle.session.id };
   }

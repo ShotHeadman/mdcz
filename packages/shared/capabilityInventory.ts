@@ -271,6 +271,7 @@ export const DESKTOP_ONLY_CHANNELS = [
     channel: IpcChannel.File_Delete,
     reason: "Deletes by absolute path; server scrape.deleteFile is root-relative and not 1:1.",
   },
+  { channel: IpcChannel.File_CancelMediaCandidates, reason: "Cancel an explicit filesystem preview." },
   { channel: IpcChannel.File_Exists, reason: "Local filesystem probe." },
   {
     channel: IpcChannel.File_ListMediaCandidates,
@@ -365,6 +366,7 @@ export const SERVER_ONLY_PROCEDURES = [
     path: "scans.candidates",
     reason: "Media-root scoped scan candidates; desktop File_ListMediaCandidates is local FS.",
   },
+  { path: "scans.cancelCandidates", reason: "Cancel an explicit filesystem preview." },
   { path: "scans.detail", reason: "Server scan task API." },
   { path: "scans.events", reason: "Server scan task API." },
   { path: "scans.list", reason: "Server scan task API." },

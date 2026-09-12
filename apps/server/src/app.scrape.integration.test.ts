@@ -115,6 +115,51 @@ beforeEach(() => {
 
 describe("buildServer scrape integration", () => {
   it.each([
+    "files",
+    "empty",
+    "missing",
+  ] as const)("accepts a directory scope and completes discovery in the backend (%s)", async (kind) => {
+    const root = await createTempRoot("directory-task");
+    const source = join(root, "source");
+    const targetDir = join(root, "output");
+    if (kind !== "missing") await mkdir(source);
+    if (kind === "files") {
+      await mkdir(join(source, "nested"));
+      await writeFile(join(source, "nested", "ABC-123.mp4"), "video");
+      await writeFile(join(source, "nested", "trailer.mp4"), "sidecar");
+    }
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+    });
+    await services.config.update({
+      download: {
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      },
+      behavior: { failedFileMove: false },
+    });
+    const token = await loginAsAdmin(fastify);
+    const accepted = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { executionMode: "batch", source: { kind: "directory", scanDir: source, recursive: true }, targetDir },
+    });
+    expect(accepted.statusCode).toBe(200);
+    const taskId = accepted.json().result.data.runId;
+    await waitForScrapeRunStatus(fastify, token, taskId, kind === "missing" ? "failed" : "completed");
+    const snapshot = await services.scrape.snapshot({ taskId });
+    expect(snapshot.directorySource).toMatchObject({ scanDir: source, recursive: true });
+    expect(snapshot.task.totalItems).toBe(kind === "missing" ? null : kind === "files" ? 1 : 0);
+    const manifest = await (await services.persistence.getState()).repositories.scrapeRuns.get(taskId);
+    expect(manifest.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
+    expect(manifest.manifestFixedAt === null).toBe(kind === "missing");
+    if (kind !== "files") expect(manifest.attempts).toEqual([]);
+  });
+  it.each([
     "conflict",
     "metadata",
   ] as const)("prepares the whole selection and isolates failures according to their scope (%s)", async (failure) => {

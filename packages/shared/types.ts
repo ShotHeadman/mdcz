@@ -287,7 +287,7 @@ export interface MaintenanceItemResult {
 /** Overall maintenance execution status. */
 export interface MaintenanceStatus {
   state: "idle" | "scanning" | "previewing" | "executing" | "paused" | "stopping";
-  totalEntries: number;
+  totalEntries: number | null;
   completedEntries: number;
   successCount: number;
   failedCount: number;

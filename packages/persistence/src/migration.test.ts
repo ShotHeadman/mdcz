@@ -15,7 +15,7 @@ describe("Persistence migration baseline", () => {
     expect(createHash("sha256").update(contents).digest("hex")).toBe(baselineChecksum);
   });
 
-  it("keeps exactly the baseline and the retagged unreleased migration", async () => {
+  it("keeps the migration journal aligned with schema files", async () => {
     const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
       entries: Array<{ idx: number; when: number; tag: string }>;
     };
@@ -24,8 +24,9 @@ describe("Persistence migration baseline", () => {
     expect(journal.entries).toEqual([
       expect.objectContaining({ idx: 0, when: 0, tag: "0000_initial" }),
       expect.objectContaining({ idx: 1, when: 1_787_875_200_000, tag: "0001_additive_roots_and_scan_tasks" }),
+      expect.objectContaining({ idx: 2, when: 1_787_961_600_000, tag: "0002_publication_and_directory_tasks" }),
     ]);
-    expect(files).toEqual(["0000_initial.sql", migrationFile]);
+    expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
 
   it("creates the strict journal, attempt, and library target schema", () => {

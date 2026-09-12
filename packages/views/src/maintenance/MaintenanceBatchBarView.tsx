@@ -40,10 +40,11 @@ export interface MaintenanceBatchBarViewProps {
   onPreview: () => Promise<void>;
   onReturnToSetup: () => void;
   onStop: () => void;
+  onRerunDirectory?: () => void;
   paused: boolean;
   presetLabel: string;
   previewPending: boolean;
-  progressValue: number;
+  progressValue: number | null;
   readyCount: number;
   recentResults: MaintenanceItemResult[];
   selectedCount: number;
@@ -68,6 +69,7 @@ export function MaintenanceBatchBarView({
   onPreview,
   onReturnToSetup,
   onStop,
+  onRerunDirectory,
   paused,
   presetLabel,
   previewPending,
@@ -93,6 +95,11 @@ export function MaintenanceBatchBarView({
       <div className="flex w-fit max-w-full flex-wrap items-center justify-center gap-2">
         {!activeExecution ? (
           <>
+            {onRerunDirectory ? (
+              <Button variant="ghost" onClick={onRerunDirectory}>
+                重新执行维护
+              </Button>
+            ) : null}
             <ReturnToWorkbenchSetupButton
               disabled={!canReturnToSetup}
               dialogDescription="返回后会清空当前维护列表、预览结果和执行记录。确定继续吗？"
@@ -129,10 +136,18 @@ export function MaintenanceBatchBarView({
         ) : (
           <>
             <div className="flex min-w-44 items-center gap-3 px-1">
-              <Progress value={progressValue} className="h-1.5 w-28 md:w-36" />
-              <span className="w-10 font-numeric text-[11px] font-bold tabular-nums text-foreground">
-                {Math.round(progressValue)}%
-              </span>
+              {progressValue === null ? (
+                <span role="status" className="text-xs">
+                  正在检索文件，即将计算进度...
+                </span>
+              ) : (
+                <>
+                  <Progress value={progressValue} className="h-1.5 w-28 md:w-36" />
+                  <span className="w-10 font-numeric text-[11px] font-bold tabular-nums text-foreground">
+                    {Math.round(progressValue)}%
+                  </span>
+                </>
+              )}
             </div>
             <Button
               type="button"

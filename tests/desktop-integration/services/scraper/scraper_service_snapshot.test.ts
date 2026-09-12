@@ -117,6 +117,10 @@ const attachLiveRun = (service: ScraperService, status: "running" | "paused") =>
     error: null,
   };
   const run: ScrapeRunManifest = {
+    directoryScopeJson: null,
+    configurationJson: null,
+    manifestFixedAt: new Date(),
+    discoveryJson: null,
     executionGeneration: 0,
     revision: 0,
     id: snapshot.runId,
@@ -198,7 +202,7 @@ describe("ScraperService.getSnapshot", () => {
     expect(snapshot?.task.continuity).toBe("live");
   });
 
-  it("keeps this process's terminal snapshot available only to its active renderer session", async () => {
+  it("keeps this process's terminal snapshot available to reconnecting renderers", async () => {
     const { service } = await createHarness();
     const { run, snapshot, startedAt } = attachLiveRun(service, "running");
     const completedAt = new Date("2026-08-29T00:05:00.000Z");
@@ -215,12 +219,12 @@ describe("ScraperService.getSnapshot", () => {
     await host.onTerminal({ ...run, startedAt, completedAt, disposition: "completed" }, terminalSnapshot);
     Object.assign(service, { workflow: null });
 
-    expect(service.getSnapshot("live-run")).toMatchObject({
+    expect(await service.getSnapshot("live-run")).toMatchObject({
       task: { id: "live-run", status: "completed", continuity: "final" },
       progress: { percent: 100, completedItems: 1, totalItems: 1 },
       items: [{ id: "item-1", status: "success" }],
     });
-    expect(service.getSnapshot("another-run")).toBeNull();
-    expect(service.getSnapshot()).toBeNull();
+    expect(await service.getSnapshot("another-run")).toBeNull();
+    expect(await service.getSnapshot()).toMatchObject({ task: { id: "live-run", status: "completed" } });
   });
 });

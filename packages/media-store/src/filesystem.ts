@@ -94,6 +94,14 @@ export interface FileWalkOptions {
   // Metadata consumers collect their own results; callback scans return no paths.
   onFile?: (filePath: string, stats: Stats) => void;
   onDiagnostic?: (message: string) => void;
+  onProgress?: (progress: {
+    directories: number;
+    candidates: number;
+    skipped: number;
+    elapsedMs: number;
+    currentPath: string | null;
+    warnings: string[];
+  }) => void;
 }
 
 export const walkFiles = async (
@@ -117,12 +125,38 @@ export const walkFiles = async (
     if (warnings.paths.length < 5) warnings.paths.push(target);
     return true;
   };
+  const calls = { realpath: 0, readdir: 0, stat: 0 };
+  const pendingOperations = new Map<symbol, { operation: string; path: string; startedAt: number }>();
+  const measure = async <T>(operation: keyof typeof calls, target: string, run: () => Promise<T>): Promise<T> => {
+    signal?.throwIfAborted();
+    calls[operation] += 1;
+    const key = Symbol();
+    const start = performance.now();
+    pendingOperations.set(key, { operation, path: target, startedAt: start });
+    const timer = options.onDiagnostic
+      ? setTimeout(() => {
+          options.onDiagnostic?.(
+            `扫描慢调用 ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start), pending: [...pendingOperations.values()] })}`,
+          );
+        }, 1000)
+      : undefined;
+    try {
+      return await run();
+    } finally {
+      if (timer) clearTimeout(timer);
+      pendingOperations.delete(key);
+      if (performance.now() - start >= 1000)
+        options.onDiagnostic?.(
+          `扫描调用结束 ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start) })}`,
+        );
+    }
+  };
   const keys = new Map<string, Promise<string>>();
   const directoryKey = (target: string) => {
     signal?.throwIfAborted();
     let pending = keys.get(target);
     if (!pending) {
-      pending = realpath(target);
+      pending = measure("realpath", target, () => realpath(target));
       keys.set(target, pending);
     }
     return pending;
@@ -131,20 +165,39 @@ export const walkFiles = async (
   const lexicalExcluded = (options.excludeDirectoryPaths ?? [])
     .map((target) => path.resolve(target))
     .filter((target) => path.relative(rootPath, target) !== "");
+  let lastProgressAt = 0;
+  let currentPath: string | null = rootPath;
+  const progress = (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastProgressAt < 250) return;
+    lastProgressAt = now;
+    options.onProgress?.({
+      directories,
+      candidates,
+      skipped: warnings.count,
+      elapsedMs: Math.round(now - started),
+      currentPath,
+      warnings: [...warnings.paths],
+    });
+  };
   const queue: Array<() => Promise<void>> = [];
   const visit = async (absolutePath: string, ancestors: ReadonlySet<string>, isRoot: boolean) => {
     // Skip excluded names before I/O, then reject aliases of excluded targets.
     if (!isRoot && lexicalExcluded.some((target) => isPathInside(target, absolutePath))) return;
+    currentPath = absolutePath;
+    progress();
     const key = await directoryKey(absolutePath);
     if (ancestors.has(key) || (options.deduplicateDirectories && visitedDirectories.has(key))) return;
     if (!isRoot && excluded.some((target) => isPathInside(target, key))) return;
     if (options.deduplicateDirectories) visitedDirectories.add(key);
     const nextAncestors = options.deduplicateDirectories ? ancestors : new Set(ancestors).add(key);
     signal?.throwIfAborted();
-    const entries = await readdir(absolutePath, { withFileTypes: true });
+    const entries = await measure("readdir", absolutePath, () => readdir(absolutePath, { withFileTypes: true }));
     signal?.throwIfAborted();
     directories += 1;
     for (const entry of entries) {
+      signal?.throwIfAborted();
+      progress();
       const entryAbsolutePath = path.join(absolutePath, entry.name);
       if (entry.isDirectory()) {
         if (recursive)
@@ -156,6 +209,7 @@ export const walkFiles = async (
         continue;
       }
       const accepted = !options.filterFile || (await options.filterFile(entryAbsolutePath));
+      signal?.throwIfAborted();
       if (entry.isFile() && !accepted) continue;
       if (!entry.isFile() && !entry.isSymbolicLink()) continue;
       if (entry.isFile() && !options.onFile) {
@@ -166,7 +220,7 @@ export const walkFiles = async (
       queue.push(async () => {
         try {
           signal?.throwIfAborted();
-          const stats = await fsStat(entryAbsolutePath);
+          const stats = await measure("stat", entryAbsolutePath, () => fsStat(entryAbsolutePath));
           signal?.throwIfAborted();
           if (stats.isDirectory()) {
             if (recursive)
@@ -189,6 +243,7 @@ export const walkFiles = async (
     }
   };
   try {
+    progress(true);
     const rootKey = await directoryKey(rootPath);
     for (const target of recursive ? lexicalExcluded : []) {
       try {
@@ -207,7 +262,7 @@ export const walkFiles = async (
       let failed = false;
       let failure: unknown;
       const pump = () => {
-        while (!failed && active < 4 && cursor < queue.length) {
+        while (!failed && !signal?.aborted && active < 4 && cursor < queue.length) {
           const task = queue[cursor++];
           if (!task) throw new Error("Missing filesystem task");
           active += 1;
@@ -231,8 +286,10 @@ export const walkFiles = async (
     signal?.throwIfAborted();
     return options.onFile ? files : files.sort((a, b) => a.localeCompare(b, "zh-CN"));
   } finally {
+    currentPath = null;
+    progress(true);
     options.onDiagnostic?.(
-      `扫描汇总 ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count })}`,
+      `扫描汇总 ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count, calls, pending: [...pendingOperations.values()] })}`,
     );
   }
 };

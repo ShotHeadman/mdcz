@@ -4,6 +4,7 @@ export * from "./aggregation";
 export * from "./canonicalizeActorAliases";
 export * from "./confirmUncensored";
 export * from "./crawlerOptions";
+export * from "./directoryDiscovery";
 export * from "./download";
 export * from "./executionPolicy";
 export {

@@ -1,3 +1,4 @@
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
@@ -14,7 +15,11 @@ import {
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
 import { ScrapeStartErrorDialog, UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
-import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import {
+  changeMaintenancePreset,
+  selectMaintenanceExecutionStatus,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
 import {
   runScrapeRequest,
   selectIsScraping,
@@ -115,6 +120,25 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
   const refreshCurrentConfig = async () => {
     await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
+  };
+
+  const handleStartDirectory = async (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => {
+    try {
+      if (workbenchMode === "maintenance") {
+        if (isScraping) throw new Error("请先停止当前刮削任务");
+        changeMaintenancePreset(presetId);
+        useMaintenanceStore.getState().setPending(true);
+        await ipc.maintenance.directory(source, presetId, targetDir);
+      } else {
+        if (maintenanceBusy) throw new Error("请先停止当前维护任务");
+        activateNewScrapeTask();
+        await ipc.scraper.start({ mode: "directory", source, targetDir });
+      }
+      toast.success("目录任务已提交");
+    } catch (error) {
+      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setError(toErrorMessage(error));
+      setStartError(error);
+    }
   };
 
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
@@ -262,6 +286,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
               mode={workbenchMode}
               config={configQ.data}
               configLoading={configQ.isLoading}
+              onStartDirectory={handleStartDirectory}
               onStartScrape={handleStartSelectedScrape}
               onStartMaintenance={handleStartSelectedMaintenance}
             />

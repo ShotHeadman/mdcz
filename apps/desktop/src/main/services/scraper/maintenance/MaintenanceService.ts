@@ -1,6 +1,7 @@
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
+import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
@@ -13,7 +14,10 @@ import {
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
+import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -50,6 +54,7 @@ export class MaintenanceService {
   private readonly persistenceService: DesktopPersistenceService;
   private readonly imageHostCooldownStore: PersistentCooldownStore;
   private readonly runtime: MaintenanceRuntime;
+  private readonly mediaRoots: ConfiguredMediaRootService;
   private readonly coordinator: MaintenanceSessionCoordinator;
 
   constructor(deps: MaintenanceServiceDependencies) {
@@ -57,6 +62,7 @@ export class MaintenanceService {
     this.persistenceService = deps.persistenceService;
     this.imageHostCooldownStore = deps.imageHostCooldownStore;
     const mediaRoots = deps.mediaRoots ?? createDesktopMediaRootService(deps.persistenceService);
+    this.mediaRoots = mediaRoots;
     this.runtime =
       deps.runtime ??
       createDesktopMaintenanceRuntime({
@@ -70,6 +76,13 @@ export class MaintenanceService {
     this.coordinator =
       deps.coordinator ??
       new MaintenanceSessionCoordinator({
+        directoryTasks: {
+          save: async (record) =>
+            (await this.persistenceService.getState()).repositories.maintenanceDirectories.save(record),
+          latest: async () => (await this.persistenceService.getState()).repositories.maintenanceDirectories.latest(),
+          discard: async (id) =>
+            (await this.persistenceService.getState()).repositories.maintenanceDirectories.discard(id),
+        },
         roots: {
           get: async (rootId) => {
             return await mediaRoots.get(rootId);
@@ -78,6 +91,24 @@ export class MaintenanceService {
           ensurePathRecord: async (input) => await mediaRoots.ensurePathRecord(input),
         },
         runtime: this.runtime,
+        discoverDirectory: async (scope, configuration, signal, onProgress) => {
+          const generatedStrms = await registeredOutputPaths(
+            (await this.persistenceService.getState()).repositories.library,
+            (id) => mediaRoots.get(id),
+            "strm",
+          );
+          return (
+            await discoverDirectoryFiles({
+              scope,
+              configuration,
+              signal,
+              onProgress,
+              generatedStrms,
+              mediaRoots,
+              platform: "desktop",
+            })
+          ).refs;
+        },
         library: createMaintenanceLibraryPort({
           getRepositories: async () => {
             const { repositories } = await this.persistenceService.getState();
@@ -115,6 +146,30 @@ export class MaintenanceService {
     };
   }
 
+  async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
+    return await this.coordinator.rerunDirectory(sessionId);
+  }
+
+  async startDirectory(
+    source: DirectorySource,
+    presetId: MaintenancePresetId,
+    targetDir?: string,
+  ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
+    const configuration = await this.runtime.getConfiguration();
+    const directoryScope = createDirectoryScope(source, targetDir ?? source.scanDir, configuration, "maintenance");
+    const root = await this.mediaRoots.registerPathIntent(directoryScope.scanDir);
+    const output = await this.mediaRoots.registerPathIntent(directoryScope.targetDir);
+    return await this.coordinator.startPreview({
+      rootId: root.id,
+      presetId,
+      refs: [],
+      outputRootId: output.id,
+      outputRelativeDirectory: toRootRelativePath(output, directoryScope.targetDir),
+      directoryScope,
+      configuration,
+    });
+  }
+
   async startPreview(
     refs: RootFileRef[],
     presetId: MaintenancePresetId,
@@ -124,7 +179,13 @@ export class MaintenanceService {
     const rootId = refs[0]?.rootId;
     if (!rootId) throw new Error("维护文件缺少媒体目录");
     this.signalService.invalidate("maintenance");
-    return await this.coordinator.startPreview({ rootId, presetId, refs, ...output });
+    return await this.coordinator.startPreview({
+      rootId,
+      presetId,
+      refs,
+      ...output,
+      configuration: await this.runtime.getConfiguration(),
+    });
   }
 
   async execute(

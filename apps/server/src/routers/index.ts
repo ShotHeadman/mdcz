@@ -1,6 +1,7 @@
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   authLoginInputSchema,
+  cancelCandidatesInputSchema,
   configImportInputSchema,
   configPathInputSchema,
   configPreviewInputSchema,
@@ -245,6 +246,10 @@ export const appRouter = t.router({
     })),
   }),
   scans: t.router({
+    cancelCandidates: protectedProcedure.input(cancelCandidatesInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.scans.cancelCandidates(input.scanId);
+      return { ok: true as const };
+    }),
     candidates: protectedProcedure
       .input(scanCandidatesInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scans.candidates(input)),

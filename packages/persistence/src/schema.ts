@@ -67,6 +67,10 @@ export const scrapeRuns = sqliteTable(
     outputRootId: text("output_root_id"),
     outputRelativeDirectory: text("output_relative_directory"),
     executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
+    directoryScopeJson: text("directory_scope_json"),
+    configurationJson: text("configuration_json"),
+    manifestFixedAt: integer("manifest_fixed_at", { mode: "timestamp_ms" }),
+    discoveryJson: text("discovery_json"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
@@ -82,6 +86,13 @@ export const scrapeRuns = sqliteTable(
     index("scrape_runs_created_at_idx").on(table.createdAt),
   ],
 );
+
+export const maintenanceDirectoryTasks = sqliteTable("maintenance_directory_tasks", {
+  id: text("id").primaryKey(),
+  snapshotJson: text("snapshot_json").notNull(),
+  configurationJson: text("configuration_json").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
 
 export const scrapeRunItems = sqliteTable(
   "scrape_run_items",

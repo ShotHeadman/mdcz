@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { MediaPathOwnership } from "../library/mediaPathOwnership";
@@ -54,7 +55,11 @@ const toRuntimePreview = (entry: LocalScanEntry) => ({
   },
 });
 
-const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}, roots = [root]) => {
+const createCoordinator = (
+  runtimeOverrides: Partial<MaintenanceRuntime> = {},
+  roots = [root],
+  overrides: Partial<ConstructorParameters<typeof MaintenanceSessionCoordinator>[0]> = {},
+) => {
   const runtime = {
     scanRefs: vi.fn(async ({ root: scanRoot, refs }: { root: typeof root; refs: Array<{ relativePath: string }> }) =>
       refs.map((ref) => createEntry(ref.relativePath, scanRoot)),
@@ -90,11 +95,103 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}, r
       },
     },
     acquireAll: (refs, owner) => ownership.acquireAll(refs, owner),
+    ...overrides,
   });
   return { coordinator, events, library, ownership, runtime };
 };
 
 describe("MaintenanceSessionCoordinator", () => {
+  it.each([
+    "files",
+    "empty",
+    "failed",
+    "stopped",
+    "interrupted",
+  ] as const)("owns directory discovery throughout its session (%s)", async (outcome) => {
+    const entered = promiseWithResolvers<void>();
+    const release = promiseWithResolvers<void>();
+    let signal: AbortSignal | undefined;
+    let checkpoint: { id: string; snapshotJson: string; configurationJson: string } | null = null;
+    const directoryTasks = {
+      save: vi.fn(async (record: NonNullable<typeof checkpoint>) => {
+        checkpoint = record;
+      }),
+      latest: async () => checkpoint,
+      discard: async () => undefined,
+    };
+    const fixture = createCoordinator({}, [root], {
+      directoryTasks,
+      discoverDirectory: async (_scope, _configuration, currentSignal, report) => {
+        signal = currentSignal;
+        report({ directories: 1, candidates: 0, elapsedMs: 1, skipped: 0, currentPath: root.hostPath, warnings: [] });
+        entered.resolve();
+        await release.promise;
+        currentSignal.throwIfAborted();
+        if (outcome === "failed") throw new Error("mount failed");
+        return outcome === "empty" ? [] : [ref("one.mp4")];
+      },
+    });
+    const handle = await fixture.coordinator.startPreview({
+      rootId: root.id,
+      presetId: "read_local",
+      refs: [],
+      configuration: defaultConfiguration,
+      directoryScope: {
+        kind: "directory",
+        scanDir: root.hostPath,
+        recursive: true,
+        targetDir: root.hostPath,
+        extraScanDirs: [],
+        excludeDirPaths: [],
+      },
+    });
+    const completion = handle.completion.then(
+      (batch) => batch,
+      (error: unknown) => error,
+    );
+    await entered.promise;
+    expect(await fixture.coordinator.getActiveSession()).toMatchObject({
+      status: "discovering",
+      totalEntries: null,
+      refs: [],
+    });
+    expect(fixture.runtime.scanRefs).not.toHaveBeenCalled();
+    const crashed = createCoordinator({}, [root], { directoryTasks });
+    expect(await crashed.coordinator.getActiveSession()).toMatchObject({
+      status: "interrupted",
+      totalEntries: null,
+      previews: [],
+    });
+    await expect(fixture.coordinator.pause(handle.session.id)).rejects.toThrow("不支持暂停");
+    const termination =
+      outcome === "stopped"
+        ? fixture.coordinator.stop(handle.session.id)
+        : outcome === "interrupted"
+          ? fixture.coordinator.close()
+          : null;
+    if (termination) expect(signal?.aborted).toBe(true);
+    release.resolve();
+    await termination;
+    await completion;
+    expect(await fixture.coordinator.getActiveSession()).toMatchObject({
+      status: outcome === "files" || outcome === "empty" ? "completed" : outcome,
+    });
+    expect(fixture.runtime.scanRefs).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
+    expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
+    expect(directoryTasks.save).toHaveBeenCalled();
+    const restarted = createCoordinator({}, [root], { directoryTasks, discoverDirectory: async () => [] });
+    expect(await restarted.coordinator.getActiveSession()).toMatchObject({
+      id: handle.session.id,
+      status: outcome === "files" ? "interrupted" : outcome === "empty" ? "completed" : outcome,
+      previews: [],
+    });
+    const rerun = await restarted.coordinator.rerunDirectory(handle.session.id);
+    expect(rerun.session.id).not.toBe(handle.session.id);
+    await rerun.completion;
+    expect(vi.mocked(restarted.runtime.createSession).mock.calls[0][0].configuration).toEqual(defaultConfiguration);
+    await restarted.coordinator.close();
+    await fixture.coordinator.close();
+  });
   it("reserves preview startup against concurrent previews and applies and releases it after scan failure", async () => {
     const scanning = promiseWithResolvers<void>();
     const scanned = promiseWithResolvers<LocalScanEntry[]>();
@@ -106,8 +203,8 @@ describe("MaintenanceSessionCoordinator", () => {
       scanning.resolve();
       return await scanned.promise;
     });
-    const starting = fixture.coordinator.startPreview(input);
-    const failed = expect(starting).rejects.toThrow("scan failed");
+    const starting = await fixture.coordinator.startPreview(input);
+    const failed = expect(starting.completion).rejects.toThrow("scan failed");
     await scanning.promise;
     await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("已有活动的维护会话");
     await expect(
@@ -115,7 +212,7 @@ describe("MaintenanceSessionCoordinator", () => {
         sessionId: first.session.id,
         selections: [{ previewId: batch.items[0].id }],
       }),
-    ).rejects.toThrow("维护预览正在启动");
+    ).rejects.toThrow("Maintenance session not found");
     scanned.reject(new Error("scan failed"));
     await failed;
     const retry = await fixture.coordinator.startPreview(input);
@@ -167,7 +264,7 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(fixture.events).toContainEqual({
       kind: "session-changed",
       session: expect.objectContaining({
-        status: "queued",
+        status: "running",
         previews: [expect.objectContaining({ relativePath: "one.mp4", status: "pending" })],
       }),
     });
@@ -401,7 +498,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const batch = await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
 
-    expect(batch.session).toMatchObject({ status: "failed", error: "维护已停止" });
+    expect(batch.session).toMatchObject({ status: "stopped", error: "维护已停止" });
     expect(batch.applied).toHaveLength(3);
     expect(new Set(batch.applied.map((item) => item.previewId)).size).toBe(3);
     expect(batch.applied.every((item) => item.status === "skipped")).toBe(true);
@@ -413,7 +510,7 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(fixture.events).toContainEqual({
       kind: "session-changed",
       session: expect.objectContaining({
-        status: "failed",
+        status: "stopped",
         currentBatch: expect.objectContaining({
           items: expect.arrayContaining([expect.objectContaining({ status: "skipped" })]),
         }),
@@ -595,7 +692,7 @@ describe("MaintenanceSessionCoordinator", () => {
       notificationFails ? "rejected" : "fulfilled",
     ]);
     const batch = await apply.completion;
-    expect(batch.session.status).toBe("failed");
+    expect(batch.session.status).toBe(closeFirst ? "interrupted" : "stopped");
     expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledOnce();
     const release = fixture.ownership.acquire(root.id, "owned.mp4");

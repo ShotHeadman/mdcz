@@ -1,5 +1,5 @@
 import type { Dirent, Stats } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFakeConfig, createFakeMediaRoots } from "./serverPathService.testSupport";
 import { type ServerPathFs, ServerPathService } from "./services/serverPathService";
 
@@ -43,10 +43,11 @@ describe("ServerPathService", () => {
     ] as Dirent[];
     const fs: ServerPathFs = {
       access: async () => undefined,
-      lstat: async (candidate) =>
+      lstat: vi.fn(async (candidate: string) =>
         candidate.replaceAll("\\", "/").toLocaleLowerCase() === "e:/med"
           ? Promise.reject(new Error("missing"))
           : fakeDirectoryStats,
+      ),
       readdir: async () => entries,
     };
     const service = new ServerPathService(createFakeMediaRoots("E:/Media"), createFakeConfig("E:/Media"), {
@@ -57,6 +58,11 @@ describe("ServerPathService", () => {
     const response = await service.suggest({ path: "E:/Med" });
 
     expect(response.parentPath).toBe("E:/");
+    expect(fs.lstat).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fs.lstat).mock.calls.map(([candidate]) => candidate.replaceAll("\\", "/"))).toEqual([
+      "E:/Med",
+      "E:/",
+    ]);
     expect(response.entries).toEqual([
       {
         type: "directory",

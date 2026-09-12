@@ -51,6 +51,90 @@ afterEach(() => {
 });
 
 describe("ScrapeRunRepository", () => {
+  it.each([
+    "empty",
+    "failed",
+    "stopped",
+    "interrupted",
+    "files",
+  ] as const)("persists directory intent independently of its immutable manifest (%s)", async (outcome) => {
+    const repository = createRepository();
+    const scope = {
+      kind: "directory" as const,
+      scanDir: "/root-1",
+      recursive: true,
+      targetDir: "/requested-output",
+      extraScanDirs: [],
+      excludeDirPaths: [],
+    };
+    const run = await repository.create({
+      rootId: "root-1",
+      outputRootId: "requested-output",
+      executionMode: "batch",
+      directoryScopeJson: JSON.stringify(scope),
+      configurationJson: '{"scrape":"captured"}',
+      items: [],
+    });
+    expect(run).toMatchObject({
+      directoryScopeJson: JSON.stringify(scope),
+      configurationJson: '{"scrape":"captured"}',
+      manifestFixedAt: null,
+      items: [],
+      attempts: [],
+    });
+    await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow("Cannot finalize");
+    const controller = new AbortController();
+    const input = {
+      runId: run.id,
+      signal: controller.signal,
+      items: outcome === "files" ? [{ rootId: "root-1", relativePath: "one.mp4", ordinal: 0 }] : [],
+      discoveryJson: JSON.stringify({
+        directories: 1,
+        candidates: outcome === "files" ? 1 : 0,
+        skipped: 0,
+        elapsedMs: 1,
+        currentPath: null,
+        warnings: [],
+      }),
+    };
+    if (outcome === "empty" || outcome === "files") {
+      const fixed = await repository.fixManifest(input);
+      expect(fixed.manifestFixedAt).toBeInstanceOf(Date);
+      expect(fixed.attempts).toEqual([]);
+      await expect(repository.fixManifest(input)).rejects.toThrow("Cannot fix");
+      if (outcome === "files") {
+        repository.commitOutcome({
+          attemptId: repository.admitAttempt(fixed.items[0].id).id,
+          outcome: "failed",
+          error: "failure",
+        });
+      }
+      await repository.finalize({ runId: run.id, disposition: outcome === "files" ? "failed" : "completed" });
+    } else {
+      controller.abort();
+      await expect(repository.fixManifest(input)).rejects.toThrow();
+      expect((await repository.get(run.id)).manifestFixedAt).toBeNull();
+      if (outcome === "interrupted") repository.interruptUnfinished();
+      else await repository.finalize({ runId: run.id, disposition: outcome });
+    }
+    const stored = await repository.get(run.id);
+    expect(stored.disposition).toBe(outcome === "empty" ? "completed" : outcome === "files" ? "failed" : outcome);
+    const rerun = await repository.rerunDirectory(run.id);
+    expect(rerun.id).not.toBe(run.id);
+    expect(rerun).toMatchObject({
+      directoryScopeJson: JSON.stringify(scope),
+      configurationJson: '{"scrape":"captured"}',
+      manifestFixedAt: null,
+      items: [],
+      attempts: [],
+    });
+    if (outcome === "files") {
+      const retry = await repository.retry(run.id);
+      expect(retry.id).toBe(run.id);
+      expect(retry.items.map((item) => item.relativePath)).toEqual(["one.mp4"]);
+      expect(retry.manifestFixedAt).toEqual(stored.manifestFixedAt);
+    }
+  });
   it("stores one ordered aggregate across the three scrape tables", async () => {
     const repository = createRepository();
     const run = await createRun(repository);

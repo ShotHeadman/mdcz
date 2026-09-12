@@ -12,6 +12,7 @@ import {
   commitScrapeTerminalResult,
   createPublicationPlan,
   registeredMediaLocations,
+  registeredOutputPaths,
   type ScrapeFileTransitions,
   type ScrapeSuccessPublicationFacts,
 } from "@mdcz/runtime/publication";
@@ -20,7 +21,9 @@ import {
   buildScrapePublicationKey,
   buildUncensoredRevision,
   confirmUncensoredOutputs,
+  createDirectoryScope,
   createScrapeExecutionPolicy,
+  discoverDirectoryFiles,
   FileOrganizer,
   type MountedRootScrapeRuntime,
   type MountedRootScrapeRuntimeItemSuccess,
@@ -46,6 +49,8 @@ import {
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
 import type { Configuration } from "@mdcz/shared/config";
+import { configurationSchema } from "@mdcz/shared/config";
+import { directoryTaskScopeSchema } from "@mdcz/shared/directoryTasks";
 import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
 import {
   type AmbiguousUncensoredItemDto,
@@ -163,6 +168,31 @@ export class ScrapeService {
     this.host = {
       create: async (input) => await this.createRun(input),
       runId: (run) => run.id,
+      describe: (run) => ({
+        executionGeneration: run.executionGeneration,
+        totalItems: run.manifestFixedAt ? run.items.length : null,
+      }),
+      discover: async (run, signal, onProgress) => {
+        if (!run.directoryScopeJson || !run.configurationJson)
+          throw new Error("Directory run is missing its scope or configuration");
+        const repository = (await this.persistence.getState()).repositories;
+        const generatedStrms = await registeredOutputPaths(repository.library, (id) => this.mediaRoots.get(id), "strm");
+        const found = await discoverDirectoryFiles({
+          scope: directoryTaskScopeSchema.parse(JSON.parse(run.directoryScopeJson)),
+          configuration: configurationSchema.parse(JSON.parse(run.configurationJson)),
+          mediaRoots: this.mediaRoots,
+          generatedStrms,
+          signal,
+          onProgress,
+          platform: "server",
+        });
+        return await repository.scrapeRuns.fixManifest({
+          runId: run.id,
+          signal,
+          discoveryJson: JSON.stringify(found.discovery),
+          items: found.refs.map((ref, ordinal) => ({ ...ref, ordinal })),
+        });
+      },
       createExecution: async (run, reporter) => await this.createExecution(run, reporter),
       onInvalidate: () => this.scheduleScrapeInvalidation(),
       onTerminal: async (run, snapshot) => await this.handleTerminalRun(run, snapshot),
@@ -175,10 +205,8 @@ export class ScrapeService {
   async start(input: ScrapeStartInput): Promise<ScrapeRunSnapshotDto> {
     const workflow = await this.coordinator();
     const snapshot = await workflow.start(input);
-    const live = workflow.liveRuns().find(({ run }) => run.id === snapshot.runId);
-    if (!live) throw new Error(`Scrape run disappeared after start: ${snapshot.runId}`);
     this.addEvent(snapshot.runId, "queued", "Scrape task queued");
-    return await this.liveRunSnapshotDto(live.run, live.snapshot, live.startedAt);
+    return await this.snapshot({ taskId: snapshot.runId });
   }
 
   /**
@@ -286,11 +314,11 @@ export class ScrapeService {
     this.imageHostCooldownStore.clear();
     runtimeLoggerService.getLogger("ScrapeService").info("Cleared image host cooldowns for user-initiated retry");
     const workflow = await this.coordinator();
-    const snapshot = await workflow.retry(input.taskId, input.itemIds);
-    const live = workflow.liveRuns().find(({ run }) => run.id === snapshot.runId);
-    if (!live) throw new Error(`Scrape retry disappeared after start: ${snapshot.runId}`);
+    const snapshot = input.rediscover
+      ? await workflow.rerunDirectory(input.taskId)
+      : await workflow.retry(input.taskId, input.itemIds);
     this.addEvent(snapshot.runId, "queued", "Scrape retry queued");
-    return await this.liveRunSnapshotDto(live.run, live.snapshot, live.startedAt);
+    return await this.snapshot({ taskId: snapshot.runId });
   }
 
   async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<string> {
@@ -494,6 +522,21 @@ export class ScrapeService {
   }
 
   private async createRun(input: ScrapeStartInput): Promise<ScrapeRunManifest> {
+    const configuration = structuredClone(await this.config.get());
+    if ("source" in input) {
+      const scope = createDirectoryScope(input.source, input.targetDir, configuration);
+      const root = await this.mediaRoots.registerPathIntent(scope.scanDir);
+      const output = await this.mediaRoots.registerPathIntent(scope.targetDir);
+      return await (await this.persistence.getState()).repositories.scrapeRuns.create({
+        rootId: root.id,
+        outputRootId: output.id,
+        outputRelativeDirectory: toRootRelativePath(output, scope.targetDir),
+        executionMode: "batch",
+        directoryScopeJson: JSON.stringify(scope),
+        configurationJson: JSON.stringify(configuration),
+        items: [],
+      });
+    }
     if (input.refs.length === 0) throw new Error("Scrape run requires at least one file");
     if (input.executionMode === "batch" && !input.outputRootId) {
       throw new Error("Batch scrapes require outputRootId");
@@ -507,6 +550,7 @@ export class ScrapeService {
       outputRootId: input.outputRootId ?? null,
       outputRelativeDirectory: input.outputRelativeDirectory || null,
       executionMode: input.executionMode,
+      configurationJson: JSON.stringify(configuration),
       items: refs.map((ref, ordinal) => ({
         ordinal,
         rootId: ref.rootId,
@@ -530,7 +574,7 @@ export class ScrapeService {
       ? await this.mediaRoots.get(manifest.requestedOutputRootId)
       : undefined;
     if (requestedOutputRoot) roots.set(requestedOutputRoot.id, requestedOutputRoot);
-    const configuration = await this.config.get();
+    const configuration = configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null"));
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
@@ -713,7 +757,7 @@ export class ScrapeService {
       const outputRoot = manifest.requestedOutputRootId
         ? await this.mediaRoots.get(manifest.requestedOutputRootId)
         : root;
-      const metadataRoot = await this.resolveMetadataRoot(outputRoot);
+      const metadataRoot = await this.resolveMetadataRoot(outputRoot, configuration);
       const runtimeResult = await runtime.prepare({
         configuration,
         root,
@@ -812,7 +856,10 @@ export class ScrapeService {
       const outputRoot = await this.mediaRoots.get(outputRef.rootId);
       const metadataRoot = result.nfo
         ? await this.mediaRoots.get(result.nfo.rootId)
-        : await this.resolveMetadataRoot(outputRoot);
+        : await this.resolveMetadataRoot(
+            outputRoot,
+            configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null")),
+          );
       nfoRelativePath = publication.nfoPath ? toRootRelativePath(metadataRoot, publication.nfoPath) : null;
       success = {
         plan: publication.plan,
@@ -1003,8 +1050,8 @@ export class ScrapeService {
     };
   }
 
-  private async resolveMetadataRoot(primaryRoot: MediaRoot): Promise<MediaRoot> {
-    const metadataPath = (await this.config.get()).paths.metadataPath.trim();
+  private async resolveMetadataRoot(primaryRoot: MediaRoot, configuration: Configuration): Promise<MediaRoot> {
+    const metadataPath = configuration.paths.metadataPath.trim();
     return metadataPath ? await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath }) : primaryRoot;
   }
 

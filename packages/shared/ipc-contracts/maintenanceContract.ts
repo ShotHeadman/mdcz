@@ -1,3 +1,4 @@
+import type { DirectorySource } from "../directoryTasks";
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "../maintenanceTasks";
@@ -6,7 +7,9 @@ import type { MaintenancePresetId } from "../types";
 
 export type MaintenanceIpcContract = {
   [IpcChannel.Maintenance_StartPreview]: IpcProcedure<
-    { refs?: RootFileRef[]; presetId?: MaintenancePresetId; outputRootId?: string; outputRelativeDirectory?: string },
+    | { rerunSessionId: string }
+    | { source: DirectorySource; targetDir?: string; presetId: MaintenancePresetId }
+    | { refs?: RootFileRef[]; presetId?: MaintenancePresetId; outputRootId?: string; outputRelativeDirectory?: string },
     { sessionId: string; snapshot: MaintenanceActiveSessionSnapshot }
   >;
   [IpcChannel.Maintenance_Apply]: IpcProcedure<

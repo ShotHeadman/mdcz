@@ -60,6 +60,37 @@ describe("ScraperService ref-native start", () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    "files",
+    "empty",
+    "missing",
+  ] as const)("accepts a directory task before filesystem discovery (%s)", async (kind) => {
+    const { directory, persistence, service } = await createHarness();
+    const source = join(directory, "source");
+    const targetDir = join(directory, "output");
+    if (kind !== "missing") await mkdir(source);
+    if (kind === "files") {
+      await mkdir(join(source, "nested"));
+      await writeFile(join(source, "nested", "ABC-123.mp4"), "video");
+      await writeFile(join(source, "nested", "trailer.mp4"), "sidecar");
+    }
+    const launch = await service.start({
+      mode: "directory",
+      source: { kind: "directory", scanDir: source, recursive: true },
+      targetDir,
+    });
+    expect(launch.snapshot.task.totalItems).toBeNull();
+    await service.waitForIdle();
+    const stored = await (await persistence.getState()).repositories.scrapeRuns.get(launch.taskId);
+    if (!stored.directoryScopeJson) throw new Error("Directory scope was not persisted");
+    expect(JSON.parse(stored.directoryScopeJson)).toMatchObject({ scanDir: source, recursive: true, targetDir });
+    expect(stored.configurationJson).not.toBeNull();
+    expect(stored.manifestFixedAt === null).toBe(kind === "missing");
+    expect(stored.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
+    expect(stored.disposition).toBe(kind === "empty" ? "completed" : "failed");
+    if (kind === "empty") expect(stored.attempts).toEqual([]);
+  });
+
   it("records a terminal batch failure when retry preparation finds a conflict", async () => {
     const { directory, persistence, service } = await createHarness();
     const source = join(directory, "source");
@@ -85,12 +116,13 @@ describe("ScraperService ref-native start", () => {
       await mkdir(dirname(file), { recursive: true });
       await writeFile(file, content);
     }
-    mockConfigManager({
+    const configuration = {
       ...defaultConfiguration,
       paths: { ...defaultConfiguration.paths, mediaPath: join(directory, "unrelated"), metadataPath: metadata },
       behavior: { ...defaultConfiguration.behavior, failedFileMove: true },
       scrape: { ...defaultConfiguration.scrape, threadNumber: 3 },
-    });
+    };
+    mockConfigManager(configuration);
     const libraryEntry = await state.repositories.library.upsertEntry({
       rootId: outputRoot.id,
       rootRelativePath: targetRelativePath,
@@ -103,6 +135,7 @@ describe("ScraperService ref-native start", () => {
       outputRootId: outputRoot.id,
       outputRelativeDirectory: "JAV_output",
       executionMode: "batch",
+      configurationJson: JSON.stringify(configuration),
       items: refs.map((ref, ordinal) => ({ ...ref, ordinal })),
     });
     for (const item of run.items) {
@@ -132,7 +165,7 @@ describe("ScraperService ref-native start", () => {
     const launch = await service.retry(run.id);
     await service.waitForIdle();
     expect(FileScraper.prototype.prepareFile).toHaveBeenCalledTimes(4);
-    const terminal = service.getSnapshot(launch.taskId);
+    const terminal = await service.getSnapshot(launch.taskId);
     expect(terminal?.task).toMatchObject({ status: "failed", failedCount: 1, skippedCount: 3 });
     expect(terminal?.task.error).toContain("目标目录已存在同名影片");
     expect(terminal?.items.find((item) => item.relativePath === "ABF-981.mp4")).toMatchObject({

@@ -7,6 +7,8 @@ export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error"
 interface WorkbenchSetupState {
   scanDir: string;
   recursive: boolean;
+  previewMode: boolean;
+  setPreviewMode: (previewMode: boolean) => void;
   committedPlanKey: string | null;
   warnings: { count: number; paths: string[] };
   setRecursive: (recursive: boolean) => void;
@@ -33,7 +35,9 @@ interface WorkbenchSetupState {
 
 export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set) => ({
   scanDir: "",
-  recursive: false,
+  previewMode: false,
+  setPreviewMode: (previewMode) => set({ previewMode }),
+  recursive: true,
   committedPlanKey: null,
   warnings: { count: 0, paths: [] },
   setRecursive: (recursive) => set({ recursive, scanStatus: "idle" }),

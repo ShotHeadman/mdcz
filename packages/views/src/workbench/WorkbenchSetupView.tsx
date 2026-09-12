@@ -1,7 +1,7 @@
 import { getMaintenancePresetMeta, MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import { Button, Checkbox, cn } from "@mdcz/ui";
-import { AlertCircle, Check, FolderOpen, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, Check, FolderOpen, Loader2 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { PathAutocompleteInput, type PathAutocompleteResult } from "../path";
 import { FloatingWorkbenchBar } from "./FloatingWorkbenchBar";
@@ -11,6 +11,8 @@ export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error"
 
 export interface WorkbenchSetupViewProps {
   mode: WorkbenchSetupMode;
+  previewMode?: boolean;
+  onExitPreview?: () => void;
   configLoading?: boolean;
   scanDir: string;
   recursive?: boolean;
@@ -144,7 +146,7 @@ function ScanningStatus({ scopeLabel }: { scopeLabel: string }) {
 
   return (
     <p role="status" className="mt-2 text-xs text-muted-foreground">
-      正在扫描（{scopeLabel}）· 已等待 {elapsedSeconds} 秒
+      正在扫描（{scopeLabel}）· 已耗时 {elapsedSeconds} 秒
     </p>
   );
 }
@@ -185,6 +187,8 @@ function MediaRow({
 
 export function WorkbenchSetupView({
   mode,
+  previewMode = false,
+  onExitPreview,
   configLoading = false,
   scanDir,
   recursive = false,
@@ -325,119 +329,127 @@ export function WorkbenchSetupView({
             </section>
           ) : null}
 
-          <section>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                  disabled={candidates.length === 0 || scanning}
-                  onCheckedChange={() => onToggleAll(!allSelected)}
-                />
+          <div className="mb-6 flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={refreshDisabled || scanning || startPending}
+              onClick={onRefreshScan}
+            >
+              {previewMode ? "刷新文件预览" : "预览并选择文件"}
+            </Button>
+            {previewMode ? (
+              <Button type="button" variant="ghost" disabled={startPending} onClick={onExitPreview}>
+                {scanning ? "停止预览，处理整个目录" : "处理整个目录"}
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                直接点击“开始”即可{mode === "scrape" ? "处理目录下的所有视频" : "对目录执行维护操作"}。
+              </p>
+            )}
+          </div>
+          {previewMode ? (
+            <section>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    disabled={candidates.length === 0 || scanning}
+                    onCheckedChange={() => onToggleAll(!allSelected)}
+                  />
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  {summary ? <span>{summary}</span> : null}
+                </div>
               </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                {summary ? <span>{summary}</span> : null}
-                {scanDir ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-quiet-sm"
-                    disabled={scanning || refreshDisabled}
-                    onClick={onRefreshScan}
-                  >
-                    <RefreshCw className={cn("h-4 w-4", scanning && "animate-spin")} />
-                    重新扫描
-                  </Button>
+
+              <div className="relative overflow-hidden rounded-quiet bg-surface-floating" aria-busy={scanning}>
+                <div
+                  className={cn(
+                    MEDIA_GRID_CLASS,
+                    "px-4 py-3 font-numeric text-[10px]/4 font-bold uppercase tracking-[0.16em] text-muted-foreground",
+                  )}
+                >
+                  <span />
+                  <span>文件</span>
+                  <span>类型</span>
+                  <span>大小</span>
+                </div>
+
+                {scanning && candidates.length === 0 && !showScanFeedback ? <div className="min-h-64" /> : null}
+
+                {scanning && candidates.length === 0 && showScanFeedback ? (
+                  <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                    <div className="text-sm font-medium">正在扫描媒体文件（{scopeLabel}）</div>
+                    <div className="max-w-md break-all font-mono text-xs">{scanDir}</div>
+                  </div>
+                ) : null}
+
+                {scanning && candidates.length > 0 && showScanFeedback ? (
+                  <div className="pointer-events-none absolute inset-x-4 top-12 z-10 flex justify-center">
+                    <div className="flex items-center gap-2 rounded-quiet-capsule bg-surface-floating/95 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)] ring-1 ring-border/45 backdrop-blur">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      正在扫描媒体文件...
+                    </div>
+                  </div>
+                ) : null}
+
+                {scanStatus === "error" && !scanning ? (
+                  <div className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 text-center">
+                    <AlertCircle className="h-8 w-8 text-destructive" />
+                    <div>
+                      <div className="font-semibold">扫描失败</div>
+                      <div className="mt-2 max-w-xl wrap-break-word text-sm text-muted-foreground">{scanError}</div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {!scanning && scanStatus !== "error" && !scanDir ? (
+                  <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                    <FolderOpen className="h-8 w-8" />
+                    <div className="text-sm font-medium">选择目录后，点击“预览并选择文件”查看可处理的媒体文件。</div>
+                  </div>
+                ) : null}
+
+                {!scanning && scanStatus === "success" && scanDir && candidates.length === 0 ? (
+                  <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                    <FolderOpen className="h-8 w-8" />
+                    <div className="text-sm font-medium">
+                      {recursive ? "未找到支持的视频" : "当前目录未找到视频，可勾选“包含子目录”"}
+                    </div>
+                    <div className="max-w-xl break-all font-mono text-xs">{scanDir}</div>
+                    {supportedExtensions.length > 0 ? (
+                      <div className="text-xs">支持类型: {supportedExtensions.join(", ")}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {candidates.length > 0 ? (
+                  <div className={cn("max-h-[48vh] overflow-y-auto transition-opacity", scanning && "opacity-55")}>
+                    {candidates.map((candidate) => (
+                      <MediaRow
+                        key={candidate.path}
+                        candidate={candidate}
+                        selected={selectedPathSet.has(candidate.path)}
+                        disabled={startPending || scanning}
+                        formatBytes={formatBytes}
+                        onToggle={() => onToggleCandidate(candidate.path)}
+                      />
+                    ))}
+                  </div>
                 ) : null}
               </div>
-            </div>
-
-            <div className="relative overflow-hidden rounded-quiet bg-surface-floating" aria-busy={scanning}>
-              <div
-                className={cn(
-                  MEDIA_GRID_CLASS,
-                  "px-4 py-3 font-numeric text-[10px]/4 font-bold uppercase tracking-[0.16em] text-muted-foreground",
-                )}
-              >
-                <span />
-                <span>文件</span>
-                <span>类型</span>
-                <span>大小</span>
-              </div>
-
-              {scanning && candidates.length === 0 && !showScanFeedback ? <div className="min-h-64" /> : null}
-
-              {scanning && candidates.length === 0 && showScanFeedback ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                  <div className="text-sm font-medium">正在扫描媒体文件（{scopeLabel}）</div>
-                  <div className="max-w-md break-all font-mono text-xs">{scanDir}</div>
-                </div>
-              ) : null}
-
-              {scanning && candidates.length > 0 && showScanFeedback ? (
-                <div className="pointer-events-none absolute inset-x-4 top-12 z-10 flex justify-center">
-                  <div className="flex items-center gap-2 rounded-quiet-capsule bg-surface-floating/95 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)] ring-1 ring-border/45 backdrop-blur">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    正在刷新目录
-                  </div>
-                </div>
-              ) : null}
-
-              {scanStatus === "error" && !scanning ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 text-center">
-                  <AlertCircle className="h-8 w-8 text-destructive" />
-                  <div>
-                    <div className="font-semibold">扫描失败</div>
-                    <div className="mt-2 max-w-xl wrap-break-word text-sm text-muted-foreground">{scanError}</div>
-                  </div>
-                </div>
-              ) : null}
-
-              {!scanning && scanStatus !== "error" && !scanDir ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-                  <FolderOpen className="h-8 w-8" />
-                  <div className="text-sm font-medium">选择扫描目录后，会在这里列出可处理的媒体文件。</div>
-                </div>
-              ) : null}
-
-              {!scanning && scanStatus === "success" && scanDir && candidates.length === 0 ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-                  <FolderOpen className="h-8 w-8" />
-                  <div className="text-sm font-medium">
-                    {recursive ? "未找到支持的视频" : "当前目录未找到视频，可勾选“包含子目录”"}
-                  </div>
-                  <div className="max-w-xl break-all font-mono text-xs">{scanDir}</div>
-                  {supportedExtensions.length > 0 ? (
-                    <div className="text-xs">支持类型: {supportedExtensions.join(", ")}</div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {candidates.length > 0 ? (
-                <div className={cn("max-h-[48vh] overflow-y-auto transition-opacity", scanning && "opacity-55")}>
-                  {candidates.map((candidate) => (
-                    <MediaRow
-                      key={candidate.path}
-                      candidate={candidate}
-                      selected={selectedPathSet.has(candidate.path)}
-                      disabled={startPending || scanning}
-                      formatBytes={formatBytes}
-                      onToggle={() => onToggleCandidate(candidate.path)}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </section>
+            </section>
+          ) : null}
         </main>
       </div>
 
       {scanDir ? (
         <FloatingWorkbenchBar contentClassName="mx-auto flex w-fit max-w-[min(92vw,26rem)] items-center justify-between gap-3 px-3 py-2.5 md:max-w-[26rem] md:px-4">
           <div className="min-w-0 font-numeric text-sm font-extrabold tracking-tight">
-            已选 {selectedPaths.length} / {candidates.length} 个文件
-            {selectedSize > 0 ? (
+            {previewMode ? `已选 ${selectedPaths.length} / ${candidates.length} 个文件` : `整个目录 · ${scopeLabel}`}
+            {previewMode && selectedSize > 0 ? (
               <span className="ml-2 text-xs font-bold text-muted-foreground">
                 {formatBytes(selectedSize, { trimTrailingZeros: true })}
               </span>

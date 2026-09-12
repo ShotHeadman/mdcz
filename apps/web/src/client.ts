@@ -232,6 +232,7 @@ export const api: ServerApiContract = {
     execute: (input) => trpcMutation("tools.execute", input),
   },
   scans: {
+    cancelCandidates: (input) => trpcMutation("scans.cancelCandidates", input),
     candidates: (input) => trpcQuery("scans.candidates", input),
     detail: (input) => trpcQuery("scans.detail", input),
     events: (input) => trpcQuery("scans.events", input),

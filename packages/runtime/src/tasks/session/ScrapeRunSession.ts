@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import type { DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../../network/networkExecution";
@@ -8,6 +9,7 @@ export const MAX_LIVE_SCRAPE_LOGS = 200;
 
 export type ScrapeRunLiveStatus =
   | "queued"
+  | "discovering"
   | "running"
   | "paused"
   | "stopping"
@@ -42,9 +44,9 @@ export type ScrapeRunItemInitialState<TManualScrape = unknown> = Pick<
 };
 
 export interface ScrapeRunProgress {
-  percent: number;
+  percent: number | null;
   completedItems: number;
-  totalItems: number;
+  totalItems: number | null;
 }
 
 export interface ScrapeRunStageSnapshot {
@@ -69,6 +71,7 @@ export interface ScrapeRunSnapshot<TManualScrape = unknown> {
   revision: number;
   status: ScrapeRunLiveStatus;
   progress: ScrapeRunProgress;
+  discovery?: DiscoveryProgress;
   items: ScrapeRunItemSnapshot<TManualScrape>[];
   latestStage: ScrapeRunStageSnapshot | null;
   logs: ScrapeRunLogEntry[];

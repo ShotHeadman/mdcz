@@ -41,6 +41,8 @@ export const buildScrapeSnapshot = (overrides: Partial<ScrapeRunSnapshotDto> = {
     executionGeneration: 0,
     continuity: "final",
   },
+  directorySource: null,
+  discovery: null,
   progress: { percent: 100, completedItems: 1, totalItems: 1 },
   items: [buildScrapeLiveItem()],
   latestStage: null,

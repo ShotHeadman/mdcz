@@ -60,6 +60,11 @@ export class ConfiguredMediaRootService {
     };
   }
 
+  async registerPathIntent(hostPath: string): Promise<MediaRoot> {
+    this.validatePathSyntax(hostPath.trim());
+    return await this.registry.ensurePath(normalizeHostPath(hostPath));
+  }
+
   async ensurePathRecord(input: MediaRootEnsurePathInput): Promise<MediaRoot> {
     const parsed = mediaRootEnsurePathInputSchema.parse(input);
     const normalizedPath = await this.validateMountedFilesystemPath(parsed.hostPath);

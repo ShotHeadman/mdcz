@@ -117,7 +117,7 @@ export const selectScrapeResults = (state: ScrapeState): ScrapeResult[] => {
 export const selectScrapeStatus = (state: ScrapeState): ScrapeStatus => {
   const status = selectScrapeSnapshot(state)?.task.status;
   if (status === "paused" || status === "stopping") return status;
-  return status === "queued" || status === "running" ? "running" : "idle";
+  return status === "queued" || status === "discovering" || status === "running" ? "running" : "idle";
 };
 
 /** Identifies terminal states that need distinct result messaging. */
@@ -129,8 +129,7 @@ export const selectScrapeOutcome = (state: ScrapeState): ScrapeOutcome => {
 };
 
 export const selectIsScraping = (state: ScrapeState): boolean => selectScrapeStatus(state) !== "idle";
-export const selectScrapeHasWork = (state: ScrapeState): boolean =>
-  selectIsScraping(state) || selectScrapeResults(state).length > 0;
+export const selectScrapeHasWork = (state: ScrapeState): boolean => selectIsScraping(state) || state.snapshot !== null;
 export const selectScrapeProgress = (state: ScrapeState): number => selectScrapeSnapshot(state)?.progress.percent ?? 0;
 export const selectFailedCount = (state: ScrapeState): number =>
   selectScrapeSnapshot(state)?.items.filter((item) => item.status === "failed").length ?? 0;

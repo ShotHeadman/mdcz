@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyItemResult,
@@ -16,6 +17,7 @@ import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 
 export const ACTIVE_MAINTENANCE_STATUSES: readonly MaintenanceSessionStatus[] = [
   "queued",
+  "discovering",
   "running",
   "paused",
   "stopping",
@@ -37,6 +39,9 @@ export class StaleMaintenanceGenerationError extends Error {}
 
 export class MaintenanceSession {
   readonly id: string;
+  readonly directoryScope?: DirectoryTaskScope;
+  private discoveryValue?: DiscoveryProgress;
+  private manifestFixed: boolean;
   readonly rootId: string;
   readonly presetId: MaintenancePresetId;
   readonly outputRootId: string;
@@ -53,6 +58,7 @@ export class MaintenanceSession {
 
   constructor(input: {
     id: string;
+    directoryScope?: DirectoryTaskScope;
     rootId: string;
     presetId: MaintenancePresetId;
     refs: readonly MaintenanceSessionRef[];
@@ -64,6 +70,8 @@ export class MaintenanceSession {
   }) {
     const now = input.now ?? new Date();
     this.id = input.id;
+    this.directoryScope = input.directoryScope;
+    this.manifestFixed = !input.directoryScope;
     this.rootId = input.rootId;
     this.presetId = input.presetId;
     this.outputRootId = input.outputRootId ?? input.rootId;
@@ -119,6 +127,27 @@ export class MaintenanceSession {
     };
   }
 
+  startDiscovery(generation: number): void {
+    this.assertGeneration(generation, ["running"]);
+    this.statusValue = "discovering";
+    this.touch();
+  }
+
+  recordDiscovery(generation: number, progress: DiscoveryProgress): void {
+    this.assertGeneration(generation, ["discovering", "stopping"]);
+    this.discoveryValue = structuredClone(progress);
+    this.touch();
+  }
+
+  fixDiscoveredRefs(generation: number, refs: readonly MaintenanceSessionRef[]): void {
+    this.assertGeneration(generation, ["discovering"]);
+    if (this.manifestFixed) throw new Error("维护文件清单已固定");
+    this.refsValue = refs.map((ref) => ({ ...ref }));
+    this.manifestFixed = true;
+    this.statusValue = "running";
+    this.touch();
+  }
+
   pause(): boolean {
     if (this.statusValue !== "queued" && this.statusValue !== "running") return false;
     this.statusValue = "paused";
@@ -167,7 +196,7 @@ export class MaintenanceSession {
   }
 
   beginStopping(error: string): number {
-    if (this.statusValue === "completed" || this.statusValue === "failed" || this.statusValue === "stopping") {
+    if (["completed", "failed", "stopped", "interrupted", "stopping"].includes(this.statusValue)) {
       return this.generationValue;
     }
     this.statusValue = "stopping";
@@ -180,8 +209,8 @@ export class MaintenanceSession {
     this.generationValue += 1;
   }
 
-  finish(generation: number, status: "completed" | "failed", error: string | null): void {
-    this.assertGeneration(generation, ["running", "stopping"]);
+  finish(generation: number, status: "completed" | "failed" | "stopped" | "interrupted", error: string | null): void {
+    this.assertGeneration(generation, ["running", "discovering", "stopping"]);
     const now = new Date();
     this.statusValue = status;
     this.errorValue = error;
@@ -208,6 +237,12 @@ export class MaintenanceSession {
       };
       this.previews.set(item.id, item);
     }
+  }
+
+  initializeEntries(generation: number, entries: readonly LocalScanEntry[]): void {
+    this.assertGeneration(generation, ["running"]);
+    if (this.previews.size) throw new Error("维护文件清单已初始化");
+    this.populateInitialEntries(entries, new Date());
   }
 
   markPreviewProcessing(
@@ -383,7 +418,7 @@ export class MaintenanceSession {
       });
   }
 
-  progress(): MaintenanceSessionProgress {
+  progress(): MaintenanceSessionProgress & { totalEntries: number } {
     if (this.phaseValue === "preview") {
       const previews = [...this.previews.values()];
       const completed = previews.filter((preview) => preview.status === "ready" || preview.status === "blocked");
@@ -410,6 +445,7 @@ export class MaintenanceSession {
       rootId: this.rootId,
       status: this.statusValue,
       ...this.progress(),
+      totalEntries: this.manifestFixed ? this.progress().totalEntries : null,
       createdAt: new Date(this.timestamps.createdAt),
       updatedAt: new Date(this.timestamps.updatedAt),
       startedAt: this.timestamps.startedAt ? new Date(this.timestamps.startedAt) : null,
@@ -420,6 +456,9 @@ export class MaintenanceSession {
 
   snapshot(): MaintenanceActiveSessionSnapshot {
     return {
+      directoryScope: this.directoryScope,
+      discovery: this.discoveryValue ? structuredClone(this.discoveryValue) : undefined,
+      manifestFixed: this.manifestFixed,
       id: this.id,
       rootId: this.rootId,
       outputRootId: this.outputRootId,
@@ -430,6 +469,7 @@ export class MaintenanceSession {
       generation: this.generationValue,
       refs: this.refsValue.map((ref) => ({ ...ref })),
       ...this.progress(),
+      totalEntries: this.manifestFixed ? this.progress().totalEntries : null,
       timestamps: {
         createdAt: new Date(this.timestamps.createdAt),
         updatedAt: new Date(this.timestamps.updatedAt),

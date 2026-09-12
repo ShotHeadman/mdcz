@@ -1,5 +1,6 @@
 import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@mdcz/shared/config";
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import type { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
@@ -84,6 +85,8 @@ export const ipc = {
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
     getStatus: (taskId?: string) => client[IpcChannel.Scraper_GetStatus]({ taskId }),
+    rerunDirectory: (runId: string) =>
+      launchScrape(() => client[IpcChannel.Scraper_Retry]({ runId, rediscover: true })),
     retry: (runId: string, itemIds?: readonly string[]) =>
       launchScrape(
         () => client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
@@ -103,8 +106,10 @@ export const ipc = {
     testLlm: (input: TranslateTestLlmInput) => client[IpcChannel.Translate_TestLlm](input),
   },
   file: {
-    listMediaCandidates: (dirPath: string, recursive: boolean, excludeDirPaths?: readonly string[]) =>
+    cancelMediaCandidates: (scanId: string) => client[IpcChannel.File_CancelMediaCandidates]({ scanId }),
+    listMediaCandidates: (dirPath: string, recursive: boolean, excludeDirPaths?: readonly string[], scanId?: string) =>
       client[IpcChannel.File_ListMediaCandidates]({
+        scanId,
         dirPath,
         recursive,
         excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
@@ -141,6 +146,17 @@ export const ipc = {
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
   maintenance: {
+    rerunDirectory: async (rerunSessionId: string) => {
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ rerunSessionId });
+      useMaintenanceStore.getState().setSnapshot(response.snapshot);
+    },
+    directory: async (source: DirectorySource, presetId: MaintenancePresetId, targetDir: string) => {
+      const previous = useMaintenanceStore.getState().snapshot;
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ source, presetId, targetDir });
+      if (useMaintenanceStore.getState().snapshot === previous)
+        useMaintenanceStore.getState().setSnapshot(response.snapshot);
+      return response;
+    },
     preview: async (
       refs: RootFileRef[],
       presetId: MaintenancePresetId,

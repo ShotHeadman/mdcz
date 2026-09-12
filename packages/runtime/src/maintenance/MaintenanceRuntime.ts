@@ -135,13 +135,18 @@ export class MaintenanceRuntime {
     private readonly sourceMediaPath?: string,
   ) {}
 
+  async getConfiguration(): Promise<Configuration> {
+    return structuredClone(await this.deps.config.get());
+  }
+
   async createSession(input: {
+    configuration?: Configuration;
     root: MediaRoot;
     outputRoot: MediaRoot;
     outputRelativeDirectory: string;
     registerRoot: (hostPath: string) => Promise<unknown>;
   }): Promise<MaintenanceRuntime> {
-    const config = structuredClone(await this.deps.config.get());
+    const config = structuredClone(input.configuration ?? (await this.deps.config.get()));
     const sourceMediaPath = config.paths.mediaPath.trim() || input.root.hostPath;
     const outputBaseDirectory = input.outputRelativeDirectory
       ? resolveRootRelativePath(input.outputRoot, input.outputRelativeDirectory)
