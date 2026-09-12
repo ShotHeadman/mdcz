@@ -650,7 +650,7 @@ describe("buildServer composition integration", () => {
     expect(recentAcquisitions.map((entry: { id: string }) => entry.id)).not.toContain("hidden-entry");
   });
 
-  it("paginates library entries and resolves availability outside the list request", async () => {
+  it.each([false, true])("paginates movies and checks each file (partially available: %s)", async (partial) => {
     const root = await createTempRoot("library-page-root");
     await writeFile(join(root, "present-a.mp4"), "a");
     await writeFile(join(root, "present-b.mp4"), "b");
@@ -668,9 +668,18 @@ describe("buildServer composition integration", () => {
         rootId,
         rootRelativePath: relativePath,
         number: id,
+        size: 1,
         createdAt: new Date(createdAt),
-        sourceRunId: `${id}-run`,
-        sourceOutcomeId: `${id}-outcome`,
+      });
+    }
+
+    if (partial) {
+      await writeFile(join(root, "present-c.mp4"), "present");
+      await state.repositories.library.upsertEntry({
+        id: "entry-c",
+        rootId,
+        rootRelativePath: "present-c.mp4",
+        size: 7,
       });
     }
 
@@ -699,28 +708,37 @@ describe("buildServer composition integration", () => {
       entries: [
         expect.objectContaining({
           id: "entry-c",
-          available: null,
-          runId: "entry-c-run",
-          scrapeOutcomeId: "entry-c-outcome",
+          available: "unchecked",
+          fileRefs: expect.arrayContaining([expect.objectContaining({ runId: null, scrapeOutcomeId: null })]),
         }),
-        expect.objectContaining({ id: "entry-b", available: null }),
+        expect.objectContaining({ id: "entry-b", available: "unchecked" }),
       ],
       hasMore: true,
       total: 3,
+      fileCount: partial ? 4 : 3,
+      totalBytes: partial ? 10 : 3,
     });
     expect(firstPage.entries[0]).not.toHaveProperty("taskId");
     expect(firstPage.entries[0]).not.toHaveProperty("scrapeOutputId");
     expect(firstPage.nextCursor).toEqual(expect.any(String));
     expect(secondPage).toMatchObject({
-      entries: [expect.objectContaining({ id: "entry-a", available: null })],
+      entries: [expect.objectContaining({ id: "entry-a", available: "unchecked" })],
       hasMore: false,
       nextCursor: null,
       total: 3,
     });
     expect(availabilityResponse.json().result.data.entries).toEqual([
-      expect.objectContaining({ id: "entry-c", available: false }),
-      expect.objectContaining({ id: "entry-b", available: true }),
+      expect.objectContaining({ id: "entry-c", available: partial ? "partial" : "unavailable" }),
+      expect.objectContaining({ id: "entry-b", available: "available" }),
     ]);
+    expect(availabilityResponse.json().result.data.entries[0].fileRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          available: false,
+          availabilityError: expect.stringContaining("文件缺失，仅保留媒体库记录"),
+        }),
+      ]),
+    );
   });
 
   it("collects deduplicated actor profiles from crawler payloads and tolerates unusable ones", async () => {

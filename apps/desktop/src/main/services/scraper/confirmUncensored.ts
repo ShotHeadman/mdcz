@@ -44,17 +44,21 @@ export const confirmUncensoredRunItems = async (input: {
   });
 
   const roots = new Map<string, MediaRoot>((await state.repositories.mediaRoots.list()).map((root) => [root.id, root]));
-  const resolved = selected.map(({ selection, item, outcome }) => {
-    const { outputRootId, outputRelativePath } = outcome;
+  const files = await state.repositories.library.resolveUncensoredFiles(
+    selected.map(({ selection, outcome }) => ({ outcomeId: outcome.id, choice: selection.choice })),
+  );
+  const snapshots = new Map(files.map(({ entry }) => [entry.id, JSON.stringify(entry.files)]));
+  const resolved = files.map(({ choice, file, outcome, entry }) => {
+    const outputRootId = file.rootId;
+    const outputRelativePath = file.rootRelativePath;
     if (!outputRootId || !outputRelativePath) {
       throw new Error(`Successful scrape outcome is missing output facts: ${outcome.id}`);
     }
     const outputRoot = roots.get(outputRootId);
-    const nfoRoot = roots.get(outcome.nfoRootId ?? outputRootId);
-    if (!outputRoot || !nfoRoot) {
+    if (!outputRoot) {
       throw new Error(`Scrape output root disappeared before uncensored confirmation: ${outcome.id}`);
     }
-    return { selection, item, outcome, outputRootId, outputRelativePath, outputRoot, nfoRoot };
+    return { selection: { choice }, file, outcome, outputRootId, outputRelativePath, outputRoot, entry };
   });
 
   const locations = await registeredMediaLocations(
@@ -63,12 +67,12 @@ export const confirmUncensoredRunItems = async (input: {
     resolved.map(({ outputRoot, outputRelativePath }) => resolveRootRelativePath(outputRoot, outputRelativePath)),
   );
   const confirmation = await confirmUncensoredOutputs(
-    resolved.map(({ selection, item, outcome, outputRelativePath, outputRoot, nfoRoot }) => ({
-      fileId: item.id,
+    resolved.map(({ selection, file, outputRelativePath, outputRoot, entry }) => ({
+      fileId: file.id,
       videoPath: resolveRootRelativePath(outputRoot, outputRelativePath),
-      nfoPath: outcome.nfoRelativePath ? resolveRootRelativePath(nfoRoot, outcome.nfoRelativePath) : undefined,
-      crawlerData: outcome.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(outcome.crawlerDataJson)) : undefined,
-      groupId: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.groupId,
+      nfoPath: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.nfoPath,
+      crawlerData: entry.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(entry.crawlerDataJson)) : undefined,
+      groupId: file.itemId,
       registeredAssets: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.assets,
       metadataVideoPath: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.strmPath,
       choice: selection.choice,
@@ -83,7 +87,7 @@ export const confirmUncensoredRunItems = async (input: {
       publish: async ({ operationId, plan, updates }) => {
         const revisions = await Promise.all(
           updates.map(async (update) => {
-            const target = resolved.find(({ item }) => item.id === update.fileId);
+            const target = resolved.find(({ file }) => file.id === update.fileId);
             if (!target) throw new Error(`Uncensored confirmation item disappeared: ${update.fileId}`);
             const { outcome, outputRootId, outputRelativePath } = target;
             const [entry, fileStats] = await Promise.all([
@@ -104,6 +108,11 @@ export const confirmUncensoredRunItems = async (input: {
           journal: state.repositories.publicationJournal,
           outputs: state.repositories.library,
           repairIssues: state.repositories.libraryRepairIssues,
+          validate: async () => {
+            for (const id of new Set(revisions.map((revision) => revision.libraryEntry.id)))
+              if (JSON.stringify((await state.repositories.library.getEntryById(id)).files) !== snapshots.get(id))
+                throw new Error("影片文件集合已变化，请重新确认");
+          },
           resolveRoot: async (rootId) => {
             const root = roots.get(rootId);
             if (!root) throw new Error(`Publication root not found: ${rootId}`);

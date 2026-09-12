@@ -8,7 +8,7 @@ import type { PublicationFileSystem, PublicationOutputPort, PublicationPlan, Pub
 /** Captured under publication locks; the returned write runs in the journal transaction. */
 export const prepareOutputRegistration = async (
   plan: PublicationPlan,
-  options: Pick<PublishMediaOptions<unknown>, "outputs" | "resolveRoot">,
+  options: Pick<PublishMediaOptions<unknown>, "outputs" | "ownerId" | "resolveRoot">,
   fileSystem: PublicationFileSystem,
 ): Promise<{ register(): void; assertCurrent(): Promise<void> } | undefined> => {
   const store = options.outputs;
@@ -63,11 +63,19 @@ export const prepareOutputRegistration = async (
     if (new Set(references.map((file) => file.itemId)).size > 1)
       throw new PublicationConflictError(absolute(media.source), absolute(media.target), "同一实际媒体被多个条目引用");
   }
-  const owners = new Set(
-    (plan.media ?? []).flatMap((media) =>
+  const owners = new Set([
+    ...(options.ownerId ? [options.ownerId] : []),
+    ...(plan.media ?? []).flatMap((media) =>
       snapshot.files.filter((file) => key(file) === key(media.source)).map((file) => file.itemId),
     ),
-  );
+  ]);
+  if (options.ownerId && [...owners].some((owner) => owner !== options.ownerId)) {
+    throw new PublicationConflictError(
+      plan.media?.[0] ? absolute(plan.media[0].source) : plan.operationId,
+      plan.media?.[0] ? absolute(plan.media[0].target) : plan.operationId,
+      "发布声明的影片归属与已登记媒体不一致",
+    );
+  }
   if (!plan.media?.length) {
     const referenced = snapshot.assets.filter(
       (asset) =>
@@ -154,7 +162,7 @@ export const prepareOutputRegistration = async (
       .map((asset) => asset.kind),
     existingOwners: snapshot.assets
       .filter((asset) => asset.published && key(asset) === key(target) && owners.has(asset.itemId))
-      .map((asset) => asset.itemId),
+      .map((asset) => ({ itemId: asset.itemId, fileId: asset.fileId })),
   }));
   const sourceKeys = new Set((plan.media ?? []).map((media) => key(media.source)));
   const targetPaths = new Set([...targets, ...retainedOutputs].map((ref) => key(ref)));
@@ -198,7 +206,7 @@ export const prepareOutputRegistration = async (
       const outputs: Parameters<PublicationOutputPort["registerPublishedOutputs"]>[0] = [];
       for (const registration of registrations) {
         const media = registration.media.length ? registration.media : (plan.media ?? []);
-        const ids = media.length
+        const outputOwners = media.length
           ? media.flatMap((participant) =>
               current.files
                 .filter(
@@ -206,18 +214,35 @@ export const prepareOutputRegistration = async (
                     refKey(file) === refKey(participant.target) ||
                     physical.get(refKey(file)) === key(participant.target),
                 )
-                .map((file) => file.itemId),
+                .map((file) => ({ itemId: file.itemId, fileId: file.fileId ?? null })),
             )
           : registration.existingOwners;
-        if (!ids.length) {
+        if (!outputOwners.length && options.ownerId) {
+          outputOwners.push({ itemId: options.ownerId, fileId: null });
+        }
+        if (!outputOwners.length) {
           if (plan.editFiles?.some((ref) => refKey(ref) === refKey(registration.target))) continue;
           throw new Error(`发布输出缺少媒体归属：${absolute(registration.target)}`);
         }
         const kinds = registration.kinds.length
           ? registration.kinds
           : [extname(registration.target.relativePath).toLowerCase() === ".nfo" ? "nfo" : "sidecar"];
-        for (const itemId of new Set(ids))
-          for (const kind of new Set(kinds)) outputs.push({ ...registration.target, itemId, kind });
+        for (const kind of new Set(kinds)) {
+          const fileScoped = kind === "strm" || kind === "subtitle";
+          for (const owner of new Map(
+            outputOwners.map((value) => [fileScoped ? `${value.itemId}:${value.fileId ?? ""}` : value.itemId, value]),
+          ).values()) {
+            if (fileScoped && !owner.fileId) {
+              throw new Error(`发布文件资源缺少文件归属：${absolute(registration.target)}`);
+            }
+            outputs.push({
+              ...registration.target,
+              itemId: owner.itemId,
+              fileId: fileScoped ? owner.fileId : null,
+              kind,
+            });
+          }
+        }
       }
       store.registerPublishedOutputs(outputs);
     },

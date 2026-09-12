@@ -1,6 +1,5 @@
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { isPathInside } from "@mdcz/media-store";
 import { toErrorMessage } from "@mdcz/shared/error";
 import {
   buildGeneratedVideoSidecarTargetPath,
@@ -96,28 +95,6 @@ export class FileMover {
       }
 
       throw new Error(`Failed to move bundled media: ${message}`);
-    }
-  }
-
-  async cleanupEmptyAncestors(dirPath: string, stopAt: string): Promise<void> {
-    const normalizedStop = resolve(stopAt);
-    let current = resolve(dirPath);
-
-    while (true) {
-      if (!isPathInside(normalizedStop, current) || current === normalizedStop) {
-        break;
-      }
-      try {
-        const entries = await readdir(current);
-        if (entries.length > 0) {
-          break;
-        }
-        await rm(current, { recursive: true });
-        this.logger.info(`Deleted empty folder: ${current}`);
-        current = dirname(current);
-      } catch {
-        break;
-      }
     }
   }
 

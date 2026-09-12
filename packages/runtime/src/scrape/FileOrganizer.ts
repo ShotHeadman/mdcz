@@ -66,7 +66,6 @@ interface ScrapeFileTransitionOptions {
   configuration: Configuration;
   failureRootPath: string;
   sourcePath: string;
-  sourceRootPath: string;
 }
 
 export class FileOrganizer {
@@ -199,16 +198,7 @@ export class FileOrganizer {
         if (!options.configuration.behavior.failedFileMove) return;
         await this.moveToFailedFolder(options.sourcePath, options.failureRootPath, options.configuration);
       },
-      succeeded: async () => {
-        if (!options.configuration.behavior.successFileMove || !options.configuration.behavior.deleteEmptyFolder)
-          return;
-        await this.cleanupEmptySourceDirectories(options.sourcePath, options.sourceRootPath);
-      },
     };
-  }
-
-  async cleanupEmptySourceDirectories(sourcePath: string, sourceRootPath: string): Promise<void> {
-    await this.fileMover.cleanupEmptyAncestors(dirname(sourcePath), resolve(sourceRootPath));
   }
 
   async moveToFailedFolder(sourcePath: string, failureRootPath: string, config: Configuration): Promise<string> {

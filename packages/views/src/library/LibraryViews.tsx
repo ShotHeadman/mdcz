@@ -1,5 +1,6 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
 import { formatBytes } from "@mdcz/shared/format";
+import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/serverDtos";
 import {
   Badge,
   Button,
@@ -19,7 +20,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, Database, FolderOpen, LoaderCircle, RefreshCw, Search, Trash2 } from "lucide-react";
 import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-export type LibraryAvailabilityFilter = "all" | "available" | "unavailable";
+export type LibraryAvailabilityFilter = "all" | LibraryEntryDto["available"];
 
 export interface LibraryIndexViewProps {
   className?: string;
@@ -32,38 +33,34 @@ export interface LibraryIndexViewProps {
   hasMore?: boolean;
   query: string;
   total: number;
+  fileCount?: number;
+  totalBytes?: number;
   availabilityFilter: LibraryAvailabilityFilter;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (entry: LibraryEntryDto) => void;
+  onOpenFolder?: (path: string) => void;
+  onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
+  onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
   onLoadMore?: () => void;
   onQueryChange: (value: string) => void;
   onRefresh: () => void;
 }
 
 export interface LibraryDeleteDialogProps {
+  entry?: LibraryEntryDto | null;
   open: boolean;
-  deleteMode?: LibraryDeleteMode;
-  showFileDeleteModes?: boolean;
   submitting?: boolean;
-  onDeleteModeChange?: (value: LibraryDeleteMode) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }
-
-export type LibraryDeleteMode = "none" | "assets" | "all";
-
-const libraryDeleteModes: Array<{ description: string; label: string; value: LibraryDeleteMode }> = [
-  { value: "none", label: "仅移除记录", description: "保留视频、NFO、图片及其他附属文件。" },
-  { value: "assets", label: "同时删除附属文件", description: "删除 NFO、图片等附属文件，保留主视频文件。" },
-  { value: "all", label: "同时删除全部文件", description: "删除主视频及其 NFO、图片等所有已登记文件。" },
-];
 
 const availabilityFilters: Array<{ label: string; value: LibraryAvailabilityFilter }> = [
   { label: "全部", value: "all" },
   { label: "可用", value: "available" },
   { label: "不可用", value: "unavailable" },
+  { label: "部分可用", value: "partial" },
+  { label: "未检查", value: "unchecked" },
 ];
 
 export function LibraryIndexView({
@@ -77,11 +74,15 @@ export function LibraryIndexView({
   hasMore = false,
   query,
   total,
+  fileCount,
+  totalBytes,
   availabilityFilter,
   linkComponent: LinkComponent,
   onAvailabilityFilterChange,
   onDeleteEntry,
   onOpenFolder,
+  onRemoveFile,
+  onRelinkFile,
   onLoadMore,
   onQueryChange,
   onRefresh,
@@ -96,13 +97,10 @@ export function LibraryIndexView({
     let totalSize = 0;
     const filteredEntries: LibraryEntryDto[] = [];
     for (const entry of entries) {
-      if (entry.available === true) availableCount += 1;
-      else if (entry.available === false) unavailableCount += 1;
-      else unknownCount += 1;
-      const matchesAvailability =
-        availabilityFilter === "all" ||
-        (availabilityFilter === "available" && entry.available === true) ||
-        (availabilityFilter === "unavailable" && entry.available === false);
+      if (entry.available === "available") availableCount += 1;
+      else if (entry.available === "unavailable") unavailableCount += 1;
+      else if (entry.available === "unchecked") unknownCount += 1;
+      const matchesAvailability = availabilityFilter === "all" || availabilityFilter === entry.available;
       if (matchesAvailability) {
         filteredEntries.push(entry);
         totalSize += Number.isFinite(entry.size) ? entry.size : 0;
@@ -131,11 +129,15 @@ export function LibraryIndexView({
       <main className={cn("h-full overflow-y-auto bg-surface-canvas text-foreground", className)} ref={mainRef}>
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-6 py-8 lg:px-12 lg:py-10">
           <header className="flex flex-wrap items-center justify-end gap-x-10 gap-y-4">
-            <Metric label="总数" value={total} />
+            <Metric label="影片数" value={total} />
+            <Metric
+              label="文件数"
+              value={fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0)}
+            />
             <Metric label="可用" value={availableCount} />
             <Metric className="text-amber-600 dark:text-amber-400" label="不可用" value={unavailableCount} />
             <Metric label={isAvailabilityLoading ? "检查中" : "未检查"} value={unknownCount} />
-            <Metric label="大小" value={formatBytes(totalSize)} />
+            <Metric label="全部文件大小" value={formatBytes(totalBytes ?? totalSize)} />
           </header>
 
           {errorMessage && (
@@ -201,6 +203,8 @@ export function LibraryIndexView({
                         linkComponent={LinkComponent}
                         onDeleteEntry={onDeleteEntry}
                         onOpenFolder={onOpenFolder}
+                        onRemoveFile={onRemoveFile}
+                        onRelinkFile={onRelinkFile}
                       />
                     </div>
                   );
@@ -240,11 +244,9 @@ export function LibraryIndexView({
 }
 
 export function LibraryDeleteDialog({
+  entry,
   open,
-  deleteMode = "none",
-  showFileDeleteModes = false,
   submitting = false,
-  onDeleteModeChange,
   onCancel,
   onConfirm,
 }: LibraryDeleteDialogProps) {
@@ -261,30 +263,12 @@ export function LibraryDeleteDialog({
         <DialogHeader>
           <DialogTitle>从媒体库移除</DialogTitle>
         </DialogHeader>
-        {showFileDeleteModes ? (
-          <div className="grid gap-2" role="radiogroup" aria-label="删除范围">
-            {libraryDeleteModes.map((mode) => (
-              <label
-                className="flex cursor-pointer items-start gap-3 rounded-quiet border border-border/60 bg-surface-low px-4 py-3"
-                key={mode.value}
-              >
-                <input
-                  checked={deleteMode === mode.value}
-                  className="mt-1"
-                  disabled={submitting}
-                  name="library-delete-mode"
-                  onChange={() => onDeleteModeChange?.(mode.value)}
-                  type="radio"
-                  value={mode.value}
-                />
-                <span>
-                  <span className="block text-sm font-semibold text-foreground">{mode.label}</span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">{mode.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        ) : null}
+        {entry && (
+          <p>
+            将移除 {entry.fileRefs.length} 个视频文件记录和 {entry.assets.length} 个资源记录。
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground">磁盘文件保持不变。</p>
         <DialogFooter>
           <Button disabled={submitting} variant="outline" onClick={onCancel}>
             取消
@@ -313,19 +297,25 @@ function LibraryEntryRow({
   linkComponent: LinkComponent,
   onDeleteEntry,
   onOpenFolder,
+  onRemoveFile,
+  onRelinkFile,
 }: {
   entry: LibraryEntryDto;
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (entry: LibraryEntryDto) => void;
+  onOpenFolder?: (path: string) => void;
+  onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
+  onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
 }) {
-  const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || entry.fileName;
-  const title = entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || entry.fileName;
+  const displayFile = entry.fileRefs.find((file) => file.id === entry.displayFileId);
+  const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || displayFile?.fileName || entry.id;
+  const title =
+    entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || displayFile?.fileName || entry.id;
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
-  const canOpenFolder = Boolean(onOpenFolder && entry.available !== false && entry.lastKnownPath);
+  const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile?.lastKnownPath);
 
   return (
     <div className="group relative flex items-center gap-5 rounded-quiet-lg border border-border/40 bg-surface p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)] lg:gap-6">
@@ -353,8 +343,25 @@ function LibraryEntryRow({
         </div>
         <div className="mt-2 flex items-center gap-3 text-[11px]">
           <ActorChips actors={entry.actors} />
-          <MiddleEllipsisPath rootDisplayName={entry.rootDisplayName} relativePath={entry.relativePath} />
+          {displayFile && (
+            <MiddleEllipsisPath rootDisplayName={displayFile.rootDisplayName} relativePath={displayFile.relativePath} />
+          )}
         </div>
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer">
+            {entry.fileRefs.length} 个文件 · {availabilityLabels[entry.available]}
+          </summary>
+          {entry.fileRefs.map((file) => (
+            <LibraryFileRow
+              key={file.id}
+              entry={entry}
+              file={file}
+              onOpenFolder={onOpenFolder}
+              onRemoveFile={onRemoveFile}
+              onRelinkFile={onRelinkFile}
+            />
+          ))}
+        </details>
       </div>
       <div className="hidden shrink-0 items-center gap-8 font-numeric text-xs font-bold text-muted-foreground/60 lg:flex">
         <div className="flex flex-col items-end">
@@ -372,7 +379,7 @@ function LibraryEntryRow({
           {LinkComponent ? (
             <LinkComponent className={detailClass} entry={entry}>
               <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
-                详情
+                文件刮削来源
               </Badge>
             </LinkComponent>
           ) : null}
@@ -382,7 +389,7 @@ function LibraryEntryRow({
                 <Button
                   aria-label="打开所在目录"
                   className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
-                  onClick={() => onOpenFolder?.(entry)}
+                  onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
                   size="icon"
                   type="button"
                   variant="ghost"
@@ -404,7 +411,7 @@ function StatusActionSlot({
   entry,
   onDeleteEntry,
 }: {
-  available: boolean | null;
+  available: LibraryEntryDto["available"];
   entry: LibraryEntryDto;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
 }) {
@@ -436,18 +443,18 @@ function StatusActionSlot({
   );
 }
 
-function StatusDot({ available }: { available: boolean | null }) {
-  if (available === false) {
+function StatusDot({ available }: { available: LibraryEntryDto["available"] }) {
+  if (available === "unavailable" || available === "partial") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="h-2 w-2 shrink-0 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
         </TooltipTrigger>
-        <TooltipContent>原路径不可用</TooltipContent>
+        <TooltipContent>{availabilityLabels[available]}</TooltipContent>
       </Tooltip>
     );
   }
-  if (available === null) {
+  if (available === "unchecked") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -458,6 +465,129 @@ function StatusDot({ available }: { available: boolean | null }) {
     );
   }
   return <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500/40" />;
+}
+
+const availabilityLabels = {
+  available: "全部可用",
+  partial: "部分可用",
+  unavailable: "全部不可用",
+  unchecked: "未检查",
+};
+
+function LibraryFileRow({
+  entry,
+  file,
+  onOpenFolder,
+  onRemoveFile,
+  onRelinkFile,
+}: {
+  entry: LibraryEntryDto;
+  file: LibraryEntryDto["fileRefs"][number];
+  onOpenFolder?: LibraryIndexViewProps["onOpenFolder"];
+  onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
+  onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
+}) {
+  const [action, setAction] = useState<"remove" | "relink" | null>(null);
+  const [relativePath, setRelativePath] = useState(file.relativePath);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const path = file.lastKnownPath ?? file.relativePath;
+  return (
+    <div className="mt-2 grid gap-2 rounded border p-2">
+      <div>
+        {file.partNumber ? `CD${file.partNumber} · ` : ""}
+        {file.fileName}
+        {file.resolution ? ` · ${file.resolution}` : ""} · {formatBytes(file.size)} ·{" "}
+        {file.available === null ? "未检查" : file.available ? "可用" : "不可用"}
+      </div>
+      <div className="break-all font-mono">{path}</div>
+      {file.availabilityError && <p className="text-destructive">{file.availabilityError}</p>}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            void navigator.clipboard.writeText(path).catch((cause) => setError(String(cause)));
+          }}
+        >
+          复制路径
+        </Button>
+        {onOpenFolder && (
+          <Button size="sm" variant="ghost" onClick={() => onOpenFolder(path)}>
+            打开位置
+          </Button>
+        )}
+        {onRelinkFile && (
+          <Button size="sm" variant="ghost" onClick={() => setAction("relink")}>
+            重定位
+          </Button>
+        )}
+        {onRemoveFile && (
+          <Button size="sm" variant="ghost" onClick={() => setAction("remove")}>
+            从媒体库移除
+          </Button>
+        )}
+      </div>
+      {error && <p className="text-destructive">{error}</p>}
+      <Dialog
+        open={action !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setAction(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{action === "remove" ? "从媒体库移除" : "重定位文件"}</DialogTitle>
+          </DialogHeader>
+          <p className="break-all">{path}</p>
+          {action === "remove" ? (
+            <>
+              <p>
+                移除这个文件的记录及其专属资源记录。
+                {entry.fileRefs.length === 1 ? "这是最后一个文件，空影片记录也将移除。" : "其他文件和公共资源保留。"}
+              </p>
+              <p>磁盘文件保持不变。</p>
+            </>
+          ) : (
+            <>
+              <p>所在媒体目录：{file.rootDisplayName}</p>
+              <label htmlFor={`relink-path-${file.id}`}>
+                相对路径
+                <Input
+                  id={`relink-path-${file.id}`}
+                  value={relativePath}
+                  onChange={(event) => setRelativePath(event.target.value)}
+                />
+              </label>
+            </>
+          )}
+          <DialogFooter>
+            <Button disabled={busy} onClick={() => setAction(null)}>
+              取消
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  if (action === "remove") await onRemoveFile?.({ fileId: file.id });
+                  else await onRelinkFile?.({ fileId: file.id, rootId: file.rootId, relativePath });
+                  setAction(null);
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
 
 function ActorChips({ actors }: { actors: string[] }) {
@@ -504,7 +634,7 @@ function MiddleEllipsisPath({ rootDisplayName, relativePath }: { rootDisplayName
 const formatDate = (value: string | null | undefined): string =>
   value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : "-";
 
-const latestEntryUpdate = (entry: Pick<LibraryEntryDto, "createdAt" | "lastRefreshedAt" | "modifiedAt">): string =>
-  [entry.createdAt, entry.lastRefreshedAt, entry.modifiedAt]
+const latestEntryUpdate = (entry: Pick<LibraryEntryDto, "createdAt" | "lastRefreshedAt" | "fileRefs">): string =>
+  [entry.createdAt, entry.lastRefreshedAt, ...entry.fileRefs.map((file) => file.modifiedAt)]
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? entry.createdAt;

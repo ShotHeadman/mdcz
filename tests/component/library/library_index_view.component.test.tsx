@@ -3,34 +3,30 @@ import { LibraryIndexView } from "@mdcz/views/library";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
-const createEntry = (id: string, available: boolean | null): LibraryEntryDto => ({
+const createEntry = (id: string, available: LibraryEntryDto["available"]): LibraryEntryDto => ({
   actors: [],
   assets: [],
   available,
   crawlerData: null,
   createdAt: "2026-08-17T00:00:00.000Z",
-  directory: "movies",
-  fileName: `${id}.mp4`,
+  displayFileId: `file-${id}`,
   fileRefs: [],
   hiddenFromRecentAt: null,
   id,
-  lastKnownPath: null,
   lastRefreshedAt: null,
   mediaIdentity: id,
-  modifiedAt: null,
   number: id,
-  relativePath: `movies/${id}.mp4`,
-  rootDisplayName: "Media",
-  rootId: "root-1",
-  scrapeOutcomeId: null,
   size: 10,
-  runId: null,
   thumbnailPath: null,
   title: `${id} title`,
 });
 
 const baseProps = {
-  entries: [createEntry("AVAILABLE", true), createEntry("UNKNOWN", null), createEntry("UNAVAILABLE", false)],
+  entries: [
+    createEntry("AVAILABLE", "available"),
+    createEntry("UNKNOWN", "unchecked"),
+    createEntry("UNAVAILABLE", "unavailable"),
+  ],
   onAvailabilityFilterChange: vi.fn(),
   onQueryChange: vi.fn(),
   onRefresh: vi.fn(),

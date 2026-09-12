@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { PersistenceDatabase } from "./database";
-import { LibraryRepository } from "./libraryRepository";
+import { LibraryRepository, type UpsertLibraryEntryInput } from "./libraryRepository";
 import { mediaRoots } from "./schema";
 import { type CommitScrapeOutcomeInput, ScrapeRunRepository } from "./scrapeRunRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
@@ -39,10 +39,16 @@ const createRun = async (repository: ScrapeRunRepository, id = "run-1") =>
 
 const commitSuccess = (
   repository: ScrapeRunRepository,
-  input: Extract<CommitScrapeOutcomeInput, { outcome: "success" }>,
+  input: Omit<Extract<CommitScrapeOutcomeInput, { outcome: "success" }>, "libraryEntry"> & {
+    libraryEntry: UpsertLibraryEntryInput;
+  },
 ) => {
   if (!database) throw new Error("Test database is not initialized");
-  return database.sqlite.transaction(() => repository.commitSuccessOutcome(input))();
+  const committed = database.sqlite.transaction(() =>
+    repository.commitSuccessOutcomes([input], input.libraryEntry),
+  )()[0];
+  if (!committed) throw new Error("Scrape success batch did not commit its input");
+  return committed;
 };
 
 afterEach(() => {
@@ -238,9 +244,40 @@ describe("ScrapeRunRepository", () => {
     );
     expect(await new LibraryRepository(database as PersistenceDatabase).getEntryById(committed.entryId)).toMatchObject({
       id: "library-abc",
-      sourceRunId: run.id,
-      sourceOutcomeId: "success-1",
+      files: [expect.objectContaining({ sourceOutcomeId: "success-1" })],
     });
+  });
+
+  it("commits a success batch atomically", async () => {
+    const repository = createRepository();
+    const run = await repository.create({
+      id: "atomic-run",
+      rootId: "root-1",
+      executionMode: "batch",
+      items: [
+        { id: "first", ordinal: 0, rootId: "root-1", relativePath: "first.mp4" },
+        { id: "second", ordinal: 1, rootId: "root-1", relativePath: "second.mp4" },
+      ],
+    });
+    const library = new LibraryRepository(database as PersistenceDatabase);
+    await library.upsertEntry({ id: "occupied", rootId: "output", rootRelativePath: "occupied.mp4" });
+    const input = (itemIndex: number, relativePath: string) => ({
+      outcome: "success" as const,
+      attemptId: repository.admitAttempt(run.items[itemIndex].id).id,
+      crawlerDataJson: "{}",
+      outputRootId: "output",
+      outputRelativePath: relativePath,
+      size: 1,
+      libraryEntry: { rootId: "output", rootRelativePath: relativePath },
+    });
+    const first = input(0, "first.mp4");
+    const second = input(1, "occupied.mp4");
+
+    expect(() => repository.commitSuccessOutcomes([first, second], { id: "different-owner" })).toThrow(
+      "媒体库路径已属于另一个条目",
+    );
+    expect((await repository.get(run.id)).outcomes).toEqual([]);
+    expect((await library.listEntries()).map((entry) => entry.id)).toEqual(["occupied"]);
   });
 
   it("rolls back the outcome when the library transaction fails", async () => {

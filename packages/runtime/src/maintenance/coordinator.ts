@@ -51,15 +51,17 @@ export interface MaintenanceLibraryPort {
     plan: PreparedPublicationPlan;
     resolvedPlan?: PublicationPlan;
     refresh: {
-      librarySource?: MaintenanceLibrarySource;
-      sourceAbsolutePath: string;
-      targetAbsolutePath: string;
-      size: number;
-      modifiedAt: Date;
+      files: Array<{
+        librarySource?: MaintenanceLibrarySource;
+        sourceAbsolutePath: string;
+        targetAbsolutePath: string;
+        size: number;
+        modifiedAt: Date;
+        outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
+      }>;
       crawlerData?: CrawlerData;
       fallbackNumber: string;
       assets: DiscoveredAssets;
-      outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
       removedAssets?: RootFileRef[];
       refreshedAt: Date;
     };
@@ -117,6 +119,7 @@ const assertUniqueRefs = (refs: readonly MaintenanceSessionRef[]): void => {
 const canonicalizeRefs = async (
   roots: MaintenanceRootPort,
   refs: readonly MaintenanceSessionRef[],
+  library: MaintenanceLibraryPort,
 ): Promise<MaintenanceSessionRef[]> => {
   const registeredRoots = await roots.list();
   const rootsById = new Map(registeredRoots.map((root) => [root.id, root]));
@@ -127,7 +130,20 @@ const canonicalizeRefs = async (
     return { rootId: resolved.root.id, relativePath: resolved.relativePath };
   });
   assertUniqueRefs(canonical);
-  return canonical;
+  const movies = new Map<string, MaintenanceSessionRef>();
+  for (const ref of canonical) {
+    const root = rootsById.get(ref.rootId);
+    if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+    const source = await library.resolveSource(resolveRootRelativePath(root, ref.relativePath));
+    const file = source?.files.toSorted((a, b) =>
+      `${a.rootId}:${a.rootRelativePath}`.localeCompare(`${b.rootId}:${b.rootRelativePath}`),
+    )[0];
+    movies.set(
+      source?.libraryItemId ?? refKey(ref),
+      file ? { rootId: file.rootId, relativePath: file.rootRelativePath } : ref,
+    );
+  }
+  return [...movies.values()];
 };
 
 const ownedPreviewPaths = (
@@ -266,7 +282,7 @@ export class MaintenanceSessionCoordinator {
     }
     this.previewStarting = true;
     try {
-      const refs = await canonicalizeRefs(this.deps.roots, input.refs);
+      const refs = await canonicalizeRefs(this.deps.roots, input.refs, this.deps.library);
       const root = await this.deps.roots.get(input.rootId);
       const outputRoot = input.outputRootId ? await this.deps.roots.get(input.outputRootId) : root;
       const outputRelativeDirectory = input.outputRelativeDirectory ?? "";
@@ -333,23 +349,15 @@ export class MaintenanceSessionCoordinator {
       .map((previewId) => session.preview(previewId))
       .filter((preview) => preview !== undefined);
     if (previews.length !== previewIds.length) throw new Error("部分维护预览不存在、已提交或不属于当前会话");
-    const groupSelections = new Map<string, string>();
-    for (const preview of previews) {
-      const entry = preview.entry;
-      if (!entry?.fileInfo.part || !entry.nfoPath) continue;
-      const selection = input.selections.find((selection) => selection.previewId === preview.id);
-      const data = JSON.stringify(buildMaintenanceApplyData(entry, preview, selection?.fieldSelections));
-      const previous = groupSelections.get(entry.nfoPath);
-      if (previous !== undefined && previous !== data)
-        throw new Error(`共享 NFO 的分片必须使用相同的字段选择：${entry.nfoPath}`);
-      groupSelections.set(entry.nfoPath, data);
-    }
     const refs = ownedPreviewPaths(await this.deps.roots.list(), previews);
+    for (const preview of previews)
+      for (const file of preview.librarySource?.files ?? [])
+        refs.push({ rootId: file.rootId, relativePath: file.rootRelativePath });
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
     if (this.session !== session) throw new Error("维护会话已变化");
     const acquireAll = this.deps.acquireAll ?? ((owned, owner) => mediaPathOwnership.acquireAll(owned, owner));
-    const release = acquireAll(refs, session.id);
+    const release = acquireAll([...new Map(refs.map((ref) => [refKey(ref), ref])).values()], session.id);
     let apply: { generation: number; batchId: string };
     try {
       apply = session.beginApply(input.selections);
@@ -589,7 +597,7 @@ export class MaintenanceSessionCoordinator {
         await progressNotification;
         if (progressError) throw progressError;
         scanController.signal.throwIfAborted();
-        initial.fixDiscoveredRefs(generation, refs);
+        initial.fixDiscoveredRefs(generation, await canonicalizeRefs(this.deps.roots, refs, this.deps.library));
         await this.publishChanged(initial);
       }
       await this.runtime.applyNetworkPolicy?.();
@@ -625,23 +633,61 @@ export class MaintenanceSessionCoordinator {
           const root = await this.deps.roots.get(entry.ref.rootId);
           try {
             const active = this.assertCurrent(sessionId, generation, ["running"]);
-            const sharedPreview =
-              entry.fileInfo.part && entry.nfoPath
-                ? active
-                    .activePreviews()
-                    .find((preview) => preview.status === "ready" && preview.entry?.nfoPath === entry.nfoPath)
-                : undefined;
+            const librarySource = await this.deps.library.resolveSource(entry.fileInfo.filePath);
+            if (active.presetId === "organize_files" || active.presetId === "rebuild_all") {
+              for (const file of librarySource?.files ?? []) {
+                const fileRoot = await this.deps.roots.get(file.rootId);
+                const absolutePath = resolveRootRelativePath(fileRoot, file.rootRelativePath);
+                if (!(await stat(absolutePath)).isFile()) throw new Error(`影片文件不可用：${absolutePath}`);
+              }
+            }
             const [item] = await this.runtime.previewEntries({
               root,
               presetId: active.presetId,
               entries: [entry],
-              sharedData: sharedPreview?.proposedCrawlerData
-                ? { crawlerData: sharedPreview.proposedCrawlerData, imageAlternatives: sharedPreview.imageAlternatives }
-                : undefined,
               signal: context.signal,
             });
             if (!item) throw new Error("维护预览未返回结果");
-            return { entry, item, librarySource: await this.deps.library.resolveSource(entry.fileInfo.filePath) };
+            item.affectedFiles = [];
+            for (const file of librarySource?.files ?? []) {
+              const fileRoot = await this.deps.roots.get(file.rootId);
+              const currentPath = resolveRootRelativePath(fileRoot, file.rootRelativePath);
+              let targetPath = currentPath;
+              if (active.presetId === "organize_files" || active.presetId === "rebuild_all") {
+                if (currentPath === entry.fileInfo.filePath) targetPath = item.pathDiff?.targetVideoPath ?? currentPath;
+                else {
+                  const peerEntries = await scanRefs(
+                    this.runtime,
+                    this.deps.roots,
+                    this.deps.library,
+                    [{ rootId: file.rootId, relativePath: file.rootRelativePath }],
+                    context.signal,
+                  );
+                  const [peer] = await this.runtime.previewEntries({
+                    root: fileRoot,
+                    presetId: active.presetId,
+                    entries: peerEntries,
+                    sharedData: {
+                      crawlerData: item.proposedCrawlerData ?? undefined,
+                      imageAlternatives: item.imageAlternatives,
+                    },
+                    signal: context.signal,
+                  });
+                  if (!peer || peer.status === "blocked") throw new Error(peer?.error ?? "影片文件预览失败");
+                  targetPath = peer.pathDiff?.targetVideoPath ?? currentPath;
+                }
+                if (librarySource)
+                  await this.deps.library.preflightRefresh({
+                    librarySource: { ...librarySource, ...file },
+                    sourceAbsolutePath: currentPath,
+                    targetAbsolutePath: targetPath,
+                  });
+              }
+              item.affectedFiles.push({ fileId: file.libraryFileId, currentPath, targetPath });
+            }
+            if (new Set(item.affectedFiles.map((file) => file.targetPath)).size !== item.affectedFiles.length)
+              throw new Error("影片多个文件的目标路径重复，请调整命名后重新预览");
+            return { entry, item, librarySource };
           } catch (error) {
             if (isAbortError(error) || context.signal.aborted) throw error;
             return {
@@ -704,12 +750,19 @@ export class MaintenanceSessionCoordinator {
           }
           try {
             const root = await this.deps.roots.get(active.preview.rootId);
-            const [entry] = await scanRefs(
+            const source = active.preview.librarySource;
+            const files = await scanRefs(
               this.runtime,
               this.deps.roots,
               this.deps.library,
-              [{ rootId: active.preview.rootId, relativePath: active.preview.relativePath }],
+              source?.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })) ?? [
+                { rootId: active.preview.rootId, relativePath: active.preview.relativePath },
+              ],
               context.signal,
+            );
+            const entry = files.find(
+              (file) =>
+                file.ref.rootId === active.preview?.rootId && file.ref.relativePath === active.preview.relativePath,
             );
             if (!entry)
               return { result: { status: "failed", error: `维护文件不存在：${active.preview.relativePath}` } };
@@ -723,22 +776,12 @@ export class MaintenanceSessionCoordinator {
             });
             const latest = this.assertCurrent(sessionId, generation, ["running", "paused"]);
             const progress = latest.progress();
-            const sharedNfoPath = active.preview.entry?.fileInfo.part ? active.preview.entry.nfoPath : undefined;
-            const sharedOutput = sharedNfoPath
-              ? latest
-                  .snapshot()
-                  .currentBatch?.items.find(
-                    (candidate) =>
-                      candidate.status === "success" &&
-                      latest.preview(candidate.selection.previewId)?.entry?.nfoPath === sharedNfoPath,
-                  )?.result?.entry
-              : undefined;
             const applied = await this.runtime.applyEntry({
               root,
               presetId: latest.presetId,
               entry,
               committed,
-              sharedOutput,
+              files,
               progress: {
                 fileIndex: Math.min(progress.totalEntries, progress.completedEntries + 1),
                 totalFiles: progress.totalEntries,
@@ -777,11 +820,40 @@ export class MaintenanceSessionCoordinator {
                 ownershipToken: sessionId,
                 plan,
                 refresh: {
-                  librarySource: active.preview.librarySource,
-                  sourceAbsolutePath,
-                  targetAbsolutePath: video?.targetPath ?? sourceAbsolutePath,
-                  size: video?.size ?? file.size,
-                  modifiedAt: file.mtime,
+                  files: await Promise.all(
+                    (plan.media?.length
+                      ? plan.media
+                      : [
+                          {
+                            sourcePath: sourceAbsolutePath,
+                            targetPath: targetAbsolutePath,
+                            assets: [],
+                            size: file.size,
+                          },
+                        ]
+                    ).map(async (media) => {
+                      const current = files.find((file) => file.fileInfo.filePath === media.sourcePath);
+                      const snapshot = source?.files.find(
+                        (file) =>
+                          file.rootId === current?.ref.rootId && file.rootRelativePath === current.ref.relativePath,
+                      );
+                      if (source && !snapshot) throw new Error("维护发布文件不属于预览集合");
+                      const info = await stat(media.sourcePath);
+                      const roots = await this.deps.roots.list();
+                      return {
+                        librarySource: source && snapshot ? { ...source, ...snapshot } : undefined,
+                        sourceAbsolutePath: media.sourcePath,
+                        targetAbsolutePath: media.targetPath,
+                        size: info.size,
+                        modifiedAt: info.mtime,
+                        outputAssets: (media.assets ?? []).flatMap((asset) => {
+                          if (!asset.targetPath || !["nfo", "strm", "subtitle"].includes(asset.kind)) return [];
+                          const target = resolveRootFile(roots, asset.targetPath);
+                          return [{ kind: asset.kind, rootId: target.root.id, relativePath: target.relativePath }];
+                        }),
+                      };
+                    }),
+                  ),
                   crawlerData,
                   fallbackNumber: applied.entry.fileInfo.number,
                   assets: applied.entry.assets,
@@ -841,11 +913,13 @@ export class MaintenanceSessionCoordinator {
       try {
         this.assertCurrent(sessionId, generation, ["running", "paused"]);
         await this.deps.library.publishRefresh(execution.publication);
-        const targetPath = execution.publication.refresh.targetAbsolutePath;
+        const updatedFile = execution.publication.refresh.files[0];
+        if (!updatedFile) throw new Error("维护刷新文件集合不能为空");
+        const targetPath = updatedFile.targetAbsolutePath;
         if (result.entry) result.entry.fileInfo.filePath = targetPath;
         const target = resolveRootFile(await this.deps.roots.list(), targetPath);
         result.outputRelativePath = target.relativePath;
-        result.outputSize = execution.publication.refresh.size;
+        result.outputSize = updatedFile.size;
       } catch (error) {
         if (!this.isCurrent(sessionId, generation)) throw error;
         result =
@@ -902,6 +976,7 @@ export class MaintenanceSessionCoordinator {
       pathDiff: item.pathDiff,
       proposedCrawlerData: item.proposedCrawlerData,
       imageAlternatives: item.imageAlternatives,
+      affectedFiles: item.affectedFiles,
       entry: item.entry,
       librarySource: librarySource ?? undefined,
     });

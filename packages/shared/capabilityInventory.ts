@@ -108,6 +108,13 @@ export const CROSS_HOST_CAPABILITIES = [
     reason: "Desktop accepts an optional site; server requires a validated site.",
   },
   { desktop: IpcChannel.Library_Availability, server: "library.availability", status: "aligned" },
+  { desktop: IpcChannel.Library_RemoveFile, server: "library.removeFile", status: "aligned" },
+  {
+    desktop: IpcChannel.Library_RelinkFile,
+    server: "library.relink",
+    status: "adapted",
+    reason: "Desktop returns an acknowledgement; server returns the updated movie.",
+  },
   {
     desktop: IpcChannel.Library_Delete,
     server: "library.delete",
@@ -352,7 +359,6 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "health.read", reason: "Server process health." },
   { path: "library.detail", reason: "Server-only library item view." },
   { path: "library.refresh", reason: "Server-only library item refresh." },
-  { path: "library.relink", reason: "Server-only library relink." },
   { path: "library.rescan", reason: "Server-only per-item rescan." },
   { path: "logs.clearRuntime", reason: "Server log store." },
   { path: "logs.list", reason: "Server log store." },

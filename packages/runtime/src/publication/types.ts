@@ -141,10 +141,12 @@ export interface PublicationJournalPort {
 
 export interface PublicationOutputPort {
   publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }): {
-    files: Array<RootFileRef & { itemId: string; fileId?: string }>;
-    assets: Array<RootFileRef & { itemId: string; kind: string; published: boolean; historical: boolean }>;
+    files: Array<RootFileRef & { itemId: string; fileId?: string; mediaIdentity?: string | null; size?: number }>;
+    assets: Array<
+      RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean; historical: boolean }
+    >;
   };
-  registerPublishedOutputs(outputs: Array<RootFileRef & { itemId: string; kind: string }>): void;
+  registerPublishedOutputs(outputs: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string }>): void;
   releaseOutputReferences(refs: RootFileRef[]): void;
 }
 
@@ -159,6 +161,8 @@ export interface RegisteredPublicationContext extends DurablePublicationContext 
 }
 
 export interface PublishMediaOptions<TResult> extends DurablePublicationContext {
+  ownerId?: string;
+  validate?(): Promise<void> | void;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   commit(): TResult;
   download?(url: string): Promise<Uint8Array>;

@@ -24,13 +24,11 @@ const publishVideo = async (
   _sourceRoot: string,
 ): Promise<string> => {
   const { plan: prepared } = await preparePublicationPlan({
-    sourceVideoPath: fileInfo.filePath,
-    outputVideoPath: plan.targetVideoPath,
+    files: [{ sourceVideoPath: fileInfo.filePath, outputVideoPath: plan.targetVideoPath, organizePlan: plan }],
     existingAssetDir: dirname(fileInfo.filePath),
     metadataOutputDir: plan.metadataDir ?? plan.outputDir,
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
-    organizePlan: plan,
     renameSubtitles: config.behavior.successFileRename,
     strmPathMappings: config.paths.strmPathMappings,
     nfoNaming: config.download.nfoNaming,

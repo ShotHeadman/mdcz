@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { and, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { writeLibraryRows } from "./libraryWrite";
 import {
@@ -11,26 +11,22 @@ import {
   libraryItemFiles,
   libraryItems,
   mediaRoots,
+  scrapeAttempts,
+  scrapeItemOutcomes,
+  scrapeRunItems,
 } from "./schema";
 
 export interface LibraryEntryRecord {
   id: string;
   mediaIdentity: string | null;
-  rootId: string;
-  rootRelativePath: string;
-  fileName: string;
-  directory: string;
+  displayFileId: string;
   size: number;
-  modifiedAt: Date | null;
-  sourceRunId: string | null;
-  sourceOutcomeId: string | null;
   title: string | null;
   number: string | null;
   actors: string[];
   crawlerDataJson: string | null;
   thumbnailPath: string | null;
   thumbnailRootId: string | null;
-  lastKnownPath: string | null;
   createdAt: Date;
   lastRefreshedAt: Date | null;
   hiddenFromRecentAt: Date | null;
@@ -38,32 +34,39 @@ export interface LibraryEntryRecord {
   assets: LibraryItemAssetRecord[];
 }
 
-export interface UpsertLibraryEntryInput {
+export interface LibraryMovieInput {
   id?: string;
-  fileId?: string;
   mediaIdentity?: string | null;
-  rootId: string;
-  rootRelativePath: string;
-  size?: number;
-  modifiedAt?: Date | null;
-  sourceRunId?: string | null;
-  sourceOutcomeId?: string | null;
   title?: string | null;
   number?: string | null;
   actors?: string[];
   crawlerDataJson?: string | null;
-  thumbnailPath?: string | null;
+  createdAt?: Date;
+  lastRefreshedAt?: Date | null;
+}
+
+export interface LibraryFileInput {
+  fileId?: string;
+  rootId: string;
+  rootRelativePath: string;
+  size?: number;
+  modifiedAt?: Date | null;
+  sourceOutcomeId?: string | null;
+  partNumber?: number | null;
+  partSuffix?: string | null;
+  resolution?: string | null;
   assets?: Array<{
     kind: string;
+    fileId?: string | null;
     uri: string;
     rootId?: string | null;
     relativePath?: string | null;
     published?: boolean;
   }>;
   lastKnownPath?: string | null;
-  createdAt?: Date;
-  lastRefreshedAt?: Date | null;
 }
+
+export type UpsertLibraryEntryInput = LibraryMovieInput & LibraryFileInput;
 
 export interface LibraryEntriesCursor {
   createdAt: Date;
@@ -78,6 +81,8 @@ export interface ListLibraryEntriesInput {
 }
 
 export interface LibraryEntriesPage {
+  fileCount: number;
+  totalBytes: number;
   entries: LibraryEntryRecord[];
   hasMore: boolean;
   nextCursor: LibraryEntriesCursor | null;
@@ -86,8 +91,6 @@ export interface LibraryEntriesPage {
 
 export interface LibraryAvailabilityEntryRecord {
   id: string;
-  rootId: string;
-  rootRelativePath: string;
   files: LibraryItemFileRecord[];
 }
 
@@ -124,6 +127,11 @@ export interface LibraryItemFileRecord {
   size: number;
   modifiedAt: Date | null;
   lastKnownPath: string | null;
+  partNumber: number | null;
+  partSuffix: string | null;
+  resolution: string | null;
+  sourceOutcomeId: string | null;
+  sourceRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -131,29 +139,34 @@ export interface LibraryItemFileRecord {
 export interface LibraryItemAssetRecord {
   id: string;
   itemId: string;
+  fileId: string | null;
   kind: string;
   uri: string;
   rootId: string | null;
   relativePath: string | null;
   published: boolean;
+  historical: boolean;
   createdAt: Date;
 }
 
 export interface CommitMaintenanceRefreshInput {
-  librarySource?: MaintenanceLibrarySourceRecord;
-  sourceAbsolutePath: string;
-  targetAbsolutePath: string;
-  size: number;
-  modifiedAt: Date;
+  files: Array<{
+    librarySource?: MaintenanceLibrarySourceRecord;
+    sourceAbsolutePath: string;
+    targetAbsolutePath: string;
+    size: number;
+    modifiedAt: Date;
+    outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
+  }>;
   crawlerData?: MaintenanceCrawlerDataRecord;
   fallbackNumber: string;
   assets: MaintenanceDiscoveredAssetsRecord;
-  outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
   removedAssets?: Array<{ rootId: string; relativePath: string }>;
   refreshedAt: Date;
 }
 
 export interface MaintenanceLibrarySourceRecord {
+  files: Array<{ libraryFileId: string; rootId: string; rootRelativePath: string }>;
   nfo?: { rootId: string; relativePath: string };
   strm?: { rootId: string; relativePath: string };
   libraryItemId: string;
@@ -200,9 +213,12 @@ type MaintenanceAssetInput = {
 };
 
 export interface PreparedMaintenanceRefresh {
-  librarySource: MaintenanceLibrarySourceRecord | undefined;
-  targetCandidates: RootPathCandidate[];
-  libraryEntry: UpsertLibraryEntryInput;
+  movie: LibraryMovieInput & { id: string };
+  files: Array<{
+    librarySource: MaintenanceLibrarySourceRecord | undefined;
+    targetCandidates: RootPathCandidate[];
+    libraryEntry: LibraryFileInput;
+  }>;
 }
 
 const safeActors = (value: string): string[] => {
@@ -214,7 +230,10 @@ const safeActors = (value: string): string[] => {
   }
 };
 
-const toLibraryItemFileRecord = (row: LibraryItemFileRow): LibraryItemFileRecord => ({
+const toLibraryItemFileRecord = (
+  row: LibraryItemFileRow,
+  sourceRunId: string | null = null,
+): LibraryItemFileRecord => ({
   id: row.id,
   itemId: row.itemId,
   rootId: row.rootId,
@@ -224,6 +243,11 @@ const toLibraryItemFileRecord = (row: LibraryItemFileRow): LibraryItemFileRecord
   size: row.size,
   modifiedAt: row.modifiedAt,
   lastKnownPath: row.lastKnownPath,
+  partNumber: row.partNumber,
+  partSuffix: row.partSuffix,
+  resolution: row.resolution,
+  sourceOutcomeId: row.sourceOutcomeId,
+  sourceRunId,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -231,20 +255,47 @@ const toLibraryItemFileRecord = (row: LibraryItemFileRow): LibraryItemFileRecord
 const toLibraryItemAssetRecord = (row: LibraryItemAssetRow): LibraryItemAssetRecord => ({
   id: row.id,
   itemId: row.itemId,
+  fileId: row.fileId,
   kind: row.kind,
   uri: row.uri,
   rootId: row.rootId,
   relativePath: row.relativePath,
   published: row.published,
+  historical: row.historical,
   createdAt: row.createdAt,
 });
+
+const resolutionRank = (resolution: string | null): number => {
+  const value = resolution?.trim().toLowerCase();
+  if (!value) return 0;
+  if (value === "4k" || value.includes("2160")) return 2160;
+  const vertical = value.match(/(?:^|\D)(\d{3,4})p?(?:\D|$)/u)?.[1];
+  return vertical ? Number(vertical) : 0;
+};
+
+export const selectRepresentativeFile = <TFile extends Pick<LibraryItemFileRecord, "id" | "partNumber" | "resolution">>(
+  files: readonly TFile[],
+): TFile | undefined => {
+  const parts = files.filter((file) => file.partNumber !== null && file.partNumber >= 1);
+  const candidates = parts.length > 0 ? parts : files;
+  return [...candidates].sort((left, right) => {
+    if (parts.length > 0) {
+      const partOrder = (left.partNumber ?? Number.MAX_SAFE_INTEGER) - (right.partNumber ?? Number.MAX_SAFE_INTEGER);
+      if (partOrder !== 0) return partOrder;
+    } else {
+      const resolutionOrder = resolutionRank(right.resolution) - resolutionRank(left.resolution);
+      if (resolutionOrder !== 0) return resolutionOrder;
+    }
+    return left.id.localeCompare(right.id);
+  })[0];
+};
 
 const toLibraryEntryRecord = (
   item: LibraryItemRow,
   files: LibraryItemFileRecord[],
   assets: LibraryItemAssetRecord[],
 ): LibraryEntryRecord => {
-  const primaryFile = files.find((file) => file.id === `${item.id}:primary`) ?? files[0];
+  const primaryFile = selectRepresentativeFile(files);
   if (!primaryFile) {
     throw new Error(`Library item has no file refs: ${item.id}`);
   }
@@ -256,21 +307,14 @@ const toLibraryEntryRecord = (
   return {
     id: item.id,
     mediaIdentity: item.mediaIdentity,
-    rootId: primaryFile.rootId,
-    rootRelativePath: primaryFile.rootRelativePath,
-    fileName: primaryFile.fileName,
-    directory: primaryFile.directory,
-    size: primaryFile.size,
-    modifiedAt: primaryFile.modifiedAt,
-    sourceRunId: item.sourceRunId,
-    sourceOutcomeId: item.sourceOutcomeId,
+    displayFileId: primaryFile.id,
+    size: files.reduce((total, file) => total + Math.max(0, file.size), 0),
     title: item.title,
     number: item.number,
     actors: safeActors(item.actorsJson),
     crawlerDataJson: item.crawlerDataJson,
     thumbnailPath: thumbnail?.uri ?? null,
     thumbnailRootId: thumbnail?.rootId ?? null,
-    lastKnownPath: primaryFile.lastKnownPath,
     createdAt: item.createdAt,
     lastRefreshedAt: item.lastRefreshedAt,
     hiddenFromRecentAt: item.hiddenFromRecentAt,
@@ -314,10 +358,13 @@ export class LibraryRepository {
         .select({
           fileId: libraryItemFiles.id,
           itemId: libraryItemFiles.itemId,
+          mediaIdentity: libraryItems.mediaIdentity,
+          size: libraryItemFiles.size,
           rootId: libraryItemFiles.rootId,
           relativePath: libraryItemFiles.rootRelativePath,
         })
         .from(libraryItemFiles)
+        .innerJoin(libraryItems, eq(libraryItems.id, libraryItemFiles.itemId))
         .where(owners.length ? or(fileWhere, inArray(libraryItemFiles.itemId, owners)) : fileWhere)
         .all(),
       assets: this.database.db
@@ -334,6 +381,7 @@ export class LibraryRepository {
             ? [
                 {
                   itemId: asset.itemId,
+                  fileId: asset.fileId,
                   kind: asset.kind,
                   rootId: asset.rootId,
                   relativePath: asset.relativePath,
@@ -347,7 +395,7 @@ export class LibraryRepository {
   }
 
   registerPublishedOutputs(
-    outputs: Array<{ itemId: string; kind: string; rootId: string; relativePath: string }>,
+    outputs: Array<{ itemId: string; fileId: string | null; kind: string; rootId: string; relativePath: string }>,
   ): void {
     for (const output of outputs) {
       const where = and(
@@ -355,6 +403,7 @@ export class LibraryRepository {
         eq(libraryItemAssets.rootId, output.rootId),
         eq(libraryItemAssets.relativePath, output.relativePath),
         eq(libraryItemAssets.kind, output.kind),
+        output.fileId ? eq(libraryItemAssets.fileId, output.fileId) : isNull(libraryItemAssets.fileId),
       );
       const existing = this.database.db.select().from(libraryItemAssets).where(where).get();
       if (existing)
@@ -376,7 +425,7 @@ export class LibraryRepository {
   }
 
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
-    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input));
+    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input, [input]));
     const id = transaction();
     return await this.getEntryById(id);
   }
@@ -390,13 +439,26 @@ export class LibraryRepository {
     const match = matches[0];
     const assets = match ? ((await this.listAssetsForItems([match.file.itemId])).get(match.file.itemId) ?? []) : [];
     const output = (kind: string) => {
-      const asset = assets.find((asset) => asset.kind === kind && asset.rootId && asset.relativePath);
+      const asset = assets.find(
+        (asset) =>
+          asset.kind === kind &&
+          asset.rootId &&
+          asset.relativePath &&
+          (asset.fileId === null || asset.fileId === match?.file.id),
+      );
       return asset?.rootId && asset.relativePath
         ? { rootId: asset.rootId, relativePath: asset.relativePath }
         : undefined;
     };
     return match
       ? {
+          files: this.database.db
+            .select()
+            .from(libraryItemFiles)
+            .where(eq(libraryItemFiles.itemId, match.file.itemId))
+            .all()
+            .map((file) => ({ libraryFileId: file.id, rootId: file.rootId, rootRelativePath: file.rootRelativePath }))
+            .sort((a, b) => a.libraryFileId.localeCompare(b.libraryFileId)),
           nfo: output("nfo"),
           strm: output("strm"),
           libraryItemId: match.file.itemId,
@@ -431,14 +493,43 @@ export class LibraryRepository {
   }
 
   async prepareRefresh(input: CommitMaintenanceRefreshInput): Promise<PreparedMaintenanceRefresh> {
-    this.assertMaintenanceSource(input.librarySource);
-    const targetCandidates = this.pathCandidates(input.targetAbsolutePath);
-    if (targetCandidates.length === 0) {
-      throw new Error(`维护目标路径不属于任何已注册媒体目录：${input.targetAbsolutePath}`);
-    }
-    this.assertNoMaintenanceTargetConflict(targetCandidates, input.librarySource?.libraryItemId);
-    const target = chooseRootCandidate(targetCandidates, input.librarySource?.rootId);
-    const changedAssets = this.buildMaintenanceAssets(input, target.rootId);
+    if (input.files.length === 0) throw new Error("维护刷新文件集合不能为空");
+    const itemIds = new Set(
+      input.files.flatMap((file) => (file.librarySource ? [file.librarySource.libraryItemId] : [])),
+    );
+    if (itemIds.size > 1) throw new Error("维护刷新文件不属于同一影片");
+    const itemId = [...itemIds][0] ?? randomUUID();
+    const files = input.files.map((file) => {
+      this.assertMaintenanceSource(file.librarySource);
+      const targetCandidates = this.pathCandidates(file.targetAbsolutePath);
+      if (targetCandidates.length === 0) {
+        throw new Error(`维护目标路径不属于任何已注册媒体目录：${file.targetAbsolutePath}`);
+      }
+      this.assertNoMaintenanceTargetConflict(targetCandidates, file.librarySource?.libraryItemId);
+      const target = chooseRootCandidate(targetCandidates, file.librarySource?.rootId);
+      const previousFile = file.librarySource
+        ? this.database.db
+            .select()
+            .from(libraryItemFiles)
+            .where(eq(libraryItemFiles.id, file.librarySource.libraryFileId))
+            .get()
+        : undefined;
+      return {
+        file,
+        targetCandidates,
+        target,
+        previousFile,
+        fileId: file.librarySource?.libraryFileId ?? randomUUID(),
+      };
+    });
+    const changedAssets = this.buildMaintenanceAssets(input, files[0]?.target.rootId as string);
+    const fileAssets = files.flatMap(({ file, fileId }) =>
+      (file.outputAssets ?? []).map((asset) => ({
+        ...asset,
+        fileId: asset.kind === "strm" || asset.kind === "subtitle" ? fileId : null,
+        uri: asset.relativePath,
+      })),
+    );
     const changedKinds = new Set([
       "thumb",
       "poster",
@@ -449,58 +540,69 @@ export class LibraryRepository {
       ...changedAssets.map((asset) => asset.kind),
     ]);
     const removedKeys = new Set((input.removedAssets ?? []).map((asset) => `${asset.rootId}:${asset.relativePath}`));
-    const previousAssets = input.librarySource
-      ? ((await this.listAssetsForItems([input.librarySource.libraryItemId])).get(input.librarySource.libraryItemId) ??
-        [])
-      : [];
+    const previousAssets = itemIds.size ? ((await this.listAssetsForItems([itemId])).get(itemId) ?? []) : [];
     const assets = [
       ...previousAssets.filter(
-        (asset) => !changedKinds.has(asset.kind) && !removedKeys.has(`${asset.rootId}:${asset.relativePath}`),
+        (asset) =>
+          !removedKeys.has(`${asset.rootId}:${asset.relativePath}`) &&
+          (asset.fileId
+            ? !fileAssets.some((replacement) => replacement.fileId === asset.fileId && replacement.kind === asset.kind)
+            : !changedKinds.has(asset.kind)),
       ),
       ...changedAssets,
+      ...fileAssets,
     ];
     const crawlerDataJson = input.crawlerData ? JSON.stringify(input.crawlerData) : null;
     const mediaIdentity = input.crawlerData?.number?.trim() || input.fallbackNumber.trim() || null;
     const title = input.crawlerData?.title ?? null;
     const number = input.crawlerData?.number ?? input.fallbackNumber ?? null;
-    const existingItem = input.librarySource
-      ? this.database.db
-          .select()
-          .from(libraryItems)
-          .where(eq(libraryItems.id, input.librarySource.libraryItemId))
-          .limit(1)
-          .get()
+    const existingItem = itemIds.size
+      ? this.database.db.select().from(libraryItems).where(eq(libraryItems.id, itemId)).limit(1).get()
       : null;
-    const itemId = input.librarySource?.libraryItemId ?? randomUUID();
     return {
-      librarySource: input.librarySource,
-      targetCandidates,
-      libraryEntry: {
+      movie: {
         id: itemId,
-        fileId: input.librarySource?.libraryFileId,
-        rootId: target.rootId,
-        rootRelativePath: target.rootRelativePath,
         mediaIdentity,
-        size: input.size,
-        modifiedAt: input.modifiedAt,
-        sourceRunId: existingItem?.sourceRunId ?? null,
-        sourceOutcomeId: existingItem?.sourceOutcomeId ?? null,
         title,
         number,
         actors: input.crawlerData?.actors ?? [],
         crawlerDataJson,
-        assets,
-        lastKnownPath: target.rootRelativePath,
         createdAt: existingItem?.createdAt ?? input.refreshedAt,
         lastRefreshedAt: input.refreshedAt,
       },
+      files: files.map(({ file, targetCandidates, target, previousFile, fileId }, index) => ({
+        librarySource: file.librarySource,
+        targetCandidates,
+        libraryEntry: {
+          fileId,
+          partNumber: previousFile?.partNumber,
+          partSuffix: previousFile?.partSuffix,
+          resolution: previousFile?.resolution,
+          rootId: target.rootId,
+          rootRelativePath: target.rootRelativePath,
+          size: file.size,
+          modifiedAt: file.modifiedAt,
+          sourceOutcomeId: previousFile?.sourceOutcomeId ?? null,
+          ...(index === 0 ? { assets } : {}),
+          lastKnownPath: target.rootRelativePath,
+        },
+      })),
     };
   }
 
   writeRefresh(prepared: PreparedMaintenanceRefresh): { libraryItemId: string } {
-    this.assertMaintenanceSource(prepared.librarySource);
-    this.assertNoMaintenanceTargetConflict(prepared.targetCandidates, prepared.librarySource?.libraryItemId);
-    return { libraryItemId: writeLibraryRows(this.database, prepared.libraryEntry) };
+    for (const file of prepared.files) {
+      this.assertMaintenanceSource(file.librarySource);
+      this.assertNoMaintenanceTargetConflict(file.targetCandidates, file.librarySource?.libraryItemId);
+    }
+    return this.database.sqlite.transaction(() => {
+      writeLibraryRows(
+        this.database,
+        prepared.movie,
+        prepared.files.map((file) => file.libraryEntry),
+      );
+      return { libraryItemId: prepared.movie.id };
+    })();
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {
@@ -514,14 +616,33 @@ export class LibraryRepository {
     return await this.getEntryById(id);
   }
 
-  async relinkEntry(input: {
-    id: string;
+  async relinkFile(input: {
+    fileId: string;
     rootId: string;
     rootRelativePath: string;
     size?: number;
     modifiedAt?: Date | null;
   }): Promise<LibraryEntryRecord> {
-    const item = await this.getLibraryItem(input.id);
+    const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, input.fileId)).get();
+    if (!file) throw new Error(`Library file not found: ${input.fileId}`);
+    const root = this.database.db.select().from(mediaRoots).where(eq(mediaRoots.id, input.rootId)).get();
+    if (!root) throw new Error(`Media root not found: ${input.rootId}`);
+    if (
+      this.findLibraryFilesAtAbsolutePath(path.resolve(root.hostPath, input.rootRelativePath)).some(
+        (match) => match.file.id !== file.id,
+      )
+    )
+      throw new Error("重定位目标实际路径已属于另一个文件");
+    const occupied = this.database.db
+      .select({ id: libraryItemFiles.id })
+      .from(libraryItemFiles)
+      .where(
+        and(eq(libraryItemFiles.rootId, input.rootId), eq(libraryItemFiles.rootRelativePath, input.rootRelativePath)),
+      )
+      .get();
+    if (occupied && occupied.id !== file.id) {
+      throw new Error(`媒体库路径已属于另一个文件：${input.rootId}:${input.rootRelativePath}`);
+    }
     const directory = path.posix.dirname(input.rootRelativePath);
     const now = new Date();
     this.database.db
@@ -536,9 +657,9 @@ export class LibraryRepository {
         lastKnownPath: input.rootRelativePath,
         updatedAt: now,
       })
-      .where(eq(libraryItemFiles.id, `${item.id}:primary`))
+      .where(eq(libraryItemFiles.id, file.id))
       .run();
-    return await this.touchEntry(item.id, now);
+    return await this.getEntryById(file.itemId);
   }
 
   deleteFiles(refs: Array<{ rootId: string; relativePath: string }>): void {
@@ -554,6 +675,53 @@ export class LibraryRepository {
     for (const id of itemIds)
       if (!this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).get())
         this.deleteEntry(id);
+  }
+
+  async getEntryByFileId(fileId: string): Promise<LibraryEntryRecord> {
+    const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
+    if (!file) throw new Error(`Library file not found: ${fileId}`);
+    return this.getEntryById(file.itemId);
+  }
+
+  async resolveUncensoredFiles<TChoice extends string>(selections: readonly { outcomeId: string; choice: TChoice }[]) {
+    const choices = new Map<string, TChoice>();
+    for (const selection of selections) {
+      const file = this.database.db
+        .select()
+        .from(libraryItemFiles)
+        .where(eq(libraryItemFiles.sourceOutcomeId, selection.outcomeId))
+        .get();
+      if (!file) throw new Error("刮削结果已不属于已登记影片文件，请刷新媒体库");
+      const previous = choices.get(file.itemId);
+      if (previous !== undefined && previous !== selection.choice) throw new Error("同一影片不能选择不同的无码类型");
+      choices.set(file.itemId, selection.choice);
+    }
+    const result = [];
+    for (const [itemId, choice] of choices) {
+      const entry = await this.getEntryById(itemId);
+      for (const file of entry.files) {
+        if (!file.sourceOutcomeId) throw new Error(`影片文件缺少刮削来源：${file.rootRelativePath}`);
+        const outcome = this.database.db
+          .select()
+          .from(scrapeItemOutcomes)
+          .where(eq(scrapeItemOutcomes.id, file.sourceOutcomeId))
+          .get();
+        if (!outcome || outcome.outcome !== "success") throw new Error("影片文件刮削来源已失效");
+        result.push({ file, choice, outcome, entry });
+      }
+    }
+    return result;
+  }
+
+  removeFile(fileId: string): void {
+    const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
+    if (!file) throw new Error(`Library file not found: ${fileId}`);
+    this.database.sqlite.transaction(() => {
+      this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.fileId, fileId)).run();
+      this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).run();
+      if (!this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.itemId, file.itemId)).get())
+        this.deleteEntry(file.itemId);
+    })();
   }
 
   deleteEntry(id: string): void {
@@ -592,17 +760,30 @@ export class LibraryRepository {
   async getEntriesBySourceOutcomeIds(sourceOutcomeIds: string[]): Promise<Map<string, LibraryEntryRecord>> {
     const ids = [...new Set(sourceOutcomeIds.map((id) => id.trim()).filter(Boolean))];
     if (ids.length === 0) return new Map();
-    const items = this.database.db.select().from(libraryItems).where(inArray(libraryItems.sourceOutcomeId, ids)).all();
-    const itemIds = items.map((item) => item.id);
+    const sourceFiles = this.database.db
+      .select({
+        itemId: libraryItemFiles.itemId,
+        sourceOutcomeId: libraryItemFiles.sourceOutcomeId,
+      })
+      .from(libraryItemFiles)
+      .where(inArray(libraryItemFiles.sourceOutcomeId, ids))
+      .all();
+    const itemIds = [...new Set(sourceFiles.map((file) => file.itemId))];
+    const items = itemIds.length
+      ? this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, itemIds)).all()
+      : [];
     const [filesByItem, assetsByItem] = await Promise.all([
       this.listFilesForItems(itemIds),
       this.listAssetsForItems(itemIds),
     ]);
     const entries = new Map<string, LibraryEntryRecord>();
-    for (const item of items) {
-      if (!item.sourceOutcomeId) continue;
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    for (const sourceFile of sourceFiles) {
+      if (!sourceFile.sourceOutcomeId) continue;
+      const item = itemById.get(sourceFile.itemId);
+      if (!item) continue;
       entries.set(
-        item.sourceOutcomeId,
+        sourceFile.sourceOutcomeId,
         toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
       );
     }
@@ -642,10 +823,7 @@ export class LibraryRepository {
       const row = rowById.get(id);
       if (!row) return [];
       const files = filesByItem.get(row.id) ?? [];
-      const primaryFile = files.find((file) => file.id === `${row.id}:primary`) ?? files[0];
-      return primaryFile
-        ? [{ id: row.id, rootId: primaryFile.rootId, rootRelativePath: primaryFile.rootRelativePath, files }]
-        : [];
+      return files.length ? [{ id: row.id, files }] : [];
     });
   }
 
@@ -695,6 +873,16 @@ export class LibraryRepository {
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
     const lastItem = pageItems.at(-1);
+    const totals = this.database.db
+      .select({
+        fileCount: sql<number>`count(${libraryItemFiles.id})`,
+        totalBytes: sql<number>`coalesce(sum(${libraryItemFiles.size}), 0)`,
+      })
+      .from(libraryItems)
+      .innerJoin(libraryItemFiles, eq(libraryItemFiles.itemId, libraryItems.id))
+      .where(baseWhere)
+      .get();
+    if (!totals) throw new Error("Library aggregate query returned no row");
 
     return {
       entries,
@@ -706,6 +894,7 @@ export class LibraryRepository {
               id: lastItem.id,
             }
           : null,
+      ...totals,
       total: this.getListCount(baseWhere),
     };
   }
@@ -714,18 +903,12 @@ export class LibraryRepository {
     const baseWhere = buildLibraryListWhere({});
     const aggregate = this.database.db
       .select({
-        fileCount: sql<number>`count(*)`,
+        fileCount: sql<number>`count(${libraryItemFiles.id})`,
         totalBytes: sql<number>`coalesce(sum(${libraryItemFiles.size}), 0)`,
         latestEntryTimestamp: sql<Date | null>`max(${libraryItems.createdAt})`,
       })
       .from(libraryItems)
-      .innerJoin(
-        libraryItemFiles,
-        and(
-          eq(libraryItemFiles.itemId, libraryItems.id),
-          sql`${libraryItemFiles.id} = ${libraryItems.id} || ':primary'`,
-        ),
-      )
+      .innerJoin(libraryItemFiles, eq(libraryItemFiles.itemId, libraryItems.id))
       .where(baseWhere)
       .get();
     const items = this.database.db
@@ -746,26 +929,26 @@ export class LibraryRepository {
       latestEntryTimestamp: aggregate?.latestEntryTimestamp ?? null,
       recentEntries: items.flatMap((item) => {
         const files = filesByItem.get(item.id) ?? [];
-        const primaryFile = files.find((file) => file.id === `${item.id}:primary`) ?? files[0];
+        const representativeFile = selectRepresentativeFile(files);
         const assets = assetsByItem.get(item.id) ?? [];
         const thumbnail =
           assets.find((asset) => asset.kind === "poster" && !isRemoteAssetUri(asset.uri)) ??
           assets.find((asset) => asset.kind === "thumb" && !isRemoteAssetUri(asset.uri)) ??
           assets.find((asset) => asset.kind === "poster" || asset.kind === "thumb");
-        return primaryFile
+        return representativeFile
           ? [
               {
                 id: item.id,
-                rootId: primaryFile.rootId,
-                rootRelativePath: primaryFile.rootRelativePath,
-                fileName: primaryFile.fileName,
-                size: primaryFile.size,
+                rootId: representativeFile.rootId,
+                rootRelativePath: representativeFile.rootRelativePath,
+                fileName: representativeFile.fileName,
+                size: files.reduce((total, file) => total + Math.max(0, file.size), 0),
                 number: item.number,
                 title: item.title,
                 actors: safeActors(item.actorsJson),
                 thumbnailPath: thumbnail?.uri ?? null,
                 thumbnailRootId: thumbnail?.rootId ?? null,
-                lastKnownPath: primaryFile.lastKnownPath,
+                lastKnownPath: representativeFile.lastKnownPath,
                 createdAt: item.createdAt,
                 hiddenFromRecentAt: item.hiddenFromRecentAt,
               },
@@ -819,6 +1002,25 @@ export class LibraryRepository {
 
   private assertMaintenanceSource(source: MaintenanceLibrarySourceRecord | undefined): void {
     if (!source) return;
+    const currentFiles = this.database.db
+      .select()
+      .from(libraryItemFiles)
+      .where(eq(libraryItemFiles.itemId, source.libraryItemId))
+      .all();
+    if (
+      currentFiles.length !== source.files.length ||
+      currentFiles.some(
+        (file) =>
+          !source.files.some(
+            (expected) =>
+              expected.libraryFileId === file.id &&
+              expected.rootId === file.rootId &&
+              expected.rootRelativePath === file.rootRelativePath,
+          ),
+      )
+    ) {
+      throw new Error("影片文件集合已变化，请重新预览");
+    }
     const file = this.database.db
       .select({ id: libraryItemFiles.id })
       .from(libraryItemFiles)
@@ -863,10 +1065,7 @@ export class LibraryRepository {
     input: CommitMaintenanceRefreshInput,
     preferredRootId: string,
   ): MaintenanceAssetInput[] {
-    const outputs: MaintenanceAssetInput[] = (input.outputAssets ?? []).map((asset) => ({
-      ...asset,
-      uri: asset.relativePath,
-    }));
+    const outputs: MaintenanceAssetInput[] = [];
     const localKinds = new Set<string>();
     const addLocal = (kind: string, value: string | undefined): void => {
       const absolutePath = value?.trim();
@@ -921,13 +1120,16 @@ export class LibraryRepository {
     const rows =
       ids.length > 0
         ? this.database.db
-            .select()
+            .select({ file: libraryItemFiles, sourceRunId: scrapeRunItems.runId })
             .from(libraryItemFiles)
+            .leftJoin(scrapeItemOutcomes, eq(scrapeItemOutcomes.id, libraryItemFiles.sourceOutcomeId))
+            .leftJoin(scrapeAttempts, eq(scrapeAttempts.id, scrapeItemOutcomes.attemptId))
+            .leftJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
             .where(inArray(libraryItemFiles.itemId, ids))
             .orderBy(libraryItemFiles.createdAt)
             .all()
         : [];
-    return groupByItem(rows.map(toLibraryItemFileRecord));
+    return groupByItem(rows.map((row) => toLibraryItemFileRecord(row.file, row.sourceRunId)));
   }
 
   private async listAssetsForItems(ids: string[]): Promise<Map<string, LibraryItemAssetRecord[]>> {

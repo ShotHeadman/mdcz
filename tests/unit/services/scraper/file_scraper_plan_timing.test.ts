@@ -12,6 +12,7 @@ import type {
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTempDirectory } from "../../../harness/tempDirectory";
 import { mockConfigManager } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
@@ -29,7 +30,13 @@ describe("FileScraper plan timing", () => {
     vi.restoreAllMocks();
   });
 
-  it("plans output paths from translated metadata so naming stays aligned with maintenance", async () => {
+  it("plans output paths from translated metadata so naming stays aligned with maintenance", async ({
+    onTestFinished,
+  }) => {
+    const directory = await createTempDirectory("scrape-plan-timing");
+    onTestFinished(() => directory.cleanup());
+    const sourcePath = join(directory.path, "ABC-123.mp4");
+    await writeFile(sourcePath, "video");
     const config = configurationSchema.parse({
       ...defaultConfiguration,
       download: {
@@ -110,7 +117,7 @@ describe("FileScraper plan timing", () => {
       getConfiguration: async () => currentConfig,
     });
 
-    const preparation = await scraper.prepareFile("/tmp/ABC-123.mp4", { fileIndex: 1, totalFiles: 1 }, undefined, {
+    const preparation = await scraper.prepareFile(sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
       source: { rootId: "root", relativePath: "tmp/ABC-123.mp4" },
       roots: [{ id: "root", hostPath: "/" }],
     });
@@ -121,7 +128,12 @@ describe("FileScraper plan timing", () => {
       naming: { ...currentConfig.naming, fileTemplate: "changed-{number}" },
     };
     if (preparation.status !== "prepared") throw new Error("Expected prepared scrape");
-    await scraper.executePreparedFile(preparation.prepared);
+    const results = await scraper.executePreparedFiles([
+      { prepared: preparation.prepared, progress: { fileIndex: 1, totalFiles: 1 } },
+    ]);
+    onTestFinished(async () => {
+      for (const result of results) await result.release?.();
+    });
     expect(aggregate).toHaveBeenCalledOnce();
     expect(translateCrawlerData).toHaveBeenCalledOnce();
     expect(fileOrganizer.plan).toHaveBeenCalledOnce();
@@ -143,3 +155,6 @@ describe("FileScraper plan timing", () => {
     });
   });
 });
+
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";

@@ -49,6 +49,7 @@ const fixture = async () => {
   const items = [1, 2].map((part) => {
     const videoPath = join(source, `FC2-123456-CD${part}.mp4`);
     return {
+      groupId: "movie-1",
       fileId: buildFileId(videoPath),
       videoPath,
       nfoPath,
@@ -220,16 +221,11 @@ describe("confirmUncensoredOutputs", () => {
     await expect(readFile(join(metadata, "FC2-123456-leak.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects conflicting choices for a shared NFO before preparing output", async () => {
+  it("rejects conflicting choices for a registered movie before preparing output", async () => {
     const { items, deps } = await fixture();
-    const result = await confirmUncensoredOutputs(
-      [items[0], { ...items[1], choice: "umr" }],
-      defaultConfiguration,
-      deps,
-    );
-    expect(result.updatedCount).toBe(0);
-    expect(result.failures).toHaveLength(2);
-    expect(result.failures.every(({ message }) => message.includes("Conflicting uncensored choices"))).toBe(true);
+    await expect(
+      confirmUncensoredOutputs([items[0], { ...items[1], choice: "umr" }], defaultConfiguration, deps),
+    ).rejects.toThrow("同一影片不能选择不同的无码类型");
     expect(deps.nfoGenerator.writeNfo).not.toHaveBeenCalled();
     expect(deps.publish).not.toHaveBeenCalled();
   });

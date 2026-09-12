@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -97,7 +97,7 @@ const waitForMaintenanceSession = async (
   token: string,
   sessionId: string,
   phase: "preview" | "apply",
-  status: "paused" | "completed",
+  status: "paused" | "completed" | "failed",
 ): Promise<MaintenanceActiveSessionSnapshot> => {
   let session: MaintenanceActiveSessionSnapshot | null = null;
   await expect
@@ -420,7 +420,17 @@ describe("buildServer maintenance integration", () => {
     await expect(access(join(sourceMetadataDir, "ABC-125-poster.jpg"))).resolves.toBeUndefined();
   });
 
-  it.each([false, true])("rebuilds and publishes shared metadata once (multipart=%s)", async (multipart) => {
+  it.each([
+    "single",
+    "multipart",
+    "missing",
+    "added",
+    "removed",
+    "relinked",
+    "offline",
+    "rollback",
+  ] as const)("publishes the complete movie or preserves all files (%s)", async (scenario) => {
+    const multipart = scenario !== "single";
     const root = await createTempRoot("maintenance-rebuild-root");
     await writeMaintenanceInput(root, "ABC-300", "Stale Local Title");
     const sourceNames = multipart ? ["ABC-300-CD1.mp4", "ABC-300-CD2.mp4"] : ["ABC-300.mp4"];
@@ -458,6 +468,8 @@ describe("buildServer maintenance integration", () => {
     const state = await services.persistence.getState();
     for (const name of sourceNames)
       await state.repositories.library.upsertEntry({
+        id: "maintenance-movie",
+        fileId: `maintenance-file:${name}`,
         rootId,
         rootRelativePath: name,
         assets: [
@@ -465,7 +477,14 @@ describe("buildServer maintenance integration", () => {
           { kind: "poster", uri: "ABC-300-poster.jpg", rootId, relativePath: "ABC-300-poster.jpg", published: true },
         ],
       });
-    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all", sourceNames);
+    const { session, sessionId } = await startMaintenancePreview(
+      fastify,
+      token,
+      rootId,
+      "rebuild_all",
+      sourceNames.slice(-1),
+    );
+    expect(session.previews).toHaveLength(1);
     expect(session.previews[0]).toMatchObject({
       presetId: "rebuild_all",
       relativePath: sourceNames[0],
@@ -473,6 +492,34 @@ describe("buildServer maintenance integration", () => {
       proposedCrawlerData: { number: "ABC-300", title: "Remote Title ABC-300" },
     });
     expect(session.previews[0].pathDiff).toBeTruthy();
+    expect(session.previews[0].affectedFiles).toHaveLength(sourceNames.length);
+    const before = await state.repositories.library.getEntryById("maintenance-movie");
+    if (scenario === "missing") await rm(join(root, sourceNames[1]));
+    if (scenario === "added") {
+      await writeFile(join(root, "ABC-300-CD3.mp4"), "third video");
+      await state.repositories.library.upsertEntry({
+        id: before.id,
+        fileId: "new-file",
+        rootId,
+        rootRelativePath: "ABC-300-CD3.mp4",
+      });
+    }
+    if (scenario === "removed") state.repositories.library.removeFile(`maintenance-file:${sourceNames[1]}`);
+    if (scenario === "relinked")
+      await state.repositories.library.relinkFile({
+        fileId: `maintenance-file:${sourceNames[1]}`,
+        rootId,
+        rootRelativePath: "relocated.mp4",
+      });
+    if (scenario === "offline")
+      await state.repositories.mediaRoots.upsert({
+        ...(await state.repositories.mediaRoots.get(rootId)),
+        hostPath: join(root, "offline"),
+      });
+    if (scenario === "rollback")
+      vi.spyOn(state.repositories.library, "writeRefresh").mockImplementation(() => {
+        throw new Error("injected maintenance commit failure");
+      });
 
     const applyResponse = await fastify.inject({
       method: "POST",
@@ -480,9 +527,31 @@ describe("buildServer maintenance integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
     });
+    if (scenario === "offline") {
+      expect(applyResponse.statusCode).toBe(500);
+      await expect(readFile(join(root, sourceNames[0]), "utf8")).resolves.toBeTruthy();
+      return;
+    }
     expect(applyResponse.statusCode).toBe(200);
     expect(applyResponse.json().result.data).toEqual({ sessionId });
-    const appliedSession = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+    const failed = scenario !== "single" && scenario !== "multipart";
+    const appliedSession = await waitForMaintenanceSession(
+      fastify,
+      token,
+      sessionId,
+      "apply",
+      failed ? "failed" : "completed",
+    );
+    if (failed) {
+      expect(appliedSession.currentBatch?.items[0]).toMatchObject({ status: "failed" });
+      await expect(readFile(join(root, sourceNames[0]), "utf8")).resolves.toBeTruthy();
+      await expect(access(join(root, "JAV_output", "ABC-300", sourceNames[0]))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      if (scenario === "rollback")
+        expect((await state.repositories.library.getEntryById(before.id)).files).toEqual(before.files);
+      return;
+    }
     expect(appliedSession.currentBatch?.items[0]).toMatchObject({ status: "success" });
 
     const organizedNfo = join(root, "JAV_output", "ABC-300", "ABC-300.nfo");
@@ -492,6 +561,10 @@ describe("buildServer maintenance integration", () => {
     }
     expect(aggregate).toHaveBeenCalledOnce();
     expect(downloadAll).toHaveBeenCalledOnce();
+    const refreshed = await state.repositories.library.getEntryById("maintenance-movie");
+    expect(refreshed.files.map((file) => file.id).sort()).toEqual(
+      sourceNames.map((name) => `maintenance-file:${name}`).sort(),
+    );
     const organizedNfoContent = await readFile(organizedNfo, "utf8");
     expect(organizedNfoContent).toContain("Remote Title ABC-300");
     expect(organizedNfoContent).not.toContain("<director>Remote Director</director>");

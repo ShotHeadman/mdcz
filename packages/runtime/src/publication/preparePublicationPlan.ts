@@ -16,8 +16,7 @@ import { capturePublicationBoundary } from "./boundary";
 import type { PreparedPublicationPlan } from "./types";
 
 export const preparePublicationPlan = async (input: {
-  sourceVideoPath: string;
-  outputVideoPath: string;
+  files: readonly { sourceVideoPath: string; outputVideoPath: string; organizePlan?: OrganizePlan }[];
   stagingDir?: string;
   existingAssetDir: string;
   metadataOutputDir: string;
@@ -26,7 +25,6 @@ export const preparePublicationPlan = async (input: {
   existingAssets?: DiscoveredAssets;
   existingNfoPath?: string;
   assetDecisions?: MaintenanceAssetDecisions;
-  organizePlan?: OrganizePlan;
   organizeFiles?: boolean;
   renameSubtitles?: boolean;
   nfoNaming: "both" | "movie" | "filename";
@@ -34,24 +32,118 @@ export const preparePublicationPlan = async (input: {
   strmPathMappings?: Configuration["paths"]["strmPathMappings"];
   reuseNfo?: boolean;
   remoteData?: CrawlerData;
+  onFileError?(sourcePath: string, error: unknown): void;
   writeNfo(
     assets: DownloadedAssets,
     writeFile: (path: string, content: string) => Promise<void>,
   ): Promise<string | undefined>;
 }): Promise<{ plan: PreparedPublicationPlan; assets: DiscoveredAssets; nfoPath?: string }> => {
+  const first = input.files[0];
+  if (!first) throw new Error("Publication requires at least one media file");
   const artifacts: PreparedPublicationPlan["artifacts"] = [];
   const sidecars: NonNullable<PreparedPublicationPlan["sidecars"]> = [];
+  const videos: NonNullable<PreparedPublicationPlan["videos"]> = [];
+  const media: NonNullable<PreparedPublicationPlan["media"]> = [];
+  const writeRoots = new Set<string>();
+  const readOnlyPaths = new Set<string>();
+  const readOnlyDirectories = new Set<string>();
+  const sharedSidecars = new Set<string>();
   const mapped = new Map<string, string>();
   const existing = input.existingAssets;
   const downloaded = input.downloadedAssets;
   const organizeFiles = input.organizeFiles !== false;
-  const independentOutput = Boolean(input.organizePlan?.strmPath);
-  const preserveSourceMedia = independentOutput && resolve(input.sourceVideoPath) === resolve(input.outputVideoPath);
+  for (const file of input.files) {
+    try {
+      const { sourceVideoPath, outputVideoPath, organizePlan } = file;
+      const size = (await stat(sourceVideoPath)).size;
+      const fileArtifacts: PreparedPublicationPlan["artifacts"] = [];
+      const fileSidecars: typeof sidecars = [];
+      const fileAssets: PreparedPublicationPlan["assets"] = [];
+      const video =
+        organizePlan && organizeFiles && resolve(sourceVideoPath) !== resolve(outputVideoPath)
+          ? {
+              sourcePath: sourceVideoPath,
+              targetPath: outputVideoPath,
+              size,
+              content: await prepareMovedStrmContent(sourceVideoPath, outputVideoPath),
+            }
+          : undefined;
+      const preserveSourceMedia =
+        Boolean(organizePlan?.strmPath) && resolve(sourceVideoPath) === resolve(outputVideoPath);
+      if (organizePlan?.strmPath) {
+        fileArtifacts.push({
+          targetPath: organizePlan.strmPath,
+          content: {
+            kind: "text",
+            data: await prepareStrmMirrorContent(sourceVideoPath, outputVideoPath, input.strmPathMappings),
+          },
+        });
+        fileAssets.push({ kind: "strm", targetPath: organizePlan.strmPath });
+      }
+      for (const subtitle of organizePlan?.subtitleSidecars ?? []) {
+        const targetPath = !organizeFiles
+          ? subtitle.path
+          : input.renameSubtitles
+            ? buildSubtitleSidecarTargetPath(subtitle, outputVideoPath)
+            : join(dirname(outputVideoPath), basename(subtitle.path));
+        const moving = resolve(targetPath) !== resolve(subtitle.path);
+        if (!organizePlan?.strmPath || moving) fileAssets.push({ kind: "subtitle", targetPath });
+        if (!moving && !organizePlan?.strmPath) continue;
+        const { size } = await stat(subtitle.path);
+        if (moving) fileSidecars.push({ sourcePath: subtitle.path, targetPath, size });
+        if (organizePlan?.strmPath) {
+          const copyPath = buildSubtitleSidecarTargetPath(subtitle, organizePlan.strmPath);
+          fileArtifacts.push({ targetPath: copyPath, content: { kind: "file", path: subtitle.path, size } });
+          fileAssets.push({ kind: "subtitle", targetPath: copyPath });
+        }
+      }
+      for (const sidecar of !organizePlan || !organizeFiles || preserveSourceMedia
+        ? []
+        : await findGeneratedVideoSidecars(sourceVideoPath)) {
+        const targetPath = buildGeneratedVideoSidecarTargetPath(
+          sidecar,
+          dirname(outputVideoPath),
+          parse(organizePlan?.nfoPath ?? outputVideoPath).name,
+        );
+        fileAssets.push({ kind: "feature", targetPath });
+        if (!sharedSidecars.has(`${sidecar.path}\0${targetPath}`))
+          fileSidecars.push({
+            sourcePath: sidecar.path,
+            targetPath,
+            size: (await stat(sidecar.path)).size,
+            shared: true,
+          });
+      }
+      if (organizePlan?.strmPath) {
+        const changing = new Set(fileSidecars.filter((move) => !move.preserveSource).map((move) => move.sourcePath));
+        writeRoots.add(organizePlan.metadataRoot ?? input.metadataOutputDir);
+        if (!preserveSourceMedia || changing.size) {
+          writeRoots.add(dirname(sourceVideoPath));
+          writeRoots.add(dirname(outputVideoPath));
+        }
+        if (preserveSourceMedia) {
+          readOnlyPaths.add(sourceVideoPath);
+          for (const subtitle of organizePlan.subtitleSidecars ?? [])
+            if (!changing.has(subtitle.path)) readOnlyPaths.add(subtitle.path);
+          if (!changing.size) readOnlyDirectories.add(dirname(sourceVideoPath));
+        }
+      }
+      for (const move of fileSidecars) if (move.shared) sharedSidecars.add(`${move.sourcePath}\0${move.targetPath}`);
+      if (video) videos.push(video);
+      artifacts.push(...fileArtifacts);
+      sidecars.push(...fileSidecars);
+      media.push({ sourcePath: sourceVideoPath, targetPath: outputVideoPath, size, assets: fileAssets });
+    } catch (error) {
+      if (!input.onFileError) throw error;
+      input.onFileError(file.sourceVideoPath, error);
+    }
+  }
+  if (!media.length) throw new Error("No media files could be prepared for publication");
   const assetFileNames = input.assetNamingMode
     ? buildMovieAssetFileNames(
         basename(
-          input.organizePlan?.nfoPath ?? input.outputVideoPath,
-          input.organizePlan ? ".nfo" : parse(input.outputVideoPath).ext,
+          first.organizePlan?.nfoPath ?? first.outputVideoPath,
+          first.organizePlan ? ".nfo" : parse(first.outputVideoPath).ext,
         ),
         input.assetNamingMode,
       )
@@ -129,8 +221,8 @@ export const preparePublicationPlan = async (input: {
     else assets[group.key] = targets[0];
   }
   let nfoPath =
-    input.reuseNfo && input.organizePlan
-      ? getNfoWritePaths(input.organizePlan.nfoPath, input.nfoNaming).canonicalPath
+    input.reuseNfo && first.organizePlan
+      ? getNfoWritePaths(first.organizePlan.nfoPath, input.nfoNaming).canonicalPath
       : await input.writeNfo(
           { ...assets, downloaded: [...new Set(artifacts.map(({ targetPath }) => targetPath))] },
           async (targetPath, data) => {
@@ -138,7 +230,7 @@ export const preparePublicationPlan = async (input: {
           },
         );
   if (!nfoPath && input.existingNfoPath) {
-    const paths = getNfoWritePaths(input.organizePlan?.nfoPath ?? input.existingNfoPath, input.nfoNaming);
+    const paths = getNfoWritePaths(first.organizePlan?.nfoPath ?? input.existingNfoPath, input.nfoNaming);
     nfoPath = paths.canonicalPath;
     let content = await readFile(input.existingNfoPath, "utf-8");
     if (organizeFiles && [...mapped].some(([source, target]) => source !== target)) {
@@ -170,15 +262,6 @@ export const preparePublicationPlan = async (input: {
       artifacts.push({ targetPath, content: { kind: "text", data: content } });
     }
   }
-  if (input.organizePlan?.strmPath) {
-    artifacts.push({
-      targetPath: input.organizePlan.strmPath,
-      content: {
-        kind: "text",
-        data: await prepareStrmMirrorContent(input.sourceVideoPath, input.outputVideoPath, input.strmPathMappings),
-      },
-    });
-  }
   const assetRefs: PreparedPublicationPlan["assets"] = [];
   for (const kind of ["thumb", "poster", "fanart", "trailer"] as const) {
     const targetPath = assets[kind];
@@ -196,97 +279,36 @@ export const preparePublicationPlan = async (input: {
       .map((artifact) => artifact.targetPath);
     assetRefs.push(...[...new Set([nfoPath, ...nfoPaths])].map((targetPath) => ({ kind: "nfo", targetPath })));
   }
-  if (input.organizePlan?.strmPath) assetRefs.push({ kind: "strm", targetPath: input.organizePlan.strmPath });
-  if (input.organizePlan) {
-    const { strmPath } = input.organizePlan;
-    for (const sidecar of input.organizePlan.subtitleSidecars ?? []) {
-      const targetPath = !organizeFiles
-        ? sidecar.path
-        : input.renameSubtitles
-          ? buildSubtitleSidecarTargetPath(sidecar, input.outputVideoPath)
-          : join(dirname(input.outputVideoPath), basename(sidecar.path));
-      const movingSubtitle = resolve(targetPath) !== resolve(sidecar.path);
-      if (!strmPath || movingSubtitle) assetRefs.push({ kind: "subtitle", targetPath });
-      if (!movingSubtitle && !strmPath) continue;
-      const { size } = await stat(sidecar.path);
-      if (movingSubtitle) sidecars.push({ sourcePath: sidecar.path, targetPath, size });
-      if (strmPath) {
-        const copyPath = buildSubtitleSidecarTargetPath(sidecar, strmPath);
-        artifacts.push({ targetPath: copyPath, content: { kind: "file", path: sidecar.path, size } });
-        assetRefs.push({ kind: "subtitle", targetPath: copyPath });
-      }
-    }
-    for (const sidecar of !organizeFiles || preserveSourceMedia
-      ? []
-      : await findGeneratedVideoSidecars(input.sourceVideoPath)) {
-      sidecars.push({
-        sourcePath: sidecar.path,
-        targetPath: buildGeneratedVideoSidecarTargetPath(
-          sidecar,
-          dirname(input.outputVideoPath),
-          parse(input.organizePlan.nfoPath).name,
-        ),
-        size: (await stat(sidecar.path)).size,
-        shared: true,
-      });
-    }
+  const allAssets = new Map<string, PreparedPublicationPlan["assets"][number]>();
+  for (const file of media) {
+    file.assets = [...assetRefs, ...(file.assets ?? [])];
+    for (const asset of file.assets) allAssets.set(`${asset.kind}\0${asset.targetPath ?? asset.url}`, asset);
   }
-  assetRefs.push(
-    ...sidecars.filter((move) => move.shared).map((move) => ({ kind: "feature", targetPath: move.targetPath })),
-  );
-  const size = (await stat(input.sourceVideoPath)).size;
   const plan: PreparedPublicationPlan = {
-    media: [{ sourcePath: input.sourceVideoPath, targetPath: input.outputVideoPath, size, assets: assetRefs }],
-    videos:
-      input.organizePlan && organizeFiles && resolve(input.sourceVideoPath) !== resolve(input.outputVideoPath)
-        ? [
-            {
-              sourcePath: input.sourceVideoPath,
-              targetPath: input.outputVideoPath,
-              size,
-              content: await prepareMovedStrmContent(input.sourceVideoPath, input.outputVideoPath),
-            },
-          ]
-        : [],
+    media,
+    videos,
     sidecars,
     artifacts,
-    assets: assetRefs,
+    assets: [...allAssets.values()],
     obsoletePaths: [],
     replaceExistingTargetPaths: [
       ...new Set([...artifacts.map(({ targetPath }) => targetPath), ...sidecars.map(({ targetPath }) => targetPath)]),
     ],
   };
-  if (input.organizePlan?.strmPath) {
+  if (writeRoots.size) {
     const moves = [...(plan.videos ?? []), ...sidecars];
-    const changingSubtitlePaths = new Set(
-      (input.organizePlan.subtitleSidecars ?? [])
-        .filter((subtitle) => moves.some((move) => !move.preserveSource && move.sourcePath === subtitle.path))
-        .map((subtitle) => subtitle.path),
-    );
     plan.boundary = await capturePublicationBoundary({
-      writeRoots: [
-        input.organizePlan.metadataRoot ?? input.metadataOutputDir,
-        ...(!preserveSourceMedia || changingSubtitlePaths.size
-          ? [dirname(input.sourceVideoPath), dirname(input.outputVideoPath)]
-          : []),
-      ],
+      writeRoots: [...writeRoots],
       writablePaths: [
         ...plan.artifacts.map((artifact) => artifact.targetPath),
         ...moves.flatMap((move) => (move.preserveSource ? [move.targetPath] : [move.sourcePath, move.targetPath])),
         ...plan.obsoletePaths,
       ],
       readOnlyPaths: [
-        ...(preserveSourceMedia
-          ? [
-              input.sourceVideoPath,
-              ...(input.organizePlan.subtitleSidecars ?? [])
-                .filter((sidecar) => !changingSubtitlePaths.has(sidecar.path))
-                .map((sidecar) => sidecar.path),
-            ]
-          : []),
+        ...readOnlyPaths,
         ...sidecars.filter((move) => move.preserveSource).map((move) => move.sourcePath),
       ],
-      readOnlyDirectories: preserveSourceMedia && !changingSubtitlePaths.size ? [dirname(input.sourceVideoPath)] : [],
+      readOnlyDirectories: [...readOnlyDirectories],
     });
   }
   return { assets, nfoPath, plan };

@@ -61,6 +61,7 @@ export interface MaintenanceRuntimePreviewEntriesInput {
 }
 
 export interface MaintenanceRuntimePreviewItem {
+  affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   entry: LocalScanEntry;
   rootId: string;
   relativePath: string;
@@ -77,7 +78,7 @@ export interface MaintenanceRuntimeApplyEntryInput {
   root: MediaRoot;
   presetId: MaintenancePresetId;
   entry: LocalScanEntry;
-  sharedOutput?: LocalScanEntry;
+  files?: LocalScanEntry[];
   committed?: {
     crawlerData?: CrawlerData;
     imageAlternatives?: MaintenanceImageAlternatives;
@@ -233,7 +234,7 @@ export class MaintenanceRuntime {
       input.progress ?? { fileIndex: 1, totalFiles: 1 },
       input.signal,
       input.committed,
-      input.sharedOutput,
+      input.files,
     );
 
     if (result.status !== "success") {

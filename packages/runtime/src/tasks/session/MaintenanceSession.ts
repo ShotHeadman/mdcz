@@ -280,6 +280,7 @@ export class MaintenanceSession {
       existing.imageAlternatives = preview.imageAlternatives;
       existing.entry = preview.entry ?? existing.entry;
       existing.librarySource = preview.librarySource ?? existing.librarySource;
+      existing.affectedFiles = preview.affectedFiles;
       existing.updatedAt = now;
       this.touch(now);
       return this.clonePreview(existing);

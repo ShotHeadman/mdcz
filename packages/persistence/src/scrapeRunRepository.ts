@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
-import type { UpsertLibraryEntryInput } from "./libraryRepository";
+import type { LibraryFileInput, LibraryMovieInput, UpsertLibraryEntryInput } from "./libraryRepository";
 import { writeLibraryRows } from "./libraryWrite";
 import { libraryItemFiles, scrapeAttempts, scrapeItemOutcomes, scrapeRunItems, scrapeRuns } from "./schema";
 
@@ -126,7 +126,7 @@ export type CommitScrapeOutcomeInput =
       uncensoredAmbiguous?: boolean;
       size: number;
       modifiedAt?: Date | null;
-      libraryEntry: UpsertLibraryEntryInput;
+      libraryEntry: LibraryFileInput;
     });
 
 export interface ReviseScrapeSuccessInput {
@@ -398,40 +398,32 @@ export class ScrapeRunRepository {
     };
   }
 
-  publicationPeers(attemptId: string) {
-    const { item } = this.requireOpenAttempt(attemptId);
-    const rows = this.database.db
-      .select({ item: scrapeRunItems, outcome: scrapeItemOutcomes, attempt: scrapeAttempts.attempt })
-      .from(scrapeItemOutcomes)
-      .innerJoin(scrapeAttempts, eq(scrapeAttempts.id, scrapeItemOutcomes.attemptId))
-      .innerJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
-      .where(eq(scrapeRunItems.runId, item.runId))
-      .orderBy(desc(scrapeAttempts.attempt))
-      .all();
-    const seen = new Set<string>();
-    return rows.flatMap((row) => {
-      if (seen.has(row.item.id)) return [];
-      seen.add(row.item.id);
-      if (
-        row.item.id === item.id ||
-        row.outcome.outcome !== "success" ||
-        !row.outcome.outputRootId ||
-        !row.outcome.outputRelativePath
-      )
-        return [];
-      return [
-        {
-          source: { rootId: row.item.rootId, relativePath: row.item.relativePath },
-          target: { rootId: row.outcome.outputRootId, relativePath: row.outcome.outputRelativePath },
-          size: row.outcome.size,
-        },
-      ];
-    });
-  }
-
-  commitSuccessOutcome(input: Extract<CommitScrapeOutcomeInput, { outcome: "success" }>): {
+  commitSuccessOutcomes(
+    inputs: readonly Extract<CommitScrapeOutcomeInput, { outcome: "success" }>[],
+    movie: LibraryMovieInput,
+  ): Array<{
     outcomeId: string;
     entryId: string;
+  }> {
+    if (inputs.length === 0) throw new Error("Scrape success batch must not be empty");
+    return this.database.sqlite.transaction(() => {
+      const outcomes = inputs.map((input) => this.writeSuccessOutcome(input));
+      const owners = new Set(outcomes.flatMap((outcome) => (outcome.ownerId ? [outcome.ownerId] : [])));
+      if (movie.id) owners.add(movie.id);
+      if (owners.size > 1) throw new Error("Scrape success group must target one movie");
+      const entryId = writeLibraryRows(
+        this.database,
+        { ...movie, id: [...owners][0] },
+        outcomes.map(({ libraryEntry }) => libraryEntry),
+      );
+      return outcomes.map(({ outcomeId }) => ({ outcomeId, entryId }));
+    })();
+  }
+
+  private writeSuccessOutcome(input: Extract<CommitScrapeOutcomeInput, { outcome: "success" }>): {
+    outcomeId: string;
+    ownerId?: string;
+    libraryEntry: LibraryFileInput;
   } {
     const id = input.id ?? randomUUID();
     const completedAt = input.completedAt ?? new Date();
@@ -461,13 +453,12 @@ export class ScrapeRunRepository {
       .get();
     return {
       outcomeId: id,
-      entryId: writeLibraryRows(this.database, {
+      ownerId: previousFile?.itemId,
+      libraryEntry: {
         ...input.libraryEntry,
-        id: input.libraryEntry.id ?? previousFile?.itemId ?? randomUUID(),
         fileId: input.libraryEntry.fileId ?? previousFile?.id,
-        sourceRunId: item.runId,
         sourceOutcomeId: id,
-      }),
+      },
     };
   }
 
@@ -477,16 +468,15 @@ export class ScrapeRunRepository {
    */
   reviseSuccess(inputs: readonly ReviseScrapeSuccessInput[]): void {
     this.database.sqlite.transaction(() => {
+      const libraryEntries: UpsertLibraryEntryInput[] = [];
       for (const input of inputs) {
         const existing = this.database.db
-          .select({ outcome: scrapeItemOutcomes, item: scrapeRunItems })
+          .select()
           .from(scrapeItemOutcomes)
-          .innerJoin(scrapeAttempts, eq(scrapeAttempts.id, scrapeItemOutcomes.attemptId))
-          .innerJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
           .where(eq(scrapeItemOutcomes.id, input.outcomeId))
           .get();
         if (!existing) throw notFound("Scrape outcome", input.outcomeId);
-        if (existing.outcome.outcome !== "success") {
+        if (existing.outcome !== "success") {
           throw new Error(`Only successful scrape outcomes can be revised: ${input.outcomeId}`);
         }
         this.database.db
@@ -503,11 +493,16 @@ export class ScrapeRunRepository {
           })
           .where(eq(scrapeItemOutcomes.id, input.outcomeId))
           .run();
-        writeLibraryRows(this.database, {
+        libraryEntries.push({
           ...input.libraryEntry,
-          sourceRunId: existing.item.runId,
-          sourceOutcomeId: existing.outcome.id,
+          sourceOutcomeId: existing.id,
         });
+      }
+      const movie = libraryEntries[0];
+      if (movie) {
+        if (new Set(libraryEntries.map((entry) => entry.id)).size !== 1)
+          throw new Error("Scrape revision group must target one movie");
+        writeLibraryRows(this.database, movie, libraryEntries);
       }
     })();
   }

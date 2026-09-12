@@ -2,10 +2,13 @@ import type { MediaRoot } from "@mdcz/media-store";
 import { toRootRelativePath } from "@mdcz/media-store";
 import type { DownloadedAssets } from "@mdcz/shared/types";
 
+export * from "./availability";
 export * from "./desktopInputRoot";
 export * from "./desktopOutputRoot";
+export * from "./entryDto";
 export * from "./mediaPathOwnership";
 export * from "./mediaRootService";
+export * from "./relink";
 
 export interface RuntimeLibraryAsset {
   kind: string;
@@ -52,6 +55,17 @@ export interface RuntimeLibraryEntrySummaryInput {
   size?: number;
   available?: boolean | null;
 }
+
+export const toRuntimeLibraryEntrySummaryInput = (
+  entry: Omit<RuntimeLibraryEntrySummaryInput, "fileName" | "lastKnownPath"> & {
+    displayFileId: string;
+    files: readonly { id: string; fileName: string; lastKnownPath: string | null }[];
+  },
+): RuntimeLibraryEntrySummaryInput => {
+  const file = entry.files.find((candidate) => candidate.id === entry.displayFileId);
+  if (!file) throw new Error(`Library display file not found: ${entry.id}`);
+  return { ...entry, fileName: file.fileName, lastKnownPath: file.lastKnownPath };
+};
 
 export interface RuntimeLibraryOverview {
   output: RuntimeOutputLibrarySummary;

@@ -129,22 +129,38 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
             ) : null}
           </div>
         ) : (
-          <DetailPanelAdapter
-            port={ports.detail}
-            item={detailItem}
-            compare={
-              usesDiffView
-                ? {
-                    result: compareResult,
-                    badgeLabel: "数据对比",
-                    entry: detailEntry ?? undefined,
-                    preview: detailPreview,
-                    fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
-                    onFieldSelectionChange: handleFieldSelectionChange,
-                  }
-                : undefined
-            }
-          />
+          <div className="flex h-full flex-col overflow-auto">
+            {snapshot?.previews.find((preview) => preview.entry?.fileId === detailEntry?.fileId)?.affectedFiles
+              ?.length ? (
+              <section className="space-y-2 border-b p-4 text-sm">
+                <h3 className="font-semibold">影片受影响文件</h3>
+                {snapshot.previews
+                  .find((preview) => preview.entry?.fileId === detailEntry?.fileId)
+                  ?.affectedFiles?.map((file) => (
+                    <p className="break-all" key={file.fileId}>
+                      {file.currentPath}
+                      {file.targetPath !== file.currentPath ? ` → ${file.targetPath}` : ""}
+                    </p>
+                  ))}
+              </section>
+            ) : null}
+            <DetailPanelAdapter
+              port={ports.detail}
+              item={detailItem}
+              compare={
+                usesDiffView
+                  ? {
+                      result: compareResult,
+                      badgeLabel: "数据对比",
+                      entry: detailEntry ?? undefined,
+                      preview: detailPreview,
+                      fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
+                      onFieldSelectionChange: handleFieldSelectionChange,
+                    }
+                  : undefined
+              }
+            />
+          </div>
         )
       }
       batchBar={<MaintenanceBatchBarAdapter port={ports.maintenance} />}

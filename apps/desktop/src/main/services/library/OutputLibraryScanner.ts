@@ -6,6 +6,7 @@ import {
   createOutputLibrarySummaryFromEntries,
   createOutputLibrarySummaryFromScrapeOutput,
   type RuntimeOutputLibrarySummary,
+  toRuntimeLibraryEntrySummaryInput,
 } from "@mdcz/runtime/library";
 
 export type OutputLibrarySummary = RuntimeOutputLibrarySummary;
@@ -84,7 +85,7 @@ export class OutputLibraryScanner {
         );
       }
       const entries = await state.repositories.library.listEntries();
-      return createOutputLibrarySummaryFromEntries(entries, scannedAt);
+      return createOutputLibrarySummaryFromEntries(entries.map(toRuntimeLibraryEntrySummaryInput), scannedAt);
     } catch (error) {
       const message = toErrorMessage(error);
       this.logger.warn(`Failed to read persisted output library summary: ${message}`);

@@ -8,11 +8,12 @@ import type {
 } from "../serverDtos";
 
 export interface LibraryDeleteInput {
-  deleteMode?: "none" | "assets" | "all";
   id: string;
 }
 
 export type LibraryIpcContract = {
+  [IpcChannel.Library_RelinkFile]: IpcProcedure<import("../serverDtos").LibraryRelinkInput, { success: true }>;
+  [IpcChannel.Library_RemoveFile]: IpcProcedure<import("../serverDtos").LibraryFileRemoveInput, { success: true }>;
   [IpcChannel.Library_Availability]: IpcProcedure<LibraryAvailabilityInput, LibraryAvailabilityResponse>;
   [IpcChannel.Library_List]: IpcProcedure<LibraryListInput, LibraryListResponse>;
   [IpcChannel.Library_Delete]: IpcProcedure<LibraryDeleteInput, { success: true }>;

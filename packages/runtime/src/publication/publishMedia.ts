@@ -232,6 +232,7 @@ export const commitPublishedMedia = async <TResult>(
       }
     }
     const preflightStartedAt = startPhase("preflight");
+    await options.validate?.();
     const registerOutputs = await prepareOutputRegistration(plan, options, fileSystem);
     const resolved = await preflightPublication(plan, options, fileSystem, previewed.observed);
     recordPhase("preflight", preflightStartedAt);
@@ -363,8 +364,8 @@ export const commitPublishedMedia = async <TResult>(
     }
 
     const obsolete = uniqueRefs([
-      ...plan.obsolete,
       ...(plan.deleteFiles ?? []),
+      ...plan.obsolete,
       ...planMoves(plan)
         .filter((move) => !move.preserveSource && resolved.resolve(move.source) !== resolved.resolve(move.target))
         .map((move) => move.source),

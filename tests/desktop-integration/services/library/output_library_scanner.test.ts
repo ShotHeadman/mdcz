@@ -55,25 +55,31 @@ const createCompletedRun = async (
     items: [{ id: `${input.id}:item`, ordinal: 0, rootId: "root-1", relativePath: input.outputRelativePath }],
   });
   database.sqlite.transaction(() =>
-    scrapeRuns.commitSuccessOutcome({
-      outcome: "success",
-      attemptId: scrapeRuns.admitAttempt(manifest.items[0].id).id,
-      crawlerDataJson: JSON.stringify({ number: input.id }),
-      outputRootId: "root-1",
-      outputRelativePath: input.outputRelativePath,
-      size: input.size,
-      completedAt: input.completedAt,
-      libraryEntry: {
+    scrapeRuns.commitSuccessOutcomes(
+      [
+        {
+          outcome: "success",
+          attemptId: scrapeRuns.admitAttempt(manifest.items[0].id).id,
+          crawlerDataJson: JSON.stringify({ number: input.id }),
+          outputRootId: "root-1",
+          outputRelativePath: input.outputRelativePath,
+          size: input.size,
+          completedAt: input.completedAt,
+          libraryEntry: {
+            rootId: "root-1",
+            rootRelativePath: input.outputRelativePath,
+            size: input.size,
+            lastKnownPath: input.outputRelativePath,
+          },
+        },
+      ],
+      {
         mediaIdentity: input.id,
-        rootId: "root-1",
-        rootRelativePath: input.outputRelativePath,
-        size: input.size,
         number: input.id,
         crawlerDataJson: JSON.stringify({ number: input.id }),
-        lastKnownPath: input.outputRelativePath,
         createdAt: input.completedAt,
       },
-    }),
+    ),
   )();
   await scrapeRuns.finalize({
     runId: manifest.id,

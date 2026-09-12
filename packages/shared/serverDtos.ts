@@ -654,26 +654,18 @@ export type TaskNotificationDto = z.infer<typeof taskNotificationSchema>;
 export const libraryEntrySchema = z.object({
   id: z.string(),
   mediaIdentity: z.string().nullable(),
-  rootId: z.string(),
-  rootDisplayName: z.string(),
-  relativePath: z.string(),
-  fileName: z.string(),
-  directory: z.string(),
+  displayFileId: z.string(),
   size: z.number(),
-  modifiedAt: z.string().nullable(),
-  runId: z.string().nullable(),
-  scrapeOutcomeId: z.string().nullable(),
   title: z.string().nullable(),
   number: z.string().nullable(),
   actors: z.array(z.string()),
   crawlerData: crawlerDataSchema.nullable(),
   thumbnailPath: z.string().nullable(),
   thumbnailRootId: z.string().nullable().optional(),
-  lastKnownPath: z.string().nullable(),
   createdAt: z.string(),
   lastRefreshedAt: z.string().nullable(),
   hiddenFromRecentAt: z.string().nullable(),
-  available: z.boolean().nullable(),
+  available: z.enum(["available", "partial", "unavailable", "unchecked"]),
   fileRefs: z.array(
     z.object({
       id: z.string(),
@@ -685,12 +677,19 @@ export const libraryEntrySchema = z.object({
       size: z.number(),
       modifiedAt: z.string().nullable(),
       lastKnownPath: z.string().nullable(),
+      partNumber: z.number().int().positive().nullable(),
+      partSuffix: z.string().nullable(),
+      resolution: z.string().nullable(),
+      runId: z.string().nullable(),
+      scrapeOutcomeId: z.string().nullable(),
       available: z.boolean().nullable(),
+      availabilityError: z.string().nullable(),
     }),
   ),
   assets: z.array(
     z.object({
       id: z.string(),
+      fileId: z.string().nullable(),
       kind: z.string(),
       uri: z.string(),
       rootId: z.string().nullable(),
@@ -718,14 +717,22 @@ export const libraryDetailInputSchema = z.object({
 
 export type LibraryDetailInput = z.infer<typeof libraryDetailInputSchema>;
 
-export const libraryRelinkInputSchema = libraryDetailInputSchema.extend({
+export const libraryRelinkInputSchema = z.object({
+  fileId: z.string().trim().min(1),
   rootId: z.string().trim().min(1),
   relativePath: z.string().trim().min(1),
 });
 
 export type LibraryRelinkInput = z.infer<typeof libraryRelinkInputSchema>;
 
+export const libraryFileRemoveInputSchema = z.object({
+  fileId: z.string().trim().min(1),
+});
+export type LibraryFileRemoveInput = z.infer<typeof libraryFileRemoveInputSchema>;
+
 export const libraryListResponseSchema = z.object({
+  fileCount: z.number(),
+  totalBytes: z.number(),
   entries: z.array(libraryEntrySchema),
   hasMore: z.boolean(),
   nextCursor: z.string().nullable(),
@@ -744,11 +751,12 @@ export const libraryAvailabilityResponseSchema = z.object({
   entries: z.array(
     z.object({
       id: z.string(),
-      available: z.boolean().nullable(),
+      available: z.enum(["available", "partial", "unavailable", "unchecked"]),
       fileRefs: z.array(
         z.object({
           id: z.string(),
           available: z.boolean().nullable(),
+          availabilityError: z.string().nullable(),
         }),
       ),
     }),

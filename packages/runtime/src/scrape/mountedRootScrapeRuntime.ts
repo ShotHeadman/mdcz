@@ -4,13 +4,17 @@ import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult } from "@mdcz/shared/types";
 import type { RuntimeDownloadNetworkClient } from "../network";
-import type { PublicationPlan } from "../publication";
 import type { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { FileOrganizer, type ScrapeExecutionMode } from "./FileOrganizer";
-import { FileScraper, type PreparedFileScrape, type RuntimeScrapeSignalService } from "./FileScraper";
+import {
+  type FileScrapeResult,
+  FileScraper,
+  type PreparedFileScrape,
+  type RuntimeScrapeSignalService,
+} from "./FileScraper";
 import { NfoGenerator } from "./nfo";
 import { applyPosterTagBadgesIfNeeded } from "./output/applyPosterTagBadges";
 import { PosterWatermarkService } from "./PosterWatermarkService";
@@ -66,26 +70,11 @@ export interface MountedRootScrapeRuntimeItemInput {
   signal?: AbortSignal;
 }
 
-export interface MountedRootScrapeRuntimeItemSuccess {
-  status: "success";
-  result: ScrapeResult;
-  crawlerData: CrawlerData;
-  nfoPath: string | null;
-  outputRelativePath: string;
-  size: number;
-  modifiedAt: Date | null;
-  plan: PublicationPlan;
-}
-
 export interface MountedRootScrapeRuntimeItemFailure {
   status: "failed" | "skipped";
   result: ScrapeResult;
   error: string;
 }
-
-export type MountedRootScrapeRuntimeItemResult =
-  | MountedRootScrapeRuntimeItemSuccess
-  | MountedRootScrapeRuntimeItemFailure;
 
 export interface PreparedMountedRootScrape {
   fileScrape: PreparedFileScrape;
@@ -152,6 +141,7 @@ export class MountedRootScrapeRuntime {
   private readonly context = new AsyncLocalStorage<{
     input: MountedRootScrapeRuntimeItemInput;
     signalService: MountedRootScrapeSignalService;
+    progressSignals?: Map<number, MountedRootScrapeSignalService>;
   }>();
   private readonly scraper: FileScraper;
 
@@ -169,7 +159,12 @@ export class MountedRootScrapeRuntime {
       showLogText: (message) => current().signalService.showLogText(message),
       showScrapeInfo: (input) => current().signalService.showScrapeInfo(input),
       showScrapeResult: (result) => current().signalService.showScrapeResult(result),
-      setProgress: (value, currentIndex, total) => current().signalService.setProgress(value, currentIndex, total),
+      setProgress: (value, currentIndex, total) =>
+        (current().progressSignals?.get(currentIndex) ?? current().signalService).setProgress(
+          value,
+          currentIndex,
+          total,
+        ),
     };
     const { config, aggregationService, networkClient, mappingStore, imageHostCooldownStore, actorSourceProvider } =
       this.deps;
@@ -262,43 +257,29 @@ export class MountedRootScrapeRuntime {
   }
 
   async executePrepared(
-    prepared: PreparedMountedRootScrape,
-    progress: MountedRootScrapeRuntimeItemInput["progress"],
+    entries: readonly (PreparedMountedRootScrape & { caseId?: string })[],
     signal?: AbortSignal,
-  ): Promise<MountedRootScrapeRuntimeItemResult> {
-    return await prepared.runtime.context.run(
-      { input: prepared.input, signalService: prepared.signalService },
+  ): Promise<FileScrapeResult[]> {
+    const first = entries[0];
+    if (!first) return [];
+    return await first.runtime.context.run(
+      {
+        input: first.input,
+        signalService: first.signalService,
+        progressSignals: new Map(entries.map((entry) => [entry.input.progress.fileIndex, entry.signalService])),
+      },
       async () => {
         try {
-          const result = await prepared.runtime.scraper.executePreparedFile(prepared.fileScrape, progress, signal);
-          if (result.status !== "success" || !result.crawlerData) {
-            return {
-              status: result.status === "skipped" ? "skipped" : "failed",
-              result,
-              error: result.error ?? "刮削失败",
-            };
-          }
-          const video = result.publicationPlan.media?.[0];
-          if (!video) throw new Error("Successful scrape did not produce a publication plan");
-          const fallbackRoot = prepared.fileScrape.roots[0];
-          if (!fallbackRoot) throw new Error("Successful scrape has no publication root");
-          return {
-            status: "success",
-            result,
-            crawlerData: result.crawlerData,
-            nfoPath: result.nfo
-              ? resolveRootRelativePath(
-                  prepared.fileScrape.roots.find((root) => root.id === result.nfo?.rootId) ?? fallbackRoot,
-                  result.nfo.relativePath,
-                )
-              : null,
-            outputRelativePath: video.target.relativePath,
-            size: video.size,
-            modifiedAt: null,
-            plan: result.publicationPlan,
-          };
+          return await first.runtime.scraper.executePreparedFiles(
+            entries.map((entry) => ({
+              prepared: entry.fileScrape,
+              progress: entry.input.progress,
+              caseId: entry.caseId,
+            })),
+            signal,
+          );
         } finally {
-          await prepared.signalService.flush();
+          await Promise.all(entries.map((entry) => entry.signalService.flush()));
         }
       },
     );

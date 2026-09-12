@@ -153,6 +153,8 @@ describe("ScraperService ref-native start", () => {
         status: "prepared",
         prepared: {
           sourcePath,
+          fileInfo: { number, part: undefined },
+          crawlerData: { number },
           outputPlan: {
             outputDir: dirname(number === "ABF-981" ? target : join(output, "JAV_output", number, `${number}.mp4`)),
             targetVideoPath: number === "ABF-981" ? target : join(output, "JAV_output", number, `${number}.mp4`),
@@ -161,7 +163,17 @@ describe("ScraperService ref-native start", () => {
         } as never,
       };
     });
-    const executePrepared = vi.spyOn(FileScraper.prototype, "executePreparedFile");
+    const executePrepared = vi
+      .spyOn(FileScraper.prototype, "executePreparedFiles")
+      .mockImplementation(async (entries) =>
+        entries.map(({ prepared }) => ({
+          ...prepared.identity,
+          fileName: `${prepared.fileInfo.number}.mp4`,
+          status: "skipped",
+          error: "test execution skipped",
+          assets: [],
+        })),
+      );
     const launch = await service.retry(run.id);
     await service.waitForIdle();
     expect(FileScraper.prototype.prepareFile).toHaveBeenCalledTimes(4);
@@ -171,7 +183,7 @@ describe("ScraperService ref-native start", () => {
     expect(terminal?.items.find((item) => item.relativePath === "ABF-981.mp4")).toMatchObject({
       status: "failed",
     });
-    expect(executePrepared).not.toHaveBeenCalled();
+    expect(executePrepared).toHaveBeenCalledTimes(3);
     expect(create).not.toHaveBeenCalled();
     expect(retry).toHaveBeenCalledOnce();
     expect(await repository.get(run.id)).not.toEqual(beforeRetry);

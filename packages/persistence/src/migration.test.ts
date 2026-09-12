@@ -25,6 +25,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 0, when: 0, tag: "0000_initial" }),
       expect.objectContaining({ idx: 1, when: 1_787_875_200_000, tag: "0001_additive_roots_and_scan_tasks" }),
       expect.objectContaining({ idx: 2, when: 1_787_961_600_000, tag: "0002_publication_and_directory_tasks" }),
+      expect.objectContaining({ idx: 3, when: 1_789_257_600_000, tag: "0003_movie_file_model" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
@@ -49,6 +50,17 @@ describe("Persistence migration baseline", () => {
       expect(columns("scan_tasks")).not.toEqual(expect.arrayContaining(["kind", "summary", "execution_version"]));
       expect(columns("scrape_item_outcomes")).toContain("attempt_id");
       expect(columns("scrape_item_outcomes")).not.toContain("item_id");
+      expect(columns("library_items")).not.toEqual(expect.arrayContaining(["source_run_id", "source_outcome_id"]));
+      expect(columns("library_item_files")).toEqual(
+        expect.arrayContaining(["part_number", "part_suffix", "resolution", "source_outcome_id"]),
+      );
+      expect(columns("library_item_assets")).toContain("file_id");
+      const fileIndexes = database.sqlite
+        .prepare("PRAGMA index_list(library_item_files)")
+        .all()
+        .map((row) => (row as { name: string }).name);
+      expect(fileIndexes).not.toContain("library_item_files_item_id_idx");
+      expect(fileIndexes).not.toContain("library_item_files_item_idx");
 
       const strict = database.sqlite.prepare("PRAGMA table_list").all() as Array<{ name: string; strict: number }>;
       for (const name of [

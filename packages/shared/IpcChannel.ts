@@ -59,6 +59,8 @@ export enum IpcChannel {
   Library_List = "library:list",
   Library_Availability = "library:availability",
   Library_Delete = "library:delete",
+  Library_RemoveFile = "library:removeFile",
+  Library_RelinkFile = "library:relinkFile",
 
   MediaRoots_EnsurePath = "mediaRoots:ensurePath",
   MediaRoots_PrepareOutputDirectory = "mediaRoots:prepare-output-directory",

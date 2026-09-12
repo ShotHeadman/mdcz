@@ -145,33 +145,39 @@ describe("FileScraper multipart aggregation cache", () => {
     );
   });
 
-  it("reuses one aggregation request for same-number multipart files", async () => {
+  it("shares aggregation and publication across multipart files while retaining individual failures", async () => {
     const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
-    const { scraper } = createScraper(aggregate);
-    const [part1Path, part2Path] = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4");
-
-    const [part1, part2] = await Promise.all([
-      prepareAndExecuteFile(scraper, part1Path, { fileIndex: 1, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
+    const { scraper, mocks } = createScraper(aggregate);
+    const paths = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4", "FC2-123456-3.mp4");
+    const entries = await Promise.all(
+      paths.map(async (filePath, index) => {
+        const progress = { fileIndex: index + 1, totalFiles: paths.length };
+        const result = await scraper.prepareFile(filePath, progress, undefined, {
+          roots: [
+            { id: "test-root", hostPath: tmpdir() },
+            { id: "output-root", hostPath: "/output" },
+          ],
+        });
+        if (result.status !== "prepared") throw new Error("Expected prepared file");
+        return { prepared: result.prepared, progress };
       }),
-      prepareAndExecuteFile(scraper, part2Path, { fileIndex: 2, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-    ]);
+    );
+    await rm(paths[2]);
+    const [part1, part2, part3] = await scraper.executePreparedFiles(entries);
 
     expect(aggregate).toHaveBeenCalledTimes(1);
+    expect(mocks.downloadAll).toHaveBeenCalledOnce();
+    expect(part3.status).toBe("failed");
     expect(part1.status).toBe("success");
     expect(part2.status).toBe("success");
     expect(part1.part?.number).toBe(1);
     expect(part2.part?.number).toBe(2);
     expect(part1.relativePath).toContain("FC2-123456-1");
     expect(part2.relativePath).toContain("FC2-123456-2");
+    if (part1.status !== "success" || part2.status !== "success") throw new Error("Expected successful parts");
+    expect(part1.publicationPlan).toBe(part2.publicationPlan);
+    expect(part1.publicationPlan.media).toHaveLength(2);
+    await part1.release?.();
   });
 
   it("reuses one aggregation request for alphabetic multipart files", async () => {

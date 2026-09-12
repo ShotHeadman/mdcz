@@ -39,6 +39,7 @@ export const registeredMediaLocations = async (
   };
   const byItem = new Map<string, RegisteredMediaLocation>();
   for (const asset of snapshot.assets) {
+    if (asset.fileId !== null) continue;
     const location = byItem.get(asset.itemId) ?? { assets: { sceneImages: [], actorPhotos: [] } };
     const path = absolute(asset);
     if (asset.published && asset.kind === "strm") {
@@ -54,27 +55,18 @@ export const registeredMediaLocations = async (
     else if (["thumb", "poster", "fanart", "trailer"].includes(asset.kind))
       location.assets[asset.kind as "thumb" | "poster" | "fanart" | "trailer"] = path;
   }
-  const groupByItem = new Map(snapshot.files.map((file) => [file.itemId, file.itemId]));
-  const ownerByPath = new Map<string, string>();
-  const activeOutputs = snapshot.assets.filter((asset) => asset.published && !asset.historical);
-  const publishedPaths = await resolvePublicationReferenceKeys(activeOutputs, [], resolveRoot);
-  for (const asset of activeOutputs) {
-    const key = publishedPaths.get(publicationRefKey(asset));
-    if (key === undefined) throw new Error(`Published resource path not found: ${absolute(asset)}`);
-    const owner = ownerByPath.get(key);
-    if (owner) {
-      const previous = groupByItem.get(asset.itemId);
-      const group = groupByItem.get(owner);
-      if (!group) throw new Error(`Published resource owner has no media: ${owner}`);
-      for (const [itemId, groupId] of groupByItem) if (groupId === previous) groupByItem.set(itemId, group);
-    } else ownerByPath.set(key, asset.itemId);
-  }
   return new Map(
     snapshot.files.map((file) => [
       absolute(file),
       {
         ...(byItem.get(file.itemId) ?? { assets: { sceneImages: [], actorPhotos: [] } }),
-        groupId: groupByItem.get(file.itemId),
+        groupId: file.itemId,
+        strmPath: snapshot.assets
+          .filter((asset) => asset.fileId === file.fileId && asset.kind === "strm" && !asset.historical)
+          .map(absolute)[0],
+        generatedStrmPaths: snapshot.assets
+          .filter((asset) => asset.fileId === file.fileId && asset.kind === "strm" && asset.published)
+          .map(absolute),
       },
     ]),
   );

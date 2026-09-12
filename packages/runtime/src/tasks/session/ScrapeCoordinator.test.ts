@@ -62,9 +62,16 @@ const createHost = (
     admitItem: async (item) => `${item.id}:attempt`,
     prepareItem: async () => ({ status: "prepared", prepared: undefined }),
     validatePrepared: vi.fn(async () => undefined),
-    executePreparedItem: async (item, _prepared, signal) => await executeItem(item, signal),
+    acquireItems: () => () => undefined,
+    executePreparedItems: async (items, signal) =>
+      await Promise.all(
+        items.map(async ({ item }) => ({
+          itemId: item.id,
+          result: await executeItem(item, signal),
+        })),
+      ),
     commitPreparationItem: async (_item, result) => result,
-    commitItem: async (_item, result) => result,
+    commitItems: async (items) => items.map(({ item, result }) => ({ itemId: item.id, result })),
   }),
   onInvalidate: vi.fn(),
 });
@@ -160,13 +167,16 @@ describe("ScrapeCoordinator", () => {
     const create = host.createExecution;
     host.createExecution = async (entry, reporter) => ({
       ...(await create(entry, reporter)),
-      commitItem: async (item, result) => {
-        if (item.id === "one") {
-          committing.resolve();
-          await release.promise;
-        }
-        return result;
-      },
+      commitItems: async (items) =>
+        await Promise.all(
+          items.map(async ({ item, result }) => {
+            if (item.id === "one") {
+              committing.resolve();
+              await release.promise;
+            }
+            return { itemId: item.id, result };
+          }),
+        ),
     });
     const coordinator = new ScrapeCoordinator(store, host);
     await coordinator.start("start");
@@ -231,11 +241,12 @@ describe("ScrapeCoordinator", () => {
       validatePrepared: async () => {
         if (stage === "preflight") throw new PublicationConflictError("/one", "/two");
       },
-      commitItem: async (item, result) => {
-        if (stage === "publication" && item.id === "one" && result.status === "success")
-          throw new PublicationConflictError("/one", "/two");
-        return result;
-      },
+      commitItems: async (items) =>
+        items.map(({ item, result }) => {
+          if (stage === "publication" && item.id === "one" && result.status === "success")
+            throw new PublicationConflictError("/one", "/two");
+          return { itemId: item.id, result };
+        }),
     });
     const coordinator = new ScrapeCoordinator(store, host);
     await coordinator.start("start");
@@ -373,11 +384,12 @@ describe("ScrapeCoordinator", () => {
     const createExecution = host.createExecution;
     host.createExecution = async (entry) => ({
       ...(await createExecution(entry, { progress: () => undefined, stage: () => undefined })),
-      commitItem: async (item, result) => {
-        committed.push(item.id);
-        if (committed.length === 2) processingCommitted.resolve();
-        return result;
-      },
+      commitItems: async (items) =>
+        items.map(({ item, result }) => {
+          committed.push(item.id);
+          if (committed.length === 2) processingCommitted.resolve();
+          return { itemId: item.id, result };
+        }),
     });
     const coordinator = new ScrapeCoordinator(store, host);
 

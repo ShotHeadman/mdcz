@@ -54,9 +54,13 @@ export const ipc = {
     getOutputSummary: () => client[IpcChannel.Overview_GetOutputSummary](undefined),
   },
   library: {
+    relinkFile: (input: import("@mdcz/shared/serverDtos").LibraryRelinkInput) =>
+      client[IpcChannel.Library_RelinkFile](input),
+    removeFile: (input: import("@mdcz/shared/serverDtos").LibraryFileRemoveInput) =>
+      client[IpcChannel.Library_RemoveFile](input),
     availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
-    delete: (input: { deleteMode?: "none" | "assets" | "all"; id: string }) => client[IpcChannel.Library_Delete](input),
+    delete: (input: { id: string }) => client[IpcChannel.Library_Delete](input),
   },
   mediaRoots: {
     ensurePath: (input: MediaRootEnsurePathInput) => client[IpcChannel.MediaRoots_EnsurePath](input),
@@ -114,11 +118,11 @@ export const ipc = {
         recursive,
         excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
       }),
+    delete: (targets: RootFileRef[], containingFolder?: boolean) =>
+      client[IpcChannel.File_Delete]({ targets, containingFolder }),
     exists: (path: LocalFileTarget) => client[IpcChannel.File_Exists]({ path }),
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
-    delete: (targets: RootFileRef[], containingFolder?: boolean) =>
-      client[IpcChannel.File_Delete]({ targets, containingFolder }),
     nfoRead: (nfoPath: LocalFileTarget, videoPath?: LocalFileTarget) =>
       client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
     nfoWrite: (nfoPath: LocalFileTarget, data: CrawlerData, videoPath?: LocalFileTarget) =>

@@ -6,9 +6,12 @@ import { isGeneratedSidecarVideo } from "./media/generatedSidecarVideos";
 import { DEFAULT_VIDEO_EXTENSIONS } from "./utils/filesystem";
 
 export interface PreparedScrapeTarget {
+  libraryItemId?: string;
   itemId: string;
   sourcePath: string;
   outputPlan: Pick<OrganizePlan, "targetVideoPath">;
+  mediaIdentity?: string;
+  partNumber?: number | null;
 }
 
 export interface ScrapeTargetConflict {
@@ -22,7 +25,7 @@ export class ScrapeTargetConflictError extends Error {
   constructor(readonly conflicts: readonly ScrapeTargetConflict[]) {
     super(
       conflicts
-        .map((conflict) => `${conflict.message}\n待处理：${conflict.sourcePath}\n冲突文件：${conflict.targetPath}`)
+        .map((conflict) => `${conflict.message}\n待处理：${conflict.sourcePath}\n目标路径：${conflict.targetPath}`)
         .join("\n\n"),
     );
     this.name = "ScrapeTargetConflictError";
@@ -31,6 +34,10 @@ export class ScrapeTargetConflictError extends Error {
 
 const pathKey = (value: string): string => resolve(value).toLocaleLowerCase();
 const targetKey = (value: string): string => `${pathKey(dirname(value))}\0${parse(value).name.toLocaleLowerCase()}`;
+export const scrapeMovieGroupKey = (
+  item: Pick<PreparedScrapeTarget, "libraryItemId" | "sourcePath" | "mediaIdentity">,
+): string =>
+  item.libraryItemId ?? `${pathKey(dirname(item.sourcePath))}\0${item.mediaIdentity?.trim().toLocaleUpperCase() ?? ""}`;
 
 const resolvedRealPath = async (filePath: string): Promise<string> =>
   await realpath(filePath).catch((error: NodeJS.ErrnoException) => {
@@ -40,6 +47,40 @@ const resolvedRealPath = async (filePath: string): Promise<string> =>
 
 export const validatePreparedScrapeFiles = async (prepared: readonly PreparedScrapeTarget[]): Promise<void> => {
   const conflicts: ScrapeTargetConflict[] = [];
+  const candidates = new Map<string, PreparedScrapeTarget[]>();
+  for (const item of prepared) {
+    if (!item.mediaIdentity?.trim()) continue;
+    const group = candidates.get(scrapeMovieGroupKey(item)) ?? [];
+    group.push(item);
+    candidates.set(scrapeMovieGroupKey(item), group);
+  }
+  for (const group of candidates.values()) {
+    if (group.every((item) => item.libraryItemId)) continue;
+    if (group.length < 2) continue;
+    const parts = group.filter((item) => item.partNumber !== null && item.partNumber !== undefined);
+    const duplicatePart = new Set<number>();
+    const seenParts = new Set<number>();
+    for (const item of parts) {
+      const partNumber = item.partNumber as number;
+      if (seenParts.has(partNumber)) duplicatePart.add(partNumber);
+      seenParts.add(partNumber);
+    }
+    const message =
+      parts.length > 0 && parts.length < group.length
+        ? "同一影片同时包含分盘文件和独立文件，需要手动核对"
+        : duplicatePart.size > 0
+          ? `同一影片存在重复分盘号：${[...duplicatePart].sort((left, right) => left - right).join("、")}`
+          : null;
+    if (!message) continue;
+    for (const item of group) {
+      conflicts.push({
+        itemId: item.itemId,
+        sourcePath: item.sourcePath,
+        targetPath: item.outputPlan.targetVideoPath,
+        message,
+      });
+    }
+  }
   const plannedByTarget = new Map<string, PreparedScrapeTarget[]>();
   for (const item of prepared) {
     const key = targetKey(item.outputPlan.targetVideoPath);

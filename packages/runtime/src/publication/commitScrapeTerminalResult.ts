@@ -1,17 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
-import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import { parseFileInfo } from "../scrape/utils/number";
-import {
-  publicationPathKey,
-  publicationRefKey,
-  resolvePublicationPath,
-  resolvePublicationReferenceKeys,
-} from "./boundary";
+import { publicationRefKey, resolvePublicationReferenceKeys } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
-import { libraryEntryFromPublicationPlan } from "./libraryEntry";
+import { libraryAssetsFromPublicationPlan } from "./libraryEntry";
 import { commitPublishedMedia } from "./publishMedia";
 import {
   PublicationError,
@@ -61,54 +56,126 @@ const commitPublishedMediaResult = async <TResult>(
   }
 };
 
-export interface ScrapeSuccessPublicationFacts {
-  plan: PublicationPlan;
-  crawlerData?: CrawlerData;
-  identity: string;
-  nfo: RootFileRef | null;
-  size: number;
-  modifiedAt: Date | null;
-  uncensoredAmbiguous: boolean;
+export interface ScrapeTerminalCommitStore {
+  commitOutcome(input: { outcome: "failed" | "skipped"; attemptId: string; error?: string | null }): { id: string };
+  commitSuccessOutcomes(
+    inputs: readonly ScrapeSuccessOutcomeCommitInput[],
+    movie: {
+      id: string;
+      mediaIdentity: string;
+      title: string;
+      number: string;
+      actors: string[];
+      crawlerDataJson: string;
+      createdAt: Date;
+    },
+  ): Array<{
+    outcomeId: string;
+    entryId: string;
+  }>;
 }
 
-export interface ScrapeTerminalCommitStore {
-  publicationPeers?(attemptId: string): Array<{ source: RootFileRef; target: RootFileRef; size: number }>;
-  commitOutcome(input: { outcome: "failed" | "skipped"; attemptId: string; error?: string | null }): { id: string };
-  commitSuccessOutcome(input: {
-    outcome: "success";
-    error?: string | null;
-    attemptId: string;
-    crawlerDataJson: string;
-    nfoRootId: string | null;
-    nfoRelativePath: string | null;
-    outputRootId: string;
-    outputRelativePath: string;
-    uncensoredAmbiguous: boolean;
+export interface ScrapeSuccessOutcomeCommitInput {
+  outcome: "success";
+  error?: string | null;
+  attemptId: string;
+  crawlerDataJson: string;
+  nfoRootId: string | null;
+  nfoRelativePath: string | null;
+  outputRootId: string;
+  outputRelativePath: string;
+  uncensoredAmbiguous: boolean;
+  size: number;
+  modifiedAt: Date | null;
+  completedAt: Date;
+  libraryEntry: {
+    rootId: string;
+    rootRelativePath: string;
+    lastKnownPath: string;
+    assets: ReturnType<typeof libraryAssetsFromPublicationPlan>;
+    fileId?: string;
+    partNumber?: number | null;
+    partSuffix?: string | null;
+    resolution?: string | null;
     size: number;
     modifiedAt: Date | null;
-    completedAt: Date;
-    libraryEntry: ReturnType<typeof libraryEntryFromPublicationPlan> & {
-      id?: string;
-      fileId?: string;
-      mediaIdentity: string;
-      size: number;
-      crawlerDataJson: string;
-      modifiedAt: Date | null;
-      createdAt: Date;
-    };
-  }): { outcomeId: string; entryId: string };
+  };
 }
 
 export interface ScrapeFileTransitions {
   failed(): Promise<void>;
-  succeeded(): Promise<void>;
 }
 
-export const commitScrapeTerminalResult = async (input: {
-  result: ScrapeResult;
+export interface ScrapeTerminalGroupItem {
+  result: ScrapeResult & { publicationPlan?: PublicationPlan };
   attemptId: string;
   itemPath: string;
-  success?: ScrapeSuccessPublicationFacts;
+  fileTransitions: ScrapeFileTransitions;
+}
+
+const normalizedMediaIdentity = (value: string | null | undefined): string => value?.trim().toUpperCase() ?? "";
+
+const resolveRegisteredPublicationOwner = async (input: {
+  plan: PublicationPlan;
+  sources: readonly RootFileRef[];
+  identity: string;
+  outputs?: PublicationOutputPort;
+  resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
+}): Promise<{
+  sourceFiles: Array<ReturnType<PublicationOutputPort["publicationSnapshot"]>["files"][number] | undefined>;
+  ownerId?: string;
+}> => {
+  if (!input.outputs) return { sourceFiles: input.sources.map(() => undefined) };
+  const localAssets = input.plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : []));
+  const requested = [
+    ...input.sources,
+    ...localAssets,
+    ...(input.plan.media ?? []).flatMap((media) => [media.source, media.target]),
+  ];
+  const paths = await Promise.all(
+    requested.map(async (ref) => resolveRootRelativePath(await input.resolveRoot(ref.rootId), ref.relativePath)),
+  );
+  const snapshot = input.outputs.publicationSnapshot({ paths, includeOwners: true });
+  const keys = await resolvePublicationReferenceKeys(
+    [...snapshot.files, ...snapshot.assets, ...requested],
+    requested,
+    input.resolveRoot,
+  );
+  const key = (ref: RootFileRef): string => {
+    const value = keys.get(publicationRefKey(ref));
+    if (!value) throw new Error(`Publication path was not resolved: ${publicationRefKey(ref)}`);
+    return value;
+  };
+  const sourceFiles = input.sources.map((source) => {
+    const matches = snapshot.files.filter((file) => key(file) === key(source));
+    if (new Set(matches.map((file) => file.itemId)).size > 1) {
+      throw new PublicationConflictError(source.relativePath, source.relativePath, "同一实际媒体被多个条目引用");
+    }
+    return matches[0];
+  });
+  const localAssetKeys = new Set(localAssets.map(key));
+  const identity = normalizedMediaIdentity(input.identity);
+  const matchingAssetOwners = snapshot.assets
+    .filter((asset) => asset.published && !asset.historical && localAssetKeys.has(key(asset)))
+    .map((asset) => asset.itemId)
+    .filter((itemId) =>
+      snapshot.files.some((file) => file.itemId === itemId && normalizedMediaIdentity(file.mediaIdentity) === identity),
+    );
+  const owners = new Set([...sourceFiles.flatMap((file) => (file ? [file.itemId] : [])), ...matchingAssetOwners]);
+  if (owners.size > 1) {
+    throw new PublicationConflictError(
+      input.sources[0]?.relativePath ?? input.plan.operationId,
+      localAssets[0]?.relativePath ?? input.plan.operationId,
+      "候选影片文件或共享输出已属于不同媒体库条目",
+    );
+  }
+  const ownerId = [...owners][0];
+  if (!ownerId) return { sourceFiles };
+
+  return { sourceFiles, ownerId };
+};
+
+interface ScrapeTerminalCommitContext {
   scrapeRuns: ScrapeTerminalCommitStore;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   acquireAll?(refs: readonly RootFileRef[]): () => void;
@@ -117,173 +184,233 @@ export const commitScrapeTerminalResult = async (input: {
   repairIssues?: PublicationRepairPort;
   fileSystem?: PublicationFileSystem;
   download?(url: string): Promise<Uint8Array>;
-  fileTransitions: ScrapeFileTransitions;
-}): Promise<ScrapeResult> => {
-  const { result, attemptId, scrapeRuns } = input;
-  const commitFailure = async (error: string, causes: unknown[] = []): Promise<ScrapeResult> => {
-    let terminalError = error;
-    try {
-      await input.fileTransitions.failed();
-    } catch (transitionError) {
-      causes.push(transitionError);
-      terminalError = `${terminalError}；失败文件移动失败：${errorMessage(transitionError)}`;
-    }
+}
 
-    try {
-      const outcome = scrapeRuns.commitOutcome({ outcome: "failed", attemptId, error: terminalError });
-      return { ...result, resultId: outcome.id, status: "failed", error: terminalError };
-    } catch (outcomeError) {
-      if (causes.length === 0) throw outcomeError;
-      throw new AggregateError([...causes, outcomeError], terminalError);
-    }
-  };
+const commitFailure = async (
+  context: ScrapeTerminalCommitContext,
+  item: ScrapeTerminalGroupItem,
+  error: string,
+  causes: readonly unknown[] = [],
+): Promise<ScrapeResult> => {
+  const failureCauses = [...causes];
+  let terminalError = error;
+  try {
+    await item.fileTransitions.failed();
+  } catch (transitionError) {
+    failureCauses.push(transitionError);
+    terminalError = `${terminalError}；失败文件移动失败：${errorMessage(transitionError)}`;
+  }
 
-  if (result.status === "failed") {
-    return await commitFailure(result.error?.trim() || "刮削失败");
+  try {
+    const outcome = context.scrapeRuns.commitOutcome({
+      outcome: "failed",
+      attemptId: item.attemptId,
+      error: terminalError,
+    });
+    return { ...item.result, resultId: outcome.id, status: "failed", error: terminalError };
+  } catch (outcomeError) {
+    if (failureCauses.length === 0) throw outcomeError;
+    throw new AggregateError([...failureCauses, outcomeError], terminalError);
   }
-  if (result.status === "skipped") {
-    const error = result.error?.trim() || null;
-    const outcome = scrapeRuns.commitOutcome({ outcome: "skipped", attemptId, error });
-    return { ...result, resultId: outcome.id, status: "skipped", error: error ?? undefined };
+};
+
+const commitSettled = async (
+  operations: readonly Promise<{ attemptId: string; result: ScrapeResult }>[],
+): Promise<Map<string, ScrapeResult>> => {
+  const settled = await Promise.allSettled(operations);
+  const results = new Map<string, ScrapeResult>();
+  const errors: unknown[] = [];
+  for (const outcome of settled) {
+    if (outcome.status === "fulfilled") results.set(outcome.value.attemptId, outcome.value.result);
+    else errors.push(outcome.reason);
   }
-  if (result.status !== "success") {
-    throw new Error(`Cannot commit non-terminal scrape result: ${result.status}`);
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, "Multiple scrape terminal outcomes could not be committed");
+  return results;
+};
+
+export const commitScrapeTerminalResults = async (
+  input: ScrapeTerminalCommitContext & {
+    items: readonly ScrapeTerminalGroupItem[];
+  },
+): Promise<ScrapeResult[]> => {
+  if (input.items.length === 0) throw new Error("Scrape terminal group must not be empty");
+
+  const committedByAttemptId = new Map<string, ScrapeResult>();
+  for (const item of input.items) {
+    if (item.result.status !== "failed" && item.result.status !== "skipped" && item.result.status !== "success") {
+      throw new Error(`Cannot commit non-terminal scrape result: ${item.result.status}`);
+    }
+    if (item.result.status === "success" && !item.result.publicationPlan) {
+      throw new Error(`Successful scrape has no publication plan: ${item.itemPath}`);
+    }
   }
-  const video = input.success?.plan.media?.[0];
-  const output = video?.target;
-  if (!input.success || !video || !output) {
-    throw new Error(`Successful scrape has no publication plan: ${input.itemPath}`);
-  }
-  const success = input.success;
-  const source = video.source;
-  const sourcePath = resolveRootRelativePath(await input.resolveRoot(source.rootId), source.relativePath);
-  const sourceStats = await (input.fileSystem?.stat ?? stat)(sourcePath);
-  const peers = scrapeRuns.publicationPeers?.(attemptId) ?? [];
-  const peerPaths = await Promise.all(
-    peers.map(async (peer) =>
-      resolveRootRelativePath(await input.resolveRoot(peer.target.rootId), peer.target.relativePath),
-    ),
-  );
-  const snapshot = input.outputs?.publicationSnapshot({ paths: [sourcePath, ...peerPaths], includeOwners: true });
-  const sourceKey = publicationPathKey(await resolvePublicationPath(sourcePath));
-  const sourceKeys = await resolvePublicationReferenceKeys(
-    [...(snapshot?.files ?? []), source],
-    [source],
-    input.resolveRoot,
-  );
-  const sourceFiles = (snapshot?.files ?? []).filter((file) => sourceKeys.get(publicationRefKey(file)) === sourceKey);
-  if (new Set(sourceFiles.map((file) => file.itemId)).size > 1)
-    throw new PublicationConflictError(sourcePath, sourcePath, "同一实际媒体被多个条目引用");
-  const sourceFile = sourceFiles[0];
-  const sourceInfo = parseFileInfo(sourcePath);
-  if (sourceInfo.part && snapshot) {
-    const groupKey = publicationPathKey(
-      path.join(
-        path.dirname(sourcePath),
-        sourceInfo.fileName.replace(sourceInfo.part.suffix, "") + sourceInfo.extension,
-      ),
+  const successful = input.items.filter((item) => item.result.status === "success");
+  const first = successful[0];
+  if (first) {
+    const plan = first.result.publicationPlan;
+    if (!plan || plan.operationType !== "scrape" || successful.some((item) => item.result.publicationPlan !== plan)) {
+      throw new Error("Scrape group must have one publication plan");
+    }
+    const sources = await Promise.all(
+      successful.map(async (item) => {
+        const video = plan.media?.find(
+          (media) =>
+            media.target.rootId === item.result.output?.rootId &&
+            media.target.relativePath === item.result.output.relativePath,
+        );
+        if (!video) throw new Error(`Successful scrape has no publication plan: ${item.itemPath}`);
+        const sourcePath = resolveRootRelativePath(
+          await input.resolveRoot(video.source.rootId),
+          video.source.relativePath,
+        );
+        const sourceStats = await (input.fileSystem?.stat ?? stat)(sourcePath);
+        return { item, video, sourcePath, sourceStats, sourceInfo: parseFileInfo(sourcePath) };
+      }),
     );
-    for (const peer of peers) {
-      const peerSource = await resolvePublicationPath(
-        resolveRootRelativePath(await input.resolveRoot(peer.source.rootId), peer.source.relativePath),
-      );
-      const peerInfo = parseFileInfo(peerSource);
+    const identities = sources.map(({ item }) => {
+      const crawlerData = item.result.crawlerData;
+      if (!crawlerData) throw new Error(`Successful scrape has no crawler data: ${item.itemPath}`);
+      return crawlerData.number.trim() || item.result.fileName;
+    });
+    if (new Set(identities.map(normalizedMediaIdentity)).size > 1) {
+      throw new Error("Scrape publication group contains different media identities");
+    }
+    const ownership = await resolveRegisteredPublicationOwner({
+      plan,
+      sources: sources.map(({ video }) => video.source),
+      identity: identities[0] as string,
+      outputs: input.outputs,
+      resolveRoot: input.resolveRoot,
+    });
+    const itemId = ownership.ownerId ?? randomUUID();
+    const completedAt = new Date();
+    const crawlerData = first.result.crawlerData;
+    if (!crawlerData) throw new Error("Scrape movie has no crawler data");
+    const identity = crawlerData.number.trim() || first.result.fileName;
+    const crawlerDataJson = JSON.stringify(crawlerData);
+    const movie = {
+      id: itemId,
+      mediaIdentity: identity,
+      number: identity,
+      title: crawlerData.title,
+      actors: crawlerData.actors,
+      crawlerDataJson,
+      createdAt: completedAt,
+    };
+    const commits: ScrapeSuccessOutcomeCommitInput[] = sources.map(
+      ({ item, video, sourceStats, sourceInfo }, index) => {
+        const output = video.target;
+        return {
+          outcome: "success",
+          error: item.result.error ?? null,
+          attemptId: item.attemptId,
+          crawlerDataJson,
+          nfoRootId: item.result.nfo && item.result.nfo.rootId !== output.rootId ? item.result.nfo.rootId : null,
+          nfoRelativePath: item.result.nfo?.relativePath ?? null,
+          outputRootId: output.rootId,
+          outputRelativePath: output.relativePath,
+          uncensoredAmbiguous: item.result.uncensoredAmbiguous === true,
+          size: video.size,
+          modifiedAt: sourceStats.mtime,
+          completedAt,
+          libraryEntry: {
+            rootId: output.rootId,
+            rootRelativePath: output.relativePath,
+            lastKnownPath: output.relativePath,
+            assets: libraryAssetsFromPublicationPlan({ assets: video.assets ?? plan.assets }),
+            fileId: ownership.sourceFiles[index]?.fileId ?? undefined,
+            partNumber: sourceInfo.part?.number ?? null,
+            partSuffix: sourceInfo.part?.suffix ?? null,
+            resolution: sourceInfo.resolution ?? null,
+            size: video.size,
+            modifiedAt: sourceStats.mtime,
+          },
+        };
+      },
+    );
+    let committed:
+      | { value: Array<{ outcomeId: string; entryId: string }>; cleanupError?: PublicationError }
+      | undefined;
+    try {
+      committed = await commitPublishedMediaResult(plan, {
+        resolveRoot: input.resolveRoot,
+        acquireAll: input.acquireAll,
+        journal: input.journal,
+        outputs: input.outputs,
+        ownerId: ownership.ownerId,
+        repairIssues: input.repairIssues,
+        fileSystem: input.fileSystem,
+        download: input.download,
+        logContext:
+          successful.length === 1
+            ? {
+                runId: plan.operationId.split(":")[0],
+                itemId: successful[0]?.result.fileId,
+              }
+            : undefined,
+        commit: () => input.scrapeRuns.commitSuccessOutcomes(commits, movie),
+      });
+    } catch (error) {
       if (
-        !peerInfo.part ||
-        publicationPathKey(
-          path.join(path.dirname(peerSource), peerInfo.fileName.replace(peerInfo.part.suffix, "") + peerInfo.extension),
-        ) !== groupKey
-      )
-        continue;
-      const owner = snapshot.files.find(
-        (file) => file.rootId === peer.target.rootId && file.relativePath === peer.target.relativePath,
-      )?.itemId;
-      if (!owner) continue;
-      success.plan.media?.push({
-        source: peer.target,
-        target: peer.target,
-        size: peer.size,
-        assets: snapshot.assets
-          .filter((asset) => asset.itemId === owner && !asset.historical)
-          .map((asset) => ({
-            type: "local",
-            kind: asset.kind,
-            file: { rootId: asset.rootId, relativePath: asset.relativePath },
-          })),
+        error instanceof PublicationConflictError ||
+        (error instanceof AggregateError && error.errors.some((cause) => cause instanceof PublicationConflictError))
+      ) {
+        throw error;
+      }
+      const message = formatCommitFailure(error);
+      const failed = await commitSettled(
+        successful.map(async (item) => ({
+          attemptId: item.attemptId,
+          result: await commitFailure(input, item, message, [error]),
+        })),
+      );
+      for (const [attemptId, result] of failed) committedByAttemptId.set(attemptId, result);
+      committed = undefined;
+    }
+    if (committed) {
+      successful.forEach((item, index) => {
+        const outcome = committed.value[index];
+        if (!outcome) throw new Error(`Scrape success batch omitted outcome: ${item.attemptId}`);
+        committedByAttemptId.set(item.attemptId, {
+          ...item.result,
+          resultId: outcome.outcomeId,
+          status: "success",
+          output: sources[index]?.video.target,
+          assets: sources[index]?.video.assets ?? plan.assets,
+          ...(committed.cleanupError ? { error: formatCommitFailure(committed.cleanupError) } : {}),
+        });
       });
     }
   }
-  success.size = video.size;
-  success.modifiedAt = sourceStats.mtime;
-  const crawlerData = success.crawlerData;
-  if (!crawlerData) {
-    throw new Error(`Successful scrape has no crawler data: ${input.itemPath}`);
-  }
-  const completedAt = new Date();
-  const crawlerDataJson = JSON.stringify(crawlerData);
-  const identity = success.identity.trim() || crawlerData.number;
-  const nfoRootId = success.nfo && success.nfo.rootId !== output.rootId ? success.nfo.rootId : null;
-  let committed: { value: { outcomeId: string; entryId: string }; cleanupError?: PublicationError };
-  try {
-    committed = await commitPublishedMediaResult(success.plan, {
-      resolveRoot: input.resolveRoot,
-      acquireAll: input.acquireAll,
-      journal: input.journal,
-      outputs: input.outputs,
-      repairIssues: input.repairIssues,
-      fileSystem: input.fileSystem,
-      download: input.download,
-      logContext: {
-        runId: success.plan.operationId.split(":")[0],
-        itemId: result.fileId,
-      },
-      commit: () =>
-        scrapeRuns.commitSuccessOutcome({
-          outcome: "success",
-          error: result.error ?? null,
-          attemptId,
-          crawlerDataJson,
-          nfoRootId,
-          nfoRelativePath: success.nfo?.relativePath ?? null,
-          outputRootId: output.rootId,
-          outputRelativePath: output.relativePath,
-          uncensoredAmbiguous: success.uncensoredAmbiguous,
-          size: success.size,
-          modifiedAt: success.modifiedAt,
-          completedAt,
-          libraryEntry: {
-            ...libraryEntryFromPublicationPlan(
-              success.plan,
-              { title: crawlerData.title, number: identity, actors: crawlerData.actors },
-              output,
-            ),
-            id: sourceFile?.itemId,
-            fileId: sourceFile?.fileId,
-            mediaIdentity: identity,
-            size: success.size,
-            modifiedAt: success.modifiedAt,
-            crawlerDataJson,
-            createdAt: completedAt,
-          },
-        }),
-    });
-  } catch (error) {
-    if (
-      error instanceof PublicationConflictError ||
-      (error instanceof AggregateError && error.errors.some((cause) => cause instanceof PublicationConflictError))
-    )
-      throw error;
-    const coordinatedError = formatCommitFailure(error);
-    return await commitFailure(coordinatedError, [error]);
-  }
-  await input.fileTransitions.succeeded();
-  return {
-    ...result,
-    resultId: committed.value.outcomeId,
-    status: "success",
-    output,
-    nfo: success.nfo ?? undefined,
-    assets: success.plan.assets,
-    ...(committed.cleanupError ? { error: formatCommitFailure(committed.cleanupError) } : {}),
-  };
+
+  const terminal = await commitSettled(
+    input.items
+      .filter((item) => item.result.status !== "success")
+      .map(async (item) => {
+        if (item.result.status === "failed") {
+          return {
+            attemptId: item.attemptId,
+            result: await commitFailure(input, item, item.result.error?.trim() || "刮削失败"),
+          };
+        }
+        const error = item.result.error?.trim() || null;
+        const outcome = input.scrapeRuns.commitOutcome({
+          outcome: "skipped",
+          attemptId: item.attemptId,
+          error,
+        });
+        return {
+          attemptId: item.attemptId,
+          result: { ...item.result, resultId: outcome.id, status: "skipped" as const, error: error ?? undefined },
+        };
+      }),
+  );
+  for (const [attemptId, result] of terminal) committedByAttemptId.set(attemptId, result);
+
+  return input.items.map((item) => {
+    const result = committedByAttemptId.get(item.attemptId);
+    if (!result) throw new Error(`Scrape terminal group omitted item: ${item.itemPath}`);
+    return result;
+  });
 };

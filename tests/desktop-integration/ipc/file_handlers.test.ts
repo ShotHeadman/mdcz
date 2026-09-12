@@ -254,6 +254,7 @@ describe("createFileHandlers", () => {
           relativePath: "nested/movie.nfo",
           kind: "nfo",
           itemId: "another-media",
+          fileId: null,
           published: true,
           historical: false,
         },

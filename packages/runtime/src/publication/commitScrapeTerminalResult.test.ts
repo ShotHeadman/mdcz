@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commitScrapeTerminalResult } from "./commitScrapeTerminalResult";
+import { commitScrapeTerminalResults, type ScrapeTerminalGroupItem } from "./commitScrapeTerminalResult";
 import { PublicationConflictError } from "./conflicts";
 import { createMemoryPublicationJournal } from "./memoryJournal";
 import type { PublicationFileSystem, PublicationPlan } from "./types";
@@ -31,16 +32,45 @@ const baseResult = (status: ScrapeResult["status"]): ScrapeResult => ({
   fileName: "movie.mp4",
   status,
   assets: [],
+  output: status === "success" ? { rootId: "output", relativePath: "ABC-001/movie.mp4" } : undefined,
 });
 
 const scrapeRuns = () => ({
   commitOutcome: vi.fn((input: { outcome: "failed" | "skipped"; attemptId: string; error?: string | null }) => ({
     id: `${input.outcome}-outcome`,
   })),
-  commitSuccessOutcome: vi.fn(() => ({ outcomeId: "success-outcome", entryId: "entry-1" })),
+  commitSuccessOutcomes: vi.fn((inputs: readonly unknown[]) =>
+    inputs.map((_, index) => ({
+      outcomeId: index === 0 ? "success-outcome" : `success-outcome-${index + 1}`,
+      entryId: "entry-1",
+    })),
+  ),
 });
 
-const noFileTransitions = () => ({ failed: vi.fn(async () => undefined), succeeded: vi.fn(async () => undefined) });
+const noFileTransitions = () => ({ failed: vi.fn(async () => undefined) });
+
+const commitScrapeTerminalResult = async (
+  input: Omit<Parameters<typeof commitScrapeTerminalResults>[0], "items"> &
+    ScrapeTerminalGroupItem & { success?: Awaited<ReturnType<typeof fixture>>["success"] },
+): Promise<ScrapeResult> => {
+  const item = {
+    ...input,
+    result: {
+      ...input.result,
+      ...(input.success
+        ? {
+            publicationPlan: input.success.plan,
+            crawlerData: input.success.crawlerData,
+            nfo: input.success.nfo ?? undefined,
+            uncensoredAmbiguous: input.success.uncensoredAmbiguous,
+          }
+        : {}),
+    },
+  };
+  const [result] = await commitScrapeTerminalResults({ ...input, items: [item] });
+  if (!result) throw new Error("Test scrape terminal group omitted its item");
+  return result;
+};
 
 const fixture = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "mdcz-scrape-commit-"));
@@ -86,9 +116,7 @@ const fixture = async () => {
       plan,
       crawlerData: crawlerData(),
       identity: "ABC-001",
-      nfo: null,
-      size: 5,
-      modifiedAt: null,
+      nfo: null as RootFileRef | null,
       uncensoredAmbiguous: false,
     },
     source,
@@ -120,7 +148,7 @@ describe("commitScrapeTerminalResult", () => {
         files: [],
         assets:
           scenario === "other-owner"
-            ? [{ ...nfo, itemId: "other", kind: "nfo", published: true, historical: false }]
+            ? [{ ...nfo, itemId: "other", fileId: null, kind: "nfo", published: true, historical: false }]
             : [],
       }),
       registerPublishedOutputs: vi.fn(),
@@ -141,9 +169,8 @@ describe("commitScrapeTerminalResult", () => {
       }),
     ).rejects.toBeInstanceOf(PublicationConflictError);
     expect(transitions.failed).not.toHaveBeenCalled();
-    expect(transitions.succeeded).not.toHaveBeenCalled();
     expect(store.commitOutcome).not.toHaveBeenCalled();
-    expect(store.commitSuccessOutcome).not.toHaveBeenCalled();
+    expect(store.commitSuccessOutcomes).not.toHaveBeenCalled();
     expect(await readFile(test.source, "utf8")).toBe("video");
     expect(await readFile(conflictPath, "utf8")).toBe("existing bytes");
     if (scenario === "video")
@@ -162,7 +189,7 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: async () => ({ id: "input", hostPath: "/tmp" }),
       journal: createMemoryPublicationJournal(),
-      fileTransitions: { failed: failedTransition, succeeded: vi.fn() },
+      fileTransitions: { failed: failedTransition },
     });
     const skipped = await commitScrapeTerminalResult({
       result: baseResult("skipped"),
@@ -186,16 +213,13 @@ describe("commitScrapeTerminalResult", () => {
       attemptId: "attempt-2",
       error: null,
     });
-    expect(store.commitSuccessOutcome).not.toHaveBeenCalled();
+    expect(store.commitSuccessOutcomes).not.toHaveBeenCalled();
     expect(failedTransition).toHaveBeenCalledOnce();
   });
 
   it("publishes a successful item and records nfo as null when it shares the output root", async () => {
     const test = await fixture();
     const store = scrapeRuns();
-    const succeededTransition = vi.fn(async () => {
-      expect(store.commitSuccessOutcome).toHaveBeenCalledOnce();
-    });
     const committed = await commitScrapeTerminalResult({
       result: { ...baseResult("success"), crawlerData: crawlerData() },
       attemptId: "attempt-1",
@@ -207,29 +231,115 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
-      fileTransitions: { failed: vi.fn(), succeeded: succeededTransition },
+      fileTransitions: { failed: vi.fn() },
     });
 
     expect(committed).toMatchObject({ status: "success", resultId: "success-outcome" });
-    expect(store.commitSuccessOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({
-        outcome: "success",
-        nfoRootId: null,
-        nfoRelativePath: "ABC-001/movie.nfo",
-        outputRootId: "output",
-        outputRelativePath: "ABC-001/movie.mp4",
-        libraryEntry: expect.objectContaining({
-          mediaIdentity: "ABC-001",
-          thumbnailPath: "ABC-001/poster.jpg",
-          assets: [
-            { kind: "poster", uri: "ABC-001/poster.jpg", rootId: "output", relativePath: "ABC-001/poster.jpg" },
-            { kind: "trailer", uri: "https://example.test/trailer.mp4" },
-          ],
+    expect(store.commitSuccessOutcomes).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          outcome: "success",
+          nfoRootId: null,
+          nfoRelativePath: "ABC-001/movie.nfo",
+          outputRootId: "output",
+          outputRelativePath: "ABC-001/movie.mp4",
+          libraryEntry: expect.objectContaining({
+            assets: [
+              { kind: "poster", uri: "ABC-001/poster.jpg", rootId: "output", relativePath: "ABC-001/poster.jpg" },
+              { kind: "trailer", uri: "https://example.test/trailer.mp4" },
+            ],
+          }),
         }),
-      }),
+      ],
+      expect.objectContaining({ mediaIdentity: "ABC-001" }),
     );
     await expect(readFile(test.target, "utf8")).resolves.toBe("video");
-    expect(succeededTransition).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    true,
+    false,
+  ])("adds a later multipart file when the registered sibling is available: %s", async (siblingAvailable) => {
+    const test = await fixture();
+    const store = scrapeRuns();
+    const directory = path.dirname(test.source);
+    const source = path.join(directory, "ABC-001-CD2.mp4");
+    await writeFile(source, "part2");
+    const targetRef = { rootId: "output", relativePath: "ABC-001/ABC-001-CD2.mp4" };
+    const sourceRef = { rootId: "input", relativePath: "ABC-001-CD2.mp4" };
+    const existingFile = {
+      rootId: "output",
+      relativePath: "ABC-001/ABC-001-CD1.mp4",
+      itemId: "existing-item",
+      fileId: "existing-file",
+      mediaIdentity: "abc-001",
+      size: 5,
+    };
+    const existingAssets = [
+      {
+        rootId: "output",
+        relativePath: "ABC-001/movie.nfo",
+        itemId: "existing-item",
+        fileId: null,
+        kind: "nfo",
+        published: true,
+        historical: false,
+      },
+      {
+        rootId: "output",
+        relativePath: "ABC-001/poster.jpg",
+        itemId: "existing-item",
+        fileId: null,
+        kind: "poster",
+        published: true,
+        historical: false,
+      },
+    ];
+    await mkdir(path.dirname(test.target), { recursive: true });
+    await Promise.all([
+      ...(siblingAvailable ? [writeFile(path.join(path.dirname(test.target), "ABC-001-CD1.mp4"), "part1")] : []),
+      writeFile(path.join(path.dirname(test.target), "movie.nfo"), "<old/>"),
+      writeFile(path.join(path.dirname(test.target), "poster.jpg"), "old"),
+    ]);
+    test.success.plan.media = [{ source: sourceRef, target: targetRef, size: 5 }];
+    test.success.plan.videos = [{ source: sourceRef, target: targetRef, size: 5 }];
+    const outputs = {
+      publicationSnapshot: vi.fn(() => ({ files: [existingFile], assets: existingAssets })),
+      registerPublishedOutputs: vi.fn(),
+      releaseOutputReferences: vi.fn(),
+    };
+
+    await commitScrapeTerminalResult({
+      result: {
+        ...baseResult("success"),
+        fileId: "part-2",
+        relativePath: sourceRef.relativePath,
+        fileName: sourceRef.relativePath,
+        output: targetRef,
+        crawlerData: crawlerData(),
+      },
+      attemptId: "attempt-2",
+      itemPath: sourceRef.relativePath,
+      success: test.success,
+      scrapeRuns: store,
+      resolveRoot: test.resolveRoot,
+      journal: createMemoryPublicationJournal(),
+      outputs,
+      fileTransitions: noFileTransitions(),
+    });
+
+    expect(store.commitSuccessOutcomes).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          libraryEntry: expect.objectContaining({ fileId: undefined, partNumber: 2 }),
+        }),
+      ],
+      expect.objectContaining({ id: "existing-item" }),
+    );
+    const sibling = readFile(path.join(path.dirname(test.target), "ABC-001-CD1.mp4"), "utf8");
+    if (siblingAvailable) await expect(sibling).resolves.toBe("part1");
+    else await expect(sibling).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(path.dirname(test.target), "ABC-001-CD2.mp4"), "utf8")).resolves.toBe("part2");
   });
 
   it("treats committed-but-cleanup-failed publication as success", async () => {
@@ -276,14 +386,14 @@ describe("commitScrapeTerminalResult", () => {
     });
     expect(committed.error).toContain("。请重新扫描");
     expect(store.commitOutcome).not.toHaveBeenCalled();
-    expect(store.commitSuccessOutcome).toHaveBeenCalledOnce();
+    expect(store.commitSuccessOutcomes).toHaveBeenCalledOnce();
     await expect(readFile(test.target, "utf8")).resolves.toBe("video");
   });
 
   it("writes a failed outcome when publication throws before commit", async () => {
     const test = await fixture();
     const store = scrapeRuns();
-    store.commitSuccessOutcome.mockImplementation(() => {
+    store.commitSuccessOutcomes.mockImplementation(() => {
       throw new Error("library constraint failed");
     });
     const failedTransition = vi.fn(async () => undefined);
@@ -296,7 +406,7 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
-      fileTransitions: { failed: failedTransition, succeeded: vi.fn() },
+      fileTransitions: { failed: failedTransition },
     });
 
     expect(committed.status).toBe("failed");
@@ -309,10 +419,57 @@ describe("commitScrapeTerminalResult", () => {
     expect(failedTransition).toHaveBeenCalledOnce();
   });
 
+  it("records every grouped failure when a failure transition also throws", async () => {
+    const test = await fixture();
+    const store = scrapeRuns();
+    store.commitSuccessOutcomes.mockImplementation(() => {
+      throw new Error("library constraint failed");
+    });
+    const firstTransition = vi.fn(async () => {
+      throw new Error("failure move failed");
+    });
+    const secondTransition = vi.fn(async () => undefined);
+    const result = { ...baseResult("success"), crawlerData: crawlerData(), publicationPlan: test.success.plan };
+
+    const committed = await commitScrapeTerminalResults({
+      items: [
+        {
+          result,
+          attemptId: "attempt-1",
+          itemPath: "movie.mp4",
+          fileTransitions: { failed: firstTransition },
+        },
+        {
+          result: { ...result, fileId: "item-2" },
+          attemptId: "attempt-2",
+          itemPath: "movie-part-2.mp4",
+          fileTransitions: { failed: secondTransition },
+        },
+      ],
+      scrapeRuns: store,
+      resolveRoot: test.resolveRoot,
+      journal: createMemoryPublicationJournal(),
+    });
+
+    expect(committed).toHaveLength(2);
+    expect(committed[0]).toMatchObject({
+      status: "failed",
+      resultId: "failed-outcome",
+      error: expect.stringContaining("失败文件移动失败：failure move failed"),
+    });
+    expect(committed[1]).toMatchObject({ status: "failed", resultId: "failed-outcome" });
+    expect(store.commitOutcome).toHaveBeenCalledTimes(2);
+    expect(store.commitOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptId: "attempt-2", error: expect.stringContaining("library constraint failed") }),
+    );
+    expect(firstTransition).toHaveBeenCalledOnce();
+    expect(secondTransition).toHaveBeenCalledOnce();
+  });
+
   it("aggregates publication and fallback-write failures", async () => {
     const test = await fixture();
     const store = scrapeRuns();
-    store.commitSuccessOutcome.mockImplementation(() => {
+    store.commitSuccessOutcomes.mockImplementation(() => {
       throw new Error("library constraint failed");
     });
     store.commitOutcome.mockImplementation(() => {

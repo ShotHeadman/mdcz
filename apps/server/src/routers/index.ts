@@ -12,6 +12,7 @@ import {
   fileActionInputSchema,
   libraryAvailabilityInputSchema,
   libraryDetailInputSchema,
+  libraryFileRemoveInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
   logListInputSchema,
@@ -171,6 +172,9 @@ export const appRouter = t.router({
     }),
   }),
   library: t.router({
+    removeFile: protectedProcedure
+      .input(libraryFileRemoveInputSchema)
+      .mutation(async ({ ctx, input }) => ctx.services.library.removeFile(input)),
     availability: protectedProcedure
       .input(libraryAvailabilityInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.availability(input)),
@@ -191,7 +195,9 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntry(input.id)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
-      return await ctx.services.scans.start(detail.entry.rootId);
+      const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);
+      if (!file) throw new Error("影片缺少展示文件");
+      return await ctx.services.scans.start(file.rootId);
     }),
   }),
   overview: t.router({

@@ -14,11 +14,7 @@ import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { type ConfiguredMediaRootService, mediaPathOwnership } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import {
-  commitScrapeTerminalResult,
-  registeredOutputPaths,
-  type ScrapeFileTransitions,
-} from "@mdcz/runtime/publication";
+import { commitScrapeTerminalResults, registeredOutputPaths } from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
   type ActorImageService,
@@ -29,9 +25,9 @@ import {
   createScrapeExecutionPolicy,
   DownloadManager,
   discoverDirectoryFiles,
-  type FileScrapeResult,
   NfoGenerator,
   type PreparedFileScrape,
+  scrapeMovieGroupKey,
   TranslateService,
   validatePreparedScrapeFiles,
 } from "@mdcz/runtime/scrape";
@@ -424,6 +420,14 @@ export class ScraperService {
       }),
     );
     const itemIndexById = new Map(items.map((item, index) => [item.id, index + 1]));
+    const librarySources = new Map(
+      await Promise.all(
+        items.map(
+          async (item) =>
+            [item.id, await state.repositories.library.resolveMaintenanceSource(item.sourcePath)] as const,
+        ),
+      ),
+    );
     const fileScraper = createFileScraper(
       this.createFileScraperDependencies(
         (value, current) => {
@@ -473,7 +477,10 @@ export class ScraperService {
           ...prepared.map(({ item, prepared }) => ({
             itemId: item.id,
             sourcePath: prepared.sourcePath,
+            libraryItemId: librarySources.get(item.id)?.libraryItemId,
             outputPlan: prepared.outputPlan,
+            mediaIdentity: prepared.crawlerData.number || prepared.fileInfo.number,
+            partNumber: prepared.fileInfo.part?.number ?? null,
           })),
           ...(runConfiguration.behavior.failedFileMove
             ? failedItems.map((item) => ({
@@ -489,22 +496,35 @@ export class ScraperService {
               }))
             : []),
         ]),
-      acquireItem: (item: ScrapeRunItem<ManualScrapeOptions>) =>
-        mediaPathOwnership.acquire(
-          item.executionSource?.rootId ?? item.rootId,
-          item.executionSource?.relativePath ?? item.relativePath,
-          item.id,
+      acquireItems: (items) =>
+        mediaPathOwnership.acquireAll(
+          items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
+          items
+            .map((item) => item.id)
+            .sort()
+            .join(","),
         ),
       getPublicationKey: (_item: ScrapeRunItem<ManualScrapeOptions>, prepared: PreparedFileScrape) =>
         buildScrapePublicationKey(prepared.outputPlan),
-      executePreparedItem: async (
-        item: ScrapeRunItem<ManualScrapeOptions>,
-        prepared: PreparedFileScrape,
-        signal: AbortSignal,
-      ) => {
-        const progress = { fileIndex: itemIndexById.get(item.id) ?? 1, totalFiles: items.length };
-        const result = await fileScraper.executePreparedFile(prepared, progress, signal);
-        return { ...result, fileId: item.id, rootId: item.rootId, relativePath: item.relativePath };
+      getExecutionGroupKey: (item: ScrapeRunItem<ManualScrapeOptions>, prepared: PreparedFileScrape) =>
+        scrapeMovieGroupKey({
+          libraryItemId: librarySources.get(item.id)?.libraryItemId,
+          sourcePath: prepared.sourcePath,
+          mediaIdentity: prepared.crawlerData.number || prepared.fileInfo.number,
+        }),
+      executePreparedItems: async (entries, signal) => {
+        const results = await fileScraper.executePreparedFiles(
+          entries.map(({ item, prepared }) => ({
+            prepared: {
+              ...prepared,
+              identity: { ...prepared.identity, fileId: item.id, rootId: item.rootId, relativePath: item.relativePath },
+            },
+            progress: { fileIndex: itemIndexById.get(item.id) ?? 1, totalFiles: items.length },
+            caseId: item.caseId,
+          })),
+          signal,
+        );
+        return results.map((result) => ({ itemId: result.fileId, result }));
       },
       commitPreparationItem: async (
         _item: ScrapeRunItem<ManualScrapeOptions>,
@@ -514,70 +534,45 @@ export class ScraperService {
         if (result.status !== "failed" && result.status !== "skipped") {
           throw new Error("Preparation can only commit failed or skipped results");
         }
-        const outcome =
-          result.status === "failed"
-            ? state.repositories.scrapeRuns.commitOutcome({
-                outcome: "failed",
-                attemptId,
-                error: result.error?.trim() || "刮削预检失败",
-              })
-            : state.repositories.scrapeRuns.commitOutcome({
-                outcome: "skipped",
-                attemptId,
-                error: result.error ?? null,
-              });
+        const outcome = state.repositories.scrapeRuns.commitOutcome({
+          attemptId,
+          ...(result.status === "failed"
+            ? { outcome: "failed", error: result.error?.trim() || "刮削预检失败" }
+            : { outcome: "skipped", error: result.error ?? null }),
+        });
         return { ...result, resultId: outcome.id };
       },
-      commitItem: async (item: ScrapeRunItem<ManualScrapeOptions>, result: ScrapeResult, attemptId: string) => {
-        const sourceRoot = roots.get(item.executionSource?.rootId ?? item.rootId);
-        if (!sourceRoot) throw new Error(`Scrape root disappeared before item commit: ${item.rootId}`);
-        return await this.commitItem(
-          item,
-          result,
-          attemptId,
-          fileOrganizer.createScrapeFileTransitions({
-            configuration: runConfiguration,
-            failureRootPath: outputRoot.hostPath,
-            sourcePath: item.sourcePath,
-            sourceRootPath: sourceRoot.hostPath,
+      commitItems: async (entries) => {
+        const committed = await commitScrapeTerminalResults({
+          items: entries.map(({ item, result, attemptId }) => {
+            return {
+              result: result,
+              attemptId,
+              itemPath: item.relativePath,
+              fileTransitions: fileOrganizer.createScrapeFileTransitions({
+                configuration: runConfiguration,
+                failureRootPath: outputRoot.hostPath,
+                sourcePath: item.sourcePath,
+              }),
+            };
           }),
-        );
+          scrapeRuns: state.repositories.scrapeRuns,
+          resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
+          acquireAll: (refs) =>
+            mediaPathOwnership.acquireAll(
+              refs,
+              entries
+                .map(({ item }) => item.id)
+                .sort()
+                .join(","),
+            ),
+          journal: state.repositories.publicationJournal,
+          outputs: state.repositories.library,
+          repairIssues: state.repositories.libraryRepairIssues,
+        });
+        return committed.map((result) => ({ itemId: result.fileId, result }));
       },
     };
-  }
-
-  private async commitItem(
-    item: ScrapeRunItem,
-    result: ScrapeResult,
-    attemptId: string,
-    fileTransitions: ScrapeFileTransitions,
-  ): Promise<ScrapeResult> {
-    const state = await this.persistenceService.getState();
-    const plan = (result as FileScrapeResult).publicationPlan;
-    return await commitScrapeTerminalResult({
-      result,
-      attemptId,
-      itemPath: item.relativePath,
-      success:
-        result.status === "success" && plan
-          ? {
-              plan,
-              crawlerData: result.crawlerData,
-              identity: result.crawlerData?.number || result.fileName,
-              nfo: result.nfo ?? null,
-              size: plan.media?.[0]?.size ?? 0,
-              modifiedAt: null,
-              uncensoredAmbiguous: result.uncensoredAmbiguous === true,
-            }
-          : undefined,
-      scrapeRuns: state.repositories.scrapeRuns,
-      resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
-      acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, item.id),
-      journal: state.repositories.publicationJournal,
-      outputs: state.repositories.library,
-      repairIssues: state.repositories.libraryRepairIssues,
-      fileTransitions,
-    });
   }
 
   private handleTerminalRun(manifest: ScrapeRunManifest, snapshot: ScrapeRunSnapshot<ManualScrapeOptions>): void {

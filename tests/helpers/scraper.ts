@@ -35,5 +35,10 @@ export const prepareAndExecuteFile = async (
 ): Promise<FileScrapeResult> => {
   const preparation = await scraper.prepareFile(...args);
   if (preparation.status !== "prepared") return preparation;
-  return await scraper.executePreparedFile(preparation.prepared, args[1], args[2]);
+  const [result] = await scraper.executePreparedFiles(
+    [{ prepared: preparation.prepared, progress: args[1] ?? { fileIndex: 1, totalFiles: 1 } }],
+    args[2],
+  );
+  if (!result) throw new Error("Test scrape group omitted its file");
+  return result;
 };

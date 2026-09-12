@@ -1,10 +1,14 @@
-import { stat } from "node:fs/promises";
-import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
-import { createRecentAcquisitionsFromEntries, type RuntimeLibraryEntrySummaryInput } from "@mdcz/runtime/library";
+import {
+  createRecentAcquisitionsFromEntries,
+  LibraryAvailabilityChecker,
+  parseLibraryCrawlerData,
+  relinkLibraryFile,
+  toLibraryEntryDto,
+} from "@mdcz/runtime/library";
+import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
-  CrawlerDataDto,
   LibraryAvailabilityInput,
   LibraryAvailabilityResponse,
   LibraryDetailResponse,
@@ -18,12 +22,8 @@ import type { ActorProfile } from "@mdcz/shared/types";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 
-const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
-const AVAILABILITY_CACHE_TTL_MS = 30_000;
-const AVAILABILITY_CONCURRENCY = 8;
-
 export class LibraryService {
-  private readonly availabilityCache = new Map<string, { available: boolean; expiresAt: number }>();
+  private readonly availabilityChecker = new LibraryAvailabilityChecker();
 
   constructor(
     private readonly persistence: ServerPersistenceService,
@@ -32,6 +32,11 @@ export class LibraryService {
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     return await this.listDtos(input);
+  }
+
+  async removeFile(input: { fileId: string }): Promise<{ success: true }> {
+    (await this.persistence.getState()).repositories.library.removeFile(input.fileId);
+    return { success: true };
   }
 
   /**
@@ -44,7 +49,7 @@ export class LibraryService {
     const payloads = await state.repositories.library.listCrawlerDataJson();
     const profiles = new Map<string, ActorProfile>();
     for (const payload of payloads) {
-      for (const profile of parseCrawlerData(payload)?.actor_profiles ?? []) {
+      for (const profile of parseLibraryCrawlerData(payload)?.actor_profiles ?? []) {
         const key = profile.name?.trim().toLowerCase();
         if (key && !profiles.has(key)) {
           profiles.set(key, profile);
@@ -66,13 +71,15 @@ export class LibraryService {
     return { entry: await this.toDto(entry, rootMap, true) };
   }
 
-  async relink(input: { id: string; rootId: string; relativePath: string }): Promise<LibraryDetailResponse> {
-    await this.mediaRoots.get(input.rootId);
+  async relink(input: { fileId: string; rootId: string; relativePath: string }): Promise<LibraryDetailResponse> {
+    const root = await this.mediaRoots.get(input.rootId);
     const state = await this.persistence.getState();
-    const entry = await state.repositories.library.relinkEntry({
-      id: input.id,
-      rootId: input.rootId,
-      rootRelativePath: input.relativePath,
+    const current = await state.repositories.library.getEntryByFileId(input.fileId);
+    const entry = await relinkLibraryFile({
+      ...input,
+      root,
+      files: current.files,
+      relink: (file) => state.repositories.library.relinkFile(file),
     });
     return { entry: await this.toDto(entry, await this.loadRootMap(), true) };
   }
@@ -83,41 +90,7 @@ export class LibraryService {
       state.repositories.library.getAvailabilityEntriesByIds(input.ids),
       this.loadRootMap(),
     ]);
-    const paths = new Map<string, { root: MediaRootDto; relativePath: string }>();
-    for (const entry of records) {
-      const root = rootMap.get(entry.rootId);
-      if (root) {
-        paths.set(availabilityKey(root, entry.rootRelativePath), { root, relativePath: entry.rootRelativePath });
-      }
-      for (const file of entry.files) {
-        const fileRoot = rootMap.get(file.rootId);
-        if (fileRoot) {
-          paths.set(availabilityKey(fileRoot, file.rootRelativePath), {
-            root: fileRoot,
-            relativePath: file.rootRelativePath,
-          });
-        }
-      }
-    }
-    const availability = new Map(
-      await mapWithConcurrency([...paths.entries()], AVAILABILITY_CONCURRENCY, async ([key, path]) => [
-        key,
-        await this.checkAvailability(path.root, path.relativePath),
-      ]),
-    );
-    const resolveAvailability = (root: MediaRootDto | undefined, relativePath: string): boolean | null =>
-      root ? (availability.get(availabilityKey(root, relativePath)) ?? false) : null;
-
-    return {
-      entries: records.map((entry) => ({
-        id: entry.id,
-        available: resolveAvailability(rootMap.get(entry.rootId), entry.rootRelativePath),
-        fileRefs: entry.files.map((file) => ({
-          id: file.id,
-          available: resolveAvailability(rootMap.get(file.rootId), file.rootRelativePath),
-        })),
-      })),
-    };
+    return await this.availabilityChecker.entries(records, rootMap);
   }
 
   async removeRecentAcquisition(id: string): Promise<{ success: true }> {
@@ -136,7 +109,7 @@ export class LibraryService {
       throw new Error("Library entry id is required");
     }
     const state = await this.persistence.getState();
-    await state.repositories.library.deleteEntry(normalizedId);
+    state.repositories.library.deleteEntry(normalizedId);
     return { success: true };
   }
 
@@ -150,8 +123,7 @@ export class LibraryService {
     const latestOutput = latestRun ? state.repositories.scrapeRuns.summary(latestRun) : null;
     const rootMap = new Map(roots.roots.map((root) => [root.id, root]));
     const entries = summary.recentEntries.filter((entry) => rootMap.has(entry.rootId));
-    const runtimeEntries = entries.map(toRuntimeLibraryEntrySummaryInput);
-    const recent = createRecentAcquisitionsFromEntries(runtimeEntries, 8);
+    const recent = createRecentAcquisitionsFromEntries(entries, 8);
     const latestEntryTimestamp = summary.latestEntryTimestamp
       ? summary.latestEntryTimestamp instanceof Date
         ? summary.latestEntryTimestamp
@@ -184,7 +156,7 @@ export class LibraryService {
           thumbnailRootId: record?.thumbnailRootId ?? null,
           lastKnownPath: entry.lastKnownPath,
           completedAt: new Date(entry.completedAt).toISOString(),
-          available: record && root ? await this.checkAvailability(root, record.rootRelativePath) : null,
+          available: record && root ? await this.availabilityChecker.check(root, record.rootRelativePath) : null,
         };
       }),
     );
@@ -215,11 +187,15 @@ export class LibraryService {
 
     return {
       entries: await Promise.all(
-        page.entries.filter((entry) => rootMap.has(entry.rootId)).map((entry) => this.toDto(entry, rootMap, false)),
+        page.entries
+          .filter((entry) => entry.files.some((file) => file.id === entry.displayFileId && rootMap.has(file.rootId)))
+          .map((entry) => this.toDto(entry, rootMap, false)),
       ),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor ? encodeLibraryPageCursor(page.nextCursor) : null,
       total: page.total,
+      fileCount: page.fileCount,
+      totalBytes: page.totalBytes,
     };
   }
 
@@ -228,142 +204,27 @@ export class LibraryService {
     rootMap: ReadonlyMap<string, MediaRootDto>,
     includeAvailability: boolean,
   ): Promise<LibraryEntryDto> {
-    const root = rootMap.get(entry.rootId);
+    const displayFile = entry.files.find((file) => file.id === entry.displayFileId);
+    const root = displayFile && rootMap.get(displayFile.rootId);
     if (!root) {
-      throw new Error(`Media root not found: ${entry.rootId}`);
+      throw new Error(`Media root not found for library item: ${entry.id}`);
     }
-    const available = includeAvailability ? await this.checkAvailability(root, entry.rootRelativePath) : null;
-    const fileRefs = await Promise.all(
-      entry.files.map(async (file) => {
+    const dto = toLibraryEntryDto(entry, rootMap);
+    if (!includeAvailability) return dto;
+    await Promise.all(
+      dto.fileRefs.map(async (file) => {
         const fileRoot = rootMap.get(file.rootId);
-        const fileAvailable =
-          includeAvailability && fileRoot ? await this.checkAvailability(fileRoot, file.rootRelativePath) : null;
-        return {
-          id: file.id,
-          rootId: file.rootId,
-          rootDisplayName: fileRoot?.displayName ?? "未知媒体目录",
-          relativePath: file.rootRelativePath,
-          fileName: file.fileName,
-          directory: file.directory,
-          size: file.size,
-          modifiedAt: toIso(file.modifiedAt),
-          lastKnownPath: file.lastKnownPath,
-          available: fileAvailable,
-        };
+        if (!fileRoot) return;
+        file.available = await this.availabilityChecker.check(fileRoot, file.relativePath);
+        file.availabilityError = this.availabilityChecker.error(fileRoot, file.relativePath);
       }),
     );
-
-    return {
-      id: entry.id,
-      mediaIdentity: entry.mediaIdentity,
-      rootId: entry.rootId,
-      rootDisplayName: root.displayName,
-      relativePath: entry.rootRelativePath,
-      fileName: entry.fileName,
-      directory: entry.directory,
-      size: entry.size,
-      modifiedAt: toIso(entry.modifiedAt),
-      runId: entry.sourceRunId,
-      scrapeOutcomeId: entry.sourceOutcomeId,
-      title: entry.title,
-      number: entry.number,
-      actors: entry.actors,
-      crawlerData: parseCrawlerData(entry.crawlerDataJson),
-      thumbnailPath: entry.thumbnailPath,
-      thumbnailRootId: entry.thumbnailRootId,
-      lastKnownPath: entry.lastKnownPath,
-      createdAt: entry.createdAt.toISOString(),
-      lastRefreshedAt: toIso(entry.lastRefreshedAt),
-      hiddenFromRecentAt: toIso(entry.hiddenFromRecentAt),
-      available,
-      fileRefs,
-      assets: entry.assets.map((asset) => ({
-        id: asset.id,
-        kind: asset.kind,
-        uri: asset.uri,
-        rootId: asset.rootId,
-        relativePath: asset.relativePath,
-      })),
-    };
+    dto.available = libraryAvailability(dto.fileRefs);
+    return dto;
   }
 
   private async loadRootMap(): Promise<Map<string, MediaRootDto>> {
     const roots = await this.mediaRoots.list();
     return new Map(roots.roots.map((root) => [root.id, root]));
   }
-
-  private async checkAvailability(root: { hostPath: string }, relativePath: string): Promise<boolean> {
-    const key = availabilityKey(root, relativePath);
-    const cached = this.availabilityCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.available;
-    }
-    let available = false;
-    try {
-      const stats = await stat(resolveRootRelativePath(root, relativePath));
-      available = stats.isFile();
-    } catch {
-      available = false;
-    }
-    this.availabilityCache.set(key, { available, expiresAt: Date.now() + AVAILABILITY_CACHE_TTL_MS });
-    return available;
-  }
 }
-
-const availabilityKey = (root: { hostPath: string }, relativePath: string): string =>
-  `${root.hostPath}\u0000${relativePath}`;
-
-const mapWithConcurrency = async <TItem, TResult>(
-  items: readonly TItem[],
-  concurrency: number,
-  mapper: (item: TItem) => Promise<TResult>,
-): Promise<TResult[]> => {
-  const outputs = new Array<TResult>(items.length);
-  let nextIndex = 0;
-  const worker = async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      outputs[index] = await mapper(items[index]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return outputs;
-};
-
-const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
-  if (!value) {
-    return null;
-  }
-  try {
-    return JSON.parse(value) as CrawlerDataDto;
-  } catch {
-    return null;
-  }
-};
-
-const toRuntimeLibraryEntrySummaryInput = (
-  entry: Pick<
-    LibraryEntryRecord,
-    | "actors"
-    | "createdAt"
-    | "fileName"
-    | "hiddenFromRecentAt"
-    | "id"
-    | "lastKnownPath"
-    | "number"
-    | "size"
-    | "thumbnailPath"
-    | "title"
-  >,
-): RuntimeLibraryEntrySummaryInput => ({
-  id: entry.id,
-  number: entry.number,
-  fileName: entry.fileName,
-  title: entry.title,
-  actors: entry.actors,
-  thumbnailPath: entry.thumbnailPath,
-  lastKnownPath: entry.lastKnownPath,
-  createdAt: entry.createdAt,
-  hiddenFromRecentAt: entry.hiddenFromRecentAt,
-  size: entry.size,
-});

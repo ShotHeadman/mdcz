@@ -1,7 +1,8 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type AggregationResult,
+  DownloadManager,
   type MountedRootScrapeAggregationService,
   PosterWatermarkService,
 } from "@mdcz/runtime/scrape";
@@ -229,7 +230,7 @@ describe("buildServer scrape integration", () => {
       ).toBe("source ABF-981");
       return;
     }
-    expect(terminal.task).toMatchObject({ status: "failed", failedCount: 2, skippedCount: 2 });
+    expect(terminal.task).toMatchObject({ status: "failed", failedCount: 2, skippedCount: 0, successCount: 2 });
     expect(terminal.task.error).toContain("目标目录已存在同名影片");
     for (const number of ["ABF-981", "XYZ-222"])
       expect(terminal.task.error).toContain(join(root, `JAV_output/fixed/${number}/${number}.mp4`));
@@ -237,7 +238,19 @@ describe("buildServer scrape integration", () => {
     expect((await services.scrape.liveRuns()).runs).toEqual([]);
     expect((await services.scrape.history({ taskId })).runs).toHaveLength(1);
     expect(await state.repositories.library.getEntryById(entry.id)).toEqual(entry);
-    for (const [file, content] of files) expect(await readFile(file, "utf8")).toBe(content);
+    for (const number of ["ABF-981", "XYZ-222"]) {
+      expect(terminal.items.find((item) => item.relativePath === `${number}.mp4`)?.error).toBe(
+        `目标目录已存在同名影片\n待处理：${join(root, `${number}.mp4`)}\n目标路径：${join(root, `JAV_output/fixed/${number}/${number}.mp4`)}`,
+      );
+      expect(await readFile(join(root, `${number}.mp4`), "utf8")).toBe(`source ${number}`);
+      expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(
+        `existing ${number}.mp4`,
+      );
+    }
+    for (const number of ["XYZ-111", "XYZ-333"]) {
+      await expect(stat(join(root, `${number}.mp4`))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(`source ${number}`);
+    }
     await expect(stat(join(root, (await services.config.get()).paths.failedOutputFolder))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -381,18 +394,20 @@ describe("buildServer scrape integration", () => {
     expect(libraryResponse.json().result.data.total).toBe(1);
     expect(entry).toMatchObject({
       actors: ["Actor A"],
-      available: null,
-      fileName: "ABC-123.mp4",
+      available: "unchecked",
       mediaIdentity: "ABC-123",
       number: "ABC-123",
-      rootId,
-      rootDisplayName: root.split(/[\\/]+/u).at(-1),
+      fileRefs: [
+        expect.objectContaining({ fileName: "ABC-123.mp4", rootId, rootDisplayName: root.split(/[\\/]+/u).at(-1) }),
+      ],
     });
-    expect(entry.relativePath).toBe(outputRelativePath);
+    expect(entry.fileRefs.find((file: { id: string }) => file.id === entry.displayFileId)?.relativePath).toBe(
+      outputRelativePath,
+    );
     expect(availabilityResponse.statusCode).toBe(200);
     expect(availabilityResponse.json().result.data.entries[0]).toMatchObject({
       id: entry.id,
-      available: true,
+      available: "available",
       fileRefs: [expect.objectContaining({ available: true })],
     });
     expect(entry.thumbnailPath).toBe("JAV_output/Actor A/ABC-123/poster.png");
@@ -780,6 +795,10 @@ describe("buildServer scrape integration", () => {
     await writeFile(join(metadataRoot, retainedPath), "retained resource");
     await state.repositories.library.upsertEntry({
       ...entry,
+      fileId: entry.files[0].id,
+      rootId: entry.files[0].rootId,
+      rootRelativePath: entry.files[0].rootRelativePath,
+      sourceOutcomeId: entry.files[0].sourceOutcomeId,
       assets: [
         ...entry.assets,
         { kind: "checksum", uri: retainedPath, rootId: result.nfoRootId, relativePath: retainedPath, published: true },
@@ -809,7 +828,7 @@ describe("buildServer scrape integration", () => {
       }),
     );
     const localFiles = [
-      { rootId: confirmed.rootId, relativePath: confirmed.rootRelativePath },
+      { rootId: confirmed.files[0].rootId, relativePath: confirmed.files[0].rootRelativePath },
       ...confirmed.assets.flatMap((asset) =>
         asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
       ),
@@ -824,7 +843,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.removeRecord",
       headers: { authorization: `Bearer ${token}` },
-      payload: { rootId: confirmed.rootId, relativePath: confirmed.rootRelativePath },
+      payload: { rootId: confirmed.files[0].rootId, relativePath: confirmed.files[0].rootRelativePath },
     });
     expect(removal.statusCode).toBe(200);
     await expect(state.repositories.library.getEntryById(entry.id)).rejects.toThrow("not found");
@@ -843,7 +862,8 @@ describe("buildServer scrape integration", () => {
     const imageServer = await startTestImageServer();
     const aggregation = createTestAggregation(`${imageServer.url}/image.png`);
     const aggregate = vi.spyOn(aggregation, "aggregate");
-    const { fastify } = await createTestServer({
+    const downloadAll = vi.spyOn(DownloadManager.prototype, "downloadAll");
+    const { fastify, services } = await createTestServer({
       scrapeAggregation: aggregation,
     });
     const token = await loginAsAdmin(fastify);
@@ -876,11 +896,32 @@ describe("buildServer scrape integration", () => {
     });
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
     expect(aggregate).toHaveBeenCalledOnce();
+    expect(downloadAll).toHaveBeenCalledOnce();
+    const entries = await services.persistence
+      .getState()
+      .then(async (state) => await state.repositories.library.listEntries());
+    expect(entries).toEqual([
+      expect.objectContaining({
+        mediaIdentity: "ABC-128",
+        files: expect.arrayContaining([
+          expect.objectContaining({ partNumber: 1, partSuffix: "-CD1" }),
+          expect.objectContaining({ partNumber: 2, partSuffix: "-CD2" }),
+        ]),
+      }),
+    ]);
+    expect(entries[0]?.files).toHaveLength(2);
   });
 
-  it("confirms moved uncensored outputs in place without scraping the old source again", async () => {
+  it.each([
+    "single",
+    "multipart",
+    "missing",
+    "conflicting",
+    "rollback",
+  ] as const)("confirms every registered movie file atomically (%s)", async (scenario) => {
     const root = await createTempRoot("ambiguous-uncensored-root");
-    await writeFile(join(root, "ABP-999-U.mp4"), "video");
+    const names = scenario === "single" ? ["ABP-999-U.mp4"] : ["ABP-999-U-CD1.mp4", "ABP-999-U-CD2.mp4"];
+    for (const name of names) await writeFile(join(root, name), "video");
     const imageServer = await startTestImageServer();
     let aggregateCount = 0;
     const aggregation = createAmbiguousUncensoredAggregation(`${imageServer.url}/image.png`);
@@ -899,7 +940,11 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { executionMode: "batch", refs: [{ rootId, relativePath: "ABP-999-U.mp4" }], outputRootId: rootId },
+      payload: {
+        executionMode: "batch",
+        refs: names.map((relativePath) => ({ rootId, relativePath })),
+        outputRootId: rootId,
+      },
     });
     const taskId = startResponse.json().result.data.runId;
 
@@ -909,17 +954,25 @@ describe("buildServer scrape integration", () => {
       return state.repositories.scrapeRuns.latestOutcomes(run);
     });
     const initialResult = initialResults[0];
-    expect(initialResult?.outputRelativePath).not.toBe("ABP-999-U.mp4");
-    await expect(readFile(join(root, "ABP-999-U.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(initialResult?.outputRelativePath).not.toBe(names[0]);
+    await expect(readFile(join(root, names[0]))).rejects.toMatchObject({ code: "ENOENT" });
+    const state = await services.persistence.getState();
+    const originalEntry = await state.repositories.library.getEntryBySourceOutcomeId(initialResult.id);
+    if (!originalEntry) throw new Error("Expected registered movie");
 
     const pendingConfirmationResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/scrape.pendingUncensoredConfirmation",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(pendingConfirmationResponse.json().result.data.items).toEqual([
-      expect.objectContaining({ taskId, ref: { rootId, relativePath: "ABP-999-U.mp4" } }),
-    ]);
+    expect(pendingConfirmationResponse.json().result.data.items).toEqual(
+      names.map((relativePath) => expect.objectContaining({ taskId, ref: { rootId, relativePath } })),
+    );
+    if (scenario === "missing") await rm(join(root, initialResults[1].outputRelativePath as string));
+    if (scenario === "rollback")
+      vi.spyOn(state.repositories.scrapeRuns, "reviseSuccess").mockImplementation(() => {
+        throw new Error("injected confirmation failure");
+      });
 
     const confirmResponse = await fastify.inject({
       method: "POST",
@@ -927,10 +980,22 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         taskId,
-        items: [{ itemId: initialResult?.itemId ?? "", choice: "leak" }],
+        items: [
+          { itemId: initialResult?.itemId ?? "", choice: "leak" },
+          ...(scenario === "conflicting" ? [{ itemId: initialResults[1].itemId, choice: "uncensored" }] : []),
+        ],
       },
     });
 
+    if (scenario === "missing" || scenario === "conflicting" || scenario === "rollback") {
+      expect(confirmResponse.statusCode).toBe(400);
+      expect(state.repositories.scrapeRuns.latestOutcomes(await state.repositories.scrapeRuns.get(taskId))).toEqual(
+        initialResults,
+      );
+      expect((await state.repositories.library.getEntryById(originalEntry.id)).files).toEqual(originalEntry.files);
+      await expect(readFile(join(root, initialResult.outputRelativePath as string), "utf8")).resolves.toBe("video");
+      return;
+    }
     expect(confirmResponse.statusCode).toBe(200);
     expect(confirmResponse.json().result.data).toEqual({ runId: taskId });
     expect(aggregateCount).toBe(1);
@@ -941,6 +1006,15 @@ describe("buildServer scrape integration", () => {
     });
     const confirmedResult = confirmedHistoryResponse.json().result.data.results[0];
     expect(confirmedResult).toMatchObject({ status: "success", uncensoredAmbiguous: false });
+    expect(confirmedHistoryResponse.json().result.data.results).toHaveLength(names.length);
+    expect(
+      confirmedHistoryResponse
+        .json()
+        .result.data.results.every((result: { uncensoredAmbiguous: boolean }) => !result.uncensoredAmbiguous),
+    ).toBe(true);
+    expect(
+      (await state.repositories.library.getEntryById(originalEntry.id)).files.map((file) => file.id).sort(),
+    ).toEqual(originalEntry.files.map((file) => file.id).sort());
     expect(confirmedResult.outputRelativePath).toContain("流出");
     await expect(readFile(join(root, confirmedResult.outputRelativePath))).resolves.toBeTruthy();
 

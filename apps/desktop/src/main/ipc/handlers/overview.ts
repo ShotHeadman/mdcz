@@ -2,7 +2,7 @@ import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
-import { createRecentAcquisitionsFromEntries } from "@mdcz/runtime/library";
+import { createRecentAcquisitionsFromEntries, toRuntimeLibraryEntrySummaryInput } from "@mdcz/runtime/library";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { OverviewRecentAcquisitionItem } from "@mdcz/shared/ipc-contracts/overviewContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
@@ -106,12 +106,12 @@ const readPersistedRecentAcquisitions = async (context: ServiceContainer): Promi
   ]);
   const rootMap = new Map(roots.map((root) => [root.id, root]));
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
-  const recent = createRecentAcquisitionsFromEntries(entries);
+  const recent = createRecentAcquisitionsFromEntries(entries.map(toRuntimeLibraryEntrySummaryInput));
 
   return recent.map((record) => {
     const entry = entryById.get(record.id ?? "");
-    const rootId = entry?.rootId ?? "";
-    const thumbnailRootId = entry?.thumbnailRootId ?? entry?.rootId ?? null;
+    const rootId = entry?.files.find((file) => file.id === entry.displayFileId)?.rootId ?? "";
+    const thumbnailRootId = entry?.thumbnailRootId ?? (rootId || null);
     return {
       id: record.id ?? "",
       rootId,

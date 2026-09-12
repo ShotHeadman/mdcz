@@ -1,6 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
-import type { LibraryAvailabilityFilter, LibraryDeleteMode } from "@mdcz/views/library";
+import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import {
   chunkLibraryEntryIds,
   LibraryDeleteDialog,
@@ -18,7 +18,6 @@ export function LibraryPage() {
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
-  const [deleteMode, setDeleteMode] = useState<LibraryDeleteMode>("none");
   const queryClient = useQueryClient();
   const libraryQ = useInfiniteQuery({
     queryKey: ["library", "list", query],
@@ -27,13 +26,12 @@ export function LibraryPage() {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
   const deleteLibraryM = useMutation({
-    mutationFn: async ({ entry, mode }: { entry: LibraryEntryDto; mode: LibraryDeleteMode }) => {
-      await ipc.library.delete({ deleteMode: mode, id: entry.id });
+    mutationFn: async (entry: LibraryEntryDto) => {
+      await ipc.library.delete({ id: entry.id });
     },
     onSuccess: async () => {
       toast.success("已从媒体库移除");
       setDeleteTarget(null);
-      setDeleteMode("none");
       await libraryQ.refetch();
       await queryClient.invalidateQueries({ queryKey: ["library", "availability"] });
     },
@@ -63,22 +61,30 @@ export function LibraryPage() {
         availabilityFilter={availabilityFilter}
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
-        getImageSrc={(path, entry) => getImageSrc(path, entry.thumbnailRootId ?? entry.rootId)}
+        getImageSrc={(path, entry) =>
+          getImageSrc(
+            path,
+            entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId ?? "",
+          )
+        }
         hasMore={libraryQ.hasNextPage}
         isAvailabilityLoading={availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
         isLoading={libraryQ.isLoading}
         isLoadingMore={libraryQ.isFetchingNextPage}
         onAvailabilityFilterChange={setAvailabilityFilter}
         onDeleteEntry={setDeleteTarget}
+        onRemoveFile={async (input) => {
+          await ipc.library.removeFile(input);
+          await queryClient.invalidateQueries({ queryKey: ["library"] });
+        }}
+        onRelinkFile={async (input) => {
+          await ipc.library.relinkFile(input);
+          await queryClient.invalidateQueries({ queryKey: ["library"] });
+        }}
         onLoadMore={() => {
           void libraryQ.fetchNextPage();
         }}
-        onOpenFolder={(entry) => {
-          const path = entry.lastKnownPath;
-          if (!path) {
-            toast.error("无已知路径");
-            return;
-          }
+        onOpenFolder={(path) => {
           void ipc.app.showItemInFolder(path).catch((error: unknown) => {
             toast.error(toErrorMessage(error));
           });
@@ -90,22 +96,21 @@ export function LibraryPage() {
         }}
         query={query}
         total={libraryQ.data?.pages[0]?.total ?? 0}
+        fileCount={libraryQ.data?.pages[0]?.fileCount ?? 0}
+        totalBytes={libraryQ.data?.pages[0]?.totalBytes ?? 0}
       />
       <LibraryDeleteDialog
+        entry={deleteTarget}
         open={Boolean(deleteTarget)}
-        deleteMode={deleteMode}
-        showFileDeleteModes
         submitting={deleteLibraryM.isPending}
-        onDeleteModeChange={setDeleteMode}
         onCancel={() => {
           if (deleteLibraryM.isPending) return;
           setDeleteTarget(null);
-          setDeleteMode("none");
         }}
         onConfirm={() => {
           const target = deleteTarget;
           if (!target || deleteLibraryM.isPending) return;
-          deleteLibraryM.mutate({ entry: target, mode: deleteMode });
+          deleteLibraryM.mutate(target);
         }}
       />
     </>

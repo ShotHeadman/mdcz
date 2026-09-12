@@ -207,6 +207,7 @@ export const api: ServerApiContract = {
     stop: (input) => trpcMutation("maintenance.stop", input),
   },
   library: {
+    removeFile: (input) => trpcMutation("library.removeFile", input),
     availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),
     detail: (input) => trpcQuery("library.detail", input),
@@ -243,8 +244,8 @@ export const api: ServerApiContract = {
   scrape: {
     liveRuns: () => trpcQuery("scrape.liveRuns"),
     snapshot: (input) => trpcQuery("scrape.snapshot", input),
-    pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
     deleteFile: (input) => trpcMutation("scrape.deleteFile", input),
+    pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
     removeRecord: (input) => trpcMutation("scrape.removeRecord", input),
     history: (input) => trpcQuery("scrape.history", input),
     nfoRead: (input) => trpcQuery("scrape.nfoRead", input),

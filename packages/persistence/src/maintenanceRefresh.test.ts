@@ -39,16 +39,24 @@ const createFixture = async () => {
 };
 
 describe("LibraryRepository maintenance refresh", () => {
-  it("keeps a stable primary file id relocatable while enforcing unique library paths", async () => {
+  it("keeps a stable file id relocatable while enforcing unique library paths", async () => {
     const { library, root } = await createFixture();
-    await library.upsertEntry({ id: "stable", rootId: root.id, rootRelativePath: "old.mp4" });
-    await library.upsertEntry({ id: "stable", rootId: root.id, rootRelativePath: "new.mp4" });
+    const entry = await library.upsertEntry({ id: "stable", rootId: root.id, rootRelativePath: "old.mp4" });
+    const source = await library.resolveMaintenanceSource(path.join(root.hostPath, "old.mp4"));
+    await library.relinkFile({ fileId: entry.files[0].id, rootId: root.id, rootRelativePath: "new.mp4" });
 
     expect(await library.getEntryById("stable")).toMatchObject({
       id: "stable",
-      rootRelativePath: "new.mp4",
+      files: [expect.objectContaining({ rootRelativePath: "new.mp4" })],
     });
     await expect(library.getEntry(root.id, "old.mp4")).rejects.toThrow("Library entry not found");
+    await expect(
+      library.preflightMaintenanceRefresh({
+        librarySource: source ?? undefined,
+        sourceAbsolutePath: path.join(root.hostPath, "old.mp4"),
+        targetAbsolutePath: path.join(root.hostPath, "output.mp4"),
+      }),
+    ).rejects.toThrow("影片文件集合已变化");
   });
 
   it("updates the original item identity and file ref while preserving creation provenance and unrelated refs", async () => {
@@ -63,10 +71,9 @@ describe("LibraryRepository maintenance refresh", () => {
     const createdAt = new Date("2026-01-02T03:04:05.000Z");
     const original = await library.upsertEntry({
       id: "stable-library-id",
+      fileId: "file-1-source",
       rootId: root.id,
       rootRelativePath: "old.mp4",
-      sourceRunId: "scrape-task",
-      sourceOutcomeId: "scrape-output",
       createdAt,
       crawlerDataJson: JSON.stringify(crawlerData("OLD-001")),
     });
@@ -92,11 +99,15 @@ describe("LibraryRepository maintenance refresh", () => {
     const refreshedAt = new Date("2026-08-24T01:02:03.000Z");
 
     const refresh = await library.prepareRefresh({
-      librarySource: source ?? undefined,
-      sourceAbsolutePath: sourcePath,
-      targetAbsolutePath: targetPath,
-      size: targetStat.size,
-      modifiedAt: targetStat.mtime,
+      files: [
+        {
+          librarySource: source ?? undefined,
+          sourceAbsolutePath: sourcePath,
+          targetAbsolutePath: targetPath,
+          size: targetStat.size,
+          modifiedAt: targetStat.mtime,
+        },
+      ],
       crawlerData: crawlerData("NEW-001"),
       fallbackNumber: "NEW-001",
       assets: { poster: posterPath, sceneImages: [], actorPhotos: [actorPhotoPath] },
@@ -110,10 +121,8 @@ describe("LibraryRepository maintenance refresh", () => {
     expect(updated).toMatchObject({
       id: "stable-library-id",
       createdAt,
-      sourceRunId: "scrape-task",
-      sourceOutcomeId: "scrape-output",
       number: "NEW-001",
-      rootRelativePath: "renamed.mp4",
+      files: expect.arrayContaining([expect.objectContaining({ rootRelativePath: "renamed.mp4" })]),
       lastRefreshedAt: refreshedAt,
       thumbnailPath: "images/poster.jpg",
       thumbnailRootId: root.id,
@@ -158,11 +167,15 @@ describe("LibraryRepository maintenance refresh", () => {
     expect(source).toMatchObject({ libraryItemId: original.id, rootId: root.id });
     const file = await stat(videoPath);
     const refresh = await library.prepareRefresh({
-      librarySource: source ?? undefined,
-      sourceAbsolutePath: videoPath,
-      targetAbsolutePath: videoPath,
-      size: file.size,
-      modifiedAt: file.mtime,
+      files: [
+        {
+          librarySource: source ?? undefined,
+          sourceAbsolutePath: videoPath,
+          targetAbsolutePath: videoPath,
+          size: file.size,
+          modifiedAt: file.mtime,
+        },
+      ],
       crawlerData: crawlerData("ROOT-001"),
       fallbackNumber: "ROOT-001",
       assets: { poster: posterPath, sceneImages: [], actorPhotos: [] },
@@ -170,7 +183,7 @@ describe("LibraryRepository maintenance refresh", () => {
     });
     database.sqlite.transaction(() => library.writeRefresh(refresh))();
     const updated = await library.getEntryById(original.id);
-    expect(updated.rootId).toBe(root.id);
+    expect(updated.files[0].rootId).toBe(root.id);
     expect(updated.thumbnailRootId).toBe(nestedRoot.id);
     expect(updated.assets).toEqual(
       expect.arrayContaining([
@@ -199,10 +212,7 @@ describe("LibraryRepository maintenance refresh", () => {
     const file = await stat(newPath);
     const refreshedAt = new Date("2026-08-24T02:03:04.000Z");
     const refresh = await library.prepareRefresh({
-      sourceAbsolutePath: newPath,
-      targetAbsolutePath: newPath,
-      size: file.size,
-      modifiedAt: file.mtime,
+      files: [{ sourceAbsolutePath: newPath, targetAbsolutePath: newPath, size: file.size, modifiedAt: file.mtime }],
       crawlerData: crawlerData("NEW-002"),
       fallbackNumber: "NEW-002",
       assets: { sceneImages: [], actorPhotos: [] },
@@ -211,8 +221,7 @@ describe("LibraryRepository maintenance refresh", () => {
     const created = database.sqlite.transaction(() => library.writeRefresh(refresh))();
     expect(await library.getEntryById(created.libraryItemId)).toMatchObject({
       createdAt: refreshedAt,
-      sourceRunId: null,
-      sourceOutcomeId: null,
+      files: [expect.objectContaining({ sourceOutcomeId: null })],
       number: "NEW-002",
     });
   });

@@ -23,7 +23,7 @@ import { type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { parseFileInfo } from "./utils/number";
 
 export interface RuntimeUncensoredConfirmItem {
-  groupId?: string;
+  groupId: string;
   fileId: FileId;
   videoPath: string;
   metadataVideoPath?: string;
@@ -80,6 +80,14 @@ export interface UncensoredRevisionSources {
   outcome: { id: string; crawlerDataJson: string | null };
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   entry: {
+    crawlerDataJson: string | null;
+    files: Array<{
+      id: string;
+      sourceOutcomeId: string | null;
+      partNumber: number | null;
+      partSuffix: string | null;
+      resolution: string | null;
+    }>;
     id: string;
     mediaIdentity: string | null;
     title: string | null;
@@ -99,13 +107,15 @@ export interface UncensoredRevisionSources {
  */
 export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
   const { update, outcome, entry, size, modifiedAt } = sources;
+  const file = entry.files.find((file) => file.sourceOutcomeId === outcome.id);
+  if (!file) throw new Error("无码确认来源已不属于影片文件");
   const outputRoot = resolveRootFile(sources.roots, update.targetVideoPath).root;
   const nfo = update.targetNfoPath ? resolveRootFile(sources.roots, update.targetNfoPath) : undefined;
   const outputRelativePath = toRootRelativePath(outputRoot, update.targetVideoPath);
   const nfoRelativePath = nfo?.relativePath ?? null;
-  const crawlerDataJson = outcome.crawlerDataJson ?? "{}";
+  const crawlerDataJson = entry.crawlerDataJson;
+  if (!crawlerDataJson) throw new Error("影片缺少当前元数据，无法确认无码类型");
   const crawlerData = crawlerDataSchema.parse(JSON.parse(crawlerDataJson));
-  const thumbnailSource = update.assets.poster ?? update.assets.thumb;
   const updatedAssets = update.outputAssets.map((asset) => {
     const resolved = asset.targetPath ? resolveRootFile(sources.roots, asset.targetPath) : undefined;
     const relativePath = resolved?.relativePath ?? null;
@@ -145,6 +155,11 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
     modifiedAt,
     libraryEntry: {
       id: entry.id,
+      fileId: file.id,
+      sourceOutcomeId: outcome.id,
+      partNumber: file.partNumber,
+      partSuffix: file.partSuffix,
+      resolution: file.resolution,
       rootId: outputRoot.id,
       rootRelativePath: outputRelativePath,
       mediaIdentity: entry.mediaIdentity,
@@ -154,7 +169,6 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
       number: entry.number ?? crawlerData.number,
       actors: entry.actors,
       crawlerDataJson,
-      thumbnailPath: thumbnailSource ? resolveRootFile(sources.roots, thumbnailSource).relativePath : null,
       assets: [...retainedAssets, ...updatedAssets],
       lastKnownPath: outputRelativePath,
       createdAt: entry.createdAt,
@@ -162,8 +176,6 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
     },
   };
 };
-
-const buildBatchKey = (nfoPath: string, choice: UncensoredChoice): string => `${nfoPath.trim()}::${choice}`;
 
 const buildSharedFileInfo = (entries: LocalScanEntry[], outputVideoPath: string): FileInfo | undefined => {
   const firstEntry = entries[0];
@@ -186,6 +198,12 @@ export const confirmUncensoredOutputs = async (
   const updatedItems: UncensoredConfirmUpdate[] = [];
   const failures: RuntimeUncensoredConfirmFailure[] = [];
   const preparedItems: PreparedUncensoredConfirmItem[] = [];
+  const choices = new Map<string, UncensoredChoice>();
+  for (const item of items) {
+    const key = item.groupId;
+    if (choices.has(key) && choices.get(key) !== item.choice) throw new Error("同一影片不能选择不同的无码类型");
+    choices.set(key, item.choice);
+  }
   const fail = (item: RuntimeUncensoredConfirmItem, message: string): void => {
     dependencies.logger.warn(message);
     failures.push({ fileId: item.fileId, videoPath: item.videoPath, message });
@@ -252,29 +270,21 @@ export const confirmUncensoredOutputs = async (
   }
 
   const batches = new Map<string, PreparedUncensoredConfirmItem[]>();
-  const choicesByNfoPath = new Map<string, Set<UncensoredChoice>>();
   for (const prepared of preparedItems) {
-    const key = prepared.item.groupId ?? prepared.effectiveNfoPath ?? prepared.item.videoPath;
-    const choices = choicesByNfoPath.get(key) ?? new Set<UncensoredChoice>();
-    choices.add(prepared.item.choice);
-    choicesByNfoPath.set(key, choices);
-  }
-  for (const prepared of preparedItems) {
-    if (
-      (choicesByNfoPath.get(prepared.item.groupId ?? prepared.effectiveNfoPath ?? prepared.item.videoPath)?.size ?? 0) >
-      1
-    ) {
-      fail(prepared.item, `Conflicting uncensored choices for shared NFO: ${prepared.effectiveNfoPath}`);
-      continue;
-    }
-    const key = buildBatchKey(
-      prepared.item.groupId ?? prepared.effectiveNfoPath ?? prepared.item.videoPath,
-      prepared.item.choice,
-    );
+    const key = prepared.item.groupId;
     batches.set(key, [...(batches.get(key) ?? []), prepared]);
   }
 
   for (const batchItems of batches.values()) {
+    if (
+      items.some(
+        (item) =>
+          item.groupId === batchItems[0].item.groupId && failures.some((failure) => failure.fileId === item.fileId),
+      )
+    ) {
+      for (const prepared of batchItems) fail(prepared.item, "影片中有文件不可用，未修改任何文件");
+      continue;
+    }
     const processedItems: Array<PreparedUncensoredConfirmItem & { outputVideoPath: string; plan: OrganizePlan }> = [];
     for (const prepared of batchItems) {
       try {
@@ -328,8 +338,13 @@ export const confirmUncensoredOutputs = async (
       const finalizedItems = [];
       for (const processed of processedItems) {
         const publication = await preparePublicationPlan({
-          sourceVideoPath: processed.item.videoPath,
-          outputVideoPath: processed.outputVideoPath,
+          files: [
+            {
+              sourceVideoPath: processed.item.videoPath,
+              outputVideoPath: processed.outputVideoPath,
+              organizePlan: processed.plan,
+            },
+          ],
           existingAssetDir: dirname(
             processed.effectiveNfoPath ?? processed.item.metadataVideoPath ?? processed.item.videoPath,
           ),
@@ -338,7 +353,6 @@ export const confirmUncensoredOutputs = async (
           actorPhotoPaths: [],
           existingAssets: processed.entry.assets,
           existingNfoPath: processed.effectiveNfoPath,
-          organizePlan: processed.plan,
           renameSubtitles: config.behavior.successFileRename,
           nfoNaming: config.download.nfoNaming,
           strmPathMappings: config.paths.strmPathMappings,

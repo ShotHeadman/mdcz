@@ -89,6 +89,8 @@ describe("buildServer scan integration", () => {
     expect(libraryResponse.statusCode).toBe(200);
     expect(libraryResponse.json().result.data).toEqual({
       entries: [],
+      fileCount: 0,
+      totalBytes: 0,
       hasMore: false,
       nextCursor: null,
       total: 0,

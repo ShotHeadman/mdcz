@@ -64,7 +64,13 @@ export function LibraryPage() {
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={(path, entry) =>
-          getLibraryAssetSrc({ format: "webp", path, rootId: entry.thumbnailRootId ?? entry.rootId, width: 160 })
+          getLibraryAssetSrc({
+            format: "webp",
+            path,
+            rootId:
+              entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId ?? "",
+            width: 160,
+          })
         }
         hasMore={libraryQ.hasNextPage}
         isAvailabilityLoading={availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
@@ -73,6 +79,14 @@ export function LibraryPage() {
         linkComponent={LibraryEntryLink}
         onAvailabilityFilterChange={setAvailabilityFilter}
         onDeleteEntry={setDeleteTarget}
+        onRemoveFile={async (input) => {
+          await api.library.removeFile(input);
+          await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+        }}
+        onRelinkFile={async (input) => {
+          await api.library.relink(input);
+          await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+        }}
         onLoadMore={() => {
           void libraryQ.fetchNextPage();
         }}
@@ -82,8 +96,11 @@ export function LibraryPage() {
         }}
         query={query}
         total={libraryQ.data?.pages[0]?.total ?? 0}
+        fileCount={libraryQ.data?.pages[0]?.fileCount ?? 0}
+        totalBytes={libraryQ.data?.pages[0]?.totalBytes ?? 0}
       />
       <LibraryDeleteDialog
+        entry={deleteTarget}
         open={Boolean(deleteTarget)}
         submitting={deleteLibraryM.isPending}
         onCancel={() => {
@@ -110,14 +127,15 @@ function LibraryEntryLink({
 }: {
   children: ReactNode;
   className?: string;
-  entry: { scrapeOutcomeId: string | null };
+  entry: LibraryEntryDto;
 }) {
-  if (!entry.scrapeOutcomeId) {
+  const outcomeId = entry.fileRefs.find((file) => file.id === entry.displayFileId)?.scrapeOutcomeId;
+  if (!outcomeId) {
     return null;
   }
 
   return (
-    <AppLink className={className} to={`/scrape/${encodeURIComponent(entry.scrapeOutcomeId)}`}>
+    <AppLink className={className} to={`/scrape/${encodeURIComponent(outcomeId)}`}>
       {children}
     </AppLink>
   );

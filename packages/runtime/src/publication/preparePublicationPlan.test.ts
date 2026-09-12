@@ -13,7 +13,7 @@ import { NfoGenerator } from "../scrape/nfo";
 import { PublicationConflictError } from "./conflicts";
 import { createPublicationPlan } from "./createPublicationPlan";
 import { adaptPublicationJournal } from "./journalAdapter";
-import { libraryEntryFromPublicationPlan } from "./libraryEntry";
+import { libraryAssetsFromPublicationPlan } from "./libraryEntry";
 import { createMemoryPublicationJournal } from "./memoryJournal";
 import { preparePublicationPlan } from "./preparePublicationPlan";
 import { commitPublishedMedia } from "./publishMedia";
@@ -84,21 +84,25 @@ describe("preparePublicationPlan", () => {
     await writeFile(video, "video");
     await outputs.upsertEntry({ id: "media", rootId: "root", rootRelativePath: "source/ABC-123.mp4" });
     const prepared = await preparePublicationPlan({
-      sourceVideoPath: video,
-      outputVideoPath: video,
+      files: [
+        {
+          sourceVideoPath: video,
+          outputVideoPath: video,
+          organizePlan: {
+            outputDir: source,
+            metadataDir: output,
+            metadataRoot: output,
+            targetVideoPath: video,
+            nfoPath: join(output, "movie.nfo"),
+            strmPath: join(output, "ABC-123.strm"),
+          },
+        },
+      ],
       existingAssetDir: source,
       metadataOutputDir: output,
       downloadedAssets: { downloaded: [], sceneImages: [] },
       actorPhotoPaths: [],
       nfoNaming: "movie",
-      organizePlan: {
-        outputDir: source,
-        metadataDir: output,
-        metadataRoot: output,
-        targetVideoPath: video,
-        nfoPath: join(output, "movie.nfo"),
-        strmPath: join(output, "ABC-123.strm"),
-      },
       writeNfo: async () => undefined,
     });
     const original = fs.realpath;
@@ -153,21 +157,25 @@ describe("preparePublicationPlan", () => {
     await writeFile(join(staging, "ABC-123-poster.jpg"), "new poster");
     const generator = new NfoGenerator();
     const { plan: prepared } = await preparePublicationPlan({
-      sourceVideoPath,
-      outputVideoPath,
+      files: [
+        {
+          sourceVideoPath,
+          outputVideoPath,
+          organizePlan: {
+            outputDir: output,
+            targetVideoPath: outputVideoPath,
+            nfoPath,
+            strmPath,
+            subtitleSidecars: await findSubtitleSidecars(sourceVideoPath),
+          },
+        },
+      ],
       stagingDir: staging,
       existingAssetDir: source,
       metadataOutputDir: metadata,
       downloadedAssets: { downloaded: [], sceneImages: [], poster: join(staging, "ABC-123-poster.jpg") },
       actorPhotoPaths: [],
       nfoNaming: "both",
-      organizePlan: {
-        outputDir: output,
-        targetVideoPath: outputVideoPath,
-        nfoPath,
-        strmPath,
-        subtitleSidecars: await findSubtitleSidecars(sourceVideoPath),
-      },
       writeNfo: (assets, writeFile) =>
         generator.writeNfo(
           nfoPath,
@@ -229,8 +237,17 @@ describe("preparePublicationPlan", () => {
     for (const name of files) await writeFile(join(source, name), name);
     if (shared) await writeFile(join(source, "another.mp4"), "another video");
     const publication = await preparePublicationPlan({
-      sourceVideoPath: join(source, "movie.mp4"),
-      outputVideoPath: join(output, "movie.mp4"),
+      files: [
+        {
+          sourceVideoPath: join(source, "movie.mp4"),
+          outputVideoPath: join(output, "movie.mp4"),
+          organizePlan: {
+            outputDir: output,
+            targetVideoPath: join(output, "movie.mp4"),
+            nfoPath: join(output, "movie.nfo"),
+          },
+        },
+      ],
       stagingDir: staging,
       existingAssetDir: source,
       metadataOutputDir: output,
@@ -243,11 +260,6 @@ describe("preparePublicationPlan", () => {
         sceneImages: [join(source, "extrafanart/scene.jpg")],
       },
       existingNfoPath: join(source, "movie.nfo"),
-      organizePlan: {
-        outputDir: output,
-        targetVideoPath: join(output, "movie.mp4"),
-        nfoPath: join(output, "movie.nfo"),
-      },
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });
@@ -281,15 +293,19 @@ describe("preparePublicationPlan", () => {
       await writeFile(join(output, name), "stale");
     }
     const publication = await preparePublicationPlan({
-      sourceVideoPath,
-      outputVideoPath,
+      files: [
+        {
+          sourceVideoPath,
+          outputVideoPath,
+          organizePlan: { outputDir: output, targetVideoPath: outputVideoPath, nfoPath: join(output, "ABC-123.nfo") },
+        },
+      ],
       existingAssetDir: source,
       metadataOutputDir: output,
       downloadedAssets: { downloaded: [], sceneImages: [] },
       actorPhotoPaths: [],
       existingNfoPath: join(source, "ABC-123.nfo"),
       nfoNaming,
-      organizePlan: { outputDir: output, targetVideoPath: outputVideoPath, nfoPath: join(output, "ABC-123.nfo") },
       writeNfo: async () => undefined,
     });
     expect(await readFile(join(source, "ABC-123.nfo"), "utf8")).toBe(original);
@@ -343,23 +359,27 @@ describe("preparePublicationPlan", () => {
     const prepare = async (id = "independent", destination = context.output, metadataOutputDir = destination) => {
       const { root, source, staging } = context;
       const { plan } = await preparePublicationPlan({
-        sourceVideoPath,
-        outputVideoPath: sourceVideoPath,
+        files: [
+          {
+            sourceVideoPath,
+            outputVideoPath: sourceVideoPath,
+            organizePlan: {
+              outputDir: source,
+              metadataDir: destination,
+              metadataRoot: destination,
+              targetVideoPath: sourceVideoPath,
+              nfoPath: join(destination, "movie.nfo"),
+              strmPath: join(destination, "ABC-123.strm"),
+              subtitleSidecars: await findSubtitleSidecars(sourceVideoPath),
+            },
+          },
+        ],
         stagingDir: staging,
         existingAssetDir: source,
         metadataOutputDir,
         downloadedAssets: { downloaded: [], sceneImages: [], poster: join(staging, "poster.jpg") },
         actorPhotoPaths: [],
         existingAssets: { sceneImages: [], actorPhotos: [], poster: join(source, "poster.jpg") },
-        organizePlan: {
-          outputDir: source,
-          metadataDir: destination,
-          metadataRoot: destination,
-          targetVideoPath: sourceVideoPath,
-          nfoPath: join(destination, "movie.nfo"),
-          strmPath: join(destination, "ABC-123.strm"),
-          subtitleSidecars: await findSubtitleSidecars(sourceVideoPath),
-        },
         nfoNaming: "movie",
         writeNfo: async (_, write) => {
           await write(join(destination, "movie.nfo"), "<movie>new</movie>");
@@ -505,10 +525,13 @@ describe("preparePublicationPlan", () => {
       const commit = (publication: typeof relocated) => {
         const target = publication.media?.[0]?.target;
         if (!target) throw new Error("Missing test media");
-        return writeLibraryRows(database, {
-          id: "media",
-          ...libraryEntryFromPublicationPlan(publication, { number: "ABC-123", title: "movie", actors: [] }, target),
-        });
+        return writeLibraryRows(database, { id: "media", number: "ABC-123", title: "movie", actors: [] }, [
+          {
+            rootId: target.rootId,
+            rootRelativePath: target.relativePath,
+            assets: libraryAssetsFromPublicationPlan(publication),
+          },
+        ]);
       };
       await expect(
         commitPublishedMedia(relocated, {
@@ -561,20 +584,24 @@ describe("preparePublicationPlan", () => {
       const publish = async () => {
         const nfoPath = join(output, "movie.nfo");
         const { plan } = await preparePublicationPlan({
-          sourceVideoPath: sourcePath,
-          outputVideoPath: sourcePath,
+          files: [
+            {
+              sourceVideoPath: sourcePath,
+              outputVideoPath: sourcePath,
+              organizePlan: {
+                outputDir: source,
+                metadataDir: output,
+                targetVideoPath: sourcePath,
+                nfoPath,
+                strmPath: join(output, `${name}.strm`),
+              },
+            },
+          ],
           existingAssetDir: output,
           metadataOutputDir: output,
           downloadedAssets: { downloaded: [], sceneImages: [] },
           actorPhotoPaths: [],
           nfoNaming: "movie",
-          organizePlan: {
-            outputDir: source,
-            metadataDir: output,
-            targetVideoPath: sourcePath,
-            nfoPath,
-            strmPath: join(output, `${name}.strm`),
-          },
           writeNfo: async (_, write) => {
             await write(nfoPath, name);
             return nfoPath;
@@ -617,20 +644,24 @@ describe("preparePublicationPlan", () => {
         const sourcePath = join(source, `${name}.mp4`);
         await writeFile(sourcePath, name);
         const { plan } = await preparePublicationPlan({
-          sourceVideoPath: sourcePath,
-          outputVideoPath: sourcePath,
+          files: [
+            {
+              sourceVideoPath: sourcePath,
+              outputVideoPath: sourcePath,
+              organizePlan: {
+                outputDir: source,
+                metadataDir: output,
+                targetVideoPath: sourcePath,
+                nfoPath: join(output, `${name}.nfo`),
+                strmPath: join(output, `${name}.strm`),
+              },
+            },
+          ],
           existingAssetDir: output,
           metadataOutputDir: output,
           downloadedAssets: { downloaded: [], sceneImages: [] },
           actorPhotoPaths: [],
           nfoNaming: "filename",
-          organizePlan: {
-            outputDir: source,
-            metadataDir: output,
-            targetVideoPath: sourcePath,
-            nfoPath: join(output, `${name}.nfo`),
-            strmPath: join(output, `${name}.strm`),
-          },
           writeNfo: async () => undefined,
         });
         return createPublicationPlan(name, "scrape", plan, [mediaRoot]);
@@ -655,19 +686,23 @@ describe("preparePublicationPlan", () => {
     const original = `\uFEFF#KODIPROP:inputstream=inputstream.adaptive\r\n${target}\r\n`;
     await writeFile(join(source, "movie.strm"), original);
     const publication = await preparePublicationPlan({
-      sourceVideoPath: join(source, "movie.strm"),
-      outputVideoPath: join(output, "movie.strm"),
+      files: [
+        {
+          sourceVideoPath: join(source, "movie.strm"),
+          outputVideoPath: join(output, "movie.strm"),
+          organizePlan: {
+            outputDir: output,
+            targetVideoPath: join(output, "movie.strm"),
+            nfoPath: join(output, "movie.nfo"),
+            strmPath: join(output, "mirror.strm"),
+          },
+        },
+      ],
       stagingDir: staging,
       existingAssetDir: source,
       metadataOutputDir: output,
       downloadedAssets: { downloaded: [], sceneImages: [] },
       actorPhotoPaths: [],
-      organizePlan: {
-        outputDir: output,
-        targetVideoPath: join(output, "movie.strm"),
-        nfoPath: join(output, "movie.nfo"),
-        strmPath: join(output, "mirror.strm"),
-      },
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });

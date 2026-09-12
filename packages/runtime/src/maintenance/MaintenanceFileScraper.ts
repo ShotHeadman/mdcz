@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
@@ -26,7 +26,6 @@ import {
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import type { FileScraperDependencies } from "../scrape/FileScraper";
-import { getNfoWritePaths } from "../scrape/nfo";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
 import {
@@ -95,7 +94,7 @@ export class MaintenanceFileScraper {
     progress: MaintenanceProgressState = { fileIndex: 1, totalFiles: 1 },
     signal?: AbortSignal,
     committed?: CommittedMaintenanceFile,
-    sharedOutput?: LocalScanEntry,
+    files: LocalScanEntry[] = [entry],
   ): Promise<MaintenanceFileScrapeResult> {
     const { fileInfo } = entry;
     this.logger.info(`[${this.preset.id}] Processing ${fileInfo.number} (${fileInfo.fileName})`);
@@ -118,10 +117,6 @@ export class MaintenanceFileScraper {
           });
       const { crawlerData, fieldDiffs, unchangedFieldDiffs, aggregationSources, imageAlternatives, plan, pathDiff } =
         prepared;
-      const sharedMetadata =
-        plan && sharedOutput?.nfoPath === getNfoWritePaths(plan.nfoPath, config.download.nfoNaming).canonicalPath
-          ? sharedOutput
-          : undefined;
       stagingDir = await mkdtemp(join(tmpdir(), "mdcz-maintenance-publication-"));
       const metadataOutputDir = plan?.metadataDir ?? plan?.outputDir ?? entry.currentDir;
       const preparedOutputData = await prepareOutputCrawlerData({
@@ -129,7 +124,7 @@ export class MaintenanceFileScraper {
         actorSourceProvider: this.deps.actorSourceProvider,
         config,
         crawlerData,
-        enabled: Boolean(!sharedMetadata && plan && (this.preset.steps.generateNfo || this.preset.steps.download)),
+        enabled: Boolean(plan && (this.preset.steps.generateNfo || this.preset.steps.download)),
         movieDir: stagingDir,
         sourceVideoPath: fileInfo.filePath,
         signal,
@@ -137,25 +132,42 @@ export class MaintenanceFileScraper {
       throwIfAborted(signal);
       let preparedCrawlerData = preparedOutputData.data;
       const preparedActorPhotoPaths = preparedOutputData.actorPhotoPaths;
-      const downloaded = sharedMetadata
-        ? { assets: { ...sharedMetadata.assets, downloaded: [] }, crawlerData: sharedMetadata.crawlerData }
-        : await this.downloadPreparedAssets(
-            entry,
-            config,
-            stagingDir,
-            preparedCrawlerData,
-            imageAlternatives,
-            aggregationSources,
-            committed,
-            plan?.nfoPath ? basename(plan.nfoPath, ".nfo") : fileInfo.fileName,
-            signal,
-          );
+      const downloaded = await this.downloadPreparedAssets(
+        entry,
+        config,
+        stagingDir,
+        preparedCrawlerData,
+        imageAlternatives,
+        aggregationSources,
+        committed,
+        plan?.nfoPath ? basename(plan.nfoPath, ".nfo") : fileInfo.fileName,
+        signal,
+      );
       preparedCrawlerData = downloaded.crawlerData;
       throwIfAborted(signal);
       const outputVideoPath = this.preset.steps.organize && plan ? plan.targetVideoPath : fileInfo.filePath;
+      const publicationFiles: Parameters<typeof preparePublicationPlan>[0]["files"][number][] = [
+        { sourceVideoPath: fileInfo.filePath, outputVideoPath, organizePlan: plan },
+      ];
+      for (const file of files) {
+        if (file.fileInfo.filePath === fileInfo.filePath) continue;
+        const preparedFile = await this.preparationService.prepareCommittedFile(
+          file,
+          config,
+          { ...committed, crawlerData: preparedCrawlerData },
+          { createDirectories: false },
+        );
+        publicationFiles.push({
+          sourceVideoPath: file.fileInfo.filePath,
+          outputVideoPath:
+            this.preset.steps.organize && preparedFile.plan
+              ? preparedFile.plan.targetVideoPath
+              : file.fileInfo.filePath,
+          organizePlan: preparedFile.plan,
+        });
+      }
       const publication = await preparePublicationPlan({
-        sourceVideoPath: fileInfo.filePath,
-        outputVideoPath,
+        files: publicationFiles,
         stagingDir,
         existingAssetDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
         metadataOutputDir,
@@ -164,19 +176,17 @@ export class MaintenanceFileScraper {
         existingAssets: entry.assets,
         existingNfoPath: entry.nfoPath,
         assetDecisions: committed?.assetDecisions,
-        organizePlan: plan,
         organizeFiles: this.preset.steps.organize,
         renameSubtitles: config.behavior.successFileRename,
         nfoNaming: config.download.nfoNaming,
         assetNamingMode: config.naming.assetNamingMode,
         strmPathMappings: config.paths.strmPathMappings,
-        reuseNfo: Boolean(sharedMetadata),
         writeNfo: async (assets, writeFile) =>
           await writePreparedNfo({
             assets,
             config,
             crawlerData: preparedCrawlerData,
-            enabled: Boolean(!sharedMetadata && this.preset.steps.generateNfo && plan),
+            enabled: Boolean(this.preset.steps.generateNfo && plan),
             fileInfo,
             localState: entry.nfoLocalState,
             buildTags: buildMovieTags,
@@ -187,23 +197,6 @@ export class MaintenanceFileScraper {
             writeFile,
           }),
       });
-      if (sharedMetadata) {
-        const sharedPaths = new Set([
-          sharedMetadata.nfoPath,
-          sharedMetadata.assets.thumb,
-          sharedMetadata.assets.poster,
-          sharedMetadata.assets.fanart,
-          sharedMetadata.assets.trailer,
-          ...sharedMetadata.assets.sceneImages,
-          ...sharedMetadata.assets.actorPhotos,
-        ]);
-        publication.plan.media?.push({
-          sourcePath: sharedMetadata.fileInfo.filePath,
-          targetPath: sharedMetadata.fileInfo.filePath,
-          size: (await stat(sharedMetadata.fileInfo.filePath)).size,
-          assets: publication.plan.assets.filter((asset) => asset.targetPath && sharedPaths.has(asset.targetPath)),
-        });
-      }
       throwIfAborted(signal);
       const updatedEntry = this.buildUpdatedEntry(entry, preparedCrawlerData, {
         fileInfo: { ...fileInfo, filePath: outputVideoPath },

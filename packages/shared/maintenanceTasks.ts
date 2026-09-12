@@ -46,6 +46,7 @@ export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
 export type MaintenanceSessionPreviewStatus = "pending" | "processing" | "ready" | "blocked" | "applied" | "failed";
 
 export interface MaintenanceSessionPreview {
+  affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   id: string;
   sessionId: string;
   rootId: string;
@@ -118,6 +119,7 @@ export interface MaintenanceApplyBatch {
 }
 
 export interface MaintenanceLibrarySource {
+  files: Array<{ libraryFileId: string; rootId: string; rootRelativePath: string }>;
   nfo?: RootFileRef;
   strm?: RootFileRef;
   libraryItemId: string;

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable(
   "media_roots",
@@ -178,8 +178,6 @@ export const libraryItems = sqliteTable(
     id: text("id").primaryKey(),
     mediaIdentity: text("media_identity"),
     crawlerDataJson: text("crawler_data_json"),
-    sourceRunId: text("source_run_id"),
-    sourceOutcomeId: text("source_outcome_id"),
     title: text("title"),
     number: text("number"),
     actorsJson: text("actors_json").notNull().default("[]"),
@@ -187,10 +185,7 @@ export const libraryItems = sqliteTable(
     lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
     hiddenFromRecentAt: integer("hidden_from_recent_at", { mode: "timestamp_ms" }),
   },
-  (table) => [
-    index("library_items_source_run_idx").on(table.sourceRunId),
-    index("library_items_created_at_idx").on(table.createdAt, table.id),
-  ],
+  (table) => [index("library_items_created_at_idx").on(table.createdAt, table.id)],
 );
 
 export const libraryItemFiles = sqliteTable(
@@ -209,12 +204,17 @@ export const libraryItemFiles = sqliteTable(
     size: integer("size").notNull().default(0),
     modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
     lastKnownPath: text("last_known_path"),
+    partNumber: integer("part_number"),
+    partSuffix: text("part_suffix"),
+    resolution: text("resolution"),
+    sourceOutcomeId: text("source_outcome_id").references(() => scrapeItemOutcomes.id, { onDelete: "set null" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
     uniqueIndex("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
-    index("library_item_files_item_idx").on(table.itemId),
+    index("library_item_files_source_outcome_idx").on(table.sourceOutcomeId),
+    check("library_item_files_part_number_check", sql`${table.partNumber} is null or ${table.partNumber} >= 1`),
   ],
 );
 
@@ -225,6 +225,7 @@ export const libraryItemAssets = sqliteTable(
     itemId: text("item_id")
       .notNull()
       .references(() => libraryItems.id, { onDelete: "cascade" }),
+    fileId: text("file_id"),
     kind: text("kind").notNull(),
     uri: text("uri").notNull(),
     rootId: text("root_id").references(() => mediaRoots.id, { onDelete: "restrict" }),
@@ -235,7 +236,17 @@ export const libraryItemAssets = sqliteTable(
   },
   (table) => [
     check("library_item_assets_root_path_check", sql`(${table.rootId} is null) = (${table.relativePath} is null)`),
+    check(
+      "library_item_assets_scope_check",
+      sql`(${table.kind} in ('strm', 'subtitle')) = (${table.fileId} is not null)`,
+    ),
+    foreignKey({
+      columns: [table.itemId, table.fileId],
+      foreignColumns: [libraryItemFiles.itemId, libraryItemFiles.id],
+      name: "library_item_assets_item_file_fk",
+    }).onDelete("cascade"),
     index("library_item_assets_item_idx").on(table.itemId),
+    index("library_item_assets_file_idx").on(table.fileId),
     index("library_item_assets_output_idx").on(table.rootId, table.relativePath),
   ],
 );

@@ -144,6 +144,7 @@ export interface ServerApiContract {
     stop(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
   };
   library: {
+    removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
@@ -180,8 +181,8 @@ export interface ServerApiContract {
   scrape: {
     liveRuns(): Promise<ScrapeLiveRunsResponse>;
     snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto>;
-    pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
+    pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
     removeRecord(input: FileActionInput): Promise<FileActionResponse>;
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
