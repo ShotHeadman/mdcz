@@ -265,8 +265,11 @@ describe("ScraperService ref-native start", () => {
     const options = vi.mocked(FileScraper.prototype.prepareFile).mock.calls.at(-1)?.[3];
     expect(run.items[0]?.manualUrl).toBe(manualUrl);
     expect(options?.manualScrape?.detailUrl).toBe(manualUrl);
-    expect(options?.roots).toEqual([expect.objectContaining({ id: sourceRoot.id, hostPath: sourcePath })]);
-    await expect(state.repositories.mediaRoots.list()).resolves.not.toEqual(
+    expect(options?.roots).toEqual([
+      expect.objectContaining({ id: sourceRoot.id, hostPath: sourcePath }),
+      expect.objectContaining({ hostPath: metadataPath }),
+    ]);
+    await expect(state.repositories.mediaRoots.list()).resolves.toEqual(
       expect.arrayContaining([expect.objectContaining({ hostPath: metadataPath })]),
     );
   });

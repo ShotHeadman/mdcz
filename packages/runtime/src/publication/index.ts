@@ -1,3 +1,4 @@
+export { publicationPathKey } from "./boundary";
 export * from "./commitScrapeTerminalResult";
 export * from "./conflicts";
 export * from "./createPublicationPlan";
@@ -9,4 +10,5 @@ export * from "./preparePublicationPlan";
 export * from "./publishMedia";
 export * from "./recoverPublications";
 export * from "./registered";
+export * from "./registeredOutputs";
 export * from "./types";

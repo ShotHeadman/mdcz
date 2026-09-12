@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import { createMediaRoot } from "@mdcz/media-store";
@@ -45,6 +45,7 @@ describe("DesktopPersistenceService", () => {
     await state.repositories.mediaRoots.upsert(
       createMediaRoot({ id: "root-1", displayName: "Media", hostPath: mediaRoot }),
     );
+    const { size, mtimeMs, ino, dev } = await stat(target);
     state.repositories.publicationJournal.begin({
       operationId: "op-1",
       operationType: "scrape",
@@ -57,6 +58,7 @@ describe("DesktopPersistenceService", () => {
             temporaryPath: "movie.nfo.op.part",
             backupPath: "movie.nfo.op.bak",
             targetExisted: true,
+            staged: { size, mtimeMs, ino, dev },
           },
         ],
         obsolete: [],

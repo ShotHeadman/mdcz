@@ -1,7 +1,15 @@
 import { stat } from "node:fs/promises";
+import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
+import { parseFileInfo } from "../scrape/utils/number";
+import {
+  publicationPathKey,
+  publicationRefKey,
+  resolvePublicationPath,
+  resolvePublicationReferenceKeys,
+} from "./boundary";
 import { PublicationConflictError } from "./conflicts";
 import { libraryEntryFromPublicationPlan } from "./libraryEntry";
 import { commitPublishedMedia } from "./publishMedia";
@@ -9,6 +17,7 @@ import {
   PublicationError,
   type PublicationFileSystem,
   type PublicationJournalPort,
+  type PublicationOutputPort,
   type PublicationPlan,
   type PublicationRepairPort,
   type PublishMediaOptions,
@@ -63,6 +72,7 @@ export interface ScrapeSuccessPublicationFacts {
 }
 
 export interface ScrapeTerminalCommitStore {
+  publicationPeers?(attemptId: string): Array<{ source: RootFileRef; target: RootFileRef; size: number }>;
   commitOutcome(input: { outcome: "failed" | "skipped"; attemptId: string; error?: string | null }): { id: string };
   commitSuccessOutcome(input: {
     outcome: "success";
@@ -78,6 +88,8 @@ export interface ScrapeTerminalCommitStore {
     modifiedAt: Date | null;
     completedAt: Date;
     libraryEntry: ReturnType<typeof libraryEntryFromPublicationPlan> & {
+      id?: string;
+      fileId?: string;
       mediaIdentity: string;
       size: number;
       crawlerDataJson: string;
@@ -100,6 +112,7 @@ export const commitScrapeTerminalResult = async (input: {
   scrapeRuns: ScrapeTerminalCommitStore;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   acquireAll?(refs: readonly RootFileRef[]): () => void;
+  outputs?: PublicationOutputPort;
   journal: PublicationJournalPort;
   repairIssues?: PublicationRepairPort;
   fileSystem?: PublicationFileSystem;
@@ -136,7 +149,7 @@ export const commitScrapeTerminalResult = async (input: {
   if (result.status !== "success") {
     throw new Error(`Cannot commit non-terminal scrape result: ${result.status}`);
   }
-  const video = input.success?.plan.videos?.[0];
+  const video = input.success?.plan.media?.[0];
   const output = video?.target;
   if (!input.success || !video || !output) {
     throw new Error(`Successful scrape has no publication plan: ${input.itemPath}`);
@@ -145,6 +158,61 @@ export const commitScrapeTerminalResult = async (input: {
   const source = video.source;
   const sourcePath = resolveRootRelativePath(await input.resolveRoot(source.rootId), source.relativePath);
   const sourceStats = await (input.fileSystem?.stat ?? stat)(sourcePath);
+  const peers = scrapeRuns.publicationPeers?.(attemptId) ?? [];
+  const peerPaths = await Promise.all(
+    peers.map(async (peer) =>
+      resolveRootRelativePath(await input.resolveRoot(peer.target.rootId), peer.target.relativePath),
+    ),
+  );
+  const snapshot = input.outputs?.publicationSnapshot({ paths: [sourcePath, ...peerPaths], includeOwners: true });
+  const sourceKey = publicationPathKey(await resolvePublicationPath(sourcePath));
+  const sourceKeys = await resolvePublicationReferenceKeys(
+    [...(snapshot?.files ?? []), source],
+    [source],
+    input.resolveRoot,
+  );
+  const sourceFiles = (snapshot?.files ?? []).filter((file) => sourceKeys.get(publicationRefKey(file)) === sourceKey);
+  if (new Set(sourceFiles.map((file) => file.itemId)).size > 1)
+    throw new PublicationConflictError(sourcePath, sourcePath, "同一实际媒体被多个条目引用");
+  const sourceFile = sourceFiles[0];
+  const sourceInfo = parseFileInfo(sourcePath);
+  if (sourceInfo.part && snapshot) {
+    const groupKey = publicationPathKey(
+      path.join(
+        path.dirname(sourcePath),
+        sourceInfo.fileName.replace(sourceInfo.part.suffix, "") + sourceInfo.extension,
+      ),
+    );
+    for (const peer of peers) {
+      const peerSource = await resolvePublicationPath(
+        resolveRootRelativePath(await input.resolveRoot(peer.source.rootId), peer.source.relativePath),
+      );
+      const peerInfo = parseFileInfo(peerSource);
+      if (
+        !peerInfo.part ||
+        publicationPathKey(
+          path.join(path.dirname(peerSource), peerInfo.fileName.replace(peerInfo.part.suffix, "") + peerInfo.extension),
+        ) !== groupKey
+      )
+        continue;
+      const owner = snapshot.files.find(
+        (file) => file.rootId === peer.target.rootId && file.relativePath === peer.target.relativePath,
+      )?.itemId;
+      if (!owner) continue;
+      success.plan.media?.push({
+        source: peer.target,
+        target: peer.target,
+        size: peer.size,
+        assets: snapshot.assets
+          .filter((asset) => asset.itemId === owner && !asset.historical)
+          .map((asset) => ({
+            type: "local",
+            kind: asset.kind,
+            file: { rootId: asset.rootId, relativePath: asset.relativePath },
+          })),
+      });
+    }
+  }
   success.size = video.size;
   success.modifiedAt = sourceStats.mtime;
   const crawlerData = success.crawlerData;
@@ -161,6 +229,7 @@ export const commitScrapeTerminalResult = async (input: {
       resolveRoot: input.resolveRoot,
       acquireAll: input.acquireAll,
       journal: input.journal,
+      outputs: input.outputs,
       repairIssues: input.repairIssues,
       fileSystem: input.fileSystem,
       download: input.download,
@@ -188,6 +257,8 @@ export const commitScrapeTerminalResult = async (input: {
               { title: crawlerData.title, number: identity, actors: crawlerData.actors },
               output,
             ),
+            id: sourceFile?.itemId,
+            fileId: sourceFile?.fileId,
             mediaIdentity: identity,
             size: success.size,
             modifiedAt: success.modifiedAt,

@@ -39,6 +39,8 @@ function buildMenuContent(
   };
   const canDeleteFolder = typeof port.deleteFileAndFolder === "function";
   const canOpenFolder = typeof port.openFolder === "function";
+  const strm = result.assets.find((asset) => asset.type === "local" && asset.kind === "strm");
+  const metadataRef = strm?.type === "local" ? (result.nfo ?? strm.file) : undefined;
   const canPlay = typeof port.play === "function";
 
   const handleCopyNumber = async () => {
@@ -63,26 +65,27 @@ function buildMenuContent(
     }
   };
 
-  const handleDeleteFile = async () => {
+  const handleDelete = async (operation: "removeRecord" | "deleteFile") => {
+    const deletionLabel = operation === "removeRecord" ? "移除记录（保留所有文件）" : "删除源媒体文件";
     if (
       !window.confirm(
         groupedVideoPaths.length > 1
-          ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${resultNumber}`
-          : `确定删除文件吗？\n${resultPath}`,
+          ? `确定${deletionLabel}（${groupedVideoPaths.length} 项）吗？\n${resultNumber}`
+          : `确定${deletionLabel}吗？\n${resultPath}`,
       )
     ) {
       return;
     }
     try {
-      await port.deleteFile(groupedTargets);
-      toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "已删除文件");
-    } catch {
-      toast.error("删除文件失败");
+      await port[operation]?.(groupedTargets);
+      toast.success(operation === "removeRecord" ? "已移除记录，文件已保留" : "已删除源媒体文件");
+    } catch (error) {
+      toast.error(toErrorMessage(error, "操作失败"));
     }
   };
 
   const handleDeleteFolder = async () => {
-    if (!window.confirm(`确定删除文件和所在文件夹吗？\n${resultPath}`)) return;
+    if (!window.confirm(`确定删除源媒体和所在文件夹吗？\n${resultPath}`)) return;
     try {
       await port.deleteFileAndFolder?.(resultTarget);
       toast.success("已删除文件夹");
@@ -136,23 +139,42 @@ function buildMenuContent(
         </ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem onClick={handleDeleteFile} className="text-destructive focus:text-destructive">
-        删除文件
-        <ContextMenuShortcut>D</ContextMenuShortcut>
-      </ContextMenuItem>
+      {port.removeRecord && (
+        <ContextMenuItem
+          onClick={() => handleDelete("removeRecord")}
+          className="text-destructive focus:text-destructive"
+        >
+          移除记录
+        </ContextMenuItem>
+      )}
+      {port.deleteFile && (
+        <ContextMenuItem onClick={() => handleDelete("deleteFile")} className="text-destructive focus:text-destructive">
+          删除源媒体文件
+          <ContextMenuShortcut>D</ContextMenuShortcut>
+        </ContextMenuItem>
+      )}
       {canDeleteFolder ? (
         <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
-          删除文件及所在文件夹
+          删除源媒体及所在文件夹
           <ContextMenuShortcut>A</ContextMenuShortcut>
         </ContextMenuItem>
       ) : null}
       <ContextMenuSeparator />
       {canOpenFolder ? (
         <ContextMenuItem onClick={handleOpenFolder}>
-          打开目录
+          打开源目录
           <ContextMenuShortcut>F</ContextMenuShortcut>
         </ContextMenuItem>
       ) : null}
+      {canOpenFolder && metadataRef && (
+        <ContextMenuItem
+          onClick={() => {
+            void port.openFolder?.({ filePath: metadataRef.relativePath, ref: metadataRef });
+          }}
+        >
+          打开元数据目录
+        </ContextMenuItem>
+      )}
       <ContextMenuItem onClick={handleOpenNfo}>
         编辑 NFO
         <ContextMenuShortcut>

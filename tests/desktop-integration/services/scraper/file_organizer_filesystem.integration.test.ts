@@ -31,6 +31,8 @@ const publishVideo = async (
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
     organizePlan: plan,
+    renameSubtitles: config.behavior.successFileRename,
+    strmPathMappings: config.paths.strmPathMappings,
     nfoNaming: config.download.nfoNaming,
     writeNfo: async () => undefined,
   });
@@ -209,7 +211,7 @@ describe("FileOrganizer filesystem organize", () => {
     await expect(readFile(plan.strmPath as string, "utf8")).resolves.toBe("https://example.com/ABC-123.m3u8");
   });
 
-  it("keeps every single-file output beside the source", async () => {
+  it.each([false, true])("uses the same output rules in single and batch mode (move=%s)", async (successFileMove) => {
     const root = await createTempDir();
     const sourceDir = join(root, "picked");
     const sourcePath = join(sourceDir, "ABC-123.mp4");
@@ -220,6 +222,7 @@ describe("FileOrganizer filesystem organize", () => {
         metadataPath: join(root, "batch-metadata"),
         successOutputFolder: "organized",
       },
+      behavior: { successFileMove },
       naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
     });
 
@@ -227,11 +230,88 @@ describe("FileOrganizer filesystem organize", () => {
       executionMode: "single",
     });
 
-    expect(plan.outputDir).toBe(sourceDir);
-    expect(dirname(plan.targetVideoPath)).toBe(sourceDir);
-    expect(plan.metadataDir).toBe(sourceDir);
-    expect(dirname(plan.nfoPath)).toBe(sourceDir);
-    expect(plan.strmPath).toBeUndefined();
+    const batchPlan = organizer.plan(createFileInfo({ filePath: sourcePath }), createCrawlerData(), config, undefined, {
+      executionMode: "batch",
+    });
+    expect(plan).toEqual(batchPlan);
+    expect(plan.metadataDir).toContain(join(root, "batch-metadata"));
+    expect(plan.metadataDir).not.toBe(sourceDir);
+    expect(plan.strmPath).toBeDefined();
+  });
+
+  it.each(
+    [false, true].flatMap((successFileMove) =>
+      [false, true].flatMap((successFileRename) =>
+        [false, true].flatMap((separate) =>
+          ["ABC-123-original", "ABC-123-CEN"].flatMap((sourceBase) =>
+            ["ABC-123", sourceBase].map((subtitleBase) => ({
+              successFileMove,
+              successFileRename,
+              separate,
+              subtitleBase,
+              sourceBase,
+            })),
+          ),
+        ),
+      ),
+    ),
+  )("keeps movement, renaming and metadata separation independent ($successFileMove/$successFileRename/$separate)", async ({
+    successFileMove,
+    successFileRename,
+    separate,
+    subtitleBase,
+    sourceBase,
+  }) => {
+    const root = await createTempDir();
+    const source = join(root, "downloads", `${sourceBase}.mp4`);
+    await mkdir(dirname(source), { recursive: true });
+    await writeFile(source, "video");
+    const subtitles = [".zh.forced.srt", ".en.sdh.ass", ".idx", ".sub"];
+    for (const suffix of subtitles) await writeFile(join(dirname(source), `${subtitleBase}${suffix}`), suffix);
+    await writeFile(join(dirname(source), "movie.nfo"), "original NFO");
+    await writeFile(join(dirname(source), "poster.jpg"), "original poster");
+    if (separate) await writeFile(join(dirname(source), "DEF-456.mp4"), "another video");
+    const config = createConfig({
+      paths: {
+        mediaPath: join(root, "media"),
+        metadataPath: separate ? join(root, "metadata") : "",
+        successOutputFolder: "organized",
+      },
+      naming: { folderTemplate: "{number}", fileTemplate: "{number}" },
+      behavior: { successFileMove, successFileRename, failedFileMove: false },
+    });
+    const organizer = new FileOrganizer();
+    const info = createFileInfo({ filePath: source, fileName: sourceBase });
+    const plan = await organizer.resolveOutputPlan(organizer.plan(info, createCrawlerData(), config), source);
+    await publishVideo(info, plan, config, dirname(source));
+    expect(await readFile(plan.targetVideoPath, "utf8")).toBe("video");
+    expect(dirname(plan.targetVideoPath) === dirname(source)).toBe(!successFileMove);
+    expect(parse(plan.targetVideoPath).base).toBe(successFileRename ? "ABC-123-CEN.mp4" : `${sourceBase}.mp4`);
+    for (const suffix of subtitles)
+      expect(
+        await readFile(
+          join(
+            dirname(plan.targetVideoPath),
+            `${successFileRename ? parse(plan.targetVideoPath).name : subtitleBase}${suffix}`,
+          ),
+          "utf8",
+        ),
+      ).toBe(suffix);
+    if (separate) {
+      expect(parse(plan.strmPath as string).base).toBe("ABC-123-CEN.strm");
+      expect(await readFile(plan.strmPath as string, "utf8")).toBe(plan.targetVideoPath);
+      for (const suffix of subtitles)
+        expect(await readFile(join(plan.metadataDir as string, `ABC-123-CEN${suffix}`), "utf8")).toBe(suffix);
+      expect(await fileUtils.listVideoFiles(plan.metadataDir as string)).toEqual([plan.strmPath]);
+    }
+    expect(await readFile(join(dirname(source), "movie.nfo"), "utf8")).toBe("original NFO");
+    expect(await readFile(join(dirname(source), "poster.jpg"), "utf8")).toBe("original poster");
+    if (!successFileMove && !successFileRename) {
+      const before = (await fs.readdir(dirname(source))).sort();
+      await publishVideo(info, plan, config, dirname(source));
+      expect((await fs.readdir(dirname(source))).sort()).toEqual(before);
+      expect(await readFile(source, "utf8")).toBe("video");
+    }
   });
 
   it("rejects overlapping media and metadata roots before creating output", async () => {
@@ -244,7 +324,7 @@ describe("FileOrganizer filesystem organize", () => {
     });
 
     expect(() => organizer.plan(createFileInfo({ filePath: sourcePath }), createCrawlerData(), config)).toThrow(
-      "本地元数据目录不能与媒体目录相同或互相包含",
+      "元数据输出目录不能与媒体目录相同或互相包含",
     );
   });
 
@@ -827,7 +907,7 @@ describe("FileOrganizer filesystem organize", () => {
     );
 
     await expect(organizer.resolveOutputPlan(invalidPlan, invalidSourcePath)).rejects.toThrow(
-      "成功后不移动文件时，仅支持源目录内存在单个视频文件",
+      "源目录包含多部影片，请设置元数据输出目录或使用按影片命名的 NFO 和图片",
     );
   });
 

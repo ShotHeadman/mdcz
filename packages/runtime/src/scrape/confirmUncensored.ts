@@ -1,5 +1,5 @@
-import { dirname, posix } from "node:path";
-import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
+import { dirname } from "node:path";
+import { type MediaRoot, resolveRootFile, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { crawlerDataSchema } from "@mdcz/shared/serverDtos";
@@ -13,21 +13,23 @@ import type {
   UncensoredChoice,
   UncensoredConfirmResultItem,
 } from "@mdcz/shared/types";
-import { toLibraryAssets } from "../library";
 import type { LocalScanService } from "../maintenance/LocalScanService";
 import { buildMovieTags } from "../maintenance/movieTags";
 import { type PreparedPublicationPlan, preparePublicationPlan } from "../publication";
+import { publicationPathKey } from "../publication/boundary";
 import type { RuntimeLogger } from "../shared";
 import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
 import { type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { parseFileInfo } from "./utils/number";
 
 export interface RuntimeUncensoredConfirmItem {
+  groupId?: string;
   fileId: FileId;
   videoPath: string;
   metadataVideoPath?: string;
   nfoPath?: string;
   crawlerData?: CrawlerData;
+  registeredAssets?: DiscoveredAssets;
   choice: UncensoredChoice;
 }
 
@@ -37,7 +39,11 @@ export interface RuntimeUncensoredConfirmFailure {
   message: string;
 }
 
-export type UncensoredConfirmUpdate = UncensoredConfirmResultItem & { assets: DiscoveredAssets };
+export type UncensoredConfirmUpdate = UncensoredConfirmResultItem & {
+  assets: DiscoveredAssets;
+  outputAssets: PreparedPublicationPlan["assets"];
+  removedAssetPaths: string[];
+};
 
 export interface RuntimeUncensoredConfirmResult {
   updatedCount: number;
@@ -48,7 +54,7 @@ export interface RuntimeUncensoredConfirmResult {
 interface PreparedUncensoredConfirmItem {
   item: RuntimeUncensoredConfirmItem;
   entry: LocalScanEntry;
-  effectiveNfoPath: string;
+  effectiveNfoPath?: string;
   nextLocalState: NfoLocalState;
 }
 
@@ -69,26 +75,10 @@ export interface UncensoredConfirmDependencies {
   }): Promise<void>;
 }
 
-/**
- * A separate metadata root keeps a STRM stub next to the NFO instead of the
- * video, so scans and confirmations must follow the stub, not the media file.
- */
-export const resolveScrapeMetadataVideoPath = (outcome: {
-  relativePath: string;
-  outputRelativePath: string | null;
-  nfoRootId: string | null;
-}): string => {
-  const outputRelativePath = outcome.outputRelativePath ?? outcome.relativePath;
-  if (!outcome.nfoRootId) return outputRelativePath;
-  const base = posix.basename(outputRelativePath, posix.extname(outputRelativePath));
-  return posix.join(posix.dirname(outputRelativePath), `${base}.strm`);
-};
-
 export interface UncensoredRevisionSources {
   update: UncensoredConfirmUpdate;
   outcome: { id: string; crawlerDataJson: string | null };
-  outputRoot: Pick<MediaRoot, "id" | "hostPath">;
-  nfoRoot: Pick<MediaRoot, "id" | "hostPath">;
+  roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   entry: {
     id: string;
     mediaIdentity: string | null;
@@ -96,6 +86,7 @@ export interface UncensoredRevisionSources {
     number: string | null;
     actors: string[];
     createdAt: Date;
+    assets: Array<{ kind: string; uri: string; rootId: string | null; relativePath: string | null }>;
   };
   size: number;
   modifiedAt: Date | null;
@@ -107,16 +98,45 @@ export interface UncensoredRevisionSources {
  * mirrored in the desktop and server services.
  */
 export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
-  const { update, outcome, outputRoot, nfoRoot, entry, size, modifiedAt } = sources;
+  const { update, outcome, entry, size, modifiedAt } = sources;
+  const outputRoot = resolveRootFile(sources.roots, update.targetVideoPath).root;
+  const nfo = update.targetNfoPath ? resolveRootFile(sources.roots, update.targetNfoPath) : undefined;
   const outputRelativePath = toRootRelativePath(outputRoot, update.targetVideoPath);
-  const nfoRelativePath = update.targetNfoPath ? toRootRelativePath(nfoRoot, update.targetNfoPath) : null;
+  const nfoRelativePath = nfo?.relativePath ?? null;
   const crawlerDataJson = outcome.crawlerDataJson ?? "{}";
   const crawlerData = crawlerDataSchema.parse(JSON.parse(crawlerDataJson));
   const thumbnailSource = update.assets.poster ?? update.assets.thumb;
+  const updatedAssets = update.outputAssets.map((asset) => {
+    const resolved = asset.targetPath ? resolveRootFile(sources.roots, asset.targetPath) : undefined;
+    const relativePath = resolved?.relativePath ?? null;
+    return {
+      kind: asset.kind,
+      uri: relativePath ?? (asset.url as string),
+      rootId: resolved?.root.id ?? null,
+      relativePath,
+    };
+  });
+  const removed = new Set(update.removedAssetPaths.map(publicationPathKey));
+  const updatedKinds = new Set([
+    "thumb",
+    "poster",
+    "fanart",
+    "trailer",
+    "scene",
+    "actor",
+    ...updatedAssets.map((asset) => asset.kind),
+  ]);
+  const retainedAssets = entry.assets.filter((asset) => {
+    if (updatedKinds.has(asset.kind)) return false;
+    if (!asset.rootId || !asset.relativePath) return true;
+    const root = sources.roots.find((root) => root.id === asset.rootId);
+    if (!root) throw new Error(`Resource root not found: ${asset.rootId}`);
+    return !removed.has(publicationPathKey(resolveRootRelativePath(root, asset.relativePath)));
+  });
   return {
     outcomeId: outcome.id,
     crawlerDataJson,
-    nfoRootId: nfoRelativePath && nfoRoot.id !== outputRoot.id ? nfoRoot.id : null,
+    nfoRootId: nfo && nfo.root.id !== outputRoot.id ? nfo.root.id : null,
     nfoRelativePath,
     outputRootId: outputRoot.id,
     outputRelativePath,
@@ -134,8 +154,8 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
       number: entry.number ?? crawlerData.number,
       actors: entry.actors,
       crawlerDataJson,
-      thumbnailPath: thumbnailSource ? toRootRelativePath(nfoRoot, thumbnailSource) : null,
-      assets: toLibraryAssets(nfoRoot, { ...update.assets, downloaded: [] }),
+      thumbnailPath: thumbnailSource ? resolveRootFile(sources.roots, thumbnailSource).relativePath : null,
+      assets: [...retainedAssets, ...updatedAssets],
       lastKnownPath: outputRelativePath,
       createdAt: entry.createdAt,
       lastRefreshedAt: new Date(),
@@ -163,7 +183,7 @@ export const confirmUncensoredOutputs = async (
   config: Configuration,
   dependencies: UncensoredConfirmDependencies,
 ): Promise<RuntimeUncensoredConfirmResult> => {
-  const updatedItems: Array<UncensoredConfirmResultItem & { assets: DiscoveredAssets }> = [];
+  const updatedItems: UncensoredConfirmUpdate[] = [];
   const failures: RuntimeUncensoredConfirmFailure[] = [];
   const preparedItems: PreparedUncensoredConfirmItem[] = [];
   const fail = (item: RuntimeUncensoredConfirmItem, message: string): void => {
@@ -176,37 +196,42 @@ export const confirmUncensoredOutputs = async (
       const nfoPath = item.nfoPath?.trim();
       const videoPath = item.videoPath.trim();
       if (
-        !nfoPath ||
         !videoPath ||
-        !(await dependencies.pathExists(nfoPath)) ||
+        (nfoPath && !(await dependencies.pathExists(nfoPath))) ||
         !(await dependencies.pathExists(videoPath))
       ) {
         fail(item, `Skipping uncensored confirm: output files not found for ${videoPath || nfoPath}`);
         continue;
       }
 
-      const scanPath = item.metadataVideoPath?.trim() || videoPath;
       const root: MediaRoot = {
         id: item.fileId,
-        displayName: dirname(scanPath),
-        hostPath: dirname(scanPath),
+        displayName: dirname(videoPath),
+        hostPath: dirname(videoPath),
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       const scannedEntry = await dependencies.localScanService.scanVideo(
         root,
-        scanPath,
+        videoPath,
         config.paths.sceneImagesFolder,
+        undefined,
+        {
+          mediaPath: "",
+          metadataPath: "",
+          registeredOutputs: new Map([[videoPath, { nfoPath, strmPath: item.metadataVideoPath }]]),
+        },
       );
       const effectiveNfoPath = scannedEntry.nfoPath ?? nfoPath;
       const crawlerData = item.crawlerData ?? scannedEntry.crawlerData;
-      if (!effectiveNfoPath || !crawlerData || !(await dependencies.pathExists(effectiveNfoPath))) {
+      if (!crawlerData || (effectiveNfoPath && !(await dependencies.pathExists(effectiveNfoPath)))) {
         fail(item, `Skipping uncensored confirm: incomplete local output for ${videoPath}`);
         continue;
       }
 
       const entry = {
         ...scannedEntry,
+        assets: item.registeredAssets ?? scannedEntry.assets,
         fileInfo: {
           ...parseFileInfo(videoPath, config.scrape.filenameIgnoreTokens),
           isSubtitled: scannedEntry.fileInfo.isSubtitled,
@@ -229,16 +254,23 @@ export const confirmUncensoredOutputs = async (
   const batches = new Map<string, PreparedUncensoredConfirmItem[]>();
   const choicesByNfoPath = new Map<string, Set<UncensoredChoice>>();
   for (const prepared of preparedItems) {
-    const choices = choicesByNfoPath.get(prepared.effectiveNfoPath) ?? new Set<UncensoredChoice>();
+    const key = prepared.item.groupId ?? prepared.effectiveNfoPath ?? prepared.item.videoPath;
+    const choices = choicesByNfoPath.get(key) ?? new Set<UncensoredChoice>();
     choices.add(prepared.item.choice);
-    choicesByNfoPath.set(prepared.effectiveNfoPath, choices);
+    choicesByNfoPath.set(key, choices);
   }
   for (const prepared of preparedItems) {
-    if ((choicesByNfoPath.get(prepared.effectiveNfoPath)?.size ?? 0) > 1) {
+    if (
+      (choicesByNfoPath.get(prepared.item.groupId ?? prepared.effectiveNfoPath ?? prepared.item.videoPath)?.size ?? 0) >
+      1
+    ) {
       fail(prepared.item, `Conflicting uncensored choices for shared NFO: ${prepared.effectiveNfoPath}`);
       continue;
     }
-    const key = buildBatchKey(prepared.effectiveNfoPath, prepared.item.choice);
+    const key = buildBatchKey(
+      prepared.item.groupId ?? prepared.effectiveNfoPath ?? prepared.item.videoPath,
+      prepared.item.choice,
+    );
     batches.set(key, [...(batches.get(key) ?? []), prepared]);
   }
 
@@ -265,28 +297,27 @@ export const confirmUncensoredOutputs = async (
       continue;
     }
 
-    let savedNfoPath: string;
+    let savedNfoPath: string | undefined;
     const nfoArtifacts = new Map<string, string>();
     try {
       const seed = processedItems[0];
-      savedNfoPath = await dependencies.nfoGenerator.writeNfo(
-        seed.plan.nfoPath,
-        seed.entry.crawlerData as CrawlerData,
-        {
-          fileInfo: buildSharedFileInfo(
-            processedItems.map((item) => item.entry),
-            seed.outputVideoPath,
-          ),
-          localState: seed.nextLocalState,
-          nfoNaming: config.download.nfoNaming,
-          enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
-          nfoTitleTemplate: config.naming.nfoTitleTemplate,
-          buildTags: buildMovieTags,
-          writeFile: async (targetPath, content) => {
-            nfoArtifacts.set(targetPath, content);
-          },
-        },
-      );
+      savedNfoPath =
+        config.download.generateNfo || seed.effectiveNfoPath
+          ? await dependencies.nfoGenerator.writeNfo(seed.plan.nfoPath, seed.entry.crawlerData as CrawlerData, {
+              fileInfo: buildSharedFileInfo(
+                processedItems.map((item) => item.entry),
+                seed.outputVideoPath,
+              ),
+              localState: seed.nextLocalState,
+              nfoNaming: config.download.nfoNaming,
+              enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
+              nfoTitleTemplate: config.naming.nfoTitleTemplate,
+              buildTags: buildMovieTags,
+              writeFile: async (targetPath, content) => {
+                nfoArtifacts.set(targetPath, content);
+              },
+            })
+          : undefined;
     } catch (error) {
       const message = `Failed to write uncensored confirmation NFO: ${toErrorMessage(error)}`;
       for (const processed of processedItems) fail(processed.item, message);
@@ -299,16 +330,18 @@ export const confirmUncensoredOutputs = async (
         const publication = await preparePublicationPlan({
           sourceVideoPath: processed.item.videoPath,
           outputVideoPath: processed.outputVideoPath,
-          existingAssetDir: dirname(processed.effectiveNfoPath),
+          existingAssetDir: dirname(
+            processed.effectiveNfoPath ?? processed.item.metadataVideoPath ?? processed.item.videoPath,
+          ),
           metadataOutputDir: processed.plan.metadataDir ?? processed.plan.outputDir,
           downloadedAssets: { downloaded: [], sceneImages: [] },
           actorPhotoPaths: [],
           existingAssets: processed.entry.assets,
           existingNfoPath: processed.effectiveNfoPath,
-          existingStrmPath: processed.item.metadataVideoPath,
-          movingVideoPaths: processedItems.map(({ item }) => item.videoPath),
           organizePlan: processed.plan,
+          renameSubtitles: config.behavior.successFileRename,
           nfoNaming: config.download.nfoNaming,
+          strmPathMappings: config.paths.strmPathMappings,
           writeNfo: async (_assets, writeFile) => {
             for (const [targetPath, content] of nfoArtifacts) await writeFile(targetPath, content);
             return savedNfoPath;
@@ -317,6 +350,15 @@ export const confirmUncensoredOutputs = async (
         finalizedItems.push({ processed, publication });
       }
       const plans = finalizedItems.map(({ publication }) => publication.plan);
+      const boundaries = plans.flatMap((plan) => (plan.boundary ? [plan.boundary] : []));
+      const boundary = boundaries.length
+        ? {
+            writeRoots: boundaries.flatMap((value) => value.writeRoots),
+            writablePaths: boundaries.flatMap((value) => value.writablePaths),
+            readOnlyPaths: boundaries.flatMap((value) => value.readOnlyPaths),
+            readOnlyDirectories: boundaries.flatMap((value) => value.readOnlyDirectories),
+          }
+        : undefined;
       const moves = new Map<string, NonNullable<PreparedPublicationPlan["sidecars"]>[number]>();
       const artifacts = new Map<string, PreparedPublicationPlan["artifacts"][number]>();
       for (const plan of plans) {
@@ -341,7 +383,6 @@ export const confirmUncensoredOutputs = async (
           artifacts.set(artifact.targetPath, artifact);
         }
       }
-      const retained = new Set([...moves.keys(), ...artifacts.keys()]);
       const confirmed: UncensoredConfirmUpdate[] = finalizedItems.map(({ processed, publication }) => ({
         fileId: processed.item.fileId,
         sourceVideoPath: processed.item.videoPath,
@@ -350,17 +391,24 @@ export const confirmUncensoredOutputs = async (
         targetNfoPath: publication.nfoPath,
         choice: processed.item.choice,
         assets: publication.assets,
+        outputAssets: publication.plan.assets,
+        removedAssetPaths: [
+          ...publication.plan.obsoletePaths,
+          ...(publication.plan.sidecars ?? [])
+            .filter((move) => move.sourcePath !== move.targetPath)
+            .map((move) => move.sourcePath),
+        ],
       }));
       await dependencies.publish({
         operationId: `uncensored-confirm:${processedItems.map(({ item }) => item.fileId).join(":")}`,
         plan: {
+          media: plans.flatMap((plan) => plan.media ?? []),
+          boundary,
           videos: plans.flatMap((plan) => plan.videos ?? []),
           sidecars: [...moves.values()],
           artifacts: [...artifacts.values()],
           assets: plans.flatMap((plan) => plan.assets),
-          obsoletePaths: [...new Set(plans.flatMap((plan) => plan.obsoletePaths))].filter(
-            (path) => !retained.has(path),
-          ),
+          obsoletePaths: [],
           replaceExistingTargetPaths: [...new Set(plans.flatMap((plan) => plan.replaceExistingTargetPaths ?? []))],
         },
         updates: confirmed,

@@ -1,5 +1,5 @@
-import { mkdir, rm } from "node:fs/promises";
-import { basename, dirname } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { atomicCopyFile, atomicWriteFile } from "@mdcz/media-store";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
@@ -276,25 +276,10 @@ export class NfoGenerator {
     const write = options?.writeFile ?? atomicWriteFile;
     const xml = this.buildXml(data, options);
     const nfoNaming = options?.nfoNaming ?? "both";
-    const { primaryPath, moviePath, canonicalPath, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
+    const { primaryPath, canonicalPath, requiredPaths } = getNfoWritePaths(nfoPath, nfoNaming);
     if (!options?.writeFile) await mkdir(dirname(primaryPath), { recursive: true });
 
-    if (nfoNaming === "both") {
-      await write(primaryPath, xml);
-      await write(moviePath, xml);
-      return canonicalPath;
-    }
-
-    if (nfoNaming === "movie") {
-      await write(moviePath, xml);
-      if (!options?.writeFile)
-        for (const stalePath of stalePaths) await tryRemoveStaleNfo(stalePath, options?.pathExists);
-      return canonicalPath;
-    }
-
-    await write(primaryPath, xml);
-    if (!options?.writeFile)
-      for (const stalePath of stalePaths) await tryRemoveStaleNfo(stalePath, options?.pathExists);
+    for (const requiredPath of requiredPaths) await write(requiredPath, xml);
     return canonicalPath;
   }
 }
@@ -305,7 +290,9 @@ export const resolveCanonicalNfoPath = (nfoPath: string, nfoNaming: NfoNamingMod
   getNfoWritePaths(nfoPath, nfoNaming).canonicalPath;
 
 export const resolveFilenameNfoPath = (nfoPath: string, videoPath?: string): string =>
-  replaceExtension(videoPath ?? nfoPath, ".nfo");
+  videoPath && dirname(resolve(nfoPath)) !== dirname(resolve(videoPath))
+    ? replaceExtension(nfoPath, ".nfo")
+    : replaceExtension(videoPath ?? nfoPath, ".nfo");
 
 export const getNfoReadCandidates = (
   nfoPath: string,
@@ -425,7 +412,7 @@ export const reconcileExistingNfoFiles = async (
   nfoNaming: NfoNamingMode = "both",
   pathExists: PathExists,
 ): Promise<string | undefined> => {
-  const { primaryPath, canonicalPath, requiredPaths, stalePaths } = getNfoWritePaths(nfoPath, nfoNaming);
+  const { primaryPath, canonicalPath, requiredPaths } = getNfoWritePaths(nfoPath, nfoNaming);
   const sourcePath = await findExistingNfoPath(nfoPath, nfoNaming, pathExists);
   if (!sourcePath) return undefined;
   await mkdir(dirname(primaryPath), { recursive: true });
@@ -433,7 +420,6 @@ export const reconcileExistingNfoFiles = async (
     if (requiredPath === sourcePath || (await pathExists(requiredPath))) continue;
     await atomicCopyFile(sourcePath, requiredPath);
   }
-  for (const stalePath of stalePaths) await tryRemoveStaleNfo(stalePath, pathExists);
   return canonicalPath;
 };
 
@@ -442,7 +428,6 @@ export interface NfoNamingPaths {
   moviePath: string;
   canonicalPath: string;
   requiredPaths: string[];
-  stalePaths: string[];
 }
 
 const siblingPath = (filePath: string, fileName: string): string => {
@@ -459,7 +444,6 @@ export const getNfoWritePaths = (nfoPath: string, nfoNaming: NfoNamingMode = "bo
       moviePath,
       canonicalPath: moviePath,
       requiredPaths: [moviePath],
-      stalePaths: primaryPath === moviePath ? [] : [primaryPath],
     };
   }
   if (nfoNaming === "filename") {
@@ -468,7 +452,6 @@ export const getNfoWritePaths = (nfoPath: string, nfoNaming: NfoNamingMode = "bo
       moviePath,
       canonicalPath: primaryPath,
       requiredPaths: [primaryPath],
-      stalePaths: primaryPath === moviePath ? [] : [moviePath],
     };
   }
   return {
@@ -476,7 +459,6 @@ export const getNfoWritePaths = (nfoPath: string, nfoNaming: NfoNamingMode = "bo
     moviePath,
     canonicalPath: primaryPath,
     requiredPaths: primaryPath === moviePath ? [primaryPath] : [primaryPath, moviePath],
-    stalePaths: [],
   };
 };
 
@@ -487,16 +469,6 @@ const replaceExtension = (filePath: string, extension: string): string => {
     ? `${filePath.slice(0, extensionIndex)}${extension}`
     : `${filePath}${extension}`;
 };
-
-async function tryRemoveStaleNfo(stalePath: string, pathExists?: PathExists): Promise<void> {
-  try {
-    if (!pathExists || (await pathExists(stalePath))) {
-      await rm(stalePath);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-}
 
 function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
   const lines: string[] = ["\n  Aggregation Sources:"];

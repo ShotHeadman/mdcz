@@ -1,15 +1,18 @@
 import { copyFile, mkdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { assertPublicationBoundary, guardPublicationFileSystem } from "./boundary";
 import { PublicationJournalAdapter } from "./journalAdapter";
 import { manifestRefs } from "./manifest";
 import { removeCommittedObsoleteFiles } from "./preflight";
+import { isPublicationPathReferenced } from "./registeredOutputs";
 import { restorePublicationFile } from "./restorePublicationFile";
 import type {
   PublicationFileSystem,
   PublicationJournalManifest,
   PublicationJournalPort,
   PublicationJournalRecord,
+  PublicationOutputPort,
   PublicationRepairPort,
 } from "./types";
 
@@ -51,6 +54,7 @@ const repairType = (operationType: string): "scrape" | "maintenance" =>
 
 export interface RecoverPublicationsOptions {
   journal: PublicationJournalPort;
+  outputs?: PublicationOutputPort;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   repairIssues?: PublicationRepairPort;
   fileSystem?: PublicationFileSystem;
@@ -117,6 +121,7 @@ const recoverPending = async (
   manifest: PublicationJournalManifest,
   resolve: (rootId: string, relativePath: string) => Promise<string>,
 ): Promise<"done" | "retain"> => {
+  let retained = false;
   for (const item of [...manifest.entries].reverse()) {
     const targetPath = await resolve(item.rootId, item.relativePath);
     const temporaryPath = await resolve(item.rootId, item.temporaryPath);
@@ -127,15 +132,18 @@ const recoverPending = async (
         temporaryPath,
         backupPath,
         targetExisted: item.targetExisted,
+        staged: item.staged,
+        recovering: true,
         sourcePath: item.source ? await resolve(item.source.rootId, item.source.relativePath) : undefined,
       });
       await fileSystem.rm(temporaryPath, { force: true });
     } catch (error) {
       if (isUnavailableError(error)) return "retain";
       await recordRepair(options, entry, item, error);
-      return "retain";
+      retained = true;
     }
   }
+  if (retained) return "retain";
   await resolveRepairs(options, entry, [...manifest.entries, ...manifest.obsolete]);
   options.journal.finish(entry.operationId);
   return "done";
@@ -170,9 +178,15 @@ const recoverCommitted = async (
       return "retain";
     }
   }
+  const outputs = options.outputs;
   let retainedObsolete: RootFileRef[] = [];
   try {
-    retainedObsolete = await removeCommittedObsoleteFiles(fileSystem, manifest.obsolete, resolve);
+    retainedObsolete = await removeCommittedObsoleteFiles(
+      fileSystem,
+      manifest.obsolete,
+      resolve,
+      outputs ? (ref) => isPublicationPathReferenced(ref, outputs, options.resolveRoot) : undefined,
+    );
   } catch (error) {
     if (isUnavailableError(error)) return "retain";
     const ref = manifest.obsolete[0] ?? manifest.entries[0];
@@ -215,11 +229,13 @@ export const recoverPublications = async (options: RecoverPublicationsOptions): 
     const resolve = async (rootId: string, relativePath: string) =>
       await resolveAbsolute(options, rootId, relativePath);
     try {
+      if (manifest.boundary) await assertPublicationBoundary(manifest.boundary);
+      const guardedFileSystem = guardPublicationFileSystem(fileSystem, manifest.boundary);
       if (entry.state === "pending") {
-        await recoverPending(options, fileSystem, entry, manifest, resolve);
+        await recoverPending(options, guardedFileSystem, entry, manifest, resolve);
         continue;
       }
-      await recoverCommitted(options, fileSystem, entry, manifest, resolve);
+      await recoverCommitted(options, guardedFileSystem, entry, manifest, resolve);
     } catch (error) {
       if (isUnavailableError(error)) continue;
       const ref = manifest.entries[0] ?? manifest.obsolete[0] ?? { rootId: "unknown", relativePath: entry.operationId };

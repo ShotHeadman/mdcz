@@ -16,7 +16,7 @@ import {
   serializeConfiguration,
 } from "@mdcz/shared/configCodec";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
-import { NamingEngine } from "../scrape/organize/NamingEngine";
+import { FileOrganizer } from "../scrape/FileOrganizer";
 
 export { buildComputedConfiguration, type ComputedConfiguration } from "./computed";
 
@@ -157,7 +157,7 @@ export const mergeRuntimeConfig = <T>(base: T, patch: DeepPartial<T>): T => {
   return merged as T;
 };
 
-const namingPreviewEngine = new NamingEngine();
+const namingPreviewEngine = new FileOrganizer();
 
 export const buildRuntimeNamingPreview = (
   configuration: Configuration,
@@ -166,7 +166,7 @@ export const buildRuntimeNamingPreview = (
   const config = parseRuntimeConfiguration(mergeRuntimeConfig(configuration, patch));
 
   return {
-    items: namingPreviewEngine.buildPreview(config),
+    items: namingPreviewEngine.buildNamingPreview(config),
   };
 };
 

@@ -75,6 +75,13 @@ const createContext = (mediaRoots?: {
       if (!root) throw new Error(`Unknown root: ${rootId}`);
       return root;
     });
+  const library = {
+    resolveMaintenanceSource: vi.fn(async () => null),
+    publicationSnapshot: () => ({ files: [], assets: [] }),
+    registerPublishedOutputs: vi.fn(),
+    releaseOutputReferences: vi.fn(),
+    deleteFiles: vi.fn(),
+  };
   return {
     windowService: {
       getMainWindow: () => null,
@@ -82,6 +89,7 @@ const createContext = (mediaRoots?: {
     persistenceService: {
       getState: async () => ({
         repositories: {
+          library,
           publicationJournal: createMemoryPublicationJournal(),
           mediaRoots: { ensurePath, get, list, upsert },
         },
@@ -233,7 +241,30 @@ describe("createFileHandlers", () => {
     await mkdir(folder);
     await writeFile(join(folder, "movie.mp4"), "video");
     await writeFile(join(folder, "movie.nfo"), "metadata");
-    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+    const context = createContext({ list: async () => [{ id: "media", hostPath: root }] });
+    const handlers = createFileHandlers(context);
+    vi.spyOn(
+      (await context.persistenceService.getState()).repositories.library,
+      "publicationSnapshot",
+    ).mockReturnValueOnce({
+      files: [],
+      assets: [
+        {
+          rootId: "media",
+          relativePath: "nested/movie.nfo",
+          kind: "nfo",
+          itemId: "another-media",
+          published: true,
+          historical: false,
+        },
+      ],
+    });
+    await expect(
+      handlers[IpcChannel.File_Delete].action(
+        actionArgs({ targets: [{ rootId: "media", relativePath: "nested/movie.mp4" }], containingFolder: true }),
+      ),
+    ).rejects.toThrow("其他媒体引用");
+    expect(await readFile(join(folder, "movie.nfo"), "utf8")).toBe("metadata");
 
     await expect(
       handlers[IpcChannel.File_Delete].action(
@@ -325,7 +356,17 @@ describe("createFileHandlers", () => {
       thumbPath,
       '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500"><rect width="100%" height="100%" fill="#c84630"/></svg>',
     );
-    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+    const context = createContext({ list: async () => [{ id: "media", hostPath: root }] });
+    const library = (await context.persistenceService.getState()).repositories.library;
+    Object.assign(library, {
+      resolveMaintenanceSource: async () => ({ libraryItemId: "item" }),
+      getEntryById: async () => ({ assets: [{ kind: "thumb", rootId: "media", relativePath: "thumb.jpg" }] }),
+      publicationSnapshot: () => ({
+        files: [{ itemId: "item", rootId: "media", relativePath: "ABC-123.mp4" }],
+        assets: [{ itemId: "item", kind: "thumb", rootId: "media", relativePath: "thumb.jpg", published: true }],
+      }),
+    });
+    const handlers = createFileHandlers(context);
     const videoRef = { rootId: "media", relativePath: "ABC-123.mp4" };
     const thumbRef = { rootId: "media", relativePath: "thumb.jpg" };
     await expect(handlers[IpcChannel.File_Exists].action(actionArgs({ path: thumbRef }))).resolves.toEqual({

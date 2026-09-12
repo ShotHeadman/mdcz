@@ -5,6 +5,8 @@ import {
   classifyStrmTarget,
   inspectStrmTarget,
   isStrmFile,
+  mapStrmPath,
+  prepareStrmMirrorContent,
   readStrmTarget,
   resolvePlayableMediaTarget,
   writeStrmTarget,
@@ -50,7 +52,7 @@ describe("strm utils", () => {
     expect(classifyStrmTarget("/library/ABC-123.strm", "../videos/ABC-123.mp4")).toEqual({
       target: "../videos/ABC-123.mp4",
       kind: "relative_path",
-      resolvedPath: resolve("/library", "../videos/ABC-123.mp4"),
+      resolvedPath: "/videos/ABC-123.mp4",
     });
     expect(classifyStrmTarget("/library/ABC-123.strm", "/videos/ABC-123.mp4")).toEqual({
       target: "/videos/ABC-123.mp4",
@@ -109,6 +111,70 @@ describe("strm utils", () => {
     await writeStrmTarget(filePath, "/videos/ABC-123.mp4");
 
     await expect(readFile(filePath, "utf8")).resolves.toBe("/videos/ABC-123.mp4");
+  });
+
+  it.each([
+    {
+      actual: "D:\\Downloads\\a\\movie.mp4",
+      from: "d:/downloads/",
+      to: "/mnt/downloads",
+      expected: "/mnt/downloads/a/movie.mp4",
+    },
+    {
+      actual: "\\\\server\\share\\movie.mp4",
+      from: "\\\\server\\share",
+      to: "Z:\\Videos",
+      expected: "Z:\\Videos\\movie.mp4",
+    },
+    {
+      actual: "/media/a/movie.mp4",
+      from: "/media",
+      to: "\\\\player\\share",
+      expected: "\\\\player\\share\\a\\movie.mp4",
+    },
+    { actual: "/media-other/movie.mp4", from: "/media", to: "/target", expected: "/media-other/movie.mp4" },
+    { actual: "/Media/movie.mp4", from: "/media", to: "/target", expected: "/Media/movie.mp4" },
+    { actual: "/movie.mp4", from: "/", to: "/target", expected: "/target/movie.mp4" },
+  ])("maps absolute paths using directory boundaries: $actual", ({ actual, from, to, expected }) => {
+    expect(mapStrmPath(actual, [{ from, to }])).toBe(expected);
+  });
+
+  it("uses the longest matching STRM prefix", () => {
+    expect(
+      mapStrmPath("/media/long/a.mp4", [
+        { from: "/media", to: "/short" },
+        { from: "/media/long", to: "/long" },
+      ]),
+    ).toBe("/long/a.mp4");
+  });
+
+  it.each([
+    "",
+    "one.mp4\ntwo.mp4",
+    "#EXTM3U\nmovie.mp4",
+    "D:relative.mp4",
+  ])("rejects unsupported mirror contents: %j", async (content) => {
+    const root = await createTempDir();
+    const source = join(root, "movie.strm");
+    await writeFile(source, content);
+    await expect(prepareStrmMirrorContent(source, source)).rejects.toThrow(/STRM/);
+    expect(await readFile(source, "utf8")).toBe(content);
+  });
+
+  it("preserves URL bytes and only maps resolved local playback targets", async () => {
+    const root = await createTempDir();
+    const source = join(root, "movie.strm");
+    const mappings = [{ from: root, to: "/player" }];
+    for (const content of [
+      "https://server/a%2Fb.mp4?token=A%2bB&x=1#frag",
+      `../${root.split(/[\\/]/u).at(-1)}/media.mp4`,
+      "media.mp4",
+    ]) {
+      await writeFile(source, content);
+      const result = await prepareStrmMirrorContent(source, source, mappings);
+      expect(result).toBe(content.startsWith("https:") ? content : "/player/media.mp4");
+      expect(await readFile(source, "utf8")).toBe(content);
+    }
   });
 
   it("rejects Kodi-only url schemes for desktop playback", async () => {

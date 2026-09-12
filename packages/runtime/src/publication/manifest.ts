@@ -18,6 +18,7 @@ const publicationObsoleteObservationSchema = z.union([
 
 const publicationJournalManifestEntrySchema = rootFileRefSchema
   .extend({
+    staged: z.object({ size: z.number(), mtimeMs: z.number(), ino: z.number(), dev: z.number() }).strict().optional(),
     temporaryPath: wireRelativePath,
     backupPath: z.union([wireRelativePath, z.null()]),
     targetExisted: z.boolean(),
@@ -31,8 +32,19 @@ const publicationJournalManifestObsoleteSchema = rootFileRefSchema
   })
   .strict();
 
+const boundaryLocationSchema = z.object({ path: z.string(), realPath: z.string() }).strict();
+const publicationBoundarySchema = z
+  .object({
+    writeRoots: z.array(boundaryLocationSchema),
+    writablePaths: z.array(boundaryLocationSchema),
+    readOnlyPaths: z.array(boundaryLocationSchema),
+    readOnlyDirectories: z.array(boundaryLocationSchema),
+  })
+  .strict();
+
 const publicationJournalManifestSchema = z
   .object({
+    boundary: publicationBoundarySchema.optional(),
     entries: z.array(publicationJournalManifestEntrySchema),
     obsolete: z.array(publicationJournalManifestObsoleteSchema),
   })

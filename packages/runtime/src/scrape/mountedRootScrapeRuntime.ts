@@ -278,7 +278,7 @@ export class MountedRootScrapeRuntime {
               error: result.error ?? "刮削失败",
             };
           }
-          const video = result.publicationPlan.videos?.[0];
+          const video = result.publicationPlan.media?.[0];
           if (!video) throw new Error("Successful scrape did not produce a publication plan");
           const fallbackRoot = prepared.fileScrape.roots[0];
           if (!fallbackRoot) throw new Error("Successful scrape has no publication root");

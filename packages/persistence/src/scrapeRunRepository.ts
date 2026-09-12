@@ -4,7 +4,7 @@ import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import type { UpsertLibraryEntryInput } from "./libraryRepository";
 import { writeLibraryRows } from "./libraryWrite";
-import { scrapeAttempts, scrapeItemOutcomes, scrapeRunItems, scrapeRuns } from "./schema";
+import { libraryItemFiles, scrapeAttempts, scrapeItemOutcomes, scrapeRunItems, scrapeRuns } from "./schema";
 
 export type ScrapeExecutionMode = "single" | "batch";
 export type ScrapeUncensoredChoice = "umr" | "leak" | "uncensored";
@@ -346,6 +346,37 @@ export class ScrapeRunRepository {
     };
   }
 
+  publicationPeers(attemptId: string) {
+    const { item } = this.requireOpenAttempt(attemptId);
+    const rows = this.database.db
+      .select({ item: scrapeRunItems, outcome: scrapeItemOutcomes, attempt: scrapeAttempts.attempt })
+      .from(scrapeItemOutcomes)
+      .innerJoin(scrapeAttempts, eq(scrapeAttempts.id, scrapeItemOutcomes.attemptId))
+      .innerJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
+      .where(eq(scrapeRunItems.runId, item.runId))
+      .orderBy(desc(scrapeAttempts.attempt))
+      .all();
+    const seen = new Set<string>();
+    return rows.flatMap((row) => {
+      if (seen.has(row.item.id)) return [];
+      seen.add(row.item.id);
+      if (
+        row.item.id === item.id ||
+        row.outcome.outcome !== "success" ||
+        !row.outcome.outputRootId ||
+        !row.outcome.outputRelativePath
+      )
+        return [];
+      return [
+        {
+          source: { rootId: row.item.rootId, relativePath: row.item.relativePath },
+          target: { rootId: row.outcome.outputRootId, relativePath: row.outcome.outputRelativePath },
+          size: row.outcome.size,
+        },
+      ];
+    });
+  }
+
   commitSuccessOutcome(input: Extract<CommitScrapeOutcomeInput, { outcome: "success" }>): {
     outcomeId: string;
     entryId: string;
@@ -371,10 +402,17 @@ export class ScrapeRunRepository {
         completedAt,
       })
       .run();
+    const previousFile = this.database.db
+      .select()
+      .from(libraryItemFiles)
+      .where(and(eq(libraryItemFiles.rootId, item.rootId), eq(libraryItemFiles.rootRelativePath, item.relativePath)))
+      .get();
     return {
       outcomeId: id,
       entryId: writeLibraryRows(this.database, {
         ...input.libraryEntry,
+        id: input.libraryEntry.id ?? previousFile?.itemId ?? randomUUID(),
+        fileId: input.libraryEntry.fileId ?? previousFile?.id,
         sourceRunId: item.runId,
         sourceOutcomeId: id,
       }),

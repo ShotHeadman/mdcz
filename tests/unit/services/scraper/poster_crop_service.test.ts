@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
@@ -9,26 +9,41 @@ const testImage = (width: number, height: number): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#c84630"/></svg>`;
 
 describe("PosterCropService", () => {
-  it("prepares from thumb and atomically writes a 2:3 poster", async () => {
+  it.each([false, true])("prepares from thumb and atomically writes a 2:3 poster (separate=%s)", async (separate) => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-poster-crop-"));
-    const videoPath = join(root, "ABC-123.mp4");
-    const thumbPath = join(root, "thumb.jpg");
+    const videoPath = join(root, "source", "ABC-123.mp4");
+    const output = separate ? join(root, "metadata") : join(root, "source");
+    await mkdir(join(root, "source"));
+    if (separate) await mkdir(output);
+    const thumbPath = join(output, "thumb.jpg");
+    const assets = separate ? { thumb: thumbPath, poster: join(output, "poster.jpg") } : undefined;
     await writeFile(videoPath, "video");
     await writeFile(thumbPath, testImage(900, 500));
     const service = new PosterCropService();
-    const session = await service.prepare(videoPath, "fixed");
+    const session = await service.prepare(videoPath, "fixed", assets);
     expect(session.sourcePath).toBe(thumbPath);
     expect((session.initialCrop.width * session.width) / (session.initialCrop.height * session.height)).toBeCloseTo(
       2 / 3,
       3,
     );
 
-    await service.save(videoPath, "fixed", session.initialCrop, {
-      journal: createMemoryPublicationJournal(),
-      roots: [{ id: "test", hostPath: root }],
-    });
+    await service.save(
+      videoPath,
+      "fixed",
+      session.initialCrop,
+      {
+        journal: createMemoryPublicationJournal(),
+        roots: [{ id: "test", hostPath: root }],
+      },
+      assets,
+    );
+    expect(await readFile(videoPath, "utf8")).toBe("video");
     await rm(thumbPath);
-    const saved = await service.prepare(videoPath, "fixed");
+    const saved = await service.prepare(
+      videoPath,
+      "fixed",
+      separate ? { poster: join(output, "poster.jpg") } : undefined,
+    );
     expect(saved.width / saved.height).toBeCloseTo(2 / 3, 2);
   });
 

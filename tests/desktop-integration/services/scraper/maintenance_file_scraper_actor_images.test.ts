@@ -156,7 +156,7 @@ describe("MaintenanceFileScraper asset replacement", () => {
     expect(result.status).toBe("success");
     if (decision === "replace") {
       expect(result.updatedEntry?.assets.trailer).toBeUndefined();
-      expect(result.publicationPlan?.obsoletePaths).toContain(oldTrailerPath);
+      expect(result.publicationPlan?.obsoletePaths).toEqual([]);
       expect(result.publicationPlan?.sidecars?.some(({ sourcePath }) => sourcePath === oldTrailerPath)).toBe(false);
     } else {
       expect(result.updatedEntry?.assets.trailer).toBe(oldTrailerPath);

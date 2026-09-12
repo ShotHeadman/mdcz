@@ -1,4 +1,4 @@
-import { readFile, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rmdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, posix } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { localFileUrlForHostPath } from "@main/localFileProtocol";
@@ -8,9 +8,14 @@ import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
 import { listRootFiles, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
-import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { commitPublishedMedia, commitRegisteredPublication } from "@mdcz/runtime/publication";
+import {
+  commitPublishedMedia,
+  commitRegisteredPublication,
+  publicationPathKey,
+  registeredOutputPaths,
+  resolveRegisteredNfoPaths,
+} from "@mdcz/runtime/publication";
 import {
   findExistingNfoPath,
   getNfoReadCandidates,
@@ -67,9 +72,23 @@ export const createFileHandlers = (
     const state = await persistenceService.getState();
     return {
       journal: state.repositories.publicationJournal,
+      outputs: state.repositories.library,
       repairIssues: state.repositories.libraryRepairIssues,
       roots: await mediaRoots.listRoots(),
     };
+  };
+
+  const registeredImagePaths = async (videoPath: string) => {
+    const state = await persistenceService.getState();
+    const source = await state.repositories.library.resolveMaintenanceSource(videoPath);
+    if (!source) throw new Error("封面编辑需要已登记的媒体资源");
+    const entry = await state.repositories.library.getEntryById(source.libraryItemId);
+    const paths: { thumb?: string; poster?: string } = {};
+    for (const asset of entry.assets) {
+      if ((asset.kind === "thumb" || asset.kind === "poster") && asset.rootId && asset.relativePath)
+        paths[asset.kind] = resolveRootRelativePath(await mediaRoots.get(asset.rootId), asset.relativePath);
+    }
+    return paths;
   };
 
   return {
@@ -90,15 +109,22 @@ export const createFileHandlers = (
           }
 
           const configuration = await configManager.getValidated();
+          if (configuration.paths.metadataPath.trim()) excludeDirPaths.push(configuration.paths.metadataPath.trim());
           await ensurePath(dirPath);
           const registeredRoots = await mediaRoots.listRoots();
 
+          const generatedStrms = await registeredOutputPaths(
+            (await persistenceService.getState()).repositories.library,
+            (id) => mediaRoots.get(id),
+            "strm",
+          );
           const candidates: MediaCandidate[] = [];
           const warnings = { count: 0, paths: [] as string[] };
           await listVideoFiles(dirPath, input.recursive, DEFAULT_VIDEO_EXTENSIONS, undefined, excludeDirPaths, {
             warnings,
             filterFile: (filePath) =>
               isPrimaryVideoFileName(filePath) &&
+              !generatedStrms.has(publicationPathKey(filePath)) &&
               !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens),
             onFile: (filePath, stats) => {
               const resolved = resolveRootFile(registeredRoots, filePath);
@@ -174,13 +200,15 @@ export const createFileHandlers = (
               operationType: "maintenance",
               artifacts: [],
               assets: [],
-              obsolete: refs,
+              obsolete: [],
+              deleteFiles: refs,
             },
             {
               resolveRoot: async (rootId) => await mediaRoots.get(rootId),
               journal: state.repositories.publicationJournal,
+              outputs: state.repositories.library,
               repairIssues: state.repositories.libraryRepairIssues,
-              commit: () => undefined,
+              commit: () => state.repositories.library.deleteFiles(refs),
             },
           );
         };
@@ -199,7 +227,13 @@ export const createFileHandlers = (
             files.map((file) => ({ rootId: root.id, relativePath: file.relativePath })),
             `delete-folder:${root.id}:${parentPath}`,
           );
-          await rm(resolveRootRelativePath(root, parentPath), { force: true, recursive: true });
+          const directory = resolveRootRelativePath(root, parentPath);
+          const remaining = await readdir(directory, { recursive: true, withFileTypes: true });
+          for (const child of remaining
+            .filter((entry) => entry.isDirectory())
+            .sort((a, b) => b.parentPath.length - a.parentPath.length))
+            await rmdir(`${child.parentPath}/${child.name}`);
+          await rmdir(directory);
           return { deletedCount: files.length, failedCount: 0 };
         }
 
@@ -251,7 +285,7 @@ export const createFileHandlers = (
             ? (await resolveLocalFileTarget(context, input.videoPath)).hostPath
             : undefined;
           const plannedNfoPath = resolveFilenameNfoPath(nfoPath, videoPath);
-          await ensurePath(resolveDesktopInputRootPath(videoPath ? [plannedNfoPath, videoPath] : [plannedNfoPath]));
+          await ensurePath(dirname(plannedNfoPath));
           const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming, pathExists, videoPath);
           const existingXml = existingNfoPath ? await readFile(existingNfoPath, "utf8") : undefined;
           const existingSnapshot = existingXml ? parseNfoSnapshot(existingXml).localState : undefined;
@@ -265,17 +299,29 @@ export const createFileHandlers = (
           const xml = existingXml
             ? nfoGenerator.mergeEditableXml(existingXml, data, options)
             : nfoGenerator.buildXml(data, options);
+          const state = await persistenceService.getState();
+          const ownedNfo = await resolveRegisteredNfoPaths(nfoPath, state.repositories.library, (id) =>
+            state.repositories.mediaRoots.get(id),
+          );
           const paths = getNfoWritePaths(plannedNfoPath, config.download.nfoNaming);
+          if (ownedNfo) {
+            paths.requiredPaths = ownedNfo.paths;
+            paths.canonicalPath = nfoPath;
+          }
           await commitRegisteredPublication(
             {
               operationId: `nfo-write:${plannedNfoPath}`,
+              mediaPaths: ownedNfo?.mediaPaths,
               operationType: "maintenance",
               artifacts: paths.requiredPaths.map((targetPath) => ({
                 targetPath,
                 content: { kind: "text" as const, data: xml },
               })),
-              obsoletePaths: paths.stalePaths,
               replaceExistingArtifacts: true,
+              editExistingFiles: true,
+              readOnlyDirectories:
+                ownedNfo?.readOnlyDirectories ??
+                (videoPath && dirname(videoPath) !== dirname(plannedNfoPath) ? [dirname(videoPath)] : []),
             },
             await publication(),
           );
@@ -290,7 +336,11 @@ export const createFileHandlers = (
         try {
           const { hostPath: videoPath } = await resolveLocalFileTarget(context, input.videoPath);
           const config = await configManager.getValidated();
-          return await posterCropService.prepare(videoPath, config.naming.assetNamingMode);
+          return await posterCropService.prepare(
+            videoPath,
+            config.naming.assetNamingMode,
+            await registeredImagePaths(videoPath),
+          );
         } catch (error) {
           throw asSerializableIpcError(error);
         }
@@ -303,7 +353,13 @@ export const createFileHandlers = (
         }
         await ensurePath(dirname(videoPath));
         const config = await configManager.getValidated();
-        return await posterCropService.save(videoPath, config.naming.assetNamingMode, input.crop, await publication());
+        return await posterCropService.save(
+          videoPath,
+          config.naming.assetNamingMode,
+          input.crop,
+          await publication(),
+          await registeredImagePaths(videoPath),
+        );
       } catch (error) {
         throw asSerializableIpcError(error);
       }

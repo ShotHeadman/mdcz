@@ -1,4 +1,4 @@
-import { readdir, rm, unlink } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -27,16 +27,6 @@ export const resolveExistingImageAsset = async (assetPath: string): Promise<stri
   }
 
   return undefined;
-};
-
-export const removeStaleImageAssetVariants = async (assetPath: string, activePath: string): Promise<void> => {
-  const activePaths = new Set([activePath]);
-
-  for (const candidatePath of buildImageFilePathVariants(assetPath)) {
-    if (!activePaths.has(candidatePath)) {
-      await unlink(candidatePath).catch(() => undefined);
-    }
-  }
 };
 
 export const buildImageAssetPathFromSource = (targetPath: string, sourcePath: string): string => {
@@ -275,31 +265,5 @@ export const listExistingSceneImages = async (sceneDir: string): Promise<string[
       .sort((a, b) => a.localeCompare(b));
   } catch {
     return [];
-  }
-};
-
-export const removeStaleSceneImages = async (
-  existingPaths: string[],
-  activePaths: string[],
-  sceneDir: string,
-): Promise<void> => {
-  const activeSet = new Set(activePaths);
-  const stalePaths = existingPaths.filter((filePath) => !activeSet.has(filePath));
-
-  for (const stalePath of stalePaths) {
-    await unlink(stalePath).catch(() => undefined);
-  }
-
-  if (stalePaths.length === 0) {
-    return;
-  }
-
-  try {
-    const remaining = await readdir(sceneDir);
-    if (remaining.length === 0) {
-      await rm(sceneDir, { recursive: true });
-    }
-  } catch {
-    /* directory may not exist */
   }
 };

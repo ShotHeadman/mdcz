@@ -19,6 +19,7 @@ export interface DetailActionPort {
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
   play?(item: DetailViewItem): Promise<void> | void;
   openFolder?(item: DetailViewItem): Promise<void> | void;
+  openMetadataFolder?(item: DetailViewItem): Promise<void> | void;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
   preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
@@ -59,7 +60,8 @@ export const resolveBatchRescrapeOutput = (
 export interface ScrapeActionPort {
   rescrapeByUrl(targets: ScrapeActionTarget[], manualUrl: string): Promise<{ message: string }>;
   retryFailed(itemIds?: readonly string[]): Promise<{ message: string }>;
-  deleteFile(targets: ScrapeActionTarget[]): Promise<void>;
+  deleteFile?(targets: ScrapeActionTarget[]): Promise<void>;
+  removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;
   deleteFileAndFolder?(target: ScrapeActionTarget): Promise<void>;
   openFolder?(target: ScrapeActionTarget): Promise<void> | void;
   play?(target: ScrapeActionTarget): Promise<void> | void;

@@ -151,7 +151,6 @@ export class MaintenanceRuntime {
       : input.outputRoot.hostPath;
     config.paths.successOutputFolder = outputBaseDirectory;
     if (config.paths.metadataPath.trim()) {
-      this.deps.fileOrganizer.resolveMetadataDir(outputBaseDirectory, config);
       await input.registerRoot(config.paths.metadataPath.trim());
     }
     return new MaintenanceRuntime({ ...this.deps, config: { get: async () => config } }, sourceMediaPath);
@@ -167,12 +166,14 @@ export class MaintenanceRuntime {
     root: MediaRoot;
     refs: Array<{ relativePath: string }>;
     signal?: AbortSignal;
+    registeredOutputs?: Map<string, { nfoPath?: string; strmPath?: string }>;
   }): Promise<LocalScanEntry[]> {
     const config = await this.getPresetConfig("read_local", input.root);
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
     return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal, {
       mediaPath: this.sourceMediaPath ?? config.paths.mediaPath,
       metadataPath: config.paths.metadataPath,
+      registeredOutputs: input.registeredOutputs,
     });
   }
 

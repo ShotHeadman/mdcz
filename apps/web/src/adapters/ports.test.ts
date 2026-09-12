@@ -155,6 +155,7 @@ describe("web detail action port", () => {
     setAdminToken("token-1");
     const initialCrop = { x: 0.4, y: 0, width: 0.3, height: 0.9 };
     vi.spyOn(api.scrape, "posterCropSession").mockResolvedValue({
+      rootId: "metadata-root",
       sourceRelativePath: "JAV_output/ABC-001/thumb.png",
       targetRelativePath: "JAV_output/ABC-001/poster.png",
       width: 900,
@@ -162,6 +163,7 @@ describe("web detail action port", () => {
       initialCrop,
     });
     const save = vi.spyOn(api.scrape, "posterCropSave").mockResolvedValue({
+      rootId: "metadata-root",
       sourceRelativePath: "JAV_output/ABC-001/thumb.png",
       targetRelativePath: "JAV_output/ABC-001/poster.png",
       width: 900,
@@ -181,7 +183,7 @@ describe("web detail action port", () => {
     const result = await port.savePosterCrop(item, initialCrop);
 
     expect(session.sourceUrl).toBe(
-      "http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/ABC-001/thumb.png?token=token-1",
+      "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
     expect(save).toHaveBeenCalledWith({ id: "result-1", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
@@ -207,8 +209,9 @@ describe("web scrape action port", () => {
     });
     expect(retry).not.toHaveBeenCalled();
   });
-  it("calls safe server delete for root-relative targets", async () => {
-    const deleteFile = vi.spyOn(api.scrape, "deleteFile").mockResolvedValue({
+  it("removes records through the explicit record API", async () => {
+    const deleteFile = vi.spyOn(api.scrape, "deleteFile");
+    const removeRecord = vi.spyOn(api.scrape, "removeRecord").mockResolvedValue({
       ok: true,
       rootId: "root-1",
       relativePath: "ABC-001.mp4",
@@ -219,10 +222,12 @@ describe("web scrape action port", () => {
       { filePath: "ABC-001-CD2.mp4", ref: { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" } },
     ];
 
-    await port.deleteFile(safeTargets);
+    await port.removeRecord?.(safeTargets);
 
-    expect(deleteFile).toHaveBeenNthCalledWith(1, { rootId: "root-1", relativePath: "ABC-001.mp4" });
-    expect(deleteFile).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
+    expect(port.deleteFile).toBeUndefined();
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(removeRecord).toHaveBeenNthCalledWith(1, { rootId: "root-1", relativePath: "ABC-001.mp4" });
+    expect(removeRecord).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
   });
 
   it("retries the scrape store run id and has no run after reset", async () => {

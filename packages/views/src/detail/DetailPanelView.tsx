@@ -66,6 +66,7 @@ export interface DetailPanelViewProps {
   nfo: DetailPanelNfoState;
   onPlay?: () => void;
   onOpenFolder?: () => void;
+  onOpenMetadataFolder?: () => void;
   onOpenNfo?: () => void;
   onPosterError?: () => void;
   onThumbError?: () => void;
@@ -128,10 +129,17 @@ interface DetailActionButtonsProps {
   nfoLoading: boolean;
   onPlay?: () => void;
   onOpenFolder?: () => void;
+  onOpenMetadataFolder?: () => void;
   onOpenNfo?: () => void;
 }
 
-function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: DetailActionButtonsProps) {
+function DetailActionButtons({
+  nfoLoading,
+  onPlay,
+  onOpenFolder,
+  onOpenMetadataFolder,
+  onOpenNfo,
+}: DetailActionButtonsProps) {
   return (
     <>
       {onPlay ? (
@@ -153,9 +161,15 @@ function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: De
           onClick={onOpenFolder}
         >
           <FolderOpen className="h-4 w-4" />
-          打开文件夹
+          打开源目录
         </Button>
       ) : null}
+      {onOpenMetadataFolder && (
+        <Button size="sm" variant="ghost" onClick={onOpenMetadataFolder}>
+          <FolderOpen className="h-4 w-4" />
+          打开元数据目录
+        </Button>
+      )}
       {onOpenNfo ? (
         <Button
           size="sm"
@@ -188,6 +202,7 @@ export function DetailPanelView({
   nfo,
   onPlay,
   onOpenFolder,
+  onOpenMetadataFolder,
   onOpenNfo,
   onPosterError,
   onThumbError,
@@ -293,6 +308,7 @@ export function DetailPanelView({
                         nfoLoading={nfo.loading}
                         onPlay={onPlay}
                         onOpenFolder={onOpenFolder}
+                        onOpenMetadataFolder={onOpenMetadataFolder}
                         onOpenNfo={onOpenNfo}
                       />
                     </div>
@@ -362,6 +378,7 @@ export function DetailPanelView({
                           nfoLoading={nfo.loading}
                           onPlay={onPlay}
                           onOpenFolder={onOpenFolder}
+                          onOpenMetadataFolder={onOpenMetadataFolder}
                           onOpenNfo={onOpenNfo}
                         />
                       </div>

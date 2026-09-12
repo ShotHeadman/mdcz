@@ -5,6 +5,8 @@ import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } fro
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
+import { publicationPathKey } from "../publication/boundary";
+import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
 import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../scrape";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "../scrape/utils/filesystem";
@@ -14,7 +16,14 @@ import { resolveLocalAssetReference, uniqueDefinedPaths } from "./localAssetRefe
 import { parseNfoSnapshot } from "./nfoSnapshot";
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
-type MetadataLocation = { mediaPath: string; metadataPath: string };
+type MetadataLocation = {
+  mediaPath: string;
+  metadataPath: string;
+  registeredOutputs?: Map<
+    string,
+    { nfoPath?: string; strmPath?: string; generatedStrmPaths?: string[]; assets?: DiscoveredAssets }
+  >;
+};
 
 const fileExists = async (path: string): Promise<boolean> => {
   try {
@@ -122,18 +131,28 @@ const listSubdirFiles = async (parentDir: string, subDirName: string, extensions
 };
 
 export class LocalScanService {
+  constructor(
+    private readonly registeredOutputs?: (paths: readonly string[]) => Promise<Map<string, RegisteredMediaLocation>>,
+  ) {}
+
   private readonly logger = runtimeLoggerService.getLogger("LocalScanService");
 
   /**
    * Scan a directory for video files and discover their local NFO and assets.
    * This is a pure read-only operation — no files are modified.
    */
-  async scan(root: MediaRoot, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]>;
+  async scan(
+    root: MediaRoot,
+    sceneImagesFolder: string,
+    signal?: AbortSignal,
+    metadata?: MetadataLocation,
+  ): Promise<LocalScanEntry[]>;
   async scan(dirPath: string, sceneImagesFolder: string, signal?: AbortSignal): Promise<LocalScanEntry[]>;
   async scan(
     rootOrPath: MediaRoot | string,
     sceneImagesFolder: string,
     signal?: AbortSignal,
+    metadata?: MetadataLocation,
   ): Promise<LocalScanEntry[]> {
     const root: MediaRoot =
       typeof rootOrPath === "string"
@@ -149,8 +168,17 @@ export class LocalScanService {
     throwIfAborted(signal);
     this.logger.info(`Scanning directory: ${dirPath}`);
 
-    const videoFiles = (await listVideoFiles(dirPath, true, undefined, signal)).filter(
-      (videoPath) => !isGeneratedSidecarVideo(videoPath),
+    const candidates = await listVideoFiles(dirPath, true, undefined, signal);
+    metadata ??= this.registeredOutputs
+      ? { mediaPath: "", metadataPath: "", registeredOutputs: await this.registeredOutputs(candidates) }
+      : undefined;
+    const generatedStrms = new Set(
+      [...(metadata?.registeredOutputs?.values() ?? [])].flatMap((output) =>
+        [...(output.generatedStrmPaths ?? []), ...(output.strmPath ? [output.strmPath] : [])].map(publicationPathKey),
+      ),
+    );
+    const videoFiles = candidates.filter(
+      (videoPath) => !isGeneratedSidecarVideo(videoPath) && !generatedStrms.has(publicationPathKey(videoPath)),
     );
     this.logger.info(`Found ${videoFiles.length} video file(s)`);
 
@@ -159,7 +187,7 @@ export class LocalScanService {
     for (const videoPath of videoFiles) {
       throwIfAborted(signal);
       try {
-        const entry = await this.scanVideo(root, videoPath, sceneImagesFolder, signal);
+        const entry = await this.scanVideo(root, videoPath, sceneImagesFolder, signal, metadata);
         entries.push(entry);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -205,6 +233,9 @@ export class LocalScanService {
       : rootOrPaths;
     throwIfAborted(signal);
     const uniqueFilePaths = [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
+    metadata ??= this.registeredOutputs
+      ? { mediaPath: "", metadataPath: "", registeredOutputs: await this.registeredOutputs(uniqueFilePaths) }
+      : undefined;
     const entries: LocalScanEntry[] = [];
 
     for (const videoPath of uniqueFilePaths) {
@@ -213,7 +244,14 @@ export class LocalScanService {
         throw new Error(`不支持的维护视频文件：${videoPath}`);
       }
 
-      if (isGeneratedSidecarVideo(videoPath)) {
+      if (
+        isGeneratedSidecarVideo(videoPath) ||
+        [...(metadata?.registeredOutputs?.values() ?? [])].some((output) =>
+          [...(output.generatedStrmPaths ?? []), ...(output.strmPath ? [output.strmPath] : [])].some(
+            (path) => publicationPathKey(path) === publicationPathKey(videoPath),
+          ),
+        )
+      ) {
         throw new Error(`不能单独维护生成的视频附属文件：${videoPath}`);
       }
 
@@ -246,20 +284,25 @@ export class LocalScanService {
     signal?: AbortSignal,
     metadata?: MetadataLocation,
   ): Promise<LocalScanEntry> {
+    metadata ??= this.registeredOutputs
+      ? { mediaPath: "", metadataPath: "", registeredOutputs: await this.registeredOutputs([videoPath]) }
+      : undefined;
     throwIfAborted(signal);
     const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath);
     const dir = dirname(videoPath);
 
-    const metadataDir =
-      metadata?.metadataPath.trim() && metadata.mediaPath && isPathInside(metadata.mediaPath, dir)
+    const registered = metadata?.registeredOutputs?.get(videoPath);
+    const registeredPath = registered?.nfoPath ?? registered?.strmPath;
+    const metadataDir = registeredPath
+      ? dirname(registeredPath)
+      : metadata?.metadataPath.trim() && metadata.mediaPath && isPathInside(metadata.mediaPath, dir)
         ? resolve(metadata.metadataPath, relative(metadata.mediaPath, dir))
         : dir;
-    const nfoPath =
-      (await this.findNfo(metadataDir, fileInfo, signal)) ??
-      (metadataDir === dir ? undefined : await this.findNfo(dir, fileInfo, signal));
+    const strmPath = registered?.strmPath;
+    const nfoPath = registered ? registered.nfoPath : await this.findNfo(metadataDir, fileInfo, signal);
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
-    let scanError: string | undefined;
+    let scanError = strmPath && !(await fileExists(strmPath)) ? `已登记的 STRM 不存在：${strmPath}` : undefined;
 
     if (nfoPath) {
       try {
@@ -274,21 +317,37 @@ export class LocalScanService {
       }
     }
 
-    const assets = await this.discoverAssets({
-      dir: nfoPath ? dirname(nfoPath) : metadataDir,
-      videoDir: dir,
-      fileInfo,
-      nfoPath,
-      crawlerData,
-      sceneImagesFolder,
-      signal,
-    });
+    const assets =
+      registered?.assets ??
+      (registered && !registeredPath
+        ? { sceneImages: [], actorPhotos: [] }
+        : await this.discoverAssets({
+            dir: nfoPath ? dirname(nfoPath) : metadataDir,
+            videoDir: dir,
+            fileInfo,
+            nfoPath,
+            crawlerData,
+            sceneImagesFolder,
+            signal,
+          }));
+    for (const path of [
+      assets.thumb,
+      assets.poster,
+      assets.fanart,
+      assets.trailer,
+      ...assets.sceneImages,
+      ...assets.actorPhotos,
+    ]) {
+      if (path && !(await fileExists(path)))
+        scanError = [scanError, `已登记的资源不存在：${path}`].filter(Boolean).join("；");
+    }
 
     return {
       fileId: buildFileId(videoPath),
       ref: { rootId: root.id, relativePath: toRootRelativePath(root, videoPath) },
       fileInfo,
       nfoPath,
+      strmPath,
       crawlerData,
       nfoLocalState,
       scanError,
@@ -310,7 +369,9 @@ export class LocalScanService {
   }): Promise<DiscoveredAssets> {
     throwIfAborted(input.signal);
 
-    const allowDirectoryWideAssets = await this.isSingleMovieDirectory(input.videoDir, input.signal);
+    const allowDirectoryWideAssets =
+      resolve(input.dir) !== resolve(input.videoDir) ||
+      (await this.isSingleMovieDirectory(input.videoDir, input.signal));
     const movieBaseNames = buildMovieBaseNameCandidates({
       fileName: input.fileInfo.fileName,
       part: input.fileInfo.part,

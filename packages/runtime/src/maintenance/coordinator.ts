@@ -18,6 +18,7 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import { type PreparedPublicationPlan, PublicationError, type PublicationPlan } from "../publication";
+import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
 import { isAbortError } from "../scrape/utils/abort";
 import { TaskExecutor, type TaskExecutorContext } from "../tasks";
 import {
@@ -35,6 +36,7 @@ export interface MaintenanceRootPort {
 }
 
 export interface MaintenanceLibraryPort {
+  registeredOutputs(paths: readonly string[]): Promise<Map<string, RegisteredMediaLocation>>;
   resolveSource(absolutePath: string): Promise<MaintenanceLibrarySource | null>;
   preflightRefresh(input: {
     librarySource?: MaintenanceLibrarySource;
@@ -55,6 +57,8 @@ export interface MaintenanceLibraryPort {
       crawlerData?: CrawlerData;
       fallbackNumber: string;
       assets: DiscoveredAssets;
+      outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
+      removedAssets?: RootFileRef[];
       refreshedAt: Date;
     };
   }): Promise<{ libraryItemId: string }>;
@@ -155,6 +159,7 @@ const ownedPreviewPaths = (
 const scanRefs = async (
   runtime: MaintenanceRuntime,
   roots: MaintenanceRootPort,
+  library: MaintenanceLibraryPort,
   refs: readonly MaintenanceSessionRef[],
   signal?: AbortSignal,
 ): Promise<LocalScanEntry[]> => {
@@ -166,10 +171,14 @@ const scanRefs = async (
     refsByRoot.set(ref.rootId, group);
   }
   const byRef = new Map<string, LocalScanEntry>();
+  const registeredOutputs = await library.registeredOutputs(
+    await Promise.all(refs.map(async (ref) => resolveRootRelativePath(await roots.get(ref.rootId), ref.relativePath))),
+  );
   for (const [rootId, group] of refsByRoot) {
     const root = await roots.get(rootId);
     const entries = await runtime.scanRefs({
       root,
+      registeredOutputs,
       refs: group.map(({ relativePath }) => ({ relativePath })),
       signal,
     });
@@ -244,7 +253,7 @@ export class MaintenanceSessionCoordinator {
       this.assertOpen();
       const generation = (this.session?.generation ?? 0) + 1;
       this.session?.invalidate();
-      const entries = (await scanRefs(this.runtime, this.deps.roots, refs)).sort((left, right) =>
+      const entries = (await scanRefs(this.runtime, this.deps.roots, this.deps.library, refs)).sort((left, right) =>
         refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
       );
       this.assertOpen();
@@ -478,9 +487,9 @@ export class MaintenanceSessionCoordinator {
       const entries =
         existingEntries.length === initial.refs.length
           ? existingEntries
-          : (await scanRefs(this.runtime, this.deps.roots, [...initial.refs], scanController.signal)).sort(
-              (left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"),
-            );
+          : (
+              await scanRefs(this.runtime, this.deps.roots, this.deps.library, [...initial.refs], scanController.signal)
+            ).sort((left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"));
       let current = this.assertCurrent(sessionId, generation, ["running", "paused"]);
       if (current.status === "paused") return;
       const committedPaths = new Set(
@@ -581,6 +590,7 @@ export class MaintenanceSessionCoordinator {
             const [entry] = await scanRefs(
               this.runtime,
               this.deps.roots,
+              this.deps.library,
               [{ rootId: active.preview.rootId, relativePath: active.preview.relativePath }],
               context.signal,
             );
@@ -624,7 +634,7 @@ export class MaintenanceSessionCoordinator {
             if (!plan) {
               return { result: { status: "failed", error: "维护应用未生成发布计划" }, release };
             }
-            const video = plan.videos?.[0];
+            const video = plan.media?.[0];
             const outputRelativePath = applied.outputRelativePath || active.preview.relativePath;
             let file: Awaited<ReturnType<typeof stat>>;
             try {

@@ -46,6 +46,7 @@ export class AmazonPosterToolService {
     return await applyAmazonPosters(this.networkClient, items, {
       validateImage,
       journal: state.repositories.publicationJournal,
+      outputs: state.repositories.library,
       repairIssues: state.repositories.libraryRepairIssues,
       roots: await this.mediaRoots.listRoots(),
     });

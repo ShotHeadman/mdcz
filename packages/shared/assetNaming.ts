@@ -1,7 +1,7 @@
 export const ASSET_NAMING_MODES = ["fixed", "followVideo"] as const;
 export const MOVIE_NFO_BASE_NAME = "movie";
 const TEMPLATE_PLACEHOLDER = /\{([^{}]+)\}/gu;
-const MOVIE_UNIQUE_TEMPLATE_FIELDS = new Set(["number", "rawnumber", "title", "originaltitle"]);
+const MOVIE_UNIQUE_TEMPLATE_FIELDS = new Set(["number", "rawnumber", "title", "originaltitle", "filename"]);
 
 export type AssetNamingMode = (typeof ASSET_NAMING_MODES)[number];
 export type MovieAssetKind = "thumb" | "poster" | "fanart" | "trailer";
@@ -20,8 +20,12 @@ const FIXED_MOVIE_ASSET_FILE_NAMES: MovieAssetFileNames = {
   trailer: "trailer.mp4",
 };
 
-export const isSharedDirectoryMode = (input: { successFileMove: boolean; folderTemplate: string }): boolean => {
-  if (!input.successFileMove) {
+export const isSharedDirectoryMode = (input: {
+  successFileMove: boolean;
+  folderTemplate: string;
+  metadataPath?: string;
+}): boolean => {
+  if (!input.successFileMove && !input.metadataPath?.trim()) {
     return false;
   }
 

@@ -12,6 +12,7 @@ import {
   probeMediaServer,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { registeredMediaLocations } from "@mdcz/runtime/publication";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
@@ -47,7 +48,10 @@ export class ToolsService {
   private readonly actorSourceProvider: ActorSourceProvider;
   private readonly aggregation: AggregationService;
   private readonly translate: TranslateService;
-  private readonly localScanService = new LocalScanService();
+  private readonly localScanService = new LocalScanService(async (paths) => {
+    const state = await this.persistence.getState();
+    return registeredMediaLocations(state.repositories.library, (id) => state.repositories.mediaRoots.get(id), paths);
+  });
   private readonly llmApiClient: LlmApiClient;
   private readonly nfoGenerator = new NfoGenerator();
 
@@ -164,6 +168,7 @@ export class ToolsService {
               writeNfo: writePreparedNfo,
               publication: {
                 journal: state.repositories.publicationJournal,
+                outputs: state.repositories.library,
                 repairIssues: state.repositories.libraryRepairIssues,
                 roots: await this.mediaRoots.listRoots(),
               },
@@ -214,6 +219,7 @@ export class ToolsService {
           const state = await this.persistence.getState();
           const results = await applyAmazonPosters(this.networkClient, items, {
             journal: state.repositories.publicationJournal,
+            outputs: state.repositories.library,
             repairIssues: state.repositories.libraryRepairIssues,
             roots: await this.mediaRoots.listRoots(),
           });

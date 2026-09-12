@@ -11,6 +11,7 @@ import {
   commitPublishedMedia,
   commitScrapeTerminalResult,
   createPublicationPlan,
+  registeredMediaLocations,
   type ScrapeFileTransitions,
   type ScrapeSuccessPublicationFacts,
 } from "@mdcz/runtime/publication";
@@ -26,7 +27,6 @@ import {
   NfoGenerator,
   PosterCropService,
   type PreparedMountedRootScrape,
-  resolveScrapeMetadataVideoPath,
   validatePreparedScrapeFiles,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
@@ -158,7 +158,6 @@ export class ScrapeService {
       this.mediaRoots,
       this.config,
       this.posterCropService,
-      (result) => this.resolveMetadataVideoPath(result),
       this.persistence,
     );
     this.host = {
@@ -314,13 +313,9 @@ export class ScrapeService {
     });
 
     const configuration = await this.config.get();
-    const roots = new Map<string, MediaRoot>();
-    for (const { outcome } of selected) {
-      const rootIds = [outcome.outputRootId, outcome.nfoRootId ?? outcome.outputRootId];
-      for (const rootId of rootIds) {
-        if (rootId && !roots.has(rootId)) roots.set(rootId, await this.mediaRoots.get(rootId));
-      }
-    }
+    const roots = new Map<string, MediaRoot>(
+      (await state.repositories.mediaRoots.list()).map((root) => [root.id, root]),
+    );
     const resolvedSelected = selected.map(({ selection, item, outcome }) => {
       const { outputRootId, outputRelativePath } = outcome;
       if (!outputRootId || !outputRelativePath) {
@@ -333,15 +328,22 @@ export class ScrapeService {
       }
       return { selection, item, outcome, outputRootId, outputRelativePath, outputRoot, nfoRoot };
     });
+    const locations = await registeredMediaLocations(
+      state.repositories.library,
+      (id) => this.mediaRoots.get(id),
+      resolvedSelected.map(({ outputRoot, outputRelativePath }) =>
+        resolveRootRelativePath(outputRoot, outputRelativePath),
+      ),
+    );
     const confirmation = await confirmUncensoredOutputs(
       resolvedSelected.map(({ selection, item, outcome, outputRelativePath, outputRoot, nfoRoot }) => ({
         fileId: item.id,
         videoPath: resolveRootRelativePath(outputRoot, outputRelativePath),
-        metadataVideoPath: outcome.nfoRootId
-          ? resolveRootRelativePath(nfoRoot, this.resolveMetadataVideoPath(this.toArtifactRecord(item, outcome)))
-          : undefined,
         nfoPath: outcome.nfoRelativePath ? resolveRootRelativePath(nfoRoot, outcome.nfoRelativePath) : undefined,
         crawlerData: outcome.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(outcome.crawlerDataJson)) : undefined,
+        groupId: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.groupId,
+        registeredAssets: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.assets,
+        metadataVideoPath: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.strmPath,
         choice: selection.choice,
       })),
       configuration,
@@ -365,16 +367,15 @@ export class ScrapeService {
             updates.map(async (update) => {
               const selected = resolvedSelected.find(({ item }) => item.id === update.fileId);
               if (!selected) throw new Error(`Uncensored confirmation item disappeared: ${update.fileId}`);
-              const { outcome, outputRoot, outputRootId, outputRelativePath, nfoRoot } = selected;
+              const { outcome, outputRootId, outputRelativePath } = selected;
               const [entry, fileStats] = await Promise.all([
                 state.repositories.library.getEntry(outputRootId, outputRelativePath),
                 stat(update.sourceVideoPath),
               ]);
               return buildUncensoredRevision({
+                roots: [...roots.values()],
                 update,
                 outcome,
-                outputRoot,
-                nfoRoot,
                 entry,
                 size: fileStats.size,
                 modifiedAt: fileStats.mtime,
@@ -384,6 +385,7 @@ export class ScrapeService {
           const publicationPlan = createPublicationPlan(operationId, "maintenance", plan, [...roots.values()]);
           await commitPublishedMedia(publicationPlan, {
             journal: state.repositories.publicationJournal,
+            outputs: state.repositories.library,
             repairIssues: state.repositories.libraryRepairIssues,
             resolveRoot: async (rootId) => {
               const root = roots.get(rootId);
@@ -426,6 +428,16 @@ export class ScrapeService {
     return await this.posterCropAdapter.save(this.toArtifactRecord(context.item, context.outcome), input);
   }
 
+  async removeRecord(input: FileActionInput): Promise<FileActionResponse> {
+    const [target] = await this.mediaRoots.canonicalizeFileRefs([input]);
+    if (!target) throw new Error("File ref is required");
+    const state = await this.persistence.getState();
+    const entry = await state.repositories.library.getEntry(target.rootId, target.relativePath);
+    state.repositories.library.deleteEntry(entry.id);
+    this.taskEvents.invalidate("scrape-history", "pending-confirmation");
+    return { ok: true, ...target };
+  }
+
   async deleteFile(input: FileActionInput): Promise<FileActionResponse> {
     const [target] = await this.mediaRoots.canonicalizeFileRefs([input]);
     if (!target) throw new Error("File ref is required");
@@ -436,12 +448,9 @@ export class ScrapeService {
         if (error instanceof Error && error.message.startsWith("Library entry not found:")) return null;
         throw error;
       });
-    const obsolete = [
+    const deleteFiles = [
       target,
       ...(entry?.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })) ?? []),
-      ...(entry?.assets.flatMap((asset) =>
-        asset.rootId && asset.relativePath ? [{ rootId: asset.rootId, relativePath: asset.relativePath }] : [],
-      ) ?? []),
     ];
     await commitPublishedMedia(
       {
@@ -449,11 +458,13 @@ export class ScrapeService {
         operationType: "maintenance",
         artifacts: [],
         assets: [],
-        obsolete,
+        obsolete: [],
+        deleteFiles,
       },
       {
         resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
         journal: state.repositories.publicationJournal,
+        outputs: state.repositories.library,
         commit: () => {
           if (entry) state.repositories.library.deleteEntry(entry.id);
         },
@@ -702,8 +713,7 @@ export class ScrapeService {
       const outputRoot = manifest.requestedOutputRootId
         ? await this.mediaRoots.get(manifest.requestedOutputRootId)
         : root;
-      const metadataRoot =
-        manifest.executionMode === "single" ? outputRoot : await this.resolveMetadataRoot(outputRoot);
+      const metadataRoot = await this.resolveMetadataRoot(outputRoot);
       const runtimeResult = await runtime.prepare({
         configuration,
         root,
@@ -797,11 +807,12 @@ export class ScrapeService {
     let success: ScrapeSuccessPublicationFacts | undefined;
     if (result.status === "success") {
       if (!publication) throw new Error(`Missing successful scrape publication for item ${item.id}`);
-      const outputRef = publication.plan.videos?.[0]?.target;
+      const outputRef = publication.plan.media?.[0]?.target;
       if (!outputRef) throw new Error(`Successful scrape has no video publication target: ${item.id}`);
       const outputRoot = await this.mediaRoots.get(outputRef.rootId);
-      const metadataRoot =
-        manifest.executionMode === "single" ? outputRoot : await this.resolveMetadataRoot(outputRoot);
+      const metadataRoot = result.nfo
+        ? await this.mediaRoots.get(result.nfo.rootId)
+        : await this.resolveMetadataRoot(outputRoot);
       nfoRelativePath = publication.nfoPath ? toRootRelativePath(metadataRoot, publication.nfoPath) : null;
       success = {
         plan: publication.plan,
@@ -824,6 +835,7 @@ export class ScrapeService {
       resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
       acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, item.id),
       journal: state.repositories.publicationJournal,
+      outputs: state.repositories.library,
       repairIssues: state.repositories.libraryRepairIssues,
       fileTransitions,
     });
@@ -994,10 +1006,6 @@ export class ScrapeService {
   private async resolveMetadataRoot(primaryRoot: MediaRoot): Promise<MediaRoot> {
     const metadataPath = (await this.config.get()).paths.metadataPath.trim();
     return metadataPath ? await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath }) : primaryRoot;
-  }
-
-  private resolveMetadataVideoPath(result: ServerScrapeArtifactRecord): string {
-    return resolveScrapeMetadataVideoPath(result);
   }
 
   private async getRootDisplayName(rootId: string): Promise<string> {

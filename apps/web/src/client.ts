@@ -244,6 +244,7 @@ export const api: ServerApiContract = {
     snapshot: (input) => trpcQuery("scrape.snapshot", input),
     pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
     deleteFile: (input) => trpcMutation("scrape.deleteFile", input),
+    removeRecord: (input) => trpcMutation("scrape.removeRecord", input),
     history: (input) => trpcQuery("scrape.history", input),
     nfoRead: (input) => trpcQuery("scrape.nfoRead", input),
     nfoWrite: (input) => trpcMutation("scrape.nfoWrite", input),

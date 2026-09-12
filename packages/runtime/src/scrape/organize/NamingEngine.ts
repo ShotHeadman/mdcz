@@ -1,7 +1,7 @@
 import { parse } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
-import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
 import { classifyMovie, type MovieClassification } from "../utils/movieClassification";
 import { buildSafeFileName, buildSafePath } from "../utils/path";
 import { resolveFileInfoSubtitleTag } from "../utils/subtitles";
@@ -9,6 +9,7 @@ import { resolveFileInfoSubtitleTag } from "../utils/subtitles";
 export interface NamingLayout {
   folderRelativePath: string;
   targetVideoFileName: string;
+  strmFileName: string;
   nfoFileName: string;
 }
 
@@ -254,7 +255,7 @@ const previewData = (number: string, overrides?: Partial<CrawlerData>): CrawlerD
   ...overrides,
 });
 
-const NAMING_PREVIEW_SAMPLES: Array<{
+export const NAMING_PREVIEW_SAMPLES: Array<{
   label: string;
   fileInfo: FileInfo;
   data: CrawlerData;
@@ -360,23 +361,13 @@ export class NamingEngine {
     const targetVideoFileName = config.behavior.successFileRename
       ? `${fileBaseName}${partSuffix}${fileInfo.extension}`
       : sourceVideo.base;
-    const nfoFileName = `${config.behavior.successFileRename ? fileBaseName : nfoBaseName}.nfo`;
+    const nfoFileName = `${config.behavior.successFileRename || config.paths.metadataPath.trim() ? fileBaseName : nfoBaseName}.nfo`;
 
     return {
       folderRelativePath,
       targetVideoFileName,
+      strmFileName: `${fileBaseName}${partSuffix}.strm`,
       nfoFileName,
     };
-  }
-
-  buildPreview(config: Configuration): NamingPreviewItem[] {
-    return NAMING_PREVIEW_SAMPLES.map((sample) => {
-      const layout = this.buildLayout(sample.fileInfo, sample.data, config, sample.localState);
-      return {
-        label: sample.label,
-        folder: config.behavior.successFileMove ? layout.folderRelativePath || "当前目录" : "当前目录",
-        file: layout.targetVideoFileName,
-      };
-    });
   }
 }

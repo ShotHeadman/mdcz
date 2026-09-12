@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, resolve, win32 } from "node:path";
+import { dirname, extname, isAbsolute, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWriteFile } from "@mdcz/media-store";
+import type { Configuration } from "@mdcz/shared/config";
+import { localPathPrefixKey, localPathStyle } from "@mdcz/shared/localPath";
 
 const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
 const STRM_PROPERTY_PATTERN = /^#KODIPROP:/iu;
@@ -97,7 +99,10 @@ export const classifyStrmTarget = (filePath: string, target: string): StrmTarget
   return {
     target: normalized,
     kind: "relative_path",
-    resolvedPath: resolve(dirname(filePath), normalized),
+    resolvedPath: (localPathStyle(filePath) === "windows" ? win32 : posix).resolve(
+      (localPathStyle(filePath) === "windows" ? win32 : posix).dirname(filePath),
+      normalized,
+    ),
   };
 };
 
@@ -154,13 +159,53 @@ export const prepareMovedStrmContent = async (sourcePath: string, targetPath: st
   return info.kind === "relative_path" && info.resolvedPath ? replaceStrmTarget(content, info.resolvedPath) : undefined;
 };
 
-export const prepareStrmMirrorContent = async (sourcePath: string, outputVideoPath: string): Promise<string> => {
-  if (!isStrmFile(sourcePath)) return outputVideoPath;
+export const mapStrmPath = (actualPath: string, mappings: Configuration["paths"]["strmPathMappings"] = []): string => {
+  const style = localPathStyle(actualPath);
+  const sourcePath = (style === "windows" ? win32 : posix).normalize(actualPath);
+  const key = localPathPrefixKey(sourcePath);
+  const matching = mappings
+    .filter(({ from }) => {
+      if (localPathStyle(from) !== style) return false;
+      const prefix = localPathPrefixKey(from);
+      return key === prefix || key.startsWith(prefix === "/" ? prefix : `${prefix}/`);
+    })
+    .sort((a, b) => localPathPrefixKey(b.from).length - localPathPrefixKey(a.from).length)[0];
+  if (!matching) return actualPath;
+  const sourceApi = style === "windows" ? win32 : posix;
+  const targetApi = localPathStyle(matching.to) === "windows" ? win32 : posix;
+  return targetApi.join(
+    matching.to,
+    ...sourceApi.relative(matching.from, sourcePath).split(sourceApi.sep).filter(Boolean),
+  );
+};
+
+export const prepareStrmMirrorContent = async (
+  sourcePath: string,
+  outputVideoPath: string,
+  mappings: Configuration["paths"]["strmPathMappings"] = [],
+): Promise<string> => {
+  if (!isStrmFile(sourcePath)) return mapStrmPath(resolve(outputVideoPath), mappings);
   const content = await readFile(sourcePath, "utf8");
-  const target = normalizeStrmContent(content);
-  if (!target) throw new Error(`STRM file does not contain a playable target: ${sourcePath}`);
+  const targets = parseStrmContent(content).lines.filter(
+    (line) => line.trim() && !STRM_PROPERTY_PATTERN.test(line.trim()),
+  );
+  if (
+    targets.length !== 1 ||
+    targets[0].trim().startsWith("#") ||
+    [...content].some((character) => character.charCodeAt(0) < 32 && !["\t", "\n", "\r"].includes(character))
+  ) {
+    throw new Error(`STRM file must contain exactly one playable target: ${sourcePath}`);
+  }
+  const target = targets[0].trim();
+  if (/^[a-z]:[^\\/]/iu.test(target)) throw new Error(`STRM contains a drive-relative path: ${sourcePath}`);
+  if (URI_SCHEME_PATTERN.test(target)) {
+    new URL(target);
+    return content;
+  }
   const info = classifyStrmTarget(sourcePath, target);
-  return info.kind === "relative_path" && info.resolvedPath ? replaceStrmTarget(content, info.resolvedPath) : content;
+  if (!info.resolvedPath) throw new Error(`STRM file does not contain a playable target: ${sourcePath}`);
+  const mapped = mapStrmPath(info.resolvedPath, mappings);
+  return mapped === target ? content : replaceStrmTarget(content, mapped);
 };
 
 export const resolvePlayableMediaTarget = async (

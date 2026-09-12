@@ -310,7 +310,7 @@ export class ScraperService {
     if (!manifest.requestedOutputRootId) throw new Error(`Scrape run has no output root: ${manifest.id}`);
     const outputRoot = await state.repositories.mediaRoots.get(manifest.requestedOutputRootId);
     roots.set(outputRoot.id, outputRoot);
-    const metadataPath = manifest.executionMode === "batch" ? configuration.paths.metadataPath.trim() : "";
+    const metadataPath = configuration.paths.metadataPath.trim();
     if (metadataPath) {
       const metadataRoot = await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath });
       roots.set(metadataRoot.id, metadataRoot);
@@ -503,7 +503,7 @@ export class ScraperService {
               crawlerData: result.crawlerData,
               identity: result.crawlerData?.number || result.fileName,
               nfo: result.nfo ?? null,
-              size: plan.videos?.[0]?.size ?? 0,
+              size: plan.media?.[0]?.size ?? 0,
               modifiedAt: null,
               uncensoredAmbiguous: result.uncensoredAmbiguous === true,
             }
@@ -512,6 +512,7 @@ export class ScraperService {
       resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
       acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, item.id),
       journal: state.repositories.publicationJournal,
+      outputs: state.repositories.library,
       repairIssues: state.repositories.libraryRepairIssues,
       fileTransitions,
     });

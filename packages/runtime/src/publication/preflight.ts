@@ -1,5 +1,6 @@
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import { assertPublicationBoundary, publicationPathKey, resolvePublicationPath } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
 import type {
   PublicationFileSystem,
@@ -30,10 +31,12 @@ export const planMoves = (plan: PublicationPlan): PublicationMove[] => [
 ];
 
 export const planRefs = (plan: PublicationPlan): RootFileRef[] => [
+  ...(plan.media ?? []).flatMap((media) => [media.source, media.target]),
   ...planMoves(plan).flatMap((move) => [move.source, move.target]),
   ...plan.artifacts.map(({ target }) => target),
   ...plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : [])),
   ...plan.obsolete,
+  ...(plan.deleteFiles ?? []),
 ];
 
 export const observePublicationFile = async (
@@ -77,6 +80,7 @@ export const removeCommittedObsoleteFiles = async (
   fileSystem: PublicationFileSystem,
   obsolete: readonly PublicationJournalManifestObsolete[],
   resolve: (rootId: string, relativePath: string) => string | Promise<string>,
+  isReferenced?: (ref: RootFileRef) => Promise<boolean>,
 ): Promise<RootFileRef[]> => {
   const retained: RootFileRef[] = [];
   for (const ref of obsolete) {
@@ -92,7 +96,7 @@ export const removeCommittedObsoleteFiles = async (
           isFile: ref.observed.isFile,
         }
       : { path: obsoletePath, exists: false };
-    if (publicationFilesMatch(expected, current)) {
+    if (publicationFilesMatch(expected, current) && !(await isReferenced?.(ref))) {
       await fileSystem.rm(obsoletePath, { force: true });
       continue;
     }
@@ -108,6 +112,7 @@ export const preflightPublication = async (
   previous?: readonly ObservedPublicationFile[],
 ): Promise<ResolvedPublicationPlan> => {
   if (!plan.operationId.trim()) throw new Error("Publication operation ID is required");
+  if (plan.boundary) await assertPublicationBoundary(plan.boundary);
   const refs = planRefs(plan);
   const rootIds = [...new Set(refs.map((ref) => ref.rootId))];
   const roots = new Map(
@@ -118,18 +123,30 @@ export const preflightPublication = async (
     if (!root) throw new Error(`Publication root not resolved: ${ref.rootId}`);
     return resolveRootRelativePath(root, parseWireRelativePath(ref.relativePath));
   };
+  const moves = planMoves(plan);
+  const targets = [...moves.map((move) => move.target), ...plan.artifacts.map(({ target }) => target)];
   for (const fact of previous ?? []) {
     const current = await observePublicationFile(fileSystem, fact.path);
-    if (!fact.exists && current.exists) {
-      const video = plan.videos?.find((video) => resolve(video.target) === fact.path);
-      if (video) throw new PublicationConflictError(resolve(video.source), fact.path);
+    if (!publicationFilesMatch(fact, current) && targets.some((target) => resolve(target) === fact.path)) {
+      const move = moves.find((move) => resolve(move.target) === fact.path);
+      throw new PublicationConflictError(
+        move ? resolve(move.source) : fact.path,
+        fact.path,
+        "发布目标在预检期间发生变化",
+      );
     }
     assertPublicationFileUnchanged(fact, current);
   }
-  const moves = planMoves(plan);
-  const targets = [...moves.map((move) => move.target), ...plan.artifacts.map(({ target }) => target)];
-  const targetKeys = targets.map(refKey);
-  if (new Set(targetKeys).size !== targetKeys.length) throw new Error("Publication target collision within plan");
+  const targetKeys = await Promise.all(
+    targets.map(async (ref) => publicationPathKey(await resolvePublicationPath(resolve(ref)))),
+  );
+  const collision = targetKeys.findIndex((key, index) => targetKeys.indexOf(key) !== index);
+  if (collision >= 0)
+    throw new PublicationConflictError(
+      plan.media?.[0] ? resolve(plan.media[0].source) : resolve(targets[collision]),
+      resolve(targets[collision]),
+      "发布计划中的实际目标路径重复",
+    );
   const replacing = new Set((plan.replaceExistingTargets ?? []).map(refKey));
   const observedByPath = new Map<string, ObservedPublicationFile>();
   const record = async (filePath: string): Promise<ObservedPublicationFile> => {
@@ -140,6 +157,24 @@ export const preflightPublication = async (
     return fact;
   };
 
+  if (plan.boundary) {
+    const declared = new Set(plan.boundary.writablePaths.map((path) => publicationPathKey(path.path)));
+    const mutations = [
+      ...targets,
+      ...plan.obsolete,
+      ...(plan.deleteFiles ?? []),
+      ...moves.filter((move) => !move.preserveSource).map((move) => move.source),
+    ];
+    for (const ref of mutations)
+      if (!declared.has(publicationPathKey(resolve(ref))))
+        throw new Error(`Publication mutation was not declared: ${resolve(ref)}`);
+  }
+  for (const media of plan.media ?? []) {
+    const source = await record(resolve(media.source));
+    if (!source.exists || !source.isFile || source.size !== media.size)
+      throw new Error("Publication participating media is missing or changed");
+  }
+
   for (const move of moves) {
     if (!Number.isSafeInteger(move.size) || move.size < 0) throw new Error("Invalid publication move size");
     const sourcePath = resolve(move.source);
@@ -149,7 +184,7 @@ export const preflightPublication = async (
     if (plan.videos?.includes(move) && sourcePath !== targetPath && source.exists && target.exists) {
       throw new PublicationConflictError(sourcePath, targetPath);
     }
-    if (target.exists && !target.isFile) throw new Error(`Publication target is not a file: ${targetPath}`);
+    if (target.exists && !target.isFile) throw new PublicationConflictError(sourcePath, targetPath, "发布目标不是文件");
     if (move.shared && target.exists && !source.exists) {
       plan.sidecars = plan.sidecars?.filter((candidate) => candidate !== move);
       continue;
@@ -167,29 +202,31 @@ export const preflightPublication = async (
       target.exists &&
       !replacing.has(refKey(move.target))
     )
-      throw new Error(`Publication sidecar replacement was not planned: ${refLabel(move.target)}`);
+      throw new PublicationConflictError(sourcePath, targetPath, "目标附属资源已存在且没有替换权限");
   }
 
   for (const artifact of plan.artifacts) {
     const targetPath = resolve(artifact.target);
     const existing = await record(targetPath);
     if (!existing.exists) continue;
-    if (!existing.isFile) throw new Error(`Publication target is not a file: ${targetPath}`);
+    if (!existing.isFile) throw new PublicationConflictError(targetPath, targetPath, "发布目标不是文件");
     if (artifact.content.kind === "download") {
-      throw new Error(`Publication target already exists: ${refLabel(artifact.target)}`);
+      if (!replacing.has(refKey(artifact.target)))
+        throw new PublicationConflictError(targetPath, targetPath, "下载目标已存在");
+      continue;
     }
     if (artifact.content.kind === "file") {
       if (!replacing.has(refKey(artifact.target)))
-        throw new Error(`Publication artifact replacement was not planned: ${refLabel(artifact.target)}`);
+        throw new PublicationConflictError(targetPath, targetPath, "目标资源已存在且没有替换权限");
       continue;
     }
     const expected = Buffer.from(artifact.content.data);
     const actual = await fileSystem.readFile(targetPath);
     if (!actual.equals(expected) && !replacing.has(refKey(artifact.target)))
-      throw new Error(`Publication artifact replacement was not planned: ${refLabel(artifact.target)}`);
+      throw new PublicationConflictError(targetPath, targetPath, "目标资源已存在且没有替换权限");
   }
 
-  for (const ref of plan.obsolete) {
+  for (const ref of [...plan.obsolete, ...(plan.deleteFiles ?? [])]) {
     await record(resolve(ref));
   }
   const plannedTargets = new Set(targets.map((ref) => resolve(ref)));

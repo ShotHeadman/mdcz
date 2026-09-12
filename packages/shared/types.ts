@@ -137,6 +137,13 @@ export interface UncensoredConfirmResponse {
 }
 
 export interface NamingPreviewItem {
+  sourcePath?: string;
+  mediaPath?: string;
+  metadataDir?: string;
+  strmFileName?: string;
+  strmContent?: string;
+  subtitles?: string[];
+  outputs?: string[];
   label: string;
   folder: string;
   file: string;
@@ -177,6 +184,7 @@ export interface LocalScanEntry {
   ref: RootFileRef;
   fileInfo: FileInfo;
   nfoPath?: string;
+  strmPath?: string;
   crawlerData?: CrawlerData;
   nfoLocalState?: NfoLocalState;
   scanError?: string;

@@ -79,7 +79,10 @@ export function buildAutoSaveFlatPayload(
   errors: unknown,
   getValue: (fieldPath: string) => unknown,
 ): Record<string, unknown> {
-  const relatedPaths = new Set([path, ...collectServerErrorPaths(errors)]);
+  const relatedPaths = new Set([
+    path,
+    ...collectServerErrorPaths(errors).map((errorPath) => errorPath.replace(/\.\d+(?:\..*)?$/u, "")),
+  ]);
   const flatPayload: Record<string, unknown> = {};
 
   for (const relatedPath of relatedPaths) {

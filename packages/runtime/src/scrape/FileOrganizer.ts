@@ -1,19 +1,23 @@
-import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { isPathInside } from "@mdcz/media-store";
+import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { findSubtitleSidecars, isGeneratedSidecarVideo, type SubtitleSidecarMatch } from "./media";
+import { getNfoWritePaths } from "./nfo";
 import { FileMover } from "./organize/FileMover";
-import { NamingEngine } from "./organize/NamingEngine";
+import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
 import { SidecarResolver } from "./organize/SidecarResolver";
 import { ensureParentDirectory, listVideoFiles } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
+import { mapStrmPath } from "./utils/strm";
 
 export interface OrganizePlan {
   outputDir: string;
   metadataDir?: string;
+  metadataRoot?: string;
   targetVideoPath: string;
   nfoPath: string;
   strmPath?: string;
@@ -49,7 +53,7 @@ export const resolveOrganizeDirectory = (
   options: OrganizePlanOptions = {},
 ): { directory: string; useFolderTemplate: boolean } => {
   const sourceDir = resolve(dirname(sourcePath));
-  if (options.executionMode === "single" || !config.behavior.successFileMove) {
+  if (!config.behavior.successFileMove) {
     return { directory: sourceDir, useFolderTemplate: false };
   }
   if (options.outputDirectory) return { directory: resolve(options.outputDirectory), useFolderTemplate: false };
@@ -91,13 +95,22 @@ export class FileOrganizer {
     const outputDir = useFolderTemplate ? join(directory, layout.folderRelativePath) : directory;
 
     const targetVideoPath = join(outputDir, layout.targetVideoFileName);
-    const metadataDir = options.executionMode === "single" ? outputDir : this.resolveMetadataDir(outputDir, config);
+    const metadataRoot = config.paths.metadataPath.trim();
+    if (metadataRoot && !isAbsolute(metadataRoot)) throw new Error("元数据输出目录必须使用绝对路径");
+    const metadataDir =
+      metadataRoot && !config.behavior.successFileMove
+        ? resolve(metadataRoot, layout.folderRelativePath)
+        : this.resolveMetadataDir(outputDir, config);
+    if (metadataRoot && !isPathInside(metadataRoot, metadataDir)) throw new Error("模板结果超出元数据输出目录");
+    if (!isPathInside(directory, outputDir)) throw new Error("模板结果超出整理目标目录");
+    if (metadataRoot && metadataDir === outputDir) throw new Error("元数据输出目录不能与源媒体输出目录重叠");
     const nfoPath = join(metadataDir, layout.nfoFileName);
-    const strmPath = metadataDir === outputDir ? undefined : join(metadataDir, `${parse(targetVideoPath).name}.strm`);
+    const strmPath = metadataDir === outputDir ? undefined : join(metadataDir, layout.strmFileName);
 
     return {
       outputDir,
       metadataDir,
+      metadataRoot: metadataRoot || undefined,
       targetVideoPath,
       nfoPath,
       strmPath,
@@ -105,7 +118,35 @@ export class FileOrganizer {
   }
 
   buildNamingPreview(config: Configuration): NamingPreviewItem[] {
-    return this.namingEngine.buildPreview(config);
+    return NAMING_PREVIEW_SAMPLES.map((sample) => {
+      const layout = this.namingEngine.buildLayout(sample.fileInfo, sample.data, config, sample.localState);
+      const plan = this.plan(sample.fileInfo, sample.data, config, sample.localState);
+      const assets = buildMovieAssetFileNames(basename(plan.nfoPath, ".nfo"), config.naming.assetNamingMode);
+      return {
+        label: sample.label,
+        folder:
+          config.behavior.successFileMove || config.paths.metadataPath.trim()
+            ? layout.folderRelativePath || "当前目录"
+            : "当前目录",
+        file: layout.targetVideoFileName,
+        sourcePath: resolve(sample.fileInfo.filePath),
+        mediaPath: plan.targetVideoPath,
+        metadataDir: resolveMetadataOutputDir(plan),
+        strmFileName: plan.strmPath ? basename(plan.strmPath) : undefined,
+        strmContent: plan.strmPath ? mapStrmPath(plan.targetVideoPath, config.paths.strmPathMappings) : undefined,
+        subtitles: plan.strmPath ? [`${basename(plan.strmPath, ".strm")}.zh.srt`] : [],
+        outputs: [
+          ...(config.download.generateNfo
+            ? getNfoWritePaths(plan.nfoPath, config.download.nfoNaming).requiredPaths.map((path) => basename(path))
+            : []),
+          ...(config.download.downloadThumb ? [assets.thumb] : []),
+          ...(config.download.downloadPoster ? [assets.poster] : []),
+          ...(config.download.downloadFanart ? [assets.fanart] : []),
+          ...(config.download.downloadTrailer ? [assets.trailer] : []),
+          ...(config.download.downloadSceneImages ? [`${config.paths.sceneImagesFolder}/…`] : []),
+        ],
+      };
+    });
   }
 
   async resolveOutputPlan(
@@ -121,7 +162,7 @@ export class FileOrganizer {
       }
     }
 
-    const outputRoot = dirname(plan.targetVideoPath);
+    const outputRoot = resolveMetadataOutputDir(plan);
     const sourceDir = resolve(dirname(sourceFilePath));
     const sameDirectoryOutput = sourceDir === resolve(outputRoot);
 
@@ -142,7 +183,7 @@ export class FileOrganizer {
       });
       if (otherVideos.length > 0) {
         this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
-        throw new Error("成功后不移动文件时，仅支持源目录内存在单个视频文件");
+        throw new Error("源目录包含多部影片，请设置元数据输出目录或使用按影片命名的 NFO 和图片");
       }
     }
 
@@ -194,16 +235,16 @@ export class FileOrganizer {
 
     const configuredMediaRoot = config.paths.mediaPath.trim();
     if (!configuredMediaRoot) {
-      throw new Error("配置本地元数据目录时，媒体目录不能为空");
+      throw new Error("配置元数据输出目录时，媒体目录不能为空");
     }
     if (!isAbsolute(configuredMediaRoot) || !isAbsolute(configuredMetadataRoot)) {
-      throw new Error("媒体目录和本地元数据目录必须使用绝对路径");
+      throw new Error("媒体目录和元数据输出目录必须使用绝对路径");
     }
 
     const mediaRoot = resolve(configuredMediaRoot);
     const metadataRoot = resolve(configuredMetadataRoot);
     if (isPathInside(mediaRoot, metadataRoot) || isPathInside(metadataRoot, mediaRoot)) {
-      throw new Error("本地元数据目录不能与媒体目录相同或互相包含");
+      throw new Error("元数据输出目录不能与媒体目录相同或互相包含");
     }
 
     const outputRelativePath = relative(mediaRoot, resolve(outputDir));

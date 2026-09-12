@@ -5,7 +5,11 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { BatchTranslateApplyResultItem, BatchTranslateField, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import {
+  commitRegisteredPublication,
+  type RegisteredPublicationContext,
+  resolveRegisteredNfoPaths,
+} from "../publication";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,
@@ -17,7 +21,7 @@ import {
   toLlmTextRequest,
   toTarget,
 } from "../scrape";
-import { getNfoWritePaths, NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
+import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
 
@@ -446,15 +450,24 @@ export const applyBatchNfoTranslations = async (
           artifacts.set(path, content);
         },
       });
+      const registered = publication.outputs
+        ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, async (id) => {
+            const root = publication.roots.find((root) => root.id === id);
+            if (!root) throw new Error(`Publication root not found: ${id}`);
+            return root;
+          })
+        : undefined;
       await commitRegisteredPublication(
         {
           operationId: `batch-nfo-translation:${entry.nfoPath}`,
+          mediaPaths: registered?.mediaPaths,
+          readOnlyDirectories: registered?.readOnlyDirectories,
           operationType: "maintenance",
-          artifacts: [...artifacts].map(([targetPath, data]) => ({ targetPath, content: { kind: "text", data } })),
-          obsoletePaths: getNfoWritePaths(entry.nfoPath, detectedNfoNaming).stalePaths.filter(
-            (path) => !artifacts.has(path),
-          ),
+          artifacts: [...artifacts]
+            .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
+            .map(([targetPath, data]) => ({ targetPath, content: { kind: "text", data } })),
           replaceExistingArtifacts: true,
+          editExistingFiles: true,
         },
         publication,
       );

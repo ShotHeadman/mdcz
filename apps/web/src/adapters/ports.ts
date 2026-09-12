@@ -152,7 +152,8 @@ export const createWebDetailPort = (): DetailActionPort => ({
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
     const videoPath = item.outputPath ?? item.path;
-    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
+    const videoRelativePath =
+      videoPath && item.fileRef?.rootId === rootId ? toRelativePath(item, videoPath) : undefined;
     const response = await api.scrape.nfoRead({ rootId, relativePath, videoRelativePath });
     return {
       path: response.effectiveRelativePath,
@@ -162,7 +163,8 @@ export const createWebDetailPort = (): DetailActionPort => ({
   writeNfo: async (item, path, data) => {
     const rootId = getMetadataRootId(item);
     const videoPath = item.outputPath ?? item.path;
-    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
+    const videoRelativePath =
+      videoPath && item.fileRef?.rootId === rootId ? toRelativePath(item, videoPath) : undefined;
     await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
   },
   preparePosterCrop: async (item) => {
@@ -170,15 +172,13 @@ export const createWebDetailPort = (): DetailActionPort => ({
     const response = await api.scrape.posterCropSession({ id: item.resultId });
     return {
       ...response,
-      sourceUrl: getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.sourceRelativePath }),
+      sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
     };
   },
   savePosterCrop: async (item, crop) => {
     if (!item.resultId) throw new Error("缺少刮削结果标识");
     const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
-    const posterUrl = new URL(
-      getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.targetRelativePath }),
-    );
+    const posterUrl = new URL(getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }));
     if (response.revision) posterUrl.searchParams.set("revision", response.revision);
     return { posterUrl: posterUrl.toString() };
   },
@@ -209,9 +209,9 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     requestScrapeLiveRunsRefresh();
     return { message: `重试任务已启动：${retry.runId}` };
   },
-  deleteFile: async (targets) => {
+  removeRecord: async (targets) => {
     for (const target of targets) {
-      await api.scrape.deleteFile(target.ref);
+      await api.scrape.removeRecord(target.ref);
     }
   },
   openNfo: (path) => {

@@ -143,6 +143,7 @@ export class DesktopLibraryService {
             return root;
           },
           journal: state.repositories.publicationJournal,
+          outputs: state.repositories.library,
           repairIssues: state.repositories.libraryRepairIssues,
           commit: () => {
             state.repositories.library.deleteEntry(normalizedId);

@@ -370,6 +370,7 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "scans.list", reason: "Server scan task API." },
   { path: "scans.retry", reason: "Server scan task API." },
   { path: "scans.start", reason: "Server scan task API." },
+  { path: "scrape.removeRecord", reason: "Removes library records while retaining all files." },
   { path: "scrape.deleteFile", reason: "Root-relative delete; desktop File_Delete uses absolute paths." },
   { path: "scrape.liveRuns", reason: "Web-only authoritative in-process scrape snapshot read." },
   {

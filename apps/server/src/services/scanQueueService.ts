@@ -7,6 +7,7 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
+import { publicationPathKey, registeredOutputPaths } from "@mdcz/runtime/publication";
 import { TaskScheduler } from "@mdcz/runtime/tasks";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import type {
@@ -155,6 +156,7 @@ export class ScanQueueService {
     const configuration = await this.config.get();
     const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
+    if (configuration.paths.metadataPath.trim()) excludeDirPaths.push(configuration.paths.metadataPath.trim());
     await this.mediaRoots.ensurePathRecord({ hostPath: input.scanDir });
     const roots = await this.mediaRoots.listRoots();
     const root = resolveRootFile(roots, hostPath).root;
@@ -162,16 +164,22 @@ export class ScanQueueService {
       (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
     );
     const warnings = { count: 0, paths: [] as string[] };
+    const generatedStrms = await registeredOutputPaths(
+      (await this.persistence.getState()).repositories.library,
+      (id) => this.mediaRoots.get(id),
+      "strm",
+    );
     const files = await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, undefined, {
       warnings,
       excludeDirectoryPaths: excludeDirPaths,
       excludeFileSymlinks: true,
-      filterFile: (filePath) => {
+      filterFile: async (filePath) => {
         const name = path.basename(filePath);
         const extension = path.extname(filePath).replace(/^\./u, "").toLowerCase();
         return (
           !hasLiteralFilenameToken(name, configuration.scrape.filenameBlacklistTokens) &&
           isPrimaryVideoFileName(name) &&
+          !generatedStrms.has(publicationPathKey(filePath)) &&
           (supported.size === 0 || supported.has(extension))
         );
       },
@@ -226,7 +234,17 @@ export class ScanQueueService {
   }
 
   private async scanDirectory(root: MediaRoot, signal?: AbortSignal): Promise<ScanDirectoryResult> {
-    const files = await listRootFiles(root, "", true, signal);
+    const configuration = await this.config.get();
+    const generatedStrms = await registeredOutputPaths(
+      (await this.persistence.getState()).repositories.library,
+      (id) => this.mediaRoots.get(id),
+      "strm",
+    );
+    const files = await listRootFiles(root, "", true, signal, {
+      excludeDirectoryPaths: configuration.paths.metadataPath.trim() ? [configuration.paths.metadataPath.trim()] : [],
+      filterFile: (filePath) =>
+        isPrimaryVideoFileName(path.basename(filePath)) && !generatedStrms.has(publicationPathKey(filePath)),
+    });
     const videos = files
       .filter((file) => isPrimaryVideoFileName(path.basename(file.relativePath)))
       .map((file) => ({

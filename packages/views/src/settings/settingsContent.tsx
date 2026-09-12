@@ -12,7 +12,6 @@ import {
   POSTER_TAG_BADGE_TYPE_LABELS,
   POSTER_TAG_BADGE_TYPE_OPTIONS,
 } from "@mdcz/shared/posterBadges";
-import { previewTitleRepair } from "@mdcz/shared/titleRepair";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import {
   Button,
@@ -28,7 +27,7 @@ import {
   Input,
   Switch,
 } from "@mdcz/ui";
-import { ArrowDown, ArrowUp, CircleHelp, FolderOpen, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { CircleHelp, FolderOpen, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -180,6 +179,16 @@ const NAMING_TEMPLATE_NOTES = {
 } as const;
 
 const NAMING_PREVIEW_FIELD_KEYS = [
+  "paths.mediaPath",
+  "paths.metadataPath",
+  "paths.successOutputFolder",
+  "paths.strmPathMappings",
+  "paths.sceneImagesFolder",
+  "download.generateNfo",
+  "download.downloadThumb",
+  "download.downloadPoster",
+  "download.downloadFanart",
+  "download.downloadTrailer",
   "naming.folderTemplate",
   "naming.fileTemplate",
   "naming.assetNamingMode",
@@ -237,7 +246,6 @@ const NAMING_SECTION_FIELD_KEYS = [
   "naming.censoredStyle",
   "naming.partStyle",
   "titleRepair.enabled",
-  "titleRepair.rules",
 ] as const;
 
 export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
@@ -322,25 +330,17 @@ export function PathsSection() {
     <>
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
       <PathFieldWrapper
-        name="paths.metadataPath"
-        label="本地元数据目录"
-        description="配置后，NFO、图片和 STRM 会按影片整理后的相对路径保存到此目录；留空则继续与影片保存在一起。"
-        isDirectory
-      />
-      <PathFieldWrapper
         name="paths.actorPhotoFolder"
         label="本地演员头像库目录"
         description="仅当“人物头像来源顺序”启用“本地”时读取，用于本地头像覆盖和媒体服务器头像同步。"
         isDirectory
       />
       <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />
-      <PathFieldWrapper name="paths.successOutputFolder" label="成功输出目录" isDirectory />
-      <PathFieldWrapper name="paths.failedOutputFolder" label="失败输出目录" isDirectory />
       <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" label="排除目录" />
       <PathFieldWrapper
         name="paths.outputSummaryPath"
         label="概览统计目录"
-        description="留空则使用成功输出目录"
+        description="留空则使用整理目标目录"
         isDirectory
       />
       <TextField name="paths.sceneImagesFolder" label="剧照目录名" />
@@ -399,7 +399,6 @@ export function NetworkCookiesSection() {
 }
 
 export function AssetDownloadsSection() {
-  const sectionMode = useSettingsSectionMode();
   const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
   const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
@@ -418,9 +417,6 @@ export function AssetDownloadsSection() {
     boolean | undefined,
     boolean | undefined,
   ];
-  const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
-  const successFileMove = Boolean(form.watch("behavior.successFileMove"));
-  const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
   const showTagBadgeSettings = Boolean(downloadPoster) && Boolean(tagBadges);
 
   if (!hasRenderableFields) {
@@ -429,11 +425,6 @@ export function AssetDownloadsSection() {
 
   return (
     <>
-      {sectionMode === "public" && sharedDirectoryMode && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-          当前为共享目录模式：多个影片会写入同一目录。保存时会校验 NFO 命名与剧照下载设置。
-        </div>
-      )}
       <BoolField name="download.downloadThumb" label="下载横版缩略图" />
       <BoolField name="download.downloadPoster" label="下载海报" />
       {shouldMountConditionalSettings(Boolean(downloadPoster), search) && (
@@ -638,6 +629,7 @@ function NamingPreview() {
     name: NAMING_PREVIEW_FIELD_KEYS,
   }) as unknown[];
   const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
+  const [previewError, setPreviewError] = useState("");
   const [loading, setLoading] = useState(false);
   const previewConfig = useMemo(() => {
     const flatValues: Record<string, unknown> = {};
@@ -662,10 +654,12 @@ function NamingPreview() {
         const result = await services.previewNaming(previewConfigRef.current as Partial<Configuration>);
         if (!cancelled && requestKey === previewConfigKey) {
           setPreviews(result.items);
+          setPreviewError("");
         }
-      } catch {
+      } catch (error) {
         if (!cancelled && requestKey === previewConfigKey) {
           setPreviews([]);
+          setPreviewError(error instanceof Error ? error.message : String(error));
         }
       } finally {
         if (!cancelled && requestKey === previewConfigKey) {
@@ -685,14 +679,18 @@ function NamingPreview() {
       <div className="mb-2 text-xs font-medium text-muted-foreground">命名预览</div>
       <div className="space-y-2">
         {previews.length === 0 && (
-          <div className="text-xs text-muted-foreground">{loading ? "生成预览中..." : "暂无预览"}</div>
+          <div role={previewError ? "alert" : undefined} className="text-xs text-muted-foreground">
+            {loading ? "生成预览中..." : previewError || "等待示例数据"}
+          </div>
         )}
         {previews.map((p) => (
           <div key={p.label} className="text-xs">
             <span className="mr-2 inline-block min-w-[4em] text-muted-foreground">{p.label}</span>
-            <span className="font-mono">
-              {p.folder}/{p.file}
-            </span>
+            <div className="space-y-1 break-all font-mono">
+              <div>源文件：{p.sourcePath ?? p.file}</div>
+              <div>整理后：{p.mediaPath ?? `${p.folder}/${p.file}`}</div>
+              {p.metadataDir && p.metadataDir !== p.folder ? <div>元数据目录：{p.metadataDir}</div> : null}
+            </div>
           </div>
         ))}
       </div>
@@ -700,212 +698,13 @@ function NamingPreview() {
   );
 }
 
-type TitleRepairRule = Configuration["titleRepair"]["rules"][number];
-
-function toTitleRepairRules(value: unknown): TitleRepairRule[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((rule) => {
-    if (!isRecord(rule) || typeof rule.source !== "string" || typeof rule.replacement !== "string") {
-      return [];
-    }
-    return [{ source: rule.source, replacement: rule.replacement }];
-  });
-}
-
-function TitleRepairRuleRow({
-  rule,
-  index,
-  total,
-  onCommit,
-  onMove,
-  onRemove,
-}: {
-  rule: TitleRepairRule;
-  index: number;
-  total: number;
-  onCommit: (next: TitleRepairRule) => void;
-  onMove: (direction: -1 | 1) => void;
-  onRemove: () => void;
-}) {
-  const [source, setSource] = useState(rule.source);
-  const [replacement, setReplacement] = useState(rule.replacement);
-
-  useEffect(() => {
-    setSource(rule.source);
-    setReplacement(rule.replacement);
-  }, [rule.replacement, rule.source]);
-
-  const commit = () => {
-    const next = { source: source.trim(), replacement: replacement.trim() };
-    if (!next.source || !next.replacement || (next.source === rule.source && next.replacement === rule.replacement)) {
-      return;
-    }
-    onCommit(next);
-  };
-
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 px-2 py-2 first:border-t-0">
-      <Input
-        value={source}
-        onChange={(event) => setSource(event.target.value)}
-        onBlur={commit}
-        aria-label={`第 ${index + 1} 条规则的替换原文`}
-        placeholder="遮蔽原文"
-        className="h-8 min-w-0"
-      />
-      <Input
-        value={replacement}
-        onChange={(event) => setReplacement(event.target.value)}
-        onBlur={commit}
-        aria-label={`第 ${index + 1} 条规则的替换结果`}
-        placeholder="替换结果"
-        className="h-8 min-w-0"
-      />
-      <div className="flex items-center gap-0.5">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label="上移规则"
-          title="上移规则"
-          disabled={index === 0}
-          onClick={() => onMove(-1)}
-        >
-          <ArrowUp className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label="下移规则"
-          title="下移规则"
-          disabled={index === total - 1}
-          onClick={() => onMove(1)}
-        >
-          <ArrowDown className="h-3.5 w-3.5" />
-        </Button>
-        <Button type="button" variant="ghost" size="icon-xs" aria-label="删除规则" title="删除规则" onClick={onRemove}>
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function TitleRepairSection() {
-  const form = useFormContext<FieldValues>();
-  const enabled = Boolean(useWatch({ control: form.control, name: "titleRepair.enabled" }));
-  const rules = toTitleRepairRules(useWatch({ control: form.control, name: "titleRepair.rules" }));
-  const [newSource, setNewSource] = useState("");
-  const [newReplacement, setNewReplacement] = useState("");
-  const [previewTitle, setPreviewTitle] = useState("");
-  const preview = previewTitleRepair(previewTitle, { enabled, rules });
-
   return (
-    <>
-      <BoolField
-        name="titleRepair.enabled"
-        label="修复遮蔽标题"
-        description="只应用下方明确规则，原始标题会随刮削结果保留。"
-      />
-      {enabled && (
-        <BaseField
-          name="titleRepair.rules"
-          label="标题修复规则"
-          description="按顺序执行字面替换；保存时会拒绝重复、空白或无效规则。"
-          layout="vertical"
-          commitMode="debounce"
-        >
-          {(field) => {
-            const addRule = () => {
-              const source = newSource.trim();
-              const replacement = newReplacement.trim();
-              if (!source || !replacement || source === replacement || rules.some((rule) => rule.source === source)) {
-                return;
-              }
-              field.onChange([...rules, { source, replacement }]);
-              setNewSource("");
-              setNewReplacement("");
-            };
-
-            return (
-              <div className="w-full space-y-3">
-                <div className="overflow-hidden rounded-[var(--radius-quiet-sm)] border border-border/60 bg-surface-low/40">
-                  {rules.length === 0 ? (
-                    <div className="px-3 py-3 text-xs text-muted-foreground">尚未添加规则</div>
-                  ) : (
-                    rules.map((rule, index) => (
-                      <TitleRepairRuleRow
-                        key={rule.source}
-                        rule={rule}
-                        index={index}
-                        total={rules.length}
-                        onCommit={(next) => {
-                          const nextRules = [...rules];
-                          nextRules[index] = next;
-                          field.onChange(nextRules);
-                        }}
-                        onMove={(direction) => {
-                          const target = index + direction;
-                          if (target < 0 || target >= rules.length) {
-                            return;
-                          }
-                          const nextRules = [...rules];
-                          [nextRules[index], nextRules[target]] = [nextRules[target], nextRules[index]];
-                          field.onChange(nextRules);
-                        }}
-                        onRemove={() => field.onChange(rules.filter((_, ruleIndex) => ruleIndex !== index))}
-                      />
-                    ))
-                  )}
-                </div>
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                  <Input
-                    value={newSource}
-                    onChange={(event) => setNewSource(event.target.value)}
-                    aria-label="新规则的替换原文"
-                    placeholder="遮蔽原文"
-                    className="h-8 min-w-0"
-                  />
-                  <Input
-                    value={newReplacement}
-                    onChange={(event) => setNewReplacement(event.target.value)}
-                    aria-label="新规则的替换结果"
-                    placeholder="替换结果"
-                    className="h-8 min-w-0"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!newSource.trim() || !newReplacement.trim() || newSource.trim() === newReplacement.trim()}
-                    onClick={addRule}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    添加规则
-                  </Button>
-                </div>
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs">
-                  <Input
-                    value={previewTitle}
-                    onChange={(event) => setPreviewTitle(event.target.value)}
-                    aria-label="标题修复预览原文"
-                    placeholder="输入标题预览"
-                    className="h-8 min-w-0"
-                  />
-                  <div className="flex min-h-8 items-center rounded-[var(--radius-quiet-sm)] border border-border/60 bg-surface-low px-2 text-muted-foreground">
-                    {previewTitle ? preview.repairedTitle : "修复结果预览"}
-                  </div>
-                </div>
-              </div>
-            );
-          }}
-        </BaseField>
-      )}
-    </>
+    <BoolField
+      name="titleRepair.enabled"
+      label="标题屏蔽词还原"
+      description="自动将官方标题中的避讳符号（●、〇 等）还原为原始词汇（例如把「催●」还原为「催眠」，「盗●」还原为「盗撮」）；原始标题仍会保留在 NFO 中。"
+    />
   );
 }
 
@@ -975,7 +774,11 @@ export function NamingSection() {
   const form = useFormContext<FieldValues>();
   const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
   const successFileMove = Boolean(form.watch("behavior.successFileMove"));
-  const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
+  const sharedDirectoryMode = isSharedDirectoryMode({
+    successFileMove,
+    folderTemplate,
+    metadataPath: String(form.watch("paths.metadataPath") ?? ""),
+  });
 
   if (!hasRenderableFields) {
     return null;
@@ -1325,11 +1128,99 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
 }
 
 export function BehaviorSection() {
+  const form = useFormContext<FieldValues>();
+  const services = useSettingsServices();
+  const move = Boolean(form.watch("behavior.successFileMove"));
+  const failedMove = Boolean(form.watch("behavior.failedFileMove"));
   return (
     <>
-      <BoolField name="behavior.successFileMove" label="成功后移动文件" />
-      <BoolField name="behavior.failedFileMove" label="失败后移动文件" />
-      <BoolField name="behavior.successFileRename" label="成功后重命名文件" />
+      <div className="pt-3 text-sm font-medium">刮削成功：文件整理</div>
+      <BoolField name="behavior.successFileMove" label="移动视频和字幕" />
+      <BoolField name="behavior.successFileRename" label="重命名视频和字幕" />
+      <PathFieldWrapper name="paths.successOutputFolder" label="整理目标目录" isDirectory disabled={!move} />
+      <div className="pt-3 text-sm font-medium">元数据与 STRM 输出（可选）</div>
+      <PathFieldWrapper
+        name="paths.metadataPath"
+        label="元数据输出目录"
+        isDirectory
+        description="留空时，元数据随视频保存在一起。指定独立目录后，元数据将输出到此处并生成 STRM 播放流文件与配套字幕（适用于只读网盘或 Emby/Jellyfin 独立挂载）。"
+      />
+      {services.isServer && (
+        <p className="text-xs text-muted-foreground">
+          源路径和输出目录属于 MDCz 服务端文件系统；STRM 映射目标属于播放器可见路径，无需服务端能够访问。
+        </p>
+      )}
+      <BaseField
+        name="paths.strmPathMappings"
+        label="STRM 路径映射（可选）"
+        layout="vertical"
+        commitMode="debounce"
+        description="当播放器（如 Docker 中的 Emby/Jellyfin）访问视频的路径与本机不同时，可通过此映射替换 .strm 文件中的路径。网络流地址不受影响。"
+      >
+        {(field) => {
+          const mappings = (field.value ?? []) as Configuration["paths"]["strmPathMappings"];
+          return (
+            <div className="space-y-2">
+              {mappings.length > 0 && (
+                <div className="grid grid-cols-[1fr_1fr_auto] gap-2 px-0.5 text-xs font-medium text-muted-foreground">
+                  <span>MDCz 可见路径前缀</span>
+                  <span>播放器可见路径前缀</span>
+                  <span className="w-8" />
+                </div>
+              )}
+              {mappings.map((mapping, index) => (
+                <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                  {(["from", "to"] as const).map((key) => {
+                    const error = form.getFieldState(`paths.strmPathMappings.${index}.${key}`, form.formState).error;
+                    return (
+                      <div key={key}>
+                        <Input
+                          aria-label={`${index + 1} ${key === "from" ? "MDCz 可见路径前缀" : "播放器可见路径前缀"}`}
+                          aria-invalid={Boolean(error)}
+                          placeholder={key === "from" ? "D:\\Downloads" : "/mnt/downloads"}
+                          value={mapping[key]}
+                          onBlur={field.onBlur}
+                          onChange={(event) =>
+                            field.onChange(
+                              mappings.map((rule, i) => (i === index ? { ...rule, [key]: event.target.value } : rule)),
+                            )
+                          }
+                        />
+                        {error?.message && (
+                          <p className="text-xs text-destructive" role="alert">
+                            {error.message}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`删除第 ${index + 1} 条映射`}
+                    onClick={() => field.onChange(mappings.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => field.onChange([...mappings, { from: "", to: "" }])}
+              >
+                <Plus className="h-4 w-4" />
+                添加路径映射
+              </Button>
+            </div>
+          );
+        }}
+      </BaseField>
+      <div className="pt-3 text-sm font-medium">刮削失败处理</div>
+      <BoolField name="behavior.failedFileMove" label="移动失败的视频和字幕" />
+      <PathFieldWrapper name="paths.failedOutputFolder" label="失败文件目录" isDirectory disabled={!failedMove} />
       <BoolField name="behavior.deleteEmptyFolder" label="删除空文件夹" />
       <BoolField name="behavior.scrapeSoftlinkPath" label="刮削软链接目录" />
       <BoolField name="behavior.saveLog" label="保存日志到文件" />

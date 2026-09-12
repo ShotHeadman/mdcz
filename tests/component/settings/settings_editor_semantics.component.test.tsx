@@ -367,8 +367,14 @@ test("settings sections expose public labels and naming placeholder help", async
       <FileBehaviorTopLevelSection forceOpen />
     </FormHarness>,
   );
-  await expect.element(behavior.getByText("文件行为")).toBeVisible();
-  await expect.element(behavior.getByText("成功后移动文件")).toBeVisible();
+  await expect.element(behavior.getByText("文件整理与输出")).toBeVisible();
+  await expect.element(behavior.getByText("移动视频和字幕", { exact: true })).toBeVisible();
+  expect(
+    behavior.container.querySelector('[data-field-name="paths.successOutputFolder"] input')?.matches(":disabled"),
+  ).toBe(true);
+  expect(
+    behavior.container.querySelector('[data-field-name="paths.failedOutputFolder"] input')?.matches(":disabled"),
+  ).toBe(true);
 
   const naming = await render(
     <FormHarness values={{ naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" } }}>
@@ -388,6 +394,39 @@ test("settings sections expose public labels and naming placeholder help", async
   );
   await expect.element(advancedDownload.getByText("剧照下载并发")).toBeVisible();
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
+});
+
+test("output settings save mappings and show preview failures", async () => {
+  const saveConfig = vi.fn<SettingsServices["saveConfig"]>(async () => undefined);
+  const screen = await render(
+    <FormHarness
+      values={defaultConfiguration}
+      services={createSettingsServices({
+        isServer: true,
+        saveConfig,
+        previewNaming: vi.fn(async () => {
+          throw new Error("模板结果越出输出根目录");
+        }),
+      })}
+    >
+      <FileBehaviorTopLevelSection forceOpen />
+      <NamingSection />
+    </FormHarness>,
+  );
+  await screen.getByRole("button", { name: "添加路径映射" }).click();
+  await screen.getByLabelText("1 MDCz 可见路径前缀").fill("D:\\Downloads");
+  await screen.getByLabelText("1 播放器可见路径前缀").fill("/player");
+  await expect
+    .poll(() => saveConfig.mock.calls.some(([value]) => JSON.stringify(value).includes("/player")))
+    .toBe(true);
+  await expect.element(screen.getByText("模板结果越出输出根目录")).toBeVisible();
+  await expect
+    .element(
+      screen.getByText(
+        "源路径和输出目录属于 MDCz 服务端文件系统；STRM 映射目标属于播放器可见路径，无需服务端能够访问。",
+      ),
+    )
+    .toBeVisible();
 });
 
 test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {
@@ -424,14 +463,13 @@ test("NFO settings render the configured enum list only while NFO generation is 
     .toBeVisible();
 });
 
-test("title repair settings expose ordered rules and add validated rows", async () => {
+test("title repair settings expose toggle switch", async () => {
   const screen = await render(
     <FormHarness
       values={{
         naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
         titleRepair: {
           enabled: true,
-          rules: [{ source: "催●", replacement: "催眠" }],
         },
       }}
     >
@@ -439,12 +477,7 @@ test("title repair settings expose ordered rules and add validated rows", async 
     </FormHarness>,
   );
 
-  await expect.element(screen.getByText("修复遮蔽标题")).toBeVisible();
-  await expect.element(screen.getByLabelText("第 1 条规则的替换原文")).toHaveValue("催●");
-  await screen.getByLabelText("新规则的替换原文").fill("●●");
-  await screen.getByLabelText("新规则的替换结果").fill("秘密");
-  await screen.getByRole("button", { name: "添加规则" }).click();
-  await expect.element(screen.getByLabelText("第 2 条规则的替换原文")).toHaveValue("●●");
+  await expect.element(screen.getByText("标题屏蔽词还原")).toBeVisible();
 });
 
 test("poster badge controls follow download and badge visibility gates", async () => {

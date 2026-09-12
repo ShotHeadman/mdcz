@@ -12,12 +12,13 @@ const toAssetRows = (
   const assets = new Map<string, Omit<LibraryItemAssetRecord, "itemId">>();
   for (const asset of explicitAssets) {
     if (!asset.uri.trim()) continue;
-    assets.set(`${asset.kind}:${asset.uri}`, {
+    assets.set(`${asset.kind}:${asset.rootId ?? ""}:${asset.uri}`, {
       id: randomUUID(),
       kind: asset.kind,
       uri: asset.uri,
       rootId: asset.rootId ?? null,
       relativePath: asset.relativePath ?? null,
+      published: asset.published ?? false,
       createdAt: now,
     });
   }
@@ -25,7 +26,6 @@ const toAssetRows = (
 };
 
 export const writeLibraryRows = (database: PersistenceDatabase, input: UpsertLibraryEntryInput): string => {
-  const id = input.id ?? `${input.rootId}:${input.rootRelativePath}`;
   const pathOccupant = database.db
     .select({ itemId: libraryItemFiles.itemId })
     .from(libraryItemFiles)
@@ -34,6 +34,7 @@ export const writeLibraryRows = (database: PersistenceDatabase, input: UpsertLib
     )
     .limit(1)
     .get();
+  const id = input.id ?? pathOccupant?.itemId ?? randomUUID();
   if (pathOccupant && pathOccupant.itemId !== id) {
     throw new Error(`媒体库路径已属于另一个条目：${input.rootId}:${input.rootRelativePath}`);
   }
@@ -42,7 +43,32 @@ export const writeLibraryRows = (database: PersistenceDatabase, input: UpsertLib
   const now = new Date();
   const actorsJson = JSON.stringify(input.actors ?? []);
   const mediaIdentity = input.mediaIdentity ?? input.number ?? id;
-  const assets = toAssetRows(input.assets);
+  const previousAssets = database.db.select().from(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).all();
+  const assets = toAssetRows(input.assets ?? previousAssets.filter((asset) => !asset.historical)).map((asset) => ({
+    ...asset,
+    historical: false,
+    published:
+      asset.published ||
+      previousAssets.some(
+        (previous) =>
+          previous.published && previous.rootId === asset.rootId && previous.relativePath === asset.relativePath,
+      ),
+  }));
+  assets.push(
+    ...previousAssets
+      .filter(
+        (previous) =>
+          previous.published &&
+          previous.kind === "strm" &&
+          !assets.some(
+            (asset) =>
+              asset.kind === previous.kind &&
+              asset.rootId === previous.rootId &&
+              asset.relativePath === previous.relativePath,
+          ),
+      )
+      .map((asset) => ({ ...asset, historical: true })),
+  );
 
   database.db
     .insert(libraryItems)

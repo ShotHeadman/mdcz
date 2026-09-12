@@ -1,4 +1,5 @@
 import type { Configuration } from "./config";
+import { BUILTIN_TITLE_REPAIR_RULES } from "./titleRepairDefaults";
 
 export interface TitleRepairPreview {
   originalTitle: string;
@@ -10,6 +11,20 @@ export interface TitleRepairPreview {
 
 type TitleRepairConfiguration = Configuration["titleRepair"];
 
+const MASK_CHARS = new Set(["●", "〇", "○", "*", "＊", "×", "■"]);
+
+function buildRuleRegex(source: string): RegExp {
+  let pattern = "";
+  for (const char of source) {
+    if (MASK_CHARS.has(char)) {
+      pattern += "[●〇○*＊×■]";
+    } else {
+      pattern += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(pattern, "gu");
+}
+
 export const previewTitleRepair = (title: string, configuration: TitleRepairConfiguration): TitleRepairPreview => {
   if (!configuration.enabled) {
     return { originalTitle: title, repairedTitle: title, matchedRules: [], applied: false, reason: "disabled" };
@@ -17,12 +32,16 @@ export const previewTitleRepair = (title: string, configuration: TitleRepairConf
 
   let repairedTitle = title;
   const matchedRules: string[] = [];
-  for (const rule of configuration.rules) {
-    if (!repairedTitle.includes(rule.source)) {
+  for (const rule of BUILTIN_TITLE_REPAIR_RULES) {
+    if (!rule.replacement) {
       continue;
     }
-    repairedTitle = repairedTitle.replaceAll(rule.source, rule.replacement);
-    matchedRules.push(rule.source);
+    const regex = buildRuleRegex(rule.source);
+    const nextTitle = repairedTitle.replace(regex, rule.replacement);
+    if (nextTitle !== repairedTitle) {
+      repairedTitle = nextTitle;
+      matchedRules.push(rule.source);
+    }
   }
 
   if (matchedRules.length === 0 || !repairedTitle.trim()) {

@@ -330,6 +330,7 @@ export const posterCropSaveInputSchema = scrapeResultIdInputSchema.extend({
 export type PosterCropSaveInput = z.infer<typeof posterCropSaveInputSchema>;
 
 export const posterCropSessionResponseSchema = z.object({
+  rootId: z.string().trim().min(1),
   sourceRelativePath: z.string().trim().min(1),
   targetRelativePath: z.string().trim().min(1),
   width: z.number().int().positive(),

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
@@ -166,8 +166,10 @@ export class MaintenanceFileScraper {
         assetDecisions: committed?.assetDecisions,
         organizePlan: plan,
         organizeFiles: this.preset.steps.organize,
+        renameSubtitles: config.behavior.successFileRename,
         nfoNaming: config.download.nfoNaming,
         assetNamingMode: config.naming.assetNamingMode,
+        strmPathMappings: config.paths.strmPathMappings,
         reuseNfo: Boolean(sharedMetadata),
         writeNfo: async (assets, writeFile) =>
           await writePreparedNfo({
@@ -185,11 +187,29 @@ export class MaintenanceFileScraper {
             writeFile,
           }),
       });
+      if (sharedMetadata) {
+        const sharedPaths = new Set([
+          sharedMetadata.nfoPath,
+          sharedMetadata.assets.thumb,
+          sharedMetadata.assets.poster,
+          sharedMetadata.assets.fanart,
+          sharedMetadata.assets.trailer,
+          ...sharedMetadata.assets.sceneImages,
+          ...sharedMetadata.assets.actorPhotos,
+        ]);
+        publication.plan.media?.push({
+          sourcePath: sharedMetadata.fileInfo.filePath,
+          targetPath: sharedMetadata.fileInfo.filePath,
+          size: (await stat(sharedMetadata.fileInfo.filePath)).size,
+          assets: publication.plan.assets.filter((asset) => asset.targetPath && sharedPaths.has(asset.targetPath)),
+        });
+      }
       throwIfAborted(signal);
       const updatedEntry = this.buildUpdatedEntry(entry, preparedCrawlerData, {
         fileInfo: { ...fileInfo, filePath: outputVideoPath },
         currentDir: plan?.outputDir ?? dirname(outputVideoPath),
         nfoPath: publication.nfoPath,
+        strmPath: publication.plan.assets.find((asset) => asset.kind === "strm")?.targetPath ?? entry.strmPath,
         assets: publication.assets,
       });
       this.setProgress(progress, 100);
@@ -272,6 +292,7 @@ export class MaintenanceFileScraper {
       fileInfo: LocalScanEntry["fileInfo"];
       currentDir: string;
       nfoPath?: string;
+      strmPath?: string;
       assets: DiscoveredAssets;
     },
   ): LocalScanEntry {

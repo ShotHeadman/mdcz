@@ -1,12 +1,7 @@
 import { join } from "node:path";
 
 import { throwIfAborted } from "../../utils/abort";
-import {
-  buildImageAssetPathFromSource,
-  removeStaleImageAssetVariants,
-  resolveExistingImageAsset,
-  shouldKeepAsset,
-} from "./helpers";
+import { buildImageAssetPathFromSource, resolveExistingImageAsset, shouldKeepAsset } from "./helpers";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan } from "./types";
 
 export class FanartAssetDownloader implements AssetDownloader {
@@ -42,7 +37,6 @@ export class FanartAssetDownloader implements AssetDownloader {
       if (createdPath) {
         assets.fanart = createdPath;
         assets.downloaded.push(createdPath);
-        await removeStaleImageAssetVariants(fanartTargetPath, createdPath);
         return;
       }
 

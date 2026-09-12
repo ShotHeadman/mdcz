@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import {
   type MediaRoot,
   readRootFile,
@@ -7,7 +8,12 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { commitPublishedMedia } from "@mdcz/runtime/publication";
+import {
+  capturePublicationBoundary,
+  commitPublishedMedia,
+  resolveRegisteredNfoPaths,
+  toRootFileRef,
+} from "@mdcz/runtime/publication";
 import {
   getNfoReadCandidates,
   getNfoWritePaths,
@@ -105,21 +111,48 @@ export class ServerNfoAdapter {
       : this.nfoGenerator.buildXml(input.data, options);
     const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
     const state = await this.persistence.getState();
+    const ownedNfo = await resolveRegisteredNfoPaths(
+      resolveRootRelativePath(root, input.relativePath),
+      state.repositories.library,
+      (id) => this.mediaRoots.get(id),
+    );
+    if (ownedNfo) {
+      paths.requiredPaths = ownedNfo.paths.map((path) => toRootRelativePath(root, path));
+      paths.canonicalPath = input.relativePath;
+    }
+    const registeredRoots = await this.mediaRoots.listRoots();
     await commitPublishedMedia(
       {
+        media: await Promise.all(
+          (ownedNfo?.mediaPaths ?? []).map(async (path) => ({
+            source: toRootFileRef(path, registeredRoots),
+            target: toRootFileRef(path, registeredRoots),
+            size: (await stat(path)).size,
+          })),
+        ),
         operationId: `nfo-write:${input.rootId}:${plannedRelativePath}`,
         operationType: "maintenance",
+        boundary: ownedNfo
+          ? await capturePublicationBoundary({
+              writeRoots: [root.hostPath],
+              writablePaths: ownedNfo.paths,
+              readOnlyPaths: [],
+              readOnlyDirectories: ownedNfo.readOnlyDirectories,
+            })
+          : undefined,
         artifacts: paths.requiredPaths.map((relativePath) => ({
           target: { rootId: root.id, relativePath },
           content: { kind: "text" as const, data: xml },
         })),
+        editFiles: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
         assets: [],
-        obsolete: paths.stalePaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+        obsolete: [],
         replaceExistingTargets: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
       },
       {
-        resolveRoot: async () => root,
+        resolveRoot: (id) => this.mediaRoots.get(id),
         journal: state.repositories.publicationJournal,
+        outputs: state.repositories.library,
         repairIssues: state.repositories.libraryRepairIssues,
         commit: () => undefined,
       },
@@ -138,20 +171,33 @@ export class ServerPosterCropAdapter {
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly posterCropService: PosterCropService,
-    private readonly resolveMetadataVideoPath: (result: ServerScrapeArtifactRecord) => string,
     private readonly persistence: ServerPersistenceService,
   ) {}
 
+  private async context(record: ServerScrapeArtifactRecord) {
+    const sourceRoot = await this.mediaRoots.get(record.outputRootId ?? record.rootId);
+    const videoPath = resolveRootRelativePath(sourceRoot, record.outputRelativePath ?? record.relativePath);
+    const state = await this.persistence.getState();
+    const source = await state.repositories.library.resolveMaintenanceSource(videoPath);
+    if (!source) throw new Error("封面编辑需要已登记的媒体输出");
+    const entry = await state.repositories.library.getEntryById(source.libraryItemId);
+    const assets: { thumb?: string; poster?: string } = {};
+    let root = sourceRoot;
+    for (const kind of ["thumb", "poster"] as const) {
+      const asset = entry.assets.find((asset) => asset.kind === kind && asset.rootId && asset.relativePath);
+      if (asset?.rootId && asset.relativePath) {
+        root = await this.mediaRoots.get(asset.rootId);
+        assets[kind] = resolveRootRelativePath(root, asset.relativePath);
+      }
+    }
+    return { root, videoPath, assets };
+  }
+
   async session(record: ServerScrapeArtifactRecord) {
-    const [root, configuration] = await Promise.all([
-      this.mediaRoots.get(record.nfoRootId ?? record.outputRootId ?? record.rootId),
-      this.config.get(),
-    ]);
-    const session = await this.posterCropService.prepare(
-      resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
-      configuration.naming.assetNamingMode,
-    );
+    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(record), this.config.get()]);
+    const session = await this.posterCropService.prepare(videoPath, configuration.naming.assetNamingMode, assets);
     return {
+      rootId: root.id,
       sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
       targetRelativePath: requireRootRelativeAssetPath(root, session.targetPath),
       width: session.width,
@@ -161,22 +207,22 @@ export class ServerPosterCropAdapter {
   }
 
   async save(record: ServerScrapeArtifactRecord, input: PosterCropSaveInput) {
-    const [root, configuration] = await Promise.all([
-      this.mediaRoots.get(record.nfoRootId ?? record.outputRootId ?? record.rootId),
-      this.config.get(),
-    ]);
+    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(record), this.config.get()]);
     const state = await this.persistence.getState();
     const result = await this.posterCropService.save(
-      resolveRootRelativePath(root, this.resolveMetadataVideoPath(record)),
+      videoPath,
       configuration.naming.assetNamingMode,
       input.crop,
       {
         journal: state.repositories.publicationJournal,
+        outputs: state.repositories.library,
         repairIssues: state.repositories.libraryRepairIssues,
-        roots: [root],
+        roots: await this.mediaRoots.listRoots(),
       },
+      assets,
     );
     return {
+      rootId: root.id,
       sourceRelativePath: requireRootRelativeAssetPath(root, result.sourcePath),
       targetRelativePath: requireRootRelativeAssetPath(root, result.targetPath),
       width: result.width,

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { throwIfAborted } from "../../utils/abort";
-import { buildImageCandidates, removeStaleImageAssetVariants, resolveExistingImageAsset, runParallel } from "./helpers";
+import { buildImageCandidates, resolveExistingImageAsset, runParallel } from "./helpers";
 import { PosterImageDerivationService } from "./PosterImageDerivationService";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan, PrimaryImageKey } from "./types";
 
@@ -60,7 +60,6 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       const downloadedPath = result.value ?? result.path;
       assets[key] = downloadedPath;
       assets.downloaded.push(downloadedPath);
-      await removeStaleImageAssetVariants(result.path, downloadedPath);
     }
 
     for (const task of primaryTasks) {
@@ -156,7 +155,6 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     if (!assets.downloaded.includes(result.path)) {
       assets.downloaded.push(result.path);
     }
-    await removeStaleImageAssetVariants(posterTargetPath, result.path);
 
     const thumbSourceUrl = plan.data.thumb_source_url ?? plan.data.thumb_url;
     if (thumbSourceUrl) {

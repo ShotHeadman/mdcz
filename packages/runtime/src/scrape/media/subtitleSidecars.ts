@@ -74,7 +74,7 @@ export interface SubtitleSidecarMatch {
 export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleSidecarMatch[]> => {
   const video = parse(videoPath);
   const videoBaseCandidates = buildVideoBaseCandidates(videoPath);
-  const entries = await readdir(video.dir, { withFileTypes: true }).catch(() => []);
+  const entries = await readdir(video.dir, { withFileTypes: true });
   const siblingVideos = entries.filter(
     (entry) =>
       (entry.isFile() || entry.isSymbolicLink()) &&
@@ -92,7 +92,10 @@ export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleS
 
       const sidecarPath = join(video.dir, entry.name);
       if (entry.isSymbolicLink()) {
-        const targetStats = await stat(sidecarPath).catch(() => null);
+        const targetStats = await stat(sidecarPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
         if (!targetStats?.isFile()) {
           return null;
         }
@@ -117,7 +120,15 @@ export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleS
     }),
   );
 
-  return matches.filter((entry): entry is SubtitleSidecarMatch => entry !== null);
+  const sidecars = matches.filter((entry): entry is SubtitleSidecarMatch => entry !== null);
+  for (const sidecar of sidecars) {
+    if (
+      extname(sidecar.path).toLowerCase() === ".idx" &&
+      !sidecars.some((candidate) => candidate.path.toLowerCase() === `${sidecar.path.slice(0, -4).toLowerCase()}.sub`)
+    )
+      throw new Error(`字幕 IDX 缺少配对的 SUB 文件：${sidecar.path}`);
+  }
+  return sidecars;
 };
 
 export const getPreferredSubtitleTagFromSidecars = (sidecars: SubtitleSidecarMatch[]): SubtitleTag | undefined => {

@@ -480,18 +480,20 @@ export function PathFieldWrapper({
   label,
   description,
   isDirectory,
+  disabled,
 }: {
   name: string;
   label: string;
   description?: string;
   isDirectory?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <BaseField name={name} label={label} description={description} commitMode="immediate">
       {(field) => (
-        <div className="w-[450px]">
+        <fieldset disabled={disabled} className="w-[450px] disabled:opacity-50">
           <ServerPathField field={field} isDirectory={isDirectory} />
-        </div>
+        </fieldset>
       )}
     </BaseField>
   );

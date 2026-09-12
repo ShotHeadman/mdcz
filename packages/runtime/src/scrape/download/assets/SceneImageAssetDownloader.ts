@@ -7,7 +7,6 @@ import {
   buildSceneImageFileName,
   getSceneImageSets,
   listExistingSceneImages,
-  removeStaleSceneImages,
   resolveExistingImageAsset,
   shouldKeepAsset,
   uniqueFilePaths,
@@ -50,7 +49,10 @@ export class SceneImageAssetDownloader implements AssetDownloader {
     const sceneImageSets = getSceneImageSets(plan.data, plan.imageAlternatives, targetSceneCount);
 
     if (sceneImageSets.length === 0) {
-      await this.handleMissingSceneImageSets(plan, assets, existingSceneImages, forceReplaceSceneImages, sceneDir);
+      if (!forceReplaceSceneImages) assets.sceneImages.push(...existingSceneImages);
+      plan.callbacks?.onResolvedSceneImageUrls?.(
+        existingSceneImages.length && !forceReplaceSceneImages ? undefined : [],
+      );
       return;
     }
 
@@ -105,31 +107,6 @@ export class SceneImageAssetDownloader implements AssetDownloader {
       existingSceneImages,
       forceReplaceSceneImages,
     );
-
-    if (assets.sceneImages.length > 0 || forceReplaceSceneImages) {
-      await removeStaleSceneImages(existingSceneImages, assets.sceneImages, sceneDir);
-    }
-  }
-
-  private async handleMissingSceneImageSets(
-    plan: DownloadExecutionPlan,
-    assets: DownloadExecutionContext["assets"],
-    existingSceneImages: string[],
-    forceReplaceSceneImages: boolean,
-    sceneDir: string,
-  ): Promise<void> {
-    if (forceReplaceSceneImages && existingSceneImages.length > 0) {
-      await removeStaleSceneImages(existingSceneImages, [], sceneDir);
-    } else {
-      assets.sceneImages.push(...existingSceneImages);
-    }
-
-    if (existingSceneImages.length > 0 && !forceReplaceSceneImages) {
-      plan.callbacks?.onResolvedSceneImageUrls?.(undefined);
-      return;
-    }
-
-    plan.callbacks?.onResolvedSceneImageUrls?.([]);
   }
 
   private reportResolvedSceneImageUrls(

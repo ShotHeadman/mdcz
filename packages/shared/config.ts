@@ -10,6 +10,7 @@ import {
   LLM_REASONING_OPTIONS,
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
+import { isLocalAbsolutePrefix, localPathPrefixKey, localPathStyle } from "./localPath";
 import {
   DEFAULT_POSTER_TAG_BADGE_TYPES,
   POSTER_TAG_BADGE_POSITION_OPTIONS,
@@ -243,9 +244,15 @@ const uiSchema = z.object({
   useCustomTitleBar: z.boolean().default(true),
 });
 
+const strmPathMappingSchema = z.object({
+  from: z.string().trim().min(1, "源路径前缀不能为空"),
+  to: z.string().trim().min(1, "目标路径前缀不能为空"),
+});
+
 const pathsSchema = z.object({
   mediaPath: z.string().default(""),
   metadataPath: z.string().default(""),
+  strmPathMappings: z.array(strmPathMappingSchema).default([]),
   actorPhotoFolder: z.string().default(""),
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),
@@ -266,38 +273,9 @@ const behaviorSchema = z.object({
   updateCheck: z.boolean().default(true),
 });
 
-const titleRepairRuleSchema = z.object({
-  source: z.string().trim().min(1, "替换原文不能为空"),
-  replacement: z.string().trim().min(1, "替换结果不能为空"),
+const titleRepairSchema = z.object({
+  enabled: z.boolean().default(false),
 });
-
-const titleRepairSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    rules: z.array(titleRepairRuleSchema).default([]),
-  })
-  .superRefine((data, ctx) => {
-    const seenSources = new Set<string>();
-
-    for (const [index, rule] of data.rules.entries()) {
-      if (seenSources.has(rule.source)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["rules", index, "source"],
-          message: "替换原文不能重复",
-        });
-      }
-      seenSources.add(rule.source);
-
-      if (rule.source === rule.replacement) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["rules", index, "replacement"],
-          message: "替换结果必须与原文不同",
-        });
-      }
-    }
-  });
 
 const fieldPrioritiesSchema = z.object({
   title: z
@@ -463,8 +441,35 @@ export const configurationSchema = z
   .superRefine((data, ctx) => {
     const sharedDirectoryMode = isSharedDirectoryMode({
       successFileMove: data.behavior.successFileMove,
+      metadataPath: data.paths.metadataPath,
       folderTemplate: data.naming.folderTemplate,
     });
+
+    if (data.paths.metadataPath.trim() && !localPathStyle(data.paths.metadataPath.trim()))
+      ctx.addIssue({
+        code: "custom",
+        path: ["paths", "metadataPath"],
+        message: "元数据输出目录必须使用绝对路径",
+      });
+    const mappingSources = new Set<string>();
+    for (const [index, mapping] of data.paths.strmPathMappings.entries()) {
+      for (const field of ["from", "to"] as const) {
+        if (!isLocalAbsolutePrefix(mapping[field]))
+          ctx.addIssue({
+            code: "custom",
+            path: ["paths", "strmPathMappings", index, field],
+            message: "路径前缀必须是 Windows、UNC 或 POSIX 绝对路径，不能包含 . 或 .. 路径段",
+          });
+      }
+      const key = `${localPathStyle(mapping.from)}:${localPathPrefixKey(mapping.from)}`;
+      if (mappingSources.has(key))
+        ctx.addIssue({
+          code: "custom",
+          path: ["paths", "strmPathMappings", index, "from"],
+          message: "源路径前缀不能重复",
+        });
+      mappingSources.add(key);
+    }
 
     if (sharedDirectoryMode && data.naming.assetNamingMode !== "followVideo") {
       ctx.addIssue({

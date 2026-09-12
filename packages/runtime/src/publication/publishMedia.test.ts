@@ -148,7 +148,7 @@ describe("commitPublishedMedia", () => {
     await expect(readFile(featureSource)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("requires a planned subtitle replacement without offering a video conflict choice", async () => {
+  it("reports an unplanned subtitle replacement as a publication conflict", async () => {
     const test = await fixture();
     const source = path.join(path.dirname(test.source), "movie.srt");
     const target = path.join(path.dirname(test.target), "movie.srt");
@@ -165,8 +165,8 @@ describe("commitPublishedMedia", () => {
     const commit = vi.fn(() => "committed");
     const options = { resolveRoot: test.resolveRoot, journal: createMemoryPublicationJournal(), commit };
     const conflict = await commitPublishedMedia(test.plan, options).catch((error) => error);
-    expect(conflict).not.toBeInstanceOf(PublicationConflictError);
-    expect(conflict.message).toContain("sidecar replacement was not planned");
+    expect(conflict).toBeInstanceOf(PublicationConflictError);
+    expect(conflict.message).toContain("目标附属资源已存在");
     expect(commit).not.toHaveBeenCalled();
     expect(await readFile(source, "utf8")).toBe("NEW");
     expect(await readFile(target, "utf8")).toBe("OLD");
@@ -457,7 +457,7 @@ describe("commitPublishedMedia", () => {
         fileSystem,
         commit: () => undefined,
       }),
-    ).rejects.toThrow("changed before mutation");
+    ).rejects.toThrow("发布目标在提交前发生变化");
     await expect(stat(firstTarget)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(secondTarget, "utf8")).resolves.toBe("foreign target");
     await expect(residue(test.metadataRoot)).resolves.toEqual([]);
@@ -570,7 +570,10 @@ describe("commitPublishedMedia", () => {
     await expect(readFile(test.nfo, "utf8")).resolves.toBe("<movie/>");
   });
 
-  it("rejects source and target facts that change after ownership is acquired", async () => {
+  it.each([
+    "source",
+    "target",
+  ] as const)("rejects %s facts that change after ownership is acquired", async (changed) => {
     const test = await fixture();
     await mkdir(path.dirname(test.nfo), { recursive: true });
     await writeFile(test.nfo, "<movie/>");
@@ -580,14 +583,13 @@ describe("commitPublishedMedia", () => {
         journal: createMemoryPublicationJournal(),
         commit: () => undefined,
         acquireAll: () => {
-          writeFileSync(test.source, "VIDEO");
-          writeFileSync(test.nfo, "<other/>");
+          writeFileSync(changed === "source" ? test.source : test.nfo, changed === "source" ? "VIDEO" : "<other/>");
           return () => undefined;
         },
       }),
-    ).rejects.toThrow("changed before mutation");
-    await expect(readFile(test.source, "utf8")).resolves.toBe("VIDEO");
-    await expect(readFile(test.nfo, "utf8")).resolves.toBe("<other/>");
+    ).rejects.toThrow(changed === "source" ? "changed before mutation" : PublicationConflictError);
+    await expect(readFile(test.source, "utf8")).resolves.toBe(changed === "source" ? "VIDEO" : "video");
+    await expect(readFile(test.nfo, "utf8")).resolves.toBe(changed === "target" ? "<other/>" : "<movie/>");
     await expect(stat(test.target)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

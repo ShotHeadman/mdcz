@@ -218,11 +218,14 @@ export const libraryItemAssets = sqliteTable(
     uri: text("uri").notNull(),
     rootId: text("root_id").references(() => mediaRoots.id, { onDelete: "restrict" }),
     relativePath: text("relative_path"),
+    published: integer("published", { mode: "boolean" }).notNull().default(false),
+    historical: integer("historical", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
     check("library_item_assets_root_path_check", sql`(${table.rootId} is null) = (${table.relativePath} is null)`),
     index("library_item_assets_item_idx").on(table.itemId),
+    index("library_item_assets_output_idx").on(table.rootId, table.relativePath),
   ],
 );
 

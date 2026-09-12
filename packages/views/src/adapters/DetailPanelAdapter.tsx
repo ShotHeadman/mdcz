@@ -329,6 +329,20 @@ export function DetailPanelAdapter({
       }}
       onPlay={actions.play}
       onOpenFolder={actions.openFolder}
+      onOpenMetadataFolder={
+        item &&
+        port.openMetadataFolder &&
+        (item.assets?.some((asset) => asset.kind === "strm") ||
+          (item.nfoRef &&
+            item.fileRef &&
+            (item.nfoRef.rootId !== item.fileRef.rootId ||
+              item.nfoRef.relativePath.split("/").slice(0, -1).join("/") !==
+                item.fileRef.relativePath.split("/").slice(0, -1).join("/"))))
+          ? () => {
+              void port.openMetadataFolder?.(item);
+            }
+          : undefined
+      }
       onOpenNfo={actions.openNfo}
       onPosterError={artwork.handlePosterError}
       onThumbError={artwork.handleThumbError}

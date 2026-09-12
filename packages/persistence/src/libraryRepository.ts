@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { and, desc, eq, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { writeLibraryRows } from "./libraryWrite";
 import {
@@ -53,7 +53,13 @@ export interface UpsertLibraryEntryInput {
   actors?: string[];
   crawlerDataJson?: string | null;
   thumbnailPath?: string | null;
-  assets?: Array<{ kind: string; uri: string; rootId?: string | null; relativePath?: string | null }>;
+  assets?: Array<{
+    kind: string;
+    uri: string;
+    rootId?: string | null;
+    relativePath?: string | null;
+    published?: boolean;
+  }>;
   lastKnownPath?: string | null;
   createdAt?: Date;
   lastRefreshedAt?: Date | null;
@@ -129,6 +135,7 @@ export interface LibraryItemAssetRecord {
   uri: string;
   rootId: string | null;
   relativePath: string | null;
+  published: boolean;
   createdAt: Date;
 }
 
@@ -141,10 +148,14 @@ export interface CommitMaintenanceRefreshInput {
   crawlerData?: MaintenanceCrawlerDataRecord;
   fallbackNumber: string;
   assets: MaintenanceDiscoveredAssetsRecord;
+  outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
+  removedAssets?: Array<{ rootId: string; relativePath: string }>;
   refreshedAt: Date;
 }
 
 export interface MaintenanceLibrarySourceRecord {
+  nfo?: { rootId: string; relativePath: string };
+  strm?: { rootId: string; relativePath: string };
   libraryItemId: string;
   libraryFileId: string;
   rootId: string;
@@ -224,6 +235,7 @@ const toLibraryItemAssetRecord = (row: LibraryItemAssetRow): LibraryItemAssetRec
   uri: row.uri,
   rootId: row.rootId,
   relativePath: row.relativePath,
+  published: row.published,
   createdAt: row.createdAt,
 });
 
@@ -272,6 +284,97 @@ const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value
 export class LibraryRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
+  publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }) {
+    const roots = this.database.db.select().from(mediaRoots).all();
+    const candidates = [...new Set(query.paths ?? [])].flatMap((value) => this.pathCandidates(value, roots));
+    const locations = sql`SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')
+      FROM json_each(${JSON.stringify(candidates.map((ref) => [ref.rootId, ref.rootRelativePath]))})`;
+    const fileWhere = sql`(${libraryItemFiles.rootId}, ${libraryItemFiles.rootRelativePath}) IN (${locations})`;
+    const assetWhere =
+      or(
+        query.kind ? and(eq(libraryItemAssets.kind, query.kind), eq(libraryItemAssets.published, true)) : undefined,
+        sql`(${libraryItemAssets.rootId}, ${libraryItemAssets.relativePath}) IN (${locations})`,
+      ) ?? sql`0`;
+    const owners = query.includeOwners
+      ? [
+          ...new Set(
+            [
+              ...this.database.db.select({ id: libraryItemFiles.itemId }).from(libraryItemFiles).where(fileWhere).all(),
+              ...this.database.db
+                .select({ id: libraryItemAssets.itemId })
+                .from(libraryItemAssets)
+                .where(assetWhere)
+                .all(),
+            ].map((row) => row.id),
+          ),
+        ]
+      : [];
+    return {
+      files: this.database.db
+        .select({
+          fileId: libraryItemFiles.id,
+          itemId: libraryItemFiles.itemId,
+          rootId: libraryItemFiles.rootId,
+          relativePath: libraryItemFiles.rootRelativePath,
+        })
+        .from(libraryItemFiles)
+        .where(owners.length ? or(fileWhere, inArray(libraryItemFiles.itemId, owners)) : fileWhere)
+        .all(),
+      assets: this.database.db
+        .select()
+        .from(libraryItemAssets)
+        .where(
+          owners.length
+            ? or(assetWhere, and(inArray(libraryItemAssets.itemId, owners), eq(libraryItemAssets.historical, false)))
+            : assetWhere,
+        )
+        .all()
+        .flatMap((asset) =>
+          asset.rootId && asset.relativePath
+            ? [
+                {
+                  itemId: asset.itemId,
+                  kind: asset.kind,
+                  rootId: asset.rootId,
+                  relativePath: asset.relativePath,
+                  published: asset.published,
+                  historical: asset.historical,
+                },
+              ]
+            : [],
+        ),
+    };
+  }
+
+  registerPublishedOutputs(
+    outputs: Array<{ itemId: string; kind: string; rootId: string; relativePath: string }>,
+  ): void {
+    for (const output of outputs) {
+      const where = and(
+        eq(libraryItemAssets.itemId, output.itemId),
+        eq(libraryItemAssets.rootId, output.rootId),
+        eq(libraryItemAssets.relativePath, output.relativePath),
+        eq(libraryItemAssets.kind, output.kind),
+      );
+      const existing = this.database.db.select().from(libraryItemAssets).where(where).get();
+      if (existing)
+        this.database.db.update(libraryItemAssets).set({ published: true, historical: false }).where(where).run();
+      else
+        this.database.db
+          .insert(libraryItemAssets)
+          .values({ ...output, id: randomUUID(), uri: output.relativePath, published: true, createdAt: new Date() })
+          .run();
+    }
+  }
+
+  releaseOutputReferences(refs: Array<{ rootId: string; relativePath: string }>): void {
+    for (const ref of refs)
+      this.database.db
+        .delete(libraryItemAssets)
+        .where(and(eq(libraryItemAssets.rootId, ref.rootId), eq(libraryItemAssets.relativePath, ref.relativePath)))
+        .run();
+  }
+
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
     const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input));
     const id = transaction();
@@ -285,8 +388,17 @@ export class LibraryRepository {
       throw new Error(`同一实际文件被多个媒体库条目引用：${absolutePath}`);
     }
     const match = matches[0];
+    const assets = match ? ((await this.listAssetsForItems([match.file.itemId])).get(match.file.itemId) ?? []) : [];
+    const output = (kind: string) => {
+      const asset = assets.find((asset) => asset.kind === kind && asset.rootId && asset.relativePath);
+      return asset?.rootId && asset.relativePath
+        ? { rootId: asset.rootId, relativePath: asset.relativePath }
+        : undefined;
+    };
     return match
       ? {
+          nfo: output("nfo"),
+          strm: output("strm"),
           libraryItemId: match.file.itemId,
           libraryFileId: match.file.id,
           rootId: match.file.rootId,
@@ -326,7 +438,27 @@ export class LibraryRepository {
     }
     this.assertNoMaintenanceTargetConflict(targetCandidates, input.librarySource?.libraryItemId);
     const target = chooseRootCandidate(targetCandidates, input.librarySource?.rootId);
-    const assets = this.buildMaintenanceAssets(input, target.rootId);
+    const changedAssets = this.buildMaintenanceAssets(input, target.rootId);
+    const changedKinds = new Set([
+      "thumb",
+      "poster",
+      "fanart",
+      "trailer",
+      "scene",
+      "actor",
+      ...changedAssets.map((asset) => asset.kind),
+    ]);
+    const removedKeys = new Set((input.removedAssets ?? []).map((asset) => `${asset.rootId}:${asset.relativePath}`));
+    const previousAssets = input.librarySource
+      ? ((await this.listAssetsForItems([input.librarySource.libraryItemId])).get(input.librarySource.libraryItemId) ??
+        [])
+      : [];
+    const assets = [
+      ...previousAssets.filter(
+        (asset) => !changedKinds.has(asset.kind) && !removedKeys.has(`${asset.rootId}:${asset.relativePath}`),
+      ),
+      ...changedAssets,
+    ];
     const crawlerDataJson = input.crawlerData ? JSON.stringify(input.crawlerData) : null;
     const mediaIdentity = input.crawlerData?.number?.trim() || input.fallbackNumber.trim() || null;
     const title = input.crawlerData?.title ?? null;
@@ -407,6 +539,21 @@ export class LibraryRepository {
       .where(eq(libraryItemFiles.id, `${item.id}:primary`))
       .run();
     return await this.touchEntry(item.id, now);
+  }
+
+  deleteFiles(refs: Array<{ rootId: string; relativePath: string }>): void {
+    const itemIds = new Set<string>();
+    for (const ref of refs) {
+      const where = and(
+        eq(libraryItemFiles.rootId, ref.rootId),
+        eq(libraryItemFiles.rootRelativePath, ref.relativePath),
+      );
+      for (const file of this.database.db.select().from(libraryItemFiles).where(where).all()) itemIds.add(file.itemId);
+      this.database.db.delete(libraryItemFiles).where(where).run();
+    }
+    for (const id of itemIds)
+      if (!this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).get())
+        this.deleteEntry(id);
   }
 
   deleteEntry(id: string): void {
@@ -628,12 +775,12 @@ export class LibraryRepository {
     };
   }
 
-  private pathCandidates(absolutePath: string): RootPathCandidate[] {
+  private pathCandidates(
+    absolutePath: string,
+    roots = this.database.db.select().from(mediaRoots).all(),
+  ): RootPathCandidate[] {
     const resolvedPath = path.resolve(absolutePath);
-    return this.database.db
-      .select()
-      .from(mediaRoots)
-      .all()
+    return roots
       .flatMap((root): RootPathCandidate[] => {
         const resolvedRootPath = path.resolve(root.hostPath);
         const relative = path.relative(resolvedRootPath, resolvedPath);
@@ -716,7 +863,10 @@ export class LibraryRepository {
     input: CommitMaintenanceRefreshInput,
     preferredRootId: string,
   ): MaintenanceAssetInput[] {
-    const outputs: MaintenanceAssetInput[] = [];
+    const outputs: MaintenanceAssetInput[] = (input.outputAssets ?? []).map((asset) => ({
+      ...asset,
+      uri: asset.relativePath,
+    }));
     const localKinds = new Set<string>();
     const addLocal = (kind: string, value: string | undefined): void => {
       const absolutePath = value?.trim();
@@ -786,7 +936,7 @@ export class LibraryRepository {
         ? this.database.db
             .select()
             .from(libraryItemAssets)
-            .where(inArray(libraryItemAssets.itemId, ids))
+            .where(and(inArray(libraryItemAssets.itemId, ids), eq(libraryItemAssets.historical, false)))
             .orderBy(libraryItemAssets.kind)
             .all()
         : [];

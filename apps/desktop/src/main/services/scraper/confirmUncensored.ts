@@ -7,13 +7,8 @@ import { pathExists } from "@main/utils/file";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeRunManifest } from "@mdcz/persistence";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
-import { commitPublishedMedia, createPublicationPlan } from "@mdcz/runtime/publication";
-import {
-  buildUncensoredRevision,
-  confirmUncensoredOutputs,
-  nfoGenerator,
-  resolveScrapeMetadataVideoPath,
-} from "@mdcz/runtime/scrape";
+import { commitPublishedMedia, createPublicationPlan, registeredMediaLocations } from "@mdcz/runtime/publication";
+import { buildUncensoredRevision, confirmUncensoredOutputs, nfoGenerator } from "@mdcz/runtime/scrape";
 import { crawlerDataSchema } from "@mdcz/shared/serverDtos";
 import type { UncensoredChoice, UncensoredConfirmResponse } from "@mdcz/shared/types";
 
@@ -48,12 +43,7 @@ export const confirmUncensoredRunItems = async (input: {
     return { selection, item, outcome };
   });
 
-  const roots = new Map<string, MediaRoot>();
-  for (const { outcome } of selected) {
-    for (const rootId of [outcome.outputRootId, outcome.nfoRootId ?? outcome.outputRootId]) {
-      if (rootId && !roots.has(rootId)) roots.set(rootId, await state.repositories.mediaRoots.get(rootId));
-    }
-  }
+  const roots = new Map<string, MediaRoot>((await state.repositories.mediaRoots.list()).map((root) => [root.id, root]));
   const resolved = selected.map(({ selection, item, outcome }) => {
     const { outputRootId, outputRelativePath } = outcome;
     if (!outputRootId || !outputRelativePath) {
@@ -67,15 +57,20 @@ export const confirmUncensoredRunItems = async (input: {
     return { selection, item, outcome, outputRootId, outputRelativePath, outputRoot, nfoRoot };
   });
 
+  const locations = await registeredMediaLocations(
+    state.repositories.library,
+    (id) => state.repositories.mediaRoots.get(id),
+    resolved.map(({ outputRoot, outputRelativePath }) => resolveRootRelativePath(outputRoot, outputRelativePath)),
+  );
   const confirmation = await confirmUncensoredOutputs(
     resolved.map(({ selection, item, outcome, outputRelativePath, outputRoot, nfoRoot }) => ({
       fileId: item.id,
       videoPath: resolveRootRelativePath(outputRoot, outputRelativePath),
-      metadataVideoPath: outcome.nfoRootId
-        ? resolveRootRelativePath(nfoRoot, resolveScrapeMetadataVideoPath({ ...item, ...outcome }))
-        : undefined,
       nfoPath: outcome.nfoRelativePath ? resolveRootRelativePath(nfoRoot, outcome.nfoRelativePath) : undefined,
       crawlerData: outcome.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(outcome.crawlerDataJson)) : undefined,
+      groupId: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.groupId,
+      registeredAssets: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.assets,
+      metadataVideoPath: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.strmPath,
       choice: selection.choice,
     })),
     configuration,
@@ -90,16 +85,15 @@ export const confirmUncensoredRunItems = async (input: {
           updates.map(async (update) => {
             const target = resolved.find(({ item }) => item.id === update.fileId);
             if (!target) throw new Error(`Uncensored confirmation item disappeared: ${update.fileId}`);
-            const { outcome, outputRoot, outputRootId, outputRelativePath, nfoRoot } = target;
+            const { outcome, outputRootId, outputRelativePath } = target;
             const [entry, fileStats] = await Promise.all([
               state.repositories.library.getEntry(outputRootId, outputRelativePath),
               stat(update.sourceVideoPath),
             ]);
             return buildUncensoredRevision({
+              roots: [...roots.values()],
               update,
               outcome,
-              outputRoot,
-              nfoRoot,
               entry,
               size: fileStats.size,
               modifiedAt: fileStats.mtime,
@@ -108,6 +102,7 @@ export const confirmUncensoredRunItems = async (input: {
         );
         await commitPublishedMedia(createPublicationPlan(operationId, "maintenance", plan, [...roots.values()]), {
           journal: state.repositories.publicationJournal,
+          outputs: state.repositories.library,
           repairIssues: state.repositories.libraryRepairIssues,
           resolveRoot: async (rootId) => {
             const root = roots.get(rootId);
@@ -123,6 +118,8 @@ export const confirmUncensoredRunItems = async (input: {
   // failure counts, and every reason is already logged by the runtime.
   return {
     updatedCount: confirmation.updatedCount,
-    items: confirmation.items.map(({ assets: _assets, ...item }) => item),
+    items: confirmation.items.map(
+      ({ assets: _assets, outputAssets: _outputAssets, removedAssetPaths: _removedAssetPaths, ...item }) => item,
+    ),
   };
 };

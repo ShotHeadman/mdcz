@@ -108,6 +108,8 @@ export interface MaintenanceApplyBatch {
 }
 
 export interface MaintenanceLibrarySource {
+  nfo?: RootFileRef;
+  strm?: RootFileRef;
   libraryItemId: string;
   libraryFileId: string;
   rootId: string;

@@ -11,7 +11,7 @@
 
 ## 2. Core Mindset: Aggressive Modernization & Anti-Bloat
 - **Zero Legacy Baggage**:
-  - The project is under active development and testing. **Zero backward compatibility or migration concerns.**
+  - The project is under active development and testing. **Zero backward compatibility concerns for application code.** Released database migrations must not be modified; subsequent database changes require new migrations.
   - **NEVER** keep backward compatibility shims, deprecated methods, or fallback branches for legacy behavior.
   - **DO NOT** hesitate to break outdated interfaces or structures if it leads to cleaner, more maintainable code.
 - **Bias for Deletion & Simplicity**:

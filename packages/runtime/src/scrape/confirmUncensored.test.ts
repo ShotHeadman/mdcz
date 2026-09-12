@@ -58,6 +58,7 @@ const fixture = async () => {
     };
   });
   for (const item of items) await writeFile(item.metadataVideoPath, item.videoPath);
+
   const journal = createMemoryPublicationJournal();
   const mediaRoot = { id: "root", hostPath: root };
   const generator = new NfoGenerator();
@@ -80,6 +81,7 @@ const fixture = async () => {
           ref: { rootId: "root", relativePath: parse(videoPath).base },
           fileInfo: { ...parseFileInfo(videoPath), isSubtitled: true, subtitleTag: "中文字幕" },
           nfoPath,
+          strmPath: join(metadata, `${parse(videoPath).name}.strm`),
           crawlerData: data,
           assets: { poster: join(source, "poster.jpg"), actorPhotos: [], sceneImages: [] },
           currentDir: source,
@@ -142,7 +144,7 @@ describe("confirmUncensoredOutputs", () => {
         expect(await readFile(target, "utf8")).toBe(parse(item.videoPath).base);
         expect(await readFile(join(metadata, `${parse(item.videoPath).name}-leak.strm`), "utf8")).toBe(target);
         await expect(readFile(item.videoPath)).rejects.toMatchObject({ code: "ENOENT" });
-        await expect(readFile(item.metadataVideoPath)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await readFile(item.metadataVideoPath, "utf8")).toBe(item.videoPath);
       }
     }
     for (const [original, renamed] of [
@@ -154,17 +156,42 @@ describe("confirmUncensoredOutputs", () => {
     }
     if (!failure) {
       expect(await readFile(join(metadata, "poster.jpg"), "utf8")).toBe("poster.jpg");
-      await expect(readFile(join(source, "movie.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(source, "movie.nfo"), "utf8")).toContain("Original");
     }
   });
 
-  it("reports missing output per item without publishing", async () => {
+  it.each([
+    "missing-video",
+    "disabled-nfo",
+  ])("requires media but does not require NFO ownership: %s", async (scenario) => {
     const { items, deps } = await fixture();
-    await rm(items[0].videoPath);
-    const result = await confirmUncensoredOutputs([items[0]], defaultConfiguration, deps);
-    expect(result.updatedCount).toBe(0);
-    expect(result.failures[0].message).toContain("output files not found");
-    expect(deps.publish).not.toHaveBeenCalled();
+    const config = structuredClone(defaultConfiguration);
+    if (scenario === "missing-video") await rm(items[0].videoPath);
+    else {
+      config.download.generateNfo = false;
+      const scanned = await deps.localScanService.scanVideo(
+        { id: "root", hostPath: "", displayName: "", createdAt: new Date(), updatedAt: new Date() },
+        items[0].videoPath,
+        "extrafanart",
+      );
+      vi.mocked(deps.localScanService.scanVideo).mockResolvedValue({ ...scanned, nfoPath: undefined });
+    }
+    const result = await confirmUncensoredOutputs(
+      [{ ...items[0], nfoPath: scenario === "disabled-nfo" ? undefined : items[0].nfoPath }],
+      config,
+      deps,
+    );
+    if (scenario === "missing-video") {
+      expect(result.updatedCount).toBe(0);
+      expect(result.failures[0].message).toContain("output files not found");
+      expect(deps.publish).not.toHaveBeenCalled();
+    } else {
+      expect(result.failures).toEqual([]);
+      expect(result.updatedCount).toBe(1);
+      expect(result.items[0].targetNfoPath).toBeUndefined();
+      expect(result.items[0].outputAssets.map((asset) => asset.kind)).toContain("strm");
+      expect(deps.nfoGenerator.writeNfo).not.toHaveBeenCalled();
+    }
   });
 
   it("rejects multipart main-video conflicts without changing paths or shared resources", async () => {

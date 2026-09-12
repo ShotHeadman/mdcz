@@ -378,7 +378,7 @@ describe("buildServer maintenance integration", () => {
     expect(await readFile(organizedNfo, "utf8")).toContain("ABC-125_new-poster.jpg");
     await expect(access(join(sourceDir, "ABC-125.en.srt"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(sourceDir, "ABC-125.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(access(join(sourceMetadataDir, "ABC-125-poster.jpg"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(sourceMetadataDir, "ABC-125-poster.jpg"))).resolves.toBeUndefined();
   });
 
   it.each([false, true])("rebuilds and publishes shared metadata once (multipart=%s)", async (multipart) => {
@@ -401,7 +401,7 @@ describe("buildServer maintenance integration", () => {
     }) as AggregationService;
     const aggregate = vi.spyOn(aggregation, "aggregate");
     const downloadAll = vi.fn(async () => ({ sceneImages: [] as string[], downloaded: [] as string[] }));
-    const { fastify } = await createTestServer({
+    const { fastify, services } = await createTestServer({
       createMaintenanceRuntime: (config) => createMaintenanceRuntime(config, aggregation, downloadAll),
     });
     const token = await loginAsAdmin(fastify);
@@ -416,6 +416,16 @@ describe("buildServer maintenance integration", () => {
       },
       translate: { enableTranslation: false },
     });
+    const state = await services.persistence.getState();
+    for (const name of sourceNames)
+      await state.repositories.library.upsertEntry({
+        rootId,
+        rootRelativePath: name,
+        assets: [
+          { kind: "nfo", uri: "ABC-300.nfo", rootId, relativePath: "ABC-300.nfo", published: true },
+          { kind: "poster", uri: "ABC-300-poster.jpg", rootId, relativePath: "ABC-300-poster.jpg", published: true },
+        ],
+      });
     const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "rebuild_all", sourceNames);
     expect(session.previews[0]).toMatchObject({
       presetId: "rebuild_all",
@@ -449,7 +459,7 @@ describe("buildServer maintenance integration", () => {
     expect(organizedNfoContent).not.toContain("<trailer>");
     expect(organizedNfoContent).not.toContain("trailer_source_url");
     expect(organizedNfoContent).not.toContain("scene_images");
-    await expect(access(join(root, "ABC-300.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(root, "ABC-300.nfo"))).resolves.toBeUndefined();
   });
 
   it("refreshes mirrored metadata while preserving video names and kept artwork", async () => {
@@ -457,6 +467,7 @@ describe("buildServer maintenance integration", () => {
     const metadataRoot = await createTempRoot("maintenance-refresh-metadata");
     const baseName = "ABC-400_LocalName";
     await writeFile(join(root, `${baseName}.mp4`), "video");
+
     const posterPath = join(metadataRoot, `${baseName}-poster.jpg`);
     const posterBytes = createTestPngBytes();
     await writeFile(posterPath, posterBytes);
@@ -485,7 +496,7 @@ describe("buildServer maintenance integration", () => {
     const network = new NetworkClient();
     const download = vi.spyOn(network, "download");
     const manager = new DownloadManager(network, { imageHostCooldownStore: new MemoryImageHostCooldownStore() });
-    const { fastify } = await createTestServer({
+    const { fastify, services } = await createTestServer({
       createMaintenanceRuntime: (config) =>
         createMaintenanceRuntime(config, aggregation, manager.downloadAll.bind(manager)),
     });
@@ -504,6 +515,28 @@ describe("buildServer maintenance integration", () => {
         downloadTrailer: false,
         nfoNaming: "filename",
       },
+    });
+    const state = await services.persistence.getState();
+    const outputRoot = await services.mediaRoots.ensurePathRecord({ hostPath: metadataRoot });
+    await state.repositories.library.upsertEntry({
+      rootId,
+      rootRelativePath: `${baseName}.mp4`,
+      assets: [
+        {
+          kind: "nfo",
+          uri: `${baseName}.nfo`,
+          rootId: outputRoot.id,
+          relativePath: `${baseName}.nfo`,
+          published: true,
+        },
+        {
+          kind: "poster",
+          uri: `${baseName}-poster.jpg`,
+          rootId: outputRoot.id,
+          relativePath: `${baseName}-poster.jpg`,
+          published: true,
+        },
+      ],
     });
     const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "refresh_data", [
       `${baseName}.mp4`,

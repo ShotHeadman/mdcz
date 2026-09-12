@@ -35,6 +35,19 @@ export const createPublicationPlan = (
   return {
     operationId,
     operationType,
+    media: prepared.media?.map((media) => ({
+      source: toRef(media.sourcePath),
+      target: toRef(media.targetPath),
+      size: media.size,
+      assets: media.assets?.flatMap((asset): AssetRef[] =>
+        asset.targetPath
+          ? [{ type: "local", kind: asset.kind, file: toRef(asset.targetPath) }]
+          : asset.url
+            ? [{ type: "remote", kind: asset.kind, url: asset.url }]
+            : [],
+      ),
+    })),
+    boundary: prepared.boundary,
     videos: prepared.videos?.map(toMove),
     sidecars: (prepared.sidecars ?? []).map(toMove),
     artifacts: prepared.artifacts.map((artifact) => ({

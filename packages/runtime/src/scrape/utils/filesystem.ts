@@ -46,8 +46,8 @@ export const listVideoFiles = async (
 ): Promise<string[]> =>
   listFiles(dirPath, recursive, signal, excludeDirectoryPaths, {
     ...options,
-    filterFile: (path) =>
-      extensions.has(extname(path).toLowerCase()) && (!options.filterFile || options.filterFile(path)),
+    filterFile: async (path) =>
+      extensions.has(extname(path).toLowerCase()) && (!options.filterFile || (await options.filterFile(path))),
   });
 
 export const ensureParentDirectory = async (targetPath: string): Promise<void> => {

@@ -34,6 +34,7 @@ describe("recoverPublications", () => {
     ["published", false],
     ["backed-up", true],
     ["published", true],
+    ["unpublished-target", false],
   ] as const)("restores moved video and subtitles after a crash at %s (replacing=%s)", async (phase, replacing) => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-moves-"));
     directories.push(directory);
@@ -46,7 +47,10 @@ describe("recoverPublications", () => {
       const backup = `${target}.bak`;
       await writeFile(path.join(directory, phase === "published" ? target : temporary), `original-${extension}`);
       if (replacing) await writeFile(path.join(directory, backup), `previous-${extension}`);
+      const { size, mtimeMs, ino, dev } = await stat(path.join(directory, phase === "published" ? target : temporary));
+      if (phase === "unpublished-target") await writeFile(path.join(directory, target), `foreign-${extension}`);
       manifest.entries.push({
+        staged: phase === "unpublished-target" ? undefined : { size, mtimeMs, ino, dev },
         rootId: "root",
         relativePath: target,
         temporaryPath: temporary,
@@ -67,12 +71,16 @@ describe("recoverPublications", () => {
         await expect(readFile(path.join(directory, `target.${extension}`), "utf8")).resolves.toBe(
           `previous-${extension}`,
         );
+      } else if (phase === "unpublished-target") {
+        await expect(readFile(path.join(directory, `target.${extension}`), "utf8")).resolves.toBe(
+          `foreign-${extension}`,
+        );
       } else {
         await expect(stat(path.join(directory, `target.${extension}`))).rejects.toMatchObject({ code: "ENOENT" });
       }
     }
-    expect(journal.listUnfinished()).toEqual([]);
-    await expect(residue(directory)).resolves.toEqual([]);
+    expect(journal.listUnfinished()).toHaveLength(phase === "unpublished-target" ? 1 : 0);
+    if (phase !== "unpublished-target") await expect(residue(directory)).resolves.toEqual([]);
   });
   it("rolls back a pending row that has both backup and new target on disk", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
@@ -85,9 +93,11 @@ describe("recoverPublications", () => {
     await writeFile(temporary, "partial");
     const journal = createMemoryPublicationJournal();
     const repairIssues = { record: vi.fn(() => undefined), resolve: vi.fn(() => undefined) };
+    const { size, mtimeMs, ino, dev } = await stat(target);
     const manifest: PublicationJournalManifest = {
       entries: [
         {
+          staged: { size, mtimeMs, ino, dev },
           rootId: "root-1",
           relativePath: "movie.nfo",
           temporaryPath: siblingRelative("movie.nfo", "op-1", "part"),
@@ -222,7 +232,7 @@ describe("recoverPublications", () => {
         journal,
         commit: () => undefined,
       }),
-    ).rejects.toThrow("unfinished operation");
+    ).rejects.toThrow("未完成的发布操作");
     await expect(readFile(target, "utf8")).resolves.toBe("new-nfo");
   });
 
@@ -341,6 +351,7 @@ describe("recoverPublications", () => {
   ])("records a repair issue for a malformed stored manifest %#", async (manifest) => {
     const journal = adaptPublicationJournal({
       begin() {},
+      stage() {},
       commit(_operationId, write) {
         return write();
       },

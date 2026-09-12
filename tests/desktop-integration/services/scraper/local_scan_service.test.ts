@@ -63,6 +63,64 @@ describe("LocalScanService", () => {
     expect(entries).toEqual([]);
   });
 
+  it("uses registered metadata paths after settings change and excludes generated STRMs from scans", async () => {
+    const root = await createTempDir();
+    const source = join(root, "source");
+    const metadata = join(root, "metadata");
+    await Promise.all([mkdir(source), mkdir(metadata)]);
+    const video = join(source, "ABC-123-original.mp4");
+    const nfo = join(metadata, "ABC-123-template.nfo");
+    const strm = join(metadata, "ABC-123-template.strm");
+    await writeFile(video, "video");
+    await writeFile(join(source, "DEF-456.mp4"), "another video");
+    await writeFile(join(metadata, "poster.jpg"), "poster");
+    await writeFile(
+      nfo,
+      '<movie><num>ABC-123</num><title>Registered</title><thumb aspect="poster">poster.jpg</thumb></movie>',
+    );
+    await writeFile(strm, video);
+    const oldStrm = join(root, "old-output.strm");
+    await writeFile(oldStrm, video);
+    const mediaRoot = { id: "root", hostPath: root, displayName: "root", createdAt: new Date(), updatedAt: new Date() };
+    const locations = {
+      mediaPath: "/changed",
+      metadataPath: "/changed-metadata",
+      registeredOutputs: new Map([
+        [
+          video,
+          {
+            nfoPath: nfo,
+            strmPath: strm,
+            generatedStrmPaths: [strm, oldStrm],
+            assets: { poster: join(metadata, "poster.jpg"), sceneImages: [], actorPhotos: [] },
+          },
+        ],
+      ]),
+    };
+    const scanner = new LocalScanService();
+    expect(
+      (await scanner.scan(mediaRoot, "extrafanart", undefined, locations))
+        .map((entry) => entry.fileInfo.filePath)
+        .sort(),
+    ).toEqual([video, join(source, "DEF-456.mp4")].sort());
+    const [entry] = await scanner.scanFiles(mediaRoot, [video], "extrafanart", undefined, locations);
+    expect(entry).toMatchObject({
+      nfoPath: nfo,
+      strmPath: strm,
+      crawlerData: { title: "Registered" },
+      assets: { poster: join(metadata, "poster.jpg") },
+    });
+    await expect(scanner.scanFiles(mediaRoot, [strm], "extrafanart", undefined, locations)).rejects.toThrow("生成");
+    await expect(scanner.scanFiles(mediaRoot, [oldStrm], "extrafanart", undefined, locations)).rejects.toThrow("生成");
+    await rm(nfo);
+    await rm(strm);
+    await writeFile(join(source, "movie.nfo"), "source metadata");
+    const [missing] = await scanner.scanFiles(mediaRoot, [video], "extrafanart", undefined, locations);
+    expect(missing.nfoPath).toBe(nfo);
+    expect(missing.strmPath).toBe(strm);
+    expect(missing.scanError).toContain("NFO");
+  });
+
   it("scans only the selected files in selected-file maintenance scans", async () => {
     const root = await createTempDir();
     const selectedPath = join(root, "ABC-123.mp4");

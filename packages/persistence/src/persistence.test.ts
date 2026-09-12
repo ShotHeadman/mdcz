@@ -60,6 +60,7 @@ describe("Persistence migrations", () => {
     expect(indexes).toEqual(
       expect.arrayContaining([
         "library_item_assets_item_idx",
+        "library_item_assets_output_idx",
         "library_item_files_item_idx",
         "library_item_files_root_path_idx",
         "library_items_source_run_idx",
@@ -149,7 +150,19 @@ describe("Persistence migrations", () => {
         )
         .run("asset-1", "library-1", "poster", "ABC-001/poster.jpg", "path-deterministic", "ABC-001/poster.jpg", 10);
 
+      await cp(
+        join(defaultMigrationsFolder, "0001_additive_roots_and_scan_tasks.sql"),
+        join(migrations.path, "0001_additive_roots_and_scan_tasks.sql"),
+      );
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 1) }),
+      );
+      runMigrations(database, { migrationsFolder: migrations.path });
+      expect(database.sqlite.prepare("SELECT * FROM library_item_assets").get()).not.toHaveProperty("published");
       runMigrations(database);
+      runMigrations(database);
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 3 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -218,6 +231,8 @@ describe("Persistence migrations", () => {
           uri: "ABC-001/poster.jpg",
           root_id: "path-deterministic",
           relative_path: "ABC-001/poster.jpg",
+          published: 0,
+          historical: 0,
           created_at: 10,
         },
       ]);

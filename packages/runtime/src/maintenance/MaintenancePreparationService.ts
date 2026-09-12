@@ -217,23 +217,33 @@ export class MaintenancePreparationService {
     }
 
     if (!this.preset.steps.organize) {
+      const layout = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState);
       const metadataDir = entry.nfoPath
         ? dirname(entry.nfoPath)
-        : this.deps.fileOrganizer.resolveMetadataDir(entry.currentDir, config);
-      const layout = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState);
+        : entry.strmPath
+          ? dirname(entry.strmPath)
+          : (layout.metadataDir ?? layout.outputDir);
       return {
-        plan: {
-          outputDir: entry.currentDir,
-          metadataDir,
-          targetVideoPath: entry.fileInfo.filePath,
-          nfoPath:
-            entry.nfoPath && !isMovieNfoBaseName(basename(entry.nfoPath, ".nfo"))
-              ? entry.nfoPath
-              : join(metadataDir, basename(layout.nfoPath)),
-          ...(metadataDir === entry.currentDir
-            ? {}
-            : { strmPath: join(metadataDir, `${basename(entry.fileInfo.filePath, entry.fileInfo.extension)}.strm`) }),
-        },
+        plan: await this.deps.fileOrganizer.resolveOutputPlan(
+          {
+            outputDir: entry.currentDir,
+            metadataDir,
+            metadataRoot: metadataDir,
+            targetVideoPath: entry.fileInfo.filePath,
+            nfoPath:
+              entry.nfoPath && !isMovieNfoBaseName(basename(entry.nfoPath, ".nfo"))
+                ? entry.nfoPath
+                : join(metadataDir, basename(layout.nfoPath)),
+            ...(metadataDir === entry.currentDir
+              ? {}
+              : {
+                  strmPath:
+                    entry.strmPath ?? join(metadataDir, basename(layout.strmPath ?? `${entry.fileInfo.fileName}.strm`)),
+                }),
+          },
+          entry.fileInfo.filePath,
+          { allowSharedDirectory: true },
+        ),
         pathDiff: undefined,
       };
     }

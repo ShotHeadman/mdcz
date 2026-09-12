@@ -18,7 +18,16 @@ export interface PublicationMove {
   content?: string;
 }
 
+export interface PublicationBoundary {
+  writeRoots: Array<{ path: string; realPath: string }>;
+  writablePaths: Array<{ path: string; realPath: string }>;
+  readOnlyPaths: Array<{ path: string; realPath: string }>;
+  readOnlyDirectories: Array<{ path: string; realPath: string }>;
+}
+
 export interface PublicationPlan {
+  media?: Array<{ source: RootFileRef; target: RootFileRef; size: number; assets?: AssetRef[] }>;
+  boundary?: PublicationBoundary;
   operationId: string;
   operationType: "scrape" | "maintenance";
   videos?: PublicationMove[];
@@ -26,6 +35,8 @@ export interface PublicationPlan {
   artifacts: Array<{ target: RootFileRef; content: PublicationContent }>;
   assets: AssetRef[];
   obsolete: RootFileRef[];
+  deleteFiles?: RootFileRef[];
+  editFiles?: RootFileRef[];
   replaceExistingTargets?: RootFileRef[];
 }
 
@@ -39,6 +50,8 @@ export interface PreparedPublicationMove {
 }
 
 export interface PreparedPublicationPlan {
+  media?: Array<{ sourcePath: string; targetPath: string; size: number; assets?: PreparedPublicationPlan["assets"] }>;
+  boundary?: PublicationBoundary;
   videos?: PreparedPublicationMove[];
   sidecars?: PreparedPublicationMove[];
   artifacts: Array<{ targetPath: string; content: Exclude<PublicationContent, { kind: "download" }> }>;
@@ -70,7 +83,15 @@ export interface PublicationRepairPort {
   resolve(operationId: string, rootId: string, relativePath: string): Promise<void> | void;
 }
 
+export interface PublicationFileIdentity {
+  size: number;
+  mtimeMs: number;
+  ino: number;
+  dev: number;
+}
+
 export interface PublicationJournalManifestEntry {
+  staged?: PublicationFileIdentity;
   rootId: string;
   relativePath: string;
   temporaryPath: string;
@@ -89,6 +110,7 @@ export interface PublicationJournalManifestObsolete extends RootFileRef {
 }
 
 export interface PublicationJournalManifest {
+  boundary?: PublicationBoundary;
   entries: PublicationJournalManifestEntry[];
   obsolete: PublicationJournalManifestObsolete[];
 }
@@ -110,13 +132,24 @@ export interface PublicationJournalPort {
     manifest: PublicationJournalManifest;
     createdAt: Date;
   }): void;
+  stage(operationId: string, manifest: PublicationJournalManifest): void;
   commit<T>(operationId: string, write: () => T): T;
   finish(operationId: string): void;
   conflicts(refs: readonly RootFileRef[]): { operationId: string } | null;
   listUnfinished(): PublicationJournalRecord[];
 }
 
+export interface PublicationOutputPort {
+  publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }): {
+    files: Array<RootFileRef & { itemId: string; fileId?: string }>;
+    assets: Array<RootFileRef & { itemId: string; kind: string; published: boolean; historical: boolean }>;
+  };
+  registerPublishedOutputs(outputs: Array<RootFileRef & { itemId: string; kind: string }>): void;
+  releaseOutputReferences(refs: RootFileRef[]): void;
+}
+
 export interface DurablePublicationContext {
+  outputs?: PublicationOutputPort;
   journal: PublicationJournalPort;
   repairIssues?: PublicationRepairPort;
 }

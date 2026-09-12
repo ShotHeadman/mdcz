@@ -76,6 +76,7 @@ export class ServerPersistenceService {
       const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
       await recoverPublications({
         journal: publicationJournal,
+        outputs: new LibraryRepository(database),
         repairIssues: libraryRepairIssues,
         resolveRoot: async (rootId) => await mediaRoots.get(rootId),
       });

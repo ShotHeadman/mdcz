@@ -292,8 +292,10 @@ export class FileScraper {
         actorPhotoPaths: actorOutput.actorPhotoPaths,
         existingNfoPath: preservedNfoPath,
         organizePlan: plan,
+        renameSubtitles: configuration.behavior.successFileRename,
         nfoNaming: configuration.download.nfoNaming,
         assetNamingMode: configuration.naming.assetNamingMode,
+        strmPathMappings: configuration.paths.strmPathMappings,
         remoteData: crawlerData,
         writeNfo: async (assets, writeFile) =>
           await writePreparedNfo({
@@ -315,7 +317,7 @@ export class FileScraper {
       });
       throwIfAborted(signal);
       const publicationPlan = createPublicationPlan(prepared.operationId, "scrape", publication.plan, roots);
-      const video = publicationPlan.videos?.[0];
+      const video = publicationPlan.media?.[0];
       if (!video) throw new Error("Scrape publication plan is missing its main video");
       const toRef = (absolutePath: string) => toRootFileRef(absolutePath, roots);
       const classification = classifyMovie(fileInfo, crawlerData, prepared.localState);

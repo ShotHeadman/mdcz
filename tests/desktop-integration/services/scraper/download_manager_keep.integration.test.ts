@@ -410,7 +410,7 @@ describe("DownloadManager keep flags", () => {
     expect(assets.sceneImages).toEqual([webp]);
     expect(assets.downloaded).toEqual([webp]);
     await expect(readFile(webp, "utf8")).resolves.toBe("downloaded:https://example.com/scene-001.jpg");
-    await expect(access(scenePath(root, 1))).rejects.toThrow();
+    await expect(readFile(scenePath(root, 1), "utf8")).resolves.toBe("old-scene");
   });
 
   it("only derives secondary artwork when a kept thumb is actually available", async () => {
@@ -597,8 +597,8 @@ describe("DownloadManager keep flags", () => {
     expect(assets.poster).toBe(join(root, "poster.webp"));
     expect(assets.fanart).toBe(join(root, "fanart.webp"));
     expect(assets.downloaded).toEqual([join(root, "thumb.webp"), join(root, "poster.webp"), join(root, "fanart.webp")]);
-    await expect(access(join(root, "thumb.jpg"))).rejects.toThrow();
-    await expect(access(join(root, "fanart.jpg"))).rejects.toThrow();
+    await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe("old-thumb");
+    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("old-fanart");
   });
 
   it("derives a missing poster from landscape thumb artwork and records the thumb source", async () => {
@@ -829,7 +829,7 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("replaces, retains, or clears scene image sets based on refresh intent and validation", async () => {
+  it("updates active scene image sets without deleting old output files", async () => {
     const cases = [
       {
         seed: { "extrafanart/fanart1.jpg": "old-1", "extrafanart/fanart2.jpg": "old-2" },
@@ -840,7 +840,7 @@ describe("DownloadManager keep flags", () => {
         assert: async (root: string, assets: Awaited<ReturnType<DownloadManager["downloadAll"]>>) => {
           await expectSceneImages(root, assets, ["https://example.com/scene-new-1.jpg"]);
           expect(assets.downloaded).toEqual([scenePath(root, 1)]);
-          await expect(access(scenePath(root, 2))).rejects.toThrow();
+          await expect(readFile(scenePath(root, 2), "utf8")).resolves.toBe("old-2");
         },
       },
       {
@@ -864,7 +864,7 @@ describe("DownloadManager keep flags", () => {
         assert: async (root: string, assets: Awaited<ReturnType<DownloadManager["downloadAll"]>>) => {
           expect(assets.sceneImages).toEqual([]);
           expect(assets.downloaded).toEqual([]);
-          await expect(access(scenePath(root, 1))).rejects.toThrow();
+          await expect(readFile(scenePath(root, 1), "utf8")).resolves.toBe("old-1");
         },
       },
       {

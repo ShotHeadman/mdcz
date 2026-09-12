@@ -53,6 +53,13 @@ const fixture = async () => {
   const plan: PublicationPlan = {
     operationId: "run:attempt",
     operationType: "scrape",
+    media: [
+      {
+        source: { rootId: "input", relativePath: "movie.mp4" },
+        target: { rootId: "output", relativePath: "ABC-001/movie.mp4" },
+        size: 5,
+      },
+    ],
     videos: [
       {
         source: { rootId: "input", relativePath: "movie.mp4" },
@@ -95,12 +102,30 @@ const fixture = async () => {
 };
 
 describe("commitScrapeTerminalResult", () => {
-  it("does not move files or persist an outcome on a publication conflict", async () => {
+  it.each([
+    "video",
+    "unknown-output",
+    "other-owner",
+  ])("does not invoke failure movement on publication conflict: %s", async (scenario) => {
     const test = await fixture();
     const store = scrapeRuns();
     const transitions = noFileTransitions();
     await mkdir(path.dirname(test.target), { recursive: true });
-    await writeFile(test.target, "existing video");
+    const conflictPath = scenario === "video" ? test.target : path.join(path.dirname(test.target), "movie.nfo");
+    await writeFile(conflictPath, "existing bytes");
+    const nfo = { rootId: "output", relativePath: "ABC-001/movie.nfo" };
+    test.success.plan.replaceExistingTargets = [nfo];
+    const outputs = {
+      publicationSnapshot: () => ({
+        files: [],
+        assets:
+          scenario === "other-owner"
+            ? [{ ...nfo, itemId: "other", kind: "nfo", published: true, historical: false }]
+            : [],
+      }),
+      registerPublishedOutputs: vi.fn(),
+      releaseOutputReferences: vi.fn(),
+    };
     const journal = createMemoryPublicationJournal();
     await expect(
       commitScrapeTerminalResult({
@@ -111,6 +136,7 @@ describe("commitScrapeTerminalResult", () => {
         scrapeRuns: store,
         resolveRoot: test.resolveRoot,
         journal,
+        outputs,
         fileTransitions: transitions,
       }),
     ).rejects.toBeInstanceOf(PublicationConflictError);
@@ -119,8 +145,11 @@ describe("commitScrapeTerminalResult", () => {
     expect(store.commitOutcome).not.toHaveBeenCalled();
     expect(store.commitSuccessOutcome).not.toHaveBeenCalled();
     expect(await readFile(test.source, "utf8")).toBe("video");
-    expect(await readFile(test.target, "utf8")).toBe("existing video");
-    await expect(readFile(path.join(path.dirname(test.target), "movie.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(conflictPath, "utf8")).toBe("existing bytes");
+    if (scenario === "video")
+      await expect(readFile(path.join(path.dirname(test.target), "movie.nfo"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     expect(journal.listUnfinished()).toEqual([]);
   });
   it("persists failed and skipped outcomes without publication", async () => {

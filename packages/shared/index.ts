@@ -30,6 +30,7 @@ export * from "./serverApi";
 export * from "./serverDtos";
 export * from "./settingsRegistry";
 export * from "./titleRepair";
+export * from "./titleRepairDefaults";
 export * from "./toolCatalog";
 export * from "./types";
 export * from "./videoClassification";

@@ -67,6 +67,7 @@ const createCoordinator = (runtimeOverrides: Partial<MaintenanceRuntime> = {}, r
   const events: unknown[] = [];
   const ownership = new MediaPathOwnership();
   const library = {
+    registeredOutputs: vi.fn(async () => new Map()),
     resolveSource: vi.fn(async () => null),
     preflightRefresh: vi.fn(async () => undefined),
     publishRefresh: vi.fn(async () => ({ libraryItemId: "test-item" })),
@@ -265,7 +266,7 @@ describe("MaintenanceSessionCoordinator", () => {
           entry: { ...entry, fileInfo: { ...entry.fileInfo, filePath: outputPath } },
           outputRelativePath: "one.mp4",
           plan: {
-            videos: [{ sourcePath: outputPath, targetPath: outputPath, size: 1 }],
+            media: [{ sourcePath: outputPath, targetPath: outputPath, size: 1 }],
             artifacts: [],
             assets: [],
             obsoletePaths: [],
@@ -310,7 +311,7 @@ describe("MaintenanceSessionCoordinator", () => {
         entry,
         outputRelativePath: "missing.mp4",
         plan: {
-          videos: [{ sourcePath: "/missing/mdcz-output.mp4", targetPath: "/missing/mdcz-output.mp4", size: 1 }],
+          media: [{ sourcePath: "/missing/mdcz-output.mp4", targetPath: "/missing/mdcz-output.mp4", size: 1 }],
           artifacts: [],
           assets: [],
           obsoletePaths: [],
@@ -515,7 +516,7 @@ describe("MaintenanceSessionCoordinator", () => {
           entry: { ...entry, fileInfo: { ...entry.fileInfo, filePath: outputPath } },
           outputRelativePath: "one.mp4",
           plan: {
-            videos: [{ sourcePath: outputPath, targetPath: outputPath, size: 1 }],
+            media: [{ sourcePath: outputPath, targetPath: outputPath, size: 1 }],
             artifacts: [],
             assets: [],
             obsoletePaths: [],
@@ -612,7 +613,7 @@ describe("MaintenanceSessionCoordinator", () => {
               entry,
               outputRelativePath: "owned.mp4",
               plan: {
-                videos: [{ sourcePath: outputPath, targetPath: outputPath, size: 1 }],
+                media: [{ sourcePath: outputPath, targetPath: outputPath, size: 1 }],
                 artifacts: [],
                 assets: [],
                 obsoletePaths: [],

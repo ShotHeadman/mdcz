@@ -181,6 +181,7 @@ export interface ServerApiContract {
     snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto>;
     pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
+    removeRecord(input: FileActionInput): Promise<FileActionResponse>;
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;

@@ -10,7 +10,11 @@ import type {
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { RuntimeDownloadNetworkClient } from "../network";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import {
+  commitRegisteredPublication,
+  type RegisteredPublicationContext,
+  resolveRegisteredNfoPaths,
+} from "../publication";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
 import type { RuntimeLogger } from "../shared";
@@ -245,14 +249,28 @@ export const applyAmazonPosters = async (
         const validation = await validateImageFn(tempPosterPath);
         if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
         const data = await readFile(tempPosterPath);
+        const registered = dependencies.outputs
+          ? await resolveRegisteredNfoPaths(normalizedNfoPath, dependencies.outputs, async (id) => {
+              const root = dependencies.roots.find((root) => root.id === id);
+              if (!root) throw new Error(`Publication root not found: ${id}`);
+              return root;
+            })
+          : undefined;
         await commitRegisteredPublication(
           {
             operationId: `amazon-poster:${savedPosterPath}`,
+            mediaPaths: registered?.mediaPaths,
+            readOnlyDirectories: registered?.readOnlyDirectories,
             operationType: "maintenance",
-            artifacts: [{ targetPath: savedPosterPath, content: { kind: "bytes" as const, data } }],
+            artifacts: [{ kind: "poster", targetPath: savedPosterPath, content: { kind: "bytes" as const, data } }],
             replaceExistingArtifacts: true,
           },
-          { journal: dependencies.journal, repairIssues: dependencies.repairIssues, roots: dependencies.roots },
+          {
+            journal: dependencies.journal,
+            outputs: dependencies.outputs,
+            repairIssues: dependencies.repairIssues,
+            roots: dependencies.roots,
+          },
         );
       } finally {
         await unlink(tempPosterPath).catch(() => undefined);
