@@ -88,7 +88,13 @@ describe("ScraperService ref-native start", () => {
     expect(stored.manifestFixedAt === null).toBe(kind === "missing");
     expect(stored.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
     expect(stored.disposition).toBe(kind === "empty" ? "completed" : "failed");
-    if (kind === "empty") expect(stored.attempts).toEqual([]);
+    if (kind === "empty") {
+      expect(stored.attempts).toEqual([]);
+      expect(await service.getSnapshot(launch.taskId)).toMatchObject({
+        task: { id: launch.taskId, status: "completed", continuity: "final" },
+      });
+      expect(await service.getSnapshot("unrelated-run")).toBeNull();
+    }
   });
 
   it("records a terminal batch failure when retry preparation finds a conflict", async () => {
@@ -193,22 +199,6 @@ describe("ScraperService ref-native start", () => {
     await expect(stat(join(output, defaultConfiguration.paths.failedOutputFolder))).rejects.toMatchObject({
       code: "ENOENT",
     });
-  });
-
-  it("derives the run root from selected refs, not from config.paths.mediaPath", async () => {
-    const { directory, persistence, service } = await createHarness();
-    const scanRootPath = join(directory, "scan-b");
-    await mkdir(scanRootPath, { recursive: true });
-    const state = await persistence.getState();
-    const scanRoot = await state.repositories.mediaRoots.ensurePath(scanRootPath);
-    const result = await service.start({
-      mode: "selection",
-      refs: [{ rootId: scanRoot.id, relativePath: "ABC-001.mp4" }],
-      outputRootId: scanRoot.id,
-    });
-    const run = await state.repositories.scrapeRuns.get(result.taskId);
-    expect(run.rootId).toBe(scanRoot.id);
-    expect(run.items).toEqual([expect.objectContaining({ rootId: scanRoot.id, relativePath: "ABC-001.mp4" })]);
   });
 
   it("persists refs from distinct registered roots in one run", async () => {

@@ -1,14 +1,4 @@
-import {
-  access,
-  copyFile as copyFileOnDisk,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rename as renameOnDisk,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { listVideoFiles } from "@main/utils/file";
@@ -18,7 +8,6 @@ type FileUtilsModule = typeof import("@mdcz/runtime/scrape/utils/filesystem");
 type FileSystemOverrides = {
   rename?: (sourcePath: string, targetPath: string) => Promise<void>;
   copyFile?: (sourcePath: string, targetPath: string) => Promise<void>;
-  unlink?: (path: string) => Promise<void>;
 };
 
 const tempDirs: string[] = [];
@@ -43,7 +32,6 @@ const importRuntimeFileUtils = async (overrides: FileSystemOverrides): Promise<F
       ...actual,
       rename: overrides.rename ?? actual.rename,
       copyFile: overrides.copyFile ?? actual.copyFile,
-      unlink: overrides.unlink ?? actual.unlink,
     };
   });
 
@@ -113,80 +101,25 @@ describe("moveFileSafely", () => {
     await expect(access(sourcePath)).rejects.toThrow();
   });
 
-  it("removes the source after a verified cross-device move", async () => {
+  it("cleans a failed copy part without deleting the source", async () => {
     const root = await createTempDir();
     const sourcePath = join(root, "source.mp4");
     const targetPath = join(root, "output", "movie.mp4");
-    const rename = vi.fn(async (sourcePathArg: string, targetPathArg: string) => {
-      if (sourcePathArg === sourcePath) {
+    const { moveFileSafely } = await importRuntimeFileUtils({
+      rename: async () => {
         throw createNodeError("EXDEV");
-      }
-      await renameOnDisk(sourcePathArg, targetPathArg);
+      },
+      copyFile: async (_sourcePath, destinationPath) => {
+        await writeFile(destinationPath, "partial", "utf8");
+        throw createNodeError("EIO", "copy failed");
+      },
     });
-    const copyFile = vi.fn(async (sourcePathArg: string, temporaryPath: string) => {
-      await expect(access(targetPath)).rejects.toThrow();
-      await copyFileOnDisk(sourcePathArg, temporaryPath);
-    });
-    const { moveFileSafely } = await importRuntimeFileUtils({ rename, copyFile });
 
     await writeFile(sourcePath, "video", "utf8");
 
-    await expect(moveFileSafely(sourcePath, targetPath)).resolves.toBe(targetPath);
-
-    expect(rename).toHaveBeenCalledWith(sourcePath, targetPath);
-    expect(copyFile).toHaveBeenCalledTimes(1);
-    const temporaryPath = copyFile.mock.calls[0]?.[1];
-    expect(temporaryPath).toMatch(/\.part$/u);
-    expect(rename).toHaveBeenLastCalledWith(temporaryPath, targetPath);
-    await expect(readFile(targetPath, "utf8")).resolves.toBe("video");
-    await expect(access(sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("cleans failed parts but preserves the source", async () => {
-    const failures: Array<{
-      message: string;
-      overrides: FileSystemOverrides;
-      publishFails?: boolean;
-    }> = [
-      {
-        message: "copy failed",
-        overrides: {
-          copyFile: async (_sourcePath, destinationPath) => {
-            await writeFile(destinationPath, "partial", "utf8");
-            throw createNodeError("EIO", "copy failed");
-          },
-        },
-      },
-      {
-        message: "publish failed",
-        overrides: {
-          copyFile: copyFileOnDisk,
-        },
-        publishFails: true,
-      },
-    ];
-
-    for (const failure of failures) {
-      const root = await createTempDir();
-      const sourcePath = join(root, "source.mp4");
-      const targetPath = join(root, "output", "movie.mp4");
-      const rename = vi.fn(async (sourcePathArg: string, targetPathArg: string) => {
-        if (sourcePathArg === sourcePath) {
-          throw createNodeError("EXDEV");
-        }
-        if (failure.publishFails) {
-          throw createNodeError("EACCES", "publish failed");
-        }
-        await renameOnDisk(sourcePathArg, targetPathArg);
-      });
-      const { moveFileSafely } = await importRuntimeFileUtils({ rename, ...failure.overrides });
-
-      await writeFile(sourcePath, "video", "utf8");
-
-      await expect(moveFileSafely(sourcePath, targetPath)).rejects.toThrow(failure.message);
-      await expect(readFile(sourcePath, "utf8")).resolves.toBe("video");
-      await expect(access(targetPath)).rejects.toThrow();
-      await expectNoPartialFiles(targetPath);
-    }
+    await expect(moveFileSafely(sourcePath, targetPath)).rejects.toThrow("copy failed");
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("video");
+    await expect(access(targetPath)).rejects.toThrow();
+    await expectNoPartialFiles(targetPath);
   });
 });

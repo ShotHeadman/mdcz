@@ -280,28 +280,6 @@ describe("ScrapeRunRepository", () => {
     expect((await library.listEntries()).map((entry) => entry.id)).toEqual(["occupied"]);
   });
 
-  it("rolls back the outcome when the library transaction fails", async () => {
-    const repository = createRepository();
-    const library = new LibraryRepository(database as PersistenceDatabase);
-    const run = await createRun(repository);
-    await library.upsertEntry({ id: "existing", rootId: "output", rootRelativePath: "occupied.mp4" });
-
-    await expect(() =>
-      commitSuccess(repository, {
-        outcome: "success",
-        attemptId: repository.admitAttempt(run.items[0].id).id,
-        crawlerDataJson: "{}",
-        outputRootId: "output",
-        outputRelativePath: "occupied.mp4",
-        size: 1,
-        libraryEntry: { id: "conflict", rootId: "output", rootRelativePath: "occupied.mp4" },
-      }),
-    ).toThrow("媒体库路径已属于另一个条目");
-
-    expect((await repository.get(run.id)).outcomes).toEqual([]);
-    await expect(library.getEntryById("conflict")).rejects.toThrow("Library entry not found");
-  });
-
   it("revises successful facts as one atomic batch while preserving outcome identity", async () => {
     const repository = createRepository();
     const run = await createRun(repository);

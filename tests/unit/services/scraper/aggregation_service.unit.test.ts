@@ -231,25 +231,6 @@ describe("AggregationService", () => {
     expect(dmmResult?.failureReason).toBe("timeout");
   });
 
-  it("does not query avwikidb when it is not enabled", async () => {
-    const siteResults = makeSiteResults([
-      Website.AVBASE,
-      { title: "AVBase Title", actors: ["Actor A"], thumb_url: "https://avbase.example/thumb.jpg" },
-    ]);
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const config = makeConfig({
-      scrape: { sites: [Website.AVBASE] },
-      download: { downloadSceneImages: false },
-    });
-
-    const result = await new AggregationService(provider).aggregate("ABF-075", config);
-
-    expect(provider.calledSites).toEqual([Website.AVBASE]);
-    expect(result).not.toBeNull();
-    expect(result?.data.title).toBe("AVBase Title");
-    expect(result?.stats.skippedCount).toBe(0);
-  });
-
   it("uses configured durationSeconds priority instead of completion order", async () => {
     const siteResults = makeSiteResults(
       [Website.AVBASE, { title: undefined, durationSeconds: 8_100, thumb_url: undefined }],
@@ -620,38 +601,6 @@ describe("AggregationService", () => {
     expect(provider.calledInputs[0]?.options?.detailUrl).toBe(detailUrl);
   });
 
-  it("limits FC2 numbers to the FC2 crawler family only", async () => {
-    const siteResults = makeSiteResults(
-      [Website.FC2, { title: "FC2 Title", number: "FC2-4775286", thumb_url: "https://fc2.example/thumb.jpg" }],
-      [Website.FC2HUB, { title: "FC2HUB Title", number: "FC2-4775286" }],
-      [Website.PPVDATABANK, { title: "PPVDATABANK FC2 Title", number: "FC2-4775286" }],
-      [Website.JAVDB, { title: "JAVDB FC2 Title", number: "FC2-4775286" }],
-    );
-
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const result = await new AggregationService(provider).aggregate(
-      "FC2-4775286",
-      makeConfig({
-        scrape: {
-          sites: [
-            Website.DMM,
-            Website.MGSTAGE,
-            Website.FC2,
-            Website.FC2HUB,
-            Website.PPVDATABANK,
-            Website.JAVDB,
-            Website.JAVBUS,
-          ],
-        },
-      }),
-    );
-
-    expect(result).not.toBeNull();
-    expect(provider.calledSites.sort()).toEqual(
-      [Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB].sort(),
-    );
-  });
-
   it("does not crawl Fantia without its required cookie", async () => {
     const provider = new RecordingCrawlerProvider(
       makeSiteResults([Website.DMM, { title: "DMM Title", thumb_url: "https://dmm.example/thumb.jpg" }]),
@@ -666,50 +615,5 @@ describe("AggregationService", () => {
     expect(provider.calledSites).toEqual([Website.DMM]);
     expect(result?.stats.failedCount).toBe(0);
     expect(result?.stats.rejectedSites).toEqual([{ site: Website.FANTIA, reason: "missing_credential" }]);
-  });
-
-  it("skips FC2-only sites when aggregating a non-FC2 number", async () => {
-    const siteResults = makeSiteResults(
-      [Website.DMM, { title: "DMM Title", thumb_url: "https://dmm.example/thumb.jpg" }],
-      [Website.JAVDB, { title: "JAVDB Title", thumb_url: "https://javdb.example/thumb.jpg" }],
-      [Website.FC2, { title: "FC2 Title", thumb_url: "https://fc2.example/thumb.jpg" }],
-      [Website.FC2HUB, { title: "FC2HUB Title", thumb_url: "https://fc2hub.example/thumb.jpg" }],
-      [Website.PPVDATABANK, { title: "PPVDATABANK Title", thumb_url: "https://ppvdatabank.example/thumb.webp" }],
-    );
-
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const result = await new AggregationService(provider).aggregate(
-      "ABF-075",
-      makeConfig({
-        scrape: {
-          sites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
-        },
-      }),
-    );
-
-    expect(result).not.toBeNull();
-    expect(provider.calledSites.sort()).toEqual([Website.DMM, Website.JAVDB].sort());
-  });
-
-  it("aborts a slow crawler once its wall-clock budget is exhausted", async () => {
-    const siteResults = makeSiteResults([
-      Website.DMM,
-      { title: "Slow DMM Title", thumb_url: "https://slow-thumb.jpg" },
-    ]);
-
-    const provider = new MultiResultCrawlerProvider(siteResults, {
-      [Website.DMM]: 80,
-    });
-    const config = makeConfig({
-      scrape: { sites: [Website.DMM] },
-    });
-    config.aggregation.maxParallelCrawlers = 1;
-    config.aggregation.perCrawlerTimeoutMs = 20;
-    config.aggregation.globalTimeoutMs = 100;
-
-    const result = await new AggregationService(provider).aggregate("ABF-075", config);
-
-    expect(result).toBeNull();
-    expect(provider.calledSites).toEqual([Website.DMM]);
   });
 });

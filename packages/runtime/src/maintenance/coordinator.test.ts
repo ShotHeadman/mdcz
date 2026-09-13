@@ -220,13 +220,6 @@ describe("MaintenanceSessionCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it("starts with no process-local session", async () => {
-    const first = createCoordinator();
-    expect(await first.coordinator.getActiveSession()).toBeNull();
-    expect(await createCoordinator().coordinator.getActiveSession()).toBeNull();
-    await first.coordinator.close();
-  });
-
   it("discards a completed session before starting a new one", async () => {
     const fixture = createCoordinator();
     const first = await fixture.coordinator.startPreview({

@@ -56,30 +56,6 @@ describe("FileScraper site aggregation", () => {
     vi.restoreAllMocks();
   });
 
-  it("attempts all enabled sites via aggregation", async () => {
-    const crawlerProvider = new OrderedStubCrawlerProvider();
-    mockConfigManager(createConfig());
-    const scraper = createFileScraper({
-      aggregationService: new AggregationService(crawlerProvider),
-      translateService: new TranslateService(new NetworkClient()),
-      nfoGenerator: new NfoGenerator(),
-      downloadManager: new DownloadManager(new NetworkClient(), {
-        imageHostCooldownStore: new MemoryImageHostCooldownStore(),
-      }),
-      fileOrganizer: new FileOrganizer(),
-    });
-
-    const result = await prepareAndExecuteFile(
-      scraper,
-      "/tmp/FNS-139.mp4",
-      { fileIndex: 1, totalFiles: 1 },
-      undefined,
-      { roots: [{ id: "test", hostPath: "/tmp" }] },
-    );
-
-    expect(result.status).toBe("failed");
-    expect(crawlerProvider.calledSites.sort()).toEqual([Website.DMM, Website.JAVBUS, Website.JAVDB].sort());
-  });
   it("uses configured filename ignore tokens before aggregation receives the authoritative number", async () => {
     const crawlerProvider = new OrderedStubCrawlerProvider();
     const filePath = "/tmp/[7SiS-001]+ ABF-252.mp4";

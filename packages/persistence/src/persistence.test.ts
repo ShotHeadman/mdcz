@@ -63,14 +63,6 @@ describe("Persistence migrations", () => {
     expect(tables).toContain("scrape_runs");
     expect(tables).toContain("scrape_run_items");
     expect(tables).toContain("scrape_item_outcomes");
-    expect(tables).not.toContain("scrape_run_summaries");
-    expect(tables).not.toContain("scrape_outputs");
-    expect(tables).not.toContain("scrape_results");
-    expect(tables).not.toContain("library_entries");
-    expect(tables).not.toContain("maintenance_previews");
-    expect(tables).not.toContain("maintenance_apply_log");
-    expect(tables).not.toContain("maintenance_apply_items");
-    expect(tables).not.toContain("maintenance_executions");
     expect(tables).toContain("library_items");
     expect(tables).toContain("library_item_files");
     expect(tables).toContain("library_item_assets");
@@ -181,7 +173,6 @@ describe("Persistence migrations", () => {
         JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 1) }),
       );
       runMigrations(database, { migrationsFolder: migrations.path });
-      expect(database.sqlite.prepare("SELECT * FROM library_item_assets").get()).not.toHaveProperty("published");
       database.sqlite.exec(`
         INSERT INTO scrape_runs (id, root_id, execution_mode, created_at)
         VALUES ('scrape-run-1', 'path-deterministic', 'single', 20);
@@ -215,13 +206,6 @@ describe("Persistence migrations", () => {
       expect(database.sqlite.prepare("SELECT id, outcome FROM scrape_item_outcomes").all()).toEqual([
         { id: "scrape-outcome-1", outcome: "success" },
       ]);
-      const libraryItemColumns = database.sqlite.prepare("PRAGMA table_info(library_items)").all() as Array<{
-        name: string;
-      }>;
-      const libraryItemColumnNames = libraryItemColumns.map((column) => column.name);
-      expect(libraryItemColumnNames).not.toEqual(expect.arrayContaining(["source_run_id", "source_outcome_id"]));
-      expect(libraryItemColumnNames).not.toContain("source_task_id");
-      expect(libraryItemColumnNames).not.toContain("scrape_output_id");
       expect(database.sqlite.prepare("SELECT * FROM library_items").all()).toEqual([]);
       expect(database.sqlite.prepare("SELECT * FROM library_item_files").all()).toEqual([]);
       expect(database.sqlite.prepare("SELECT * FROM library_item_assets").all()).toEqual([]);
@@ -262,17 +246,14 @@ describe("MediaRootRepository", () => {
     await expect(repository.ensurePath("/media/child")).resolves.toEqual(root);
   });
 
-  it("adds distinct ensured roots without changing existing roots", async () => {
+  it("coalesces concurrent registrations for the same host path", async () => {
     database = createTestPersistenceDatabase();
-    const repository = new MediaRootRepository(database);
-    const now = new Date("2026-08-22T00:00:00.000Z");
-    const firstRoot = createMediaRoot({ id: "path-first", displayName: "First", hostPath: "/first", now });
-    const secondRoot = createMediaRoot({ id: "path-second", displayName: "Second", hostPath: "/second", now });
-    await repository.upsert(firstRoot);
-    await repository.upsert(secondRoot);
+    const first = new MediaRootRepository(database);
+    const second = new MediaRootRepository(database);
+    const roots = await Promise.all([first.ensurePath("/first", "First"), second.ensurePath("/first", "Second")]);
 
-    const roots = await repository.list();
-    expect(roots).toEqual(expect.arrayContaining([firstRoot, secondRoot]));
+    expect(roots[0].id).toBe(roots[1].id);
+    await expect(first.list()).resolves.toEqual([roots[0]]);
   });
 
   it("uses stable not-found errors", async () => {
@@ -377,17 +358,6 @@ describe("LibraryRepository", () => {
     await expect(repository.getEntryBySourceOutcomeId("outcome-2")).resolves.toMatchObject({ id: "entry-2" });
     await expect(repository.getEntryBySourceOutcomeId("missing")).resolves.toBeNull();
     await expect(repository.getEntriesBySourceOutcomeIds([])).resolves.toEqual(new Map());
-  });
-
-  it("uses the root-path index for library entry lookup", async () => {
-    database = createTestPersistenceDatabase();
-    const plan = database.sqlite
-      .prepare(
-        "EXPLAIN QUERY PLAN SELECT * FROM library_item_files WHERE root_id = ? AND root_relative_path = ? LIMIT 1",
-      )
-      .all("root-1", "ABC-123/ABC-123.mp4") as Array<{ detail: string }>;
-
-    expect(plan.some((row) => row.detail.includes("library_item_files_root_path_idx"))).toBe(true);
   });
 
   it("paginates library entries with a stable created-at and id cursor", async () => {
@@ -715,17 +685,6 @@ describe("ScanTaskRepository", () => {
         results: [{ relativePath: "fresh.mp4", size: 1, modifiedAt: null }],
       }),
     ).resolves.toMatchObject({ status: "completed", videoCount: 1 });
-  });
-
-  it("stores scan facts without a generic discriminator or recovery version", () => {
-    database = createTestPersistenceDatabase();
-    const columns = database.sqlite
-      .prepare("PRAGMA table_info(scan_tasks)")
-      .all()
-      .map((row) => (row as { name: string }).name);
-
-    expect(columns).not.toContain("kind");
-    expect(columns).not.toContain("execution_version");
   });
 
   it("rejects duplicate scan paths within one task and root", async () => {

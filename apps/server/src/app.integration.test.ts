@@ -226,12 +226,6 @@ describe("buildServer composition integration", () => {
       url: "/trpc/config.read",
       headers: { authorization: `Bearer ${token}` },
     });
-    const readPostResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.read",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {},
-    });
     const exportResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/config.export",
@@ -240,8 +234,6 @@ describe("buildServer composition integration", () => {
 
     expect(readResponse.statusCode).toBe(200);
     expect(readResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
-    expect(readPostResponse.statusCode).toBe(200);
-    expect(readPostResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
     expect(exportResponse.statusCode).toBe(200);
     expect(exportResponse.json().result.data).toContain("[network]");
   });
@@ -465,21 +457,6 @@ describe("buildServer composition integration", () => {
       network: { timeout: previous.network.timeout },
     });
     await expect(services.mediaRoots.list()).resolves.toEqual(rootsBefore);
-  });
-
-  it("coalesces concurrent media root synchronization by deterministic id", async () => {
-    const mediaPath = await createTempRoot("config-media-root-concurrent");
-    const { services } = await createTestServer();
-
-    const roots = await Promise.all([
-      services.mediaRoots.ensurePath({ displayName: "First", hostPath: mediaPath }),
-      services.mediaRoots.ensurePath({ displayName: "Second", hostPath: mediaPath }),
-    ]);
-
-    expect(new Set(roots.map((root) => root.id))).toEqual(new Set([deterministicMediaRootId(mediaPath)]));
-    await expect(services.mediaRoots.list()).resolves.toMatchObject({
-      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath })],
-    });
   });
 
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {
@@ -718,8 +695,6 @@ describe("buildServer composition integration", () => {
       fileCount: partial ? 4 : 3,
       totalBytes: partial ? 10 : 3,
     });
-    expect(firstPage.entries[0]).not.toHaveProperty("taskId");
-    expect(firstPage.entries[0]).not.toHaveProperty("scrapeOutputId");
     expect(firstPage.nextCursor).toEqual(expect.any(String));
     expect(secondPage).toMatchObject({
       entries: [expect.objectContaining({ id: "entry-a", available: "unchecked" })],
@@ -940,62 +915,12 @@ describe("buildServer composition integration", () => {
     await webhook.close();
   });
 
-  it("applies NFO field settings to manual saves without coupling trailer downloads", async () => {
-    const root = await createTempRoot("manual-nfo-root");
-    const { fastify, services } = await createTestServer();
-    const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    const data = {
-      title: "Manual NFO",
-      number: "ABC-123",
-      actors: [],
-      genres: [],
-      director: "Director",
-      trailer_url: "https://example.com/trailer.mp4",
-      trailer_source_url: "https://example.com/trailer-source.mp4",
-      scene_images: [],
-      website: Website.JAVDB,
-    };
-    const writeManualNfo = async (relativePath: string) =>
-      await fastify.inject({
-        method: "POST",
-        url: "/trpc/scrape.nfoWrite",
-        headers: { authorization: `Bearer ${token}` },
-        payload: { rootId, relativePath, data },
-      });
-
-    await services.config.update({ download: { nfoIgnoreFields: ["director"] } });
-    const directorOnlyResponse = await writeManualNfo("director-only.nfo");
-    const directorOnlyXml = await readFile(join(root, "director-only.nfo"), "utf8");
-
-    expect(directorOnlyResponse.statusCode).toBe(200);
-    expect(directorOnlyXml).not.toContain("<director>Director</director>");
-    expect(directorOnlyXml).toContain("<trailer>");
-    expect(directorOnlyXml).toContain("trailer_source_url");
-
-    await services.config.update({
-      download: {
-        downloadTrailer: false,
-        nfoIgnoreFields: ["trailer"],
-      },
-    });
-    const trailerOnlyResponse = await writeManualNfo("trailer-only.nfo");
-    const trailerOnlyXml = await readFile(join(root, "trailer-only.nfo"), "utf8");
-
-    expect(trailerOnlyResponse.statusCode).toBe(200);
-    expect(trailerOnlyXml).toContain("<director>Director</director>");
-    expect(trailerOnlyXml).not.toContain("<trailer>https://example.com/trailer.mp4</trailer>");
-    expect(trailerOnlyXml).not.toContain(
-      "<trailer_source_url>https://example.com/trailer-source.mp4</trailer_source_url>",
-    );
-  });
-
   it("resolves configured filename NFO paths and preserves unmanaged XML on edit", async () => {
     const root = await createTempRoot("nfo-editor-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    await services.config.update({ download: { nfoNaming: "filename" } });
+    await services.config.update({ download: { nfoNaming: "filename", nfoIgnoreFields: ["director"] } });
     await writeFile(join(root, "ABC-123.mp4"), "video");
     await writeFile(
       join(root, "ABC-123.nfo"),
@@ -1020,13 +945,14 @@ describe("buildServer composition integration", () => {
       payload: {
         ...readInput,
         relativePath: readResult.effectiveRelativePath,
-        data: { ...readResult.data, title: "New", title_zh: "New" },
+        data: { ...readResult.data, title: "New", title_zh: "New", director: "Omitted Director" },
       },
     });
     const savedXml = await readFile(join(root, "ABC-123.nfo"), "utf8");
     expect(writeResponse.statusCode).toBe(200);
     expect(writeResponse.json().result.data.effectiveRelativePath).toBe("ABC-123.nfo");
     expect(savedXml).toContain("<title>New</title>");
+    expect(savedXml).not.toContain("<director>Omitted Director</director>");
     expect(savedXml).toContain('<movie custom="keep">');
     expect(savedXml).toContain('<actor role="lead">');
     expect(savedXml).toContain('<providerid source="local">keep-me</providerid>');

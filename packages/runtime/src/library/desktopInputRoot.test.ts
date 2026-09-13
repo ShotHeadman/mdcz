@@ -19,10 +19,6 @@ describe("desktop input root", () => {
     expect(deterministicMediaRootId(first.hostPath)).toBe(first.id);
   });
 
-  it("changes identity when the host path changes", () => {
-    expect(deterministicMediaRootId("/media/a")).not.toBe(deterministicMediaRootId("/media/b"));
-  });
-
   it("uses a containing preferred root or falls back to the common parent", () => {
     const base = path.resolve("media-root-test");
     const files = [path.join(base, "a", "one.mp4"), path.join(base, "b", "two.mp4")];

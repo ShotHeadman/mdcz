@@ -892,34 +892,6 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("abandons a partial scene set and switches to the next set without mixing sources", async () => {
-    const { root, manager, networkClient } = await createSubject();
-    mockValid();
-    networkClient.download.mockImplementation(async (url, outputPath) => {
-      if (url.includes("slow.example.com")) throw new Error("Request timeout");
-      return writeDownloadedFile(outputPath, url);
-    });
-    const config = sequentialSceneSet(2);
-    const assets = await manager.downloadAll(
-      root,
-      createCrawlerData({
-        scene_images: ["https://fast.example.com/set-a-1.jpg", "https://slow.example.com/set-a-2.jpg"],
-      }),
-      config,
-      { scene_images: [["https://alt.example.com/set-b-1.jpg", "https://alt.example.com/set-b-2.jpg"]] },
-    );
-    await expectSceneImages(root, assets, [
-      "https://alt.example.com/set-b-1.jpg",
-      "https://alt.example.com/set-b-2.jpg",
-    ]);
-    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual([
-      "https://fast.example.com/set-a-1.jpg",
-      "https://slow.example.com/set-a-2.jpg",
-      "https://alt.example.com/set-b-1.jpg",
-      "https://alt.example.com/set-b-2.jpg",
-    ]);
-  });
-
   it("keeps the scene image set with the most successful downloads when no set completes", async () => {
     const { root, manager, networkClient } = await createSubject();
     mockValid();

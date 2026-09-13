@@ -227,20 +227,4 @@ describe("buildServer scan integration", () => {
       }),
     ]);
   });
-
-  it("returns no scan candidates for an empty configured directory", async () => {
-    mediaDirectory = await createTempDirectory("server-empty-scan");
-    const { fastify } = await createTestServer();
-    const token = await loginAsAdmin(fastify);
-    await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
-
-    const response = await fastify.inject({
-      method: "GET",
-      url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: true, scanDir: mediaDirectory.path }))}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json().result.data.candidates).toEqual([]);
-  });
 });

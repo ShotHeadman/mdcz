@@ -193,20 +193,7 @@ test("ordered site field exposes grouped priority semantics", async () => {
   await expect.element(screen.getByRole("checkbox")).toHaveAttribute("aria-checked", "mixed");
 });
 
-test("ordered site field keeps simple mode enable order stable", async () => {
-  const screen = await render(
-    <FormHarness>
-      <OrderedSiteFieldEditor value={["javdb", "dmm"]} options={["dmm", "javdb", "avbase"]} onChange={noop} />
-    </FormHarness>,
-  );
-
-  await expect.element(screen.getByText("已启用 2/3")).toBeVisible();
-  await expect.element(screen.getByText("avbase", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("javdb", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("dmm", { exact: true })).toBeVisible();
-});
-
-test("profile capsule marks loading busy state without default profile fallback", async () => {
+test("profile capsule marks loading busy state", async () => {
   const screen = await render(
     <ProfileCapsule
       profiles={[]}
@@ -222,7 +209,6 @@ test("profile capsule marks loading busy state without default profile fallback"
   );
 
   expect(screen.container.querySelector('[aria-busy="true"]')).not.toBeNull();
-  expect(screen.container.textContent ?? "").not.toContain("默认配置");
 });
 
 test("section anchors defer content until force-opened", async () => {
@@ -460,23 +446,6 @@ test("NFO settings render the configured enum list only while NFO generation is 
       enabled.getByText("选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。"),
     )
     .toBeVisible();
-});
-
-test("title repair settings expose toggle switch", async () => {
-  const screen = await render(
-    <FormHarness
-      values={{
-        naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
-        titleRepair: {
-          enabled: true,
-        },
-      }}
-    >
-      <NamingSection />
-    </FormHarness>,
-  );
-
-  await expect.element(screen.getByText("标题屏蔽词还原")).toBeVisible();
 });
 
 test("poster badge controls follow download and badge visibility gates", async () => {

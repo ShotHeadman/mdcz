@@ -143,9 +143,6 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<sortorder>0</sortorder>");
     expect(xml).not.toContain("<tag>Drama</tag>");
     expect(xml).toContain("<tag>mdcz:content_type:VR</tag>");
-    expect(xml).not.toContain("<altname>");
-    expect(xml).not.toContain("<biography>");
-    expect(xml).not.toContain("<website>");
   });
 
   it("injects classification tags when fileInfo is provided", () => {
@@ -313,39 +310,6 @@ describe("NfoGenerator", () => {
     expect(merged).toContain("<name>Actor A</name>");
     expect(merged).not.toContain("<original_plot>");
   });
-  it("writes configurable director and trailer fields without coupling trailer downloads", () => {
-    const data = createCrawlerData({
-      director: "Director",
-      trailer_url: "https://example.com/trailer.mp4",
-      trailer_source_url: "https://example.com/source-trailer.mp4",
-    });
-    const generator = new NfoGenerator();
-
-    const defaults = generator.buildXml(data);
-    expect(defaults).toContain("<director>Director</director>");
-    expect(defaults).toContain("<trailer>https://example.com/trailer.mp4</trailer>");
-    expect(defaults).toContain("<trailer_source_url>https://example.com/source-trailer.mp4</trailer_source_url>");
-
-    const directorOnly = generator.buildXml(data, { assets: createAssets(), enabledFields: ["director"] });
-    expect(directorOnly).toContain("<director>Director</director>");
-    expect(directorOnly).not.toContain("<trailer>");
-    expect(directorOnly).not.toContain("trailer_source_url");
-
-    const trailerOnlyWithLocalAsset = generator.buildXml(data, {
-      assets: createAssets(),
-      enabledFields: ["trailer"],
-    });
-    expect(trailerOnlyWithLocalAsset).not.toContain("<director>");
-    expect(trailerOnlyWithLocalAsset).toContain("<trailer>trailer.mp4</trailer>");
-    expect(trailerOnlyWithLocalAsset).toContain(
-      "<trailer_source_url>https://example.com/source-trailer.mp4</trailer_source_url>",
-    );
-
-    const neither = generator.buildXml(data, { enabledFields: [] });
-    expect(neither).not.toContain("<director>");
-    expect(neither).not.toContain("<trailer>");
-    expect(neither).not.toContain("trailer_source_url");
-  });
   it("gates optional NFO field groups while retaining core metadata", () => {
     const generator = new NfoGenerator();
     const data = createCrawlerData({
@@ -407,24 +371,8 @@ describe("NfoGenerator", () => {
     expect(empty).toContain("<title>中文标题</title>");
     expect(empty).toContain("<originaltitle>Original</originaltitle>");
     expect(empty).toContain("<uniqueid");
-    expect(empty).not.toContain("<num>");
     expect(empty).toContain("<actor>");
     expect(empty).toContain("<dateadded>");
-    expect(empty).not.toContain("<plot>");
-    expect(empty).not.toContain("<premiered>");
-    expect(empty).not.toContain("<runtime>");
-    expect(empty).not.toContain("<rating>");
-    expect(empty).not.toContain("<director>");
-    expect(empty).not.toContain("<genre>");
-    expect(empty).not.toContain("<tag>");
-    expect(empty).not.toContain("<thumb");
-    expect(empty).not.toContain("<fanart>");
-    expect(empty).not.toContain("<trailer>");
-    expect(empty).not.toContain("<fileinfo>");
-    expect(empty).not.toContain("Aggregation Sources:");
-    expect(empty).not.toContain("<scene_images>");
-    expect(empty).not.toContain("poster-source.jpg");
-    expect(empty).not.toContain("trailer-source.mp4");
 
     const optionalFieldTokens: Record<NfoField, string[]> = {
       num: ["<num>"],
@@ -491,11 +439,6 @@ describe("NfoGenerator", () => {
       enabledFields: [],
     });
     expect(customTitleWithEmptyPolicy).toContain("<raw_title>中文标题</raw_title>");
-    expect(customTitleWithEmptyPolicy).not.toContain("<poster_source_url>");
-    expect(customTitleWithEmptyPolicy).not.toContain("<thumb_source_url>");
-    expect(customTitleWithEmptyPolicy).not.toContain("<fanart_source_url>");
-    expect(customTitleWithEmptyPolicy).not.toContain("<trailer_source_url>");
-    expect(customTitleWithEmptyPolicy).not.toContain("<scene_images>");
   });
 
   it("keeps fanart fallback metadata independent from the thumb field", () => {

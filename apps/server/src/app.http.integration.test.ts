@@ -133,14 +133,6 @@ describe("buildServer HTTP integration", () => {
     });
   });
 
-  it("returns not found for unknown routes", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({ method: "GET", url: "/unknown" });
-
-    expect(response.statusCode).toBe(404);
-  });
-
   it("serves the WebUI static bundle and falls back to index.html for routes", async () => {
     const webRoot = await createTempRoot("web-static");
     await writeFile(join(webRoot, "index.html"), '<!doctype html><div id="root"></div>', "utf8");

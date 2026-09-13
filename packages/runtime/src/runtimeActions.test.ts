@@ -1,13 +1,9 @@
-import { mkdtemp, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { buildCrawlerOptions } from "./scrape/crawlerOptions";
-import { ensureWatermarkDirectory } from "./scrape/watermarkDirectory";
 import { JAVBUS_REQUEST_HEADERS } from "./shared";
 import type { LlmApiClient } from "./translate";
 import { testLlmConnectivity } from "./translate/llmTest";
@@ -233,14 +229,5 @@ describe("settings parity runtime helpers", () => {
       success: false,
       message: "连接失败: HTTP 400: invalid temperature",
     });
-  });
-
-  it("creates the server-side watermark directory under runtime data", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-watermark-"));
-    const directoryPath = await ensureWatermarkDirectory(root);
-    const stats = await stat(directoryPath);
-
-    expect(stats.isDirectory()).toBe(true);
-    expect(directoryPath).toBe(join(root, "watermark"));
   });
 });

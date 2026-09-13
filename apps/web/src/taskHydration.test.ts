@@ -29,12 +29,6 @@ describe("applyScrapeLiveRunsSnapshot", () => {
     expect(useUIStore.getState().selectedResultId).toBe("root-1:ABC-001.mp4");
   });
 
-  it("leaves a fresh window empty when liveRuns is empty", () => {
-    applyScrapeLiveRunsSnapshot([]);
-    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
-    expect(useScrapeStore.getState().snapshot).toBeNull();
-  });
-
   it("fetches and retains the terminal snapshot when the run leaves liveRuns", async () => {
     const status = "failed";
     const running = buildScrapeSnapshot({

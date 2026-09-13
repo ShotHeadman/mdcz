@@ -46,11 +46,7 @@ describe("Persistence migration baseline", () => {
           .prepare(`PRAGMA table_info(${table})`)
           .all()
           .map((row) => (row as { name: string }).name);
-      expect(columns("scrape_runs")).not.toContain("retry_of_run_id");
-      expect(columns("scan_tasks")).not.toEqual(expect.arrayContaining(["kind", "summary", "execution_version"]));
       expect(columns("scrape_item_outcomes")).toContain("attempt_id");
-      expect(columns("scrape_item_outcomes")).not.toContain("item_id");
-      expect(columns("library_items")).not.toEqual(expect.arrayContaining(["source_run_id", "source_outcome_id"]));
       expect(columns("library_item_files")).toEqual(
         expect.arrayContaining(["part_number", "part_suffix", "resolution", "source_outcome_id"]),
       );

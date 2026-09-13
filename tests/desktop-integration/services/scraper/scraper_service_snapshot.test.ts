@@ -5,12 +5,10 @@ import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
-import type { ScrapeRunManifest } from "@mdcz/persistence";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
-import type { ScrapeRunSnapshot } from "@mdcz/runtime/tasks";
 import { afterEach, describe, expect, it } from "vitest";
 
 const directories: string[] = [];
@@ -35,11 +33,7 @@ const createHarness = async () => {
   return { directory, persistence, service };
 };
 
-const seedFinalizedRun = async (
-  directory: string,
-  persistence: DesktopPersistenceService,
-  disposition: "completed" | "failed",
-) => {
+const seedFailedFinalizedRun = async (directory: string, persistence: DesktopPersistenceService) => {
   const mediaRoot = join(directory, "media");
   await mkdir(mediaRoot, { recursive: true });
   const root = createMediaRoot({ id: "desktop-input", displayName: "Input", hostPath: mediaRoot });
@@ -53,110 +47,17 @@ const seedFinalizedRun = async (
     items: [{ ordinal: 0, rootId: root.id, relativePath: "ABC-001.mp4" }],
   });
   const attempt = state.repositories.scrapeRuns.admitAttempt(run.items[0].id);
-  if (disposition === "failed") {
-    await state.repositories.scrapeRuns.commitOutcome({
-      outcome: "failed",
-      attemptId: attempt.id,
-      error: "latest failure",
-    });
-  } else {
-    const crawlerDataJson = JSON.stringify({ title: "Movie", number: "ABC-001", actors: [] });
-    state.repositories.scrapeRuns.commitSuccessOutcome({
-      outcome: "success",
-      attemptId: attempt.id,
-      crawlerDataJson,
-      nfoRootId: null,
-      nfoRelativePath: "ABC-001.nfo",
-      outputRootId: root.id,
-      outputRelativePath: "ABC-001.mp4",
-      uncensoredAmbiguous: false,
-      size: 5,
-      completedAt,
-      libraryEntry: {
-        mediaIdentity: "ABC-001",
-        rootId: root.id,
-        rootRelativePath: "ABC-001.mp4",
-        title: "Movie",
-        number: "ABC-001",
-        actors: [],
-        crawlerDataJson,
-        createdAt: completedAt,
-        assets: [],
-      },
-    });
-  }
+  await state.repositories.scrapeRuns.commitOutcome({
+    outcome: "failed",
+    attemptId: attempt.id,
+    error: "latest failure",
+  });
   await state.repositories.scrapeRuns.finalize({
     runId: run.id,
-    disposition,
+    disposition: "failed",
     startedAt: new Date("2026-08-28T00:01:00.000Z"),
     completedAt,
   });
-};
-
-const attachLiveRun = (service: ScraperService, status: "running" | "paused") => {
-  const startedAt = new Date("2026-08-29T00:01:00.000Z");
-  const snapshot: ScrapeRunSnapshot = {
-    executionGeneration: 0,
-    runId: "live-run",
-    generation: 1,
-    revision: 1,
-    status,
-    progress: { percent: 0, completedItems: 0, totalItems: 1 },
-    items: [
-      {
-        id: "item-1",
-        rootId: "desktop-input",
-        relativePath: "ABC-001.mp4",
-        sourcePath: "/media/ABC-001.mp4",
-        status: "processing",
-        error: null,
-      },
-    ],
-    latestStage: null,
-    logs: [],
-    error: null,
-  };
-  const run: ScrapeRunManifest = {
-    directoryScopeJson: null,
-    configurationJson: null,
-    manifestFixedAt: new Date(),
-    discoveryJson: null,
-    executionGeneration: 0,
-    revision: 0,
-    id: snapshot.runId,
-    rootId: "desktop-input",
-    requestedOutputRootId: null,
-    requestedOutputRelativeDirectory: null,
-    executionMode: "single",
-    createdAt: startedAt,
-    startedAt,
-    completedAt: null,
-    disposition: null,
-    error: null,
-    items: snapshot.items.map((item, ordinal) => ({
-      id: item.id,
-      runId: snapshot.runId,
-      ordinal,
-      rootId: item.rootId,
-      relativePath: item.relativePath,
-      manualUrl: null,
-      uncensoredChoice: null,
-    })),
-    attempts: [],
-    outcomes: [],
-  };
-  Object.assign(service, {
-    workflow: {
-      liveRuns: () => [
-        {
-          run,
-          snapshot,
-          startedAt,
-        },
-      ],
-    },
-  });
-  return { run, snapshot, startedAt };
 };
 
 describe("ScraperService.getSnapshot", () => {
@@ -167,64 +68,9 @@ describe("ScraperService.getSnapshot", () => {
     );
   });
 
-  it("returns null when there is no in-process run", async () => {
-    const { service } = await createHarness();
-    expect(await service.getSnapshot()).toBeNull();
-  });
-
-  it("returns null when the latest SQLite run succeeded", async () => {
+  it("does not restore a finalized single-file run as the active snapshot", async () => {
     const { directory, persistence, service } = await createHarness();
-    await seedFinalizedRun(directory, persistence, "completed");
+    await seedFailedFinalizedRun(directory, persistence);
     expect(await service.getSnapshot()).toBeNull();
-  });
-
-  it("returns null when the latest SQLite run failed", async () => {
-    const { directory, persistence, service } = await createHarness();
-    await seedFinalizedRun(directory, persistence, "failed");
-    expect(await service.getSnapshot()).toBeNull();
-  });
-
-  it("returns a running in-process run", async () => {
-    const { service } = await createHarness();
-    attachLiveRun(service, "running");
-    const snapshot = await service.getSnapshot();
-    expect(snapshot?.task.id).toBe("live-run");
-    expect(snapshot?.task.status).toBe("running");
-    expect(snapshot?.task.continuity).toBe("live");
-  });
-
-  it("returns a paused in-process run", async () => {
-    const { service } = await createHarness();
-    attachLiveRun(service, "paused");
-    const snapshot = await service.getSnapshot();
-    expect(snapshot?.task.id).toBe("live-run");
-    expect(snapshot?.task.status).toBe("paused");
-    expect(snapshot?.task.continuity).toBe("live");
-  });
-
-  it("keeps this process's terminal snapshot available to reconnecting renderers", async () => {
-    const { service } = await createHarness();
-    const { run, snapshot, startedAt } = attachLiveRun(service, "running");
-    const completedAt = new Date("2026-08-29T00:05:00.000Z");
-    const terminalSnapshot: ScrapeRunSnapshot = {
-      ...snapshot,
-      status: "completed",
-      progress: { percent: 100, completedItems: 1, totalItems: 1 },
-      items: snapshot.items.map((item) => ({ ...item, status: "success" })),
-    };
-    const host = Reflect.get(service, "host") as {
-      onTerminal(run: ScrapeRunManifest, snapshot: ScrapeRunSnapshot): Promise<void> | void;
-    };
-
-    await host.onTerminal({ ...run, startedAt, completedAt, disposition: "completed" }, terminalSnapshot);
-    Object.assign(service, { workflow: null });
-
-    expect(await service.getSnapshot("live-run")).toMatchObject({
-      task: { id: "live-run", status: "completed", continuity: "final" },
-      progress: { percent: 100, completedItems: 1, totalItems: 1 },
-      items: [{ id: "item-1", status: "success" }],
-    });
-    expect(await service.getSnapshot("another-run")).toBeNull();
-    expect(await service.getSnapshot()).toMatchObject({ task: { id: "live-run", status: "completed" } });
   });
 });

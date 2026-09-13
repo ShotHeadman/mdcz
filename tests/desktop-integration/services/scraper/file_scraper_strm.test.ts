@@ -151,61 +151,42 @@ describe("FileScraper .strm support", () => {
   });
 
   it("reuses kept NFO files according to the configured naming mode", async () => {
-    for (const scenario of [
-      {
-        nfoNaming: "filename" as const,
-        shouldSyncMovieAlias: false,
-      },
-      {
-        nfoNaming: "both" as const,
-        shouldSyncMovieAlias: true,
-      },
-    ]) {
-      const root = await createTempDir();
-      const nfoPath = join(root, "ABC-123.nfo");
-      const movieNfoPath = join(root, "movie.nfo");
-      await writeFile(nfoPath, "<movie><title>Kept Title</title></movie>", "utf8");
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123.nfo");
+    const movieNfoPath = join(root, "movie.nfo");
+    await writeFile(nfoPath, "<movie><title>Kept Title</title></movie>", "utf8");
 
-      const config = createConfig({
-        generateNfo: true,
-        keepNfo: true,
-        nfoNaming: scenario.nfoNaming,
-      });
-      const crawlerData = createCrawlerData();
-      const plan: OrganizePlan = {
-        outputDir: root,
-        targetVideoPath: join(root, "ABC-123.strm"),
-        nfoPath,
-      };
-      const writeNfo = vi.fn().mockResolvedValue(nfoPath);
-      const scraper = createScraper({ config, crawlerData, plan, writeNfo });
-      const sourcePath = await createTempFile("ABC-123.strm");
+    const config = createConfig({ generateNfo: true, keepNfo: true, nfoNaming: "both" });
+    const crawlerData = createCrawlerData();
+    const plan: OrganizePlan = {
+      outputDir: root,
+      targetVideoPath: join(root, "ABC-123.strm"),
+      nfoPath,
+    };
+    const writeNfo = vi.fn().mockResolvedValue(nfoPath);
+    const scraper = createScraper({ config, crawlerData, plan, writeNfo });
+    const sourcePath = await createTempFile("ABC-123.strm");
 
-      const result = await prepareAndExecuteFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      });
+    const result = await prepareAndExecuteFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+      roots: [
+        { id: "test-root", hostPath: tmpdir() },
+        { id: "output-root", hostPath: "/output" },
+      ],
+    });
 
-      expect(writeNfo).not.toHaveBeenCalled();
-      expect(result.nfo).toEqual({
+    expect(writeNfo).not.toHaveBeenCalled();
+    expect(result.nfo).toEqual({
+      rootId: "test-root",
+      relativePath: relative(tmpdir(), nfoPath).replaceAll("\\", "/"),
+    });
+    expect(result.publicationPlan?.artifacts).toContainEqual({
+      target: {
         rootId: "test-root",
-        relativePath: relative(tmpdir(), nfoPath).replaceAll("\\", "/"),
-      });
-      if (scenario.shouldSyncMovieAlias) {
-        expect(result.publicationPlan?.artifacts).toContainEqual({
-          target: {
-            rootId: "test-root",
-            relativePath: relative(tmpdir(), movieNfoPath).replaceAll("\\", "/"),
-          },
-          content: { kind: "text", data: await readFile(nfoPath, "utf8") },
-        });
-        await expect(readFile(movieNfoPath)).rejects.toMatchObject({ code: "ENOENT" });
-        continue;
-      }
-      await expect(readFile(movieNfoPath, "utf8")).rejects.toThrow();
-    }
+        relativePath: relative(tmpdir(), movieNfoPath).replaceAll("\\", "/"),
+      },
+      content: { kind: "text", data: await readFile(nfoPath, "utf8") },
+    });
+    await expect(readFile(movieNfoPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reuses kept NFO local state for planning and uncensored confirmation state", async () => {

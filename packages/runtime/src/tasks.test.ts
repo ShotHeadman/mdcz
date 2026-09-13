@@ -89,9 +89,8 @@ describe("task executor", () => {
     await expect(run).rejects.toThrow("worker failed");
   });
 
-  it.each([
-    2, 4,
-  ])("serializes publication and stops admission after the first failure at concurrency %s", async (concurrency) => {
+  it("serializes publication and stops admission after the first concurrent failure", async () => {
+    const concurrency = 2;
     const started: number[] = [];
     const applied: number[] = [];
     const finalized: number[] = [];

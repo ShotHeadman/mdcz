@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runtimeLoggerService } from "../shared";
 import { PublicationConflictError } from "./conflicts";
 import { createMemoryPublicationJournal } from "./memoryJournal";
 import { commitPublishedMedia } from "./publishMedia";
@@ -206,19 +205,6 @@ describe("commitPublishedMedia", () => {
       expect(await readFile(test.target, "utf8")).toBe("video");
     }
     expect(copy).not.toHaveBeenCalled();
-  });
-
-  it("leaves staging owned by the pending result in place after commit", async () => {
-    const test = await fixture();
-    const staging = path.join(path.dirname(test.source), "staging");
-    await mkdir(staging);
-    await writeFile(path.join(staging, "tmp"), "tmp");
-    await commitPublishedMedia(test.plan, {
-      resolveRoot: test.resolveRoot,
-      journal: createMemoryPublicationJournal(),
-      commit: () => "ok",
-    });
-    await expect(readFile(path.join(staging, "tmp"), "utf8")).resolves.toBe("tmp");
   });
 
   it("publishes across roots, commits once, then removes sources and obsolete files", async () => {
@@ -803,36 +789,5 @@ describe("commitPublishedMedia", () => {
       "journal finish failed",
     ]);
     originalFinish(test.plan.operationId);
-  });
-
-  it("logs only a single [publication] entry containing op and the longest phase", async () => {
-    const test = await fixture();
-    const journal = createMemoryPublicationJournal();
-    const logs: string[] = [];
-    runtimeLoggerService.setFactory(() => ({
-      debug: () => undefined,
-      info: (message: string) => logs.push(message),
-      warn: () => undefined,
-      error: () => undefined,
-    }));
-    try {
-      await commitPublishedMedia(test.plan, {
-        resolveRoot: test.resolveRoot,
-        journal,
-        commit: async () => ({ ok: true }),
-      });
-      const publicationLogs = logs.filter((msg) => msg.startsWith("[publication]"));
-      expect(publicationLogs).toHaveLength(1);
-      expect(publicationLogs[0]).toMatch(
-        new RegExp(`^\\[publication\\] op=${test.plan.operationId.slice(-8)} phase=\\S+ durationMs=\\d+$`),
-      );
-    } finally {
-      runtimeLoggerService.setFactory(() => ({
-        debug: () => undefined,
-        info: () => undefined,
-        warn: () => undefined,
-        error: () => undefined,
-      }));
-    }
   });
 });

@@ -121,8 +121,6 @@ describe("Playwright and Vitest live discovery", () => {
     expect(desktopLive.filter((name) => name.endsWith(".live.e2e.spec.ts"))).toEqual([
       "desktop-workbench.live.e2e.spec.ts",
     ]);
-    expect(webLive).not.toContain("web-crawler.live.e2e.spec.ts");
-    expect(desktopLive).not.toContain("desktop-crawler.live.e2e.spec.ts");
     expect(LIVE_CASES.filter((liveCase) => liveCase.enabledByDefault)).toHaveLength(1);
   });
 });

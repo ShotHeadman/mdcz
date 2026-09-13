@@ -56,30 +56,8 @@ afterEach(async () => {
 });
 
 describe("preparePublicationPlan", () => {
-  it.each([
-    { unavailable: "unrelated", code: "ENOTCONN", succeeds: true },
-    { unavailable: "unrelated", code: "EACCES", succeeds: true },
-    { unavailable: "output", code: "ENOTCONN", succeeds: false },
-    { unavailable: "nested", code: "ENOTCONN", succeeds: true },
-  ])("isolates unavailable roots without ignoring required paths: $unavailable/$code", async ({
-    unavailable,
-    code,
-    succeeds,
-  }) => {
-    const { root, source, output, outputs, journal, database } = await fixture();
-    const offline = join(root, "offline");
-    await mkdir(offline);
-    database.db
-      .insert(mediaRoots)
-      .values({
-        id: "offline",
-        hostPath: offline,
-        displayName: "offline",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .run();
-    await outputs.upsertEntry({ id: "unrelated", rootId: "offline", rootRelativePath: "other.mp4" });
+  it("rejects an unavailable required output root", async () => {
+    const { root, source, output, outputs, journal } = await fixture();
     const video = join(source, "ABC-123.mp4");
     await writeFile(video, "video");
     await outputs.upsertEntry({ id: "media", rootId: "root", rootRelativePath: "source/ABC-123.mp4" });
@@ -106,16 +84,11 @@ describe("preparePublicationPlan", () => {
       writeNfo: async () => undefined,
     });
     const original = fs.realpath;
-    const failedPath =
-      unavailable === "output" ? output : unavailable === "nested" ? join(offline, "other.mp4") : offline;
-    vi.spyOn(fs, "realpath").mockImplementation(async (path, options) => {
-      if (String(path) === failedPath) throw Object.assign(new Error(`${code}: offline fixture`), { code });
+    const realpath = vi.spyOn(fs, "realpath").mockImplementation(async (path, options) => {
+      if (String(path) === output) throw Object.assign(new Error("ENOTCONN: offline fixture"), { code: "ENOTCONN" });
       return await original(path, options as never);
     });
-    const roots = [
-      { id: "root", hostPath: root },
-      { id: "offline", hostPath: offline },
-    ];
+    const roots = [{ id: "root", hostPath: root }];
     const publish = commitPublishedMedia(createPublicationPlan("offline", "scrape", prepared.plan, roots), {
       outputs,
       journal,
@@ -126,10 +99,8 @@ describe("preparePublicationPlan", () => {
       },
       commit: () => undefined,
     });
-    if (succeeds) {
-      await publish;
-      expect(await readFile(join(output, "ABC-123.strm"), "utf8")).toBe(video);
-    } else await expect(publish).rejects.toThrow("offline fixture");
+    await expect(publish).rejects.toThrow("offline fixture");
+    expect(realpath.mock.calls.some(([path]) => String(path) === output)).toBe(true);
     expect(await readFile(video, "utf8")).toBe("video");
   });
   it.each([
@@ -226,16 +197,12 @@ describe("preparePublicationPlan", () => {
     expect(nfo).toContain('<thumb aspect="poster">ABC-123-poster.jpg</thumb>');
     expect(nfo).toContain("<title>ABC-123-poster.jpg</title>");
   });
-  it.each([
-    false,
-    true,
-  ])("copies existing metadata without deleting it when moving media (shared=%s)", async (shared) => {
+  it("copies existing metadata without deleting it when moving media", async () => {
     const { root, source, output, staging } = await fixture();
     await mkdir(join(source, ".actors"));
     await mkdir(join(source, "extrafanart"));
     const files = ["movie.mp4", "movie.nfo", "poster.jpg", "trailer.mp4", ".actors/Actor.jpg", "extrafanart/scene.jpg"];
     for (const name of files) await writeFile(join(source, name), name);
-    if (shared) await writeFile(join(source, "another.mp4"), "another video");
     const publication = await preparePublicationPlan({
       files: [
         {

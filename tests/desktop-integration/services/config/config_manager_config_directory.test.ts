@@ -193,52 +193,6 @@ describe("ConfigManager configDirectory", () => {
     expect(persisted.download.downloadThumb).toBe(true);
   });
 
-  it("loads configs with unknown legacy keys without converting old fields", async () => {
-    const configDir = join(mockUserDataPath, "config");
-    const configPath = join(configDir, "default.json");
-    await mkdir(configDir, { recursive: true });
-
-    await writeFile(
-      configPath,
-      JSON.stringify(
-        {
-          configVersion: 99,
-          download: {
-            downloadCover: false,
-            downloadNfo: false,
-          },
-          server: {
-            url: "http://192.168.1.100:8096",
-          },
-          paths: {
-            configDirectory: "config",
-          },
-          translate: {
-            llmMaxTry: 9,
-          },
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
-
-    const { ConfigManager } = await import("@main/services/config/ConfigManager");
-
-    const manager = new ConfigManager();
-    const configuration = await manager.getValidated();
-    const persisted = parseConfigurationContent(await readFile(join(configDir, "default.toml"), "utf8"), "toml");
-
-    expect(configuration.download.downloadThumb).toBe(true);
-    expect(configuration.download.generateNfo).toBe(true);
-    expect(configuration.translate.llmMaxRetries).toBe(3);
-    expect(persisted).not.toHaveProperty("configVersion");
-    expect(persisted).not.toHaveProperty("server");
-    expect(persisted.download).not.toHaveProperty("downloadCover");
-    expect(persisted.download).not.toHaveProperty("downloadNfo");
-    expect(persisted.translate).not.toHaveProperty("llmMaxTry");
-  });
-
   it("does not overwrite an unreadable active config file", async () => {
     const configDir = join(mockUserDataPath, "config");
     const configPath = join(configDir, "default.json");

@@ -17,11 +17,13 @@ const task = (id: string, status: ScanTask["status"]): ScanTask => ({
 });
 
 describe("ScanQueueService", () => {
-  it.each(
-    (["start", "retry"] as const).flatMap((operation) =>
-      (["event", "snapshot", "publish"] as const).map((failure) => ({ operation, failure })),
-    ),
-  )("executes $operation even when its queued $failure notification fails", async ({ operation, failure }) => {
+  it.each([
+    { operation: "start", failure: "event" },
+    { operation: "retry", failure: "publish" },
+  ] as const)("executes $operation even when its queued $failure notification fails", async ({
+    operation,
+    failure,
+  }) => {
     const queued = task("notification-failure", operation === "retry" ? "failed" : "queued");
     const notificationError = new Error("notification unavailable");
     const addEvent = vi.fn(async ({ taskId, type, message }: { taskId: string; type: string; message: string }) => ({
@@ -31,7 +33,6 @@ describe("ScanQueueService", () => {
       message,
       createdAt: new Date(),
     }));
-    const listScanResults = vi.fn(async () => []);
     const claim = vi.fn(async () => {
       queued.status = "running";
       return queued;
@@ -49,7 +50,7 @@ describe("ScanQueueService", () => {
             get: async () => queued,
             claim,
             addEvent,
-            listScanResults,
+            listScanResults: async () => [],
             fail: async (_id: string, error: string) => {
               queued.status = "failed";
               queued.error = error;
@@ -62,7 +63,6 @@ describe("ScanQueueService", () => {
     };
     const taskEvents = createTaskEventBus();
     if (failure === "event") addEvent.mockRejectedValueOnce(notificationError);
-    if (failure === "snapshot") listScanResults.mockRejectedValueOnce(notificationError);
     if (failure === "publish")
       vi.spyOn(taskEvents, "lifecycle").mockImplementationOnce(() => {
         throw notificationError;

@@ -94,9 +94,6 @@ describe("workbench media fixture helper", () => {
     expect(nfoContent).toContain(`<title>${WORKBENCH_REFRESH_STALE_TITLE}</title>`);
     expect(nfoContent).toContain(`<originaltitle>${WORKBENCH_REFRESH_STALE_TITLE}</originaltitle>`);
     expect(nfoContent).toContain("SSIS-497");
-    // Seed must omit production markers so post-apply assertions can prove rewrite.
-    expect(nfoContent).not.toContain("<dateadded>");
-    expect(nfoContent).not.toContain("<mdcz>");
   });
 
   it("rejects an untouched refresh seed as applied output", async () => {

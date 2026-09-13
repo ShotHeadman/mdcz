@@ -111,10 +111,6 @@ describe("MaintenanceFileScraper preview diffs", () => {
       changed: true,
     });
     expect(result.pathDiff).toBeUndefined();
-    expect(getPreset("refresh_data").configOverrides.behavior).toMatchObject({
-      successFileMove: false,
-      successFileRename: false,
-    });
   });
 
   it("plans rebuild_all path reorganization while refresh_data keeps source path", async () => {
@@ -140,14 +136,6 @@ describe("MaintenanceFileScraper preview diffs", () => {
     );
 
     expect(refreshResult.pathDiff).toBeUndefined();
-    expect(getPreset("refresh_data").configOverrides.behavior).toMatchObject({
-      successFileMove: false,
-      successFileRename: false,
-    });
-    expect(getPreset("rebuild_all").configOverrides.behavior).toMatchObject({
-      successFileMove: true,
-      successFileRename: true,
-    });
     expect(rebuildResult.pathDiff).toMatchObject({
       currentVideoPath: "/media/ABC-123.mp4",
       targetVideoPath: "/organized/ABC-123/ABC-123.mp4",

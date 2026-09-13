@@ -211,7 +211,7 @@ describe("diffCrawlerData", () => {
     expect(result.fieldDiffs.find((diff) => diff.field === "fanart_url")).toBeUndefined();
   });
 
-  it("diffs release_date without surfacing a separate release_year field", () => {
+  it("diffs release_date", () => {
     const result = partitionCrawlerDataWithOptions(
       createCrawlerData({
         release_date: "2023-05-06",

@@ -128,6 +128,7 @@ function ReplacementHarness({ onExecute }: { onExecute: () => void }) {
 test("maintenance setup selects all four presets through semantic buttons", async () => {
   const screen = await render(<PresetSelectionHarness />);
   const current = screen.getByLabelText("当前维护预设");
+  await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
 
   for (const [label, presetId] of [
     ["读取本地", "read_local"],

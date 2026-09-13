@@ -237,23 +237,75 @@ describe("FileOrganizer filesystem organize", () => {
     expect(plan.strmPath).toBeDefined();
   });
 
-  it.each(
-    [false, true].flatMap((successFileMove) =>
+  it.each([
+    ...[false, true].flatMap((successFileMove) =>
       [false, true].flatMap((successFileRename) =>
-        [false, true].flatMap((separate) =>
-          ["ABC-123-original", "ABC-123-CEN"].flatMap((sourceBase) =>
-            ["ABC-123", sourceBase].map((subtitleBase) => ({
-              successFileMove,
-              successFileRename,
-              separate,
-              subtitleBase,
-              sourceBase,
-            })),
-          ),
-        ),
+        [false, true].map((separate) => ({
+          successFileMove,
+          successFileRename,
+          separate,
+          sourceBase: "ABC-123-original",
+          subtitleBase: "ABC-123-original",
+        })),
       ),
     ),
-  )("keeps movement, renaming and metadata separation independent ($successFileMove/$successFileRename/$separate)", async ({
+    {
+      successFileMove: false,
+      successFileRename: false,
+      separate: false,
+      sourceBase: "ABC-123-CEN",
+      subtitleBase: "ABC-123-CEN",
+    },
+    {
+      successFileMove: true,
+      successFileRename: true,
+      separate: true,
+      sourceBase: "ABC-123-CEN",
+      subtitleBase: "ABC-123-CEN",
+    },
+    {
+      successFileMove: false,
+      successFileRename: false,
+      separate: true,
+      sourceBase: "ABC-123-CEN",
+      subtitleBase: "ABC-123",
+    },
+    {
+      successFileMove: false,
+      successFileRename: true,
+      separate: false,
+      sourceBase: "ABC-123-CEN",
+      subtitleBase: "ABC-123",
+    },
+    {
+      successFileMove: true,
+      successFileRename: false,
+      separate: false,
+      sourceBase: "ABC-123-CEN",
+      subtitleBase: "ABC-123",
+    },
+    {
+      successFileMove: true,
+      successFileRename: true,
+      separate: true,
+      sourceBase: "ABC-123-CEN",
+      subtitleBase: "ABC-123",
+    },
+    {
+      successFileMove: false,
+      successFileRename: true,
+      separate: true,
+      sourceBase: "ABC-123-original",
+      subtitleBase: "ABC-123",
+    },
+    {
+      successFileMove: true,
+      successFileRename: false,
+      separate: false,
+      sourceBase: "ABC-123-original",
+      subtitleBase: "ABC-123",
+    },
+  ])("keeps movement, renaming and metadata separation independent ($successFileMove/$successFileRename/$separate)", async ({
     successFileMove,
     successFileRename,
     separate,

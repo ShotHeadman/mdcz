@@ -180,35 +180,6 @@ describe("FileScraper multipart aggregation cache", () => {
     await part1.release?.();
   });
 
-  it("reuses one aggregation request for alphabetic multipart files", async () => {
-    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "IDBD-905" })));
-    const { scraper } = createScraper(aggregate);
-    const [partAPath, partHPath] = await createTempFiles("IDBD-905-A.mp4", "IDBD-905-H.mp4");
-
-    const [partA, partH] = await Promise.all([
-      prepareAndExecuteFile(scraper, partAPath, { fileIndex: 1, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-      prepareAndExecuteFile(scraper, partHPath, { fileIndex: 2, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-    ]);
-
-    expect(aggregate).toHaveBeenCalledTimes(1);
-    expect(partA.status).toBe("success");
-    expect(partH.status).toBe("success");
-    expect(partA.part?.number).toBe(1);
-    expect(partH.part?.number).toBe(8);
-    expect(partA.relativePath).toContain("IDBD-905-A");
-    expect(partH.relativePath).toContain("IDBD-905-H");
-  });
-
   it("keeps aggregation requests separate for different numbers", async () => {
     const aggregate = vi
       .fn()

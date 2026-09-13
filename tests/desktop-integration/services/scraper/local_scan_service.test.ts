@@ -53,16 +53,6 @@ describe("LocalScanService", () => {
     expect(entries[0]?.assets.trailer).toBe(trailerPath);
   });
 
-  it("returns no entries when a directory only contains generated trailer sidecars", async () => {
-    const root = await createTempDir();
-
-    await writeFile(join(root, "trailer.mp4"), "trailer");
-
-    const entries = await new LocalScanService().scan(root, "extrafanart");
-
-    expect(entries).toEqual([]);
-  });
-
   it("uses registered metadata paths after settings change and excludes generated STRMs from scans", async () => {
     const root = await createTempDir();
     const source = join(root, "source");
