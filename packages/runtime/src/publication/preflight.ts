@@ -36,7 +36,6 @@ export const planRefs = (plan: PublicationPlan): RootFileRef[] => [
   ...plan.artifacts.map(({ target }) => target),
   ...plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : [])),
   ...plan.obsolete,
-  ...(plan.deleteFiles ?? []),
 ];
 
 export const observePublicationFile = async (
@@ -162,7 +161,6 @@ export const preflightPublication = async (
     const mutations = [
       ...targets,
       ...plan.obsolete,
-      ...(plan.deleteFiles ?? []),
       ...moves.filter((move) => !move.preserveSource).map((move) => move.source),
     ];
     for (const ref of mutations)
@@ -226,7 +224,7 @@ export const preflightPublication = async (
       throw new PublicationConflictError(targetPath, targetPath, "目标资源已存在且没有替换权限");
   }
 
-  for (const ref of [...plan.obsolete, ...(plan.deleteFiles ?? [])]) {
+  for (const ref of plan.obsolete) {
     await record(resolve(ref));
   }
   const plannedTargets = new Set(targets.map((ref) => resolve(ref)));

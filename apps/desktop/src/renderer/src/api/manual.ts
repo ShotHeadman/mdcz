@@ -51,18 +51,6 @@ export const startSelectedScrape = async (
   return { data };
 };
 
-export const deleteFile = async (target: RootFileRef | RootFileRef[]) => {
-  const data = await ipc.file.delete(Array.isArray(target) ? target : [target]);
-  if (data.failedCount > 0) throw new Error(`删除失败：${data.failedCount} 个文件未删除`);
-  return { data };
-};
-
-export const deleteFileAndFolder = async (target: RootFileRef) => {
-  const data = await ipc.file.delete([target], true);
-  if (data.failedCount > 0) throw new Error("删除文件夹失败");
-  return { data };
-};
-
 export const readNfo = async (path: LocalFileTarget, videoPath?: LocalFileTarget) => {
   const response = await ipc.file.nfoRead(asNfoTarget(path), videoPath);
   const data: NfoResponse = {

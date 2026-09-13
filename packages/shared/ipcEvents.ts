@@ -9,8 +9,6 @@ export type TaskSnapshotPayload =
 export type RendererShortcutAction =
   | "start-or-stop-scrape"
   | "retry-scrape"
-  | "delete-file"
-  | "delete-file-and-folder"
   | "open-folder"
   | "edit-nfo"
   | "play-video";

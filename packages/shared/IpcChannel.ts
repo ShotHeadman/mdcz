@@ -33,7 +33,6 @@ export enum IpcChannel {
   File_ListMediaCandidates = "file:list-media-candidates",
   File_Exists = "file:exists",
   File_Browse = "file:browse",
-  File_Delete = "file:delete",
   File_NfoRead = "file:nfo-read",
   File_NfoWrite = "file:nfo-write",
   File_PosterCropSession = "file:poster-crop-session",

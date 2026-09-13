@@ -277,9 +277,6 @@ export const appRouter = t.router({
     removeRecord: protectedProcedure
       .input(fileActionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.removeRecord(input)),
-    deleteFile: protectedProcedure
-      .input(fileActionInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.deleteFile(input)),
     history: protectedProcedure
       .input(scrapeTaskControlInputSchema.optional())
       .query(async ({ ctx, input }) => await ctx.services.scrape.history(input)),

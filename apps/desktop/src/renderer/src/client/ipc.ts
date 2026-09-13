@@ -118,8 +118,6 @@ export const ipc = {
         recursive,
         excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
       }),
-    delete: (targets: RootFileRef[], containingFolder?: boolean) =>
-      client[IpcChannel.File_Delete]({ targets, containingFolder }),
     exists: (path: LocalFileTarget) => client[IpcChannel.File_Exists]({ path }),
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),

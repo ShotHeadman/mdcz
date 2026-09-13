@@ -19,7 +19,6 @@ export const prepareOutputRegistration = async (
     ...plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : [])),
     ...(plan.sidecars ?? []).flatMap((move) => [move.source, move.target]),
     ...plan.obsolete,
-    ...(plan.deleteFiles ?? []),
   ];
   const roots = new Map(
     await Promise.all(
@@ -46,18 +45,6 @@ export const prepareOutputRegistration = async (
     if (path === undefined) throw new Error(`Publication path was not resolved: ${refKey(ref)}`);
     return path;
   };
-  const deletionOwners = new Set(
-    snapshot.files.filter((file) => plan.deleteFiles?.some((ref) => key(ref) === key(file))).map((file) => file.itemId),
-  );
-  for (const ref of plan.deleteFiles ?? []) {
-    if (
-      [...snapshot.files, ...snapshot.assets].some(
-        (reference) => key(reference) === key(ref) && !deletionOwners.has(reference.itemId),
-      )
-    ) {
-      throw new PublicationConflictError(absolute(ref), absolute(ref), "删除目标仍被其他媒体引用");
-    }
-  }
   for (const media of plan.media ?? []) {
     const references = snapshot.files.filter((file) => key(file) === key(media.source));
     if (new Set(references.map((file) => file.itemId)).size > 1)

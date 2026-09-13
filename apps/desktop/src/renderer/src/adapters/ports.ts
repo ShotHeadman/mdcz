@@ -9,7 +9,7 @@ import type {
 } from "@mdcz/views/adapters";
 import { resolveBatchRescrapeOutput } from "@mdcz/views/adapters";
 import { type DetailViewItem, getDetailLocalAssetRef } from "@mdcz/views/detail";
-import { deleteFile, deleteFileAndFolder, readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
+import { readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { getImageSrc, getLocalImagePath, resolveImagePath } from "@/utils/image";
 import { playMediaPath } from "@/utils/playback";
@@ -135,12 +135,6 @@ export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
     return {
       message: response.data.message,
     };
-  },
-  deleteFile: async (targets) => {
-    await deleteFile(targets.map((target) => target.ref));
-  },
-  deleteFileAndFolder: async (target) => {
-    await deleteFileAndFolder(target.ref);
   },
   openFolder: async (target) => {
     await ipc.app.showItemInFolder(target.ref ?? target.filePath);

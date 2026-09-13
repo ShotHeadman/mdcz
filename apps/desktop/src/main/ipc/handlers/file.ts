@@ -1,17 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, rmdir, stat } from "node:fs/promises";
-import { basename, dirname, extname, posix } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { basename, dirname, extname } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { localFileUrlForHostPath } from "@main/localFileProtocol";
 import { configManager } from "@main/services/config/ConfigManager";
-import { loggerService } from "@main/services/LoggerService";
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
-import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
-import { listRootFiles, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
+import { resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
-  commitPublishedMedia,
   commitRegisteredPublication,
   registeredOutputPaths,
   resolveRegisteredNfoPaths,
@@ -38,7 +35,6 @@ import { createIpcError, IpcErrorCode } from "../errors";
 import { resolveLocalFileTarget } from "../localFileTarget";
 import {
   fileBrowseInputSchema,
-  fileDeleteInputSchema,
   fileExistsInputSchema,
   fileListMediaCandidatesInputSchema,
   fileNfoReadInputSchema,
@@ -48,8 +44,6 @@ import {
 } from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
-const logger = loggerService.getLogger("IpcRouter");
-
 export const createFileHandlers = (
   context: ServiceContainer,
 ): Pick<
@@ -58,7 +52,6 @@ export const createFileHandlers = (
   | typeof IpcChannel.File_ListMediaCandidates
   | typeof IpcChannel.File_Exists
   | typeof IpcChannel.File_Browse
-  | typeof IpcChannel.File_Delete
   | typeof IpcChannel.File_NfoRead
   | typeof IpcChannel.File_NfoWrite
   | typeof IpcChannel.File_PosterCropSession
@@ -183,80 +176,6 @@ export const createFileHandlers = (
         : await dialog.showOpenDialog(options);
       return { paths: result.canceled ? null : result.filePaths };
     }),
-    [IpcChannel.File_Delete]: t.procedure
-      .input(fileDeleteInputSchema)
-      .action(async ({ input }): Promise<{ deletedCount: number; failedCount: number }> => {
-        if (input.containingFolder && input.targets.length !== 1) {
-          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Deleting a containing folder requires one file");
-        }
-        const state = await persistenceService.getState();
-        const roots = await mediaRoots.listRoots();
-        const canonicalizeRef = (ref: (typeof input.targets)[number]) => {
-          const referencedRoot = roots.find((root) => root.id === ref.rootId);
-          if (!referencedRoot) throw new Error(`Media root not found: ${ref.rootId}`);
-          const resolved = resolveRootFile(roots, resolveRootRelativePath(referencedRoot, ref.relativePath));
-          return { rootId: resolved.root.id, relativePath: resolved.relativePath };
-        };
-        const publishDeletion = async (refs: Array<{ rootId: string; relativePath: string }>, operationId: string) => {
-          await commitPublishedMedia(
-            {
-              operationId,
-              operationType: "maintenance",
-              artifacts: [],
-              assets: [],
-              obsolete: [],
-              deleteFiles: refs,
-            },
-            {
-              resolveRoot: async (rootId) => await mediaRoots.get(rootId),
-              journal: state.repositories.publicationJournal,
-              outputs: state.repositories.library,
-              repairIssues: state.repositories.libraryRepairIssues,
-              commit: () => state.repositories.library.deleteFiles(refs),
-            },
-          );
-        };
-
-        if (input.containingFolder) {
-          const target = input.targets[0];
-          if (!target) throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "File target is required");
-          const ref = canonicalizeRef(target);
-          const parentPath = posix.dirname(ref.relativePath);
-          if (parentPath === "." || parentPath === "") {
-            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Cannot delete a media root directory");
-          }
-          const root = await mediaRoots.get(ref.rootId);
-          const files = await listRootFiles(root, parentPath, true);
-          await publishDeletion(
-            files.map((file) => ({ rootId: root.id, relativePath: file.relativePath })),
-            `delete-folder:${root.id}:${parentPath}`,
-          );
-          const directory = resolveRootRelativePath(root, parentPath);
-          const remaining = await readdir(directory, { recursive: true, withFileTypes: true });
-          for (const child of remaining
-            .filter((entry) => entry.isDirectory())
-            .sort((a, b) => b.parentPath.length - a.parentPath.length))
-            await rmdir(`${child.parentPath}/${child.name}`);
-          await rmdir(directory);
-          return { deletedCount: files.length, failedCount: 0 };
-        }
-
-        let deletedCount = 0;
-        let failedCount = 0;
-
-        for (const target of input.targets) {
-          try {
-            const ref = canonicalizeRef(target);
-            await publishDeletion([ref], `delete:${ref.rootId}:${ref.relativePath}`);
-            deletedCount += 1;
-          } catch (error) {
-            failedCount += 1;
-            logger.warn(`Failed to delete file: ${toErrorMessage(error)}`);
-          }
-        }
-
-        return { deletedCount, failedCount };
-      }),
     [IpcChannel.File_NfoRead]: t.procedure.input(fileNfoReadInputSchema).action(async ({ input }) => {
       try {
         const { hostPath: nfoPath } = await resolveLocalFileTarget(context, input.nfoPath);

@@ -274,10 +274,6 @@ export const DESKTOP_ONLY_CHANNELS = [
   { channel: IpcChannel.Event_Shortcut, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.Event_TaskSnapshot, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.File_Browse, reason: "Native file dialog; no server procedure." },
-  {
-    channel: IpcChannel.File_Delete,
-    reason: "Deletes by absolute path; server scrape.deleteFile is root-relative and not 1:1.",
-  },
   { channel: IpcChannel.File_CancelMediaCandidates, reason: "Cancel an explicit filesystem preview." },
   { channel: IpcChannel.File_Exists, reason: "Local filesystem probe." },
   {
@@ -379,7 +375,6 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "scans.retry", reason: "Server scan task API." },
   { path: "scans.start", reason: "Server scan task API." },
   { path: "scrape.removeRecord", reason: "Removes library records while retaining all files." },
-  { path: "scrape.deleteFile", reason: "Root-relative delete; desktop File_Delete uses absolute paths." },
   { path: "scrape.liveRuns", reason: "Web-only authoritative in-process scrape snapshot read." },
   {
     path: "scrape.pendingUncensoredConfirmation",

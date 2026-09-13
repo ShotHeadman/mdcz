@@ -35,7 +35,6 @@ export interface PublicationPlan {
   artifacts: Array<{ target: RootFileRef; content: PublicationContent }>;
   assets: AssetRef[];
   obsolete: RootFileRef[];
-  deleteFiles?: RootFileRef[];
   editFiles?: RootFileRef[];
   replaceExistingTargets?: RootFileRef[];
 }

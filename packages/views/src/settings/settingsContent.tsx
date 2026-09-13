@@ -1059,8 +1059,6 @@ export function ShortcutsSection() {
     <>
       <ShortcutField name="shortcuts.startOrStopScrape" label="开始/停止刮削" description="示例: S" />
       <ShortcutField name="shortcuts.retryScrape" label="重新刮削" description="示例: R" />
-      <ShortcutField name="shortcuts.deleteFile" label="删除文件" description="示例: D" />
-      <ShortcutField name="shortcuts.deleteFileAndFolder" label="删除文件及文件夹" description="示例: ⇧ + D" />
       <ShortcutField name="shortcuts.openFolder" label="打开所在目录" description="示例: F" />
       <ShortcutField name="shortcuts.editNfo" label="编辑 NFO" description="示例: E" />
       <ShortcutField name="shortcuts.playVideo" label="播放视频" description="示例: P" />
@@ -1221,7 +1219,6 @@ export function BehaviorSection() {
       <div className="pt-3 text-sm font-medium">刮削失败处理</div>
       <BoolField name="behavior.failedFileMove" label="移动失败的视频和字幕" />
       <PathFieldWrapper name="paths.failedOutputFolder" label="失败文件目录" isDirectory disabled={!failedMove} />
-      <BoolField name="behavior.deleteEmptyFolder" label="删除空文件夹" />
       <BoolField name="behavior.scrapeSoftlinkPath" label="刮削软链接目录" />
       <BoolField name="behavior.saveLog" label="保存日志到文件" />
     </>

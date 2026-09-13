@@ -358,7 +358,6 @@ test("settings sections expose public labels and naming placeholder help", async
           successFileMove: false,
           failedFileMove: false,
           successFileRename: false,
-          deleteEmptyFolder: false,
           scrapeSoftlinkPath: false,
           saveLog: false,
         },

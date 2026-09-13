@@ -227,8 +227,6 @@ const embySchema = z.object({
 const shortcutsSchema = z.object({
   startOrStopScrape: z.string().default("S"),
   retryScrape: z.string().default("R"),
-  deleteFile: z.string().default("D"),
-  deleteFileAndFolder: z.string().default("Shift+D"),
   openFolder: z.string().default("F"),
   editNfo: z.string().default("E"),
   playVideo: z.string().default("P"),
@@ -267,7 +265,6 @@ const behaviorSchema = z.object({
   successFileMove: z.boolean().default(true),
   failedFileMove: z.boolean().default(true),
   successFileRename: z.boolean().default(true),
-  deleteEmptyFolder: z.boolean().default(true),
   scrapeSoftlinkPath: z.boolean().default(false),
   saveLog: z.boolean().default(true),
   updateCheck: z.boolean().default(true),

@@ -37,7 +37,6 @@ function buildMenuContent(
     filePath: resultPath,
     ref: result.output ?? { rootId: result.rootId, relativePath: result.relativePath },
   };
-  const canDeleteFolder = typeof port.deleteFileAndFolder === "function";
   const canOpenFolder = typeof port.openFolder === "function";
   const strm = result.assets.find((asset) => asset.type === "local" && asset.kind === "strm");
   const metadataRef = strm?.type === "local" ? (result.nfo ?? strm.file) : undefined;
@@ -65,32 +64,21 @@ function buildMenuContent(
     }
   };
 
-  const handleDelete = async (operation: "removeRecord" | "deleteFile") => {
-    const deletionLabel = operation === "removeRecord" ? "移除记录（保留所有文件）" : "删除源媒体文件";
+  const handleRemove = async () => {
     if (
       !window.confirm(
         groupedVideoPaths.length > 1
-          ? `确定${deletionLabel}（${groupedVideoPaths.length} 项）吗？\n${resultNumber}`
-          : `确定${deletionLabel}吗？\n${resultPath}`,
+          ? `确定从媒体库移除 ${groupedVideoPaths.length} 项记录吗？\n${resultNumber}`
+          : `确定从媒体库移除记录吗？\n${resultPath}`,
       )
     ) {
       return;
     }
     try {
-      await port[operation]?.(groupedTargets);
-      toast.success(operation === "removeRecord" ? "已移除记录，文件已保留" : "已删除源媒体文件");
+      await port.removeRecord?.(groupedTargets);
+      toast.success("已从媒体库移除，磁盘文件保持不变");
     } catch (error) {
       toast.error(toErrorMessage(error, "操作失败"));
-    }
-  };
-
-  const handleDeleteFolder = async () => {
-    if (!window.confirm(`确定删除源媒体和所在文件夹吗？\n${resultPath}`)) return;
-    try {
-      await port.deleteFileAndFolder?.(resultTarget);
-      toast.success("已删除文件夹");
-    } catch {
-      toast.error("删除文件夹失败");
     }
   };
 
@@ -130,6 +118,23 @@ function buildMenuContent(
           <Copy className="h-3.5 w-3.5" />
         </ContextMenuShortcut>
       </ContextMenuItem>
+      {!canOpenFolder && (
+        <ContextMenuItem
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(resultPath);
+              toast.success("已复制路径");
+            } catch (error) {
+              toast.error(toErrorMessage(error, "复制路径失败"));
+            }
+          }}
+        >
+          复制路径
+          <ContextMenuShortcut>
+            <Copy className="h-3.5 w-3.5" />
+          </ContextMenuShortcut>
+        </ContextMenuItem>
+      )}
       <ContextMenuSeparator />
       <ContextMenuItem onClick={handleRetryScrape}>重新刮削</ContextMenuItem>
       <ContextMenuItem onClick={handleManualUrlRescrape}>
@@ -140,25 +145,10 @@ function buildMenuContent(
       </ContextMenuItem>
       <ContextMenuSeparator />
       {port.removeRecord && (
-        <ContextMenuItem
-          onClick={() => handleDelete("removeRecord")}
-          className="text-destructive focus:text-destructive"
-        >
-          移除记录
+        <ContextMenuItem onClick={handleRemove} className="text-destructive focus:text-destructive">
+          从媒体库移除
         </ContextMenuItem>
       )}
-      {port.deleteFile && (
-        <ContextMenuItem onClick={() => handleDelete("deleteFile")} className="text-destructive focus:text-destructive">
-          删除源媒体文件
-          <ContextMenuShortcut>D</ContextMenuShortcut>
-        </ContextMenuItem>
-      )}
-      {canDeleteFolder ? (
-        <ContextMenuItem onClick={handleDeleteFolder} className="text-destructive focus:text-destructive">
-          删除源媒体及所在文件夹
-          <ContextMenuShortcut>A</ContextMenuShortcut>
-        </ContextMenuItem>
-      ) : null}
       <ContextMenuSeparator />
       {canOpenFolder ? (
         <ContextMenuItem onClick={handleOpenFolder}>

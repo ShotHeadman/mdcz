@@ -210,7 +210,6 @@ describe("web scrape action port", () => {
     expect(retry).not.toHaveBeenCalled();
   });
   it("removes records through the explicit record API", async () => {
-    const deleteFile = vi.spyOn(api.scrape, "deleteFile");
     const removeRecord = vi.spyOn(api.scrape, "removeRecord").mockResolvedValue({
       ok: true,
       rootId: "root-1",
@@ -224,8 +223,6 @@ describe("web scrape action port", () => {
 
     await port.removeRecord?.(safeTargets);
 
-    expect(port.deleteFile).toBeUndefined();
-    expect(deleteFile).not.toHaveBeenCalled();
     expect(removeRecord).toHaveBeenNthCalledWith(1, { rootId: "root-1", relativePath: "ABC-001.mp4" });
     expect(removeRecord).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
   });

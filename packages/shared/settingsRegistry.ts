@@ -514,8 +514,6 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "emby.refreshPersonAfterSync", label: "同步后刷新人物 (Emby)", anchor: "system", surface: "tools" },
   { key: "shortcuts.startOrStopScrape", label: "开始/停止刮削", anchor: "system" },
   { key: "shortcuts.retryScrape", label: "重新刮削", anchor: "system" },
-  { key: "shortcuts.deleteFile", label: "删除文件", anchor: "system" },
-  { key: "shortcuts.deleteFileAndFolder", label: "删除文件及文件夹", anchor: "system" },
   { key: "shortcuts.openFolder", label: "打开所在目录", anchor: "system" },
   { key: "shortcuts.editNfo", label: "编辑 NFO", anchor: "system" },
   { key: "shortcuts.playVideo", label: "播放视频", anchor: "system" },
@@ -527,7 +525,6 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "behavior.successFileMove", label: "移动视频和字幕", anchor: "fileBehavior" },
   { key: "behavior.failedFileMove", label: "移动失败的视频和字幕", anchor: "fileBehavior" },
   { key: "behavior.successFileRename", label: "重命名视频和字幕", anchor: "fileBehavior" },
-  { key: "behavior.deleteEmptyFolder", label: "删除空文件夹", anchor: "fileBehavior" },
   { key: "behavior.scrapeSoftlinkPath", label: "刮削软链接目录", anchor: "fileBehavior" },
   { key: "behavior.saveLog", label: "保存日志到文件", anchor: "fileBehavior" },
 ];

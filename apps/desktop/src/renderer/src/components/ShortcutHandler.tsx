@@ -12,15 +12,13 @@ import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { deleteFile, deleteFileAndFolder, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
+import { retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { playMediaPath } from "@/utils/playback";
 
 const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([
   "start-or-stop-scrape",
   "retry-scrape",
-  "delete-file",
-  "delete-file-and-folder",
   "open-folder",
   "edit-nfo",
   "play-video",
@@ -64,16 +62,11 @@ export function ShortcutHandler() {
           : undefined;
         const selectedItem = actionContext?.selectedItem;
         const selectedNfoPath = actionContext?.nfoPath;
-        const groupedTargets = actionContext?.targets ?? [];
-        const groupedVideoPaths = actionContext?.videoPaths ?? [];
         const selectedPath = selectedItem
           ? (selectedItem.output?.relativePath ?? selectedItem.relativePath)
           : undefined;
         const selectedRef = selectedItem
           ? (selectedItem.output ?? { rootId: selectedItem.rootId, relativePath: selectedItem.relativePath })
-          : undefined;
-        const selectedNumber = selectedItem
-          ? (selectedItem.crawlerData?.number ?? selectedItem.fileName.replace(/\.[^.]+$/u, ""))
           : undefined;
         const handleRetrySelectedScrape = async () => {
           if (!selectedItem) {
@@ -165,46 +158,6 @@ export function ShortcutHandler() {
 
           case "retry-scrape": {
             await handleRetrySelectedScrape();
-            return;
-          }
-
-          case "delete-file": {
-            if (!selectedPath) {
-              toast.info("请先选择一个结果项");
-              return;
-            }
-            if (
-              !window.confirm(
-                groupedVideoPaths.length > 1
-                  ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${selectedNumber}`
-                  : `确定删除文件吗？\n${selectedPath}`,
-              )
-            ) {
-              return;
-            }
-            try {
-              await deleteFile(groupedTargets.map((target) => target.ref));
-              toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "文件已删除");
-            } catch (error) {
-              toast.error(`删除失败: ${toErrorMessage(error)}`);
-            }
-            return;
-          }
-
-          case "delete-file-and-folder": {
-            if (!selectedPath || !selectedRef) {
-              toast.info("请先选择一个结果项");
-              return;
-            }
-            if (!window.confirm(`确定删除文件和所在文件夹吗？\n${selectedPath}`)) {
-              return;
-            }
-            try {
-              await deleteFileAndFolder(selectedRef);
-              toast.success("文件和文件夹已删除");
-            } catch (error) {
-              toast.error(`删除失败: ${toErrorMessage(error)}`);
-            }
             return;
           }
 

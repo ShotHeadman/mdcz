@@ -475,42 +475,6 @@ export class ScrapeService {
     return { ok: true, ...target };
   }
 
-  async deleteFile(input: FileActionInput): Promise<FileActionResponse> {
-    const [target] = await this.mediaRoots.canonicalizeFileRefs([input]);
-    if (!target) throw new Error("File ref is required");
-    const state = await this.persistence.getState();
-    const entry = await state.repositories.library
-      .getEntry(target.rootId, target.relativePath)
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.message.startsWith("Library entry not found:")) return null;
-        throw error;
-      });
-    const deleteFiles = [
-      target,
-      ...(entry?.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })) ?? []),
-    ];
-    await commitPublishedMedia(
-      {
-        operationId: `delete:${target.rootId}:${target.relativePath}`,
-        operationType: "maintenance",
-        artifacts: [],
-        assets: [],
-        obsolete: [],
-        deleteFiles,
-      },
-      {
-        resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
-        journal: state.repositories.publicationJournal,
-        outputs: state.repositories.library,
-        commit: () => {
-          if (entry) state.repositories.library.deleteEntry(entry.id);
-        },
-        repairIssues: state.repositories.libraryRepairIssues,
-      },
-    );
-    return { ok: true, ...target };
-  }
-
   async close(): Promise<void> {
     if (this.scrapeInvalidationTimer) {
       clearTimeout(this.scrapeInvalidationTimer);

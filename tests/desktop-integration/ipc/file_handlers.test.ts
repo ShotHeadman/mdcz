@@ -80,7 +80,6 @@ const createContext = (mediaRoots?: {
     publicationSnapshot: () => ({ files: [], assets: [] }),
     registerPublishedOutputs: vi.fn(),
     releaseOutputReferences: vi.fn(),
-    deleteFiles: vi.fn(),
   };
   return {
     windowService: {
@@ -235,48 +234,6 @@ describe("createFileHandlers", () => {
     );
   });
 
-  it("deletes a containing folder from its media root ref", async () => {
-    const root = await createTempDir();
-    const folder = join(root, "nested");
-    await mkdir(folder);
-    await writeFile(join(folder, "movie.mp4"), "video");
-    await writeFile(join(folder, "movie.nfo"), "metadata");
-    const context = createContext({ list: async () => [{ id: "media", hostPath: root }] });
-    const handlers = createFileHandlers(context);
-    vi.spyOn(
-      (await context.persistenceService.getState()).repositories.library,
-      "publicationSnapshot",
-    ).mockReturnValueOnce({
-      files: [],
-      assets: [
-        {
-          rootId: "media",
-          relativePath: "nested/movie.nfo",
-          kind: "nfo",
-          itemId: "another-media",
-          fileId: null,
-          published: true,
-          historical: false,
-        },
-      ],
-    });
-    await expect(
-      handlers[IpcChannel.File_Delete].action(
-        actionArgs({ targets: [{ rootId: "media", relativePath: "nested/movie.mp4" }], containingFolder: true }),
-      ),
-    ).rejects.toThrow("其他媒体引用");
-    expect(await readFile(join(folder, "movie.nfo"), "utf8")).toBe("metadata");
-
-    await expect(
-      handlers[IpcChannel.File_Delete].action(
-        actionArgs({
-          targets: [{ rootId: "media", relativePath: "nested/movie.mp4" }],
-          containingFolder: true,
-        }),
-      ),
-    ).resolves.toEqual({ deletedCount: 2, failedCount: 0 });
-    await expect(readFile(join(folder, "movie.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
-  });
   it("applies configured NFO fields when manually saving metadata", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "ABC-123.nfo");

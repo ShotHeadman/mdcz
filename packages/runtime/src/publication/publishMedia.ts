@@ -364,7 +364,6 @@ export const commitPublishedMedia = async <TResult>(
     }
 
     const obsolete = uniqueRefs([
-      ...(plan.deleteFiles ?? []),
       ...plan.obsolete,
       ...planMoves(plan)
         .filter((move) => !move.preserveSource && resolved.resolve(move.source) !== resolved.resolve(move.target))

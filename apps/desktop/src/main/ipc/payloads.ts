@@ -92,10 +92,6 @@ export const fileBrowseInputSchema = z.object({
   type: z.enum(["file", "directory"]).optional(),
   filters: z.array(z.object({ name: z.string(), extensions: z.array(z.string()) })).optional(),
 });
-export const fileDeleteInputSchema = z.object({
-  targets: z.array(rootFileRefSchema).min(1),
-  containingFolder: z.boolean().optional(),
-});
 export const fileNfoReadInputSchema = z.object({
   nfoPath: localFileTargetSchema,
   videoPath: localFileTargetSchema.optional(),
@@ -113,7 +109,6 @@ export const filePosterCropSaveInputSchema = z.object({
 
 export const libraryDeleteInputSchema = z.object({
   id: optionalString,
-  deleteMode: z.enum(["none", "assets", "all"]).optional(),
 });
 
 export {

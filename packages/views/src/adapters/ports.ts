@@ -61,9 +61,7 @@ export interface ScrapeActionPort {
   rerunDirectory?(runId: string): Promise<void>;
   rescrapeByUrl(targets: ScrapeActionTarget[], manualUrl: string): Promise<{ message: string }>;
   retryFailed(itemIds?: readonly string[]): Promise<{ message: string }>;
-  deleteFile?(targets: ScrapeActionTarget[]): Promise<void>;
   removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;
-  deleteFileAndFolder?(target: ScrapeActionTarget): Promise<void>;
   openFolder?(target: ScrapeActionTarget): Promise<void> | void;
   play?(target: ScrapeActionTarget): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;

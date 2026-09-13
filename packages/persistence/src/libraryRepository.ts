@@ -662,21 +662,6 @@ export class LibraryRepository {
     return await this.getEntryById(file.itemId);
   }
 
-  deleteFiles(refs: Array<{ rootId: string; relativePath: string }>): void {
-    const itemIds = new Set<string>();
-    for (const ref of refs) {
-      const where = and(
-        eq(libraryItemFiles.rootId, ref.rootId),
-        eq(libraryItemFiles.rootRelativePath, ref.relativePath),
-      );
-      for (const file of this.database.db.select().from(libraryItemFiles).where(where).all()) itemIds.add(file.itemId);
-      this.database.db.delete(libraryItemFiles).where(where).run();
-    }
-    for (const id of itemIds)
-      if (!this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).get())
-        this.deleteEntry(id);
-  }
-
   async getEntryByFileId(fileId: string): Promise<LibraryEntryRecord> {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
     if (!file) throw new Error(`Library file not found: ${fileId}`);
