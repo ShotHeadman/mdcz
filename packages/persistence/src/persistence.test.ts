@@ -25,6 +25,11 @@ const addRoots = async (...ids: string[]): Promise<void> => {
   await Promise.all(ids.map((id) => roots.upsert(createMediaRoot({ id, displayName: id, hostPath: `/${id}` }))));
 };
 
+const readSchema = (target: PersistenceDatabase) =>
+  target.sqlite
+    .prepare("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
+    .all();
+
 describe("Persistence migrations", () => {
   it("migrates isolated test databases with the package migration facade", () => {
     database = createTestPersistenceDatabase();
@@ -221,6 +226,113 @@ describe("Persistence migrations", () => {
           created_at: 10,
         },
       ]);
+    } finally {
+      await migrations.cleanup();
+    }
+  });
+
+  it("upgrades a released v0.12 database through the compatibility bridge", async () => {
+    const migrations = await createTempDirectory("persistence-v012-migrations");
+    try {
+      await mkdir(join(migrations.path, "meta"), { recursive: true });
+      await Promise.all(
+        ["0000_initial.sql", "0001_task_execution_and_media_root_identity.sql"].map((file) =>
+          cp(join(defaultMigrationsFolder, file), join(migrations.path, file)),
+        ),
+      );
+      const journal = JSON.parse(await readFile(join(defaultMigrationsFolder, "meta", "_journal.json"), "utf8")) as {
+        entries: Array<{ idx: number }>;
+      };
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 1) }),
+      );
+
+      database = createPersistenceDatabase({ path: ":memory:" });
+      runMigrations(database, { migrationsFolder: migrations.path });
+      database.sqlite
+        .prepare(
+          "INSERT INTO media_roots (id, display_name, host_path, root_type, enabled, deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run("root-1", "Media", "/media", "mounted-filesystem", 1, 0, 1, 1);
+      database.sqlite
+        .prepare(
+          "INSERT INTO task_records (id, kind, root_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("scan-1", "scan", "root-1", "completed", 2, 3);
+      database.sqlite
+        .prepare("INSERT INTO scan_results (task_id, root_id, relative_path, size, modified_at) VALUES (?, ?, ?, ?, ?)")
+        .run("scan-1", "root-1", "movie.mp4", 20, 2);
+
+      runMigrations(database);
+      runMigrations(database);
+
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 4 });
+      expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
+        { id: "scan-1", root_id: "root-1", status: "completed" },
+      ]);
+      expect(database.sqlite.prepare("SELECT task_id, root_id, relative_path, size FROM scan_results").all()).toEqual([
+        { task_id: "scan-1", root_id: "root-1", relative_path: "movie.mp4", size: 20 },
+      ]);
+      expect(database.sqlite.prepare("PRAGMA integrity_check").pluck().all()).toEqual(["ok"]);
+      expect(database.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+
+      const indexes = database.sqlite
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
+        .pluck()
+        .all();
+      expect(indexes).toContain("scan_task_events_task_created_at_idx");
+      expect(indexes).not.toContain("task_events_task_created_at_idx");
+
+      const fresh = createTestPersistenceDatabase();
+      try {
+        expect(readSchema(database)).toEqual(readSchema(fresh));
+      } finally {
+        fresh.close();
+      }
+    } finally {
+      await migrations.cleanup();
+    }
+  });
+
+  it("accepts the released v0.15 migration record without replaying it", async () => {
+    const migrations = await createTempDirectory("persistence-v015-migrations");
+    try {
+      await mkdir(join(migrations.path, "meta"), { recursive: true });
+      await cp(join(defaultMigrationsFolder, "0000_initial.sql"), join(migrations.path, "0000_initial.sql"));
+      await cp(
+        join(defaultMigrationsFolder, "0003_additive_roots_and_scan_tasks.sql"),
+        join(migrations.path, "0001_additive_roots_and_scan_tasks.sql"),
+      );
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({
+          version: "7",
+          dialect: "sqlite",
+          entries: [
+            { idx: 0, version: "7", when: 0, tag: "0000_initial", breakpoints: true },
+            {
+              idx: 1,
+              version: "7",
+              when: 1_787_875_200_000,
+              tag: "0001_additive_roots_and_scan_tasks",
+              breakpoints: true,
+            },
+          ],
+        }),
+      );
+
+      database = createPersistenceDatabase({ path: ":memory:" });
+      runMigrations(database, { migrationsFolder: migrations.path });
+      runMigrations(database);
+
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 2 });
+      const fresh = createTestPersistenceDatabase();
+      try {
+        expect(readSchema(database)).toEqual(readSchema(fresh));
+      } finally {
+        fresh.close();
+      }
     } finally {
       await migrations.cleanup();
     }
