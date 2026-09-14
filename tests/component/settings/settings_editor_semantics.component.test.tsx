@@ -4,12 +4,12 @@ import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form
 import {
   AdvancedSettingsFooterContent,
   AssetDownloadsSection,
-  FileBehaviorTopLevelSection,
   flattenConfig,
   NamingSection,
   NetworkTopLevelSection,
   NfoSection,
   PathsSection,
+  PathsTopLevelSection,
   ProfileCapsule,
   SectionAnchor,
   SettingsEditor,
@@ -81,6 +81,15 @@ function SettingsSurfaceHarness() {
   const configuration = useMemo(
     () => ({
       ...defaultConfiguration,
+      behavior: {
+        ...defaultConfiguration.behavior,
+        metadataOnly: true,
+        generateStrm: true,
+      },
+      paths: {
+        ...defaultConfiguration.paths,
+        metadataPath: "/metadata",
+      },
       download: {
         ...defaultConfiguration.download,
         downloadPoster: true,
@@ -281,7 +290,6 @@ test("paths section surfaces scan exclusion directories with autocomplete inputs
     <FormHarness
       values={{
         paths: {
-          failedOutputFolder: "failed",
           defaultScanExcludeDirs: ["E:/Output", "failed_22"],
         },
       }}
@@ -342,23 +350,19 @@ test("settings sections expose public labels and naming placeholder help", async
       values={{
         behavior: {
           successFileMove: false,
-          failedFileMove: false,
           successFileRename: false,
-          scrapeSoftlinkPath: false,
-          saveLog: false,
         },
       }}
     >
-      <FileBehaviorTopLevelSection forceOpen />
+      <PathsTopLevelSection forceOpen />
     </FormHarness>,
   );
-  await expect.element(behavior.getByText("文件整理与输出")).toBeVisible();
-  await expect.element(behavior.getByText("移动视频和字幕", { exact: true })).toBeVisible();
+  await expect.element(behavior.getByText("媒体库与输出")).toBeVisible();
+  await expect.element(behavior.getByText("移动视频与字幕", { exact: true })).toBeVisible();
+  await expect.element(behavior.getByText("重命名视频与字幕", { exact: true })).toBeVisible();
+  await expect.element(behavior.getByText("仅输出元数据", { exact: true })).toBeVisible();
   expect(
     behavior.container.querySelector('[data-field-name="paths.successOutputFolder"] input')?.matches(":disabled"),
-  ).toBe(true);
-  expect(
-    behavior.container.querySelector('[data-field-name="paths.failedOutputFolder"] input')?.matches(":disabled"),
   ).toBe(true);
 
   const naming = await render(
@@ -394,10 +398,12 @@ test("output settings save mappings and show preview failures", async () => {
         }),
       })}
     >
-      <FileBehaviorTopLevelSection forceOpen />
+      <PathsTopLevelSection forceOpen />
       <NamingSection />
     </FormHarness>,
   );
+  await screen.getByRole("switch", { name: "仅输出元数据" }).click();
+  await screen.getByRole("switch", { name: "同时生成 .strm 播放流文件" }).click();
   await screen.getByRole("button", { name: "添加路径映射" }).click();
   await screen.getByLabelText("1 MDCz 可见路径前缀").fill("D:\\Downloads");
   await screen.getByLabelText("1 播放器可见路径前缀").fill("/player");
@@ -488,4 +494,32 @@ test("poster badge controls follow download and badge visibility gates", async (
   await expect.element(badgeOn.getByText("覆盖角标图片", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("中字")).toBeVisible();
   await expect.element(badgeOn.getByText("流出")).toBeVisible();
+});
+
+test("metadata-only mode disables media organization and shows lock guidance", async () => {
+  const normal = await render(
+    <FormHarness values={{ behavior: { metadataOnly: false, successFileMove: true, successFileRename: true } }}>
+      <PathsTopLevelSection forceOpen />
+    </FormHarness>,
+  );
+  expect(
+    normal.container.querySelector('[data-field-name="behavior.successFileMove"] button')?.matches(":disabled"),
+  ).toBe(false);
+  expect(
+    normal.container.querySelector('[data-field-name="behavior.successFileRename"] button')?.matches(":disabled"),
+  ).toBe(false);
+  await expect.element(normal.getByText("已开启「仅输出元数据」模式")).not.toBeInTheDocument();
+
+  const metadataOnly = await render(
+    <FormHarness values={{ behavior: { metadataOnly: true, successFileMove: true, successFileRename: true } }}>
+      <PathsTopLevelSection forceOpen />
+    </FormHarness>,
+  );
+  expect(
+    metadataOnly.container.querySelector('[data-field-name="behavior.successFileMove"] button')?.matches(":disabled"),
+  ).toBe(true);
+  expect(
+    metadataOnly.container.querySelector('[data-field-name="behavior.successFileRename"] button')?.matches(":disabled"),
+  ).toBe(true);
+  await expect.element(metadataOnly.getByText("已开启「仅输出元数据」模式")).toBeVisible();
 });

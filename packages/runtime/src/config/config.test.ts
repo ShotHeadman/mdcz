@@ -127,6 +127,16 @@ describe("runtime config helpers", () => {
     const merged = mergeRuntimeConfig(defaultConfiguration, { network: { timeout: 33 } });
 
     expect(parseRuntimeConfiguration(merged).network.timeout).toBe(33);
+    for (const successFileMove of [false, true]) {
+      expect(() =>
+        parseRuntimeConfiguration({
+          behavior: { metadataOnly: true, successFileMove },
+          paths: { metadataPath: "/metadata" },
+          naming: { folderTemplate: "{actor}", assetNamingMode: "fixed" },
+          download: { nfoNaming: "movie" },
+        }),
+      ).toThrow(RuntimeConfigValidationError);
+    }
     expect(() => parseRuntimeConfiguration({ download: { nfoNaming: "invalid" } })).toThrow(
       RuntimeConfigValidationError,
     );

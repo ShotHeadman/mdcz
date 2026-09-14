@@ -583,7 +583,6 @@ export class ScrapeService {
           latestOutcome: latestOutcomeByItemId.get(item.id),
           outputRoot: requestedOutputRoot ?? root,
           outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? "",
-          failedOutputFolder: configuration.paths.failedOutputFolder,
           resolveRoot: async (id) => {
             const resolved = roots.get(id) ?? (await this.mediaRoots.get(id));
             roots.set(id, resolved);
@@ -649,10 +648,9 @@ export class ScrapeService {
           item: ScrapeRunItem<ServerManualScrape>;
           prepared: PreparedMountedRootScrape;
         }[],
-        failedItems: readonly ScrapeRunItem<ServerManualScrape>[],
       ) =>
-        await validatePreparedScrapeFiles([
-          ...prepared.map(({ item, prepared }) => ({
+        await validatePreparedScrapeFiles(
+          prepared.map(({ item, prepared }) => ({
             itemId: item.id,
             sourcePath: prepared.fileScrape.sourcePath,
             libraryItemId: librarySources.get(item.id)?.libraryItemId,
@@ -660,24 +658,7 @@ export class ScrapeService {
             mediaIdentity: prepared.fileScrape.crawlerData.number || prepared.fileScrape.fileInfo.number,
             partNumber: prepared.fileScrape.fileInfo.part?.number ?? null,
           })),
-          ...(configuration.behavior.failedFileMove
-            ? failedItems.map((item) => {
-                const root = requestedOutputRoot ?? roots.get(item.executionSource?.rootId ?? item.rootId);
-                if (!root) throw new Error(`Scrape failure root disappeared: ${item.id}`);
-                return {
-                  itemId: item.id,
-                  sourcePath: item.sourcePath,
-                  outputPlan: {
-                    targetVideoPath: this.fileOrganizer.resolveFailedVideoPath(
-                      item.sourcePath,
-                      root.hostPath,
-                      configuration,
-                    ),
-                  },
-                };
-              })
-            : []),
-        ]),
+        ),
       executePreparedItems: async (entries, signal) => {
         const results = await this.runtime.executePrepared(
           entries.map(({ item, prepared }) => ({
@@ -722,31 +703,11 @@ export class ScrapeService {
       },
       commitItems: async (entries) => {
         const committed = await commitScrapeTerminalResults({
-          items: entries.map(({ item, result, attemptId }) => {
-            const sourceRoot = roots.get(item.executionSource?.rootId ?? item.rootId);
-            if (!sourceRoot) throw new Error(`Scrape root disappeared before item commit: ${item.rootId}`);
-            const outputRoot = requestedOutputRoot ?? sourceRoot;
-            const runConfiguration: Configuration = {
-              ...configuration,
-              paths: {
-                ...configuration.paths,
-                mediaPath: outputRoot.hostPath,
-                ...(requestedOutputRoot
-                  ? { successOutputFolder: manifest.requestedOutputRelativeDirectory ?? "" }
-                  : {}),
-              },
-            };
-            return {
-              result: item.manualScrape?.uncensoredChoice ? { ...result, uncensoredAmbiguous: false } : result,
-              attemptId,
-              itemPath: item.relativePath,
-              fileTransitions: this.fileOrganizer.createScrapeFileTransitions({
-                configuration: runConfiguration,
-                failureRootPath: outputRoot.hostPath,
-                sourcePath: item.sourcePath,
-              }),
-            };
-          }),
+          items: entries.map(({ item, result, attemptId }) => ({
+            result: item.manualScrape?.uncensoredChoice ? { ...result, uncensoredAmbiguous: false } : result,
+            attemptId,
+            itemPath: item.relativePath,
+          })),
           scrapeRuns: state.repositories.scrapeRuns,
           resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
           acquireAll: (refs) =>
@@ -999,7 +960,7 @@ export class ScrapeService {
   }
 
   private async resolveMetadataRoot(primaryRoot: MediaRoot, configuration: Configuration): Promise<MediaRoot> {
-    const metadataPath = configuration.paths.metadataPath.trim();
+    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
     return metadataPath ? await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath }) : primaryRoot;
   }
 

@@ -353,7 +353,8 @@ export const confirmUncensoredOutputs = async (
           actorPhotoPaths: [],
           existingAssets: processed.entry.assets,
           existingNfoPath: processed.effectiveNfoPath,
-          renameSubtitles: config.behavior.successFileRename,
+          organizeFiles: !config.behavior.metadataOnly,
+          renameSubtitles: !config.behavior.metadataOnly && config.behavior.successFileRename,
           nfoNaming: config.download.nfoNaming,
           strmPathMappings: config.paths.strmPathMappings,
           writeNfo: async (_assets, writeFile) => {

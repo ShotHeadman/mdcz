@@ -1,4 +1,4 @@
-import { mergeMediaCandidates, resolveMediaCandidateScanPlan } from "@mdcz/shared/mediaCandidate";
+import { resolveMediaCandidateScanPlan } from "@mdcz/shared/mediaCandidate";
 import type { MediaCandidate } from "@mdcz/shared/types";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import type { ConfigOutput } from "@renderer/client/types";
@@ -6,24 +6,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
 const successDir = process.platform === "win32" ? "D:\\media\\JAV_output" : "/media/JAV_output";
-const failedDir = process.platform === "win32" ? "D:\\media\\failed" : "/media/failed";
-const softlinkDir = process.platform === "win32" ? "D:\\softlink" : "/softlink";
 
 const createConfig = (overrides?: Partial<ConfigOutput>): ConfigOutput =>
   ({
     paths: {
       mediaPath: rootDir,
       successOutputFolder: "JAV_output",
-      failedOutputFolder: "failed",
-      defaultScanExcludeDirs: ["JAV_output", "failed"],
-      softlinkPath: softlinkDir,
+      defaultScanExcludeDirs: ["JAV_output"],
       outputSummaryPath: "",
     },
-    behavior: {
-      scrapeSoftlinkPath: true,
-    },
+    behavior: {},
     ...overrides,
-  }) as ConfigOutput;
+  }) as unknown as ConfigOutput;
 
 const createCandidate = (path: string): MediaCandidate => ({
   path,
@@ -57,25 +51,10 @@ describe("workbench setup contract", () => {
   it("plans normal scrape scans from configured paths and excludes output folders", () => {
     const plan = resolveMediaCandidateScanPlan("scrape", rootDir, false, createConfig());
 
-    expect(plan.excludeDirPaths).toEqual([successDir, failedDir]);
-    expect(plan.extraScanDirs).toEqual([softlinkDir]);
+    expect(plan.excludeDirPaths).toEqual([successDir]);
     expect(plan.recursive).toBe(false);
     expect(resolveMediaCandidateScanPlan("scrape", rootDir, true, createConfig()).scanKey).not.toBe(plan.scanKey);
     expect(resolveMediaCandidateScanPlan("maintenance", rootDir, false, createConfig()).scanKey).not.toBe(plan.scanKey);
-
-    for (const [directory, recursive, expected] of [
-      [`${rootDir}/links`, true, []],
-      [`${rootDir}/links`, false, [`${rootDir}/links`]],
-      [`${rootDir}/failed`, true, [`${rootDir}/failed`]],
-      [`${rootDir}/failed/links`, true, [`${rootDir}/failed/links`]],
-      [`${rootDir}/../outside`, true, [`${rootDir}/../outside`]],
-      [softlinkDir, true, [softlinkDir]],
-      [rootDir, true, []],
-    ] as const) {
-      const config = createConfig();
-      config.paths.softlinkPath = directory;
-      expect(resolveMediaCandidateScanPlan("scrape", rootDir, recursive, config).extraScanDirs).toEqual(expected);
-    }
   });
 
   it("uses only configured scan exclude directories", () => {
@@ -87,16 +66,14 @@ describe("workbench setup contract", () => {
         paths: {
           mediaPath: rootDir,
           successOutputFolder: "JAV_output",
-          failedOutputFolder: "failed",
-          softlinkPath: softlinkDir,
           outputSummaryPath: "",
-          defaultScanExcludeDirs: ["JAV_output", "failed", "thumbnails"],
+          defaultScanExcludeDirs: ["JAV_output", "thumbnails"],
         },
       } as Partial<ConfigOutput>),
     );
 
     const thumbnailsDir = process.platform === "win32" ? "D:\\media\\thumbnails" : "/media/thumbnails";
-    expect(plan.excludeDirPaths).toEqual([successDir, failedDir, thumbnailsDir]);
+    expect(plan.excludeDirPaths).toEqual([successDir, thumbnailsDir]);
   });
 
   it("does not hide the active success target when it is removed from configured exclusions", () => {
@@ -108,32 +85,13 @@ describe("workbench setup contract", () => {
         paths: {
           mediaPath: rootDir,
           successOutputFolder: "JAV_output",
-          failedOutputFolder: "failed",
-          softlinkPath: softlinkDir,
           outputSummaryPath: "",
-          defaultScanExcludeDirs: ["failed"],
-        },
-      } as Partial<ConfigOutput>),
+          defaultScanExcludeDirs: [],
+        } as unknown as ConfigOutput["paths"],
+      }),
     );
 
-    expect(plan.excludeDirPaths).toEqual([failedDir]);
-  });
-
-  it("dedupes merged scan roots across case and aliases", () => {
-    const keptVideo = createCandidate(
-      process.platform === "win32" ? "D:\\media\\library\\ABC-123.mp4" : "/media/library/ABC-123.mp4",
-    );
-    const duplicate = createCandidate(
-      process.platform === "win32" ? "D:\\MEDIA\\library\\ABC-123.mp4" : keptVideo.path,
-    );
-    const softlinkVideo = createCandidate(
-      process.platform === "win32" ? "D:\\softlink\\SOFT-001.mp4" : "/softlink/SOFT-001.mp4",
-    );
-
-    expect(mergeMediaCandidates([keptVideo], [duplicate, softlinkVideo])).toEqual([keptVideo, softlinkVideo]);
-    expect(
-      mergeMediaCandidates([createCandidate("D:\\media\\ABC-123.mp4")], [createCandidate("d:/MEDIA/abc-123.mp4")]),
-    ).toEqual([createCandidate("D:\\media\\ABC-123.mp4")]);
+    expect(plan.excludeDirPaths).toEqual([]);
   });
 
   it("keeps the current file list visible while a rescan is pending", () => {

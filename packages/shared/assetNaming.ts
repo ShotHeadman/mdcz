@@ -24,8 +24,10 @@ export const isSharedDirectoryMode = (input: {
   successFileMove: boolean;
   folderTemplate: string;
   metadataPath?: string;
+  metadataOnly?: boolean;
 }): boolean => {
-  if (!input.successFileMove && !input.metadataPath?.trim()) {
+  const hasMetadataPath = Boolean(input.metadataOnly && input.metadataPath?.trim());
+  if (!input.successFileMove && !hasMetadataPath) {
     return false;
   }
 

@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isPathInside } from "@mdcz/media-store";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 
@@ -7,9 +7,7 @@ import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@m
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { findSubtitleSidecars, isGeneratedSidecarVideo, type SubtitleSidecarMatch } from "./media";
 import { getNfoWritePaths } from "./nfo";
-import { FileMover } from "./organize/FileMover";
 import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
-import { SidecarResolver } from "./organize/SidecarResolver";
 import { ensureParentDirectory, listVideoFiles } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
 import { mapStrmPath } from "./utils/strm";
@@ -22,6 +20,7 @@ export interface OrganizePlan {
   nfoPath: string;
   strmPath?: string;
   subtitleSidecars?: SubtitleSidecarMatch[];
+  metadataOnly?: boolean;
 }
 
 export const resolveMetadataOutputDir = (plan: OrganizePlan): string => plan.metadataDir ?? plan.outputDir;
@@ -62,24 +61,13 @@ export const resolveOrganizeDirectory = (
   return { directory: base, useFolderTemplate: true };
 };
 
-interface ScrapeFileTransitionOptions {
-  configuration: Configuration;
-  failureRootPath: string;
-  sourcePath: string;
-}
-
 export class FileOrganizer {
   private readonly logger: RuntimeLogger;
 
-  private readonly sidecarResolver = new SidecarResolver();
-
   private readonly namingEngine = new NamingEngine();
-
-  private readonly fileMover: FileMover;
 
   constructor(logger: RuntimeLogger = noopRuntimeLogger) {
     this.logger = logger;
-    this.fileMover = new FileMover(this.logger, this.sidecarResolver);
   }
 
   plan(
@@ -90,29 +78,57 @@ export class FileOrganizer {
     options: OrganizePlanOptions = {},
   ): OrganizePlan {
     const layout = this.namingEngine.buildLayout(fileInfo, data, config, localState);
+    const metadataRoot = config.paths.metadataPath.trim();
+
+    if (config.behavior.metadataOnly) {
+      if (!metadataRoot) {
+        throw new Error("启用仅输出元数据模式时，必须指定元数据输出目录");
+      }
+      if (!isAbsolute(metadataRoot)) {
+        throw new Error("元数据输出目录必须使用绝对路径");
+      }
+      const sourceDir = resolve(dirname(fileInfo.filePath));
+      const metadataDir = resolve(metadataRoot, layout.folderRelativePath);
+      if (!isPathInside(metadataRoot, metadataDir)) {
+        throw new Error("模板结果超出元数据输出目录");
+      }
+      if (
+        metadataDir === sourceDir ||
+        metadataRoot === sourceDir ||
+        isPathInside(sourceDir, metadataRoot) ||
+        isPathInside(metadataRoot, sourceDir)
+      ) {
+        throw new Error("元数据输出目录不能与源媒体目录相同或互相包含");
+      }
+      const nfoPath = join(metadataDir, layout.nfoFileName);
+      const strmPath = config.behavior.generateStrm ? join(metadataDir, layout.strmFileName) : undefined;
+
+      return {
+        outputDir: sourceDir,
+        metadataDir,
+        metadataRoot,
+        targetVideoPath: fileInfo.filePath,
+        nfoPath,
+        strmPath,
+        metadataOnly: true,
+      };
+    }
+
     const { directory, useFolderTemplate } = resolveOrganizeDirectory(fileInfo.filePath, config, options);
     const outputDir = useFolderTemplate ? join(directory, layout.folderRelativePath) : directory;
 
     const targetVideoPath = join(outputDir, layout.targetVideoFileName);
-    const metadataRoot = config.paths.metadataPath.trim();
-    if (metadataRoot && !isAbsolute(metadataRoot)) throw new Error("元数据输出目录必须使用绝对路径");
-    const metadataDir =
-      metadataRoot && !config.behavior.successFileMove
-        ? resolve(metadataRoot, layout.folderRelativePath)
-        : this.resolveMetadataDir(outputDir, config);
-    if (metadataRoot && !isPathInside(metadataRoot, metadataDir)) throw new Error("模板结果超出元数据输出目录");
     if (!isPathInside(directory, outputDir)) throw new Error("模板结果超出整理目标目录");
-    if (metadataRoot && metadataDir === outputDir) throw new Error("元数据输出目录不能与源媒体输出目录重叠");
-    const nfoPath = join(metadataDir, layout.nfoFileName);
-    const strmPath = metadataDir === outputDir ? undefined : join(metadataDir, layout.strmFileName);
+    const nfoPath = join(outputDir, layout.nfoFileName);
 
     return {
       outputDir,
-      metadataDir,
-      metadataRoot: metadataRoot || undefined,
+      metadataDir: outputDir,
+      metadataRoot: undefined,
       targetVideoPath,
       nfoPath,
-      strmPath,
+      strmPath: undefined,
+      metadataOnly: false,
     };
   }
 
@@ -124,7 +140,7 @@ export class FileOrganizer {
       return {
         label: sample.label,
         folder:
-          config.behavior.successFileMove || config.paths.metadataPath.trim()
+          config.behavior.metadataOnly || config.behavior.successFileMove
             ? layout.folderRelativePath || "当前目录"
             : "当前目录",
         file: layout.targetVideoFileName,
@@ -182,7 +198,7 @@ export class FileOrganizer {
       });
       if (otherVideos.length > 0) {
         this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
-        throw new Error("源目录包含多部影片，请设置元数据输出目录或使用按影片命名的 NFO 和图片");
+        throw new Error("源目录包含多部影片，请启用仅输出元数据并设置独立目录，或使用按影片命名的 NFO 和图片");
       }
     }
 
@@ -190,59 +206,6 @@ export class FileOrganizer {
       ...plan,
       subtitleSidecars: plan.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath)),
     };
-  }
-
-  createScrapeFileTransitions(options: ScrapeFileTransitionOptions) {
-    return {
-      failed: async () => {
-        if (!options.configuration.behavior.failedFileMove) return;
-        await this.moveToFailedFolder(options.sourcePath, options.failureRootPath, options.configuration);
-      },
-    };
-  }
-
-  async moveToFailedFolder(sourcePath: string, failureRootPath: string, config: Configuration): Promise<string> {
-    const fileInfo = parseFileInfo(sourcePath, config.scrape.filenameIgnoreTokens);
-    const targetVideoPath = this.resolveFailedVideoPath(sourcePath, failureRootPath, config);
-    await ensureParentDirectory(targetVideoPath);
-    const movedPath = await this.fileMover.moveBundledMedia(fileInfo.filePath, targetVideoPath, {
-      sharedMovieBaseName: fileInfo.number,
-    });
-    this.logger.info(`Moved failed file to ${dirname(targetVideoPath)}: ${fileInfo.fileName}`);
-    return movedPath;
-  }
-
-  resolveFailedVideoPath(sourcePath: string, failureRootPath: string, config: Configuration): string {
-    const fileInfo = parseFileInfo(sourcePath, config.scrape.filenameIgnoreTokens);
-    return resolve(failureRootPath, config.paths.failedOutputFolder.trim(), fileInfo.fileName + fileInfo.extension);
-  }
-
-  resolveMetadataDir(outputDir: string, config: Configuration): string {
-    const configuredMetadataRoot = config.paths.metadataPath.trim();
-    if (!configuredMetadataRoot) {
-      return outputDir;
-    }
-
-    const configuredMediaRoot = config.paths.mediaPath.trim();
-    if (!configuredMediaRoot) {
-      throw new Error("配置元数据输出目录时，媒体目录不能为空");
-    }
-    if (!isAbsolute(configuredMediaRoot) || !isAbsolute(configuredMetadataRoot)) {
-      throw new Error("媒体目录和元数据输出目录必须使用绝对路径");
-    }
-
-    const mediaRoot = resolve(configuredMediaRoot);
-    const metadataRoot = resolve(configuredMetadataRoot);
-    if (isPathInside(mediaRoot, metadataRoot) || isPathInside(metadataRoot, mediaRoot)) {
-      throw new Error("元数据输出目录不能与媒体目录相同或互相包含");
-    }
-
-    const outputRelativePath = relative(mediaRoot, resolve(outputDir));
-    if (!isPathInside(mediaRoot, outputDir)) {
-      throw new Error(`影片输出目录不在媒体目录内：${outputDir}`);
-    }
-
-    return resolve(metadataRoot, outputRelativePath);
   }
 }
 

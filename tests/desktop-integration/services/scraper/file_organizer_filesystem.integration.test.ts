@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, parse, resolve } from "node:path";
+import { dirname, join, parse } from "node:path";
 import { commitPublishedMedia, createPublicationPlan, preparePublicationPlan } from "@mdcz/runtime/publication";
 import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import { FileOrganizer, type OrganizePlan } from "@mdcz/runtime/scrape";
@@ -29,7 +29,9 @@ const publishVideo = async (
     metadataOutputDir: plan.metadataDir ?? plan.outputDir,
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
-    renameSubtitles: config.behavior.successFileRename,
+    organizeFiles:
+      !config.behavior.metadataOnly && (config.behavior.successFileMove || config.behavior.successFileRename),
+    renameSubtitles: !config.behavior.metadataOnly && config.behavior.successFileRename,
     strmPathMappings: config.paths.strmPathMappings,
     nfoNaming: config.download.nfoNaming,
     writeNfo: async () => undefined,
@@ -145,7 +147,7 @@ describe("FileOrganizer filesystem organize", () => {
     await expectPathExists(resultPath);
   });
 
-  it("mirrors metadata locally and writes STRM after organizing the video", async () => {
+  it("skips separate metadata and STRM when metadataOnly is false even if metadataPath is configured", async () => {
     const root = await createTempDir();
     const mediaRoot = join(root, "media");
     const metadataRoot = join(root, "metadata");
@@ -165,27 +167,44 @@ describe("FileOrganizer filesystem organize", () => {
         fileTemplate: "{number}",
       },
       behavior: {
+        metadataOnly: false,
+        generateStrm: true,
         successFileMove: true,
         successFileRename: true,
       },
     });
     const fileInfo = createFileInfo({ filePath: sourcePath, fileName: "ABC-123" });
+    for (const successFileRename of [false, true]) {
+      const namingConfig = {
+        ...config,
+        behavior: { ...config.behavior, metadataOnly: false, successFileRename },
+      };
+      expect(organizer.plan(fileInfo, createCrawlerData(), namingConfig).nfoPath).toBe(
+        organizer.plan(fileInfo, createCrawlerData(), {
+          ...namingConfig,
+          paths: { ...namingConfig.paths, metadataPath: "" },
+        }).nfoPath,
+      );
+    }
     const plan = await organizer.resolveOutputPlan(
       organizer.plan(fileInfo, createCrawlerData({ actors: ["Actor A"] }), config),
       sourcePath,
     );
 
+    const expectedDir = join(mediaRoot, "organized", "Actor A", "ABC-123-CEN");
     expect(plan).toMatchObject({
-      outputDir: join(mediaRoot, "organized", "Actor A", "ABC-123-CEN"),
-      metadataDir: join(metadataRoot, "organized", "Actor A", "ABC-123-CEN"),
-      nfoPath: join(metadataRoot, "organized", "Actor A", "ABC-123-CEN", "ABC-123-CEN.nfo"),
-      strmPath: join(metadataRoot, "organized", "Actor A", "ABC-123-CEN", "ABC-123-CEN.strm"),
+      outputDir: expectedDir,
+      metadataDir: expectedDir,
+      metadataRoot: undefined,
+      nfoPath: join(expectedDir, "ABC-123-CEN.nfo"),
+      strmPath: undefined,
+      metadataOnly: false,
     });
 
     const organizedPath = await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
 
-    await expect(readFile(plan.strmPath as string, "utf8")).resolves.toBe(resolve(organizedPath));
     await expectPathExists(organizedPath);
+    await expect(access(metadataRoot)).rejects.toThrow();
   });
 
   it("copies the playable target when separated metadata is generated from a source STRM", async () => {
@@ -200,6 +219,7 @@ describe("FileOrganizer filesystem organize", () => {
     const config = createConfig({
       paths: { mediaPath: mediaRoot, metadataPath: metadataRoot, successOutputFolder: "organized" },
       naming: { folderTemplate: "{number}", fileTemplate: "{number}" },
+      behavior: { metadataOnly: true, generateStrm: true },
     });
     const fileInfo = createFileInfo({ filePath: sourcePath, fileName: "ABC-123", extension: ".strm" });
     const plan = await organizer.resolveOutputPlan(organizer.plan(fileInfo, createCrawlerData(), config), sourcePath);
@@ -220,7 +240,7 @@ describe("FileOrganizer filesystem organize", () => {
         metadataPath: join(root, "batch-metadata"),
         successOutputFolder: "organized",
       },
-      behavior: { successFileMove },
+      behavior: { metadataOnly: true, successFileMove, generateStrm: true },
       naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
     });
 
@@ -328,21 +348,28 @@ describe("FileOrganizer filesystem organize", () => {
         successOutputFolder: "organized",
       },
       naming: { folderTemplate: "{number}", fileTemplate: "{number}" },
-      behavior: { successFileMove, successFileRename, failedFileMove: false },
+      behavior: {
+        successFileMove,
+        successFileRename,
+        generateStrm: separate,
+        metadataOnly: separate,
+      },
     });
     const organizer = new FileOrganizer();
     const info = createFileInfo({ filePath: source, fileName: sourceBase });
     const plan = await organizer.resolveOutputPlan(organizer.plan(info, createCrawlerData(), config), source);
     await publishVideo(info, plan, config, dirname(source));
     expect(await readFile(plan.targetVideoPath, "utf8")).toBe("video");
-    expect(dirname(plan.targetVideoPath) === dirname(source)).toBe(!successFileMove);
-    expect(parse(plan.targetVideoPath).base).toBe(successFileRename ? "ABC-123-CEN.mp4" : `${sourceBase}.mp4`);
+    const isVideoMoved = !separate && successFileMove;
+    const isVideoRenamed = !separate && successFileRename;
+    expect(dirname(plan.targetVideoPath) === dirname(source)).toBe(!isVideoMoved);
+    expect(parse(plan.targetVideoPath).base).toBe(isVideoRenamed ? "ABC-123-CEN.mp4" : `${sourceBase}.mp4`);
     for (const suffix of subtitles)
       expect(
         await readFile(
           join(
             dirname(plan.targetVideoPath),
-            `${successFileRename ? parse(plan.targetVideoPath).name : subtitleBase}${suffix}`,
+            `${isVideoRenamed ? parse(plan.targetVideoPath).name : subtitleBase}${suffix}`,
           ),
           "utf8",
         ),
@@ -353,6 +380,9 @@ describe("FileOrganizer filesystem organize", () => {
       for (const suffix of subtitles)
         expect(await readFile(join(plan.metadataDir as string, `ABC-123-CEN${suffix}`), "utf8")).toBe(suffix);
       expect(await fileUtils.listVideoFiles(plan.metadataDir as string)).toEqual([plan.strmPath]);
+    } else {
+      expect(plan.strmPath).toBeUndefined();
+      expect(plan.metadataDir).toBe(plan.outputDir);
     }
     expect(await readFile(join(dirname(source), "movie.nfo"), "utf8")).toBe("original NFO");
     expect(await readFile(join(dirname(source), "poster.jpg"), "utf8")).toBe("original poster");
@@ -364,6 +394,101 @@ describe("FileOrganizer filesystem organize", () => {
     }
   });
 
+  it("writes separated metadata without generating STRM when generateStrm is false", async () => {
+    const root = await createTempDir();
+    const mediaRoot = join(root, "media");
+    const metadataRoot = join(root, "metadata");
+    const sourcePath = join(mediaRoot, "incoming", "ABC-123.mp4");
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, "video", "utf8");
+
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      paths: {
+        mediaPath: mediaRoot,
+        metadataPath: metadataRoot,
+        successOutputFolder: "organized",
+      },
+      naming: {
+        folderTemplate: "{actor}/{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        metadataOnly: true,
+        generateStrm: false,
+        successFileMove: false,
+        successFileRename: false,
+      },
+    });
+    const fileInfo = createFileInfo({ filePath: sourcePath, fileName: "ABC-123" });
+    const plan = await organizer.resolveOutputPlan(
+      organizer.plan(fileInfo, createCrawlerData({ actors: ["Actor A"] }), config),
+      sourcePath,
+    );
+
+    expect(plan.strmPath).toBeUndefined();
+    expect(plan.metadataDir).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN"));
+
+    await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
+    await expectPathExists(sourcePath);
+    await expect(access(join(plan.metadataDir as string, "ABC-123-CEN.strm"))).rejects.toThrow();
+  });
+
+  it("enforces metadataOnly mode by leaving source files strictly unmoved and unrenamed even if move and rename are true", async () => {
+    const root = await createTempDir();
+    const mediaRoot = join(root, "media");
+    const metadataRoot = join(root, "metadata");
+    const sourcePath = join(mediaRoot, "incoming", "ABC-123-custom.mp4");
+    const subtitlePath = join(mediaRoot, "incoming", "ABC-123.zh.srt");
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, "video content", "utf8");
+    await writeFile(subtitlePath, "subtitle content", "utf8");
+
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      paths: {
+        mediaPath: mediaRoot,
+        metadataPath: metadataRoot,
+        successOutputFolder: "organized",
+      },
+      naming: {
+        folderTemplate: "{actor}/{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        metadataOnly: true,
+        successFileMove: true,
+        successFileRename: true,
+        generateStrm: true,
+      },
+    });
+    const fileInfo = createFileInfo({ filePath: sourcePath, fileName: "ABC-123-custom" });
+    const plan = await organizer.resolveOutputPlan(
+      organizer.plan(fileInfo, createCrawlerData({ actors: ["Actor A"] }), config),
+      sourcePath,
+    );
+
+    expect(plan.targetVideoPath).toBe(sourcePath);
+    expect(plan.outputDir).toBe(dirname(sourcePath));
+    expect(plan.metadataDir).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN"));
+    expect(plan.strmPath).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN", "ABC-123-CEN.strm"));
+
+    await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
+    await expectPathExists(sourcePath);
+    expect(await readFile(sourcePath, "utf8")).toBe("video content");
+    // Source subtitle must remain strictly unmoved and unrenamed
+    await expectPathExists(subtitlePath);
+    expect(await readFile(subtitlePath, "utf8")).toBe("subtitle content");
+    // Renamed subtitle in source directory must NOT exist
+    const renamedSourceSubtitle = join(mediaRoot, "incoming", "ABC-123-custom.zh.srt");
+    await expect(readFile(renamedSourceSubtitle, "utf8")).rejects.toThrow();
+    // In metadataDir, strm and companion subtitle copy must exist
+    expect(await readFile(plan.strmPath as string, "utf8")).toBe(sourcePath);
+    const metadataSubtitleCopy = join(plan.metadataDir as string, "ABC-123-CEN.zh.srt");
+    await expectPathExists(metadataSubtitleCopy);
+    expect(await readFile(metadataSubtitleCopy, "utf8")).toBe("subtitle content");
+  });
+
   it("rejects overlapping media and metadata roots before creating output", async () => {
     const root = await createTempDir();
     const mediaRoot = join(root, "media");
@@ -371,10 +496,11 @@ describe("FileOrganizer filesystem organize", () => {
     const organizer = new FileOrganizer();
     const config = createConfig({
       paths: { mediaPath: mediaRoot, metadataPath: join(mediaRoot, "metadata") },
+      behavior: { metadataOnly: true },
     });
 
     expect(() => organizer.plan(createFileInfo({ filePath: sourcePath }), createCrawlerData(), config)).toThrow(
-      "元数据输出目录不能与媒体目录相同或互相包含",
+      "元数据输出目录不能与源媒体目录相同或互相包含",
     );
   });
 
@@ -473,34 +599,6 @@ describe("FileOrganizer filesystem organize", () => {
     await expect(access(giftPath)).rejects.toThrow();
   });
 
-  it("moves matching subtitle sidecars alongside failed video moves", async () => {
-    const organizer = new FileOrganizer();
-    const failedRoot = await createTempDir();
-    const failedVideoPath = join(failedRoot, "FAIL-001.mp4");
-    const failedSubtitlePath = join(failedRoot, "FAIL-001.ass");
-    await writeFile(failedVideoPath, "video", "utf8");
-    await writeFile(failedSubtitlePath, "subtitle", "utf8");
-
-    const failedFileInfo = createFileInfo({
-      filePath: failedVideoPath,
-      fileName: "FAIL-001",
-      number: "FAIL-001",
-      extension: ".mp4",
-    });
-    const failedConfig = createConfig({
-      paths: {
-        mediaPath: failedRoot,
-        failedOutputFolder: "failed",
-      },
-    });
-
-    await organizer.moveToFailedFolder(failedFileInfo.filePath, failedRoot, failedConfig);
-
-    await expectPathExists(join(failedRoot, "failed", "FAIL-001.mp4"));
-    await expectPathExists(join(failedRoot, "failed", "FAIL-001.ass"));
-    await expect(access(failedSubtitlePath)).rejects.toThrow();
-  });
-
   it("rewrites relative .strm targets to absolute paths when moving to a different success directory", async () => {
     const organizer = new FileOrganizer();
     const root = await createTempDir();
@@ -541,33 +639,6 @@ describe("FileOrganizer filesystem organize", () => {
 
     expect(movedPath).toBe(join(root, "output", "ABC-123-CEN", "ABC-123-CEN.strm"));
     await expect(readFile(movedPath, "utf8")).resolves.toBe(join(root, "videos", "ABC-123.mp4"));
-    await expect(access(sourcePath)).rejects.toThrow();
-  });
-
-  it("rewrites relative .strm targets to absolute paths when moving to the failed directory", async () => {
-    const organizer = new FileOrganizer();
-    const root = await createTempDir();
-    const sourcePath = join(root, "FAIL-001.strm");
-
-    await writeFile(sourcePath, "../videos/FAIL-001.mp4", "utf8");
-
-    const fileInfo = createFileInfo({
-      filePath: sourcePath,
-      fileName: "FAIL-001",
-      number: "FAIL-001",
-      extension: ".strm",
-    });
-    const config = createConfig({
-      paths: {
-        mediaPath: root,
-        failedOutputFolder: "failed",
-      },
-    });
-
-    const movedPath = await organizer.moveToFailedFolder(fileInfo.filePath, root, config);
-
-    expect(movedPath).toBe(join(root, "failed", "FAIL-001.strm"));
-    await expect(readFile(movedPath, "utf8")).resolves.toBe(resolve(dirname(sourcePath), "../videos/FAIL-001.mp4"));
     await expect(access(sourcePath)).rejects.toThrow();
   });
 
@@ -612,24 +683,20 @@ describe("FileOrganizer filesystem organize", () => {
     });
   });
 
-  it("supports absolute success and failed output directories without duplicating the base path", async () => {
+  it("supports absolute success output directories without duplicating the base path", async () => {
     const organizer = new FileOrganizer();
     const root = await createTempDir();
     const mediaRoot = join(root, "media");
     const absoluteSuccessDir = join(root, "absolute-success");
-    const absoluteFailedDir = join(root, "absolute-failed");
     const sourcePath = join(mediaRoot, "library", "ABC-123.mp4");
-    const failedSourcePath = join(mediaRoot, "library", "FAIL-001.mp4");
 
     await mkdir(join(mediaRoot, "library"), { recursive: true });
     await writeFile(sourcePath, "video", "utf8");
-    await writeFile(failedSourcePath, "video", "utf8");
 
     const config = createConfig({
       paths: {
         mediaPath: mediaRoot,
         successOutputFolder: absoluteSuccessDir,
-        failedOutputFolder: absoluteFailedDir,
       },
       naming: {
         folderTemplate: "{number}",
@@ -656,52 +723,6 @@ describe("FileOrganizer filesystem organize", () => {
 
     expect(preparedPlan.outputDir).toBe(join(absoluteSuccessDir, "ABC-123-CEN"));
     expect(preparedPlan.targetVideoPath).toBe(join(absoluteSuccessDir, "ABC-123-CEN", "ABC-123-CEN.mp4"));
-
-    const failedFileInfo = createFileInfo({
-      filePath: failedSourcePath,
-      fileName: "FAIL-001",
-      number: "FAIL-001",
-    });
-    const failedTargetPath = await organizer.moveToFailedFolder(failedFileInfo.filePath, mediaRoot, config);
-
-    expect(failedTargetPath).toBe(join(absoluteFailedDir, "FAIL-001.mp4"));
-    await expectPathExists(failedTargetPath);
-  });
-
-  it("moves generated FC2 feature videos alongside failed movie moves", async () => {
-    const organizer = new FileOrganizer();
-    const failedRoot = await createTempDir();
-    const failedVideoPath = join(failedRoot, "FC2-123456-1.mp4");
-    const failedFeaturePath = join(failedRoot, "FC2-123456-花絮.mp4");
-    const failedGiftPath = join(failedRoot, "FC2-123456_gift.mp4");
-    await writeFile(failedVideoPath, "video", "utf8");
-    await writeFile(failedFeaturePath, "feature", "utf8");
-    await writeFile(failedGiftPath, "gift", "utf8");
-
-    const failedFileInfo = createFileInfo({
-      filePath: failedVideoPath,
-      fileName: "FC2-123456-1",
-      number: "FC2-123456",
-      extension: ".mp4",
-      part: {
-        number: 1,
-        suffix: "-1",
-      },
-    });
-    const failedConfig = createConfig({
-      paths: {
-        mediaPath: failedRoot,
-        failedOutputFolder: "failed",
-      },
-    });
-
-    await organizer.moveToFailedFolder(failedFileInfo.filePath, failedRoot, failedConfig);
-
-    await expectPathExists(join(failedRoot, "failed", "FC2-123456-1.mp4"));
-    await expectPathExists(join(failedRoot, "failed", "FC2-123456-花絮.mp4"));
-    await expectPathExists(join(failedRoot, "failed", "FC2-123456_gift.mp4"));
-    await expect(access(failedFeaturePath)).rejects.toThrow();
-    await expect(access(failedGiftPath)).rejects.toThrow();
   });
 
   it("rolls back the video move when a subtitle sidecar move fails", async () => {
@@ -957,7 +978,7 @@ describe("FileOrganizer filesystem organize", () => {
     );
 
     await expect(organizer.resolveOutputPlan(invalidPlan, invalidSourcePath)).rejects.toThrow(
-      "源目录包含多部影片，请设置元数据输出目录或使用按影片命名的 NFO 和图片",
+      "源目录包含多部影片，请启用仅输出元数据并设置独立目录，或使用按影片命名的 NFO 和图片",
     );
   });
 

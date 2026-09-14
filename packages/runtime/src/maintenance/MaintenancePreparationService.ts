@@ -234,12 +234,7 @@ export class MaintenancePreparationService {
               entry.nfoPath && !isMovieNfoBaseName(basename(entry.nfoPath, ".nfo"))
                 ? entry.nfoPath
                 : join(metadataDir, basename(layout.nfoPath)),
-            ...(metadataDir === entry.currentDir
-              ? {}
-              : {
-                  strmPath:
-                    entry.strmPath ?? join(metadataDir, basename(layout.strmPath ?? `${entry.fileInfo.fileName}.strm`)),
-                }),
+            strmPath: entry.strmPath,
           },
           entry.fileInfo.filePath,
           { allowSharedDirectory: true },

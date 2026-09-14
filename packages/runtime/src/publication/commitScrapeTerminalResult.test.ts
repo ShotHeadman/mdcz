@@ -47,8 +47,6 @@ const scrapeRuns = () => ({
   ),
 });
 
-const noFileTransitions = () => ({ failed: vi.fn(async () => undefined) });
-
 const commitScrapeTerminalResult = async (
   input: Omit<Parameters<typeof commitScrapeTerminalResults>[0], "items"> &
     ScrapeTerminalGroupItem & { success?: Awaited<ReturnType<typeof fixture>>["success"] },
@@ -134,10 +132,9 @@ describe("commitScrapeTerminalResult", () => {
     "video",
     "unknown-output",
     "other-owner",
-  ])("does not invoke failure movement on publication conflict: %s", async (scenario) => {
+  ])("fails with PublicationConflictError on publication conflict: %s", async (scenario) => {
     const test = await fixture();
     const store = scrapeRuns();
-    const transitions = noFileTransitions();
     await mkdir(path.dirname(test.target), { recursive: true });
     const conflictPath = scenario === "video" ? test.target : path.join(path.dirname(test.target), "movie.nfo");
     await writeFile(conflictPath, "existing bytes");
@@ -165,10 +162,8 @@ describe("commitScrapeTerminalResult", () => {
         resolveRoot: test.resolveRoot,
         journal,
         outputs,
-        fileTransitions: transitions,
       }),
     ).rejects.toBeInstanceOf(PublicationConflictError);
-    expect(transitions.failed).not.toHaveBeenCalled();
     expect(store.commitOutcome).not.toHaveBeenCalled();
     expect(store.commitSuccessOutcomes).not.toHaveBeenCalled();
     expect(await readFile(test.source, "utf8")).toBe("video");
@@ -181,7 +176,6 @@ describe("commitScrapeTerminalResult", () => {
   });
   it("persists failed and skipped outcomes without publication", async () => {
     const store = scrapeRuns();
-    const failedTransition = vi.fn(async () => undefined);
     const failed = await commitScrapeTerminalResult({
       result: { ...baseResult("failed"), error: "  boom  " },
       attemptId: "attempt-1",
@@ -189,7 +183,6 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: async () => ({ id: "input", hostPath: "/tmp" }),
       journal: createMemoryPublicationJournal(),
-      fileTransitions: { failed: failedTransition },
     });
     const skipped = await commitScrapeTerminalResult({
       result: baseResult("skipped"),
@@ -198,7 +191,6 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: async () => ({ id: "input", hostPath: "/tmp" }),
       journal: createMemoryPublicationJournal(),
-      fileTransitions: noFileTransitions(),
     });
 
     expect(failed).toMatchObject({ status: "failed", resultId: "failed-outcome", error: "boom" });
@@ -214,7 +206,6 @@ describe("commitScrapeTerminalResult", () => {
       error: null,
     });
     expect(store.commitSuccessOutcomes).not.toHaveBeenCalled();
-    expect(failedTransition).toHaveBeenCalledOnce();
   });
 
   it("publishes a successful item and records nfo as null when it shares the output root", async () => {
@@ -231,7 +222,6 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
-      fileTransitions: { failed: vi.fn() },
     });
 
     expect(committed).toMatchObject({ status: "success", resultId: "success-outcome" });
@@ -325,7 +315,6 @@ describe("commitScrapeTerminalResult", () => {
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
       outputs,
-      fileTransitions: noFileTransitions(),
     });
 
     expect(store.commitSuccessOutcomes).toHaveBeenCalledWith(
@@ -376,7 +365,6 @@ describe("commitScrapeTerminalResult", () => {
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
       fileSystem,
-      fileTransitions: noFileTransitions(),
     });
 
     expect(committed).toMatchObject({
@@ -396,7 +384,6 @@ describe("commitScrapeTerminalResult", () => {
     store.commitSuccessOutcomes.mockImplementation(() => {
       throw new Error("library constraint failed");
     });
-    const failedTransition = vi.fn(async () => undefined);
 
     const committed = await commitScrapeTerminalResult({
       result: { ...baseResult("success"), crawlerData: crawlerData() },
@@ -406,7 +393,6 @@ describe("commitScrapeTerminalResult", () => {
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
       journal: createMemoryPublicationJournal(),
-      fileTransitions: { failed: failedTransition },
     });
 
     expect(committed.status).toBe("failed");
@@ -416,19 +402,14 @@ describe("commitScrapeTerminalResult", () => {
     expect(store.commitOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", attemptId: "attempt-1" }),
     );
-    expect(failedTransition).toHaveBeenCalledOnce();
   });
 
-  it("records every grouped failure when a failure transition also throws", async () => {
+  it("records every grouped failure when publication fails", async () => {
     const test = await fixture();
     const store = scrapeRuns();
     store.commitSuccessOutcomes.mockImplementation(() => {
       throw new Error("library constraint failed");
     });
-    const firstTransition = vi.fn(async () => {
-      throw new Error("failure move failed");
-    });
-    const secondTransition = vi.fn(async () => undefined);
     const result = { ...baseResult("success"), crawlerData: crawlerData(), publicationPlan: test.success.plan };
 
     const committed = await commitScrapeTerminalResults({
@@ -437,13 +418,11 @@ describe("commitScrapeTerminalResult", () => {
           result,
           attemptId: "attempt-1",
           itemPath: "movie.mp4",
-          fileTransitions: { failed: firstTransition },
         },
         {
           result: { ...result, fileId: "item-2" },
           attemptId: "attempt-2",
           itemPath: "movie-part-2.mp4",
-          fileTransitions: { failed: secondTransition },
         },
       ],
       scrapeRuns: store,
@@ -455,15 +434,20 @@ describe("commitScrapeTerminalResult", () => {
     expect(committed[0]).toMatchObject({
       status: "failed",
       resultId: "failed-outcome",
-      error: expect.stringContaining("失败文件移动失败：failure move failed"),
+      error: expect.stringContaining("library constraint failed"),
     });
-    expect(committed[1]).toMatchObject({ status: "failed", resultId: "failed-outcome" });
+    expect(committed[1]).toMatchObject({
+      status: "failed",
+      resultId: "failed-outcome",
+      error: expect.stringContaining("library constraint failed"),
+    });
     expect(store.commitOutcome).toHaveBeenCalledTimes(2);
+    expect(store.commitOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptId: "attempt-1", error: expect.stringContaining("library constraint failed") }),
+    );
     expect(store.commitOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ attemptId: "attempt-2", error: expect.stringContaining("library constraint failed") }),
     );
-    expect(firstTransition).toHaveBeenCalledOnce();
-    expect(secondTransition).toHaveBeenCalledOnce();
   });
 
   it("aggregates publication and fallback-write failures", async () => {
@@ -485,7 +469,6 @@ describe("commitScrapeTerminalResult", () => {
         scrapeRuns: store,
         resolveRoot: test.resolveRoot,
         journal: createMemoryPublicationJournal(),
-        fileTransitions: noFileTransitions(),
       }),
     ).rejects.toMatchObject({
       name: "AggregateError",

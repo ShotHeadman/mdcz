@@ -333,7 +333,10 @@ export class FileScraper {
             downloadedAssets,
             actorPhotoPaths,
             existingNfoPath: preservedNfoPath,
-            renameSubtitles: configuration.behavior.successFileRename,
+            organizeFiles:
+              !configuration.behavior.metadataOnly &&
+              (configuration.behavior.successFileMove || configuration.behavior.successFileRename),
+            renameSubtitles: !configuration.behavior.metadataOnly && configuration.behavior.successFileRename,
             nfoNaming: configuration.download.nfoNaming,
             assetNamingMode: configuration.naming.assetNamingMode,
             strmPathMappings: configuration.paths.strmPathMappings,

@@ -4,7 +4,6 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import {
   isAbsoluteHostPath,
-  mergeMediaCandidates,
   normalizeComparableHostPath,
   resolveMediaCandidateScanPlan,
   resolveSuccessTargetDir,
@@ -147,21 +146,9 @@ export function WorkbenchSetupAdapter({
     const completion = (async () => {
       const isCurrentScan = () => scanRequestRef.current === requestId;
       try {
-        const results: CandidateScanResult[] = [];
-        for (const directory of [scanDir, ...scanPlan.extraScanDirs]) {
-          if (!isCurrentScan()) return;
-          results.push(await port.scanCandidates(directory, recursive, scanPlan.excludeDirPaths, id));
-        }
+        const result = await port.scanCandidates(scanDir, recursive, scanPlan.excludeDirPaths, id);
         if (!isCurrentScan()) return;
-        applyScanResult(
-          scanPlan.scanKey,
-          mergeMediaCandidates(...results.map((result) => result.candidates)),
-          [...new Set(results.flatMap((result) => result.supportedExtensions))],
-          {
-            count: results.reduce((count, result) => count + (result.warnings?.count ?? 0), 0),
-            paths: results.flatMap((result) => result.warnings?.paths ?? []).slice(0, 5),
-          },
-        );
+        applyScanResult(scanPlan.scanKey, result.candidates, result.supportedExtensions, result.warnings);
       } catch (error) {
         if (isCurrentScan()) failScan(toErrorMessage(error));
       } finally {
@@ -303,7 +290,6 @@ export function WorkbenchSetupAdapter({
           );
         }
       }}
-      extraScanDirs={scanPlan.extraScanDirs}
       warnings={warnings}
       targetDir={needsTarget ? targetDir : undefined}
       candidates={candidates}

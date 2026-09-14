@@ -361,7 +361,7 @@ export class NamingEngine {
     const targetVideoFileName = config.behavior.successFileRename
       ? `${fileBaseName}${partSuffix}${fileInfo.extension}`
       : sourceVideo.base;
-    const nfoFileName = `${config.behavior.successFileRename || config.paths.metadataPath.trim() ? fileBaseName : nfoBaseName}.nfo`;
+    const nfoFileName = `${config.behavior.successFileRename || config.behavior.metadataOnly ? fileBaseName : nfoBaseName}.nfo`;
 
     return {
       folderRelativePath,

@@ -68,8 +68,14 @@ export const preparePublicationPlan = async (input: {
               content: await prepareMovedStrmContent(sourceVideoPath, outputVideoPath),
             }
           : undefined;
+      const isMetadataOnly = Boolean(organizePlan?.metadataOnly);
+      const hasSeparateMetadata = Boolean(
+        organizePlan?.metadataRoot && organizePlan?.metadataDir && organizePlan.metadataDir !== organizePlan.outputDir,
+      );
       const preserveSourceMedia =
-        Boolean(organizePlan?.strmPath) && resolve(sourceVideoPath) === resolve(outputVideoPath);
+        isMetadataOnly ||
+        ((Boolean(organizePlan?.strmPath) || hasSeparateMetadata) &&
+          resolve(sourceVideoPath) === resolve(outputVideoPath));
       if (organizePlan?.strmPath) {
         fileArtifacts.push({
           targetPath: organizePlan.strmPath,
@@ -81,11 +87,12 @@ export const preparePublicationPlan = async (input: {
         fileAssets.push({ kind: "strm", targetPath: organizePlan.strmPath });
       }
       for (const subtitle of organizePlan?.subtitleSidecars ?? []) {
-        const targetPath = !organizeFiles
-          ? subtitle.path
-          : input.renameSubtitles
-            ? buildSubtitleSidecarTargetPath(subtitle, outputVideoPath)
-            : join(dirname(outputVideoPath), basename(subtitle.path));
+        const targetPath =
+          !organizeFiles || isMetadataOnly || preserveSourceMedia
+            ? subtitle.path
+            : input.renameSubtitles
+              ? buildSubtitleSidecarTargetPath(subtitle, outputVideoPath)
+              : join(dirname(outputVideoPath), basename(subtitle.path));
         const moving = resolve(targetPath) !== resolve(subtitle.path);
         if (!organizePlan?.strmPath || moving) fileAssets.push({ kind: "subtitle", targetPath });
         if (!moving && !organizePlan?.strmPath) continue;
@@ -114,16 +121,16 @@ export const preparePublicationPlan = async (input: {
             shared: true,
           });
       }
-      if (organizePlan?.strmPath) {
+      if (organizePlan?.strmPath || hasSeparateMetadata) {
         const changing = new Set(fileSidecars.filter((move) => !move.preserveSource).map((move) => move.sourcePath));
-        writeRoots.add(organizePlan.metadataRoot ?? input.metadataOutputDir);
+        writeRoots.add(organizePlan?.metadataRoot ?? input.metadataOutputDir);
         if (!preserveSourceMedia || changing.size) {
           writeRoots.add(dirname(sourceVideoPath));
           writeRoots.add(dirname(outputVideoPath));
         }
         if (preserveSourceMedia) {
           readOnlyPaths.add(sourceVideoPath);
-          for (const subtitle of organizePlan.subtitleSidecars ?? [])
+          for (const subtitle of organizePlan?.subtitleSidecars ?? [])
             if (!changing.has(subtitle.path)) readOnlyPaths.add(subtitle.path);
           if (!changing.size) readOnlyDirectories.add(dirname(sourceVideoPath));
         }

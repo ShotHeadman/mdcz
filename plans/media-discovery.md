@@ -86,7 +86,7 @@
 
 ## Reuse
 
-- `packages/shared/mediaCandidate.ts`：resolveMediaCandidateScanPlan、isHostPathWithinDirectory、normalizeComparableHostPath、mergeMediaCandidates。
+- `packages/shared/mediaCandidate.ts`：resolveMediaCandidateScanPlan、normalizeComparableHostPath。
 - `packages/shared/mediaExtensions.ts` 及现有 isPrimaryVideoFileName / hasLiteralFilenameToken：沿用文件资格规则。
 - `packages/media-store`：resolveRootFile、RootRelativePath 与现有错误映射，不重新实现路径归属。
 - `packages/views/src/path/PathAutocompleteInput.tsx` 已支持 onBlur/键盘事件；工作台 PathControl 接线，无需改造其他页面的路径输入。

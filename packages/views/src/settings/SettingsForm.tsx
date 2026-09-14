@@ -6,7 +6,6 @@ import { useCrawlerSiteOptions } from "./settingsContent";
 import {
   AdvancedTopLevelSection,
   DownloadTopLevelSection,
-  FileBehaviorTopLevelSection,
   NamingTopLevelSection,
   NetworkTopLevelSection,
   PathsTopLevelSection,
@@ -37,7 +36,6 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
           <TranslateTopLevelSection />
           <NamingTopLevelSection />
           <DownloadTopLevelSection />
-          <FileBehaviorTopLevelSection />
           <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
           <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>

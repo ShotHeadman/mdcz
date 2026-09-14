@@ -10,7 +10,6 @@ import {
   AggregationPrioritySection,
   AggregationScrapeSection,
   AssetDownloadsSection,
-  BehaviorSection,
   FilenameFilteringSection,
   NamingSection,
   NetworkConnectionSection,
@@ -35,13 +34,12 @@ interface SystemSectionProps {
 }
 
 const DEFERRED_SECTION_HEIGHTS = {
+  paths: 1400,
   scrape: 1040,
   network: 920,
   translate: 980,
   naming: 1260,
   download: 960,
-  fileBehavior: 760,
-  paths: 780,
   system: 840,
   advancedSettings: 1760,
 } as const;
@@ -150,21 +148,6 @@ export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boo
       <Subsection title="NFO" className="mb-6 last:mb-0">
         <NfoSection />
       </Subsection>
-    </SectionAnchor>
-  );
-}
-
-export function FileBehaviorTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
-  return (
-    <SectionAnchor
-      id="fileBehavior"
-      label={SECTION_LABELS.fileBehavior}
-      title={SECTION_LABELS.fileBehavior}
-      forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.fileBehavior}
-    >
-      <BehaviorSection />
     </SectionAnchor>
   );
 }
