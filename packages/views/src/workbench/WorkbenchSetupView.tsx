@@ -18,7 +18,6 @@ export interface WorkbenchSetupViewProps {
   recursive?: boolean;
   onRecursiveChange?: (recursive: boolean) => void;
   onCommitScanDir?: () => void;
-  extraScanDirs?: string[];
   warnings?: { count: number; paths: string[] };
   targetDir?: string;
   candidates: MediaCandidate[];
@@ -194,7 +193,6 @@ export function WorkbenchSetupView({
   recursive = false,
   onRecursiveChange,
   onCommitScanDir,
-  extraScanDirs = [],
   warnings,
   targetDir = "",
   candidates,
@@ -279,11 +277,6 @@ export function WorkbenchSetupView({
               />
               包含子目录
             </label>
-            {extraScanDirs.length > 0 ? (
-              <p className="mt-2 break-all text-xs text-muted-foreground">
-                额外扫描目录（{scopeLabel}）：{extraScanDirs.join("、")}
-              </p>
-            ) : null}
             {scanning ? <ScanningStatus scopeLabel={scopeLabel} /> : null}
             {!scanning && scanStatus === "success" && warnings && warnings.count > 0 ? (
               <p role="status" className="mt-2 break-all text-sm text-amber-600">

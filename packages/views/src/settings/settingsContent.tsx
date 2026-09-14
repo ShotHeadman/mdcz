@@ -27,7 +27,7 @@ import {
   Input,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { CircleHelp, FolderOpen, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -168,7 +168,7 @@ const NAMING_TEMPLATE_PLACEHOLDERS = [
 const NAMING_TEMPLATE_NOTES = {
   folder: [
     "该配置里的 / 或 \\ 会创建多级文件夹；",
-    "如果关闭“成功后移动文件”，不会按文件夹模板创建新目录；",
+    "移动视频与字幕或仅输出元数据时，会按文件夹模板创建目录；",
     "如果模板不包含影片级唯一字段，保存时会按共享目录模式校验附属文件和 NFO 命名",
   ],
   file: [
@@ -329,21 +329,26 @@ export function PathsSection() {
   return (
     <>
       <PathFieldWrapper name="paths.mediaPath" label="媒体目录" isDirectory />
+      <PathArrayFieldWrapper
+        name="paths.defaultScanExcludeDirs"
+        label="排除目录"
+        description="扫描媒体库时自动跳过这些文件夹。"
+      />
+      <MediaOrganizeSection />
+      <MetadataExportSection />
       <PathFieldWrapper
         name="paths.actorPhotoFolder"
         label="本地演员头像库目录"
         description="仅当“人物头像来源顺序”启用“本地”时读取，用于本地头像覆盖和媒体服务器头像同步。"
         isDirectory
       />
-      <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />
-      <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" label="排除目录" />
+      <TextField name="paths.sceneImagesFolder" label="剧照目录名" />
       <PathFieldWrapper
         name="paths.outputSummaryPath"
         label="概览统计目录"
         description="留空则使用整理目标目录"
         isDirectory
       />
-      <TextField name="paths.sceneImagesFolder" label="剧照目录名" />
       <PathFieldWrapper name="paths.configDirectory" label="配置文件目录" isDirectory />
     </>
   );
@@ -775,6 +780,7 @@ export function NamingSection() {
   const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
   const successFileMove = Boolean(form.watch("behavior.successFileMove"));
   const sharedDirectoryMode = isSharedDirectoryMode({
+    metadataOnly: Boolean(form.watch("behavior.metadataOnly")),
     successFileMove,
     folderTemplate,
     metadataPath: String(form.watch("paths.metadataPath") ?? ""),
@@ -1125,102 +1131,167 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
   );
 }
 
-export function BehaviorSection() {
+export function MediaOrganizeSection() {
   const form = useFormContext<FieldValues>();
-  const services = useSettingsServices();
+  const metadataOnly = Boolean(form.watch("behavior.metadataOnly"));
   const move = Boolean(form.watch("behavior.successFileMove"));
-  const failedMove = Boolean(form.watch("behavior.failedFileMove"));
+
   return (
     <>
-      <div className="pt-3 text-sm font-medium">刮削成功：文件整理</div>
-      <BoolField name="behavior.successFileMove" label="移动视频和字幕" />
-      <BoolField name="behavior.successFileRename" label="重命名视频和字幕" />
-      <PathFieldWrapper name="paths.successOutputFolder" label="整理目标目录" isDirectory disabled={!move} />
-      <div className="pt-3 text-sm font-medium">元数据与 STRM 输出（可选）</div>
-      <PathFieldWrapper
-        name="paths.metadataPath"
-        label="元数据输出目录"
-        isDirectory
-        description="留空时，元数据随视频保存在一起。指定独立目录后，元数据将输出到此处并生成 STRM 播放流文件与配套字幕（适用于只读网盘或 Emby/Jellyfin 独立挂载）。"
-      />
-      {services.isServer && (
-        <p className="text-xs text-muted-foreground">
-          源路径和输出目录属于 MDCz 服务端文件系统；STRM 映射目标属于播放器可见路径，无需服务端能够访问。
-        </p>
+      {metadataOnly && (
+        <div className="mb-3 rounded-md border border-border/70 bg-muted/50 p-3 text-xs text-muted-foreground">
+          已开启「仅输出元数据」模式，已停用视频移动与重命名。
+        </div>
       )}
-      <BaseField
-        name="paths.strmPathMappings"
-        label="STRM 路径映射（可选）"
-        layout="vertical"
-        commitMode="debounce"
-        description="当播放器（如 Docker 中的 Emby/Jellyfin）访问视频的路径与本机不同时，可通过此映射替换 .strm 文件中的路径。网络流地址不受影响。"
-      >
-        {(field) => {
-          const mappings = (field.value ?? []) as Configuration["paths"]["strmPathMappings"];
-          return (
-            <div className="space-y-2">
-              {mappings.length > 0 && (
-                <div className="grid grid-cols-[1fr_1fr_auto] gap-2 px-0.5 text-xs font-medium text-muted-foreground">
-                  <span>MDCz 可见路径前缀</span>
-                  <span>播放器可见路径前缀</span>
-                  <span className="w-8" />
-                </div>
+      <BoolField
+        name="behavior.successFileMove"
+        label="移动视频与字幕"
+        description="刮削成功后将视频与字幕移动到指定目录归档；关闭时保留在原目录就地保存。"
+        disabled={metadataOnly}
+      />
+      <PathFieldWrapper
+        name="paths.successOutputFolder"
+        label="整理目标目录"
+        description="移动归档后的存放目录，支持绝对路径或相对路径（留空则保存在媒体目录下）。"
+        isDirectory
+        disabled={!move || metadataOnly}
+      />
+      <BoolField
+        name="behavior.successFileRename"
+        label="重命名视频与字幕"
+        description="按命名规则重命名视频与字幕文件；关闭时保留原始文件名。"
+        disabled={metadataOnly}
+      />
+    </>
+  );
+}
+
+export function MetadataExportSection() {
+  const form = useFormContext<FieldValues>();
+  const services = useSettingsServices();
+  const search = useOptionalSettingsSearch();
+  const metadataOnly = Boolean(form.watch("behavior.metadataOnly"));
+  const generateStrm = Boolean(form.watch("behavior.generateStrm"));
+
+  const shouldMountChildren = shouldMountConditionalSettings(metadataOnly, search);
+  const isStrmMappingsVisible =
+    generateStrm || Boolean(search?.hasActiveFilters && search.isFieldVisible("paths.strmPathMappings"));
+
+  return (
+    <>
+      <BoolField
+        name="behavior.metadataOnly"
+        label="仅输出元数据"
+        description="不移动原视频，仅将海报与 NFO 输出到独立目录（适合网盘挂载等场景）。"
+      />
+      {shouldMountChildren && (
+        <div className="space-y-4 pt-1 pl-4 border-l-2 border-border/50 animate-in fade-in duration-200">
+          <PathFieldWrapper
+            name="paths.metadataPath"
+            label="元数据输出目录"
+            isDirectory
+            description="存放 NFO、海报及 .strm 播放流文件的目录。"
+            rules={{
+              validate: (value) => {
+                if (metadataOnly && !String(value ?? "").trim()) {
+                  return "启用仅输出元数据时，必须指定元数据输出目录";
+                }
+                return true;
+              },
+            }}
+          />
+          <BoolField
+            name="behavior.generateStrm"
+            label="同时生成 .strm 播放流文件"
+            description="在元数据目录生成 .strm 文件，供 Emby / Jellyfin 挂载串流播放。"
+          />
+          {isStrmMappingsVisible && (
+            <div className="space-y-4 pt-1 pl-4 border-l-2 border-border/40 animate-in fade-in duration-200">
+              {services.isServer && (
+                <p className="text-xs text-muted-foreground">
+                  源路径和输出目录属于 MDCz 服务端文件系统；STRM 映射目标属于播放器可见路径，无需服务端能够访问。
+                </p>
               )}
-              {mappings.map((mapping, index) => (
-                <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                  {(["from", "to"] as const).map((key) => {
-                    const error = form.getFieldState(`paths.strmPathMappings.${index}.${key}`, form.formState).error;
-                    return (
-                      <div key={key}>
-                        <Input
-                          aria-label={`${index + 1} ${key === "from" ? "MDCz 可见路径前缀" : "播放器可见路径前缀"}`}
-                          aria-invalid={Boolean(error)}
-                          placeholder={key === "from" ? "D:\\Downloads" : "/mnt/downloads"}
-                          value={mapping[key]}
-                          onBlur={field.onBlur}
-                          onChange={(event) =>
-                            field.onChange(
-                              mappings.map((rule, i) => (i === index ? { ...rule, [key]: event.target.value } : rule)),
-                            )
-                          }
-                        />
-                        {error?.message && (
-                          <p className="text-xs text-destructive" role="alert">
-                            {error.message}
-                          </p>
+              <BaseField
+                name="paths.strmPathMappings"
+                label="STRM 路径映射（可选）"
+                layout="vertical"
+                commitMode="debounce"
+                description="当媒体服务器访问视频的路径与本机不同时（如 Docker 或 NAS），替换 .strm 中的路径。"
+              >
+                {(field) => {
+                  const mappings = (field.value ?? []) as Configuration["paths"]["strmPathMappings"];
+                  return (
+                    <div className="space-y-2">
+                      {mappings.length > 0 && (
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 px-0.5 text-xs font-medium text-muted-foreground">
+                          <span>MDCz 可见路径前缀</span>
+                          <span>播放器可见路径前缀</span>
+                          <span className="w-8" />
+                        </div>
+                      )}
+                      {mappings.map((mapping, index) => (
+                        <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                          {(["from", "to"] as const).map((key) => {
+                            const error = form.getFieldState(
+                              `paths.strmPathMappings.${index}.${key}`,
+                              form.formState,
+                            ).error;
+                            return (
+                              <div key={key}>
+                                <Input
+                                  aria-label={`${index + 1} ${key === "from" ? "MDCz 可见路径前缀" : "播放器可见路径前缀"}`}
+                                  aria-invalid={Boolean(error)}
+                                  placeholder={key === "from" ? "D:\\Downloads" : "/mnt/downloads"}
+                                  value={mapping[key]}
+                                  onBlur={field.onBlur}
+                                  onChange={(event) =>
+                                    field.onChange(
+                                      mappings.map((rule, i) =>
+                                        i === index ? { ...rule, [key]: event.target.value } : rule,
+                                      ),
+                                    )
+                                  }
+                                />
+                                {error?.message && <span className="text-xs text-destructive">{error.message}</span>}
+                              </div>
+                            );
+                          })}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-9 text-muted-foreground hover:text-foreground"
+                            onClick={() => field.onChange(mappings.filter((_, i) => i !== index))}
+                            aria-label={`删除第 ${index + 1} 条路径映射`}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => field.onChange([...mappings, { from: "", to: "" }])}
+                        >
+                          添加路径映射
+                        </Button>
+                        {mappings.length === 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            未配置路径映射时，.strm 将直接使用原始媒体路径。
+                          </span>
                         )}
                       </div>
-                    );
-                  })}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`删除第 ${index + 1} 条映射`}
-                    onClick={() => field.onChange(mappings.filter((_, i) => i !== index))}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => field.onChange([...mappings, { from: "", to: "" }])}
-              >
-                <Plus className="h-4 w-4" />
-                添加路径映射
-              </Button>
+                    </div>
+                  );
+                }}
+              </BaseField>
             </div>
-          );
-        }}
-      </BaseField>
-      <div className="pt-3 text-sm font-medium">刮削失败处理</div>
-      <BoolField name="behavior.failedFileMove" label="移动失败的视频和字幕" />
-      <PathFieldWrapper name="paths.failedOutputFolder" label="失败文件目录" isDirectory disabled={!failedMove} />
-      <BoolField name="behavior.scrapeSoftlinkPath" label="刮削软链接目录" />
-      <BoolField name="behavior.saveLog" label="保存日志到文件" />
+          )}
+        </div>
+      )}
     </>
   );
 }

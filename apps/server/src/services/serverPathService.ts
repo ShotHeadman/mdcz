@@ -157,9 +157,8 @@ export class ServerPathService {
     return [
       configuration.paths.mediaPath,
       configuration.paths.actorPhotoFolder,
-      configuration.paths.softlinkPath,
       configuration.paths.successOutputFolder,
-      configuration.paths.failedOutputFolder,
+      configuration.paths.metadataPath ?? "",
       configuration.paths.outputSummaryPath,
       configuration.paths.configDirectory,
     ].map((value) => value.trim());

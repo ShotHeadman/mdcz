@@ -313,16 +313,16 @@ describe("buildServer maintenance integration", () => {
   it.each([
     "incoming",
     "organized",
-    "metadata",
+    "nested-root",
   ] as const)("reorganizes the selected layout and preserves named assets (%s)", async (location) => {
     const parent = await createTempRoot("maintenance-organize-root");
-    const root = location === "metadata" ? join(parent, "JAV_output") : parent;
+    const root = location === "nested-root" ? join(parent, "JAV_output") : parent;
     const sourceRelative =
       location === "incoming" ? "" : location === "organized" ? "JAV_output/Old/ABC-125" : "Old/ABC-125";
     const sourceDir = join(root, sourceRelative);
-    const metadataRoot = location === "metadata" ? await createTempRoot("maintenance-metadata") : undefined;
-    const sourceMetadataDir = metadataRoot ? join(metadataRoot, sourceRelative) : sourceDir;
-    const outputRelative = location === "metadata" ? "" : "JAV_output";
+    const metadataRoot = location === "nested-root" ? await createTempRoot("maintenance-metadata") : undefined;
+    const sourceMetadataDir = sourceDir;
+    const outputRelative = location === "nested-root" ? "" : "JAV_output";
     await mkdir(sourceDir, { recursive: true });
     await mkdir(sourceMetadataDir, { recursive: true });
     await writeFile(join(sourceDir, "ABC-125.mp4"), "video");
@@ -394,7 +394,7 @@ describe("buildServer maintenance integration", () => {
       title: "Local Title ABC-125",
     });
     const targetDir = join(root, outputRelative, "S", "ABC-125");
-    const targetMetadataDir = join(metadataRoot ?? root, outputRelative, "S", "ABC-125");
+    const targetMetadataDir = targetDir;
     const organizedVideo = join(targetDir, "ABC-125_new.mp4");
     const organizedNfo = join(targetMetadataDir, "ABC-125_new.nfo");
     await expect(access(organizedVideo)).resolves.toBeUndefined();

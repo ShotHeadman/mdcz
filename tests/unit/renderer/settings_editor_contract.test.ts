@@ -28,8 +28,10 @@ describe("settings editor metadata and filtering", () => {
     const keys = new Set(FIELD_REGISTRY.map((candidate) => candidate.key));
     expect(keys.has("behavior.updateCheck")).toBe(false);
     expect(FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.defaultScanExcludeDirs")).toBe(
-      FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.failedOutputFolder") + 1,
+      FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.mediaPath") + 1,
     );
+    expect(entry("paths.successOutputFolder")).toMatchObject({ anchor: "paths", visibility: "public" });
+    expect(entry("behavior.metadataOnly")).toMatchObject({ anchor: "paths", visibility: "public" });
   });
 
   it("round-trips registered settings, including scrape order and aggregation paths", () => {

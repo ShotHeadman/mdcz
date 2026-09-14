@@ -16,7 +16,7 @@ import {
 } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
 import { createContext, type ReactElement, type ReactNode, useContext, useState } from "react";
-import type { ControllerRenderProps, FieldValues } from "react-hook-form";
+import type { ControllerRenderProps, FieldValues, RegisterOptions } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 import { ResetToDefaultButton } from "../settings/ResetToDefaultButton";
@@ -70,6 +70,7 @@ interface BaseFieldProps {
    * Defaults to "immediate".
    */
   commitMode?: CommitMode;
+  rules?: RegisterOptions;
 }
 
 /**
@@ -83,6 +84,7 @@ export function BaseField({
   children,
   layout,
   commitMode = "immediate",
+  rules,
 }: BaseFieldProps) {
   const sectionMode = useSettingsSectionMode();
 
@@ -98,13 +100,23 @@ export function BaseField({
       labelAddon={labelAddon}
       layout={layout}
       commitMode={commitMode}
+      rules={rules}
     >
       {children}
     </ConnectedBaseField>
   );
 }
 
-function ConnectedBaseField({ name, label, description, labelAddon, children, layout, commitMode }: BaseFieldProps) {
+function ConnectedBaseField({
+  name,
+  label,
+  description,
+  labelAddon,
+  children,
+  layout,
+  commitMode,
+  rules,
+}: BaseFieldProps) {
   const form = useFormContext();
   const fieldLayout = useContext(ConfigFieldLayoutContext);
   const { resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
@@ -123,6 +135,7 @@ function ConnectedBaseField({ name, label, description, labelAddon, children, la
     <FormField
       control={form.control}
       name={name}
+      rules={rules}
       render={({ field, fieldState }): ReactElement => {
         if (!visible) {
           return <FormItem className="hidden" aria-hidden="true" />;
@@ -154,12 +167,27 @@ function ConnectedBaseField({ name, label, description, labelAddon, children, la
 
 // ── Boolean ──
 
-export function BoolField({ name, label, description }: { name: string; label: string; description?: string }) {
+export function BoolField({
+  name,
+  label,
+  description,
+  disabled,
+}: {
+  name: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+}) {
   return (
     <BaseField name={name} label={label} description={description} commitMode="immediate">
       {(field) => (
         <FormControl>
-          <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
+          <Switch
+            aria-label={label}
+            checked={Boolean(field.value)}
+            onCheckedChange={field.onChange}
+            disabled={disabled}
+          />
         </FormControl>
       )}
     </BaseField>
@@ -481,15 +509,17 @@ export function PathFieldWrapper({
   description,
   isDirectory,
   disabled,
+  rules,
 }: {
   name: string;
   label: string;
   description?: string;
   isDirectory?: boolean;
   disabled?: boolean;
+  rules?: RegisterOptions;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="immediate">
+    <BaseField name={name} label={label} description={description} commitMode="immediate" rules={rules}>
       {(field) => (
         <fieldset disabled={disabled} className="w-[450px] disabled:opacity-50">
           <ServerPathField field={field} isDirectory={isDirectory} />

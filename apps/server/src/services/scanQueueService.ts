@@ -169,7 +169,8 @@ export class ScanQueueService {
     const configuration = await this.config.get();
     const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
-    if (configuration.paths.metadataPath.trim()) excludeDirPaths.push(configuration.paths.metadataPath.trim());
+    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
+    if (metadataPath) excludeDirPaths.push(metadataPath);
     await this.mediaRoots.ensurePathRecord({ hostPath: input.scanDir });
     const roots = await this.mediaRoots.listRoots();
     const root = resolveRootFile(roots, hostPath).root;
@@ -244,8 +245,9 @@ export class ScanQueueService {
       (id) => this.mediaRoots.get(id),
       "strm",
     );
+    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
     const files = await listRootFiles(root, "", true, signal, {
-      excludeDirectoryPaths: configuration.paths.metadataPath.trim() ? [configuration.paths.metadataPath.trim()] : [],
+      excludeDirectoryPaths: metadataPath ? [metadataPath] : [],
       filterFile: (filePath) =>
         isPrimaryVideoFileName(path.basename(filePath)) && !generatedStrms.has(publicationPathKey(filePath)),
     });

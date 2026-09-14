@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { defaultConfiguration } from "@main/services/config";
@@ -137,7 +137,6 @@ describe("ScraperService ref-native start", () => {
     const configuration = {
       ...defaultConfiguration,
       paths: { ...defaultConfiguration.paths, mediaPath: join(directory, "unrelated"), metadataPath: metadata },
-      behavior: { ...defaultConfiguration.behavior, failedFileMove: true },
       scrape: { ...defaultConfiguration.scrape, threadNumber: 3 },
     };
     mockConfigManager(configuration);
@@ -208,9 +207,6 @@ describe("ScraperService ref-native start", () => {
     expect(await state.repositories.library.getEntryById(libraryEntry.id)).toEqual(libraryEntry);
     expect(state.repositories.publicationJournal.listUnfinished()).toEqual([]);
     for (const [file, content] of contents) expect(await readFile(file, "utf8")).toBe(content);
-    await expect(stat(join(output, defaultConfiguration.paths.failedOutputFolder))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
   });
 
   it("persists refs from distinct registered roots in one run", async () => {
@@ -287,6 +283,10 @@ describe("ScraperService ref-native start", () => {
     await Promise.all([mkdir(sourcePath, { recursive: true }), mkdir(metadataPath, { recursive: true })]);
     mockConfigManager({
       ...defaultConfiguration,
+      behavior: {
+        ...defaultConfiguration.behavior,
+        metadataOnly: true,
+      },
       paths: {
         ...defaultConfiguration.paths,
         mediaPath: join(directory, "unrelated-global-output"),
@@ -331,6 +331,7 @@ describe("ScraperService ref-native start", () => {
     );
     mockConfigManager({
       ...defaultConfiguration,
+      behavior: { ...defaultConfiguration.behavior, metadataOnly: true },
       paths: { ...defaultConfiguration.paths, mediaPath: outputPath, metadataPath },
     });
     const state = await persistence.getState();

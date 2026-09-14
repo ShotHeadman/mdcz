@@ -252,21 +252,18 @@ const pathsSchema = z.object({
   metadataPath: z.string().default(""),
   strmPathMappings: z.array(strmPathMappingSchema).default([]),
   actorPhotoFolder: z.string().default(""),
-  softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),
-  failedOutputFolder: z.string().default("failed"),
-  defaultScanExcludeDirs: z.array(z.string()).default(["JAV_output", "failed"]),
+  defaultScanExcludeDirs: z.array(z.string()).default(["JAV_output"]),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
   outputSummaryPath: z.string().default(""),
 });
 
 const behaviorSchema = z.object({
+  metadataOnly: z.boolean().default(false),
   successFileMove: z.boolean().default(true),
-  failedFileMove: z.boolean().default(true),
   successFileRename: z.boolean().default(true),
-  scrapeSoftlinkPath: z.boolean().default(false),
-  saveLog: z.boolean().default(true),
+  generateStrm: z.boolean().default(false),
   updateCheck: z.boolean().default(true),
 });
 
@@ -437,6 +434,7 @@ export const configurationSchema = z
   })
   .superRefine((data, ctx) => {
     const sharedDirectoryMode = isSharedDirectoryMode({
+      metadataOnly: data.behavior.metadataOnly,
       successFileMove: data.behavior.successFileMove,
       metadataPath: data.paths.metadataPath,
       folderTemplate: data.naming.folderTemplate,

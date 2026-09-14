@@ -140,7 +140,6 @@ describe("buildServer scrape integration", () => {
         downloadSceneImages: false,
         downloadTrailer: false,
       },
-      behavior: { failedFileMove: false },
     });
     const token = await loginAsAdmin(fastify);
     const accepted = await fastify.inject({
@@ -211,7 +210,6 @@ describe("buildServer scrape integration", () => {
     const { fastify, services } = await createTestServer({ scrapeAggregation: aggregation });
     await services.config.update({
       naming: { folderTemplate: "fixed/{number}", fileTemplate: "{number}" },
-      behavior: { failedFileMove: true },
       download: {
         downloadThumb: false,
         downloadPoster: false,
@@ -250,9 +248,7 @@ describe("buildServer scrape integration", () => {
       for (const number of ["XYZ-111", "XYZ-222", "XYZ-333"]) {
         expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(`source ${number}`);
       }
-      expect(
-        await readFile(join(root, (await services.config.get()).paths.failedOutputFolder, "ABF-981.mp4"), "utf8"),
-      ).toBe("source ABF-981");
+      expect(await readFile(join(root, "ABF-981.mp4"), "utf8")).toBe("source ABF-981");
       return;
     }
     expect(terminal.task).toMatchObject({ status: "failed", failedCount: 2, skippedCount: 0, successCount: 2 });
@@ -276,9 +272,6 @@ describe("buildServer scrape integration", () => {
       await expect(stat(join(root, `${number}.mp4`))).rejects.toMatchObject({ code: "ENOENT" });
       expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(`source ${number}`);
     }
-    await expect(stat(join(root, (await services.config.get()).paths.failedOutputFolder))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
   });
 
   it("runs the full scrape runtime pipeline and indexes organized output", async () => {
@@ -662,7 +655,7 @@ describe("buildServer scrape integration", () => {
       payload: {
         download: { downloadSceneImages: false, downloadTrailer: false },
         paths: { metadataPath: metadataRoot },
-        behavior: { successFileMove: move, successFileRename: move, failedFileMove: false },
+        behavior: { metadataOnly: true, successFileMove: move, successFileRename: move, generateStrm: true },
         naming: { fileTemplate: "{number}_output" },
       },
     });
@@ -687,8 +680,8 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     const result = historyResponse.json().result.data.results[0];
-    const directory = `${move ? "JAV_output/" : ""}Actor A/ABC-123`;
-    const outputRelativePath = move ? `${directory}/ABC-123_output.mp4` : "ABC-123.mp4";
+    const directory = "Actor A/ABC-123";
+    const outputRelativePath = "ABC-123.mp4";
     const nfoRelativePath = `${directory}/ABC-123_output.nfo`;
     const strmRelativePath = `${directory}/ABC-123_output.strm`;
     const posterRelativePath = `${directory}/poster.png`;

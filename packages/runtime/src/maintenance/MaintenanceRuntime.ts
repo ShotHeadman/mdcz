@@ -137,7 +137,11 @@ export class MaintenanceRuntime {
   ) {}
 
   async getConfiguration(): Promise<Configuration> {
-    return structuredClone(await this.deps.config.get());
+    const configuration = structuredClone(await this.deps.config.get());
+    if (configuration.behavior.metadataOnly) {
+      throw new Error("维护模式不支持仅输出元数据，请先在设置中关闭");
+    }
+    return configuration;
   }
 
   async createSession(input: {
@@ -145,9 +149,11 @@ export class MaintenanceRuntime {
     root: MediaRoot;
     outputRoot: MediaRoot;
     outputRelativeDirectory: string;
-    registerRoot: (hostPath: string) => Promise<unknown>;
   }): Promise<MaintenanceRuntime> {
-    const config = structuredClone(input.configuration ?? (await this.deps.config.get()));
+    const config = structuredClone(input.configuration ?? (await this.getConfiguration()));
+    if (config.behavior.metadataOnly) {
+      throw new Error("维护模式不支持仅输出元数据，请先在设置中关闭");
+    }
     const sourceMediaPath = config.paths.mediaPath.trim() || input.root.hostPath;
     const outputBaseDirectory = input.outputRelativeDirectory
       ? resolveRootRelativePath(input.outputRoot, input.outputRelativeDirectory)
@@ -156,9 +162,6 @@ export class MaintenanceRuntime {
       ? sourceMediaPath
       : input.outputRoot.hostPath;
     config.paths.successOutputFolder = outputBaseDirectory;
-    if (config.paths.metadataPath.trim()) {
-      await input.registerRoot(config.paths.metadataPath.trim());
-    }
     return new MaintenanceRuntime({ ...this.deps, config: { get: async () => config } }, sourceMediaPath);
   }
 
@@ -178,7 +181,7 @@ export class MaintenanceRuntime {
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
     return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal, {
       mediaPath: this.sourceMediaPath ?? config.paths.mediaPath,
-      metadataPath: config.paths.metadataPath,
+      metadataPath: "",
       registeredOutputs: input.registeredOutputs,
     });
   }
@@ -305,7 +308,7 @@ export class MaintenanceRuntime {
 
   private async getPresetConfig(presetId: MaintenancePresetId, root: MediaRoot): Promise<Configuration> {
     const preset = getMaintenancePreset(presetId);
-    const baseConfig = await this.deps.config.get();
+    const baseConfig = await this.getConfiguration();
     return mergeDeep(
       {
         ...baseConfig,

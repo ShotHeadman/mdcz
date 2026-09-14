@@ -61,6 +61,7 @@ const createCoordinator = (
   overrides: Partial<ConstructorParameters<typeof MaintenanceSessionCoordinator>[0]> = {},
 ) => {
   const runtime = {
+    getConfiguration: vi.fn(async () => structuredClone(defaultConfiguration)),
     scanRefs: vi.fn(async ({ root: scanRoot, refs }: { root: typeof root; refs: Array<{ relativePath: string }> }) =>
       refs.map((ref) => createEntry(ref.relativePath, scanRoot)),
     ),
@@ -132,7 +133,6 @@ describe("MaintenanceSessionCoordinator", () => {
         scanDir: root.hostPath,
         recursive: true,
         targetDir: root.hostPath,
-        extraScanDirs: [],
         excludeDirPaths: [],
       },
     });

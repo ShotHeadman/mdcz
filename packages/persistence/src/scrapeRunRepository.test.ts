@@ -70,7 +70,6 @@ describe("ScrapeRunRepository", () => {
       scanDir: "/root-1",
       recursive: true,
       targetDir: "/requested-output",
-      extraScanDirs: [],
       excludeDirPaths: [],
     };
     const run = await repository.create({

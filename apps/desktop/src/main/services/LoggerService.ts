@@ -42,8 +42,6 @@ export class LoggerService {
 
   private readonly listeners = new Set<(payload: LoggerEventPayload) => void>();
 
-  private fileTransport: DailyRotateFile | null = null;
-
   private constructor() {
     const logDir = getLogDir();
 
@@ -58,16 +56,15 @@ export class LoggerService {
       return info;
     });
 
-    const configuredTransports: transport[] = [];
-
-    this.fileTransport = new DailyRotateFile({
+    const fileTransport = new DailyRotateFile({
       filename: join(logDir, "mdcz-%DATE%.log"),
       datePattern: "YYYY-MM-DD",
       maxFiles: "14d",
       zippedArchive: true,
       level: "info",
     });
-    configuredTransports.push(this.fileTransport);
+
+    const configuredTransports: transport[] = [fileTransport];
 
     if (!app.isPackaged) {
       configuredTransports.push(
@@ -99,26 +96,6 @@ export class LoggerService {
 
   getLogger(moduleName: string): Logger {
     return this.logger.child({ module: moduleName });
-  }
-
-  /**
-   * Dynamically enable or disable file logging based on the `behavior.saveLog` config.
-   */
-  reconfigure(saveLog: boolean): void {
-    if (!saveLog && this.fileTransport) {
-      this.logger.remove(this.fileTransport);
-      this.fileTransport = null;
-    } else if (saveLog && !this.fileTransport) {
-      const logDir = getLogDir();
-      this.fileTransport = new DailyRotateFile({
-        filename: join(logDir, "mdcz-%DATE%.log"),
-        datePattern: "YYYY-MM-DD",
-        maxFiles: "14d",
-        zippedArchive: true,
-        level: "info",
-      });
-      this.logger.add(this.fileTransport);
-    }
   }
 
   onLog(listener: (payload: LoggerEventPayload) => void): () => void {

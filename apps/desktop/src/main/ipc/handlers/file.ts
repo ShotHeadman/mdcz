@@ -109,7 +109,8 @@ export const createFileHandlers = (
             }
 
             const configuration = await configManager.getValidated();
-            if (configuration.paths.metadataPath.trim()) excludeDirPaths.push(configuration.paths.metadataPath.trim());
+            const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
+            if (metadataPath) excludeDirPaths.push(metadataPath);
             await ensurePath(dirPath);
             const registeredRoots = await mediaRoots.listRoots();
 

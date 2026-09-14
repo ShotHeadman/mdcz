@@ -1,5 +1,4 @@
 import { stat } from "node:fs/promises";
-import { basename, join } from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 
@@ -22,7 +21,6 @@ export const resolveScrapeRetry = async (input: {
   latestOutcome?: { outcome: string; outputRootId: string | null; outputRelativePath: string | null };
   outputRoot: Pick<MediaRoot, "id" | "hostPath">;
   outputRelativeDirectory: string;
-  failedOutputFolder: string;
   resolveRoot(id: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
 }): Promise<{ sourcePath: string; executionSource?: RootFileRef; outputTemplateRoot?: string }> => {
   const sourceRoot = await input.resolveRoot(input.item.rootId);
@@ -33,10 +31,7 @@ export const resolveScrapeRetry = async (input: {
   if (outcome?.outcome === "success" && outcome.outputRootId && outcome.outputRelativePath) {
     candidates.push({ rootId: outcome.outputRootId, relativePath: outcome.outputRelativePath });
   }
-  candidates.push(input.item, {
-    rootId: input.outputRoot.id,
-    relativePath: join(input.failedOutputFolder.trim(), basename(input.item.relativePath)).replaceAll("\\", "/"),
-  });
+  candidates.push(input.item);
   for (const candidate of candidates) {
     const root =
       candidate.rootId === input.outputRoot.id ? input.outputRoot : await input.resolveRoot(candidate.rootId);

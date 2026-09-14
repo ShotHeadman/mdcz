@@ -9,7 +9,6 @@ export const directorySourceSchema = z.object({
 export type DirectorySource = z.infer<typeof directorySourceSchema>;
 
 export const directoryTaskScopeSchema = directorySourceSchema.extend({
-  extraScanDirs: z.array(z.string()),
   excludeDirPaths: z.array(z.string()),
   targetDir: z.string(),
 });

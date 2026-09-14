@@ -102,15 +102,10 @@ export interface ScrapeSuccessOutcomeCommitInput {
   };
 }
 
-export interface ScrapeFileTransitions {
-  failed(): Promise<void>;
-}
-
 export interface ScrapeTerminalGroupItem {
   result: ScrapeResult & { publicationPlan?: PublicationPlan };
   attemptId: string;
   itemPath: string;
-  fileTransitions: ScrapeFileTransitions;
 }
 
 const normalizedMediaIdentity = (value: string | null | undefined): string => value?.trim().toUpperCase() ?? "";
@@ -192,25 +187,16 @@ const commitFailure = async (
   error: string,
   causes: readonly unknown[] = [],
 ): Promise<ScrapeResult> => {
-  const failureCauses = [...causes];
-  let terminalError = error;
-  try {
-    await item.fileTransitions.failed();
-  } catch (transitionError) {
-    failureCauses.push(transitionError);
-    terminalError = `${terminalError}；失败文件移动失败：${errorMessage(transitionError)}`;
-  }
-
   try {
     const outcome = context.scrapeRuns.commitOutcome({
       outcome: "failed",
       attemptId: item.attemptId,
-      error: terminalError,
+      error,
     });
-    return { ...item.result, resultId: outcome.id, status: "failed", error: terminalError };
+    return { ...item.result, resultId: outcome.id, status: "failed", error };
   } catch (outcomeError) {
-    if (failureCauses.length === 0) throw outcomeError;
-    throw new AggregateError([...failureCauses, outcomeError], terminalError);
+    if (causes.length === 0) throw outcomeError;
+    throw new AggregateError([...causes, outcomeError], error);
   }
 };
 

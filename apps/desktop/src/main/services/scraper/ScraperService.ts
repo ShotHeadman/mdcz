@@ -380,7 +380,7 @@ export class ScraperService {
     if (!manifest.requestedOutputRootId) throw new Error(`Scrape run has no output root: ${manifest.id}`);
     const outputRoot = await state.repositories.mediaRoots.get(manifest.requestedOutputRootId);
     roots.set(outputRoot.id, outputRoot);
-    const metadataPath = configuration.paths.metadataPath.trim();
+    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
     if (metadataPath) {
       const metadataRoot = await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath });
       roots.set(metadataRoot.id, metadataRoot);
@@ -415,7 +415,6 @@ export class ScraperService {
           latestOutcome: latestOutcomeByItemId.get(item.id),
           outputRoot: outputRoot,
           outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? "",
-          failedOutputFolder: configuration.paths.failedOutputFolder,
           resolveRoot: async (id) => {
             const resolved = roots.get(id) ?? (await state.repositories.mediaRoots.get(id));
             roots.set(id, resolved);
@@ -483,10 +482,9 @@ export class ScraperService {
       },
       validatePrepared: async (
         prepared: readonly { item: ScrapeRunItem<ManualScrapeOptions>; prepared: PreparedFileScrape }[],
-        failedItems: readonly ScrapeRunItem<ManualScrapeOptions>[],
       ) =>
-        await validatePreparedScrapeFiles([
-          ...prepared.map(({ item, prepared }) => ({
+        await validatePreparedScrapeFiles(
+          prepared.map(({ item, prepared }) => ({
             itemId: item.id,
             sourcePath: prepared.sourcePath,
             libraryItemId: librarySources.get(item.id)?.libraryItemId,
@@ -494,20 +492,7 @@ export class ScraperService {
             mediaIdentity: prepared.crawlerData.number || prepared.fileInfo.number,
             partNumber: prepared.fileInfo.part?.number ?? null,
           })),
-          ...(runConfiguration.behavior.failedFileMove
-            ? failedItems.map((item) => ({
-                itemId: item.id,
-                sourcePath: item.sourcePath,
-                outputPlan: {
-                  targetVideoPath: fileOrganizer.resolveFailedVideoPath(
-                    item.sourcePath,
-                    outputRoot.hostPath,
-                    runConfiguration,
-                  ),
-                },
-              }))
-            : []),
-        ]),
+        ),
       acquireItems: (items) =>
         mediaPathOwnership.acquireAll(
           items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
@@ -561,11 +546,6 @@ export class ScraperService {
               result: result,
               attemptId,
               itemPath: item.relativePath,
-              fileTransitions: fileOrganizer.createScrapeFileTransitions({
-                configuration: runConfiguration,
-                failureRootPath: outputRoot.hostPath,
-                sourcePath: item.sourcePath,
-              }),
             };
           }),
           scrapeRuns: state.repositories.scrapeRuns,

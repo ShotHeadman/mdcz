@@ -272,17 +272,22 @@ export class MaintenanceSessionCoordinator {
     }
     this.previewStarting = true;
     try {
+      const currentConfiguration = await this.deps.runtime.getConfiguration();
+      const configuration = input.configuration ?? currentConfiguration;
+      if (configuration.behavior.metadataOnly) {
+        throw new Error("维护模式不支持仅输出元数据，请先在设置中关闭");
+      }
       const refs = await canonicalizeRefs(this.deps.roots, input.refs, this.deps.library);
       const root = await this.deps.roots.get(input.rootId);
       const outputRoot = input.outputRootId ? await this.deps.roots.get(input.outputRootId) : root;
       const outputRelativeDirectory = input.outputRelativeDirectory ?? "";
-      this.pendingPreviewSetup = { root, outputRoot, outputRelativeDirectory, configuration: input.configuration };
+      this.pendingPreviewSetup = { root, outputRoot, outputRelativeDirectory, configuration };
       for (const rootId of new Set(refs.map((ref) => ref.rootId))) await this.deps.roots.get(rootId);
       this.assertOpen();
       const generation = (this.session?.generation ?? 0) + 1;
       this.session?.invalidate();
       this.assertOpen();
-      this.directoryConfiguration = input.configuration;
+      this.directoryConfiguration = configuration;
       this.session = new MaintenanceSession({
         directoryScope: input.directoryScope,
         id: randomUUID(),
@@ -329,6 +334,7 @@ export class MaintenanceSessionCoordinator {
     selections: readonly MaintenanceApplySelection[];
   }): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     this.assertOpen();
+    await this.deps.runtime.getConfiguration();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
     if (input.selections.length === 0) throw new Error("请选择要应用的维护预览");
     const previewIds = input.selections.map((selection) => selection.previewId);
@@ -527,10 +533,7 @@ export class MaintenanceSessionCoordinator {
       }
       const setup = this.pendingPreviewSetup;
       if (setup) {
-        this.runtime = await this.deps.runtime.createSession({
-          ...setup,
-          registerRoot: async (hostPath) => await this.deps.roots.ensurePathRecord({ hostPath }),
-        });
+        this.runtime = await this.deps.runtime.createSession(setup);
         this.pendingPreviewSetup = null;
       }
       scanController.signal.throwIfAborted();

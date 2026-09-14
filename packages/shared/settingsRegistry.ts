@@ -1,13 +1,4 @@
-export const SECTION_ORDER = [
-  "paths",
-  "scrape",
-  "network",
-  "translate",
-  "naming",
-  "download",
-  "fileBehavior",
-  "system",
-] as const;
+export const SECTION_ORDER = ["paths", "scrape", "network", "translate", "naming", "download", "system"] as const;
 
 export type FieldAnchor = (typeof SECTION_ORDER)[number];
 export type FieldSurface = "settings" | "tools" | "about" | "internal";
@@ -31,24 +22,42 @@ export interface AggregationPriorityFieldDefinition {
 }
 
 export const SECTION_LABELS: Record<FieldAnchor, string> = {
-  paths: "目录与路径",
+  paths: "媒体库与输出",
   scrape: "刮削设置",
   network: "网络连接",
   translate: "翻译服务",
   naming: "命名规则",
   download: "下载选项",
-  fileBehavior: "文件整理与输出",
   system: "界面与快捷键",
 };
 
 export const SECTION_FILTER_ALIASES: Record<FieldAnchor, string[]> = {
-  paths: ["path", "paths", "folder", "directory", "directories"],
+  paths: [
+    "path",
+    "paths",
+    "folder",
+    "directory",
+    "directories",
+    "media",
+    "output",
+    "move",
+    "rename",
+    "behavior",
+    "file",
+    "媒体库",
+    "整理",
+    "输出",
+    "移动",
+    "重命名",
+    "strm",
+    "元数据",
+    "归档",
+  ],
   scrape: ["scrape", "crawler", "site", "sites", "source", "sources", "rate", "limit"],
   network: ["network", "proxy", "cookie", "retry", "timeout"],
   translate: ["translate", "translation", "translator", "llm", "language"],
   naming: ["naming", "name", "template", "rule", "rules"],
   download: ["download", "asset", "poster", "fanart", "nfo"],
-  fileBehavior: ["behavior", "file", "move", "rename", "log"],
   system: ["system", "ui", "interface", "shortcut", "hotkey", "系统", "界面", "快捷键"],
 };
 
@@ -192,12 +201,12 @@ const ADVANCED_FIELD_KEYS = new Set<string>([
 const FIELD_ALIASES: Record<string, string[]> = {
   ...AGGREGATION_PRIORITY_ALIASES,
   "paths.mediaPath": ["media", "library", "媒体库"],
-  "paths.metadataPath": ["metadata", "sidecar", "strm", "元数据", "本地目录"],
+  "behavior.metadataOnly": ["metadata", "only", "只读", "仅输出元数据", "网盘", "原视频不动"],
+  "paths.metadataPath": ["metadata", "sidecar", "strm", "元数据", "本地目录", "元数据目录"],
   "paths.strmPathMappings": ["strm", "mapping", "播放器", "路径映射", "UNC"],
+  "behavior.generateStrm": ["strm", "播放流", "串流", "流媒体"],
   "paths.actorPhotoFolder": ["actor", "photo", "头像", "演员"],
-  "paths.softlinkPath": ["symlink", "softlink", "链接"],
   "paths.successOutputFolder": ["output", "success", "成功目录"],
-  "paths.failedOutputFolder": ["output", "failed", "失败目录"],
   "paths.defaultScanExcludeDirs": ["scan exclude", "exclude dirs", "排除目录", "扫描排除"],
   "paths.outputSummaryPath": ["summary", "overview", "概览目录"],
   "paths.configDirectory": ["config", "profile", "配置目录"],
@@ -320,29 +329,41 @@ const RAW_FIELD_REGISTRY: Array<
 > = [
   { key: "paths.mediaPath", label: "媒体目录", anchor: "paths" },
   {
+    key: "paths.defaultScanExcludeDirs",
+    label: "默认扫描排除目录",
+    anchor: "paths",
+    description: "扫描媒体库时自动跳过这些文件夹。",
+  },
+  { key: "behavior.successFileMove", label: "移动视频与字幕", anchor: "paths" },
+  { key: "paths.successOutputFolder", label: "整理目标目录", anchor: "paths" },
+  { key: "behavior.successFileRename", label: "重命名视频与字幕", anchor: "paths" },
+  {
+    key: "behavior.metadataOnly",
+    label: "仅输出元数据",
+    anchor: "paths",
+    description: "不移动原视频，仅将海报与 NFO 输出到独立目录（适合网盘挂载等场景）。",
+  },
+  {
     key: "paths.metadataPath",
     label: "元数据输出目录",
-    anchor: "fileBehavior",
-    description: "留空时随视频保存；指定独立目录后输出元数据与 STRM 播放流文件，便于只读网盘或 Emby 挂载。",
+    anchor: "paths",
+    description: "启用“仅输出元数据”时必填。存放 NFO、海报及 .strm 播放流文件的目录。",
+  },
+  {
+    key: "behavior.generateStrm",
+    label: "同时生成 .strm 播放流文件",
+    anchor: "paths",
+    description: "在元数据目录生成 .strm 文件，供 Emby / Jellyfin 挂载串流播放。",
   },
   {
     key: "paths.strmPathMappings",
     label: "STRM 路径映射（可选）",
-    anchor: "fileBehavior",
-    description: "将 STRM 中的本地视频路径替换为播放器访问路径；网络流地址直接保留。",
+    anchor: "paths",
+    description: "当启用生成 .strm 文件时，替换其中的本地视频路径为播放器可见路径。",
   },
   { key: "paths.actorPhotoFolder", label: "本地演员头像库目录", anchor: "paths" },
-  { key: "paths.softlinkPath", label: "软链接目录", anchor: "paths" },
-  { key: "paths.successOutputFolder", label: "整理目标目录", anchor: "fileBehavior" },
-  { key: "paths.failedOutputFolder", label: "失败文件目录", anchor: "fileBehavior" },
-  {
-    key: "paths.defaultScanExcludeDirs",
-    label: "默认扫描排除目录",
-    anchor: "paths",
-    description: "扫描媒体目录时默认过滤这些目录；相对路径会按当前扫描目录解析。",
-  },
-  { key: "paths.outputSummaryPath", label: "概览统计目录", anchor: "paths" },
   { key: "paths.sceneImagesFolder", label: "剧照目录名", anchor: "paths" },
+  { key: "paths.outputSummaryPath", label: "概览统计目录", anchor: "paths" },
   { key: "paths.configDirectory", label: "配置文件目录", anchor: "paths" },
   {
     key: "scrape.sites",
@@ -522,11 +543,6 @@ const RAW_FIELD_REGISTRY: Array<
   { key: "ui.hideDock", label: "隐藏 Dock 图标", anchor: "system" },
   { key: "ui.hideMenu", label: "隐藏菜单栏", anchor: "system" },
   { key: "ui.hideWindowButtons", label: "隐藏窗口按钮", anchor: "system" },
-  { key: "behavior.successFileMove", label: "移动视频和字幕", anchor: "fileBehavior" },
-  { key: "behavior.failedFileMove", label: "移动失败的视频和字幕", anchor: "fileBehavior" },
-  { key: "behavior.successFileRename", label: "重命名视频和字幕", anchor: "fileBehavior" },
-  { key: "behavior.scrapeSoftlinkPath", label: "刮削软链接目录", anchor: "fileBehavior" },
-  { key: "behavior.saveLog", label: "保存日志到文件", anchor: "fileBehavior" },
 ];
 
 export const FIELD_REGISTRY: FieldEntry[] = RAW_FIELD_REGISTRY.map((entry) => ({
