@@ -83,7 +83,7 @@ describe("ScrapeCoordinator", () => {
     "failed",
     "stopped",
     "interrupted",
-  ] as const)("accepts and settles directory discovery before a file session exists (%s)", async (outcome) => {
+  ] as const)("accepts and settles directory discovery through one session (%s)", async (outcome) => {
     const run: Run = { id: "directory", items: [{ id: "one", rootId: "root", relativePath: "one.mp4" }] };
     const store = createStore(run);
     const entered = deferred<void>();
@@ -103,11 +103,21 @@ describe("ScrapeCoordinator", () => {
       fixed = true;
       return { ...entry, items: outcome === "empty" ? [] : entry.items };
     });
-    const createExecution = vi.fn(host.createExecution);
+    const commitItems = vi.fn(async (items: readonly { item: ScrapeRunItem; result: ScrapeResult }[]) =>
+      items.map(({ item, result }) => ({ itemId: item.id, result })),
+    );
+    const create = host.createExecution;
+    const createExecution = vi.fn(async (...args: Parameters<typeof create>) => ({
+      ...(await create(...args)),
+      commitItems,
+    }));
+    host.onTerminal = vi.fn();
     host.createExecution = createExecution;
     const coordinator = new ScrapeCoordinator(store, host);
     const accepted = await coordinator.start("directory");
     expect(accepted.progress.totalItems).toBeNull();
+    expect(host.discover).not.toHaveBeenCalled();
+    expect(createExecution).not.toHaveBeenCalled();
     await entered.promise;
     expect(coordinator.liveRuns()[0].snapshot).toMatchObject({
       status: "discovering",
@@ -115,12 +125,17 @@ describe("ScrapeCoordinator", () => {
       discovery: { directories: 3, candidates: 1 },
     });
     expect(createExecution).not.toHaveBeenCalled();
+    coordinator.recordLog(run.id, { level: "info", message: "discovery log" });
+    const discoveryRevision = coordinator.liveRuns()[0].snapshot.revision;
     await expect(coordinator.pause(run.id)).rejects.toThrow("不支持暂停");
     if (outcome === "stopped") {
       vi.mocked(host.create).mockResolvedValueOnce({ ...run, id: "queued-directory" });
       const queued = await coordinator.start("second");
       expect(queued).toMatchObject({ runId: "queued-directory", status: "queued", progress: { totalItems: null } });
+      await expect(coordinator.pause(queued.runId)).resolves.toMatchObject({ status: "paused" });
+      await expect(coordinator.resume(queued.runId)).resolves.toMatchObject({ status: "queued" });
       await coordinator.stop(queued.runId);
+      expect(commitItems).not.toHaveBeenCalled();
       expect(host.discover).toHaveBeenCalledTimes(1);
       expect(store.finalize).toHaveBeenCalledWith(
         expect.objectContaining({ runId: queued.runId, disposition: "stopped" }),
@@ -136,6 +151,31 @@ describe("ScrapeCoordinator", () => {
     release.resolve();
     await termination;
     await coordinator.waitForIdle();
+    const snapshots = vi
+      .mocked(host.onInvalidate)
+      .mock.calls.flatMap(([runs]) =>
+        runs.filter(({ snapshot }) => snapshot.runId === run.id).map(({ snapshot }) => snapshot),
+      );
+    const revisions = snapshots.map((snapshot) => snapshot.revision);
+    expect(revisions).toEqual([...revisions].sort((a, b) => a - b));
+    if (outcome === "files") {
+      expect(new Set(revisions).size).toBe(revisions.length);
+      expect(snapshots.at(-1)?.revision).toBeGreaterThan(discoveryRevision);
+      expect(host.onTerminal).toHaveBeenCalledWith(
+        run,
+        expect.objectContaining({
+          logs: expect.arrayContaining([expect.objectContaining({ message: "discovery log" })]),
+          discovery: expect.objectContaining({ directories: 3, candidates: 1 }),
+        }),
+      );
+    }
+    if (outcome === "empty")
+      expect(snapshots.at(-1)).toMatchObject({
+        status: "completed",
+        progress: { percent: 100, completedItems: 0, totalItems: 0 },
+        latestStage: { message: "未找到可处理视频" },
+      });
+    if (outcome !== "files") expect(commitItems).not.toHaveBeenCalled();
     expect(coordinator.liveRuns()).toEqual([]);
     expect(execute).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
     expect(createExecution).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
@@ -152,43 +192,67 @@ describe("ScrapeCoordinator", () => {
       );
     }
   });
-  it("shares stop completion while an admitted publication is committing", async () => {
+  it.each([
+    "setup",
+    "publication",
+  ] as const)("settles admitted retry attempts when stopped during %s", async (phase) => {
     const run: Run = {
-      id: "stop-commit",
+      id: "stop-retry",
       items: [
         { id: "one", rootId: "root", relativePath: "one.mp4" },
         { id: "two", rootId: "root", relativePath: "two.mp4" },
       ],
     };
+    const openAttempts = new Set(run.items.map((item) => item.id));
     const store = createStore(run);
-    const committing = deferred<void>();
-    const release = deferred<void>();
-    const host = createHost(run, async (item) => resultFor(item, "success"));
-    const create = host.createExecution;
-    host.createExecution = async (entry, reporter) => ({
-      ...(await create(entry, reporter)),
-      commitItems: async (items) =>
-        await Promise.all(
-          items.map(async ({ item, result }) => {
-            if (item.id === "one") {
-              committing.resolve();
-              await release.promise;
-            }
-            return { itemId: item.id, result };
-          }),
-        ),
+    store.finalize = vi.fn(async () => {
+      if (openAttempts.size > 0) throw new Error("Cannot finalize a run with unfinished attempts");
+      return run;
     });
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const execute = vi.fn(async (item: ScrapeRunItem) => resultFor(item, "success"));
+    const host = createHost(run, execute);
+    const create = host.createExecution;
+    host.createExecution = async (entry, reporter) => {
+      if (phase === "setup") {
+        entered.resolve();
+        await release.promise;
+      }
+      return {
+        ...(await create(entry, reporter)),
+        commitItems: async (items) =>
+          await Promise.all(
+            items.map(async ({ item, result }) => {
+              if (phase === "publication" && item.id === "one") {
+                entered.resolve();
+                await release.promise;
+              }
+              openAttempts.delete(item.id);
+              return { itemId: item.id, result };
+            }),
+          ),
+      };
+    };
     const coordinator = new ScrapeCoordinator(store, host);
-    await coordinator.start("start");
-    await committing.promise;
+    await coordinator.retry(run.id);
+    await entered.promise;
     const first = coordinator.stop(run.id);
     const second = coordinator.stop(run.id);
     expect(store.finalize).not.toHaveBeenCalled();
     release.resolve();
     const snapshots = await Promise.all([first, second]);
+    await coordinator.waitForIdle();
     expect(snapshots[0]).toEqual(snapshots[1]);
-    expect(snapshots[0].items.map((item) => item.status)).toEqual(["success", "skipped"]);
+    expect(snapshots[0].status).toBe("stopped");
+    expect(snapshots[0].items.map((item) => item.status)).toEqual([
+      phase === "setup" ? "skipped" : "success",
+      "skipped",
+    ]);
+    expect(execute).toHaveBeenCalledTimes(phase === "setup" ? 0 : 1);
+    expect(openAttempts.size).toBe(0);
     expect(store.finalize).toHaveBeenCalledOnce();
+    expect(coordinator.liveRuns()).toEqual([]);
   });
 
   it("lets overlapping stop and shutdown share one settlement", async () => {
@@ -340,6 +404,7 @@ describe("ScrapeCoordinator", () => {
       }
       return resultFor(item, "success");
     });
+    host.createExecution = vi.fn(host.createExecution);
     const coordinator = new ScrapeCoordinator(store, host);
 
     await coordinator.start("start");
@@ -352,6 +417,7 @@ describe("ScrapeCoordinator", () => {
     release.resolve();
     await coordinator.waitForIdle();
 
+    expect(host.createExecution).toHaveBeenCalledOnce();
     expect(executed).toEqual(["item-1", "item-2"]);
     expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ runId: run.id, disposition: "completed" }));
   });
@@ -391,6 +457,7 @@ describe("ScrapeCoordinator", () => {
           return { itemId: item.id, result };
         }),
     });
+    host.createExecution = vi.fn(host.createExecution);
     const coordinator = new ScrapeCoordinator(store, host);
 
     await coordinator.start("start");
@@ -398,11 +465,13 @@ describe("ScrapeCoordinator", () => {
     await coordinator.pause(run.id);
     release.resolve();
     await processingCommitted.promise;
+    await coordinator.waitForIdle();
     expect(started).toEqual(["item-1", "item-2"]);
 
-    await coordinator.resume(run.id);
+    await expect(coordinator.resume(run.id)).resolves.toMatchObject({ status: "queued" });
     await coordinator.waitForIdle();
 
+    expect(host.createExecution).toHaveBeenCalledOnce();
     expect(started).toEqual(["item-1", "item-2", "item-3"]);
     expect(committed).toEqual(["item-1", "item-2", "item-3"]);
   });

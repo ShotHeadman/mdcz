@@ -159,6 +159,31 @@ describe("buildServer scrape integration", () => {
     expect(manifest.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
     expect(manifest.manifestFixedAt === null).toBe(kind === "missing");
     if (kind !== "files") expect(manifest.attempts).toEqual([]);
+    if (kind === "missing") {
+      const retry = await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.retry",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { taskId },
+      });
+      expect(retry.statusCode).not.toBe(200);
+      expect(retry.body).toContain("目录文件列表尚未生成，无法重试，请重新扫描目录");
+      await mkdir(source);
+      await writeFile(join(source, "DEF-456.mp4"), "new video");
+      const rerun = await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.rerunDirectory",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { taskId },
+      });
+      expect(rerun.statusCode).toBe(200);
+      const rerunId = rerun.json().result.data.runId;
+      expect(rerunId).not.toBe(taskId);
+      await waitForScrapeRunStatus(fastify, token, rerunId, "completed");
+      const repository = (await services.persistence.getState()).repositories.scrapeRuns;
+      expect((await repository.get(rerunId)).items.map((item) => item.relativePath)).toEqual(["DEF-456.mp4"]);
+      expect(await repository.get(taskId)).toEqual(manifest);
+    }
   });
   it.each([
     "conflict",

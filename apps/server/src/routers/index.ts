@@ -30,6 +30,7 @@ import {
   scanStartInputSchema,
   scanTaskIdInputSchema,
   scrapeConfirmUncensoredInputSchema,
+  scrapeRerunDirectoryInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
   scrapeTaskControlInputSchema,
@@ -311,6 +312,9 @@ export const appRouter = t.router({
     retry: scrapeLaunchProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.retry(input)).task.id })),
+    rerunDirectory: scrapeLaunchProcedure
+      .input(scrapeRerunDirectoryInputSchema)
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.rerunDirectory(input)).task.id })),
     confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
       try {
         return { runId: await ctx.services.scrape.confirmUncensored(input) };

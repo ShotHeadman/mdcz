@@ -111,16 +111,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const entered = promiseWithResolvers<void>();
     const release = promiseWithResolvers<void>();
     let signal: AbortSignal | undefined;
-    let checkpoint: { id: string; snapshotJson: string; configurationJson: string } | null = null;
-    const directoryTasks = {
-      save: vi.fn(async (record: NonNullable<typeof checkpoint>) => {
-        checkpoint = record;
-      }),
-      latest: async () => checkpoint,
-      discard: async () => undefined,
-    };
     const fixture = createCoordinator({}, [root], {
-      directoryTasks,
       discoverDirectory: async (_scope, _configuration, currentSignal, report) => {
         signal = currentSignal;
         report({ directories: 1, candidates: 0, elapsedMs: 1, skipped: 0, currentPath: root.hostPath, warnings: [] });
@@ -156,12 +147,6 @@ describe("MaintenanceSessionCoordinator", () => {
       refs: [],
     });
     expect(fixture.runtime.scanRefs).not.toHaveBeenCalled();
-    const crashed = createCoordinator({}, [root], { directoryTasks });
-    expect(await crashed.coordinator.getActiveSession()).toMatchObject({
-      status: "interrupted",
-      totalEntries: null,
-      previews: [],
-    });
     await expect(fixture.coordinator.pause(handle.session.id)).rejects.toThrow("不支持暂停");
     const termination =
       outcome === "stopped"
@@ -178,18 +163,15 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     expect(fixture.runtime.scanRefs).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
     expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
-    expect(directoryTasks.save).toHaveBeenCalled();
-    const restarted = createCoordinator({}, [root], { directoryTasks, discoverDirectory: async () => [] });
-    expect(await restarted.coordinator.getActiveSession()).toMatchObject({
-      id: handle.session.id,
-      status: outcome === "files" ? "interrupted" : outcome === "empty" ? "completed" : outcome,
-      previews: [],
-    });
-    const rerun = await restarted.coordinator.rerunDirectory(handle.session.id);
-    expect(rerun.session.id).not.toBe(handle.session.id);
-    await rerun.completion;
-    expect(vi.mocked(restarted.runtime.createSession).mock.calls[0][0].configuration).toEqual(defaultConfiguration);
-    await restarted.coordinator.close();
+    if (outcome !== "interrupted") {
+      const rerun = await fixture.coordinator.rerunDirectory(handle.session.id);
+      expect(rerun.session.id).not.toBe(handle.session.id);
+      if (outcome === "failed") await expect(rerun.completion).rejects.toThrow("mount failed");
+      else await rerun.completion;
+      expect(vi.mocked(fixture.runtime.createSession).mock.calls.at(-1)?.[0].configuration).toEqual(
+        defaultConfiguration,
+      );
+    }
     await fixture.coordinator.close();
   });
   it("reserves preview startup against concurrent previews and applies and releases it after scan failure", async () => {

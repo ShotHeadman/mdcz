@@ -78,7 +78,7 @@ export function ScrapeWorkbenchFrame({
               {stageMessage ? <span className="text-xs text-muted-foreground">{stageMessage}</span> : null}
               {progress === null ? (
                 <span role="status" className="text-xs">
-                  正在检索文件，即将计算进度...
+                  正在扫描文件，即将计算进度...
                 </span>
               ) : (
                 <>

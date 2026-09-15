@@ -258,15 +258,27 @@ export class ScraperService {
     if (live?.snapshot.status === "paused") await this.workflow?.resume(live.run.id);
   }
 
-  async retry(runId: string, itemIds?: readonly string[], rediscover = false): Promise<StartScrapeResult> {
-    if (!runId.trim()) throw new ScraperServiceError("NO_FILES", "No scrape run selected for retry");
+  async retry(runId: string, itemIds?: readonly string[]): Promise<StartScrapeResult> {
+    return await this.relaunch(runId, (workflow) => workflow.retry(runId, itemIds));
+  }
+
+  async rerunDirectory(runId: string): Promise<StartScrapeResult> {
+    return await this.relaunch(runId, (workflow) => workflow.rerunDirectory(runId));
+  }
+
+  private async relaunch(
+    runId: string,
+    launch: (workflow: NonNullable<ScraperService["workflow"]>) => Promise<ScrapeRunSnapshot<ManualScrapeOptions>>,
+  ): Promise<StartScrapeResult> {
+    if (!runId.trim()) throw new ScraperServiceError("NO_FILES", "No scrape run selected");
     const configuration = await configManager.getValidated();
-    this.clearImageHostCooldownsForRetry();
+    this.imageHostCooldownStore.clear();
+    this.logger.info("Cleared image host cooldowns for user-initiated relaunch");
     this.configureRuntimeSettings(configuration);
     const workflow = await this.coordinator();
-    const snapshot = rediscover ? await workflow.rerunDirectory(runId) : await workflow.retry(runId, itemIds);
+    const snapshot = await launch(workflow);
     const initialSnapshot = await this.getSnapshot(snapshot.runId);
-    if (!initialSnapshot) throw new Error(`Scrape task disappeared after retry: ${snapshot.runId}`);
+    if (!initialSnapshot) throw new Error(`Scrape task disappeared after relaunch: ${snapshot.runId}`);
     this.signalService.invalidate("scrape", "overview");
     return {
       taskId: snapshot.runId,
@@ -622,10 +634,5 @@ export class ScraperService {
       rootDisplayName: manifest.rootId,
       completedAt: manifest.completedAt,
     });
-  }
-
-  private clearImageHostCooldownsForRetry(): void {
-    this.imageHostCooldownStore.clear();
-    this.logger.info("Cleared image host cooldowns for user-initiated retry");
   }
 }

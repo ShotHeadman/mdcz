@@ -88,6 +88,18 @@ describe("ScraperService ref-native start", () => {
     expect(stored.manifestFixedAt === null).toBe(kind === "missing");
     expect(stored.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
     expect(stored.disposition).toBe(kind === "empty" ? "completed" : "failed");
+    if (kind === "missing") {
+      await expect(service.retry(launch.taskId)).rejects.toThrow("目录文件列表尚未生成，无法重试，请重新扫描目录");
+      await mkdir(source);
+      await writeFile(join(source, "DEF-456.mp4"), "new video");
+      const rerun = await service.rerunDirectory(launch.taskId);
+      expect(rerun.taskId).not.toBe(launch.taskId);
+      expect(rerun.snapshot.task.id).toBe(rerun.taskId);
+      await service.waitForIdle();
+      const repository = (await persistence.getState()).repositories.scrapeRuns;
+      expect((await repository.get(rerun.taskId)).items.map((item) => item.relativePath)).toEqual(["DEF-456.mp4"]);
+      expect(await repository.get(launch.taskId)).toEqual(stored);
+    }
     if (kind === "empty") {
       expect(stored.attempts).toEqual([]);
       expect(await service.getSnapshot(launch.taskId)).toMatchObject({

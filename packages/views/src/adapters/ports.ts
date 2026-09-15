@@ -58,7 +58,7 @@ export const resolveBatchRescrapeOutput = (
 };
 
 export interface ScrapeActionPort {
-  rerunDirectory?(runId: string): Promise<void>;
+  rerunDirectory(runId: string): Promise<void>;
   rescrapeByUrl(targets: ScrapeActionTarget[], manualUrl: string): Promise<{ message: string }>;
   retryFailed(itemIds?: readonly string[]): Promise<{ message: string }>;
   removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;

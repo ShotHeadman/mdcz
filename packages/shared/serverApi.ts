@@ -60,6 +60,7 @@ import type {
   ScrapeLiveRunsResponse,
   ScrapeMutationAckDto,
   ScrapePendingUncensoredConfirmationResponse,
+  ScrapeRerunDirectoryInput,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeRunSnapshotDto,
@@ -192,6 +193,7 @@ export interface ServerApiContract {
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
     resume(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
+    rerunDirectory(input: ScrapeRerunDirectoryInput): Promise<ScrapeMutationAckDto>;
     confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScrapeMutationAckDto>;
     start(input: ScrapeStartInput): Promise<ScrapeMutationAckDto>;
     stop(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;

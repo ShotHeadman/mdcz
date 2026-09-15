@@ -29,6 +29,13 @@
       "when": 1789257600000,
       "tag": "0003_movie_file_model",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789344000000,
+      "tag": "0004_drop_maintenance_directory_tasks",
+      "breakpoints": true
     }
   ]
 }

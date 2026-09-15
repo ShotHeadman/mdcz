@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
-import { type Configuration, configurationSchema } from "@mdcz/shared/config";
+import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import type {
   MaintenanceActiveSessionSnapshot,
@@ -231,11 +231,6 @@ export class MaintenanceSessionCoordinator {
   private closePromise: Promise<void> | null = null;
   private previewStarting = false;
   private directoryConfiguration?: Configuration;
-  private recovered: Promise<{
-    snapshot: MaintenanceActiveSessionSnapshot;
-    configuration: Configuration;
-  } | null> | null = null;
-  private savedManifestFixed = false;
   private pendingPreviewSetup: {
     root: MediaRoot;
     outputRoot: MediaRoot;
@@ -245,11 +240,6 @@ export class MaintenanceSessionCoordinator {
 
   constructor(
     private readonly deps: {
-      directoryTasks?: {
-        save(record: { id: string; snapshotJson: string; configurationJson: string }): Promise<void>;
-        latest(): Promise<{ id: string; snapshotJson: string; configurationJson: string } | null>;
-        discard(id: string): Promise<void>;
-      };
       roots: MaintenanceRootPort;
       runtime: MaintenanceRuntime;
       discoverDirectory?: (
@@ -293,8 +283,6 @@ export class MaintenanceSessionCoordinator {
       this.session?.invalidate();
       this.assertOpen();
       this.directoryConfiguration = input.configuration;
-      this.savedManifestFixed = false;
-      this.recovered = Promise.resolve(null);
       this.session = new MaintenanceSession({
         directoryScope: input.directoryScope,
         id: randomUUID(),
@@ -384,7 +372,7 @@ export class MaintenanceSessionCoordinator {
 
   async pause(sessionId: string): Promise<MaintenanceSessionSnapshot> {
     const session = this.require(sessionId);
-    if (session.status === "discovering") throw new Error("文件发现阶段不支持暂停，请停止任务");
+    if (session.status === "discovering") throw new Error("目录扫描不支持暂停，请停止任务");
     if (!session.pause()) return session.statusSnapshot();
     await this.publishStatus(session, "paused", "Maintenance session paused");
     this.activeFor(session.id, session.generation)?.executor.pause();
@@ -452,35 +440,13 @@ export class MaintenanceSessionCoordinator {
   }
 
   async getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null> {
-    if (this.session) return this.session.snapshot();
-    this.recovered ??= (this.deps.directoryTasks?.latest() ?? Promise.resolve(null)).then((row) => {
-      if (!row) return null;
-      const snapshot = JSON.parse(row.snapshotJson) as MaintenanceActiveSessionSnapshot;
-      snapshot.timestamps = {
-        createdAt: new Date(snapshot.timestamps.createdAt),
-        updatedAt: new Date(snapshot.timestamps.updatedAt),
-        startedAt: snapshot.timestamps.startedAt ? new Date(snapshot.timestamps.startedAt) : null,
-        completedAt: snapshot.timestamps.completedAt ? new Date(snapshot.timestamps.completedAt) : null,
-      };
-      const unfinished = ["queued", "discovering", "running", "paused", "stopping"].includes(snapshot.status);
-      const previewNeedsRestart =
-        snapshot.phase === "preview" && snapshot.status === "completed" && snapshot.previews.length > 0;
-      if (unfinished || previewNeedsRestart) {
-        snapshot.status = "interrupted";
-        snapshot.error = "维护后端已重启，请基于原目录范围重新运行";
-        snapshot.timestamps.updatedAt = snapshot.timestamps.completedAt = new Date();
-      }
-      snapshot.previews = [];
-      snapshot.currentBatch = null;
-      return { snapshot, configuration: configurationSchema.parse(JSON.parse(row.configurationJson)) };
-    });
-    return (await this.recovered)?.snapshot ?? null;
+    return this.session?.snapshot() ?? null;
   }
 
   async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
-    const snapshot = await this.getActiveSession();
+    const snapshot = this.session?.snapshot();
     if (!snapshot || snapshot.id !== sessionId || !snapshot.directoryScope) throw new Error("维护目录任务不存在");
-    const configuration = this.directoryConfiguration ?? (await this.recovered)?.configuration;
+    const configuration = this.directoryConfiguration;
     if (!configuration) throw new Error("维护目录配置不存在");
     return await this.startPreview({
       directoryScope: snapshot.directoryScope,
@@ -505,17 +471,10 @@ export class MaintenanceSessionCoordinator {
   }
 
   async discardSession(sessionId?: string): Promise<void> {
-    if (!this.session) {
-      const recovered = await this.getActiveSession();
-      if (recovered) await this.deps.directoryTasks?.discard(recovered.id);
-      this.recovered = Promise.resolve(null);
-      return;
-    }
+    if (!this.session) return;
     if (sessionId && this.session.id !== sessionId) throw new Error("维护会话已变化");
     if (this.session.isActive()) throw new Error("维护会话仍在运行，请先停止后再返回设置");
     const id = this.session.id;
-    if (this.session.directoryScope) await this.deps.directoryTasks?.discard(id);
-    this.recovered = Promise.resolve(null);
     this.session.invalidate();
     this.releasePaths();
     this.session = null;
@@ -1087,18 +1046,6 @@ export class MaintenanceSessionCoordinator {
 
   private async publishChanged(session: MaintenanceSession): Promise<void> {
     const snapshot = session.snapshot();
-    if (
-      session.directoryScope &&
-      (session.status === "queued" || !session.isActive() || (!this.savedManifestFixed && snapshot.manifestFixed))
-    ) {
-      if (!this.directoryConfiguration) throw new Error("维护目录配置不存在");
-      await this.deps.directoryTasks?.save({
-        id: snapshot.id,
-        snapshotJson: JSON.stringify(snapshot),
-        configurationJson: JSON.stringify(this.directoryConfiguration),
-      });
-      this.savedManifestFixed = snapshot.manifestFixed === true;
-    }
     await this.deps.events?.publish({ kind: "session-changed", session: snapshot });
     this.notify(session.id);
   }

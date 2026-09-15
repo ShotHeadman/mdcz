@@ -29,8 +29,12 @@ export type ScraperIpcContract = {
   [IpcChannel.Scraper_Pause]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Scraper_Resume]: IpcProcedure<void, { success: true }>;
   [IpcChannel.Scraper_GetStatus]: IpcProcedure<{ taskId?: string }, ScrapeRunSnapshotDto | null>;
+  [IpcChannel.Scraper_RerunDirectory]: IpcProcedure<
+    { runId: string },
+    { taskId: string; totalFiles: number | null; message: string; snapshot: ScrapeRunSnapshotDto }
+  >;
   [IpcChannel.Scraper_Retry]: IpcProcedure<
-    { runId: string; itemIds?: string[]; rediscover?: boolean },
+    { runId: string; itemIds?: string[] },
     { taskId: string; totalFiles: number | null; message: string; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<ScrapeConfirmUncensoredInput, UncensoredConfirmResponse>;

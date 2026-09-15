@@ -89,8 +89,7 @@ export const ipc = {
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
     getStatus: (taskId?: string) => client[IpcChannel.Scraper_GetStatus]({ taskId }),
-    rerunDirectory: (runId: string) =>
-      launchScrape(() => client[IpcChannel.Scraper_Retry]({ runId, rediscover: true })),
+    rerunDirectory: (runId: string) => launchScrape(() => client[IpcChannel.Scraper_RerunDirectory]({ runId })),
     retry: (runId: string, itemIds?: readonly string[]) =>
       launchScrape(
         () => client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),

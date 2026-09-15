@@ -310,12 +310,14 @@ export const scrapeStartInputSchema = z.union([
 export type ScrapeStartInput = z.output<typeof scrapeStartInputSchema>;
 
 export const scrapeTaskControlInputSchema = z.object({
-  rediscover: z.boolean().optional(),
   taskId: z.string().trim().min(1),
   itemIds: z.array(z.string().trim().min(1)).min(1).optional(),
 });
 
 export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema>;
+
+export const scrapeRerunDirectoryInputSchema = z.object({ taskId: z.string().trim().min(1) });
+export type ScrapeRerunDirectoryInput = z.infer<typeof scrapeRerunDirectoryInputSchema>;
 
 export const scrapeConfirmUncensoredInputSchema = z.object({
   taskId: z.string().trim().min(1),

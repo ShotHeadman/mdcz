@@ -56,8 +56,8 @@ export const scraperStartInputSchema = z.discriminatedUnion("mode", [
 ]);
 export const scraperStartSinglePathInputSchema = z.object({ path: z.string().trim().min(1) });
 export const scraperGetStatusInputSchema = z.object({ taskId: z.string().trim().min(1).optional() });
+export const scraperRerunDirectoryInputSchema = z.object({ runId: z.string().trim().min(1) });
 export const scraperRetryInputSchema = z.object({
-  rediscover: z.boolean().optional(),
   runId: z.string().min(1),
   itemIds: z.array(z.string().min(1)).min(1).optional(),
 });

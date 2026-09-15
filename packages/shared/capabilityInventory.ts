@@ -233,6 +233,12 @@ export const CROSS_HOST_CAPABILITIES = [
     reason: SCRAPE_EXECUTION_REASON,
   },
   {
+    desktop: IpcChannel.Scraper_RerunDirectory,
+    server: "scrape.rerunDirectory",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
     desktop: IpcChannel.Scraper_Retry,
     server: "scrape.retry",
     status: "blocked",

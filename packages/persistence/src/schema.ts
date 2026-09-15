@@ -87,13 +87,6 @@ export const scrapeRuns = sqliteTable(
   ],
 );
 
-export const maintenanceDirectoryTasks = sqliteTable("maintenance_directory_tasks", {
-  id: text("id").primaryKey(),
-  snapshotJson: text("snapshot_json").notNull(),
-  configurationJson: text("configuration_json").notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
-
 export const scrapeRunItems = sqliteTable(
   "scrape_run_items",
   {

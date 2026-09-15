@@ -58,12 +58,12 @@ afterEach(() => {
 
 describe("ScrapeRunRepository", () => {
   it.each([
-    "empty",
-    "failed",
-    "stopped",
-    "interrupted",
-    "files",
-  ] as const)("persists directory intent independently of its immutable manifest (%s)", async (outcome) => {
+    ["empty", "no failed or skipped items"],
+    ["failed", "目录文件列表尚未生成，无法重试，请重新扫描目录"],
+    ["stopped", "目录文件列表尚未生成，无法重试，请重新扫描目录"],
+    ["interrupted", "Only completed, failed, or stopped"],
+    ["files", null],
+  ] as const)("persists directory intent independently of its immutable manifest (%s)", async (outcome, retryError) => {
     const repository = createRepository();
     const scope = {
       kind: "directory" as const,
@@ -125,6 +125,13 @@ describe("ScrapeRunRepository", () => {
     }
     const stored = await repository.get(run.id);
     expect(stored.disposition).toBe(outcome === "empty" ? "completed" : outcome === "files" ? "failed" : outcome);
+    if (retryError) {
+      await expect(repository.retry(run.id)).rejects.toThrow(retryError);
+      await expect(repository.retry(run.id, ["unknown-item"])).rejects.toThrow(
+        outcome === "empty" ? "does not belong to run" : retryError,
+      );
+      expect(await repository.get(run.id)).toEqual(stored);
+    }
     const rerun = await repository.rerunDirectory(run.id);
     expect(rerun.id).not.toBe(run.id);
     expect(rerun).toMatchObject({

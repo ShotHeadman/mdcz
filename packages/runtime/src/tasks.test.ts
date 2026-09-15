@@ -205,30 +205,33 @@ describe("scrape run session", () => {
     const executed: string[] = [];
     const session = new ScrapeRunSession({
       runId: "publication-ownership",
-      items: [runItem("ABC-001"), runItem("XYZ-002"), runItem("independent")],
-      concurrency: 3,
-      admitItem,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      getPublicationKey: (item) =>
-        buildScrapePublicationKey({
-          outputDir: item.id === "independent" ? "/output/independent" : "/output/shared",
-          targetVideoPath: `/output/${item.id}.mp4`,
-          nfoPath: `/output/${item.id}.nfo`,
+      totalItems: 3,
+      prepare: async () => ({
+        items: [runItem("ABC-001"), runItem("XYZ-002"), runItem("independent")],
+        concurrency: 3,
+        admitItem,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        getPublicationKey: (item) =>
+          buildScrapePublicationKey({
+            outputDir: item.id === "independent" ? "/output/independent" : "/output/shared",
+            targetVideoPath: `/output/${item.id}.mp4`,
+            nfoPath: `/output/${item.id}.nfo`,
+          }),
+        executePreparedItems: executeAsGroup(async (item) => {
+          executed.push(item.id);
+          if (item.id === "independent") independent.resolve();
+          return terminalResult(item, "success");
         }),
-      executePreparedItems: executeAsGroup(async (item) => {
-        executed.push(item.id);
-        if (item.id === "independent") independent.resolve();
-        return terminalResult(item, "success");
-      }),
-      commitItems: commitAsGroup(async (item, result) => {
-        if (item.id === "ABC-001") {
-          committing.resolve();
-          await releaseCommit.promise;
-        }
-        return result;
+        commitItems: commitAsGroup(async (item, result) => {
+          if (item.id === "ABC-001") {
+            committing.resolve();
+            await releaseCommit.promise;
+          }
+          return result;
+        }),
       }),
       onSnapshot: () => undefined,
     });
@@ -247,22 +250,25 @@ describe("scrape run session", () => {
     const committed: string[][] = [];
     const session = new ScrapeRunSession({
       runId: "movie-groups",
-      items,
-      concurrency: 2,
-      admitItem,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      getExecutionGroupKey: (item) => (item.id.startsWith("part-") ? "movie" : item.id),
-      executePreparedItems: executeAsGroup(async (item) => {
-        executed.push(item.id);
-        return terminalResult(item, "success");
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 2,
+        admitItem,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        getExecutionGroupKey: (item) => (item.id.startsWith("part-") ? "movie" : item.id),
+        executePreparedItems: executeAsGroup(async (item) => {
+          executed.push(item.id);
+          return terminalResult(item, "success");
+        }),
+        commitItems: async (entries) => {
+          committed.push(entries.map(({ item }) => item.id));
+          return entries.map(({ item, result }) => ({ itemId: item.id, result }));
+        },
       }),
-      commitItems: async (entries) => {
-        committed.push(entries.map(({ item }) => item.id));
-        return entries.map(({ item, result }) => ({ itemId: item.id, result }));
-      },
       onSnapshot: () => undefined,
     });
 
@@ -281,22 +287,25 @@ describe("scrape run session", () => {
     const executed: string[] = [];
     const session = new ScrapeRunSession({
       runId: "paused-preflight",
-      items: [runItem("one")],
-      concurrency: 1,
-      admitItem,
-      prepareItem,
-      commitPreparationItem,
-      acquireItems,
-      validatePrepared: async () => {
-        checks += 1;
-        checking.resolve();
-        await checked.promise;
-      },
-      executePreparedItems: executeAsGroup(async (item) => {
-        executed.push(item.id);
-        return terminalResult(item, "success");
+      totalItems: 1,
+      prepare: async () => ({
+        items: [runItem("one")],
+        concurrency: 1,
+        admitItem,
+        prepareItem,
+        commitPreparationItem,
+        acquireItems,
+        validatePrepared: async () => {
+          checks += 1;
+          checking.resolve();
+          await checked.promise;
+        },
+        executePreparedItems: executeAsGroup(async (item) => {
+          executed.push(item.id);
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (_item, result) => result),
       }),
-      commitItems: commitAsGroup(async (_item, result) => result),
       onSnapshot: () => undefined,
     });
     await session.start();
@@ -306,6 +315,8 @@ describe("scrape run session", () => {
     await session.waitForIdle();
     expect(executed).toEqual([]);
     await session.resume();
+    expect(session.snapshot().status).toBe("queued");
+    await session.start();
     await session.waitForIdle();
     expect(checks).toBe(1);
     expect(executed).toEqual(["one"]);
@@ -319,28 +330,31 @@ describe("scrape run session", () => {
     let checks = 0;
     const session = new ScrapeRunSession({
       runId: "isolated-preflight-conflict",
-      items,
-      concurrency: 2,
-      admitItem,
-      prepareItem,
-      validatePrepared: async () => {
-        checks += 1;
-        if (checks === 1) {
-          throw new ScrapeTargetConflictError([
-            { itemId: "conflict", sourcePath: "/source.mp4", targetPath: "/target.mp4", message: "目标路径冲突" },
-          ]);
-        }
-      },
-      commitPreparationItem: async (item, result) => {
-        preparationCommits.push(item.id);
-        return result;
-      },
-      acquireItems,
-      executePreparedItems: executeAsGroup(async (item) => {
-        executed.push(item.id);
-        return terminalResult(item, "success");
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 2,
+        admitItem,
+        prepareItem,
+        validatePrepared: async () => {
+          checks += 1;
+          if (checks === 1) {
+            throw new ScrapeTargetConflictError([
+              { itemId: "conflict", sourcePath: "/source.mp4", targetPath: "/target.mp4", message: "目标路径冲突" },
+            ]);
+          }
+        },
+        commitPreparationItem: async (item, result) => {
+          preparationCommits.push(item.id);
+          return result;
+        },
+        acquireItems,
+        executePreparedItems: executeAsGroup(async (item) => {
+          executed.push(item.id);
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (_item, result) => result),
       }),
-      commitItems: commitAsGroup(async (_item, result) => result),
       onSnapshot: () => undefined,
     });
 
@@ -372,24 +386,27 @@ describe("scrape run session", () => {
     const lateReads: Promise<void>[] = [];
     const session = new ScrapeRunSession({
       runId: "fixture-context",
-      items,
-      concurrency: 2,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared) => {
-        await Promise.resolve();
-        observed.push(getScrapeItemExecutionContext());
-        lateReads.push(
-          releaseLateReads.promise.then(() => {
-            lateObserved.push(getScrapeItemExecutionContext());
-          }),
-        );
-        return terminalResult(item, "success");
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 2,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item, _prepared) => {
+          await Promise.resolve();
+          observed.push(getScrapeItemExecutionContext());
+          lateReads.push(
+            releaseLateReads.promise.then(() => {
+              lateObserved.push(getScrapeItemExecutionContext());
+            }),
+          );
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (_item, result) => result),
       }),
-      commitItems: commitAsGroup(async (_item, result) => result),
       onSnapshot: () => undefined,
     });
 
@@ -419,26 +436,29 @@ describe("scrape run session", () => {
     const items = [runItem("one"), runItem("two")];
     const session = new ScrapeRunSession({
       runId: "run-1",
-      items,
-      concurrency: 1,
-      prepareItem,
-      validatePrepared: async () => {
-        if (++preflightCount > 1) throw new Error("Output changed after initial preflight");
-      },
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared) => {
-        executed.push(item.id);
-        if (item.id === "one") {
-          started.resolve();
-          return await first.promise;
-        }
-        return terminalResult(item, "success");
-      }),
-      commitItems: commitAsGroup(async (item, result) => {
-        committed.push(item.id);
-        return { ...result, resultId: item.id };
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 1,
+        prepareItem,
+        validatePrepared: async () => {
+          if (++preflightCount > 1) throw new Error("Output changed after initial preflight");
+        },
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item, _prepared) => {
+          executed.push(item.id);
+          if (item.id === "one") {
+            started.resolve();
+            return await first.promise;
+          }
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (item, result) => {
+          committed.push(item.id);
+          return { ...result, resultId: item.id };
+        }),
       }),
       onSnapshot: (snapshot) => {
         observedStatuses.push(snapshot.status);
@@ -446,6 +466,9 @@ describe("scrape run session", () => {
       },
     });
 
+    session.recordLog({ level: "info", message: "queued" });
+    await session.start();
+    await started.promise;
     session.recordStage({ stage: "Download", message: "Downloading", itemId: items[0]?.id });
     for (let index = 0; index <= MAX_LIVE_SCRAPE_LOGS; index += 1) {
       session.recordLog({ level: "info", message: `log-${index}`, itemId: items[0]?.id });
@@ -459,8 +482,6 @@ describe("scrape run session", () => {
       ],
     });
 
-    await session.start();
-    await started.promise;
     await expect(session.pause()).resolves.toMatchObject({
       status: "paused",
       progress: { completedItems: 0, totalItems: 2, percent: 0 },
@@ -483,6 +504,8 @@ describe("scrape run session", () => {
     });
 
     await session.resume();
+    expect(session.snapshot().status).toBe("queued");
+    await session.start();
     await session.waitForIdle();
     expect(session.snapshot()).toMatchObject({
       runId: "run-1",
@@ -511,29 +534,32 @@ describe("scrape run session", () => {
     const items = [runItem("one"), runItem("two")];
     const session = new ScrapeRunSession({
       runId: "run-progress",
-      items,
-      concurrency: 1,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared) => {
-        if (item.id === "one") {
-          started.resolve();
-          return await first.promise;
-        }
-        return terminalResult(item, "success");
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 1,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item, _prepared) => {
+          if (item.id === "one") {
+            started.resolve();
+            return await first.promise;
+          }
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (_item, result) => result),
       }),
-      commitItems: commitAsGroup(async (_item, result) => result),
       onSnapshot: () => undefined,
     });
 
+    await session.start();
+    await started.promise;
     session.recordProgress("one", 42.4);
     session.recordProgress("one", 20);
     expect(session.snapshot().progress.percent).toBe(21);
-    await session.start();
-    await started.promise;
     await session.pause();
     first.resolve(terminalResult(items[0], "success"));
     await session.waitForIdle();
@@ -542,26 +568,40 @@ describe("scrape run session", () => {
     expect(session.snapshot().progress.percent).toBe(50);
   });
 
-  it("reserves 100 percent for a fully settled run", () => {
+  it("reserves 100 percent for a fully settled run", async () => {
+    const started = deferred<void>();
+    const release = deferred<void>();
     const items = [runItem("one"), runItem("two")];
     const session = new ScrapeRunSession({
       runId: "run-progress-terminal",
-      items,
-      concurrency: 2,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared) => terminalResult(item, "success")),
-      commitItems: commitAsGroup(async (_item, result) => result),
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 2,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item) => {
+          started.resolve();
+          await release.promise;
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (_item, result) => result),
+      }),
       onSnapshot: () => undefined,
     });
 
+    await session.start();
+    await started.promise;
     session.recordProgress("one", 100);
     session.recordProgress("two", 100);
 
     expect(session.snapshot().progress).toEqual({ completedItems: 0, totalItems: 2, percent: 99 });
+    release.resolve();
+    await session.waitForIdle();
+    expect(session.snapshot().progress.percent).toBe(100);
   });
 
   it("aborts in-flight work and skips every unsettled item on stop", async () => {
@@ -572,31 +612,34 @@ describe("scrape run session", () => {
     const items = [runItem("one"), runItem("two")];
     const session = new ScrapeRunSession({
       runId: "run-1",
-      items,
-      concurrency: 1,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared, signal) => {
-        executed.push(item.id);
-        started.resolve();
-        await new Promise<void>((resolve) =>
-          signal.addEventListener(
-            "abort",
-            () => {
-              aborted.resolve();
-              resolve();
-            },
-            { once: true },
-          ),
-        );
-        throw signal.reason;
-      }),
-      commitItems: commitAsGroup(async (item, result) => {
-        committed.push(`${item.id}:${result.status}`);
-        return result;
+      totalItems: items.length,
+      prepare: async () => ({
+        items,
+        concurrency: 1,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item, _prepared, signal) => {
+          executed.push(item.id);
+          started.resolve();
+          await new Promise<void>((resolve) =>
+            signal.addEventListener(
+              "abort",
+              () => {
+                aborted.resolve();
+                resolve();
+              },
+              { once: true },
+            ),
+          );
+          throw signal.reason;
+        }),
+        commitItems: commitAsGroup(async (item, result) => {
+          committed.push(`${item.id}:${result.status}`);
+          return result;
+        }),
       }),
       onSnapshot: () => undefined,
     });
@@ -619,21 +662,24 @@ describe("scrape run session", () => {
     const committed: string[] = [];
     const session = new ScrapeRunSession({
       runId: "run-1",
-      items: [runItem("one"), runItem("two")],
-      concurrency: 1,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared, signal) => {
-        started.resolve();
-        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-        return terminalResult(item, "success");
-      }),
-      commitItems: commitAsGroup(async (item, result) => {
-        committed.push(item.id);
-        return result;
+      totalItems: 2,
+      prepare: async () => ({
+        items: [runItem("one"), runItem("two")],
+        concurrency: 1,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item, _prepared, signal) => {
+          started.resolve();
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+          return terminalResult(item, "success");
+        }),
+        commitItems: commitAsGroup(async (item, result) => {
+          committed.push(item.id);
+          return result;
+        }),
       }),
       onSnapshot: () => undefined,
     });
@@ -656,26 +702,29 @@ describe("scrape run session", () => {
     const committed: string[] = [];
     const session = new ScrapeRunSession({
       runId: "staging-discard",
-      items: [runItem("one")],
-      concurrency: 1,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item, _prepared, signal) => {
-        started.resolve();
-        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-        return {
-          ...terminalResult(item, "success"),
-          release: async () => {
-            released.push(item.id);
-          },
-        };
-      }),
-      commitItems: commitAsGroup(async (item, result) => {
-        committed.push(`${item.id}:${result.status}`);
-        return result;
+      totalItems: 1,
+      prepare: async () => ({
+        items: [runItem("one")],
+        concurrency: 1,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item, _prepared, signal) => {
+          started.resolve();
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+          return {
+            ...terminalResult(item, "success"),
+            release: async () => {
+              released.push(item.id);
+            },
+          };
+        }),
+        commitItems: commitAsGroup(async (item, result) => {
+          committed.push(`${item.id}:${result.status}`);
+          return result;
+        }),
       }),
       onSnapshot: () => undefined,
     });
@@ -690,20 +739,23 @@ describe("scrape run session", () => {
   it("keeps a committed item successful when staging cleanup fails", async () => {
     const session = new ScrapeRunSession({
       runId: "staging-cleanup",
-      items: [runItem("one")],
-      concurrency: 1,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async (item) => ({
-        ...terminalResult(item, "success"),
-        release: async () => {
-          throw new Error("staging busy");
-        },
-      })),
-      commitItems: commitAsGroup(async (_item, result) => result),
+      totalItems: 1,
+      prepare: async () => ({
+        items: [runItem("one")],
+        concurrency: 1,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async (item) => ({
+          ...terminalResult(item, "success"),
+          release: async () => {
+            throw new Error("staging busy");
+          },
+        })),
+        commitItems: commitAsGroup(async (_item, result) => result),
+      }),
       onSnapshot: () => undefined,
     });
 
@@ -719,18 +771,21 @@ describe("scrape run session", () => {
   it("surfaces terminal persistence failure and interrupts the run", async () => {
     const session = new ScrapeRunSession({
       runId: "run-persistence-failure",
-      items: [runItem("one")],
-      concurrency: 1,
-      prepareItem,
-      validatePrepared,
-      commitPreparationItem,
-      acquireItems,
-      admitItem,
-      executePreparedItems: executeAsGroup(async () => {
-        throw new Error("crawler crashed");
-      }),
-      commitItems: commitAsGroup(async () => {
-        throw new Error("database unavailable");
+      totalItems: 1,
+      prepare: async () => ({
+        items: [runItem("one")],
+        concurrency: 1,
+        prepareItem,
+        validatePrepared,
+        commitPreparationItem,
+        acquireItems,
+        admitItem,
+        executePreparedItems: executeAsGroup(async () => {
+          throw new Error("crawler crashed");
+        }),
+        commitItems: commitAsGroup(async () => {
+          throw new Error("database unavailable");
+        }),
       }),
       onSnapshot: () => undefined,
     });

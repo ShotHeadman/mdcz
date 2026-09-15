@@ -4,7 +4,6 @@ import {
   createPersistenceDatabase,
   LibraryRepairIssueRepository,
   LibraryRepository,
-  MaintenanceDirectoryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   PublicationJournalRepository,
@@ -35,7 +34,6 @@ export interface DesktopPersistenceRepositories {
   publicationJournal: PublicationJournalPort;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
-  maintenanceDirectories: MaintenanceDirectoryRepository;
 }
 
 export interface DesktopPersistenceState {
@@ -112,7 +110,6 @@ export class DesktopPersistenceService {
           publicationJournal,
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
-          maintenanceDirectories: new MaintenanceDirectoryRepository(database),
         },
       };
       return this.state;

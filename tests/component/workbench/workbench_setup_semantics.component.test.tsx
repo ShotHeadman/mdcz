@@ -91,7 +91,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   expect(onStart).toHaveBeenCalledWith([first], "/output");
   await screen.getByRole("button", { name: "刷新文件预览" }).click();
   await expect.poll(() => requests.length).toBe(4);
-  await screen.getByRole("button", { name: "停止预览，处理整个目录" }).click();
+  await screen.getByRole("button", { name: "退出文件选择" }).click();
   await expect.element(screen.getByText("整个目录 · 仅当前目录")).toBeVisible();
   await screen.rerender(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
   expect(requests).toHaveLength(4);
@@ -103,13 +103,17 @@ test("submits directories without scanning and keeps explicit previews cancellab
   );
   await screen.getByRole("button", { name: "预览并选择文件" }).click();
   await expect.poll(() => requests.length).toBe(5);
+  expect(useWorkbenchSetupStore.getState().activePreview).not.toBeNull();
   await screen.unmount();
   await expect.poll(() => cancelCandidates.mock.calls.length).toBe(3);
+  await expect.poll(() => useWorkbenchSetupStore.getState().activePreview).toBeNull();
   const remounted = await render(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
   expect(requests).toHaveLength(5);
   await expect.element(remounted.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
   await remounted.unmount();
+  useWorkbenchSetupStore.setState({ activePreview: { id: "reset-preview", stop: async () => undefined } });
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
+  expect(useWorkbenchSetupStore.getState().activePreview).toBeNull();
 });
 
 test("shows the complete task error without clearing the selected result", async () => {

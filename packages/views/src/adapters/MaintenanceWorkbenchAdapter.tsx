@@ -105,14 +105,14 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
           <div role="status" className="space-y-4 p-8">
             <h2 className="text-lg font-semibold">
               {snapshot.status === "discovering"
-                ? "正在发现维护文件"
+                ? "正在扫描维护文件"
                 : snapshot.status === "queued"
                   ? "维护任务已排队"
                   : snapshot.status === "stopping"
-                    ? "正在停止，等待活动文件操作退出"
+                    ? "正在停止，等待当前文件处理完成"
                     : snapshot.status === "completed"
                       ? snapshot.totalEntries === 0
-                        ? "未发现可维护视频"
+                        ? "未找到可维护视频"
                         : "维护任务已完成"
                       : (snapshot.error ?? "正在读取本地文件")}
             </h2>
@@ -120,7 +120,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
             {snapshot.discovery ? (
               <>
                 <p>
-                  已遍历 {snapshot.discovery.directories} 个目录，发现 {snapshot.discovery.candidates} 个视频，跳过{" "}
+                  已扫描 {snapshot.discovery.directories} 个目录，找到 {snapshot.discovery.candidates} 个视频，跳过{" "}
                   {snapshot.discovery.skipped} 项
                 </p>
                 <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>

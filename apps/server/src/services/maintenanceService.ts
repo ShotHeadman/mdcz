@@ -32,11 +32,6 @@ export class MaintenanceService {
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
-      directoryTasks: {
-        save: async (record) => (await this.persistence.getState()).repositories.maintenanceDirectories.save(record),
-        latest: async () => (await this.persistence.getState()).repositories.maintenanceDirectories.latest(),
-        discard: async (id) => (await this.persistence.getState()).repositories.maintenanceDirectories.discard(id),
-      },
       roots: {
         get: async (rootId) => await this.mediaRoots.get(rootId),
         list: async () => await this.mediaRoots.listRoots(),

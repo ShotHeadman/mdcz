@@ -58,15 +58,6 @@ const toPathAutocompleteResult = (result: ServerPathSuggestResponse): PathAutoco
   entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
 });
 
-let activePreview: { id: string; port: WorkbenchSetupPort; completion: Promise<void> } | null = null;
-
-const stopPreview = async () => {
-  const current = activePreview;
-  if (!current) return;
-  await current.port.cancelCandidates(current.id);
-  await current.completion;
-};
-
 export function WorkbenchSetupAdapter({
   mode,
   config,
@@ -78,6 +69,7 @@ export function WorkbenchSetupAdapter({
 }: WorkbenchSetupAdapterProps) {
   const {
     scanDir,
+    stopPreview,
     previewMode,
     setPreviewMode,
     recursive,
@@ -173,12 +165,32 @@ export function WorkbenchSetupAdapter({
       } catch (error) {
         if (isCurrentScan()) failScan(toErrorMessage(error));
       } finally {
-        if (activePreview?.id === id) activePreview = null;
+        if (useWorkbenchSetupStore.getState().activePreview?.id === id)
+          useWorkbenchSetupStore.setState({ activePreview: null });
       }
     })();
-    activePreview = { id, port, completion };
+    useWorkbenchSetupStore.setState({
+      activePreview: {
+        id,
+        stop: async () => {
+          await port.cancelCandidates(id);
+          await completion;
+        },
+      },
+    });
     await completion;
-  }, [applyScanResult, beginScan, failScan, port, recursive, scanDir, scanPlan, scanReady, setPreviewMode]);
+  }, [
+    applyScanResult,
+    beginScan,
+    failScan,
+    port,
+    recursive,
+    scanDir,
+    scanPlan,
+    scanReady,
+    setPreviewMode,
+    stopPreview,
+  ]);
 
   useEffect(() => {
     if (!config || initializedRef.current) {
@@ -204,11 +216,11 @@ export function WorkbenchSetupAdapter({
   useEffect(() => {
     return () => {
       scanRequestRef.current += 1;
-      void stopPreview().catch((error) => toast.error(`停止预览失败: ${toErrorMessage(error)}`));
+      void stopPreview().catch((error) => toast.error(`取消扫描失败: ${toErrorMessage(error)}`));
       if (useWorkbenchSetupStore.getState().scanStatus === "scanning")
         useWorkbenchSetupStore.setState({ scanStatus: "idle" });
     };
-  }, [scanPlan.scanKey, draftDir]);
+  }, [scanPlan.scanKey, draftDir, stopPreview]);
 
   const handleChooseScanDir = async () => {
     try {

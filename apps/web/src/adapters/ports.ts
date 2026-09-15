@@ -200,7 +200,7 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     return { message: `按 URL 刮削任务已启动：${snapshot.runId}` };
   },
   rerunDirectory: async (taskId) => {
-    await api.scrape.retry({ taskId, rediscover: true });
+    await api.scrape.rerunDirectory({ taskId });
     requestScrapeLiveRunsRefresh();
   },
   retryFailed: async (itemIds) => {

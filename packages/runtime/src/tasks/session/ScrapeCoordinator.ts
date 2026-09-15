@@ -2,9 +2,9 @@ import type { DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import { runtimeLoggerService } from "../../shared";
 import { TaskScheduler } from "../scheduler";
 import {
+  type ScrapeRunExecution,
   type ScrapeRunLogEntry,
   ScrapeRunSession,
-  type ScrapeRunSessionOptions,
   type ScrapeRunSnapshot,
   type ScrapeRunStageSnapshot,
 } from "./ScrapeRunSession";
@@ -30,10 +30,7 @@ export interface ScrapeWorkflowReporter {
   stage(stage: Omit<ScrapeRunStageSnapshot, "itemId" | "relativePath"> & { itemId?: string | null }): void;
 }
 
-export type ScrapeHostExecution<TManualScrape, TPrepared> = Omit<
-  ScrapeRunSessionOptions<TManualScrape, TPrepared>,
-  "runId" | "onSnapshot"
->;
+export type ScrapeHostExecution<TManualScrape, TPrepared> = ScrapeRunExecution<TManualScrape, TPrepared>;
 
 export interface ScrapeHostPort<TStart, TRun, TManualScrape = unknown, TPrepared = unknown> {
   create(input: TStart): Promise<TRun>;
@@ -49,15 +46,10 @@ export interface ScrapeHostPort<TStart, TRun, TManualScrape = unknown, TPrepared
 type WorkflowEntry<TRun, TManualScrape, TPrepared> = {
   id: string;
   run: TRun;
-  phase:
-    | { kind: "pending"; controller: AbortController; snapshot: ScrapeRunSnapshot<TManualScrape> }
-    | { kind: "session"; session: ScrapeRunSession<TManualScrape, TPrepared> };
-  state: "queued" | "running" | "paused" | "stopping";
+  session: ScrapeRunSession<TManualScrape, TPrepared>;
   startedAt: Date | null;
   settlement: Promise<void> | null;
-  completion: Promise<void> | null;
   stopOperation: Promise<ScrapeRunSnapshot<TManualScrape>> | null;
-  revisionOffset: number;
 };
 
 export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared = unknown> {
@@ -75,10 +67,10 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
   ) {
     this.scheduler = new TaskScheduler({
       claimNext: async () => this.claimNext(),
-      runExecution: async (entry) => await this.runEntry(entry),
+      runExecution: async (entry) => await this.executeEntry(entry),
       onExecutionError: async (entry, error) => {
         await this.host.onError?.(entry.id, error);
-        if (entry.phase.kind === "session") await entry.phase.session.abortForShutdown();
+        await entry.session.abortForShutdown();
         this.repairRequired = error instanceof Error ? error.message : String(error);
         this.entries.delete(entry.id);
         this.host.onInvalidate(this.liveRuns());
@@ -110,7 +102,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
   liveRuns(): Array<{ run: TRun; snapshot: ScrapeRunSnapshot<TManualScrape>; startedAt: Date | null }> {
     return this.orderedEntries().map((entry) => ({
       run: entry.run,
-      snapshot: this.entrySnapshot(entry),
+      snapshot: entry.session.snapshot(),
       startedAt: entry.startedAt,
     }));
   }
@@ -123,51 +115,26 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
     },
   ): void {
     const entry = this.requireLive(runId);
-    if (entry.phase.kind === "session") entry.phase.session.recordLog(log);
-    else {
-      entry.phase.snapshot.logs.push({
-        ...log,
-        timestamp: log.timestamp ?? new Date(),
-        itemId: log.itemId ?? null,
-        relativePath: null,
-      });
-      entry.phase.snapshot.logs = entry.phase.snapshot.logs.slice(-200);
-    }
+    entry.session.recordLog(log);
   }
 
   async pause(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
     const entry = this.requireLive(runId);
-    if (entry.state === "paused") return this.entrySnapshot(entry);
-    if (entry.phase.kind === "pending" && this.host.describe(entry.run).totalItems === null)
-      throw new Error("文件发现阶段不支持暂停，请停止任务");
-    if (entry.state !== "queued" && entry.state !== "running")
-      throw new Error(`Cannot pause scrape run in ${entry.state} state: ${runId}`);
     this.removeReady(runId);
-    entry.state = "paused";
-    if (entry.phase.kind === "session") await entry.phase.session.pause();
-    this.host.onInvalidate(this.liveRuns());
-    return this.entrySnapshot(entry);
+    return await entry.session.pause();
   }
 
   async resume(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
     const entry = this.requireLive(runId);
-    if (entry.state === "queued" || entry.state === "running") return this.entrySnapshot(entry);
-    if (entry.state !== "paused") throw new Error(`Cannot resume scrape run: ${runId}`);
     this.assertOpen();
-    if (
-      entry.phase.kind === "session" &&
-      this.activeRunId === runId &&
-      entry.phase.session.snapshot().status === "paused"
-    ) {
-      entry.state = "running";
-      await entry.phase.session.resume();
-    } else {
-      entry.state = "queued";
+    await entry.session.resume();
+    const snapshot = entry.session.snapshot();
+    if (snapshot.status === "queued") {
+      this.removeReady(runId);
       this.readyRunIds.push(runId);
       this.scheduler.drain();
     }
-    this.host.onInvalidate(this.liveRuns());
-    return this.entrySnapshot(entry);
+    return snapshot;
   }
 
   stop(runId: string): Promise<ScrapeRunSnapshot<TManualScrape>> {
@@ -179,29 +146,15 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
   private async stopEntry(
     entry: WorkflowEntry<TRun, TManualScrape, TPrepared>,
   ): Promise<ScrapeRunSnapshot<TManualScrape>> {
-    entry.state = "stopping";
     this.removeReady(entry.id);
-    if (entry.phase.kind === "pending") entry.phase.controller.abort();
-    this.host.onInvalidate(this.liveRuns());
-    if (entry.phase.kind === "session") {
-      await entry.phase.session.stop();
-      const snapshot = this.entrySnapshot(entry);
-      await this.settle(entry, snapshot);
-      return snapshot;
-    }
-    await entry.completion;
-    const snapshot = { ...this.entrySnapshot(entry), status: "stopped" as const };
+    const snapshot = await entry.session.stop();
     await this.settle(entry, snapshot);
     return snapshot;
   }
 
   async waitForIdle(): Promise<void> {
     await this.scheduler.waitForIdle();
-    await Promise.all(
-      [...this.entries.values()].map(async (entry) => {
-        if (entry.phase.kind === "session") await entry.phase.session.waitForIdle();
-      }),
-    );
+    await Promise.all([...this.entries.values()].map((entry) => entry.session.waitForIdle()));
   }
 
   async abortForShutdown(): Promise<void> {
@@ -209,12 +162,7 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
     this.closing = true;
     this.scheduler.requestStop();
     this.readyRunIds.length = 0;
-    await Promise.all(
-      [...this.entries.values()].map(async (entry) => {
-        if (entry.phase.kind === "session") await entry.phase.session.abortForShutdown();
-        else entry.phase.controller.abort();
-      }),
-    );
+    await Promise.all([...this.entries.values()].map((entry) => entry.session.abortForShutdown()));
     await this.scheduler.waitForIdle();
     await Promise.all([...this.entries.values()].map((entry) => entry.stopOperation));
     await Promise.allSettled([...this.registrations]);
@@ -243,39 +191,36 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
     const entry: WorkflowEntry<TRun, TManualScrape, TPrepared> = {
       id,
       run,
-      phase: {
-        kind: "pending",
-        controller: new AbortController(),
-        snapshot: {
-          runId: id,
-          executionGeneration: description.executionGeneration,
-          generation: 0,
-          revision: 0,
-          status: "queued",
-          progress: {
-            totalItems: description.totalItems,
-            completedItems: 0,
-            percent: description.totalItems === null ? null : 0,
-          },
-          items: [],
-          latestStage: null,
-          logs: [],
-          error: null,
+      session: new ScrapeRunSession<TManualScrape, TPrepared>({
+        runId: id,
+        ...description,
+        onSnapshot: () => this.host.onInvalidate(this.liveRuns()),
+        prepare: async (signal) => {
+          signal.throwIfAborted();
+          if (description.totalItems === null) {
+            if (!this.host.discover) throw new Error("Directory discovery is unavailable");
+            entry.run = await this.host.discover(entry.run, signal, (progress) =>
+              entry.session.recordDiscovery(progress),
+            );
+            signal.throwIfAborted();
+          }
+          if (this.host.describe(entry.run).totalItems === 0) return null;
+          return await this.host.createExecution(entry.run, {
+            progress: (itemId, percent) => entry.session.recordProgress(itemId, percent),
+            stage: (stage) => entry.session.recordStage(stage),
+          });
         },
-      },
-      state: "queued",
+      }),
       startedAt: null,
       settlement: null,
-      completion: null,
       stopOperation: null,
-      revisionOffset: 0,
     };
     this.entries.set(id, entry);
     this.readyRunIds.push(id);
     this.host.onInvalidate(this.liveRuns());
     // Return acceptance before starting any filesystem work, including execution setup.
     queueMicrotask(() => this.scheduler.drain());
-    return this.entrySnapshot(entry);
+    return entry.session.snapshot();
   }
 
   private claimNext(): WorkflowEntry<TRun, TManualScrape, TPrepared> | null {
@@ -283,99 +228,23 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
       const runId = this.readyRunIds.shift();
       if (!runId) return null;
       const entry = this.entries.get(runId);
-      if (!entry || entry.state !== "queued") continue;
-      entry.state = "running";
+      if (!entry || entry.session.snapshot().status !== "queued") continue;
       entry.startedAt ??= new Date();
       this.activeRunId = runId;
-      this.host.onInvalidate(this.liveRuns());
       return entry;
     }
     return null;
   }
 
-  private runEntry(entry: WorkflowEntry<TRun, TManualScrape, TPrepared>): Promise<void> {
-    entry.completion = this.executeEntry(entry);
-    return entry.completion;
-  }
-
   private async executeEntry(entry: WorkflowEntry<TRun, TManualScrape, TPrepared>): Promise<void> {
     try {
-      if (entry.phase.kind === "pending") {
-        const pending = entry.phase;
-        if (this.host.describe(entry.run).totalItems === null) {
-          if (!this.host.discover) throw new Error("Directory discovery is unavailable");
-          pending.snapshot.status = "discovering";
-          pending.snapshot.latestStage = {
-            stage: "discovering",
-            message: "正在发现视频文件",
-            itemId: null,
-            relativePath: null,
-          };
-          this.host.onInvalidate(this.liveRuns());
-          entry.run = await this.host.discover(entry.run, pending.controller.signal, (progress) => {
-            pending.snapshot.discovery = progress;
-            pending.snapshot.revision += 1;
-            this.host.onInvalidate(this.liveRuns());
-          });
-          pending.controller.signal.throwIfAborted();
-        }
-        if (this.closing || entry.state === "stopping") return;
-        if (this.host.describe(entry.run).totalItems === 0) {
-          pending.snapshot = {
-            ...pending.snapshot,
-            status: "completed",
-            progress: { percent: 100, completedItems: 0, totalItems: 0 },
-            latestStage: { stage: "completed", message: "未发现可处理视频", itemId: null, relativePath: null },
-          };
-          await this.settle(entry, pending.snapshot);
-          return;
-        }
-        const reporter: ScrapeWorkflowReporter = {
-          progress: (itemId, percent) => {
-            if (entry.phase.kind === "session") entry.phase.session.recordProgress(itemId, percent);
-          },
-          stage: (stage) => {
-            if (entry.phase.kind === "session") entry.phase.session.recordStage(stage);
-          },
-        };
-        const execution = await this.host.createExecution(entry.run, reporter);
-        const session = new ScrapeRunSession<TManualScrape, TPrepared>({
-          ...execution,
-          runId: entry.id,
-          onSnapshot: () => this.host.onInvalidate(this.liveRuns()),
-        });
-        for (const log of pending.snapshot.logs) session.recordLog(log);
-        entry.revisionOffset = pending.snapshot.revision + 1;
-        entry.phase = { kind: "session", session };
-        if (this.closing) {
-          await session.abortForShutdown();
-          return;
-        }
-        if (pending.controller.signal.aborted) {
-          await session.stop();
-          return;
-        }
-        if (entry.state === "paused") return;
-      }
-      const session = entry.phase.session;
-      const status = session.snapshot().status;
-      if (status === "queued") await session.start();
-      else if (status === "paused") await session.resume();
-      else throw new Error(`Cannot schedule scrape session in ${status} state: ${entry.id}`);
-      await session.waitForIdle();
-      if (this.closing || entry.state === "stopping") return;
-      const snapshot = this.entrySnapshot(entry);
+      const status = entry.session.snapshot().status;
+      if (status === "queued") await entry.session.start();
+      await entry.session.waitForIdle();
+      if (this.closing) return;
+      const snapshot = entry.session.snapshot();
       if (["completed", "failed", "stopped", "interrupted"].includes(snapshot.status))
         await this.settle(entry, snapshot);
-    } catch (error) {
-      if (this.closing || entry.state === "stopping") return;
-      if (entry.phase.kind === "session" || entry.settlement) throw error;
-      entry.phase.snapshot = {
-        ...entry.phase.snapshot,
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      };
-      await this.settle(entry, entry.phase.snapshot);
     } finally {
       if (this.activeRunId === entry.id) this.activeRunId = null;
     }
@@ -409,16 +278,6 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
     if (snapshot.status === "interrupted")
       this.repairRequired = snapshot.error ?? `Scrape run was interrupted: ${entry.id}`;
     this.host.onInvalidate(this.liveRuns());
-  }
-
-  private entrySnapshot(entry: WorkflowEntry<TRun, TManualScrape, TPrepared>): ScrapeRunSnapshot<TManualScrape> {
-    let snapshot = entry.phase.kind === "session" ? entry.phase.session.snapshot() : entry.phase.snapshot;
-    if (entry.phase.kind === "session") snapshot = { ...snapshot, revision: snapshot.revision + entry.revisionOffset };
-    if (entry.state === "paused") return { ...snapshot, status: "paused" };
-    if (entry.state === "queued") return { ...snapshot, status: "queued" };
-    if (entry.state === "stopping" && !["completed", "failed", "stopped", "interrupted"].includes(snapshot.status))
-      return { ...snapshot, status: "stopping" };
-    return snapshot;
   }
 
   private orderedEntries(): WorkflowEntry<TRun, TManualScrape, TPrepared>[] {

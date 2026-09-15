@@ -20,6 +20,7 @@ export enum IpcChannel {
   Scraper_Resume = "scraper:resume",
   Scraper_GetStatus = "scraper:get-status",
   Scraper_Retry = "scraper:retry",
+  Scraper_RerunDirectory = "scraper:rerunDirectory",
   Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",

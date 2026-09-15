@@ -179,14 +179,6 @@ describe("buildServer maintenance integration", () => {
       directoryScope: { scanDir: source, recursive: true },
     });
     expect(session?.refs.map((ref) => ref.relativePath)).toEqual(kind === "files" ? ["ABC-123.mp4"] : []);
-    const stored = (await services.persistence.getState()).repositories.maintenanceDirectories.latest();
-    if (!stored) throw new Error("Directory checkpoint was not persisted");
-    expect(JSON.parse(stored.snapshotJson)).toMatchObject({
-      id: sessionId,
-      status: kind === "missing" ? "failed" : "completed",
-      directoryScope: { scanDir: source },
-    });
-    expect(stored?.configurationJson).toBeDefined();
   });
   it("creates exactly one preview per selected ref", async () => {
     const root = await createTempRoot("maintenance-two-selected-root");

@@ -54,11 +54,11 @@ export function ScrapeWorkbenchAdapter({
               {snapshot.task.status === "queued"
                 ? "目录任务已排队"
                 : snapshot.task.status === "discovering"
-                  ? "正在发现视频文件"
+                  ? "正在扫描视频文件"
                   : snapshot.task.status === "stopping"
-                    ? "正在停止，等待活动文件操作退出"
+                    ? "正在停止，等待当前文件处理完成"
                     : snapshot.task.status === "completed"
-                      ? "未发现可处理视频"
+                      ? "未找到可处理视频"
                       : snapshot.task.status === "stopped"
                         ? "任务已停止"
                         : snapshot.task.status === "interrupted"
@@ -69,7 +69,7 @@ export function ScrapeWorkbenchAdapter({
             {snapshot.discovery ? (
               <>
                 <p>
-                  已遍历 {snapshot.discovery.directories} 个目录，发现 {snapshot.discovery.candidates} 个视频，跳过{" "}
+                  已扫描 {snapshot.discovery.directories} 个目录，找到 {snapshot.discovery.candidates} 个视频，跳过{" "}
                   {snapshot.discovery.skipped} 项
                 </p>
                 <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>
@@ -95,12 +95,12 @@ export function ScrapeWorkbenchAdapter({
       onStopScrape={onStopScrape}
       onRetryFailed={onRetryFailed}
       onRerunDirectory={
-        snapshot?.directorySource && ports.scrape.rerunDirectory
+        snapshot?.directorySource
           ? () => {
               if (rerunning.current) return;
               rerunning.current = true;
               void ports.scrape
-                .rerunDirectory?.(snapshot.task.id)
+                .rerunDirectory(snapshot.task.id)
                 .catch((error) => toast.error(toErrorMessage(error)))
                 .finally(() => {
                   rerunning.current = false;

@@ -66,6 +66,7 @@ import {
   type ScrapeHistoryRunDto,
   type ScrapeLiveRunsResponse,
   type ScrapePendingUncensoredConfirmationResponse,
+  type ScrapeRerunDirectoryInput,
   type ScrapeResultDetailResponse,
   type ScrapeResultDto,
   type ScrapeRunSnapshotDto,
@@ -307,13 +308,21 @@ export class ScrapeService {
   }
 
   async retry(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto> {
+    return await this.relaunch((workflow) => workflow.retry(input.taskId, input.itemIds), "Scrape retry queued");
+  }
+
+  async rerunDirectory(input: ScrapeRerunDirectoryInput): Promise<ScrapeRunSnapshotDto> {
+    return await this.relaunch((workflow) => workflow.rerunDirectory(input.taskId), "Directory rescan queued");
+  }
+
+  private async relaunch(
+    launch: (workflow: NonNullable<ScrapeService["workflow"]>) => Promise<ScrapeRunSnapshot<ServerManualScrape>>,
+    message: string,
+  ): Promise<ScrapeRunSnapshotDto> {
     this.imageHostCooldownStore.clear();
-    runtimeLoggerService.getLogger("ScrapeService").info("Cleared image host cooldowns for user-initiated retry");
-    const workflow = await this.coordinator();
-    const snapshot = input.rediscover
-      ? await workflow.rerunDirectory(input.taskId)
-      : await workflow.retry(input.taskId, input.itemIds);
-    this.addEvent(snapshot.runId, "queued", "Scrape retry queued");
+    runtimeLoggerService.getLogger("ScrapeService").info("Cleared image host cooldowns for user-initiated relaunch");
+    const snapshot = await launch(await this.coordinator());
+    this.addEvent(snapshot.runId, "queued", message);
     return await this.snapshot({ taskId: snapshot.runId });
   }
 

@@ -227,8 +227,8 @@ describe("web scrape action port", () => {
     expect(removeRecord).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
   });
 
-  it("retries the scrape store run id and has no run after reset", async () => {
-    const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "retry-1" });
+  it("retries the current run and rescans directories through separate APIs", async () => {
+    const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "session-run" });
     useScrapeStore.getState().setSnapshot(
       buildFailedScrapeSnapshot({
         task: { ...buildFailedScrapeSnapshot().task, id: "session-run" },
@@ -237,9 +237,15 @@ describe("web scrape action port", () => {
     const port = createWebScrapeActionPort();
 
     await expect(port.retryFailed()).resolves.toEqual({
-      message: "重试任务已启动：retry-1",
+      message: "重试任务已启动：session-run",
     });
     expect(retry).toHaveBeenCalledWith({ taskId: "session-run" });
+    await port.retryFailed(["failed-item"]);
+    expect(retry).toHaveBeenLastCalledWith({ taskId: "session-run", itemIds: ["failed-item"] });
+    const rerunDirectory = vi.spyOn(api.scrape, "rerunDirectory").mockResolvedValue({ runId: "new-run" });
+    await port.rerunDirectory("directory-run");
+    expect(rerunDirectory).toHaveBeenCalledWith({ taskId: "directory-run" });
+    expect(retry).toHaveBeenCalledTimes(2);
 
     useScrapeStore.getState().reset();
     await expect(port.retryFailed()).rejects.toThrow("没有可重试的刮削任务");

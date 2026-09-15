@@ -599,12 +599,10 @@ export class ScrapeRunRepository {
 
   async retry(runId: string, itemIds?: readonly string[], admittedAt = new Date()): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
-    if (run.directoryScopeJson && !run.manifestFixedAt && run.disposition && !itemIds) {
-      return await this.rerunDirectory(runId);
-    }
     if (!run.disposition || run.disposition === "interrupted") {
       throw new Error(`Only completed, failed, or stopped scrape runs can be retried: ${run.id}`);
     }
+    if (!run.manifestFixedAt) throw new Error("目录文件列表尚未生成，无法重试，请重新扫描目录");
     const outcomesByItemId = new Map(latestOutcomes(run.outcomes).map((outcome) => [outcome.itemId, outcome]));
     const items = itemIds
       ? (() => {

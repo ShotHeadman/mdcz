@@ -255,6 +255,7 @@ export const api: ServerApiContract = {
     result: (input) => trpcQuery("scrape.result", input),
     resume: (input) => trpcMutation("scrape.resume", input),
     retry: (input) => trpcMutation("scrape.retry", input),
+    rerunDirectory: (input) => trpcMutation("scrape.rerunDirectory", input),
     confirmUncensored: (input) => trpcMutation("scrape.confirmUncensored", input),
     start: (input) => trpcMutation("scrape.start", input),
     stop: (input) => trpcMutation("scrape.stop", input),

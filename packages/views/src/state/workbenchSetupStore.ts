@@ -5,6 +5,8 @@ import { create } from "zustand";
 export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error";
 
 interface WorkbenchSetupState {
+  activePreview: { id: string; stop: () => Promise<void> } | null;
+  stopPreview: () => Promise<void>;
   scanDir: string;
   recursive: boolean;
   previewMode: boolean;
@@ -33,7 +35,14 @@ interface WorkbenchSetupState {
   setAllSelected: (selected: boolean) => void;
 }
 
-export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set) => ({
+export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set, get) => ({
+  activePreview: null,
+  stopPreview: async () => {
+    const current = get().activePreview;
+    if (!current) return;
+    await current.stop();
+    if (get().activePreview?.id === current.id) set({ activePreview: null });
+  },
   scanDir: "",
   previewMode: false,
   setPreviewMode: (previewMode) => set({ previewMode }),

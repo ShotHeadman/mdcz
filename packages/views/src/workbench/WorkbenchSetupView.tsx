@@ -340,7 +340,7 @@ export function WorkbenchSetupView({
             </Button>
             {previewMode ? (
               <Button type="button" variant="ghost" disabled={startPending} onClick={onExitPreview}>
-                {scanning ? "停止预览，处理整个目录" : "处理整个目录"}
+                退出文件选择
               </Button>
             ) : (
               <p className="text-sm text-muted-foreground">

@@ -8,6 +8,7 @@ import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError } from "../errors";
 import {
   scraperGetStatusInputSchema,
+  scraperRerunDirectoryInputSchema,
   scraperRetryInputSchema,
   scraperStartInputSchema,
   scraperStartSinglePathInputSchema,
@@ -33,6 +34,7 @@ export const createScraperHandlers = (
   | typeof IpcChannel.Scraper_Stop
   | typeof IpcChannel.Scraper_Pause
   | typeof IpcChannel.Scraper_Resume
+  | typeof IpcChannel.Scraper_RerunDirectory
   | typeof IpcChannel.Scraper_Retry
   | typeof IpcChannel.Scraper_ConfirmUncensored
 > => {
@@ -87,15 +89,21 @@ export const createScraperHandlers = (
         return { success: true as const };
       }),
     ),
+    [IpcChannel.Scraper_RerunDirectory]: t.procedure
+      .input(scraperRerunDirectoryInputSchema)
+      .action(({ input }) =>
+        withIpcErrorHandling(
+          "rerun directory",
+          async () => withLaunchMessage(await scraperService.rerunDirectory(input.runId), "已重新启动目录扫描"),
+          { mapError: toScraperServiceIpcError },
+        ),
+      ),
     [IpcChannel.Scraper_Retry]: t.procedure.input(scraperRetryInputSchema).action(({ input }) =>
       withIpcErrorHandling(
         "retry files",
         async () => {
-          const result = await scraperService.retry(input.runId, input.itemIds, input.rediscover);
-          return withLaunchMessage(
-            result,
-            result.totalFiles === null ? "目录任务已重新提交" : `重试任务已启动，共 ${result.totalFiles} 个文件`,
-          );
+          const result = await scraperService.retry(input.runId, input.itemIds);
+          return withLaunchMessage(result, `已启动重试（共 ${result.totalFiles} 个文件）`);
         },
         { mapError: toScraperServiceIpcError },
       ),
