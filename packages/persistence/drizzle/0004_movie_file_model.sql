@@ -1,3 +1,11 @@
+ALTER TABLE `scrape_runs` ADD `directory_scope_json` text;
+--> statement-breakpoint
+ALTER TABLE `scrape_runs` ADD `configuration_json` text;
+--> statement-breakpoint
+ALTER TABLE `scrape_runs` ADD `manifest_fixed_at` integer;
+--> statement-breakpoint
+ALTER TABLE `scrape_runs` ADD `discovery_json` text;
+--> statement-breakpoint
 DROP TABLE `library_item_assets`;
 --> statement-breakpoint
 DROP TABLE `library_item_files`;

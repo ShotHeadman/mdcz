@@ -192,24 +192,20 @@ describe("Persistence migrations", () => {
         INSERT INTO scrape_item_outcomes (id, attempt_id, outcome, completed_at)
         VALUES ('scrape-outcome-1', 'scrape-attempt-1', 'success', 21);
       `);
-      for (const name of ["0004_publication_and_directory_tasks.sql", "0005_movie_file_model.sql"]) {
-        await cp(join(defaultMigrationsFolder, name), join(migrations.path, name));
-      }
+      await cp(
+        join(defaultMigrationsFolder, "0004_movie_file_model.sql"),
+        join(migrations.path, "0004_movie_file_model.sql"),
+      );
       await writeFile(
         join(migrations.path, "meta", "_journal.json"),
-        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 5) }),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 4) }),
       );
       runMigrations(database, { migrationsFolder: migrations.path });
-      database.sqlite.exec(`
-        INSERT INTO maintenance_directory_tasks (id, snapshot_json, configuration_json, updated_at)
-        VALUES ('maintenance-1', '{}', '{}', 1);
-      `);
-      runMigrations(database);
       runMigrations(database);
       expect(
         database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'maintenance_directory_tasks'").all(),
       ).toEqual([]);
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -274,7 +270,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -333,7 +329,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 3 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
