@@ -1,16 +1,15 @@
 import { extname } from "node:path";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { publicationPathKey, publicationRefKey as refKey, resolvePublicationReferenceKeys } from "./boundary";
+import { publicationPathKey, publicationRefKey as refKey } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
 import type { PublicationFileSystem, PublicationOutputPort, PublicationPlan, PublishMediaOptions } from "./types";
 
-/** Captured under publication locks; the returned write runs in the journal transaction. */
 export const prepareOutputRegistration = async (
   plan: PublicationPlan,
   options: Pick<PublishMediaOptions<unknown>, "outputs" | "ownerId" | "resolveRoot">,
   fileSystem: PublicationFileSystem,
-): Promise<{ register(): void; assertCurrent(): Promise<void> } | undefined> => {
+): Promise<(() => void) | undefined> => {
   const store = options.outputs;
   if (!store) return undefined;
   const required = [
@@ -32,19 +31,7 @@ export const prepareOutputRegistration = async (
   };
   const query = { paths: required.map(absolute), includeOwners: true };
   const snapshot = store.publicationSnapshot(query);
-  const refs = [...snapshot.files, ...snapshot.assets, ...required];
-  for (const id of new Set(refs.map((ref) => ref.rootId)))
-    if (!roots.has(id)) roots.set(id, await options.resolveRoot(id));
-  const physical = await resolvePublicationReferenceKeys(refs, required, async (id) => {
-    const root = roots.get(id);
-    if (!root) throw new Error(`Publication root not found: ${id}`);
-    return root;
-  });
-  const key = (ref: RootFileRef, keys = physical) => {
-    const path = keys.get(refKey(ref));
-    if (path === undefined) throw new Error(`Publication path was not resolved: ${refKey(ref)}`);
-    return path;
-  };
+  const key = refKey;
   for (const media of plan.media ?? []) {
     const references = snapshot.files.filter((file) => key(file) === key(media.source));
     if (new Set(references.map((file) => file.itemId)).size > 1)
@@ -92,7 +79,7 @@ export const prepareOutputRegistration = async (
     ...plan.artifacts.map((artifact) => artifact.target),
     ...(plan.sidecars ?? []).map((move) => move.target),
   ];
-  const missing: RootFileRef[] = [];
+  const missing: typeof snapshot.assets = [];
   for (const target of targets) {
     const exists = await fileSystem
       .stat(absolute(target))
@@ -119,11 +106,12 @@ export const prepareOutputRegistration = async (
         "输出未登记为当前媒体所有，或仍被其他媒体引用",
       );
   }
-  plan.replaceExistingTargets = targets;
   plan.obsolete = plan.obsolete.filter(removable);
+  plan.replaceExistingTargets = targets;
   for (const move of plan.sidecars ?? []) {
-    if (snapshot.assets.some((asset) => key(asset) === key(move.source) && !owners.has(asset.itemId)))
+    if (snapshot.assets.some((asset) => key(asset) === key(move.source) && !owners.has(asset.itemId))) {
       move.preserveSource = true;
+    }
   }
   const retainedOutputs = plan.assets.flatMap((asset) =>
     asset.type === "local" &&
@@ -151,87 +139,55 @@ export const prepareOutputRegistration = async (
       .filter((asset) => asset.published && key(asset) === key(target) && owners.has(asset.itemId))
       .map((asset) => ({ itemId: asset.itemId, fileId: asset.fileId })),
   }));
-  const sourceKeys = new Set((plan.media ?? []).map((media) => key(media.source)));
-  const targetPaths = new Set([...targets, ...retainedOutputs].map((ref) => key(ref)));
-  const relevant = (value: typeof snapshot, keys: Map<string, string>) =>
-    JSON.stringify({
-      files: value.files
-        .filter((file) => owners.has(file.itemId) || sourceKeys.has(key(file, keys)))
-        .sort((a, b) => refKey(a).localeCompare(refKey(b))),
-      assets: value.assets
-        .filter((asset) => owners.has(asset.itemId) || targetPaths.has(key(asset, keys)))
-        .sort((a, b) => `${a.itemId}:${refKey(a)}:${a.kind}`.localeCompare(`${b.itemId}:${refKey(b)}:${b.kind}`)),
-    });
-  const expected = relevant(snapshot, physical);
-  return {
-    async assertCurrent() {
-      const current = store.publicationSnapshot(query);
-      const keys = await resolvePublicationReferenceKeys(
-        [...current.files, ...current.assets, ...required],
-        required,
-        options.resolveRoot,
-      );
-      if (relevant(current, keys) !== expected)
-        throw new PublicationConflictError(
-          plan.media?.[0] ? absolute(plan.media[0].source) : plan.operationId,
-          targets[0] ? absolute(targets[0]) : plan.operationId,
-          "输出归属或媒体引用在发布期间发生变化",
-        );
-    },
-    register() {
-      const released = [
-        ...plan.obsolete,
-        ...(plan.sidecars ?? [])
-          .filter((move) => !move.preserveSource && key(move.source) !== key(move.target))
-          .map((move) => move.source),
-      ];
-      store.releaseOutputReferences([
-        ...missing,
-        ...snapshot.assets.filter((asset) => released.some((ref) => key(ref) === key(asset))),
-      ]);
-      const current = store.publicationSnapshot({ paths: (plan.media ?? []).map((media) => absolute(media.target)) });
-      const outputs: Parameters<PublicationOutputPort["registerPublishedOutputs"]>[0] = [];
-      for (const registration of registrations) {
-        const media = registration.media.length ? registration.media : (plan.media ?? []);
-        const outputOwners = media.length
-          ? media.flatMap((participant) =>
-              current.files
-                .filter(
-                  (file) =>
-                    refKey(file) === refKey(participant.target) ||
-                    physical.get(refKey(file)) === key(participant.target),
-                )
-                .map((file) => ({ itemId: file.itemId, fileId: file.fileId ?? null })),
-            )
-          : registration.existingOwners;
-        if (!outputOwners.length && options.ownerId) {
-          outputOwners.push({ itemId: options.ownerId, fileId: null });
-        }
-        if (!outputOwners.length) {
-          if (plan.editFiles?.some((ref) => refKey(ref) === refKey(registration.target))) continue;
-          throw new Error(`发布输出缺少媒体归属：${absolute(registration.target)}`);
-        }
-        const kinds = registration.kinds.length
-          ? registration.kinds
-          : [extname(registration.target.relativePath).toLowerCase() === ".nfo" ? "nfo" : "sidecar"];
-        for (const kind of new Set(kinds)) {
-          const fileScoped = kind === "strm" || kind === "subtitle";
-          for (const owner of new Map(
-            outputOwners.map((value) => [fileScoped ? `${value.itemId}:${value.fileId ?? ""}` : value.itemId, value]),
-          ).values()) {
-            if (fileScoped && !owner.fileId) {
-              throw new Error(`发布文件资源缺少文件归属：${absolute(registration.target)}`);
-            }
-            outputs.push({
-              ...registration.target,
-              itemId: owner.itemId,
-              fileId: fileScoped ? owner.fileId : null,
-              kind,
-            });
+  return () => {
+    const released = [
+      ...plan.obsolete,
+      ...(plan.sidecars ?? [])
+        .filter((move) => !move.preserveSource && key(move.source) !== key(move.target))
+        .map((move) => move.source),
+    ];
+    store.releaseOutputReferences([
+      ...missing,
+      ...snapshot.assets.filter((asset) => released.some((ref) => key(ref) === key(asset))),
+    ]);
+    const current = store.publicationSnapshot({ paths: (plan.media ?? []).map((media) => absolute(media.target)) });
+    const outputs: Parameters<PublicationOutputPort["registerPublishedOutputs"]>[0] = [];
+    for (const registration of registrations) {
+      const media = registration.media.length ? registration.media : (plan.media ?? []);
+      const outputOwners = media.length
+        ? media.flatMap((participant) =>
+            current.files
+              .filter((file) => refKey(file) === refKey(participant.target) || key(file) === key(participant.target))
+              .map((file) => ({ itemId: file.itemId, fileId: file.fileId ?? null })),
+          )
+        : registration.existingOwners;
+      if (!outputOwners.length && options.ownerId) {
+        outputOwners.push({ itemId: options.ownerId, fileId: null });
+      }
+      if (!outputOwners.length) {
+        if (plan.editFiles?.some((ref) => refKey(ref) === refKey(registration.target))) continue;
+        throw new Error(`发布输出缺少关联的媒体条目：${absolute(registration.target)}`);
+      }
+      const kinds = registration.kinds.length
+        ? registration.kinds
+        : [extname(registration.target.relativePath).toLowerCase() === ".nfo" ? "nfo" : "sidecar"];
+      for (const kind of new Set(kinds)) {
+        const fileScoped = kind === "strm" || kind === "subtitle";
+        for (const owner of new Map(
+          outputOwners.map((value) => [fileScoped ? `${value.itemId}:${value.fileId ?? ""}` : value.itemId, value]),
+        ).values()) {
+          if (fileScoped && !owner.fileId) {
+            throw new Error(`单文件级发布资源缺少关联的视频文件：${absolute(registration.target)}`);
           }
+          outputs.push({
+            ...registration.target,
+            itemId: owner.itemId,
+            fileId: fileScoped ? owner.fileId : null,
+            kind,
+          });
         }
       }
-      store.registerPublishedOutputs(outputs);
-    },
+    }
+    store.registerPublishedOutputs(outputs);
   };
 };

@@ -47,15 +47,26 @@ export const createPublicationPlan = (
             : [],
       ),
     })),
-    boundary: prepared.boundary,
+    boundary: prepared.boundary
+      ? {
+          writeRoots: prepared.boundary.writeRoots.map((location) => ({ ...location })),
+          writablePaths: prepared.boundary.writablePaths.map((location) => ({ ...location })),
+          readOnlyPaths: prepared.boundary.readOnlyPaths.map((location) => ({ ...location })),
+          readOnlyDirectories: prepared.boundary.readOnlyDirectories.map((location) => ({ ...location })),
+        }
+      : undefined,
     videos: prepared.videos?.map(toMove),
     sidecars: (prepared.sidecars ?? []).map(toMove),
     artifacts: prepared.artifacts.map((artifact) => ({
       target: toRef(artifact.targetPath),
-      content: artifact.content,
+      content:
+        artifact.content.kind === "bytes"
+          ? { kind: "bytes", data: Buffer.from(artifact.content.data) }
+          : { ...artifact.content },
     })),
     assets,
     obsolete: prepared.obsoletePaths.map(toRef),
+    editFiles: prepared.editFilePaths?.map(toRef),
     replaceExistingTargets: prepared.replaceExistingTargetPaths?.map(toRef),
   };
 };

@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import {
   type MediaRoot,
   readRootFile,
@@ -8,12 +7,7 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import {
-  capturePublicationBoundary,
-  commitPublishedMedia,
-  resolveRegisteredNfoPaths,
-  toRootFileRef,
-} from "@mdcz/runtime/publication";
+import { commitRegisteredPublication, resolveRegisteredNfoPaths } from "@mdcz/runtime/publication";
 import {
   getNfoReadCandidates,
   getNfoWritePaths,
@@ -121,36 +115,21 @@ export class ServerNfoAdapter {
       paths.canonicalPath = input.relativePath;
     }
     const registeredRoots = await this.mediaRoots.listRoots();
-    await commitPublishedMedia(
+    await commitRegisteredPublication(
       {
-        media: await Promise.all(
-          (ownedNfo?.mediaPaths ?? []).map(async (path) => ({
-            source: toRootFileRef(path, registeredRoots),
-            target: toRootFileRef(path, registeredRoots),
-            size: (await stat(path)).size,
-          })),
-        ),
         operationId: `nfo-write:${input.rootId}:${plannedRelativePath}`,
         operationType: "maintenance",
-        boundary: ownedNfo
-          ? await capturePublicationBoundary({
-              writeRoots: [root.hostPath],
-              writablePaths: ownedNfo.paths,
-              readOnlyPaths: [],
-              readOnlyDirectories: ownedNfo.readOnlyDirectories,
-            })
-          : undefined,
+        mediaPaths: ownedNfo?.mediaPaths,
         artifacts: paths.requiredPaths.map((relativePath) => ({
-          target: { rootId: root.id, relativePath },
+          targetPath: resolveRootRelativePath(root, relativePath),
           content: { kind: "text" as const, data: xml },
         })),
-        editFiles: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
-        assets: [],
-        obsolete: [],
-        replaceExistingTargets: paths.requiredPaths.map((relativePath) => ({ rootId: root.id, relativePath })),
+        replaceExistingArtifacts: true,
+        editExistingFiles: true,
+        readOnlyDirectories: ownedNfo?.readOnlyDirectories,
       },
       {
-        resolveRoot: (id) => this.mediaRoots.get(id),
+        roots: registeredRoots,
         journal: state.repositories.publicationJournal,
         outputs: state.repositories.library,
         repairIssues: state.repositories.libraryRepairIssues,

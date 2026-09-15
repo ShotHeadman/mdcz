@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -295,20 +295,23 @@ describe("commitPublishedMedia", () => {
     });
     await stageStartedPromise;
 
-    await expect(
-      commitPublishedMedia(
-        { ...test.plan, operationId: "run:second" },
-        {
-          resolveRoot: test.resolveRoot,
-          journal: createMemoryPublicationJournal(),
-          fileSystem,
-          commit: () => undefined,
-        },
-      ),
-    ).rejects.toThrow("already being modified");
-
+    const conflict = await commitPublishedMedia(
+      { ...test.plan, operationId: "run:second" },
+      {
+        resolveRoot: test.resolveRoot,
+        journal: createMemoryPublicationJournal(),
+        fileSystem,
+        commit: () => undefined,
+      },
+    ).catch((error: unknown) => error);
     releaseStage();
     await first;
+    expect(conflict).toBeInstanceOf(PublicationConflictError);
+    expect(conflict).toMatchObject({
+      reason: "发布路径正被其他并发任务占用",
+      sourcePath: "[input] movie.mp4",
+      targetPath: "[input] movie.mp4",
+    });
   });
 
   it.each([
@@ -557,26 +560,48 @@ describe("commitPublishedMedia", () => {
   });
 
   it.each([
-    "source",
-    "target",
-  ] as const)("rejects %s facts that change after ownership is acquired", async (changed) => {
+    {
+      driftCase: "existing target content",
+      setup: async (test: Awaited<ReturnType<typeof fixture>>) => {
+        await mkdir(path.dirname(test.nfo), { recursive: true });
+        await writeFile(test.nfo, "<movie/>");
+      },
+      drift: (test: Awaited<ReturnType<typeof fixture>>) => writeFileSync(test.nfo, "<other/>"),
+      expectedError: PublicationConflictError,
+    },
+    {
+      driftCase: "unexpected target created",
+      drift: (test: Awaited<ReturnType<typeof fixture>>) => {
+        mkdirSync(path.dirname(test.target), { recursive: true });
+        writeFileSync(test.target, "video");
+      },
+      expectedError: PublicationConflictError,
+    },
+  ])("rejects publication when $driftCase changes after ownership is acquired", async ({
+    setup,
+    drift,
+    expectedError,
+  }) => {
     const test = await fixture();
-    await mkdir(path.dirname(test.nfo), { recursive: true });
-    await writeFile(test.nfo, "<movie/>");
-    await expect(
-      commitPublishedMedia(test.plan, {
-        resolveRoot: test.resolveRoot,
-        journal: createMemoryPublicationJournal(),
-        commit: () => undefined,
-        acquireAll: () => {
-          writeFileSync(changed === "source" ? test.source : test.nfo, changed === "source" ? "VIDEO" : "<other/>");
-          return () => undefined;
-        },
-      }),
-    ).rejects.toThrow(changed === "source" ? "changed before mutation" : PublicationConflictError);
-    await expect(readFile(test.source, "utf8")).resolves.toBe(changed === "source" ? "VIDEO" : "video");
-    await expect(readFile(test.nfo, "utf8")).resolves.toBe(changed === "target" ? "<other/>" : "<movie/>");
-    await expect(stat(test.target)).rejects.toMatchObject({ code: "ENOENT" });
+    await setup?.(test);
+    const journal = createMemoryPublicationJournal();
+    const commit = vi.fn(() => undefined);
+
+    const error = await commitPublishedMedia(test.plan, {
+      resolveRoot: test.resolveRoot,
+      journal,
+      commit,
+      acquireAll: () => {
+        drift(test);
+        return () => undefined;
+      },
+    }).catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(expectedError);
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(journal.listUnfinished()).toEqual([]);
+    expect(existsSync(test.source)).toBe(true);
   });
 
   it("retains moved bytes at the target and obsolete assets until the database commit", async () => {
@@ -621,13 +646,24 @@ describe("commitPublishedMedia", () => {
     await expect(stat(test.target)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("revalidates obsolete assets immediately before cleanup", async () => {
+  it.each([
+    "different-content",
+    "same-size-subsecond-mtime",
+  ] as const)("revalidates obsolete assets immediately before cleanup: %s", async (change) => {
     const test = await fixture();
+    const originalObsolete = await stat(test.obsolete);
     const fileSystem = await defaultFileSystem();
     const originalRename = fileSystem.rename;
     fileSystem.rename = async (source, target) => {
       await originalRename(source, target);
-      if (target === test.poster) writeFileSync(test.obsolete, "foreign obsolete");
+      if (target !== test.poster) return;
+      if (change === "different-content") {
+        writeFileSync(test.obsolete, "foreign obsolete");
+        return;
+      }
+      await writeFile(test.obsolete, "OLD");
+      const changedAt = new Date(originalObsolete.mtimeMs + 100);
+      await utimes(test.obsolete, changedAt, changedAt);
     };
     const journal = createMemoryPublicationJournal();
     const repairIssues = { record: vi.fn(() => undefined), resolve: vi.fn(() => undefined) };
@@ -641,7 +677,9 @@ describe("commitPublishedMedia", () => {
         commit: () => undefined,
       }),
     ).resolves.toBeUndefined();
-    await expect(readFile(test.obsolete, "utf8")).resolves.toBe("foreign obsolete");
+    await expect(readFile(test.obsolete, "utf8")).resolves.toBe(
+      change === "different-content" ? "foreign obsolete" : "OLD",
+    );
     expect(journal.listUnfinished()).toEqual([]);
     expect(repairIssues.record).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -660,23 +698,6 @@ describe("commitPublishedMedia", () => {
     await expect(commitPublishedMedia(test.plan, options)).resolves.toEqual({ libraryItemId: "library-item-1" });
     await expect(commitPublishedMedia(test.plan, options)).rejects.toThrow("Publication source is missing");
     expect(commit).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects a video target that appears after preview with the expected size", async () => {
-    const test = await fixture();
-    await expect(
-      commitPublishedMedia(test.plan, {
-        resolveRoot: test.resolveRoot,
-        journal: createMemoryPublicationJournal(),
-        commit: () => undefined,
-        acquireAll: () => {
-          mkdirSync(path.dirname(test.target), { recursive: true });
-          writeFileSync(test.target, "video");
-          return () => undefined;
-        },
-      }),
-    ).rejects.toBeInstanceOf(PublicationConflictError);
-    await expect(readFile(test.source, "utf8")).resolves.toBe("video");
   });
 
   it("rejects a target that changes during staging", async () => {

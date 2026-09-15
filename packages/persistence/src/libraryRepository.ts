@@ -416,11 +416,21 @@ export class LibraryRepository {
     }
   }
 
-  releaseOutputReferences(refs: Array<{ rootId: string; relativePath: string }>): void {
+  releaseOutputReferences(
+    refs: Array<{ itemId: string; fileId: string | null; kind: string; rootId: string; relativePath: string }>,
+  ): void {
     for (const ref of refs)
       this.database.db
         .delete(libraryItemAssets)
-        .where(and(eq(libraryItemAssets.rootId, ref.rootId), eq(libraryItemAssets.relativePath, ref.relativePath)))
+        .where(
+          and(
+            eq(libraryItemAssets.itemId, ref.itemId),
+            ref.fileId !== null ? eq(libraryItemAssets.fileId, ref.fileId) : isNull(libraryItemAssets.fileId),
+            eq(libraryItemAssets.kind, ref.kind),
+            eq(libraryItemAssets.rootId, ref.rootId),
+            eq(libraryItemAssets.relativePath, ref.relativePath),
+          ),
+        )
         .run();
   }
 
