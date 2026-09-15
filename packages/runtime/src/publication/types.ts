@@ -5,8 +5,7 @@ import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 export type PublicationContent =
   | { kind: "bytes"; data: Buffer }
   | { kind: "text"; data: string }
-  | { kind: "file"; path: string; size: number }
-  | { kind: "download"; url: string };
+  | { kind: "file"; path: string; size: number };
 
 export interface PublicationMove {
   preserveSource?: boolean;
@@ -53,9 +52,10 @@ export interface PreparedPublicationPlan {
   boundary?: PublicationBoundary;
   videos?: PreparedPublicationMove[];
   sidecars?: PreparedPublicationMove[];
-  artifacts: Array<{ targetPath: string; content: Exclude<PublicationContent, { kind: "download" }> }>;
+  artifacts: Array<{ targetPath: string; content: PublicationContent }>;
   assets: Array<{ kind: string; targetPath?: string; url?: string }>;
   obsoletePaths: string[];
+  editFilePaths?: string[];
   replaceExistingTargetPaths?: string[];
 }
 
@@ -146,7 +146,7 @@ export interface PublicationOutputPort {
     >;
   };
   registerPublishedOutputs(outputs: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string }>): void;
-  releaseOutputReferences(refs: RootFileRef[]): void;
+  releaseOutputReferences(refs: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string }>): void;
 }
 
 export interface DurablePublicationContext {
@@ -164,7 +164,6 @@ export interface PublishMediaOptions<TResult> extends DurablePublicationContext 
   validate?(): Promise<void> | void;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   commit(): TResult;
-  download?(url: string): Promise<Uint8Array>;
   acquireAll?(refs: readonly RootFileRef[]): () => void;
   fileSystem?: PublicationFileSystem;
   logContext?: { runId?: string; itemId?: string };

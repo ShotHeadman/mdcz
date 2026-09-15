@@ -108,7 +108,6 @@ export const preflightPublication = async (
   plan: PublicationPlan,
   options: Pick<PublishMediaOptions<unknown>, "resolveRoot">,
   fileSystem: PublicationFileSystem,
-  previous?: readonly ObservedPublicationFile[],
 ): Promise<ResolvedPublicationPlan> => {
   if (!plan.operationId.trim()) throw new Error("Publication operation ID is required");
   if (plan.boundary) await assertPublicationBoundary(plan.boundary);
@@ -124,18 +123,6 @@ export const preflightPublication = async (
   };
   const moves = planMoves(plan);
   const targets = [...moves.map((move) => move.target), ...plan.artifacts.map(({ target }) => target)];
-  for (const fact of previous ?? []) {
-    const current = await observePublicationFile(fileSystem, fact.path);
-    if (!publicationFilesMatch(fact, current) && targets.some((target) => resolve(target) === fact.path)) {
-      const move = moves.find((move) => resolve(move.target) === fact.path);
-      throw new PublicationConflictError(
-        move ? resolve(move.source) : fact.path,
-        fact.path,
-        "发布目标在预检期间发生变化",
-      );
-    }
-    assertPublicationFileUnchanged(fact, current);
-  }
   const targetKeys = await Promise.all(
     targets.map(async (ref) => publicationPathKey(await resolvePublicationPath(resolve(ref)))),
   );
@@ -208,11 +195,6 @@ export const preflightPublication = async (
     const existing = await record(targetPath);
     if (!existing.exists) continue;
     if (!existing.isFile) throw new PublicationConflictError(targetPath, targetPath, "发布目标不是文件");
-    if (artifact.content.kind === "download") {
-      if (!replacing.has(refKey(artifact.target)))
-        throw new PublicationConflictError(targetPath, targetPath, "下载目标已存在");
-      continue;
-    }
     if (artifact.content.kind === "file") {
       if (!replacing.has(refKey(artifact.target)))
         throw new PublicationConflictError(targetPath, targetPath, "目标资源已存在且没有替换权限");

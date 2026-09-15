@@ -70,11 +70,11 @@ export const commitRegisteredPublication = async <TResult>(
         artifact.kind ? [{ kind: artifact.kind, targetPath: artifact.targetPath }] : [],
       ),
       obsoletePaths: [],
+      editFilePaths: input.editExistingFiles ? artifactPaths : undefined,
       replaceExistingTargetPaths,
     },
     options.roots,
   );
-  if (input.editExistingFiles) plan.editFiles = plan.artifacts.map((artifact) => artifact.target);
   return await commitPublishedMedia(plan, {
     resolveRoot: async (rootId) => {
       const root = options.roots.find((candidate) => candidate.id === rootId);

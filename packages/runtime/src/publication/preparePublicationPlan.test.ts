@@ -458,11 +458,13 @@ describe("preparePublicationPlan", () => {
       }
       await writeFile(join(staging, "poster.jpg"), "poster v2");
       const plan = await prepare("rerun");
+      const originalPlan = JSON.stringify(plan);
       if (scenario === "record-removed") {
         outputs.deleteEntry("media");
         await outputs.upsertEntry({ id: "replacement", rootId: "root", rootRelativePath: "source/ABC-123.mp4" });
         await expect(commitPublishedMedia(plan, options)).rejects.toBeInstanceOf(PublicationConflictError);
       } else await commitPublishedMedia(plan, options);
+      expect(JSON.stringify(plan)).toBe(originalPlan);
       expect(await readFile(join(output, "poster.jpg"), "utf8")).toBe(
         scenario === "record-removed" ? "poster v1" : "poster v2",
       );
@@ -476,8 +478,27 @@ describe("preparePublicationPlan", () => {
         rootRelativePath: "source/previous.mp4",
         assets: [
           { kind: "nfo", uri: "output/movie.nfo", rootId: "root", relativePath: "output/movie.nfo", published: true },
+          {
+            kind: "poster",
+            uri: "output/movie.nfo",
+            rootId: "root",
+            relativePath: "output/movie.nfo",
+            published: true,
+          },
         ],
       });
+      context.outputs.releaseOutputReferences([
+        {
+          itemId: "previous",
+          fileId: null,
+          kind: "poster",
+          rootId: "root",
+          relativePath: "output/movie.nfo",
+        },
+      ]);
+      expect((await context.outputs.getEntryById("previous")).assets).toEqual([
+        expect.objectContaining({ kind: "nfo" }),
+      ]);
       await commitPublishedMedia(await prepare(), options);
       expect((await context.outputs.getEntryById("previous")).assets).toEqual([]);
       await assertOutputs();

@@ -1,5 +1,15 @@
 import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
 
+export class MediaPathBusyError extends Error {
+  constructor(
+    readonly rootId: string,
+    readonly relativePath: string,
+  ) {
+    super(`Media path is already being modified: ${rootId}:${relativePath}`);
+    this.name = "MediaPathBusyError";
+  }
+}
+
 export class MediaPathOwnership {
   readonly #owners = new Map<string, { owner: string | symbol; count: number }>();
 
@@ -21,7 +31,7 @@ export class MediaPathOwnership {
     });
     if (occupied) {
       const [rootId, relativePath] = occupied.split("\0");
-      throw new Error(`Media path is already being modified: ${rootId}:${relativePath}`);
+      throw new MediaPathBusyError(rootId, relativePath);
     }
     for (const key of keys) {
       const current = this.#owners.get(key);

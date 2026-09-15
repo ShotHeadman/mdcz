@@ -103,7 +103,9 @@ export interface ScrapeSuccessOutcomeCommitInput {
 }
 
 export interface ScrapeTerminalGroupItem {
-  result: ScrapeResult & { publicationPlan?: PublicationPlan };
+  result: ScrapeResult & {
+    publicationPlan?: PublicationPlan;
+  };
   attemptId: string;
   itemPath: string;
 }
@@ -178,7 +180,6 @@ interface ScrapeTerminalCommitContext {
   journal: PublicationJournalPort;
   repairIssues?: PublicationRepairPort;
   fileSystem?: PublicationFileSystem;
-  download?(url: string): Promise<Uint8Array>;
 }
 
 const commitFailure = async (
@@ -327,7 +328,6 @@ export const commitScrapeTerminalResults = async (
         ownerId: ownership.ownerId,
         repairIssues: input.repairIssues,
         fileSystem: input.fileSystem,
-        download: input.download,
         logContext:
           successful.length === 1
             ? {

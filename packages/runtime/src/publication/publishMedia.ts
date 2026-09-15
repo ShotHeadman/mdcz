@@ -1,18 +1,11 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, open, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { mediaPathOwnership } from "../library/mediaPathOwnership";
+import { MediaPathBusyError, mediaPathOwnership } from "../library/mediaPathOwnership";
 import { runtimeLoggerService } from "../shared";
-import {
-  guardPublicationFileSystem,
-  publicationPathKey,
-  publicationRefKey as refKey,
-  resolvePublicationPath,
-} from "./boundary";
+import { guardPublicationFileSystem, publicationRefKey as refKey } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
-import { manifestRefs } from "./manifest";
 import { prepareOutputRegistration } from "./outputs";
 import {
   assertPublicationFileUnchanged,
@@ -115,12 +108,21 @@ interface PlannedPublication {
 }
 
 export const commitPublishedMedia = async <TResult>(
-  plan: PublicationPlan,
+  requestedPlan: PublicationPlan,
   options: PublishMediaOptions<TResult>,
 ): Promise<TResult> => {
+  const plan: PublicationPlan = {
+    ...requestedPlan,
+    videos: requestedPlan.videos?.map((move) => ({ ...move })),
+    sidecars: requestedPlan.sidecars?.map((move) => ({ ...move })),
+    obsolete: [...requestedPlan.obsolete],
+    editFiles: requestedPlan.editFiles ? [...requestedPlan.editFiles] : undefined,
+    replaceExistingTargets: requestedPlan.replaceExistingTargets
+      ? [...requestedPlan.replaceExistingTargets]
+      : undefined,
+  };
   const outputs = options.outputs;
   const fileSystem = guardPublicationFileSystem(options.fileSystem ?? defaultFileSystem, plan.boundary);
-  const lockRefs = uniqueRefs(planRefs(plan));
   const logger = runtimeLoggerService.getLogger("Publication");
   const operationLabel = plan.operationId.slice(-8);
   const phaseCounts = new Map<string, number>();
@@ -142,36 +144,19 @@ export const commitPublishedMedia = async <TResult>(
     activePhaseStartedAt = performance.now();
     return activePhaseStartedAt;
   };
-  const previewStartedAt = startPhase("preview");
-  await prepareOutputRegistration(plan, options, fileSystem);
-  const previewed = await preflightPublication(plan, options, fileSystem);
-  recordPhase("preview", previewStartedAt);
+  const lockRefs = uniqueRefs(planRefs(plan));
   const lockStartedAt = startPhase("lock");
-  const canonicalRefs = uniqueRefs(
-    await Promise.all(
-      lockRefs.map(async (ref) => ({
-        rootId: "publication-filesystem",
-        relativePath: createHash("sha256")
-          .update(
-            publicationPathKey(
-              await resolvePublicationPath(
-                resolveRootRelativePath(
-                  previewed.roots.get(ref.rootId) ?? (await options.resolveRoot(ref.rootId)),
-                  ref.relativePath,
-                ),
-              ),
-            ),
-          )
-          .digest("hex"),
-      })),
-    ),
-  );
-  const releaseCanonical = mediaPathOwnership.acquireAll(canonicalRefs);
   let release: () => void;
   try {
     release = options.acquireAll?.(lockRefs) ?? mediaPathOwnership.acquireAll(lockRefs);
   } catch (error) {
-    releaseCanonical();
+    if (error instanceof MediaPathBusyError) {
+      throw new PublicationConflictError(
+        `[${error.rootId}] ${error.relativePath}`,
+        `[${error.rootId}] ${error.relativePath}`,
+        "发布路径正被其他并发任务占用",
+      );
+    }
     throw error;
   }
   recordPhase("lock", lockStartedAt);
@@ -215,34 +200,18 @@ export const commitPublishedMedia = async <TResult>(
   try {
     const conflict = options.journal.conflicts(lockRefs);
     if (conflict)
-      throw new PublicationConflictError(plan.operationId, conflict.operationId, "目标仍属于未完成的发布操作");
-    const lockedPhysicalPaths = new Set(canonicalRefs.map((ref) => ref.relativePath));
-    for (const pending of options.journal.listUnfinished()) {
-      for (const ref of manifestRefs(pending.manifest)) {
-        const absolute = resolveRootRelativePath(await options.resolveRoot(ref.rootId), ref.relativePath);
-        const physicalKey = createHash("sha256")
-          .update(publicationPathKey(await resolvePublicationPath(absolute)))
-          .digest("hex");
-        if (lockedPhysicalPaths.has(physicalKey))
-          throw new PublicationConflictError(
-            plan.operationId,
-            absolute,
-            `实际目标仍属于未完成的发布操作 ${pending.operationId}`,
-          );
-      }
-    }
+      throw new PublicationConflictError(plan.operationId, conflict.operationId, "目标路径仍属于未完成的发布操作");
     const preflightStartedAt = startPhase("preflight");
     await options.validate?.();
     const registerOutputs = await prepareOutputRegistration(plan, options, fileSystem);
-    const resolved = await preflightPublication(plan, options, fileSystem, previewed.observed);
+    const resolved = await preflightPublication(plan, options, fileSystem);
     recordPhase("preflight", preflightStartedAt);
     const replacing = new Set((plan.replaceExistingTargets ?? []).map(refKey));
     for (const artifact of plan.artifacts) {
       const targetPath = resolved.resolve(artifact.target);
       const targetFact = observedAt(resolved.observed, targetPath);
       const targetExisted = targetFact?.exists === true;
-      if (targetExisted && artifact.content.kind !== "download" && !replacing.has(refKey(artifact.target))) continue;
-      await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
+      if (targetExisted && !replacing.has(refKey(artifact.target))) continue;
       const temporaryPath = createTargetTemporaryPath(targetPath, plan.operationId);
       planned.push({
         ref: artifact.target,
@@ -251,6 +220,7 @@ export const commitPublishedMedia = async <TResult>(
         backupPath: targetExisted ? createTargetBackupPath(targetPath, plan.operationId) : null,
         targetExisted,
         stage: async () => {
+          await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
           if (artifact.content.kind === "file") {
             const source = await fileSystem.stat(artifact.content.path);
             if (!source.isFile() || source.size !== artifact.content.size) {
@@ -272,15 +242,7 @@ export const commitPublishedMedia = async <TResult>(
             }
             return;
           }
-          let data: Buffer | string;
-          if (artifact.content.kind === "download") {
-            const downloaded = options.download
-              ? await options.download(artifact.content.url)
-              : new Uint8Array(await (await fetch(artifact.content.url)).arrayBuffer());
-            data = Buffer.from(downloaded);
-          } else {
-            data = artifact.content.data;
-          }
+          const data = artifact.content.data;
           const writeStartedAt = startPhase("sidecar-write");
           const capacity = await fileSystem.statfs(path.dirname(targetPath));
           if (capacity.bavail * capacity.bsize < expectedBytes(data)) {
@@ -308,7 +270,6 @@ export const commitPublishedMedia = async <TResult>(
       const targetFact = observedAt(resolved.observed, targetPath);
       const targetExisted = targetFact?.exists === true;
       if (sourcePath !== targetPath) {
-        await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
         const temporaryPath = createTargetTemporaryPath(targetPath, plan.operationId);
         planned.push({
           ref: video.target,
@@ -318,6 +279,7 @@ export const commitPublishedMedia = async <TResult>(
           targetExisted,
           ...(content === undefined && !video.preserveSource ? { sourcePath, source: video.source } : {}),
           stage: async () => {
+            await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
             const sourceNow = await fileSystem.stat(sourcePath);
             const observed = observedAt(resolved.observed, sourcePath);
             if (
@@ -431,11 +393,10 @@ export const commitPublishedMedia = async <TResult>(
       const expected = observedAt(resolved.observed, resolved.resolve(media.source));
       if (expected) assertPublicationFileUnchanged(expected, await observePublicationFile(fileSystem, expected.path));
     }
-    await registerOutputs?.assertCurrent();
     const commitStartedAt = startPhase("commit");
     const result = options.journal.commit(plan.operationId, () => {
       const result = options.commit();
-      registerOutputs?.register();
+      registerOutputs?.();
       return result;
     });
     committed = true;
@@ -507,7 +468,6 @@ export const commitPublishedMedia = async <TResult>(
     if (journalOpen) await rollback(error);
     throw error;
   } finally {
-    releaseCanonical();
     release();
     if (activePhase) {
       const count = (phaseCounts.get(activePhase) ?? 0) + 1;
