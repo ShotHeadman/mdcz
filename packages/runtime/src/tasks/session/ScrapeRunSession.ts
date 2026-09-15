@@ -558,17 +558,33 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
       },
       runItem: async (group, context) => {
         const releases = [this.execution.acquireItems(group.items)];
-        const publicationKeys = [
-          ...new Set(
-            group.items.flatMap((item) => {
-              if (!this.preparedByItemId.has(item.id)) return [];
-              const prepared = this.preparedByItemId.get(item.id) as TPrepared;
-              const key = this.execution.getPublicationKey?.(item, prepared);
-              return key ? [key] : [];
-            }),
-          ),
-        ].sort();
+        const releaseResources = async () => {
+          const errors: unknown[] = [];
+          for (const release of releases.splice(0).reverse()) {
+            try {
+              await release();
+            } catch (error) {
+              errors.push(error);
+            }
+          }
+          if (errors.length === 1) throw errors[0];
+          if (errors.length > 1)
+            throw new AggregateError(
+              errors,
+              errors.map((error) => (error instanceof Error ? error.message : String(error))).join("; "),
+            );
+        };
         try {
+          const publicationKeys = [
+            ...new Set(
+              group.items.flatMap((item) => {
+                if (!this.preparedByItemId.has(item.id)) return [];
+                const prepared = this.preparedByItemId.get(item.id) as TPrepared;
+                const key = this.execution.getPublicationKey?.(item, prepared);
+                return key ? [key] : [];
+              }),
+            ),
+          ].sort();
           for (const key of publicationKeys) releases.push(await this.acquirePublication(key, context.signal));
           const results: ScrapeGroupExecution<TManualScrape>["results"] = [];
           const preparedItems = group.items.flatMap((item) => {
@@ -578,10 +594,11 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
             return [{ item, prepared: this.preparedByItemId.get(item.id) as TPrepared, attemptId }];
           });
           const groupedResults = new Map(
-            (await this.execution.executePreparedItems(preparedItems, context.signal)).map(({ itemId, result }) => [
-              itemId,
-              result,
-            ]),
+            (await this.execution.executePreparedItems(preparedItems, context.signal)).map(({ itemId, result }) => {
+              const { release, ...scrapeResult } = result;
+              if (release) releases.push(release);
+              return [itemId, scrapeResult];
+            }),
           );
           if (groupedResults.size !== preparedItems.length) {
             throw new Error("Scrape group execution returned an incomplete result set");
@@ -597,18 +614,20 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
             if (!this.preparedByItemId.has(item.id)) throw new Error(`Scrape item was not prepared: ${item.id}`);
             const executed = groupedResults.get(item.id);
             if (!executed) throw new Error(`Scrape group execution omitted item: ${item.id}`);
-            const { release, ...result } = executed;
-            if (release) releases.push(release);
-            results.push({ item, result, attemptId });
+            results.push({ item, result: executed, attemptId });
           }
           return {
             results,
-            release: async () => {
-              for (const release of [...releases].reverse()) await release();
-            },
+            release: releaseResources,
           };
         } catch (error) {
-          for (const release of [...releases].reverse()) await release();
+          try {
+            await releaseResources();
+          } catch (cleanupError) {
+            const message = error instanceof Error ? error.message : String(error);
+            const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+            throw new AggregateError([error, cleanupError], `${message}; resource cleanup failed: ${cleanupMessage}`);
+          }
           throw error;
         }
       },

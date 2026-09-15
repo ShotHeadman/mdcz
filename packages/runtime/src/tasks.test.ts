@@ -736,24 +736,37 @@ describe("scrape run session", () => {
     expect(committed).toEqual(["one:skipped"]);
   });
 
-  it("keeps a committed item successful when staging cleanup fails", async () => {
+  it.each([
+    "valid",
+    "invalid",
+  ])("releases every group resource when staging cleanup fails (%s results)", async (shape) => {
+    const released: string[] = [];
     const session = new ScrapeRunSession({
       runId: "staging-cleanup",
-      totalItems: 1,
+      totalItems: 3,
       prepare: async () => ({
-        items: [runItem("one")],
+        items: [runItem("one"), runItem("two"), runItem("next")],
         concurrency: 1,
         prepareItem,
         validatePrepared,
         commitPreparationItem,
-        acquireItems,
+        acquireItems: (items) => () => {
+          released.push(...items.map((item) => `source:${item.id}`));
+        },
+        getExecutionGroupKey: (item) => (item.id === "next" ? "next" : "movie"),
+        getPublicationKey: () => "shared-output",
         admitItem,
-        executePreparedItems: executeAsGroup(async (item) => ({
-          ...terminalResult(item, "success"),
-          release: async () => {
-            throw new Error("staging busy");
-          },
-        })),
+        executePreparedItems: async (entries) =>
+          entries.map(({ item }) => ({
+            itemId: shape === "invalid" && item.id === "two" ? "unknown" : item.id,
+            result: {
+              ...terminalResult(item, "success"),
+              release: async () => {
+                released.push(`staging:${item.id}`);
+                if (item.id === "two") throw new Error("staging busy");
+              },
+            },
+          })),
         commitItems: commitAsGroup(async (_item, result) => result),
       }),
       onSnapshot: () => undefined,
@@ -762,10 +775,21 @@ describe("scrape run session", () => {
     await session.start();
     await session.waitForIdle();
     expect(session.snapshot()).toMatchObject({
-      status: "completed",
-      items: [{ id: "one", status: "success" }],
+      status: shape === "valid" ? "completed" : "failed",
+      items: ["one", "two", "next"].map((id) => ({ id, status: shape === "valid" ? "success" : "skipped" })),
     });
-    expect(session.snapshot().logs.some((entry) => entry.message.includes("Staging cleanup failed"))).toBe(true);
+    expect(released).toEqual([
+      "staging:two",
+      "staging:one",
+      "source:one",
+      "source:two",
+      ...(shape === "valid" ? ["staging:next", "source:next"] : []),
+    ]);
+    expect(session.snapshot().logs.some((entry) => entry.message.includes("staging busy"))).toBe(true);
+    if (shape === "invalid")
+      expect(session.snapshot().error).toBe(
+        "Scrape group execution omitted item: two; resource cleanup failed: staging busy",
+      );
   });
 
   it("surfaces terminal persistence failure and interrupts the run", async () => {
