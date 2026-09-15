@@ -82,7 +82,7 @@ export const createMaintenanceLibraryPort = <TPrepared>(deps: {
     });
     return await commitPublishedMedia(plan, {
       resolveRoot: deps.resolveRoot,
-      acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, input.ownershipToken),
+      acquireAll: (keys) => mediaPathOwnership.acquireAll(keys, input.ownershipToken),
       journal: state.publicationJournal,
       outputs: state.library,
       repairIssues: state.libraryRepairIssues,

@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -179,7 +179,10 @@ describe("recoverPublications", () => {
     expect(repairIssues.resolve).toHaveBeenCalledWith("op-1", "root-1", "old.jpg");
   });
 
-  it("retains the row when the root is unresolvable and rejects a later conflicting publication", async () => {
+  it.each([
+    "same",
+    "alias",
+  ])("retains an unresolvable journal and rejects a later publication through %s root", async (scenario) => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-recover-"));
     directories.push(directory);
     const target = path.join(directory, "movie.nfo");
@@ -216,19 +219,20 @@ describe("recoverPublications", () => {
     await expect(readFile(target, "utf8")).resolves.toBe("new-nfo");
     await expect(readFile(backup, "utf8")).resolves.toBe("original-nfo");
 
+    const aliasPath = path.join(directory, "alias");
+    if (scenario === "alias") await symlink(directory, aliasPath, process.platform === "win32" ? "junction" : "dir");
+    const targetRef = { rootId: scenario === "alias" ? "alias" : "root-1", relativePath: "movie.nfo" };
     const plan: PublicationPlan = {
       operationId: "op-2",
       operationType: "maintenance",
-      artifacts: [
-        { target: { rootId: "root-1", relativePath: "movie.nfo" }, content: { kind: "text", data: "other" } },
-      ],
+      artifacts: [{ target: targetRef, content: { kind: "text", data: "other" } }],
       assets: [],
       obsolete: [],
-      replaceExistingTargets: [{ rootId: "root-1", relativePath: "movie.nfo" }],
+      replaceExistingTargets: [targetRef],
     };
     await expect(
       commitPublishedMedia(plan, {
-        resolveRoot: async () => ({ id: "root-1", hostPath: directory }),
+        resolveRoot: async (id) => ({ id, hostPath: id === "alias" ? aliasPath : directory }),
         journal,
         commit: () => undefined,
       }),

@@ -134,11 +134,11 @@ export interface PublicationJournalPort {
   stage(operationId: string, manifest: PublicationJournalManifest): void;
   commit<T>(operationId: string, write: () => T): T;
   finish(operationId: string): void;
-  conflicts(refs: readonly RootFileRef[]): { operationId: string } | null;
   listUnfinished(): PublicationJournalRecord[];
 }
 
 export interface PublicationOutputPort {
+  publicationRoots(): Array<Pick<MediaRoot, "id" | "hostPath">>;
   publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }): {
     files: Array<RootFileRef & { itemId: string; fileId?: string; mediaIdentity?: string | null; size?: number }>;
     assets: Array<
@@ -164,7 +164,7 @@ export interface PublishMediaOptions<TResult> extends DurablePublicationContext 
   validate?(): Promise<void> | void;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   commit(): TResult;
-  acquireAll?(refs: readonly RootFileRef[]): () => void;
+  acquireAll?(keys: readonly string[]): () => void;
   fileSystem?: PublicationFileSystem;
   logContext?: { runId?: string; itemId?: string };
 }

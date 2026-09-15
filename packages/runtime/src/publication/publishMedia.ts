@@ -6,7 +6,9 @@ import { MediaPathBusyError, mediaPathOwnership } from "../library/mediaPathOwne
 import { runtimeLoggerService } from "../shared";
 import { guardPublicationFileSystem, publicationRefKey as refKey } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
+import { manifestRefs } from "./manifest";
 import { prepareOutputRegistration } from "./outputs";
+import { preparePublicationPaths } from "./paths";
 import {
   assertPublicationFileUnchanged,
   type ObservedPublicationFile,
@@ -146,16 +148,14 @@ export const commitPublishedMedia = async <TResult>(
   };
   const lockRefs = uniqueRefs(planRefs(plan));
   const lockStartedAt = startPhase("lock");
+  const paths = await preparePublicationPaths(lockRefs, options, plan.boundary);
+  const lockKeys = new Set(lockRefs.map(paths.key));
   let release: () => void;
   try {
-    release = options.acquireAll?.(lockRefs) ?? mediaPathOwnership.acquireAll(lockRefs);
+    release = options.acquireAll?.([...lockKeys]) ?? mediaPathOwnership.acquireAll([...lockKeys]);
   } catch (error) {
     if (error instanceof MediaPathBusyError) {
-      throw new PublicationConflictError(
-        `[${error.rootId}] ${error.relativePath}`,
-        `[${error.rootId}] ${error.relativePath}`,
-        "发布路径正被其他并发任务占用",
-      );
+      throw new PublicationConflictError(error.path, error.path, "发布路径正被其他并发任务占用");
     }
     throw error;
   }
@@ -198,13 +198,17 @@ export const commitPublishedMedia = async <TResult>(
   };
 
   try {
-    const conflict = options.journal.conflicts(lockRefs);
+    const unfinished = options.journal.listUnfinished();
+    for (const record of unfinished) await paths.prepare(manifestRefs(record.manifest), record.manifest.boundary);
+    const conflict = unfinished.find((entry) =>
+      manifestRefs(entry.manifest).some((ref) => lockKeys.has(paths.key(ref))),
+    );
     if (conflict)
       throw new PublicationConflictError(plan.operationId, conflict.operationId, "目标路径仍属于未完成的发布操作");
     const preflightStartedAt = startPhase("preflight");
     await options.validate?.();
-    const registerOutputs = await prepareOutputRegistration(plan, options, fileSystem);
-    const resolved = await preflightPublication(plan, options, fileSystem);
+    const registerOutputs = await prepareOutputRegistration(plan, options, fileSystem, paths);
+    const resolved = await preflightPublication(plan, paths, fileSystem);
     recordPhase("preflight", preflightStartedAt);
     const replacing = new Set((plan.replaceExistingTargets ?? []).map(refKey));
     for (const artifact of plan.artifacts) {
@@ -395,8 +399,9 @@ export const commitPublishedMedia = async <TResult>(
     }
     const commitStartedAt = startPhase("commit");
     const result = options.journal.commit(plan.operationId, () => {
+      registerOutputs?.assertCurrent();
       const result = options.commit();
-      registerOutputs?.();
+      registerOutputs?.register();
       return result;
     });
     committed = true;

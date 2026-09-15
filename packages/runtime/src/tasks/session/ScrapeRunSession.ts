@@ -88,7 +88,7 @@ export interface ScrapeRunExecution<TManualScrape = unknown, TPrepared = unknown
   items: readonly ScrapeRunItem<TManualScrape>[];
   initialItems?: readonly ScrapeRunItemInitialState<TManualScrape>[];
   concurrency: number;
-  acquireItems: (items: readonly ScrapeRunItem<TManualScrape>[]) => () => void;
+  acquireItems: (items: readonly ScrapeRunItem<TManualScrape>[]) => Promise<() => void> | (() => void);
   getExecutionGroupKey?: (item: ScrapeRunItem<TManualScrape>, prepared: TPrepared) => string;
   getPublicationKey?: (item: ScrapeRunItem<TManualScrape>, prepared: TPrepared) => string;
   admitItem: (item: ScrapeRunItem<TManualScrape>) => Promise<string>;
@@ -557,7 +557,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
         beforeResult: async () => this.assertCurrent(generation, ["running", "paused", "stopping"]),
       },
       runItem: async (group, context) => {
-        const releases = [this.execution.acquireItems(group.items)];
+        const releases = [await this.execution.acquireItems(group.items)];
         const releaseResources = async () => {
           const errors: unknown[] = [];
           for (const release of releases.splice(0).reverse()) {
@@ -575,6 +575,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
             );
         };
         try {
+          this.assertCurrent(generation, ["running", "paused"]);
           const publicationKeys = [
             ...new Set(
               group.items.flatMap((item) => {

@@ -14,7 +14,7 @@ import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { type ConfiguredMediaRootService, mediaPathOwnership } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { commitScrapeTerminalResults, registeredOutputPaths } from "@mdcz/runtime/publication";
+import { commitScrapeTerminalResults, prepareMediaPathKeys, registeredOutputPaths } from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
   type ActorImageService,
@@ -493,9 +493,12 @@ export class ScraperService {
             partNumber: prepared.fileInfo.part?.number ?? null,
           })),
         ),
-      acquireItems: (items) =>
+      acquireItems: async (items) =>
         mediaPathOwnership.acquireAll(
-          items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
+          await prepareMediaPathKeys(
+            items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
+            (id) => this.mediaRoots.get(id),
+          ),
           items
             .map((item) => item.id)
             .sort()
@@ -550,9 +553,9 @@ export class ScraperService {
           }),
           scrapeRuns: state.repositories.scrapeRuns,
           resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
-          acquireAll: (refs) =>
+          acquireAll: (keys) =>
             mediaPathOwnership.acquireAll(
-              refs,
+              keys,
               entries
                 .map(({ item }) => item.id)
                 .sort()

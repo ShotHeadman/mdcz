@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -265,7 +265,7 @@ describe("commitPublishedMedia", () => {
     expect(tokens.size).toBe(1);
   });
 
-  it("serializes publications for the same paths without caller-provided ownership", async () => {
+  it.each(["same", "alias", "independent"])("coordinates concurrent physical paths: %s", async (scenario) => {
     const test = await fixture();
     const fileSystem = await defaultFileSystem();
     const originalWriteFile = fileSystem.writeFile;
@@ -287,30 +287,44 @@ describe("commitPublishedMedia", () => {
       }
     };
 
+    const journal = createMemoryPublicationJournal();
     const first = commitPublishedMedia(test.plan, {
       resolveRoot: test.resolveRoot,
-      journal: createMemoryPublicationJournal(),
+      journal,
       fileSystem,
       commit: () => undefined,
     });
     await stageStartedPromise;
 
-    const conflict = await commitPublishedMedia(
-      { ...test.plan, operationId: "run:second" },
-      {
-        resolveRoot: test.resolveRoot,
-        journal: createMemoryPublicationJournal(),
-        fileSystem,
-        commit: () => undefined,
-      },
-    ).catch((error: unknown) => error);
+    const second = scenario === "independent" ? await fixture() : test;
+    const alias = path.join(path.dirname(test.source), "../input-alias");
+    if (scenario === "alias")
+      await symlink(path.dirname(test.source), alias, process.platform === "win32" ? "junction" : "dir");
+    const secondPlan = structuredClone(second.plan);
+    secondPlan.operationId = "run:second";
+    if (scenario === "alias") {
+      const video = secondPlan.videos?.[0];
+      if (!video) throw new Error("Expected video move");
+      video.source.rootId = "alias";
+    }
+    const conflict = await commitPublishedMedia(secondPlan, {
+      resolveRoot: async (id) => (id === "alias" ? { id, hostPath: alias } : second.resolveRoot(id)),
+      journal: scenario === "independent" ? createMemoryPublicationJournal() : journal,
+      fileSystem,
+      commit: () => undefined,
+    }).catch((error: unknown) => error);
     releaseStage();
     await first;
+    if (scenario === "independent") {
+      expect(conflict).toBeUndefined();
+      expect(await readFile(second.target, "utf8")).toBe("video");
+      return;
+    }
     expect(conflict).toBeInstanceOf(PublicationConflictError);
     expect(conflict).toMatchObject({
       reason: "发布路径正被其他并发任务占用",
-      sourcePath: "[input] movie.mp4",
-      targetPath: "[input] movie.mp4",
+      sourcePath: test.source,
+      targetPath: test.source,
     });
   });
 

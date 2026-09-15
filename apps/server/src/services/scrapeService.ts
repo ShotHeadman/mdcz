@@ -11,6 +11,7 @@ import {
   commitPublishedMedia,
   commitScrapeTerminalResults,
   createPublicationPlan,
+  prepareMediaPathKeys,
   registeredMediaLocations,
   registeredOutputPaths,
 } from "@mdcz/runtime/publication";
@@ -616,9 +617,12 @@ export class ScrapeService {
         openAttemptByItemId.set(item.id, attempt.id);
         return attempt.id;
       },
-      acquireItems: (items) =>
+      acquireItems: async (items) =>
         mediaPathOwnership.acquireAll(
-          items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
+          await prepareMediaPathKeys(
+            items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
+            (id) => this.mediaRoots.get(id),
+          ),
           items
             .map((item) => item.id)
             .sort()
@@ -710,9 +714,9 @@ export class ScrapeService {
           })),
           scrapeRuns: state.repositories.scrapeRuns,
           resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
-          acquireAll: (refs) =>
+          acquireAll: (keys) =>
             mediaPathOwnership.acquireAll(
-              refs,
+              keys,
               entries
                 .map(({ item }) => item.id)
                 .sort()

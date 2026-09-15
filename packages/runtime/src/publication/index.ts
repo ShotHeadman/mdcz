@@ -1,4 +1,4 @@
-export { publicationPathKey } from "./boundary";
+export { prepareMediaPathKeys, publicationPathKey } from "./boundary";
 export * from "./commitScrapeTerminalResult";
 export * from "./conflicts";
 export * from "./createPublicationPlan";

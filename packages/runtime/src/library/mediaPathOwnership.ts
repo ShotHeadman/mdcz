@@ -1,11 +1,6 @@
-import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
-
 export class MediaPathBusyError extends Error {
-  constructor(
-    readonly rootId: string,
-    readonly relativePath: string,
-  ) {
-    super(`Media path is already being modified: ${rootId}:${relativePath}`);
+  constructor(readonly path: string) {
+    super(`Media path is already being modified: ${path}`);
     this.name = "MediaPathBusyError";
   }
 }
@@ -13,25 +8,19 @@ export class MediaPathBusyError extends Error {
 export class MediaPathOwnership {
   readonly #owners = new Map<string, { owner: string | symbol; count: number }>();
 
-  acquire(rootId: string, relativePath: string, owner?: string | symbol): () => void {
-    return this.acquireAll([{ rootId, relativePath }], owner);
+  acquire(path: string, owner?: string | symbol): () => void {
+    return this.acquireAll([path], owner);
   }
 
-  acquireAll(refs: readonly RootFileRef[], owner: string | symbol = Symbol("media-path-owner")): () => void {
-    const keys = refs
-      .map(({ rootId, relativePath }) => {
-        if (!rootId.trim()) throw new Error("Media root ID is required");
-        return `${rootId}\0${parseWireRelativePath(relativePath)}`;
-      })
-      .sort();
-    if (new Set(keys).size !== keys.length) throw new Error("Duplicate media path ownership request");
+  acquireAll(paths: readonly string[], owner: string | symbol = Symbol("media-path-owner")): () => void {
+    const keys = [...new Set(paths)].sort();
+    if (keys.some((key) => !key.trim())) throw new Error("Media path key is required");
     const occupied = keys.find((key) => {
       const current = this.#owners.get(key);
       return current && current.owner !== owner;
     });
     if (occupied) {
-      const [rootId, relativePath] = occupied.split("\0");
-      throw new MediaPathBusyError(rootId, relativePath);
+      throw new MediaPathBusyError(occupied);
     }
     for (const key of keys) {
       const current = this.#owners.get(key);

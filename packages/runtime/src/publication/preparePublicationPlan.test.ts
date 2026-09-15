@@ -449,7 +449,14 @@ describe("preparePublicationPlan", () => {
       await assertOutputs();
     });
 
-    it.each(["success", "hardlink", "record-removed"])("updates only owned outputs on rerun: %s", async (scenario) => {
+    it.each([
+      "success",
+      "hardlink",
+      "record-removed",
+      "relink-during-stage",
+      "foreign-published",
+      "foreign-discovered",
+    ])("updates only owned outputs on rerun: %s", async (scenario) => {
       const { source, output, staging, outputs } = context;
       await commitPublishedMedia(await prepare(), options);
       if (scenario === "hardlink") {
@@ -463,21 +470,78 @@ describe("preparePublicationPlan", () => {
         outputs.deleteEntry("media");
         await outputs.upsertEntry({ id: "replacement", rootId: "root", rootRelativePath: "source/ABC-123.mp4" });
         await expect(commitPublishedMedia(plan, options)).rejects.toBeInstanceOf(PublicationConflictError);
+      } else if (["relink-during-stage", "foreign-published", "foreign-discovered"].includes(scenario)) {
+        let changed = false;
+        await expect(
+          commitPublishedMedia(plan, {
+            ...options,
+            fileSystem: {
+              ...fs,
+              writeFile: async (path, data, settings) => {
+                await fs.writeFile(path, data, settings);
+                if (changed || !path.endsWith(".part")) return;
+                changed = true;
+                if (scenario === "relink-during-stage") {
+                  const entry = await outputs.getEntryById("media");
+                  const file = entry.files[0];
+                  if (!file) throw new Error("Expected registered media file");
+                  await outputs.relinkFile({
+                    fileId: file.id,
+                    rootId: "root",
+                    rootRelativePath: "source/relinked.mp4",
+                  });
+                } else {
+                  await outputs.upsertEntry({
+                    id: "foreign",
+                    rootId: "root",
+                    rootRelativePath: "source/other.mp4",
+                    assets: [
+                      {
+                        kind: "poster",
+                        uri: "output/poster.jpg",
+                        rootId: "root",
+                        relativePath: "output/poster.jpg",
+                        published: scenario === "foreign-published",
+                      },
+                    ],
+                  });
+                }
+              },
+            },
+          }),
+        ).rejects.toBeInstanceOf(PublicationConflictError);
+        expect(changed).toBe(true);
+        expect(context.journal.listUnfinished()).toEqual([]);
       } else await commitPublishedMedia(plan, options);
       expect(JSON.stringify(plan)).toBe(originalPlan);
       expect(await readFile(join(output, "poster.jpg"), "utf8")).toBe(
-        scenario === "record-removed" ? "poster v1" : "poster v2",
+        ["success", "hardlink"].includes(scenario) ? "poster v2" : "poster v1",
       );
       await assertOutputs();
     });
 
-    it("releases references to missing outputs when assigning a new owner", async () => {
+    it.each([
+      "same",
+      "nested",
+      "symlink",
+    ])("releases missing output references through %s roots when assigning a new owner", async (scenario) => {
+      const assetRootId = scenario === "same" ? "root" : "alias";
+      const assetPath = scenario === "same" ? "output/movie.nfo" : "movie.nfo";
+      if (scenario !== "same") {
+        const hostPath = scenario === "symlink" ? join(context.root, "output-alias") : context.output;
+        if (scenario === "symlink")
+          await symlink(context.output, hostPath, process.platform === "win32" ? "junction" : "dir");
+        context.database.db
+          .insert(mediaRoots)
+          .values({ id: "alias", displayName: "alias", hostPath, createdAt: new Date(), updatedAt: new Date() })
+          .run();
+      }
       await context.outputs.upsertEntry({
         id: "previous",
         rootId: "root",
         rootRelativePath: "source/previous.mp4",
         assets: [
-          { kind: "nfo", uri: "output/movie.nfo", rootId: "root", relativePath: "output/movie.nfo", published: true },
+          { kind: "nfo", uri: assetPath, rootId: assetRootId, relativePath: assetPath, published: true },
           {
             kind: "poster",
             uri: "output/movie.nfo",

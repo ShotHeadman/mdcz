@@ -61,6 +61,11 @@ export const resolvePublicationReferenceKeys = async (
   );
 };
 
+export const prepareMediaPathKeys = async (
+  refs: readonly RootFileRef[],
+  resolveRoot: PublishMediaOptions<unknown>["resolveRoot"],
+): Promise<string[]> => [...(await resolvePublicationReferenceKeys(refs, refs, resolveRoot)).values()];
+
 export const publicationPathKey = (value: string): string =>
   process.platform === "win32" ? resolve(value).toLowerCase() : resolve(value);
 

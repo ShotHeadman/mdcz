@@ -328,6 +328,10 @@ const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value
 export class LibraryRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
+  publicationRoots() {
+    return this.database.db.select({ id: mediaRoots.id, hostPath: mediaRoots.hostPath }).from(mediaRoots).all();
+  }
+
   publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }) {
     const roots = this.database.db.select().from(mediaRoots).all();
     const candidates = [...new Set(query.paths ?? [])].flatMap((value) => this.pathCandidates(value, roots));

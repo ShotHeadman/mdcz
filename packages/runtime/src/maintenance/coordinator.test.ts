@@ -654,7 +654,9 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await started;
 
-    expect(() => fixture.ownership.acquire(root.id, "owned.mp4")).toThrow("Media path is already being modified");
+    expect(() => fixture.ownership.acquire(join(root.hostPath, "owned.mp4"))).toThrow(
+      "Media path is already being modified",
+    );
     if (notificationFails)
       vi.spyOn(fixture.events, "push").mockImplementation(() => {
         throw new Error("notification unavailable");
@@ -670,7 +672,7 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(batch.session.status).toBe(closeFirst ? "interrupted" : "stopped");
     expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledOnce();
-    const release = fixture.ownership.acquire(root.id, "owned.mp4");
+    const release = fixture.ownership.acquire(join(root.hostPath, "owned.mp4"));
     release();
   });
 
@@ -705,7 +707,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await apply.completion;
 
-    const release = fixture.ownership.acquire(root.id, "owned.mp4");
+    const release = fixture.ownership.acquire(join(root.hostPath, "owned.mp4"));
     release();
     await fixture.coordinator.close();
   });
