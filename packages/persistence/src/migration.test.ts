@@ -6,13 +6,19 @@ import { createPersistenceDatabase } from "./database";
 import { defaultMigrationsFolder } from "./migrate";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
-const baselineChecksum = "5ac9842c4940bfb7571562f68b5ad978000534f89b67bf6525907baf098f40ff";
-const migrationFile = "0001_additive_roots_and_scan_tasks.sql";
+const releasedMigrationChecksums = {
+  "0000_initial.sql": "5ac9842c4940bfb7571562f68b5ad978000534f89b67bf6525907baf098f40ff",
+  "0001_task_execution_and_media_root_identity.sql": "15e03731fe4c578cdb6c64a8659ffd4e17b04b23d2cf1f8a147c927871bf0b4f",
+  "0003_additive_roots_and_scan_tasks.sql": "abb0eb1ada49dc0a38d4e52256a5f3cdddfaed1751dcfb8826a92c5b9b500a4a",
+} as const;
+const migrationFile = "0003_additive_roots_and_scan_tasks.sql";
 
 describe("Persistence migration baseline", () => {
-  it("keeps the released baseline byte-for-byte intact", async () => {
-    const contents = await readFile(join(defaultMigrationsFolder, "0000_initial.sql"));
-    expect(createHash("sha256").update(contents).digest("hex")).toBe(baselineChecksum);
+  it("keeps released migrations byte-for-byte intact", async () => {
+    for (const [file, checksum] of Object.entries(releasedMigrationChecksums)) {
+      const contents = await readFile(join(defaultMigrationsFolder, file));
+      expect(createHash("sha256").update(contents).digest("hex")).toBe(checksum);
+    }
   });
 
   it("keeps the migration journal aligned with schema files", async () => {
@@ -23,10 +29,16 @@ describe("Persistence migration baseline", () => {
 
     expect(journal.entries).toEqual([
       expect.objectContaining({ idx: 0, when: 0, tag: "0000_initial" }),
-      expect.objectContaining({ idx: 1, when: 1_787_875_200_000, tag: "0001_additive_roots_and_scan_tasks" }),
-      expect.objectContaining({ idx: 2, when: 1_787_961_600_000, tag: "0002_publication_and_directory_tasks" }),
-      expect.objectContaining({ idx: 3, when: 1_789_257_600_000, tag: "0003_movie_file_model" }),
-      expect.objectContaining({ idx: 4, when: 1_789_344_000_000, tag: "0004_drop_maintenance_directory_tasks" }),
+      expect.objectContaining({
+        idx: 1,
+        when: 1_787_424_000_000,
+        tag: "0001_task_execution_and_media_root_identity",
+      }),
+      expect.objectContaining({ idx: 2, when: 1_787_600_000_000, tag: "0002_legacy_012_bridge" }),
+      expect.objectContaining({ idx: 3, when: 1_787_875_200_000, tag: "0003_additive_roots_and_scan_tasks" }),
+      expect.objectContaining({ idx: 4, when: 1_787_961_600_000, tag: "0004_publication_and_directory_tasks" }),
+      expect.objectContaining({ idx: 5, when: 1_789_257_600_000, tag: "0005_movie_file_model" }),
+      expect.objectContaining({ idx: 6, when: 1_789_344_000_000, tag: "0006_drop_maintenance_directory_tasks" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
