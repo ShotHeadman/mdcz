@@ -141,6 +141,7 @@ describe("commitScrapeTerminalResult", () => {
     const nfo = { rootId: "output", relativePath: "ABC-001/movie.nfo" };
     test.success.plan.replaceExistingTargets = [nfo];
     const outputs = {
+      publicationRoots: () => [],
       publicationSnapshot: () => ({
         files: [],
         assets:
@@ -294,6 +295,7 @@ describe("commitScrapeTerminalResult", () => {
     test.success.plan.media = [{ source: sourceRef, target: targetRef, size: 5 }];
     test.success.plan.videos = [{ source: sourceRef, target: targetRef, size: 5 }];
     const outputs = {
+      publicationRoots: () => [],
       publicationSnapshot: vi.fn(() => ({ files: [existingFile], assets: existingAssets })),
       registerPublishedOutputs: vi.fn(),
       releaseOutputReferences: vi.fn(),

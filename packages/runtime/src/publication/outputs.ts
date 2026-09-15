@@ -1,37 +1,22 @@
 import { extname } from "node:path";
-import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { publicationPathKey, publicationRefKey as refKey } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
+import type { PublicationPaths } from "./paths";
 import type { PublicationFileSystem, PublicationOutputPort, PublicationPlan, PublishMediaOptions } from "./types";
 
 export const prepareOutputRegistration = async (
   plan: PublicationPlan,
   options: Pick<PublishMediaOptions<unknown>, "outputs" | "ownerId" | "resolveRoot">,
   fileSystem: PublicationFileSystem,
-): Promise<(() => void) | undefined> => {
+  paths: PublicationPaths,
+): Promise<{ register(): void; assertCurrent(): void } | undefined> => {
   const store = options.outputs;
   if (!store) return undefined;
-  const required = [
-    ...(plan.media ?? []).flatMap((media) => [media.source, media.target]),
-    ...plan.artifacts.map((artifact) => artifact.target),
-    ...plan.assets.flatMap((asset) => (asset.type === "local" ? [asset.file] : [])),
-    ...(plan.sidecars ?? []).flatMap((move) => [move.source, move.target]),
-    ...plan.obsolete,
-  ];
-  const roots = new Map(
-    await Promise.all(
-      [...new Set(required.map((ref) => ref.rootId))].map(async (id) => [id, await options.resolveRoot(id)] as const),
-    ),
-  );
-  const absolute = (ref: RootFileRef) => {
-    const root = roots.get(ref.rootId);
-    if (!root) throw new Error(`Publication root not found: ${ref.rootId}`);
-    return resolveRootRelativePath(root, ref.relativePath);
-  };
-  const query = { paths: required.map(absolute), includeOwners: true };
+  const { absolute, key } = paths;
+  const query = { paths: paths.queryPaths, includeOwners: true };
   const snapshot = store.publicationSnapshot(query);
-  const key = refKey;
+  await paths.prepare([...snapshot.files, ...snapshot.assets]);
   for (const media of plan.media ?? []) {
     const references = snapshot.files.filter((file) => key(file) === key(media.source));
     if (new Set(references.map((file) => file.itemId)).size > 1)
@@ -139,7 +124,50 @@ export const prepareOutputRegistration = async (
       .filter((asset) => asset.published && key(asset) === key(target) && owners.has(asset.itemId))
       .map((asset) => ({ itemId: asset.itemId, fileId: asset.fileId })),
   }));
-  return () => {
+  const sourceKeys = new Set((plan.media ?? []).map((media) => key(media.source)));
+  const expectedFiles = snapshot.files.filter((file) => sourceKeys.has(key(file)));
+  const protectedKeys = new Set(
+    [
+      ...targets,
+      ...retainedOutputs,
+      ...plan.obsolete,
+      ...(plan.sidecars ?? []).filter((move) => !move.preserveSource).map((move) => move.source),
+    ].map(key),
+  );
+  const relationKey = (asset: (typeof snapshot.assets)[number]) =>
+    `${asset.itemId}\0${asset.fileId ?? ""}\0${asset.kind}\0${refKey(asset)}`;
+  const missingReferences = new Set(missing.map(relationKey));
+  const expectedReferences = snapshot.assets
+    .filter((asset) => protectedKeys.has(key(asset)) && !missingReferences.has(relationKey(asset)))
+    .map(relationKey);
+  const assertCurrent = () => {
+    const current = store.publicationSnapshot({ paths: query.paths });
+    const currentReferences = new Set(current.assets.map(relationKey));
+    const changed =
+      expectedReferences.some((reference) => !currentReferences.has(reference)) ||
+      expectedFiles.some(
+        (expected) =>
+          !current.files.some(
+            (file) =>
+              file.fileId === expected.fileId && file.itemId === expected.itemId && refKey(file) === refKey(expected),
+          ),
+      ) ||
+      current.files.some(
+        (file) =>
+          (sourceKeys.has(key(file)) &&
+            !expectedFiles.some((expected) => expected.fileId === file.fileId && expected.itemId === file.itemId)) ||
+          (protectedKeys.has(key(file)) && !owners.has(file.itemId)),
+      ) ||
+      current.assets.some(
+        (asset) =>
+          protectedKeys.has(key(asset)) &&
+          !missingReferences.has(relationKey(asset)) &&
+          (!owners.has(asset.itemId) || !asset.published || asset.historical),
+      );
+    if (changed)
+      throw new PublicationConflictError(plan.operationId, plan.operationId, "发布依赖的媒体归属或输出引用已改变");
+  };
+  const register = () => {
     const released = [
       ...plan.obsolete,
       ...(plan.sidecars ?? [])
@@ -150,7 +178,7 @@ export const prepareOutputRegistration = async (
       ...missing,
       ...snapshot.assets.filter((asset) => released.some((ref) => key(ref) === key(asset))),
     ]);
-    const current = store.publicationSnapshot({ paths: (plan.media ?? []).map((media) => absolute(media.target)) });
+    const current = store.publicationSnapshot({ paths: query.paths });
     const outputs: Parameters<PublicationOutputPort["registerPublishedOutputs"]>[0] = [];
     for (const registration of registrations) {
       const media = registration.media.length ? registration.media : (plan.media ?? []);
@@ -190,4 +218,5 @@ export const prepareOutputRegistration = async (
     }
     store.registerPublishedOutputs(outputs);
   };
+  return { register, assertCurrent };
 };

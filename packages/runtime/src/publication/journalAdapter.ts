@@ -1,5 +1,4 @@
-import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { manifestRefs, parsePublicationJournalManifest } from "./manifest";
+import { parsePublicationJournalManifest } from "./manifest";
 import type {
   PublicationJournalManifest,
   PublicationJournalPort,
@@ -64,15 +63,6 @@ export class PublicationJournalAdapter implements PublicationJournalPort {
       }
     }
     return records;
-  }
-
-  conflicts(refs: readonly RootFileRef[]): { operationId: string } | null {
-    const requested = new Set(refs.map((ref) => `${ref.rootId}\0${ref.relativePath}`));
-    return (
-      this.listUnfinished().find((entry) =>
-        manifestRefs(entry.manifest).some((ref) => requested.has(`${ref.rootId}\0${ref.relativePath}`)),
-      ) ?? null
-    );
   }
 }
 

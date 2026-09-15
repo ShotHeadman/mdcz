@@ -36,6 +36,7 @@ export class DesktopLibraryService {
       ...input,
       root,
       files: current.files,
+      resolveRoot: (id) => repositories.mediaRoots.get(id),
       relink: (file) => repositories.library.relinkFile(file),
     });
     return { success: true };

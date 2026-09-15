@@ -175,7 +175,7 @@ const resolveRegisteredPublicationOwner = async (input: {
 interface ScrapeTerminalCommitContext {
   scrapeRuns: ScrapeTerminalCommitStore;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
-  acquireAll?(refs: readonly RootFileRef[]): () => void;
+  acquireAll?(keys: readonly string[]): () => void;
   outputs?: PublicationOutputPort;
   journal: PublicationJournalPort;
   repairIssues?: PublicationRepairPort;

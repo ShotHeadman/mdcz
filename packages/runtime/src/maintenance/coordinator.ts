@@ -19,7 +19,12 @@ import type {
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
-import { type PreparedPublicationPlan, PublicationError, type PublicationPlan } from "../publication";
+import {
+  type PreparedPublicationPlan,
+  PublicationError,
+  type PublicationPlan,
+  prepareMediaPathKeys,
+} from "../publication";
 import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
 import { isAbortError } from "../scrape/utils/abort";
 import { TaskExecutor, type TaskExecutorContext } from "../tasks";
@@ -250,7 +255,7 @@ export class MaintenanceSessionCoordinator {
       ) => Promise<MaintenanceSessionRef[]>;
       library: MaintenanceLibraryPort;
       events?: { publish(event: MaintenanceCoordinatorEvent): void | Promise<void> };
-      acquireAll?: (refs: readonly RootFileRef[], owner: string) => () => void;
+      acquireAll?: (keys: readonly string[], owner: string) => () => void;
     },
   ) {
     this.runtime = deps.runtime;
@@ -347,11 +352,12 @@ export class MaintenanceSessionCoordinator {
     for (const preview of previews)
       for (const file of preview.librarySource?.files ?? [])
         refs.push({ rootId: file.rootId, relativePath: file.rootRelativePath });
+    const keys = await prepareMediaPathKeys(refs, (id) => this.deps.roots.get(id));
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
     if (this.session !== session) throw new Error("维护会话已变化");
     const acquireAll = this.deps.acquireAll ?? ((owned, owner) => mediaPathOwnership.acquireAll(owned, owner));
-    const release = acquireAll([...new Map(refs.map((ref) => [refKey(ref), ref])).values()], session.id);
+    const release = acquireAll(keys, session.id);
     let apply: { generation: number; batchId: string };
     try {
       apply = session.beginApply(input.selections);

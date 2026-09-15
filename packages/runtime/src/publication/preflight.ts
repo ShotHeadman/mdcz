@@ -1,14 +1,13 @@
-import { resolveRootRelativePath } from "@mdcz/media-store";
 import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
-import { assertPublicationBoundary, publicationPathKey, resolvePublicationPath } from "./boundary";
+import { assertPublicationBoundary, publicationPathKey } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
+import type { PublicationPaths } from "./paths";
 import type {
   PublicationFileSystem,
   PublicationJournalManifestObsolete,
   PublicationMove,
   PublicationObsoleteObservation,
   PublicationPlan,
-  PublishMediaOptions,
 } from "./types";
 
 export type ObservedPublicationFile =
@@ -16,7 +15,6 @@ export type ObservedPublicationFile =
   | { path: string; exists: true; size: number; mtimeMs: number; isFile: boolean };
 
 export interface ResolvedPublicationPlan {
-  roots: Map<string, Awaited<ReturnType<PublishMediaOptions<unknown>["resolveRoot"]>>>;
   resolve(ref: RootFileRef): string;
   observed: ObservedPublicationFile[];
 }
@@ -106,26 +104,15 @@ export const removeCommittedObsoleteFiles = async (
 
 export const preflightPublication = async (
   plan: PublicationPlan,
-  options: Pick<PublishMediaOptions<unknown>, "resolveRoot">,
+  paths: PublicationPaths,
   fileSystem: PublicationFileSystem,
 ): Promise<ResolvedPublicationPlan> => {
   if (!plan.operationId.trim()) throw new Error("Publication operation ID is required");
   if (plan.boundary) await assertPublicationBoundary(plan.boundary);
-  const refs = planRefs(plan);
-  const rootIds = [...new Set(refs.map((ref) => ref.rootId))];
-  const roots = new Map(
-    await Promise.all(rootIds.map(async (rootId) => [rootId, await options.resolveRoot(rootId)] as const)),
-  );
-  const resolve = (ref: RootFileRef): string => {
-    const root = roots.get(ref.rootId);
-    if (!root) throw new Error(`Publication root not resolved: ${ref.rootId}`);
-    return resolveRootRelativePath(root, parseWireRelativePath(ref.relativePath));
-  };
+  const resolve = paths.absolute;
   const moves = planMoves(plan);
   const targets = [...moves.map((move) => move.target), ...plan.artifacts.map(({ target }) => target)];
-  const targetKeys = await Promise.all(
-    targets.map(async (ref) => publicationPathKey(await resolvePublicationPath(resolve(ref)))),
-  );
+  const targetKeys = targets.map(paths.key);
   const collision = targetKeys.findIndex((key, index) => targetKeys.indexOf(key) !== index);
   if (collision >= 0)
     throw new PublicationConflictError(
@@ -218,5 +205,5 @@ export const preflightPublication = async (
     if (!fact.exists || !fact.isFile) throw new Error(`Publication asset is missing or not a file: ${assetPath}`);
   }
 
-  return { roots, resolve, observed: [...observedByPath.values()] };
+  return { resolve, observed: [...observedByPath.values()] };
 };

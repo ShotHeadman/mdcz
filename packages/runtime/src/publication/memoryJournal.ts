@@ -1,4 +1,3 @@
-import { manifestRefs } from "./manifest";
 import type { PublicationJournalPort, PublicationJournalRecord } from "./types";
 
 export const createMemoryPublicationJournal = (): PublicationJournalPort => {
@@ -25,14 +24,6 @@ export const createMemoryPublicationJournal = (): PublicationJournalPort => {
     },
     listUnfinished() {
       return [...entries.values()];
-    },
-    conflicts(refs) {
-      const requested = new Set(refs.map((ref) => `${ref.rootId}\0${ref.relativePath}`));
-      return (
-        [...entries.values()].find((entry) =>
-          manifestRefs(entry.manifest).some((ref) => requested.has(`${ref.rootId}\0${ref.relativePath}`)),
-        ) ?? null
-      );
     },
   };
 };

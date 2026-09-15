@@ -76,6 +76,7 @@ const createContext = (mediaRoots?: {
       return root;
     });
   const library = {
+    publicationRoots: () => [],
     resolveMaintenanceSource: vi.fn(async () => null),
     publicationSnapshot: () => ({ files: [], assets: [] }),
     registerPublishedOutputs: vi.fn(),
