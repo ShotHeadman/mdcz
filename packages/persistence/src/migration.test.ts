@@ -36,9 +36,7 @@ describe("Persistence migration baseline", () => {
       }),
       expect.objectContaining({ idx: 2, when: 1_787_600_000_000, tag: "0002_legacy_012_bridge" }),
       expect.objectContaining({ idx: 3, when: 1_787_875_200_000, tag: "0003_additive_roots_and_scan_tasks" }),
-      expect.objectContaining({ idx: 4, when: 1_787_961_600_000, tag: "0004_publication_and_directory_tasks" }),
-      expect.objectContaining({ idx: 5, when: 1_789_257_600_000, tag: "0005_movie_file_model" }),
-      expect.objectContaining({ idx: 6, when: 1_789_344_000_000, tag: "0006_drop_maintenance_directory_tasks" }),
+      expect.objectContaining({ idx: 4, when: 1_787_961_600_000, tag: "0004_movie_file_model" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
