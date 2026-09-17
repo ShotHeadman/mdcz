@@ -6,22 +6,17 @@ import { localFileUrlForHostPath } from "@main/localFileProtocol";
 import { configManager } from "@main/services/config/ConfigManager";
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
-import { resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
-import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import {
-  commitRegisteredPublication,
-  registeredOutputPaths,
-  resolveRegisteredNfoPaths,
-} from "@mdcz/runtime/publication";
+import { resolveRootFile } from "@mdcz/media-store";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import {
   createMediaFileFilter,
-  findExistingNfoPath,
   getNfoReadCandidates,
-  getNfoWritePaths,
   nfoGenerator,
-  nfoIgnoreFieldsToEnabledFields,
   PosterCropService,
+  registeredPosterCropContext,
   resolveFilenameNfoPath,
+  writeNfoPublication,
 } from "@mdcz/runtime/scrape";
 import { CandidatePreview } from "@mdcz/runtime/tasks";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
@@ -69,6 +64,7 @@ export const createFileHandlers = (
     return {
       journal: state.repositories.publicationJournal,
       outputs: state.repositories.library,
+      library: state.repositories.library,
       repairIssues: state.repositories.libraryRepairIssues,
       roots: await mediaRoots.listRoots(),
     };
@@ -76,15 +72,8 @@ export const createFileHandlers = (
 
   const registeredImagePaths = async (videoPath: string) => {
     const state = await persistenceService.getState();
-    const source = await state.repositories.library.resolveMaintenanceSource(videoPath);
-    if (!source) throw new Error("封面编辑需要已登记的媒体资源");
-    const entry = await state.repositories.library.getEntryById(source.libraryItemId);
-    const paths: { thumb?: string; poster?: string } = {};
-    for (const asset of entry.assets) {
-      if ((asset.kind === "thumb" || asset.kind === "poster") && asset.rootId && asset.relativePath)
-        paths[asset.kind] = resolveRootRelativePath(await mediaRoots.get(asset.rootId), asset.relativePath);
-    }
-    return paths;
+    return (await registeredPosterCropContext(videoPath, state.repositories.library, (id) => mediaRoots.get(id)))
+      .assets;
   };
 
   return {
@@ -210,46 +199,15 @@ export const createFileHandlers = (
             : undefined;
           const plannedNfoPath = resolveFilenameNfoPath(nfoPath, videoPath);
           await ensurePath(dirname(plannedNfoPath));
-          const existingNfoPath = await findExistingNfoPath(nfoPath, config.download.nfoNaming, pathExists, videoPath);
-          const existingXml = existingNfoPath ? await readFile(existingNfoPath, "utf8") : undefined;
-          const existingSnapshot = existingXml ? parseNfoSnapshot(existingXml).localState : undefined;
-          const options = {
-            localState: existingSnapshot,
-            nfoNaming: config.download.nfoNaming,
-            enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
-            nfoTitleTemplate: config.naming.nfoTitleTemplate,
-            buildTags: buildMovieTags,
-          };
-          const xml = existingXml
-            ? nfoGenerator.mergeEditableXml(existingXml, data, options)
-            : nfoGenerator.buildXml(data, options);
-          const state = await persistenceService.getState();
-          const ownedNfo = await resolveRegisteredNfoPaths(nfoPath, state.repositories.library, (id) =>
-            state.repositories.mediaRoots.get(id),
-          );
-          const paths = getNfoWritePaths(plannedNfoPath, config.download.nfoNaming);
-          if (ownedNfo) {
-            paths.requiredPaths = ownedNfo.paths;
-            paths.canonicalPath = nfoPath;
-          }
-          await commitRegisteredPublication(
-            {
-              operationId: `nfo-write:${plannedNfoPath}`,
-              mediaPaths: ownedNfo?.mediaPaths,
-              operationType: "maintenance",
-              artifacts: paths.requiredPaths.map((targetPath) => ({
-                targetPath,
-                content: { kind: "text" as const, data: xml },
-              })),
-              replaceExistingArtifacts: true,
-              editExistingFiles: true,
-              readOnlyDirectories:
-                ownedNfo?.readOnlyDirectories ??
-                (videoPath && dirname(videoPath) !== dirname(plannedNfoPath) ? [dirname(videoPath)] : []),
-            },
-            await publication(),
-          );
-          return { success: true as const, nfoPath: paths.canonicalPath };
+          const canonicalPath = await writeNfoPublication({
+            nfoPath,
+            videoPath,
+            data,
+            configuration: config,
+            nfoGenerator,
+            publication: await publication(),
+          });
+          return { success: true as const, nfoPath: canonicalPath };
         } catch (error) {
           throw asSerializableIpcError(error);
         }

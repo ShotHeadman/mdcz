@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type {
@@ -12,7 +13,10 @@ import type {
   MaintenanceItemResult,
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
-import { type PreparedPublicationPlan, preparePublicationPlan } from "../publication";
+import { type MoviePublicationPlan, preparePublicationPlan, retainedRegisteredFeatures } from "../publication";
+import { resolvePublicationAssetLayout } from "../publication/assetLayout";
+import { toRootFileRef } from "../publication/publicationPlan";
+import type { PublicationParticipants } from "../publication/types";
 import {
   type AggregationService,
   type DownloadManager,
@@ -26,6 +30,7 @@ import {
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import type { FileScraperDependencies } from "../scrape/FileScraper";
+import { getNfoWritePaths } from "../scrape/nfo";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
 import {
@@ -47,6 +52,7 @@ type MaintenanceProgressState = {
 };
 
 export interface MaintenanceFileScraperDependencies {
+  outputTemplateRoot?: string;
   actorImageService?: RuntimeActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
   aggregationService: AggregationService;
@@ -59,7 +65,10 @@ export interface MaintenanceFileScraperDependencies {
 }
 
 export type MaintenanceFileScrapeResult = MaintenanceItemResult & {
-  publicationPlan?: PreparedPublicationPlan;
+  publication?: { plan: MoviePublicationPlan };
+  outputRelativePath?: string;
+  outputSize?: number;
+  outputModifiedAt?: Date;
   release?: () => Promise<void>;
 };
 
@@ -83,6 +92,7 @@ export class MaintenanceFileScraper {
         translateService: deps.translateService,
         fileOrganizer: deps.fileOrganizer,
         signalService: deps.signalService,
+        outputTemplateRoot: deps.outputTemplateRoot,
       },
       preset,
     );
@@ -95,6 +105,12 @@ export class MaintenanceFileScraper {
     signal?: AbortSignal,
     committed?: CommittedMaintenanceFile,
     files: LocalScanEntry[] = [entry],
+    publication?: {
+      validateOutputs(outputs: readonly import("@mdcz/shared/mediaRef").RootFileRef[]): Promise<void>;
+      operationId: string;
+      roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+      identity: Pick<PublicationParticipants, "movieId" | "expected">;
+    },
   ): Promise<MaintenanceFileScrapeResult> {
     const { fileInfo } = entry;
     this.logger.info(`[${this.preset.id}] Processing ${fileInfo.number} (${fileInfo.fileName})`);
@@ -104,21 +120,59 @@ export class MaintenanceFileScraper {
     let stagingHandedOff = false;
     try {
       throwIfAborted(signal);
-      const prepared = committed
-        ? await this.preparationService.prepareCommittedFile(entry, config, committed, {
-            createDirectories: false,
-            onProgress: (stepPercent) => this.setProgress(progress, stepPercent),
-          })
-        : await this.preparationService.prepareFile(entry, config, {
-            createDirectories: false,
-            emitLogs: true,
-            onProgress: (stepPercent) => this.setProgress(progress, stepPercent),
-            signal,
-          });
+      const group = await this.preparationService.prepareFiles(
+        entry,
+        files,
+        config,
+        {
+          createDirectories: false,
+          emitLogs: true,
+          onProgress: (stepPercent) => this.setProgress(progress, stepPercent),
+          signal,
+        },
+        committed,
+      );
+      const prepared = group.shared;
       const { crawlerData, fieldDiffs, unchangedFieldDiffs, aggregationSources, imageAlternatives, plan, pathDiff } =
         prepared;
+      if (!publication) throw new Error("Maintenance publication identity is required");
+      const members = await Promise.all(
+        group.files.map(async ({ entry: file, plan }) => {
+          if (!plan) throw new Error(`Maintenance file has no resolved layout: ${file.fileId}`);
+          const { sourceVideoPath: _sourceVideoPath, ...layout } = plan;
+          return {
+            source: file.ref,
+            fileId: file.fileId,
+            layout,
+            assetLayout: await resolvePublicationAssetLayout({
+              layout: plan,
+              config,
+              crawlerData,
+              existingAssets: file.assets,
+              assetDecisions: committed?.assetDecisions,
+              movieBaseName: group.shared.plan ? basename(group.shared.plan.nfoPath, ".nfo") : undefined,
+            }),
+            existingAssets: file.assets,
+            existingNfoPath: file.nfoPath,
+          };
+        }),
+      );
+      await publication.validateOutputs(
+        members.flatMap(({ layout, assetLayout }) =>
+          [
+            layout.targetVideoPath,
+            ...getNfoWritePaths(layout.nfoPath, config.download.nfoNaming).requiredPaths,
+            ...(layout.mirror ? [layout.mirror.targetPath] : []),
+            ...layout.sidecars.flatMap((sidecar) => [
+              sidecar.targetPath,
+              ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : []),
+            ]),
+            ...assetLayout.staged.values(),
+            ...assetLayout.retained.values(),
+          ].map((path) => toRootFileRef(path, publication.roots)),
+        ),
+      );
       stagingDir = await mkdtemp(join(tmpdir(), "mdcz-maintenance-publication-"));
-      const metadataOutputDir = plan?.metadataDir ?? plan?.outputDir ?? entry.currentDir;
       const preparedOutputData = await prepareOutputCrawlerData({
         actorImageService: this.actorImageService,
         actorSourceProvider: this.deps.actorSourceProvider,
@@ -145,42 +199,22 @@ export class MaintenanceFileScraper {
       );
       preparedCrawlerData = downloaded.crawlerData;
       throwIfAborted(signal);
-      const outputVideoPath = this.preset.steps.organize && plan ? plan.targetVideoPath : fileInfo.filePath;
-      const publicationFiles: Parameters<typeof preparePublicationPlan>[0]["files"][number][] = [
-        { sourceVideoPath: fileInfo.filePath, outputVideoPath, organizePlan: plan },
-      ];
-      for (const file of files) {
-        if (file.fileInfo.filePath === fileInfo.filePath) continue;
-        const preparedFile = await this.preparationService.prepareCommittedFile(
-          file,
-          config,
-          { ...committed, crawlerData: preparedCrawlerData },
-          { createDirectories: false },
-        );
-        publicationFiles.push({
-          sourceVideoPath: file.fileInfo.filePath,
-          outputVideoPath:
-            this.preset.steps.organize && preparedFile.plan
-              ? preparedFile.plan.targetVideoPath
-              : file.fileInfo.filePath,
-          organizePlan: preparedFile.plan,
-        });
-      }
-      const publication = await preparePublicationPlan({
-        files: publicationFiles,
+      if (!publication) throw new Error("Maintenance publication identity is required");
+      const published = await preparePublicationPlan({
+        operationId: publication.operationId,
+        operationType: "maintenance",
+        roots: publication.roots,
+        identity: {
+          movieId: publication.identity.movieId,
+          expected: publication.identity.expected,
+          members,
+        },
+        retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.expected.assets),
         stagingDir,
-        existingAssetDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
-        metadataOutputDir,
         downloadedAssets: downloaded.assets,
         actorPhotoPaths: preparedActorPhotoPaths,
-        existingAssets: entry.assets,
-        existingNfoPath: entry.nfoPath,
         assetDecisions: committed?.assetDecisions,
-        organizeFiles: this.preset.steps.organize,
-        renameSubtitles: config.behavior.successFileRename,
         nfoNaming: config.download.nfoNaming,
-        assetNamingMode: config.naming.assetNamingMode,
-        strmPathMappings: config.paths.strmPathMappings,
         writeNfo: async (assets, writeFile) =>
           await writePreparedNfo({
             assets,
@@ -198,12 +232,31 @@ export class MaintenanceFileScraper {
           }),
       });
       throwIfAborted(signal);
+      if (!published.plan) throw new Error("No media files could be prepared for publication");
+      const file = published.plan.files.find((candidate) => candidate.fileId === entry.fileId);
+      if (!file) throw new Error("Maintenance publication requires the selected media member");
+      const strm = file.assets.find((asset) => asset.kind === "strm");
+      const targetRoot =
+        publication.roots.find((root) => root.id === file.target.rootId) ??
+        (() => {
+          throw new Error(`Publication root not found: ${file.target.rootId}`);
+        })();
+      const targetPath = resolveRootRelativePath(targetRoot, file.target.relativePath);
       const updatedEntry = this.buildUpdatedEntry(entry, preparedCrawlerData, {
-        fileInfo: { ...fileInfo, filePath: outputVideoPath },
-        currentDir: plan?.outputDir ?? dirname(outputVideoPath),
-        nfoPath: publication.nfoPath,
-        strmPath: publication.plan.assets.find((asset) => asset.kind === "strm")?.targetPath ?? entry.strmPath,
-        assets: publication.assets,
+        fileInfo: { ...fileInfo, filePath: targetPath },
+        currentDir: plan?.outputDir ?? dirname(targetPath),
+        nfoPath: published.nfoPath,
+        strmPath:
+          strm?.type === "local"
+            ? resolveRootRelativePath(
+                publication.roots.find((root) => root.id === strm.file.rootId) ??
+                  (() => {
+                    throw new Error(`Publication root not found: ${strm.file.rootId}`);
+                  })(),
+                strm.file.relativePath,
+              )
+            : entry.strmPath,
+        assets: published.assets,
       });
       this.setProgress(progress, 100);
       const result: MaintenanceFileScrapeResult = {
@@ -214,7 +267,10 @@ export class MaintenanceFileScraper {
         fieldDiffs,
         unchangedFieldDiffs,
         pathDiff,
-        publicationPlan: publication.plan,
+        outputRelativePath: file.target.relativePath,
+        outputSize: file.size,
+        outputModifiedAt: file.modifiedAt,
+        publication: { plan: published.plan },
         release: async () => {
           await rm(stagingDir as string, { recursive: true, force: true });
         },
@@ -241,16 +297,17 @@ export class MaintenanceFileScraper {
     entry: LocalScanEntry,
     config: Configuration,
     signal?: AbortSignal,
-    sharedData?: CommittedMaintenanceFile,
-  ): Promise<MaintenancePreviewItem> {
+    files: LocalScanEntry[] = [entry],
+  ): Promise<
+    MaintenancePreviewItem & { affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }> }
+  > {
     try {
-      const prepared = sharedData
-        ? await this.preparationService.prepareCommittedFile(entry, config, sharedData, { createDirectories: false })
-        : await this.preparationService.prepareFile(entry, config, {
-            createDirectories: false,
-            emitLogs: false,
-            signal,
-          });
+      const group = await this.preparationService.prepareFiles(entry, files, config, {
+        createDirectories: false,
+        emitLogs: false,
+        signal,
+      });
+      const prepared = group.shared;
 
       return {
         fileId: entry.fileId,
@@ -260,6 +317,11 @@ export class MaintenanceFileScraper {
         pathDiff: prepared.pathDiff,
         proposedCrawlerData: prepared.crawlerData,
         imageAlternatives: prepared.imageAlternatives,
+        affectedFiles: group.files.map(({ entry, plan }) => ({
+          fileId: entry.fileId,
+          currentPath: entry.fileInfo.filePath,
+          targetPath: this.preset.steps.organize && plan ? plan.targetVideoPath : entry.fileInfo.filePath,
+        })),
       };
     } catch (error) {
       return {
@@ -293,6 +355,7 @@ export class MaintenanceFileScraper {
       ...entry,
       fileInfo: updates.fileInfo,
       nfoPath: updates.nfoPath,
+      strmPath: updates.strmPath,
       crawlerData: crawlerData ?? entry.crawlerData,
       nfoLocalState: entry.nfoLocalState,
       scanError: undefined,
@@ -352,6 +415,7 @@ export class MaintenanceFileScraper {
         ? async (assets, crawlerData) =>
             await postProcessAssets({
               assets,
+              signalService: this.deps.signalService,
               crawlerData,
               configuration: config,
               fileInfo,

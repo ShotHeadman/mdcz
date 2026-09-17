@@ -45,7 +45,20 @@ export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
 
 export type MaintenanceSessionPreviewStatus = "pending" | "processing" | "ready" | "blocked" | "applied" | "failed";
 
+export interface MaintenancePublicationIdentity {
+  movieId: string;
+  files: Array<RootFileRef & { fileId: string }>;
+  expected: {
+    files: Array<RootFileRef & { itemId: string; fileId?: string; mediaIdentity?: string | null; size?: number }>;
+    assets: Array<
+      RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean; historical: boolean }
+    >;
+  };
+}
+
 export interface MaintenanceSessionPreview {
+  files?: LocalScanEntry[];
+  publicationIdentity?: MaintenancePublicationIdentity;
   affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   id: string;
   sessionId: string;
@@ -60,7 +73,6 @@ export interface MaintenanceSessionPreview {
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
   entry?: LocalScanEntry;
-  librarySource?: MaintenanceLibrarySource;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -116,16 +128,6 @@ export interface MaintenanceApplyBatch {
   batchId: string;
   items: MaintenanceSessionPreview[];
   applied: MaintenanceSessionApplyLog[];
-}
-
-export interface MaintenanceLibrarySource {
-  files: Array<{ libraryFileId: string; rootId: string; rootRelativePath: string }>;
-  nfo?: RootFileRef;
-  strm?: RootFileRef;
-  libraryItemId: string;
-  libraryFileId: string;
-  rootId: string;
-  rootRelativePath: string;
 }
 
 export interface MaintenanceSessionDraft {

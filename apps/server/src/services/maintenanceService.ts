@@ -1,5 +1,6 @@
 import { toRootRelativePath } from "@mdcz/media-store";
 import {
+  createMaintenanceDirectoryTaskPort,
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
@@ -38,6 +39,9 @@ export class MaintenanceService {
         ensurePathRecord: async (input) => await this.mediaRoots.ensurePathRecord(input),
       },
       runtime: this.runtime,
+      directoryTasks: createMaintenanceDirectoryTaskPort(
+        async () => (await this.persistence.getState()).repositories.maintenanceDirectoryTasks,
+      ),
       discoverDirectory: async (scope, configuration, signal, onProgress) => {
         const generatedStrms = await registeredOutputPaths(
           (await this.persistence.getState()).repositories.library,

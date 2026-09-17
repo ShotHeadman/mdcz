@@ -1,5 +1,4 @@
 import { stat } from "node:fs/promises";
-import { dirname } from "node:path";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { DiscoveredAssets } from "@mdcz/shared/types";
@@ -8,7 +7,7 @@ import {
   publicationRefKey,
   resolvePublicationPath,
   resolvePublicationReferenceKeys,
-} from "./boundary";
+} from "./paths";
 import type { PublicationOutputPort, PublishMediaOptions } from "./types";
 
 export interface RegisteredMediaLocation {
@@ -81,7 +80,7 @@ export const isPublicationPathReferenced = async (
   const snapshot = outputs.publicationSnapshot({ paths: [path] });
   const keys = await resolvePublicationReferenceKeys([...snapshot.files, ...snapshot.assets, ref], [ref], resolveRoot);
   const target = keys.get(publicationRefKey(ref));
-  for (const reference of [...snapshot.files, ...snapshot.assets]) {
+  for (const reference of [...snapshot.files, ...snapshot.assets.filter((asset) => !asset.historical)]) {
     if (keys.get(publicationRefKey(reference)) === target) return true;
   }
   return false;
@@ -111,7 +110,7 @@ export const resolveRegisteredNfoPaths = async (
   nfoPath: string,
   outputs: PublicationOutputPort,
   resolveRoot: PublishMediaOptions<unknown>["resolveRoot"],
-): Promise<{ paths: string[]; readOnlyDirectories: string[]; mediaPaths: string[] } | undefined> => {
+): Promise<{ paths: string[]; mediaPaths: string[] } | undefined> => {
   const snapshot = outputs.publicationSnapshot({ paths: [nfoPath], includeOwners: true });
   const roots = new Map(
     await Promise.all(
@@ -143,8 +142,5 @@ export const resolveRegisteredNfoPaths = async (
   return {
     paths,
     mediaPaths,
-    readOnlyDirectories: [...new Set(mediaPaths.map(dirname))].filter(
-      (dir) => !paths.some((path) => dirname(path) === dir),
-    ),
   };
 };

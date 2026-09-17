@@ -14,6 +14,7 @@ import type {
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveTestOutputPlan } from "../../../helpers/scraper";
 
 const tempDirs: string[] = [];
 
@@ -39,7 +40,7 @@ const createEntry = (
   overrides: Partial<LocalScanEntry> = {},
 ): LocalScanEntry => ({
   fileId: "entry-1",
-  ref: { rootId: "test-root", relativePath: "test.mp4" },
+  ref: { rootId: "test-root", relativePath: "ABC-123.mp4" },
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),
     fileName: "ABC-123.mp4",
@@ -58,10 +59,24 @@ const createEntry = (
   ...overrides,
 });
 
+const publication = (root: string) => ({
+  validateOutputs: vi.fn(async () => {}),
+  operationId: "maintenance-test",
+  roots: [{ id: "test-root", hostPath: root }],
+  identity: {
+    movieId: "movie-1",
+    members: [{ fileId: "entry-1", source: { rootId: "test-root", relativePath: "ABC-123.mp4" } }],
+    expected: { files: [], assets: [] },
+  },
+});
+
 const createScraperHarness = (root: string, downloadAll: ReturnType<typeof vi.fn>) => {
   const outputDir = join(root, "output", "ABC-123");
   const plan: OrganizePlan = {
     outputDir,
+    metadataDir: outputDir,
+    mode: "move",
+    renameSubtitles: true,
     targetVideoPath: join(outputDir, "ABC-123.mp4"),
     nfoPath: join(outputDir, "ABC-123.nfo"),
   };
@@ -82,7 +97,7 @@ const createScraperHarness = (root: string, downloadAll: ReturnType<typeof vi.fn
       downloadManager: { downloadAll } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
+        resolveOutputPlan: vi.fn(resolveTestOutputPlan),
       } as unknown as FileOrganizer,
       signalService: { setProgress: vi.fn(), showLogText: vi.fn() },
       actorImageService: {
@@ -118,6 +133,8 @@ describe("MaintenanceFileScraper asset replacement", () => {
       { fileIndex: 1, totalFiles: 1 },
       undefined,
       { crawlerData: createCrawlerData({ thumb_url: "https://example.com/thumb-new.jpg" }) },
+      undefined,
+      publication(root),
     );
 
     expect(downloadAll.mock.calls[0]?.[4]).toEqual(
@@ -151,22 +168,33 @@ describe("MaintenanceFileScraper asset replacement", () => {
         crawlerData: createCrawlerData({ trailer_url: undefined }),
         assetDecisions: { trailer: decision },
       },
+      undefined,
+      publication(root),
     );
 
     expect(result.status).toBe("success");
     if (decision === "replace") {
       expect(result.updatedEntry?.assets.trailer).toBeUndefined();
-      expect(result.publicationPlan?.obsoletePaths).toEqual([]);
-      expect(result.publicationPlan?.sidecars?.some(({ sourcePath }) => sourcePath === oldTrailerPath)).toBe(false);
+      expect(result.publication?.plan?.obsolete).toEqual([]);
+      expect(
+        result.publication?.plan?.operations.some(
+          (operation) => "sourcePath" in operation && operation.sourcePath === oldTrailerPath,
+        ),
+      ).toBe(false);
     } else {
       expect(result.updatedEntry?.assets.trailer).toBe(oldTrailerPath);
-      expect(result.publicationPlan?.obsoletePaths).not.toContain(oldTrailerPath);
-      expect(result.publicationPlan?.sidecars?.some(({ sourcePath }) => sourcePath === oldTrailerPath)).toBe(false);
+      expect(result.publication?.plan?.obsolete.map((ref) => ref.relativePath)).not.toContain(oldTrailerPath);
+      expect(
+        result.publication?.plan?.operations.some(
+          (operation) => "sourcePath" in operation && operation.sourcePath === oldTrailerPath,
+        ),
+      ).toBe(false);
     }
-    expect(result.publicationPlan?.replaceExistingTargetPaths).toBeDefined();
-    expect(result.publicationPlan?.replaceExistingTargetPaths).not.toContain(
-      join(root, "output", "ABC-123", "ABC-123.mp4"),
-    );
+    expect(
+      result.publication?.plan?.operations.some(
+        (operation) => operation.target.relativePath === "output/ABC-123/ABC-123.mp4",
+      ),
+    ).toBe(false);
     await expect(readFile(oldTrailerPath, "utf8")).resolves.toBe("old-trailer");
   });
 });

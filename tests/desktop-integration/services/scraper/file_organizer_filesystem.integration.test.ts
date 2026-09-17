@@ -1,10 +1,11 @@
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
-import { commitPublishedMedia, createPublicationPlan, preparePublicationPlan } from "@mdcz/runtime/publication";
+import { commitPublishedMedia, preparePublicationPlan, toRootFileRef } from "@mdcz/runtime/publication";
 import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
-import { FileOrganizer, type OrganizePlan } from "@mdcz/runtime/scrape";
+import { FileOrganizer, type ResolvedPublicationLayout } from "@mdcz/runtime/scrape";
 import * as fileUtils from "@mdcz/runtime/scrape/utils/filesystem";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,25 +20,30 @@ const publicationFs = { ...fs };
 
 const publishVideo = async (
   fileInfo: ReturnType<typeof createFileInfo>,
-  plan: OrganizePlan,
+  plan: ResolvedPublicationLayout,
   config: ReturnType<typeof createConfig>,
   _sourceRoot: string,
 ): Promise<string> => {
-  const { plan: prepared } = await preparePublicationPlan({
-    files: [{ sourceVideoPath: fileInfo.filePath, outputVideoPath: plan.targetVideoPath, organizePlan: plan }],
-    existingAssetDir: dirname(fileInfo.filePath),
-    metadataOutputDir: plan.metadataDir ?? plan.outputDir,
+  const roots = tempDirs.map((hostPath) => ({ id: hostPath, hostPath }));
+  const source = toRootFileRef(fileInfo.filePath, roots);
+  const prepared = await preparePublicationPlan({
+    operationId: "organize",
+    operationType: "scrape",
+    roots,
+    identity: {
+      movieId: randomUUID(),
+      members: [
+        { source, fileId: randomUUID(), layout: plan, assetLayout: { staged: new Map(), retained: new Map() } },
+      ],
+      expected: { files: [], assets: [] },
+    },
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
-    organizeFiles:
-      !config.behavior.metadataOnly && (config.behavior.successFileMove || config.behavior.successFileRename),
-    renameSubtitles: !config.behavior.metadataOnly && config.behavior.successFileRename,
-    strmPathMappings: config.paths.strmPathMappings,
     nfoNaming: config.download.nfoNaming,
     writeNfo: async () => undefined,
   });
-  const roots = tempDirs.map((hostPath) => ({ id: hostPath, hostPath }));
-  await commitPublishedMedia(createPublicationPlan("organize", "scrape", prepared, roots), {
+  if (!prepared.plan) throw new Error("No media files could be prepared for publication");
+  await commitPublishedMedia(prepared.plan, {
     resolveRoot: async (rootId) => {
       const root = roots.find((root) => root.id === rootId);
       if (!root) throw new Error(`Missing test root: ${rootId}`);
@@ -195,11 +201,10 @@ describe("FileOrganizer filesystem organize", () => {
     expect(plan).toMatchObject({
       outputDir: expectedDir,
       metadataDir: expectedDir,
-      metadataRoot: undefined,
       nfoPath: join(expectedDir, "ABC-123-CEN.nfo"),
-      strmPath: undefined,
-      metadataOnly: false,
+      mode: "move",
     });
+    expect(plan.mirror).toBeUndefined();
 
     const organizedPath = await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
 
@@ -226,7 +231,7 @@ describe("FileOrganizer filesystem organize", () => {
 
     await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
 
-    await expect(readFile(plan.strmPath as string, "utf8")).resolves.toBe("https://example.com/ABC-123.m3u8");
+    await expect(readFile(plan.mirror?.targetPath as string, "utf8")).resolves.toBe("https://example.com/ABC-123.m3u8");
   });
 
   it.each([false, true])("uses the same output rules in single and batch mode (move=%s)", async (successFileMove) => {
@@ -375,13 +380,13 @@ describe("FileOrganizer filesystem organize", () => {
         ),
       ).toBe(suffix);
     if (separate) {
-      expect(parse(plan.strmPath as string).base).toBe("ABC-123-CEN.strm");
-      expect(await readFile(plan.strmPath as string, "utf8")).toBe(plan.targetVideoPath);
+      expect(parse(plan.mirror?.targetPath as string).base).toBe("ABC-123-CEN.strm");
+      expect(await readFile(plan.mirror?.targetPath as string, "utf8")).toBe(plan.targetVideoPath);
       for (const suffix of subtitles)
         expect(await readFile(join(plan.metadataDir as string, `ABC-123-CEN${suffix}`), "utf8")).toBe(suffix);
-      expect(await fileUtils.listVideoFiles(plan.metadataDir as string)).toEqual([plan.strmPath]);
+      expect(await fileUtils.listVideoFiles(plan.metadataDir as string)).toEqual([plan.mirror?.targetPath]);
     } else {
-      expect(plan.strmPath).toBeUndefined();
+      expect(plan.mirror).toBeUndefined();
       expect(plan.metadataDir).toBe(plan.outputDir);
     }
     expect(await readFile(join(dirname(source), "movie.nfo"), "utf8")).toBe("original NFO");
@@ -426,7 +431,7 @@ describe("FileOrganizer filesystem organize", () => {
       sourcePath,
     );
 
-    expect(plan.strmPath).toBeUndefined();
+    expect(plan.mirror).toBeUndefined();
     expect(plan.metadataDir).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN"));
 
     await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
@@ -471,7 +476,7 @@ describe("FileOrganizer filesystem organize", () => {
     expect(plan.targetVideoPath).toBe(sourcePath);
     expect(plan.outputDir).toBe(dirname(sourcePath));
     expect(plan.metadataDir).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN"));
-    expect(plan.strmPath).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN", "ABC-123-CEN.strm"));
+    expect(plan.mirror?.targetPath).toBe(join(metadataRoot, "Actor A", "ABC-123-CEN", "ABC-123-CEN.strm"));
 
     await publishVideo(fileInfo, plan, config, config.paths.mediaPath);
     await expectPathExists(sourcePath);
@@ -483,7 +488,7 @@ describe("FileOrganizer filesystem organize", () => {
     const renamedSourceSubtitle = join(mediaRoot, "incoming", "ABC-123-custom.zh.srt");
     await expect(readFile(renamedSourceSubtitle, "utf8")).rejects.toThrow();
     // In metadataDir, strm and companion subtitle copy must exist
-    expect(await readFile(plan.strmPath as string, "utf8")).toBe(sourcePath);
+    expect(await readFile(plan.mirror?.targetPath as string, "utf8")).toBe(sourcePath);
     const metadataSubtitleCopy = join(plan.metadataDir as string, "ABC-123-CEN.zh.srt");
     await expectPathExists(metadataSubtitleCopy);
     expect(await readFile(metadataSubtitleCopy, "utf8")).toBe("subtitle content");

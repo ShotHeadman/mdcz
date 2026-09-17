@@ -62,16 +62,19 @@ const createHost = (
     admitItem: async (item) => `${item.id}:attempt`,
     prepareItem: async () => ({ status: "prepared", prepared: undefined }),
     validatePrepared: vi.fn(async () => undefined),
+    formExecutionGroups: (entries) => entries.map(({ item }) => ({ itemIds: [item.id], publicationKeys: [] })),
     acquireItems: () => () => undefined,
-    executePreparedItems: async (items, signal) =>
-      await Promise.all(
+    executePreparedItems: async (items, signal) => ({
+      results: await Promise.all(
         items.map(async ({ item }) => ({
           itemId: item.id,
           result: await executeItem(item, signal),
         })),
       ),
+    }),
     commitPreparationItem: async (_item, result) => result,
-    commitItems: async (items) => items.map(({ item, result }) => ({ itemId: item.id, result })),
+    commitItems: async (items) =>
+      items.map(({ item, result }) => ({ itemId: item.id, result: result as ScrapeResult })),
   }),
   onInvalidate: vi.fn(),
 });
@@ -103,8 +106,8 @@ describe("ScrapeCoordinator", () => {
       fixed = true;
       return { ...entry, items: outcome === "empty" ? [] : entry.items };
     });
-    const commitItems = vi.fn(async (items: readonly { item: ScrapeRunItem; result: ScrapeResult }[]) =>
-      items.map(({ item, result }) => ({ itemId: item.id, result })),
+    const commitItems = vi.fn(async (items: readonly { item: ScrapeRunItem; result?: ScrapeResult }[]) =>
+      items.map(({ item, result }) => ({ itemId: item.id, result: result as ScrapeResult })),
     );
     const create = host.createExecution;
     const createExecution = vi.fn(async (...args: Parameters<typeof create>) => ({
@@ -229,7 +232,7 @@ describe("ScrapeCoordinator", () => {
                 await release.promise;
               }
               openAttempts.delete(item.id);
-              return { itemId: item.id, result };
+              return { itemId: item.id, result: result as ScrapeResult };
             }),
           ),
       };
@@ -307,9 +310,9 @@ describe("ScrapeCoordinator", () => {
       },
       commitItems: async (items) =>
         items.map(({ item, result }) => {
-          if (stage === "publication" && item.id === "one" && result.status === "success")
+          if (stage === "publication" && item.id === "one" && result?.status === "success")
             throw new PublicationConflictError("/one", "/two");
-          return { itemId: item.id, result };
+          return { itemId: item.id, result: result as ScrapeResult };
         }),
     });
     const coordinator = new ScrapeCoordinator(store, host);
@@ -454,7 +457,7 @@ describe("ScrapeCoordinator", () => {
         items.map(({ item, result }) => {
           committed.push(item.id);
           if (committed.length === 2) processingCommitted.resolve();
-          return { itemId: item.id, result };
+          return { itemId: item.id, result: result as ScrapeResult };
         }),
     });
     host.createExecution = vi.fn(host.createExecution);

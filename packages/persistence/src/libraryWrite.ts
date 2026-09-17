@@ -18,10 +18,13 @@ export const writeLibraryRows = (
   movie: LibraryMovieInput,
   inputs: readonly LibraryFileInput[],
 ): string => {
-  if (!inputs.length) throw new Error("Library write group must not be empty");
-  let itemId = movie.id;
-
+  const id = movie.id;
+  if (!id) throw new Error("Library write requires a declared movie ID");
+  if (!inputs.length && !database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).get()) {
+    throw new Error("Asset-only library write requires an existing movie");
+  }
   const resolved = inputs.map((input) => {
+    if (!input.fileId) throw new Error("Library write requires a declared file ID");
     const pathOccupant = database.db
       .select({ fileId: libraryItemFiles.id, itemId: libraryItemFiles.itemId })
       .from(libraryItemFiles)
@@ -30,10 +33,11 @@ export const writeLibraryRows = (
       )
       .limit(1)
       .get();
-    itemId ??= pathOccupant?.itemId ?? randomUUID();
-    if (pathOccupant && pathOccupant.itemId !== itemId) {
-      throw new Error(`媒体库路径已属于另一个条目：${input.rootId}:${input.rootRelativePath}`);
+    if (pathOccupant && (pathOccupant.itemId !== id || pathOccupant.fileId !== input.fileId)) {
+      throw new Error(`媒体库路径已属于另一个文件：${input.rootId}:${input.rootRelativePath}`);
     }
+    const declaredFile = database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, input.fileId)).get();
+    if (declaredFile && declaredFile.itemId !== id) throw new Error("Library file belongs to another movie");
     if (input.sourceOutcomeId) {
       const outcome = database.db
         .select({ outcome: scrapeItemOutcomes.outcome })
@@ -44,11 +48,19 @@ export const writeLibraryRows = (
         throw new Error(`Library file source must be a successful scrape outcome: ${input.sourceOutcomeId}`);
       }
     }
-    return { input, fileId: input.fileId ?? pathOccupant?.fileId ?? randomUUID() };
+    return { input, fileId: input.fileId };
   });
-
-  if (!itemId) throw new Error("Library movie ID was not resolved");
-  const id = itemId;
+  const scopes = [
+    { fileId: null, assets: movie.assets },
+    ...resolved.map(({ input, fileId }) => ({ fileId, assets: input.assets })),
+  ].filter((scope) => scope.assets !== undefined);
+  for (const scope of scopes) {
+    for (const asset of scope.assets ?? []) {
+      const fileScoped = asset.kind === "strm" || asset.kind === "subtitle";
+      if (fileScoped !== (scope.fileId !== null)) throw new Error(`Invalid library asset scope: ${asset.kind}`);
+      if (!asset.uri.trim()) throw new Error("Library asset URI must not be empty");
+    }
+  }
   const createdAt = movie.createdAt ?? new Date();
   const mediaIdentity = movie.mediaIdentity ?? movie.number ?? id;
   const actorsJson = JSON.stringify(movie.actors ?? []);
@@ -68,12 +80,13 @@ export const writeLibraryRows = (
     .onConflictDoUpdate({
       target: libraryItems.id,
       set: {
-        mediaIdentity,
-        crawlerDataJson: movie.crawlerDataJson ?? null,
-        title: movie.title ?? null,
-        number: movie.number ?? null,
-        actorsJson,
-        lastRefreshedAt: movie.lastRefreshedAt ?? null,
+        id,
+        mediaIdentity: movie.mediaIdentity !== undefined || movie.number !== undefined ? mediaIdentity : undefined,
+        crawlerDataJson: movie.crawlerDataJson,
+        title: movie.title,
+        number: movie.number,
+        actorsJson: movie.actors === undefined ? undefined : actorsJson,
+        lastRefreshedAt: movie.lastRefreshedAt,
       },
     })
     .run();
@@ -107,21 +120,21 @@ export const writeLibraryRows = (
           rootRelativePath: input.rootRelativePath,
           fileName: path.posix.basename(input.rootRelativePath),
           directory: directory === "." ? "" : directory,
-          size: input.size ?? 0,
-          modifiedAt: input.modifiedAt ?? null,
-          lastKnownPath: input.lastKnownPath ?? input.rootRelativePath,
-          partNumber: input.partNumber ?? null,
-          partSuffix: input.partSuffix ?? null,
-          resolution: input.resolution ?? null,
-          sourceOutcomeId: input.sourceOutcomeId ?? null,
+          size: input.size,
+          modifiedAt: input.modifiedAt,
+          lastKnownPath: input.lastKnownPath,
+          partNumber: input.partNumber,
+          partSuffix: input.partSuffix,
+          resolution: input.resolution,
+          sourceOutcomeId: input.sourceOutcomeId,
           updatedAt: now,
         },
       })
       .run();
   }
 
-  const affectedFileIds = new Set<string>();
-  let replacesPublicAssets = false;
+  const affectedFileIds = new Set(scopes.flatMap((scope) => (scope.fileId ? [scope.fileId] : [])));
+  const updatesMovieAssets = movie.assets !== undefined;
   const desiredAssets = new Map<
     string,
     {
@@ -133,16 +146,10 @@ export const writeLibraryRows = (
       published: boolean;
     }
   >();
-  for (const { input, fileId } of resolved) {
-    if (!input.assets) continue;
-    affectedFileIds.add(fileId);
-    replacesPublicAssets = true;
-    for (const asset of input.assets) {
-      if (!asset.uri.trim()) continue;
-      const owningFileId = asset.kind === "strm" || asset.kind === "subtitle" ? (asset.fileId ?? fileId) : null;
-      if (owningFileId) affectedFileIds.add(owningFileId);
+  for (const { assets, fileId } of scopes) {
+    for (const asset of assets ?? []) {
       const desired = {
-        fileId: owningFileId,
+        fileId,
         kind: asset.kind,
         uri: asset.uri,
         rootId: asset.rootId ?? null,
@@ -152,12 +159,12 @@ export const writeLibraryRows = (
       desiredAssets.set(assetKey(desired), desired);
     }
   }
-  if (!replacesPublicAssets && affectedFileIds.size === 0) return id;
+  if (!scopes.length) return id;
 
   const previousAssets = database.db.select().from(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).all();
   const affectedAssets = previousAssets.filter(
     (asset) =>
-      (asset.fileId === null && replacesPublicAssets) || (asset.fileId !== null && affectedFileIds.has(asset.fileId)),
+      (asset.fileId === null && updatesMovieAssets) || (asset.fileId !== null && affectedFileIds.has(asset.fileId)),
   );
   const previousByKey = new Map(affectedAssets.map((asset) => [assetKey(asset), asset]));
   const retainedIds = new Set<string>();

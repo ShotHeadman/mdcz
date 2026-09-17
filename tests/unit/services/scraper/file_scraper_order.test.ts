@@ -13,7 +13,7 @@ import {
 } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager, prepareAndExecuteFile } from "../../../helpers/scraper";
+import { mockConfigManager } from "../../../helpers/scraper";
 
 class OrderedStubCrawlerProvider extends CrawlerProvider {
   readonly calledSites: Website[] = [];
@@ -74,9 +74,10 @@ describe("FileScraper site aggregation", () => {
       fileOrganizer: new FileOrganizer(),
     });
 
-    const result = await prepareAndExecuteFile(scraper, filePath, undefined, undefined, {
+    const result = await scraper.prepareFile(filePath, undefined, undefined, {
       roots: [{ id: "test", hostPath: "/tmp" }],
     });
+    if (result.status === "prepared") throw new Error("Expected all configured crawlers to miss");
 
     expect(crawlerProvider.calledNumbers).toEqual(["ABF-252", "ABF-252", "ABF-252"]);
     expect(result.fileName).toBe("[7SiS-001]+ ABF-252");

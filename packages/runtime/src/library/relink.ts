@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { resolveRootRelativePath } from "@mdcz/media-store";
-import { prepareMediaPathKeys } from "../publication/boundary";
+import { prepareMediaPathKeys } from "../publication/paths";
 import { mediaPathOwnership } from "./mediaPathOwnership";
 
 export const relinkLibraryFile = async <T>(input: {

@@ -50,34 +50,32 @@ const createFixture = async () => {
   const runtime = {
     getConfiguration: vi.fn(async () => defaultConfiguration),
     scanRefs: vi.fn(async () => [entry]),
-    previewEntries: vi.fn(async ({ root }: { root: { id: string } }) => [
-      {
-        entry,
-        rootId: root.id,
-        relativePath: path.basename(filePath),
-        status: "ready" as const,
-        error: null,
-        fieldDiffs: [
-          {
-            kind: "value" as const,
-            field: "title" as const,
-            label: "标题",
-            oldValue: "old title",
-            newValue: "new title",
-            changed: true,
-          },
-        ],
-        unchangedFieldDiffs: [],
-        pathDiff: null,
-        proposedCrawlerData: {
-          title: "new title",
-          number: "ABP-123",
-          actors: [],
-          genres: [],
-          scene_images: [],
+    previewMovie: vi.fn(async ({ root }: { root: { id: string } }) => ({
+      entry,
+      rootId: root.id,
+      relativePath: path.basename(filePath),
+      status: "ready" as const,
+      error: null,
+      fieldDiffs: [
+        {
+          kind: "value" as const,
+          field: "title" as const,
+          label: "标题",
+          oldValue: "old title",
+          newValue: "new title",
+          changed: true,
         },
+      ],
+      unchangedFieldDiffs: [],
+      pathDiff: null,
+      proposedCrawlerData: {
+        title: "new title",
+        number: "ABP-123",
+        actors: [],
+        genres: [],
+        scene_images: [],
       },
-    ]),
+    })),
     applyEntry: vi.fn(),
   } as unknown as MaintenanceRuntime;
   runtime.createSession = vi.fn(async () => runtime);

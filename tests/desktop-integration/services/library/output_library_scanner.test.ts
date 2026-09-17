@@ -66,6 +66,7 @@ const createCompletedRun = async (
           size: input.size,
           completedAt: input.completedAt,
           libraryEntry: {
+            fileId: `${input.id}:file`,
             rootId: "root-1",
             rootRelativePath: input.outputRelativePath,
             size: input.size,
@@ -74,6 +75,7 @@ const createCompletedRun = async (
         },
       ],
       {
+        id: input.id,
         mediaIdentity: input.id,
         number: input.id,
         crawlerDataJson: JSON.stringify({ number: input.id }),
@@ -165,16 +167,19 @@ describe("OutputLibraryScanner", () => {
       }),
     );
     await library.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "A.mp4",
-      size: 4,
-      number: "A",
+      movie: { number: "A" },
+      files: [{ rootId: "root-1", rootRelativePath: "A.mp4", size: 4, fileId: "root-1:A.mp4" }],
     });
     await library.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "nested/B.mkv",
-      size: 6,
-      number: "B",
+      movie: { number: "B" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "nested/B.mkv",
+          size: 6,
+          fileId: "root-1:nested/B.mkv",
+        },
+      ],
     });
 
     const scanner = new OutputLibraryScanner({

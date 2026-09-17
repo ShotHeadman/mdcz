@@ -4,23 +4,14 @@ import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeItemOutcomeRecord, ScrapeRunItemRecord, ScrapeRunManifest } from "@mdcz/persistence";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
-import { mediaPathOwnership } from "@mdcz/runtime/library";
-import { buildMovieTags, LocalScanService } from "@mdcz/runtime/maintenance";
+import { LocalScanService } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import {
-  commitPublishedMedia,
-  commitScrapeTerminalResults,
-  createPublicationPlan,
-  prepareMediaPathKeys,
-  registeredMediaLocations,
-  registeredOutputPaths,
-} from "@mdcz/runtime/publication";
+import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import {
   applyScrapeNetworkPolicy,
-  buildScrapePublicationKey,
-  buildUncensoredRevision,
-  confirmUncensoredOutputs,
+  confirmUncensoredRunItems,
   createDirectoryScope,
+  createScrapeExecution,
   createScrapeExecutionPolicy,
   discoverDirectoryFiles,
   FileOrganizer,
@@ -28,23 +19,17 @@ import {
   NfoGenerator,
   PosterCropService,
   type PreparedMountedRootScrape,
-  scrapeMovieGroupKey,
-  validatePreparedScrapeFiles,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
-  resolveScrapeAttempts,
-  resolveScrapeRetry,
   ScrapeCoordinator,
   type ScrapeHostExecution,
   type ScrapeHostPort,
   type ScrapePreparationResult,
   type ScrapeRunItem,
-  type ScrapeRunItemInitialState,
   type ScrapeRunSnapshot,
   type ScrapeWorkflowReporter,
   toFinalizedScrapeRunSnapshot,
-  toScrapeResultFromOutcome,
   toScrapeRunSnapshotDto,
 } from "@mdcz/runtime/tasks";
 import type { Configuration } from "@mdcz/shared/config";
@@ -330,116 +315,31 @@ export class ScrapeService {
   async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<string> {
     const state = await this.persistence.getState();
     const manifest = await state.repositories.scrapeRuns.get(input.taskId);
-    const summary = state.repositories.scrapeRuns.summary(manifest);
-    if (!summary) throw new Error("无码确认只允许修改已结束刮削的成功结果");
-    const outcomes = state.repositories.scrapeRuns.latestOutcomes(manifest);
-    const outcomeByItem = new Map(outcomes.map((outcome) => [outcome.itemId, outcome]));
-    const itemById = new Map(manifest.items.map((item) => [item.id, item]));
-    const selectedItems = input.items;
-    const selected = selectedItems.map((selection) => {
-      const item = itemById.get(selection.itemId);
-      if (!item) throw new Error(`Item does not belong to scrape task: ${selection.itemId}`);
-      const outcome = outcomeByItem.get(item.id);
-      if (!outcome || outcome.outcome !== "success" || !outcome.outputRootId || !outcome.outputRelativePath) {
-        throw new Error(`Item does not belong to successful scrape output: ${selection.itemId}`);
-      }
-      return { selection, item, outcome };
-    });
-
-    const configuration = await this.config.get();
-    const roots = new Map<string, MediaRoot>(
-      (await state.repositories.mediaRoots.list()).map((root) => [root.id, root]),
-    );
-    const files = await state.repositories.library.resolveUncensoredFiles(
-      selected.map(({ selection, outcome }) => ({ outcomeId: outcome.id, choice: selection.choice })),
-    );
-    const snapshots = new Map(files.map(({ entry }) => [entry.id, JSON.stringify(entry.files)]));
-    const resolvedSelected = files.map(({ choice, file, outcome, entry }) => {
-      const outputRootId = file.rootId;
-      const outputRelativePath = file.rootRelativePath;
-      if (!outputRootId || !outputRelativePath) {
-        throw new Error(`Successful scrape outcome is missing output facts: ${outcome.id}`);
-      }
-      const outputRoot = roots.get(outputRootId);
-      if (!outputRoot) {
-        throw new Error(`Scrape output root disappeared before uncensored confirmation: ${outcome.id}`);
-      }
-      return { selection: { choice }, file, outcome, outputRootId, outputRelativePath, outputRoot, entry };
-    });
-    const locations = await registeredMediaLocations(
-      state.repositories.library,
-      (id) => this.mediaRoots.get(id),
-      resolvedSelected.map(({ outputRoot, outputRelativePath }) =>
-        resolveRootRelativePath(outputRoot, outputRelativePath),
-      ),
-    );
-    const confirmation = await confirmUncensoredOutputs(
-      resolvedSelected.map(({ selection, file, outputRelativePath, outputRoot, entry }) => ({
-        fileId: file.id,
-        videoPath: resolveRootRelativePath(outputRoot, outputRelativePath),
-        nfoPath: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.nfoPath,
-        crawlerData: entry.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(entry.crawlerDataJson)) : undefined,
-        groupId: file.itemId,
-        registeredAssets: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.assets,
-        metadataVideoPath: locations.get(resolveRootRelativePath(outputRoot, outputRelativePath))?.strmPath,
-        choice: selection.choice,
-      })),
-      configuration,
-      {
+    const confirmation = await confirmUncensoredRunItems({
+      manifest,
+      items: input.items,
+      configuration: await this.config.get(),
+      roots: await state.repositories.mediaRoots.list(),
+      repositories: {
+        library: state.repositories.library,
+        scrapeRuns: state.repositories.scrapeRuns,
+        journal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
+      },
+      dependencies: {
         fileOrganizer: this.fileOrganizer,
         localScanService: new LocalScanService(),
         logger: runtimeLoggerService.getLogger(`scrape-confirm:${manifest.id}`),
-        nfoGenerator: {
-          writeNfo: async (nfoPath, data, options) =>
-            await this.nfoGenerator.writeNfo(nfoPath, data, {
-              ...options,
-              buildTags: options?.buildTags ?? buildMovieTags,
-            }),
-        },
+        nfoGenerator: this.nfoGenerator,
         pathExists: async (filePath) =>
           await stat(filePath)
             .then((value) => value.isFile())
-            .catch(() => false),
-        publish: async ({ operationId, plan, updates }) => {
-          const revisions = await Promise.all(
-            updates.map(async (update) => {
-              const selected = resolvedSelected.find(({ file }) => file.id === update.fileId);
-              if (!selected) throw new Error(`Uncensored confirmation item disappeared: ${update.fileId}`);
-              const { outcome, outputRootId, outputRelativePath } = selected;
-              const [entry, fileStats] = await Promise.all([
-                state.repositories.library.getEntry(outputRootId, outputRelativePath),
-                stat(update.sourceVideoPath),
-              ]);
-              return buildUncensoredRevision({
-                roots: [...roots.values()],
-                update,
-                outcome,
-                entry,
-                size: fileStats.size,
-                modifiedAt: fileStats.mtime,
-              });
+            .catch((error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return false;
+              throw error;
             }),
-          );
-          const publicationPlan = createPublicationPlan(operationId, "maintenance", plan, [...roots.values()]);
-          await commitPublishedMedia(publicationPlan, {
-            journal: state.repositories.publicationJournal,
-            outputs: state.repositories.library,
-            repairIssues: state.repositories.libraryRepairIssues,
-            validate: async () => {
-              for (const id of new Set(revisions.map((revision) => revision.libraryEntry.id)))
-                if (JSON.stringify((await state.repositories.library.getEntryById(id)).files) !== snapshots.get(id))
-                  throw new Error("影片文件集合已变化，请重新确认");
-            },
-            resolveRoot: async (rootId) => {
-              const root = roots.get(rootId);
-              if (!root) throw new Error(`Publication root not found: ${rootId}`);
-              return root;
-            },
-            commit: () => state.repositories.scrapeRuns.reviseSuccess(revisions),
-          });
-        },
       },
-    );
+    });
     this.taskEvents.invalidate("scrape-history", "pending-confirmation");
     if (confirmation.failures.length > 0) {
       throw new Error(confirmation.failures.map((failure) => failure.message).join("\n"));
@@ -548,198 +448,64 @@ export class ScrapeService {
     manifest: ScrapeRunManifest,
     reporter: ScrapeWorkflowReporter,
   ): Promise<ScrapeHostExecution<ServerManualScrape, PreparedMountedRootScrape>> {
-    const runtime = this.runtime.createExecution(manifest.executionMode);
-    const roots = new Map<string, MediaRoot>();
-    for (const item of manifest.items) {
-      if (!roots.has(item.rootId)) roots.set(item.rootId, await this.mediaRoots.get(item.rootId));
-    }
+    for (const rootId of new Set(manifest.items.map((item) => item.rootId))) await this.mediaRoots.get(rootId);
     const requestedOutputRoot = manifest.requestedOutputRootId
       ? await this.mediaRoots.get(manifest.requestedOutputRootId)
       : undefined;
-    if (requestedOutputRoot) roots.set(requestedOutputRoot.id, requestedOutputRoot);
     const configuration = configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null"));
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
     const state = await this.persistence.getState();
+    const runtime = this.runtime.createExecution(manifest.executionMode, state.repositories.library);
     const repository = state.repositories.scrapeRuns;
-    const { openAttemptByItemId, latestOutcomeByItemId } = resolveScrapeAttempts(manifest);
-    const initialItems: ScrapeRunItemInitialState<ServerManualScrape>[] = manifest.items.map((item) => {
-      const outcome = latestOutcomeByItemId.get(item.id);
-      if (openAttemptByItemId.has(item.id) || !outcome) return { id: item.id, status: "pending", error: null };
-      return {
-        id: item.id,
-        status: outcome.outcome,
-        error: outcome.error,
-        result: toScrapeResultFromOutcome(item, outcome),
-      };
-    });
-    const items = await Promise.all(
-      manifest.items.map(async (item) => {
-        const root = roots.get(item.rootId);
-        if (!root) throw new Error(`Scrape root disappeared before session creation: ${item.rootId}`);
-        const retrying = openAttemptByItemId.has(item.id);
-        const execution = await resolveScrapeRetry({
-          item,
-          retrying,
-          latestOutcome: latestOutcomeByItemId.get(item.id),
-          outputRoot: requestedOutputRoot ?? root,
-          outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? "",
-          resolveRoot: async (id) => {
-            const resolved = roots.get(id) ?? (await this.mediaRoots.get(id));
-            roots.set(id, resolved);
-            return resolved;
-          },
-        });
-        return this.prepareScrapeItem({
-          id: item.id,
-          rootId: item.rootId,
-          relativePath: item.relativePath,
-          ...execution,
-          manualScrape: { manualUrl: item.manualUrl, uncensoredChoice: item.uncensoredChoice },
-        });
-      }),
-    );
-    const library = state.repositories.library;
-    const librarySources = new Map(
-      await Promise.all(
-        items.map(async (item) => [item.id, await library.resolveMaintenanceSource(item.sourcePath)] as const),
-      ),
-    );
-    return {
-      items,
-      initialItems,
-      executionGeneration: manifest.executionGeneration,
-      concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
-      admitItem: async (item: ScrapeRunItem<ServerManualScrape>) => {
-        const existing = openAttemptByItemId.get(item.id);
-        if (existing) return existing;
-        const attempt = repository.admitAttempt(item.id);
-        openAttemptByItemId.set(item.id, attempt.id);
-        return attempt.id;
+    return await createScrapeExecution<ServerManualScrape, PreparedMountedRootScrape>({
+      manifest,
+      outputRoot: requestedOutputRoot,
+      restGate: policy.restGate ?? undefined,
+      resolveRoot: (id) => this.mediaRoots.get(id),
+      enrichItem: (item) => this.prepareScrapeItem(item),
+      manualScrape: (id) => {
+        const item = manifest.items.find((item) => item.id === id);
+        if (!item) throw new Error(`Scrape item not found: ${id}`);
+        return { manualUrl: item.manualUrl, uncensoredChoice: item.uncensoredChoice };
       },
-      acquireItems: async (items) =>
-        mediaPathOwnership.acquireAll(
-          await prepareMediaPathKeys(
-            items.map((item) => item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath }),
-            (id) => this.mediaRoots.get(id),
-          ),
-          items
-            .map((item) => item.id)
-            .sort()
-            .join(","),
-        ),
-      getPublicationKey: (_item: ScrapeRunItem<ServerManualScrape>, prepared: PreparedMountedRootScrape) =>
-        buildScrapePublicationKey(prepared.fileScrape.outputPlan),
-      getExecutionGroupKey: (item: ScrapeRunItem<ServerManualScrape>, prepared: PreparedMountedRootScrape) =>
-        scrapeMovieGroupKey({
-          libraryItemId: librarySources.get(item.id)?.libraryItemId,
-          sourcePath: prepared.fileScrape.sourcePath,
-          mediaIdentity: prepared.fileScrape.crawlerData.number || prepared.fileScrape.fileInfo.number,
-        }),
-      prepareItem: async (item: ScrapeRunItem<ServerManualScrape>, signal: AbortSignal, attemptId: string) =>
-        await this.prepareItem(
-          manifest,
-          item,
-          configuration,
-          signal,
-          attemptId,
-          policy.restGate ?? undefined,
-          reporter,
-          runtime,
-        ),
-      validatePrepared: async (
-        prepared: readonly {
-          item: ScrapeRunItem<ServerManualScrape>;
-          prepared: PreparedMountedRootScrape;
-        }[],
-      ) =>
-        await validatePreparedScrapeFiles(
-          prepared.map(({ item, prepared }) => ({
-            itemId: item.id,
-            sourcePath: prepared.fileScrape.sourcePath,
-            libraryItemId: librarySources.get(item.id)?.libraryItemId,
-            outputPlan: prepared.fileScrape.outputPlan,
-            mediaIdentity: prepared.fileScrape.crawlerData.number || prepared.fileScrape.fileInfo.number,
-            partNumber: prepared.fileScrape.fileInfo.part?.number ?? null,
-          })),
-        ),
-      executePreparedItems: async (entries, signal) => {
-        const results = await this.runtime.executePrepared(
-          entries.map(({ item, prepared }) => ({
-            ...prepared,
-            fileScrape: {
-              ...prepared.fileScrape,
-              identity: {
-                ...prepared.fileScrape.identity,
-                fileId: item.id,
-                rootId: item.rootId,
-                relativePath: item.relativePath,
-              },
-            },
-            caseId: item.caseId,
-          })),
-          signal,
-        );
-        return results.map((result) => ({ itemId: result.fileId, result }));
+      fileScrape: (prepared) => prepared.fileScrape,
+      admitAttempt: (id) => repository.admitAttempt(id),
+      publication: {
+        scrapeRuns: repository,
+        resolveRoot: (id) => this.mediaRoots.get(id),
+        journal: state.repositories.publicationJournal,
+        outputs: state.repositories.library,
+        repairIssues: state.repositories.libraryRepairIssues,
       },
-      commitPreparationItem: async (
-        item: ScrapeRunItem<ServerManualScrape>,
-        result: ScrapeResult,
-        attemptId: string,
-      ) => {
-        if (result.status !== "failed" && result.status !== "skipped") {
-          throw new Error("Preparation can only commit failed or skipped results");
-        }
-        const outcome = repository.commitOutcome({
-          attemptId,
-          ...(result.status === "failed"
-            ? { outcome: "failed", error: result.error?.trim() || "刮削预检失败" }
-            : { outcome: "skipped", error: result.error ?? null }),
-        });
-        const committed = { ...result, resultId: outcome.id };
+      transformResult: (item, result) =>
+        item.manualScrape?.uncensoredChoice ? { ...result, uncensoredAmbiguous: false } : result,
+      onCommitted: (result) =>
         this.addEvent(
           manifest.id,
-          committed.status === "failed" ? "item-failed" : "item-skipped",
-          committed.error ? `${item.relativePath}: ${committed.error}` : item.relativePath,
-          item.id,
-        );
-        return committed;
+          result.status === "success" ? "item-success" : result.status === "skipped" ? "item-skipped" : "item-failed",
+          result.status === "success"
+            ? `Generated NFO: ${result.nfo?.relativePath ?? "not generated"}`
+            : result.error
+              ? `${result.relativePath}: ${result.error}`
+              : result.relativePath,
+          result.fileId,
+        ),
+      execution: {
+        concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
+        prepareItem: async (item: ScrapeRunItem<ServerManualScrape>, signal: AbortSignal, attemptId: string) =>
+          await this.prepareItem(manifest, item, configuration, signal, attemptId, reporter, runtime),
+        executePreparedFiles: async (entries, signal) =>
+          await runtime.executePrepared(
+            entries.map(({ item, prepared, fileScrape }) => ({
+              ...prepared,
+              fileScrape,
+              caseId: item.caseId,
+            })),
+            signal,
+          ),
       },
-      commitItems: async (entries) => {
-        const committed = await commitScrapeTerminalResults({
-          items: entries.map(({ item, result, attemptId }) => ({
-            result: item.manualScrape?.uncensoredChoice ? { ...result, uncensoredAmbiguous: false } : result,
-            attemptId,
-            itemPath: item.relativePath,
-          })),
-          scrapeRuns: state.repositories.scrapeRuns,
-          resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
-          acquireAll: (keys) =>
-            mediaPathOwnership.acquireAll(
-              keys,
-              entries
-                .map(({ item }) => item.id)
-                .sort()
-                .join(","),
-            ),
-          journal: state.repositories.publicationJournal,
-          outputs: state.repositories.library,
-          repairIssues: state.repositories.libraryRepairIssues,
-        });
-        for (const result of committed)
-          this.addEvent(
-            manifest.id,
-            result.status === "success" ? "item-success" : result.status === "skipped" ? "item-skipped" : "item-failed",
-            result.status === "success"
-              ? `Generated NFO: ${result.nfo?.relativePath ?? "not generated"}`
-              : result.error
-                ? `${result.relativePath}: ${result.error}`
-                : result.relativePath,
-            result.fileId,
-          );
-        return committed.map((result) => ({ itemId: result.fileId, result }));
-      },
-    };
+    });
   }
 
   private async prepareItem(
@@ -748,12 +514,10 @@ export class ScrapeService {
     configuration: Configuration,
     signal: AbortSignal,
     attemptId: string,
-    restGate: { waitBeforeStart(signal?: AbortSignal): Promise<void> } | undefined,
     reporter: ScrapeWorkflowReporter,
     runtime: MountedRootScrapeRuntime,
   ): Promise<ScrapePreparationResult<PreparedMountedRootScrape>> {
     try {
-      await restGate?.waitBeforeStart(signal);
       const sourceRef = item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath };
       const root = await this.mediaRoots.get(sourceRef.rootId);
       const outputRoot = manifest.requestedOutputRootId
@@ -765,7 +529,6 @@ export class ScrapeService {
         root,
         outputRoot: manifest.requestedOutputRootId ? outputRoot : undefined,
         outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? undefined,
-        executionMode: manifest.executionMode,
         relativePath: sourceRef.relativePath,
         scrapeSessionId: manifest.id,
         operationId: `${manifest.id}:${attemptId}`,
@@ -773,10 +536,6 @@ export class ScrapeService {
           new Map([root, outputRoot, metadataRoot].map((entry) => [entry.id, entry])).values(),
         ),
         manualScrape: resolveManualScrapeRoute(item.manualScrape?.manualUrl),
-        progress: {
-          fileIndex: (manifest.items.find((candidate) => candidate.id === item.id)?.ordinal ?? 0) + 1,
-          totalFiles: manifest.items.length,
-        },
         localState: item.manualScrape?.uncensoredChoice
           ? { uncensoredChoice: item.manualScrape.uncensoredChoice }
           : undefined,
@@ -789,7 +548,7 @@ export class ScrapeService {
         onEvent: (type, message) => {
           this.addEvent(manifest.id, type, message, item.id);
         },
-        onProgress: ({ value }) => {
+        onProgress: (value) => {
           reporter.progress(item.id, value);
         },
         onStage: (stage, message) => {

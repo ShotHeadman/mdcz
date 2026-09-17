@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { and, desc, eq, inArray, isNotNull, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { writeLibraryRows } from "./libraryWrite";
 import {
@@ -43,6 +43,15 @@ export interface LibraryMovieInput {
   crawlerDataJson?: string | null;
   createdAt?: Date;
   lastRefreshedAt?: Date | null;
+  assets?: LibraryAssetInput[];
+}
+
+export interface LibraryAssetInput {
+  kind: string;
+  uri: string;
+  rootId?: string | null;
+  relativePath?: string | null;
+  published?: boolean;
 }
 
 export interface LibraryFileInput {
@@ -55,18 +64,14 @@ export interface LibraryFileInput {
   partNumber?: number | null;
   partSuffix?: string | null;
   resolution?: string | null;
-  assets?: Array<{
-    kind: string;
-    fileId?: string | null;
-    uri: string;
-    rootId?: string | null;
-    relativePath?: string | null;
-    published?: boolean;
-  }>;
+  assets?: LibraryAssetInput[];
   lastKnownPath?: string | null;
 }
 
-export type UpsertLibraryEntryInput = LibraryMovieInput & LibraryFileInput;
+export interface UpsertLibraryEntryInput {
+  movie: LibraryMovieInput;
+  files: LibraryFileInput[];
+}
 
 export interface LibraryEntriesCursor {
   createdAt: Date;
@@ -149,77 +154,11 @@ export interface LibraryItemAssetRecord {
   createdAt: Date;
 }
 
-export interface CommitMaintenanceRefreshInput {
-  files: Array<{
-    librarySource?: MaintenanceLibrarySourceRecord;
-    sourceAbsolutePath: string;
-    targetAbsolutePath: string;
-    size: number;
-    modifiedAt: Date;
-    outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
-  }>;
-  crawlerData?: MaintenanceCrawlerDataRecord;
-  fallbackNumber: string;
-  assets: MaintenanceDiscoveredAssetsRecord;
-  removedAssets?: Array<{ rootId: string; relativePath: string }>;
-  refreshedAt: Date;
-}
-
-export interface MaintenanceLibrarySourceRecord {
-  files: Array<{ libraryFileId: string; rootId: string; rootRelativePath: string }>;
-  nfo?: { rootId: string; relativePath: string };
-  strm?: { rootId: string; relativePath: string };
-  libraryItemId: string;
-  libraryFileId: string;
-  rootId: string;
-  rootRelativePath: string;
-}
-
-export interface MaintenanceCrawlerDataRecord {
-  title: string;
-  number: string;
-  actors: string[];
-  thumb_url?: string;
-  poster_url?: string;
-  fanart_url?: string;
-  thumb_source_url?: string;
-  poster_source_url?: string;
-  fanart_source_url?: string;
-  trailer_source_url?: string;
-  scene_images: string[];
-  trailer_url?: string;
-}
-
-export interface MaintenanceDiscoveredAssetsRecord {
-  thumb?: string;
-  poster?: string;
-  fanart?: string;
-  sceneImages: string[];
-  trailer?: string;
-  actorPhotos: string[];
-}
-
-export type RootPathCandidate = {
+type RootPathCandidate = {
   hostPath: string;
   rootId: string;
   rootRelativePath: string;
 };
-
-type MaintenanceAssetInput = {
-  kind: string;
-  uri: string;
-  rootId: string | null;
-  relativePath: string | null;
-};
-
-export interface PreparedMaintenanceRefresh {
-  movie: LibraryMovieInput & { id: string };
-  files: Array<{
-    librarySource: MaintenanceLibrarySourceRecord | undefined;
-    targetCandidates: RootPathCandidate[];
-    libraryEntry: LibraryFileInput;
-  }>;
-}
 
 const safeActors = (value: string): string[] => {
   try {
@@ -398,225 +337,16 @@ export class LibraryRepository {
     };
   }
 
-  registerPublishedOutputs(
-    outputs: Array<{ itemId: string; fileId: string | null; kind: string; rootId: string; relativePath: string }>,
-  ): void {
-    for (const output of outputs) {
-      const where = and(
-        eq(libraryItemAssets.itemId, output.itemId),
-        eq(libraryItemAssets.rootId, output.rootId),
-        eq(libraryItemAssets.relativePath, output.relativePath),
-        eq(libraryItemAssets.kind, output.kind),
-        output.fileId ? eq(libraryItemAssets.fileId, output.fileId) : isNull(libraryItemAssets.fileId),
-      );
-      const existing = this.database.db.select().from(libraryItemAssets).where(where).get();
-      if (existing)
-        this.database.db.update(libraryItemAssets).set({ published: true, historical: false }).where(where).run();
-      else
-        this.database.db
-          .insert(libraryItemAssets)
-          .values({ ...output, id: randomUUID(), uri: output.relativePath, published: true, createdAt: new Date() })
-          .run();
-    }
-  }
-
-  releaseOutputReferences(
-    refs: Array<{ itemId: string; fileId: string | null; kind: string; rootId: string; relativePath: string }>,
-  ): void {
-    for (const ref of refs)
-      this.database.db
-        .delete(libraryItemAssets)
-        .where(
-          and(
-            eq(libraryItemAssets.itemId, ref.itemId),
-            ref.fileId !== null ? eq(libraryItemAssets.fileId, ref.fileId) : isNull(libraryItemAssets.fileId),
-            eq(libraryItemAssets.kind, ref.kind),
-            eq(libraryItemAssets.rootId, ref.rootId),
-            eq(libraryItemAssets.relativePath, ref.relativePath),
-          ),
-        )
-        .run();
+  writeEntry(movie: LibraryMovieInput, files: readonly LibraryFileInput[]): string {
+    return this.database.sqlite.transaction(() => writeLibraryRows(this.database, movie, files))();
   }
 
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
-    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input, [input]));
+    const movie = { ...input.movie, id: input.movie.id ?? randomUUID() };
+    const files = input.files.map((file) => ({ ...file, fileId: file.fileId ?? randomUUID() }));
+    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, movie, files));
     const id = transaction();
     return await this.getEntryById(id);
-  }
-
-  async resolveMaintenanceSource(absolutePath: string): Promise<MaintenanceLibrarySourceRecord | null> {
-    const matches = this.findLibraryFilesAtAbsolutePath(absolutePath);
-    const itemIds = new Set(matches.map(({ file }) => file.itemId));
-    if (itemIds.size > 1) {
-      throw new Error(`同一实际文件被多个媒体库条目引用：${absolutePath}`);
-    }
-    const match = matches[0];
-    const assets = match ? ((await this.listAssetsForItems([match.file.itemId])).get(match.file.itemId) ?? []) : [];
-    const output = (kind: string) => {
-      const asset = assets.find(
-        (asset) =>
-          asset.kind === kind &&
-          asset.rootId &&
-          asset.relativePath &&
-          (asset.fileId === null || asset.fileId === match?.file.id),
-      );
-      return asset?.rootId && asset.relativePath
-        ? { rootId: asset.rootId, relativePath: asset.relativePath }
-        : undefined;
-    };
-    return match
-      ? {
-          files: this.database.db
-            .select()
-            .from(libraryItemFiles)
-            .where(eq(libraryItemFiles.itemId, match.file.itemId))
-            .all()
-            .map((file) => ({ libraryFileId: file.id, rootId: file.rootId, rootRelativePath: file.rootRelativePath }))
-            .sort((a, b) => a.libraryFileId.localeCompare(b.libraryFileId)),
-          nfo: output("nfo"),
-          strm: output("strm"),
-          libraryItemId: match.file.itemId,
-          libraryFileId: match.file.id,
-          rootId: match.file.rootId,
-          rootRelativePath: match.file.rootRelativePath,
-        }
-      : null;
-  }
-
-  async preflightMaintenanceRefresh(input: {
-    librarySource?: MaintenanceLibrarySourceRecord;
-    sourceAbsolutePath: string;
-    targetAbsolutePath: string;
-  }): Promise<void> {
-    this.assertMaintenanceSource(input.librarySource);
-    if (
-      input.librarySource &&
-      !this.pathCandidates(input.sourceAbsolutePath).some(
-        (candidate) =>
-          candidate.rootId === input.librarySource?.rootId &&
-          candidate.rootRelativePath === input.librarySource.rootRelativePath,
-      )
-    ) {
-      throw new Error("维护源文件位置已变化，请重新预览");
-    }
-    const candidates = this.pathCandidates(input.targetAbsolutePath);
-    if (candidates.length === 0) {
-      throw new Error(`维护目标路径不属于任何已注册媒体目录：${input.targetAbsolutePath}`);
-    }
-    this.assertNoMaintenanceTargetConflict(candidates, input.librarySource?.libraryItemId);
-  }
-
-  async prepareRefresh(input: CommitMaintenanceRefreshInput): Promise<PreparedMaintenanceRefresh> {
-    if (input.files.length === 0) throw new Error("维护刷新文件集合不能为空");
-    const itemIds = new Set(
-      input.files.flatMap((file) => (file.librarySource ? [file.librarySource.libraryItemId] : [])),
-    );
-    if (itemIds.size > 1) throw new Error("维护刷新文件不属于同一影片");
-    const itemId = [...itemIds][0] ?? randomUUID();
-    const files = input.files.map((file) => {
-      this.assertMaintenanceSource(file.librarySource);
-      const targetCandidates = this.pathCandidates(file.targetAbsolutePath);
-      if (targetCandidates.length === 0) {
-        throw new Error(`维护目标路径不属于任何已注册媒体目录：${file.targetAbsolutePath}`);
-      }
-      this.assertNoMaintenanceTargetConflict(targetCandidates, file.librarySource?.libraryItemId);
-      const target = chooseRootCandidate(targetCandidates, file.librarySource?.rootId);
-      const previousFile = file.librarySource
-        ? this.database.db
-            .select()
-            .from(libraryItemFiles)
-            .where(eq(libraryItemFiles.id, file.librarySource.libraryFileId))
-            .get()
-        : undefined;
-      return {
-        file,
-        targetCandidates,
-        target,
-        previousFile,
-        fileId: file.librarySource?.libraryFileId ?? randomUUID(),
-      };
-    });
-    const changedAssets = this.buildMaintenanceAssets(input, files[0]?.target.rootId as string);
-    const fileAssets = files.flatMap(({ file, fileId }) =>
-      (file.outputAssets ?? []).map((asset) => ({
-        ...asset,
-        fileId: asset.kind === "strm" || asset.kind === "subtitle" ? fileId : null,
-        uri: asset.relativePath,
-      })),
-    );
-    const changedKinds = new Set([
-      "thumb",
-      "poster",
-      "fanart",
-      "trailer",
-      "scene",
-      "actor",
-      ...changedAssets.map((asset) => asset.kind),
-    ]);
-    const removedKeys = new Set((input.removedAssets ?? []).map((asset) => `${asset.rootId}:${asset.relativePath}`));
-    const previousAssets = itemIds.size ? ((await this.listAssetsForItems([itemId])).get(itemId) ?? []) : [];
-    const assets = [
-      ...previousAssets.filter(
-        (asset) =>
-          !removedKeys.has(`${asset.rootId}:${asset.relativePath}`) &&
-          (asset.fileId
-            ? !fileAssets.some((replacement) => replacement.fileId === asset.fileId && replacement.kind === asset.kind)
-            : !changedKinds.has(asset.kind)),
-      ),
-      ...changedAssets,
-      ...fileAssets,
-    ];
-    const crawlerDataJson = input.crawlerData ? JSON.stringify(input.crawlerData) : null;
-    const mediaIdentity = input.crawlerData?.number?.trim() || input.fallbackNumber.trim() || null;
-    const title = input.crawlerData?.title ?? null;
-    const number = input.crawlerData?.number ?? input.fallbackNumber ?? null;
-    const existingItem = itemIds.size
-      ? this.database.db.select().from(libraryItems).where(eq(libraryItems.id, itemId)).limit(1).get()
-      : null;
-    return {
-      movie: {
-        id: itemId,
-        mediaIdentity,
-        title,
-        number,
-        actors: input.crawlerData?.actors ?? [],
-        crawlerDataJson,
-        createdAt: existingItem?.createdAt ?? input.refreshedAt,
-        lastRefreshedAt: input.refreshedAt,
-      },
-      files: files.map(({ file, targetCandidates, target, previousFile, fileId }, index) => ({
-        librarySource: file.librarySource,
-        targetCandidates,
-        libraryEntry: {
-          fileId,
-          partNumber: previousFile?.partNumber,
-          partSuffix: previousFile?.partSuffix,
-          resolution: previousFile?.resolution,
-          rootId: target.rootId,
-          rootRelativePath: target.rootRelativePath,
-          size: file.size,
-          modifiedAt: file.modifiedAt,
-          sourceOutcomeId: previousFile?.sourceOutcomeId ?? null,
-          ...(index === 0 ? { assets } : {}),
-          lastKnownPath: target.rootRelativePath,
-        },
-      })),
-    };
-  }
-
-  writeRefresh(prepared: PreparedMaintenanceRefresh): { libraryItemId: string } {
-    for (const file of prepared.files) {
-      this.assertMaintenanceSource(file.librarySource);
-      this.assertNoMaintenanceTargetConflict(file.targetCandidates, file.librarySource?.libraryItemId);
-    }
-    return this.database.sqlite.transaction(() => {
-      writeLibraryRows(
-        this.database,
-        prepared.movie,
-        prepared.files.map((file) => file.libraryEntry),
-      );
-      return { libraryItemId: prepared.movie.id };
-    })();
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {
@@ -999,114 +729,6 @@ export class LibraryRepository {
     });
   }
 
-  private assertMaintenanceSource(source: MaintenanceLibrarySourceRecord | undefined): void {
-    if (!source) return;
-    const currentFiles = this.database.db
-      .select()
-      .from(libraryItemFiles)
-      .where(eq(libraryItemFiles.itemId, source.libraryItemId))
-      .all();
-    if (
-      currentFiles.length !== source.files.length ||
-      currentFiles.some(
-        (file) =>
-          !source.files.some(
-            (expected) =>
-              expected.libraryFileId === file.id &&
-              expected.rootId === file.rootId &&
-              expected.rootRelativePath === file.rootRelativePath,
-          ),
-      )
-    ) {
-      throw new Error("影片文件集合已变化，请重新预览");
-    }
-    const file = this.database.db
-      .select({ id: libraryItemFiles.id })
-      .from(libraryItemFiles)
-      .where(
-        and(
-          eq(libraryItemFiles.id, source.libraryFileId),
-          eq(libraryItemFiles.itemId, source.libraryItemId),
-          eq(libraryItemFiles.rootId, source.rootId),
-          eq(libraryItemFiles.rootRelativePath, source.rootRelativePath),
-        ),
-      )
-      .limit(1)
-      .get();
-    if (!file) throw new Error("原媒体库条目或文件引用已变化，请重新预览");
-  }
-
-  private assertNoMaintenanceTargetConflict(
-    candidates: readonly RootPathCandidate[],
-    allowedItemId: string | undefined,
-  ): void {
-    for (const candidate of candidates) {
-      const occupant = this.database.db
-        .select({ itemId: libraryItemFiles.itemId })
-        .from(libraryItemFiles)
-        .where(
-          and(
-            eq(libraryItemFiles.rootId, candidate.rootId),
-            eq(libraryItemFiles.rootRelativePath, candidate.rootRelativePath),
-          ),
-        )
-        .limit(1)
-        .get();
-      if (occupant && occupant.itemId !== allowedItemId) {
-        throw new Error(
-          `维护目标路径已属于另一个媒体库条目 ${occupant.itemId}：${candidate.rootId}:${candidate.rootRelativePath}`,
-        );
-      }
-    }
-  }
-
-  private buildMaintenanceAssets(
-    input: CommitMaintenanceRefreshInput,
-    preferredRootId: string,
-  ): MaintenanceAssetInput[] {
-    const outputs: MaintenanceAssetInput[] = [];
-    const localKinds = new Set<string>();
-    const addLocal = (kind: string, value: string | undefined): void => {
-      const absolutePath = value?.trim();
-      if (!absolutePath) return;
-      const candidates = this.pathCandidates(absolutePath);
-      if (candidates.length === 0) {
-        throw new Error(`维护生成的本地资源不属于任何已注册媒体目录：${absolutePath}`);
-      }
-      const mapped = chooseRootCandidate(candidates, preferredRootId);
-      outputs.push({
-        kind,
-        uri: mapped.rootRelativePath,
-        rootId: mapped.rootId,
-        relativePath: mapped.rootRelativePath,
-      });
-      localKinds.add(kind);
-    };
-
-    addLocal("thumb", input.assets.thumb);
-    addLocal("poster", input.assets.poster);
-    addLocal("fanart", input.assets.fanart);
-    addLocal("trailer", input.assets.trailer);
-    for (const sceneImage of input.assets.sceneImages) addLocal("scene", sceneImage);
-    for (const actorPhoto of input.assets.actorPhotos) addLocal("actor", actorPhoto);
-
-    const addRemoteFallback = (kind: string, values: Array<string | undefined>): void => {
-      if (localKinds.has(kind)) return;
-      for (const value of values) {
-        const uri = value?.trim();
-        if (!uri || !isRemoteAssetUri(uri)) continue;
-        outputs.push({ kind, uri, rootId: null, relativePath: null });
-      }
-    };
-    const crawlerData = input.crawlerData;
-    addRemoteFallback("thumb", [crawlerData?.thumb_source_url, crawlerData?.thumb_url]);
-    addRemoteFallback("poster", [crawlerData?.poster_source_url, crawlerData?.poster_url]);
-    addRemoteFallback("fanart", [crawlerData?.fanart_source_url, crawlerData?.fanart_url]);
-    addRemoteFallback("trailer", [crawlerData?.trailer_source_url, crawlerData?.trailer_url]);
-    addRemoteFallback("scene", crawlerData?.scene_images ?? []);
-    return outputs;
-  }
-
   private async getLibraryItem(id: string): Promise<LibraryItemRow> {
     const row = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
     if (!row) {
@@ -1150,13 +772,6 @@ export class LibraryRepository {
     );
   }
 }
-
-const chooseRootCandidate = (candidates: readonly RootPathCandidate[], preferredRootId?: string): RootPathCandidate => {
-  const longest = candidates[0];
-  if (!longest) throw new Error("路径不属于任何已注册媒体目录");
-  const sameDepth = candidates.filter((candidate) => candidate.hostPath.length === longest.hostPath.length);
-  return sameDepth.find((candidate) => candidate.rootId === preferredRootId) ?? longest;
-};
 
 const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
   const filters: SQL[] = [];

@@ -2,62 +2,66 @@ import type { Stats } from "node:fs";
 import type { MediaRoot } from "@mdcz/media-store";
 import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 
-export type PublicationContent =
-  | { kind: "bytes"; data: Buffer }
-  | { kind: "text"; data: string }
-  | { kind: "file"; path: string; size: number };
+import type { CrawlerData, FileInfo, ScrapeResult, VideoMeta } from "@mdcz/shared/types";
+import type { PublicationLibraryAsset } from "./libraryEntry";
 
-export interface PublicationMove {
-  preserveSource?: boolean;
-  shared?: boolean;
+export interface PublicationParticipants<TMember extends { source: RootFileRef } = { source: RootFileRef }> {
+  movieId: string;
+  members: Array<TMember & { fileId: string }>;
+  expected: ReturnType<PublicationOutputPort["publicationSnapshot"]>;
+}
+
+export type PublicationContent = { kind: "bytes"; data: Buffer } | { kind: "text"; data: string };
+
+export type PublicationOperation = { target: RootFileRef; replaceExisting: boolean } & (
+  | { kind: "copy"; sourcePath: string; size: number }
+  | { kind: "move"; source: RootFileRef; size: number }
+  | { kind: "write"; content: PublicationContent }
+);
+
+export interface PublicationFile {
+  fileId: string;
   source: RootFileRef;
   target: RootFileRef;
   size: number;
-  /** Relative STRM targets must be re-anchored when the file changes directory. */
-  content?: string;
+  sourceSize: number;
+  modifiedAt: Date;
+  assets: AssetRef[];
+  operations: PublicationOperation[];
+  scrape?: {
+    itemId: string;
+    attemptId: string;
+    identity: Pick<ScrapeResult, "rootId" | "relativePath" | "fileName" | "part">;
+    fileInfo: FileInfo;
+    videoMeta?: VideoMeta;
+    error?: string;
+    uncensoredAmbiguous: boolean;
+  };
 }
 
-export interface PublicationBoundary {
-  writeRoots: Array<{ path: string; realPath: string }>;
-  writablePaths: Array<{ path: string; realPath: string }>;
-  readOnlyPaths: Array<{ path: string; realPath: string }>;
-  readOnlyDirectories: Array<{ path: string; realPath: string }>;
-}
-
-export interface PublicationPlan {
-  media?: Array<{ source: RootFileRef; target: RootFileRef; size: number; assets?: AssetRef[] }>;
-  boundary?: PublicationBoundary;
+interface PublicationBase {
   operationId: string;
   operationType: "scrape" | "maintenance";
-  videos?: PublicationMove[];
-  sidecars?: PublicationMove[];
-  artifacts: Array<{ target: RootFileRef; content: PublicationContent }>;
-  assets: AssetRef[];
+  operations: PublicationOperation[];
+  movieAssets: AssetRef[];
   obsolete: RootFileRef[];
-  editFiles?: RootFileRef[];
-  replaceExistingTargets?: RootFileRef[];
 }
 
-export interface PreparedPublicationMove {
-  preserveSource?: boolean;
-  shared?: boolean;
-  sourcePath: string;
-  targetPath: string;
-  size: number;
-  content?: string;
+export interface MoviePublicationPlan extends PublicationBase {
+  kind: "movie";
+  movieId: string;
+  files: PublicationFile[];
+  expected: ReturnType<PublicationOutputPort["publicationSnapshot"]>;
+  scrape?: { crawlerData: CrawlerData; sources: ScrapeResult["sources"]; nfo?: RootFileRef };
 }
 
-export interface PreparedPublicationPlan {
-  media?: Array<{ sourcePath: string; targetPath: string; size: number; assets?: PreparedPublicationPlan["assets"] }>;
-  boundary?: PublicationBoundary;
-  videos?: PreparedPublicationMove[];
-  sidecars?: PreparedPublicationMove[];
-  artifacts: Array<{ targetPath: string; content: PublicationContent }>;
-  assets: Array<{ kind: string; targetPath?: string; url?: string }>;
-  obsoletePaths: string[];
-  editFilePaths?: string[];
-  replaceExistingTargetPaths?: string[];
+export interface UnmanagedPublicationPlan extends PublicationBase {
+  kind: "unmanaged";
+  files: [];
+  sources: Array<{ source: RootFileRef; size: number }>;
 }
+
+export type PublicationPlan = MoviePublicationPlan | UnmanagedPublicationPlan;
 
 export interface PublicationFileSystem {
   copyFile(source: string, target: string): Promise<void>;
@@ -109,7 +113,6 @@ export interface PublicationJournalManifestObsolete extends RootFileRef {
 }
 
 export interface PublicationJournalManifest {
-  boundary?: PublicationBoundary;
   entries: PublicationJournalManifestEntry[];
   obsolete: PublicationJournalManifestObsolete[];
 }
@@ -145,8 +148,6 @@ export interface PublicationOutputPort {
       RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean; historical: boolean }
     >;
   };
-  registerPublishedOutputs(outputs: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string }>): void;
-  releaseOutputReferences(refs: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string }>): void;
 }
 
 export interface DurablePublicationContext {
@@ -156,11 +157,19 @@ export interface DurablePublicationContext {
 }
 
 export interface RegisteredPublicationContext extends DurablePublicationContext {
+  library?: {
+    getEntryById(id: string): Promise<{
+      assets: Array<PublicationLibraryAsset & { fileId: string | null; historical: boolean }>;
+    }>;
+    writeEntry(
+      movie: { id: string; assets?: PublicationLibraryAsset[] },
+      files: Array<{ fileId: string; rootId: string; rootRelativePath: string; assets?: PublicationLibraryAsset[] }>,
+    ): string;
+  };
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
 }
 
 export interface PublishMediaOptions<TResult> extends DurablePublicationContext {
-  ownerId?: string;
   validate?(): Promise<void> | void;
   resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
   commit(): TResult;
@@ -169,14 +178,7 @@ export interface PublishMediaOptions<TResult> extends DurablePublicationContext 
   logContext?: { runId?: string; itemId?: string };
 }
 
-export class PublicationError extends Error {
-  constructor(
-    message: string,
-    readonly operationId: string,
-    readonly committed: boolean,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = "PublicationError";
-  }
+export interface PublicationResult<TResult> {
+  value: TResult;
+  cleanupIssues: unknown[];
 }

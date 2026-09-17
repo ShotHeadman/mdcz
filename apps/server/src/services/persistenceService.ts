@@ -2,6 +2,7 @@ import {
   createPersistenceDatabase,
   LibraryRepairIssueRepository,
   LibraryRepository,
+  MaintenanceDirectoryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   PublicationJournalRepository,
@@ -17,6 +18,7 @@ import { acquireDatabaseLease } from "../databaseFiles";
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
+  maintenanceDirectoryTasks: MaintenanceDirectoryRepository;
   library: LibraryRepository;
   libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
@@ -71,6 +73,8 @@ export class ServerPersistenceService {
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
+      const maintenanceDirectoryTasks = new MaintenanceDirectoryRepository(database);
+      maintenanceDirectoryTasks.interruptUnfinished();
       const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
       const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
@@ -83,6 +87,7 @@ export class ServerPersistenceService {
       this.state = {
         database,
         repositories: {
+          maintenanceDirectoryTasks,
           library: new LibraryRepository(database),
           libraryRepairIssues,
           mediaRoots,

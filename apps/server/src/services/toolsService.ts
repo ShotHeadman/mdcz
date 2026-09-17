@@ -169,6 +169,7 @@ export class ToolsService {
               publication: {
                 journal: state.repositories.publicationJournal,
                 outputs: state.repositories.library,
+                library: state.repositories.library,
                 repairIssues: state.repositories.libraryRepairIssues,
                 roots: await this.mediaRoots.listRoots(),
               },
@@ -220,6 +221,7 @@ export class ToolsService {
           const results = await applyAmazonPosters(this.networkClient, items, {
             journal: state.repositories.publicationJournal,
             outputs: state.repositories.library,
+            library: state.repositories.library,
             repairIssues: state.repositories.libraryRepairIssues,
             roots: await this.mediaRoots.listRoots(),
           });

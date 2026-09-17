@@ -5,7 +5,7 @@ import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } fro
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
-import { publicationPathKey } from "../publication/boundary";
+import { publicationPathKey } from "../publication/paths";
 import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
 import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../scrape";
 import { throwIfAborted } from "../scrape/utils/abort";

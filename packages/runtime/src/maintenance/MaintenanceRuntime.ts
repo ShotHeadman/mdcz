@@ -1,5 +1,5 @@
 import type { MediaRoot } from "@mdcz/media-store";
-import { isPathInside, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import type {
   CrawlerData,
@@ -10,7 +10,7 @@ import type {
   MaintenancePreviewStatus,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { PreparedPublicationPlan } from "../publication";
+import type { MoviePublicationPlan, PublicationParticipants } from "../publication";
 import {
   type AggregationService,
   applyScrapeNetworkPolicy,
@@ -27,7 +27,6 @@ import {
   type MaintenanceFileScraperDependencies,
   type MaintenanceSignalService,
 } from "./MaintenanceFileScraper";
-import type { CommittedMaintenanceFile } from "./MaintenancePreparationService";
 import { getMaintenancePreset, supportsMaintenanceExecution } from "./presets";
 
 export interface MaintenanceRuntimeConfigProvider {
@@ -52,15 +51,16 @@ export interface MaintenanceRuntimeDependencies {
   postProcessAssets?: MaintenanceFileScraperDependencies["postProcessAssets"];
 }
 
-export interface MaintenanceRuntimePreviewEntriesInput {
+export interface MaintenanceRuntimePreviewMovieInput {
   root: MediaRoot;
   presetId: MaintenancePresetId;
-  entries: LocalScanEntry[];
-  sharedData?: CommittedMaintenanceFile;
+  entry: LocalScanEntry;
+  files: LocalScanEntry[];
   signal?: AbortSignal;
 }
 
 export interface MaintenanceRuntimePreviewItem {
+  files?: LocalScanEntry[];
   affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   entry: LocalScanEntry;
   rootId: string;
@@ -84,6 +84,12 @@ export interface MaintenanceRuntimeApplyEntryInput {
     imageAlternatives?: MaintenanceImageAlternatives;
     assetDecisions?: import("@mdcz/shared/types").MaintenanceAssetDecisions;
   };
+  publication: {
+    validateOutputs(outputs: readonly import("@mdcz/shared/mediaRef").RootFileRef[]): Promise<void>;
+    operationId: string;
+    roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+    identity: Pick<PublicationParticipants, "movieId" | "expected">;
+  };
   progress?: { fileIndex: number; totalFiles: number };
   signalService?: MaintenanceSignalService;
   signal?: AbortSignal;
@@ -97,7 +103,9 @@ export interface MaintenanceRuntimeApplySuccess {
   unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
   outputRelativePath: string;
-  plan?: PreparedPublicationPlan;
+  outputSize?: number;
+  outputModifiedAt?: Date;
+  publication?: { plan: MoviePublicationPlan };
   release?: () => Promise<void>;
 }
 
@@ -134,6 +142,7 @@ export class MaintenanceRuntime {
   constructor(
     private readonly deps: MaintenanceRuntimeDependencies,
     private readonly sourceMediaPath?: string,
+    private readonly outputTemplateRoot?: string,
   ) {}
 
   async getConfiguration(): Promise<Configuration> {
@@ -158,11 +167,11 @@ export class MaintenanceRuntime {
     const outputBaseDirectory = input.outputRelativeDirectory
       ? resolveRootRelativePath(input.outputRoot, input.outputRelativeDirectory)
       : input.outputRoot.hostPath;
-    config.paths.mediaPath = isPathInside(sourceMediaPath, outputBaseDirectory)
-      ? sourceMediaPath
-      : input.outputRoot.hostPath;
-    config.paths.successOutputFolder = outputBaseDirectory;
-    return new MaintenanceRuntime({ ...this.deps, config: { get: async () => config } }, sourceMediaPath);
+    return new MaintenanceRuntime(
+      { ...this.deps, config: { get: async () => config } },
+      sourceMediaPath,
+      outputBaseDirectory,
+    );
   }
 
   /** Applies the current per-site scrape policy to maintenance HTTP work. */
@@ -177,7 +186,7 @@ export class MaintenanceRuntime {
     signal?: AbortSignal;
     registeredOutputs?: Map<string, { nfoPath?: string; strmPath?: string }>;
   }): Promise<LocalScanEntry[]> {
-    const config = await this.getPresetConfig("read_local", input.root);
+    const config = await this.getPresetConfig("read_local");
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
     return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal, {
       mediaPath: this.sourceMediaPath ?? config.paths.mediaPath,
@@ -186,36 +195,31 @@ export class MaintenanceRuntime {
     });
   }
 
-  async previewEntries(input: MaintenanceRuntimePreviewEntriesInput): Promise<MaintenanceRuntimePreviewItem[]> {
+  async previewMovie(input: MaintenanceRuntimePreviewMovieInput): Promise<MaintenanceRuntimePreviewItem> {
     const preset = getMaintenancePreset(input.presetId);
-    const config = await this.getPresetConfig(input.presetId, input.root);
-    const entries = input.entries;
+    const config = await this.getPresetConfig(input.presetId);
 
     if (!supportsMaintenanceExecution(preset)) {
-      return entries.map((entry) => this.localEntryToPreviewItem(input.root, entry));
+      return { ...this.localEntryToPreviewItem(input.root, input.entry), files: input.files };
     }
 
     const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(), preset);
-    const items: MaintenanceRuntimePreviewItem[] = [];
-    for (const entry of entries) {
-      const relativePath = this.toRelativePath(input.root, entry.fileInfo.filePath);
-      const preview = await scraper.previewFile(entry, config, input.signal, input.sharedData);
-      items.push({
-        entry,
-        rootId: input.root.id,
-        relativePath,
-        status: preview.status,
-        error: preview.error ?? null,
-        fieldDiffs: preview.fieldDiffs ?? [],
-        unchangedFieldDiffs: preview.unchangedFieldDiffs ?? [],
-        pathDiff: preview.pathDiff ?? null,
-        proposedCrawlerData: preview.proposedCrawlerData ?? null,
-        imageAlternatives: preview.imageAlternatives,
-      });
-    }
-
-    items.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
-    return items;
+    const entry = input.entry;
+    const preview = await scraper.previewFile(entry, config, input.signal, input.files);
+    return {
+      entry,
+      rootId: input.root.id,
+      relativePath: this.toRelativePath(input.root, entry.fileInfo.filePath),
+      status: preview.status,
+      error: preview.error ?? null,
+      fieldDiffs: preview.fieldDiffs ?? [],
+      unchangedFieldDiffs: preview.unchangedFieldDiffs ?? [],
+      pathDiff: preview.pathDiff ?? null,
+      proposedCrawlerData: preview.proposedCrawlerData ?? null,
+      imageAlternatives: preview.imageAlternatives,
+      affectedFiles: preview.affectedFiles,
+      files: input.files,
+    };
   }
 
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {
@@ -229,7 +233,7 @@ export class MaintenanceRuntime {
     }
 
     const entry = input.entry;
-    const config = await this.getPresetConfig(input.presetId, input.root);
+    const config = await this.getPresetConfig(input.presetId);
     const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(input.signalService), preset);
     const result = await scraper.processFile(
       entry,
@@ -238,6 +242,7 @@ export class MaintenanceRuntime {
       input.signal,
       input.committed,
       input.files,
+      input.publication,
     );
 
     if (result.status !== "success") {
@@ -245,10 +250,11 @@ export class MaintenanceRuntime {
     }
 
     const updatedEntry = result.updatedEntry ?? entry;
-    const plan = result.publicationPlan;
-    if (!plan) {
+    const publication = result.publication;
+    if (!publication) {
       return { status: "failed", error: "维护应用未生成发布计划" };
     }
+    if (!result.outputRelativePath) throw new Error("Maintenance publication requires the selected media member");
     return {
       status: "success",
       entry: updatedEntry,
@@ -256,8 +262,10 @@ export class MaintenanceRuntime {
       fieldDiffs: result.fieldDiffs,
       unchangedFieldDiffs: result.unchangedFieldDiffs,
       pathDiff: result.pathDiff,
-      outputRelativePath: this.toRelativePath(input.root, updatedEntry.fileInfo.filePath),
-      plan,
+      outputRelativePath: result.outputRelativePath,
+      outputSize: result.outputSize,
+      outputModifiedAt: result.outputModifiedAt,
+      publication: { plan: publication.plan },
       release: result.release,
     };
   }
@@ -294,6 +302,7 @@ export class MaintenanceRuntime {
 
   private createFileScraperDependencies(signalService?: MaintenanceSignalService): MaintenanceFileScraperDependencies {
     return {
+      outputTemplateRoot: this.outputTemplateRoot,
       actorImageService: this.deps.actorImageService,
       actorSourceProvider: this.deps.actorSourceProvider,
       aggregationService: this.deps.aggregationService,
@@ -306,18 +315,9 @@ export class MaintenanceRuntime {
     };
   }
 
-  private async getPresetConfig(presetId: MaintenancePresetId, root: MediaRoot): Promise<Configuration> {
+  private async getPresetConfig(presetId: MaintenancePresetId): Promise<Configuration> {
     const preset = getMaintenancePreset(presetId);
     const baseConfig = await this.getConfiguration();
-    return mergeDeep(
-      {
-        ...baseConfig,
-        paths: {
-          ...baseConfig.paths,
-          mediaPath: baseConfig.paths.mediaPath.trim() || root.hostPath,
-        },
-      },
-      preset.configOverrides,
-    );
+    return mergeDeep(baseConfig, preset.configOverrides);
   }
 }

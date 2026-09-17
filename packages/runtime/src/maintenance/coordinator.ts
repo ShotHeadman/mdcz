@@ -1,30 +1,26 @@
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
+import { toErrorMessage } from "@mdcz/shared/error";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
   MaintenanceApplyItemResult,
   MaintenanceApplySelection,
-  MaintenanceLibrarySource,
   MaintenancePreviewBatch,
   MaintenanceSessionEvent,
   MaintenanceSessionPreview,
   MaintenanceSessionRef,
   MaintenanceSessionSnapshot,
   MaintenanceSessionStatus,
+  MaintenancePublicationIdentity as SharedMaintenancePublicationIdentity,
 } from "@mdcz/shared/maintenanceTasks";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import type { CrawlerData, DiscoveredAssets, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
+import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
-import {
-  type PreparedPublicationPlan,
-  PublicationError,
-  type PublicationPlan,
-  prepareMediaPathKeys,
-} from "../publication";
+import { type MoviePublicationPlan, prepareMediaPathKeys } from "../publication";
 import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
 import { isAbortError } from "../scrape/utils/abort";
 import { TaskExecutor, type TaskExecutorContext } from "../tasks";
@@ -42,35 +38,35 @@ export interface MaintenanceRootPort {
   ensurePathRecord(input: { hostPath: string }): Promise<MediaRoot>;
 }
 
+export interface MaintenanceDirectoryTaskDefinition {
+  id: string;
+  directoryScope: DirectoryTaskScope;
+  configuration: Configuration;
+  rootId: string;
+  outputRootId: string;
+  outputRelativeDirectory: string;
+  presetId: MaintenancePresetId;
+}
+
+type MaintenancePublicationIdentity = SharedMaintenancePublicationIdentity;
+
 export interface MaintenanceLibraryPort {
+  resolveParticipants(
+    sources: readonly (RootFileRef & { fileId?: string })[],
+    outputs?: readonly RootFileRef[],
+    identity?: string,
+    movieId?: string,
+  ): Promise<MaintenancePublicationIdentity>;
+  assertPublication(identity: MaintenancePublicationIdentity, outputs?: readonly RootFileRef[]): Promise<void>;
   registeredOutputs(paths: readonly string[]): Promise<Map<string, RegisteredMediaLocation>>;
-  resolveSource(absolutePath: string): Promise<MaintenanceLibrarySource | null>;
-  preflightRefresh(input: {
-    librarySource?: MaintenanceLibrarySource;
-    sourceAbsolutePath: string;
-    targetAbsolutePath: string;
-  }): Promise<void>;
   publishRefresh(input: {
     operationId: string;
     ownershipToken: string;
-    plan: PreparedPublicationPlan;
-    resolvedPlan?: PublicationPlan;
-    refresh: {
-      files: Array<{
-        librarySource?: MaintenanceLibrarySource;
-        sourceAbsolutePath: string;
-        targetAbsolutePath: string;
-        size: number;
-        modifiedAt: Date;
-        outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
-      }>;
-      crawlerData?: CrawlerData;
-      fallbackNumber: string;
-      assets: DiscoveredAssets;
-      removedAssets?: RootFileRef[];
-      refreshedAt: Date;
-    };
-  }): Promise<{ libraryItemId: string }>;
+    plan: MoviePublicationPlan;
+    crawlerData?: CrawlerData;
+    fallbackNumber: string;
+    refreshedAt: Date;
+  }): Promise<{ libraryItemId: string; cleanupIssues: unknown[] }>;
 }
 
 export type MaintenanceCoordinatorEvent =
@@ -88,10 +84,15 @@ type ActiveExecution = {
   executor: { pause(): void; stop(): void };
 };
 
+type MaintenanceMovieSelection = {
+  ref: MaintenanceSessionRef;
+  identity: MaintenancePublicationIdentity;
+  files?: LocalScanEntry[];
+};
+
 type PreviewExecutionResult = {
-  entry: LocalScanEntry;
   item: MaintenanceRuntimePreviewItem;
-  librarySource: MaintenanceLibrarySource | null;
+  selection: MaintenanceMovieSelection;
 };
 
 type ApplyExecutionResult = {
@@ -107,14 +108,14 @@ const STOPPED_ITEM = "维护已停止，项目未执行";
 const INTERRUPTED = "维护因服务关闭而中断，请重新预览后执行";
 const OWNERSHIP_CHANGED = "Maintenance execution ownership changed";
 
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const errorMessage = (error: unknown): string => toErrorMessage(error);
 
 const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${ref.relativePath}`;
 
 const assertUniqueRefs = (refs: readonly MaintenanceSessionRef[]): void => {
   const seen = new Set<string>();
   for (const ref of refs) {
-    if (!ref.relativePath.trim()) throw new Error("维护文件相对路径不能为空");
+    if (!ref.relativePath.trim()) throw new Error("维护文件路径不能为空");
     const key = refKey(ref);
     if (seen.has(key)) throw new Error(`维护文件路径重复：${ref.rootId}:${ref.relativePath}`);
     seen.add(key);
@@ -124,7 +125,6 @@ const assertUniqueRefs = (refs: readonly MaintenanceSessionRef[]): void => {
 const canonicalizeRefs = async (
   roots: MaintenanceRootPort,
   refs: readonly MaintenanceSessionRef[],
-  library: MaintenanceLibraryPort,
 ): Promise<MaintenanceSessionRef[]> => {
   const registeredRoots = await roots.list();
   const rootsById = new Map(registeredRoots.map((root) => [root.id, root]));
@@ -135,18 +135,21 @@ const canonicalizeRefs = async (
     return { rootId: resolved.root.id, relativePath: resolved.relativePath };
   });
   assertUniqueRefs(canonical);
-  const movies = new Map<string, MaintenanceSessionRef>();
-  for (const ref of canonical) {
-    const root = rootsById.get(ref.rootId);
-    if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
-    const source = await library.resolveSource(resolveRootRelativePath(root, ref.relativePath));
-    const file = source?.files.toSorted((a, b) =>
-      `${a.rootId}:${a.rootRelativePath}`.localeCompare(`${b.rootId}:${b.rootRelativePath}`),
-    )[0];
-    movies.set(
-      source?.libraryItemId ?? refKey(ref),
-      file ? { rootId: file.rootId, relativePath: file.rootRelativePath } : ref,
-    );
+  return canonical;
+};
+
+const resolveMovieSelections = async (
+  library: MaintenanceLibraryPort,
+  refs: readonly MaintenanceSessionRef[],
+): Promise<MaintenanceMovieSelection[]> => {
+  const movies = new Map<string, MaintenanceMovieSelection>();
+  for (const ref of refs) {
+    const identity = await library.resolveParticipants([ref]);
+    const representative = identity.files
+      .map(({ rootId, relativePath }) => ({ rootId, relativePath }))
+      .toSorted((left, right) => refKey(left).localeCompare(refKey(right)))[0];
+    if (!representative) throw new Error("维护影片没有可扫描的视频文件");
+    movies.set(identity.movieId, { ref: representative, identity });
   }
   return [...movies.values()];
 };
@@ -179,23 +182,25 @@ const ownedPreviewPaths = (
   return [...paths.values()];
 };
 
-const scanRefs = async (
+const scanMembers = async (
   runtime: MaintenanceRuntime,
   roots: MaintenanceRootPort,
   library: MaintenanceLibraryPort,
-  refs: readonly MaintenanceSessionRef[],
+  members: readonly (RootFileRef & { fileId: string })[],
   signal?: AbortSignal,
-): Promise<LocalScanEntry[]> => {
-  assertUniqueRefs(refs);
-  const refsByRoot = new Map<string, MaintenanceSessionRef[]>();
-  for (const ref of refs) {
-    const group = refsByRoot.get(ref.rootId) ?? [];
-    group.push(ref);
-    refsByRoot.set(ref.rootId, group);
+): Promise<Array<LocalScanEntry & { fileId: string }>> => {
+  assertUniqueRefs(members);
+  const refsByRoot = new Map<string, Array<RootFileRef & { fileId: string }>>();
+  for (const member of members) {
+    const group = refsByRoot.get(member.rootId) ?? [];
+    group.push(member);
+    refsByRoot.set(member.rootId, group);
   }
   const byRef = new Map<string, LocalScanEntry>();
   const registeredOutputs = await library.registeredOutputs(
-    await Promise.all(refs.map(async (ref) => resolveRootRelativePath(await roots.get(ref.rootId), ref.relativePath))),
+    await Promise.all(
+      members.map(async (member) => resolveRootRelativePath(await roots.get(member.rootId), member.relativePath)),
+    ),
   );
   for (const [rootId, group] of refsByRoot) {
     const root = await roots.get(rootId);
@@ -212,10 +217,14 @@ const scanRefs = async (
       byRef.set(key, { ...entry, ref });
     }
   }
-  if (byRef.size !== refs.length || refs.some((ref) => !byRef.has(refKey(ref)))) {
+  if (byRef.size !== members.length || members.some((member) => !byRef.has(refKey(member)))) {
     throw new Error("维护扫描结果与请求文件不一致");
   }
-  return refs.map((ref) => byRef.get(refKey(ref)) as LocalScanEntry);
+  return members.map((member) => {
+    const observation = byRef.get(refKey(member));
+    if (!observation) throw new Error("维护扫描结果与请求文件不一致");
+    return { ...observation, fileId: member.fileId };
+  });
 };
 
 const libraryCommitFailure = (error: unknown): MaintenanceApplyItemResult => ({
@@ -235,7 +244,7 @@ export class MaintenanceSessionCoordinator {
   private closing = false;
   private closePromise: Promise<void> | null = null;
   private previewStarting = false;
-  private directoryConfiguration?: Configuration;
+  private previewSelections = new Map<string, MaintenanceMovieSelection>();
   private pendingPreviewSetup: {
     root: MediaRoot;
     outputRoot: MediaRoot;
@@ -247,6 +256,11 @@ export class MaintenanceSessionCoordinator {
     private readonly deps: {
       roots: MaintenanceRootPort;
       runtime: MaintenanceRuntime;
+      directoryTasks: {
+        save(definition: MaintenanceDirectoryTaskDefinition): Promise<void>;
+        get(id: string): Promise<MaintenanceDirectoryTaskDefinition>;
+        setStatus(id: string, status: string): Promise<void>;
+      };
       discoverDirectory?: (
         scope: DirectoryTaskScope,
         configuration: Configuration,
@@ -282,7 +296,10 @@ export class MaintenanceSessionCoordinator {
       if (configuration.behavior.metadataOnly) {
         throw new Error("维护模式不支持仅输出元数据，请先在设置中关闭");
       }
-      const refs = await canonicalizeRefs(this.deps.roots, input.refs, this.deps.library);
+      const canonical = await canonicalizeRefs(this.deps.roots, input.refs);
+      const selections = await resolveMovieSelections(this.deps.library, canonical);
+      const refs = selections.map((selection) => selection.ref);
+      this.previewSelections = new Map(selections.map((selection) => [refKey(selection.ref), selection]));
       const root = await this.deps.roots.get(input.rootId);
       const outputRoot = input.outputRootId ? await this.deps.roots.get(input.outputRootId) : root;
       const outputRelativeDirectory = input.outputRelativeDirectory ?? "";
@@ -292,10 +309,21 @@ export class MaintenanceSessionCoordinator {
       const generation = (this.session?.generation ?? 0) + 1;
       this.session?.invalidate();
       this.assertOpen();
-      this.directoryConfiguration = configuration;
+      const sessionId = randomUUID();
+      if (input.directoryScope) {
+        await this.deps.directoryTasks.save({
+          id: sessionId,
+          directoryScope: input.directoryScope,
+          configuration,
+          rootId: input.rootId,
+          outputRootId: outputRoot.id,
+          outputRelativeDirectory,
+          presetId: input.presetId,
+        });
+      }
       this.session = new MaintenanceSession({
         directoryScope: input.directoryScope,
-        id: randomUUID(),
+        id: sessionId,
         rootId: input.rootId,
         presetId: input.presetId,
         generation,
@@ -350,12 +378,12 @@ export class MaintenanceSessionCoordinator {
     if (previews.length !== previewIds.length) throw new Error("部分维护预览不存在、已提交或不属于当前会话");
     const refs = ownedPreviewPaths(await this.deps.roots.list(), previews);
     for (const preview of previews)
-      for (const file of preview.librarySource?.files ?? [])
-        refs.push({ rootId: file.rootId, relativePath: file.rootRelativePath });
+      for (const file of preview.publicationIdentity?.files ?? [])
+        refs.push({ rootId: file.rootId, relativePath: file.relativePath });
     const keys = await prepareMediaPathKeys(refs, (id) => this.deps.roots.get(id));
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
-    if (this.session !== session) throw new Error("维护会话已变化");
+    if (this.session !== session) throw new Error("当前维护任务已失效，请重新开始");
     const acquireAll = this.deps.acquireAll ?? ((owned, owner) => mediaPathOwnership.acquireAll(owned, owner));
     const release = acquireAll(keys, session.id);
     let apply: { generation: number; batchId: string };
@@ -456,17 +484,9 @@ export class MaintenanceSessionCoordinator {
   }
 
   async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
-    const snapshot = this.session?.snapshot();
-    if (!snapshot || snapshot.id !== sessionId || !snapshot.directoryScope) throw new Error("维护目录任务不存在");
-    const configuration = this.directoryConfiguration;
-    if (!configuration) throw new Error("维护目录配置不存在");
+    const definition = await this.deps.directoryTasks.get(sessionId);
     return await this.startPreview({
-      directoryScope: snapshot.directoryScope,
-      configuration,
-      rootId: snapshot.rootId,
-      outputRootId: snapshot.outputRootId,
-      outputRelativeDirectory: snapshot.outputRelativeDirectory,
-      presetId: snapshot.presetId,
+      ...definition,
       refs: [],
     });
   }
@@ -484,11 +504,12 @@ export class MaintenanceSessionCoordinator {
 
   async discardSession(sessionId?: string): Promise<void> {
     if (!this.session) return;
-    if (sessionId && this.session.id !== sessionId) throw new Error("维护会话已变化");
+    if (sessionId && this.session.id !== sessionId) throw new Error("当前维护任务已失效，请重新开始");
     if (this.session.isActive()) throw new Error("维护会话仍在运行，请先停止后再返回设置");
     const id = this.session.id;
     this.session.invalidate();
     this.releasePaths();
+    this.previewSelections.clear();
     this.session = null;
     this.notify(id);
   }
@@ -507,6 +528,7 @@ export class MaintenanceSessionCoordinator {
     const session = this.session;
     if (session) await this.requestTermination(session.id, INTERRUPTED, INTERRUPTED);
     this.releasePaths();
+    this.previewSelections.clear();
   }
 
   private async startCurrentPhase(sessionId: string, generation: number, message?: string): Promise<void> {
@@ -544,7 +566,7 @@ export class MaintenanceSessionCoordinator {
       }
       scanController.signal.throwIfAborted();
       if (initial.directoryScope && !initial.snapshot().manifestFixed) {
-        if (!this.deps.discoverDirectory || !setup?.configuration) throw new Error("维护目录发现缺少配置");
+        if (!this.deps.discoverDirectory || !setup?.configuration) throw new Error("目录扫描缺少必要配置");
         let progressNotification = Promise.resolve();
         let progressError: unknown;
         const refs = await this.deps.discoverDirectory(
@@ -565,23 +587,45 @@ export class MaintenanceSessionCoordinator {
         await progressNotification;
         if (progressError) throw progressError;
         scanController.signal.throwIfAborted();
-        initial.fixDiscoveredRefs(generation, await canonicalizeRefs(this.deps.roots, refs, this.deps.library));
+        const canonical = await canonicalizeRefs(this.deps.roots, refs);
+        const selections = await resolveMovieSelections(this.deps.library, canonical);
+        this.previewSelections = new Map(selections.map((selection) => [refKey(selection.ref), selection]));
+        initial.fixDiscoveredRefs(
+          generation,
+          selections.map((selection) => selection.ref),
+        );
         await this.publishChanged(initial);
       }
       await this.runtime.applyNetworkPolicy?.();
       initial = this.assertCurrent(sessionId, generation, ["running", "paused"]);
       if (initial.status === "paused") return;
-      const existingEntries = initial.activePreviews().flatMap((preview) => (preview.entry ? [preview.entry] : []));
-      const entries =
-        existingEntries.length === initial.refs.length
-          ? existingEntries
-          : (
-              await scanRefs(this.runtime, this.deps.roots, this.deps.library, [...initial.refs], scanController.signal)
-            ).sort((left, right) => refKey(left.ref).localeCompare(refKey(right.ref), "zh-CN"));
+      const selections = initial.refs.map((ref) => {
+        const selection = this.previewSelections.get(refKey(ref));
+        if (!selection) throw new Error(`维护影片选择已失效：${ref.rootId}:${ref.relativePath}`);
+        return selection;
+      });
+      for (const selection of selections) {
+        if (selection.files) continue;
+        const scanned = await scanMembers(
+          this.runtime,
+          this.deps.roots,
+          this.deps.library,
+          selection.identity.files,
+          scanController.signal,
+        );
+        selection.files = scanned;
+      }
       let current = this.assertCurrent(sessionId, generation, ["running", "paused"]);
       if (current.status === "paused") return;
-      if (!current.activePreviews().length && entries.length) {
-        current.initializeEntries(generation, entries);
+      if (!current.activePreviews().length && selections.length) {
+        current.initializeEntries(
+          generation,
+          selections.map((selection) => {
+            const entry = selection.files?.find((file) => refKey(file.ref) === refKey(selection.ref));
+            if (!entry) throw new Error("维护预览缺少选中的文件");
+            return entry;
+          }),
+        );
         await this.publishChanged(current);
       }
       const committedPaths = new Set(
@@ -590,78 +634,40 @@ export class MaintenanceSessionCoordinator {
           .previews.filter((preview) => preview.status === "ready" || preview.status === "blocked")
           .map(refKey),
       );
-      const pending = entries.filter((entry) => !committedPaths.has(refKey(entry.ref)));
-      await this.executeItems<LocalScanEntry, PreviewExecutionResult>(sessionId, generation, pending, {
-        runItem: async (entry, context) => {
+      const pending = selections.filter((selection) => !committedPaths.has(refKey(selection.ref)));
+      await this.executeItems<MaintenanceMovieSelection, PreviewExecutionResult>(sessionId, generation, pending, {
+        runItem: async (selection, context) => {
           this.assertCurrent(sessionId, generation, ["running"]);
           const activeSession = this.require(sessionId);
-          activeSession.markPreviewProcessing(generation, entry.ref.rootId, entry.ref.relativePath);
+          activeSession.markPreviewProcessing(generation, selection.ref.rootId, selection.ref.relativePath);
           await this.publishChanged(activeSession);
 
+          const files = selection.files;
+          const entry = files?.find((file) => refKey(file.ref) === refKey(selection.ref));
+          if (!files || !entry) throw new Error("维护预览缺少已扫描的影片成员");
           const root = await this.deps.roots.get(entry.ref.rootId);
           try {
             const active = this.assertCurrent(sessionId, generation, ["running"]);
-            const librarySource = await this.deps.library.resolveSource(entry.fileInfo.filePath);
-            if (active.presetId === "organize_files" || active.presetId === "rebuild_all") {
-              for (const file of librarySource?.files ?? []) {
-                const fileRoot = await this.deps.roots.get(file.rootId);
-                const absolutePath = resolveRootRelativePath(fileRoot, file.rootRelativePath);
-                if (!(await stat(absolutePath)).isFile()) throw new Error(`影片文件不可用：${absolutePath}`);
-              }
-            }
-            const [item] = await this.runtime.previewEntries({
+            const item = await this.runtime.previewMovie({
               root,
               presetId: active.presetId,
-              entries: [entry],
+              entry,
+              files,
               signal: context.signal,
             });
-            if (!item) throw new Error("维护预览未返回结果");
-            item.affectedFiles = [];
-            for (const file of librarySource?.files ?? []) {
-              const fileRoot = await this.deps.roots.get(file.rootId);
-              const currentPath = resolveRootRelativePath(fileRoot, file.rootRelativePath);
-              let targetPath = currentPath;
-              if (active.presetId === "organize_files" || active.presetId === "rebuild_all") {
-                if (currentPath === entry.fileInfo.filePath) targetPath = item.pathDiff?.targetVideoPath ?? currentPath;
-                else {
-                  const peerEntries = await scanRefs(
-                    this.runtime,
-                    this.deps.roots,
-                    this.deps.library,
-                    [{ rootId: file.rootId, relativePath: file.rootRelativePath }],
-                    context.signal,
-                  );
-                  const [peer] = await this.runtime.previewEntries({
-                    root: fileRoot,
-                    presetId: active.presetId,
-                    entries: peerEntries,
-                    sharedData: {
-                      crawlerData: item.proposedCrawlerData ?? undefined,
-                      imageAlternatives: item.imageAlternatives,
-                    },
-                    signal: context.signal,
-                  });
-                  if (!peer || peer.status === "blocked") throw new Error(peer?.error ?? "影片文件预览失败");
-                  targetPath = peer.pathDiff?.targetVideoPath ?? currentPath;
-                }
-                if (librarySource)
-                  await this.deps.library.preflightRefresh({
-                    librarySource: { ...librarySource, ...file },
-                    sourceAbsolutePath: currentPath,
-                    targetAbsolutePath: targetPath,
-                  });
-              }
-              item.affectedFiles.push({ fileId: file.libraryFileId, currentPath, targetPath });
-            }
-            if (new Set(item.affectedFiles.map((file) => file.targetPath)).size !== item.affectedFiles.length)
+            if (
+              item.affectedFiles &&
+              new Set(item.affectedFiles.map((file) => file.targetPath)).size !== item.affectedFiles.length
+            )
               throw new Error("影片多个文件的目标路径重复，请调整命名后重新预览");
-            return { entry, item, librarySource };
+            return { item, selection };
           } catch (error) {
             if (isAbortError(error) || context.signal.aborted) throw error;
             return {
-              entry,
+              selection,
               item: {
                 entry,
+                files,
                 rootId: entry.ref.rootId,
                 relativePath: entry.ref.relativePath,
                 status: "blocked",
@@ -671,12 +677,11 @@ export class MaintenanceSessionCoordinator {
                 pathDiff: null,
                 proposedCrawlerData: null,
               },
-              librarySource: null,
             };
           }
         },
-        applyResult: async (_entry, result) => {
-          this.commitPreview(sessionId, generation, result.item, result.librarySource);
+        applyResult: async (_selection, result) => {
+          this.commitPreview(sessionId, generation, result.item, result.selection);
           await this.publishChanged(this.require(sessionId));
         },
       });
@@ -716,18 +721,30 @@ export class MaintenanceSessionCoordinator {
           if (active.preview.status === "blocked") {
             return { result: { status: "skipped", error: active.preview.error ?? "维护预览不可应用" } };
           }
+          let release: (() => Promise<void>) | undefined;
           try {
+            const previewIdentity = active.preview.publicationIdentity;
+            if (!previewIdentity) throw new Error("Maintenance preview has no publication identity");
             const root = await this.deps.roots.get(active.preview.rootId);
-            const source = active.preview.librarySource;
-            const files = await scanRefs(
+            await this.deps.library.assertPublication(previewIdentity);
+
+            const files = await scanMembers(
               this.runtime,
               this.deps.roots,
               this.deps.library,
-              source?.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })) ?? [
-                { rootId: active.preview.rootId, relativePath: active.preview.relativePath },
-              ],
+              previewIdentity.files,
               context.signal,
             );
+            for (const previous of active.preview.files ?? []) {
+              const current = files.find((file) => file.fileId === previous.fileId);
+              if (
+                !current ||
+                !isDeepStrictEqual(current.fileInfo, previous.fileInfo) ||
+                !isDeepStrictEqual(current.nfoLocalState, previous.nfoLocalState)
+              ) {
+                throw new Error("影片源文件或本地元数据已修改，请重新预览");
+              }
+            }
             const entry = files.find(
               (file) =>
                 file.ref.rootId === active.preview?.rootId && file.ref.relativePath === active.preview.relativePath,
@@ -735,15 +752,9 @@ export class MaintenanceSessionCoordinator {
             if (!entry)
               return { result: { status: "failed", error: `维护文件不存在：${active.preview.relativePath}` } };
             const committed = buildMaintenanceApplyData(entry, active.preview, active.item.selection.fieldSelections);
-            const sourceAbsolutePath = active.preview.entry?.fileInfo.filePath ?? entry.fileInfo.filePath;
-            const targetAbsolutePath = active.preview.pathDiff?.targetVideoPath ?? sourceAbsolutePath;
-            await this.deps.library.preflightRefresh({
-              librarySource: active.preview.librarySource,
-              sourceAbsolutePath,
-              targetAbsolutePath,
-            });
             const latest = this.assertCurrent(sessionId, generation, ["running", "paused"]);
             const progress = latest.progress();
+            const publicationRoots = await this.deps.roots.list();
             const applied = await this.runtime.applyEntry({
               root,
               presetId: latest.presetId,
@@ -755,20 +766,25 @@ export class MaintenanceSessionCoordinator {
                 totalFiles: progress.totalEntries,
               },
               signal: context.signal,
+              publication: {
+                operationId: `${sessionId}:${active.preview.id}`,
+                roots: publicationRoots,
+                validateOutputs: async (outputs) => {
+                  await this.deps.library.assertPublication(previewIdentity, outputs);
+                },
+                identity: {
+                  movieId: previewIdentity.movieId,
+                  expected: previewIdentity.expected,
+                },
+              },
             });
             if (applied.status === "failed") return { result: { status: "failed", error: applied.error } };
-            const release = applied.release;
-            const plan = applied.plan;
-            if (!plan) {
-              return { result: { status: "failed", error: "维护应用未生成发布计划" }, release };
-            }
-            const video = plan.media?.[0];
-            const outputRelativePath = applied.outputRelativePath || active.preview.relativePath;
-            let file: Awaited<ReturnType<typeof stat>>;
-            try {
-              file = await stat(video?.sourcePath ?? sourceAbsolutePath);
-            } catch (error) {
-              return { result: libraryCommitFailure(error), release };
+            release = applied.release;
+            const publication = applied.publication;
+            if (!publication) {
+              if (latest.presetId === "read_local")
+                return { result: { status: "success", entry: applied.entry }, release };
+              return { result: { status: "failed", error: "维护处理未产生任何待更新的文件" }, release };
             }
             const crawlerData = applied.crawlerData ?? applied.entry.crawlerData ?? committed.crawlerData;
             return {
@@ -779,54 +795,17 @@ export class MaintenanceSessionCoordinator {
                 fieldDiffs: applied.fieldDiffs,
                 unchangedFieldDiffs: applied.unchangedFieldDiffs,
                 pathDiff: applied.pathDiff,
-                outputRelativePath,
-                outputSize: file.size,
-                outputModifiedAt: file.mtime,
+                outputRelativePath: applied.outputRelativePath || active.preview.relativePath,
+                outputSize: applied.outputSize,
+                outputModifiedAt: applied.outputModifiedAt,
               },
               publication: {
                 operationId: `${sessionId}:${active.preview.id}`,
                 ownershipToken: sessionId,
-                plan,
-                refresh: {
-                  files: await Promise.all(
-                    (plan.media?.length
-                      ? plan.media
-                      : [
-                          {
-                            sourcePath: sourceAbsolutePath,
-                            targetPath: targetAbsolutePath,
-                            assets: [],
-                            size: file.size,
-                          },
-                        ]
-                    ).map(async (media) => {
-                      const current = files.find((file) => file.fileInfo.filePath === media.sourcePath);
-                      const snapshot = source?.files.find(
-                        (file) =>
-                          file.rootId === current?.ref.rootId && file.rootRelativePath === current.ref.relativePath,
-                      );
-                      if (source && !snapshot) throw new Error("维护发布文件不属于预览集合");
-                      const info = await stat(media.sourcePath);
-                      const roots = await this.deps.roots.list();
-                      return {
-                        librarySource: source && snapshot ? { ...source, ...snapshot } : undefined,
-                        sourceAbsolutePath: media.sourcePath,
-                        targetAbsolutePath: media.targetPath,
-                        size: info.size,
-                        modifiedAt: info.mtime,
-                        outputAssets: (media.assets ?? []).flatMap((asset) => {
-                          if (!asset.targetPath || !["nfo", "strm", "subtitle"].includes(asset.kind)) return [];
-                          const target = resolveRootFile(roots, asset.targetPath);
-                          return [{ kind: asset.kind, rootId: target.root.id, relativePath: target.relativePath }];
-                        }),
-                      };
-                    }),
-                  ),
-                  crawlerData,
-                  fallbackNumber: applied.entry.fileInfo.number,
-                  assets: applied.entry.assets,
-                  refreshedAt: new Date(),
-                },
+                plan: publication.plan,
+                crawlerData,
+                fallbackNumber: applied.entry.fileInfo.number,
+                refreshedAt: new Date(),
               },
               release,
             };
@@ -834,6 +813,7 @@ export class MaintenanceSessionCoordinator {
             const stopped = isAbortError(error) || context.signal.aborted;
             return {
               result: { status: stopped ? "skipped" : "failed", error: stopped ? STOPPED_ITEM : errorMessage(error) },
+              release,
             };
           }
         },
@@ -880,20 +860,14 @@ export class MaintenanceSessionCoordinator {
     if (execution.publication) {
       try {
         this.assertCurrent(sessionId, generation, ["running", "paused"]);
-        await this.deps.library.publishRefresh(execution.publication);
-        const updatedFile = execution.publication.refresh.files[0];
-        if (!updatedFile) throw new Error("维护刷新文件集合不能为空");
-        const targetPath = updatedFile.targetAbsolutePath;
-        if (result.entry) result.entry.fileInfo.filePath = targetPath;
-        const target = resolveRootFile(await this.deps.roots.list(), targetPath);
-        result.outputRelativePath = target.relativePath;
-        result.outputSize = updatedFile.size;
+        const published = await this.deps.library.publishRefresh(execution.publication);
+        result = {
+          ...result,
+          ...(published.cleanupIssues.length ? { error: published.cleanupIssues.map(errorMessage).join("; ") } : {}),
+        };
       } catch (error) {
         if (!this.isCurrent(sessionId, generation)) throw error;
-        result =
-          error instanceof PublicationError && error.committed
-            ? { ...result, error: errorMessage(error) }
-            : libraryCommitFailure(error);
+        result = libraryCommitFailure(error);
       }
     }
     await this.commitItem(sessionId, generation, item, result);
@@ -931,10 +905,11 @@ export class MaintenanceSessionCoordinator {
     sessionId: string,
     generation: number,
     item: MaintenanceRuntimePreviewItem,
-    librarySource: MaintenanceLibrarySource | null,
+    selection: MaintenanceMovieSelection,
   ): void {
     const session = this.assertCurrent(sessionId, generation, ["running", "paused"]);
     session.commitPreview(generation, {
+      publicationIdentity: selection.identity,
       rootId: item.rootId,
       relativePath: item.relativePath,
       status: item.status,
@@ -945,8 +920,8 @@ export class MaintenanceSessionCoordinator {
       proposedCrawlerData: item.proposedCrawlerData,
       imageAlternatives: item.imageAlternatives,
       affectedFiles: item.affectedFiles,
+      files: item.files,
       entry: item.entry,
-      librarySource: librarySource ?? undefined,
     });
   }
 
@@ -979,7 +954,7 @@ export class MaintenanceSessionCoordinator {
       const revision = this.revision;
       const session = this.require(sessionId);
       if (["completed", "failed", "stopped", "interrupted"].includes(session.status)) {
-        if (session.snapshot().currentBatch?.id !== batchId) throw new Error("维护批次已变化");
+        if (session.snapshot().currentBatch?.id !== batchId) throw new Error("维护执行状态已变动，请重新查看任务进度");
         return {
           session: session.statusSnapshot(),
           batchId,
@@ -1049,6 +1024,7 @@ export class MaintenanceSessionCoordinator {
   }
 
   private async publishStatus(session: MaintenanceSession, type: string, message: string): Promise<void> {
+    if (session.directoryScope) await this.deps.directoryTasks.setStatus(session.id, session.status);
     await this.publishChanged(session);
     await this.publishLog(session, type, message);
   }

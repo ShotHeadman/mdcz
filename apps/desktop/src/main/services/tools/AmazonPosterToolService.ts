@@ -47,6 +47,7 @@ export class AmazonPosterToolService {
       validateImage,
       journal: state.repositories.publicationJournal,
       outputs: state.repositories.library,
+      library: state.repositories.library,
       repairIssues: state.repositories.libraryRepairIssues,
       roots: await this.mediaRoots.listRoots(),
     });

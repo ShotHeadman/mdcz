@@ -232,14 +232,14 @@ describe("buildServer maintenance integration", () => {
         const createSession = runtime.createSession.bind(runtime);
         runtime.createSession = async (sessionInput) => {
           const sessionRuntime = await createSession(sessionInput);
-          const previewEntries = sessionRuntime.previewEntries.bind(sessionRuntime);
-          sessionRuntime.previewEntries = async (input) => {
+          const previewMovie = sessionRuntime.previewMovie.bind(sessionRuntime);
+          sessionRuntime.previewMovie = async (input) => {
             if (firstPreview) {
               firstPreview = false;
               firstCallStarted();
               await blocked;
             }
-            return await previewEntries(input);
+            return await previewMovie(input);
           };
           return sessionRuntime;
         };
@@ -451,14 +451,14 @@ describe("buildServer maintenance integration", () => {
     const state = await services.persistence.getState();
     for (const name of sourceNames)
       await state.repositories.library.upsertEntry({
-        id: "maintenance-movie",
-        fileId: `maintenance-file:${name}`,
-        rootId,
-        rootRelativePath: name,
-        assets: [
-          { kind: "nfo", uri: "ABC-300.nfo", rootId, relativePath: "ABC-300.nfo", published: true },
-          { kind: "poster", uri: "ABC-300-poster.jpg", rootId, relativePath: "ABC-300-poster.jpg", published: true },
-        ],
+        movie: {
+          id: "maintenance-movie",
+          assets: [
+            { kind: "nfo", uri: "ABC-300.nfo", rootId, relativePath: "ABC-300.nfo", published: true },
+            { kind: "poster", uri: "ABC-300-poster.jpg", rootId, relativePath: "ABC-300-poster.jpg", published: true },
+          ],
+        },
+        files: [{ fileId: `maintenance-file:${name}`, rootId, rootRelativePath: name, assets: [] }],
       });
     const { session, sessionId } = await startMaintenancePreview(
       fastify,
@@ -481,10 +481,8 @@ describe("buildServer maintenance integration", () => {
     if (scenario === "added") {
       await writeFile(join(root, "ABC-300-CD3.mp4"), "third video");
       await state.repositories.library.upsertEntry({
-        id: before.id,
-        fileId: "new-file",
-        rootId,
-        rootRelativePath: "ABC-300-CD3.mp4",
+        movie: { id: before.id },
+        files: [{ fileId: "new-file", rootId, rootRelativePath: "ABC-300-CD3.mp4" }],
       });
     }
     if (scenario === "removed") state.repositories.library.removeFile(`maintenance-file:${sourceNames[1]}`);
@@ -500,7 +498,7 @@ describe("buildServer maintenance integration", () => {
         hostPath: join(root, "offline"),
       });
     if (scenario === "rollback")
-      vi.spyOn(state.repositories.library, "writeRefresh").mockImplementation(() => {
+      vi.spyOn(state.repositories.library, "writeEntry").mockImplementation(() => {
         throw new Error("injected maintenance commit failure");
       });
 
@@ -610,22 +608,30 @@ describe("buildServer maintenance integration", () => {
     const state = await services.persistence.getState();
     const outputRoot = await services.mediaRoots.ensurePathRecord({ hostPath: metadataRoot });
     await state.repositories.library.upsertEntry({
-      rootId,
-      rootRelativePath: `${baseName}.mp4`,
-      assets: [
+      movie: {
+        assets: [
+          {
+            kind: "nfo",
+            uri: `${baseName}.nfo`,
+            rootId: outputRoot.id,
+            relativePath: `${baseName}.nfo`,
+            published: true,
+          },
+          {
+            kind: "poster",
+            uri: `${baseName}-poster.jpg`,
+            rootId: outputRoot.id,
+            relativePath: `${baseName}-poster.jpg`,
+            published: true,
+          },
+        ],
+      },
+      files: [
         {
-          kind: "nfo",
-          uri: `${baseName}.nfo`,
-          rootId: outputRoot.id,
-          relativePath: `${baseName}.nfo`,
-          published: true,
-        },
-        {
-          kind: "poster",
-          uri: `${baseName}-poster.jpg`,
-          rootId: outputRoot.id,
-          relativePath: `${baseName}-poster.jpg`,
-          published: true,
+          rootId,
+          rootRelativePath: `${baseName}.mp4`,
+          assets: [],
+          fileId: `${rootId}:${baseName}.mp4`,
         },
       ],
     });

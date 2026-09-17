@@ -5,13 +5,14 @@ export * from "./applyData";
 export * from "./coordinator";
 export * from "./diffCrawlerData";
 export * from "./diffPaths";
+export * from "./directoryTaskPort";
 export * from "./LocalScanService";
 export * from "./libraryPort";
 export type {
   MaintenanceRuntimeApplyEntryInput,
   MaintenanceRuntimeApplyResult,
-  MaintenanceRuntimePreviewEntriesInput,
   MaintenanceRuntimePreviewItem,
+  MaintenanceRuntimePreviewMovieInput,
 } from "./MaintenanceRuntime";
 export { MaintenanceRuntime } from "./MaintenanceRuntime";
 export * from "./movieTags";

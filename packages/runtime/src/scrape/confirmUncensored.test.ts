@@ -6,10 +6,11 @@ import { Website } from "@mdcz/shared/enums";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commitPublishedMedia, createPublicationPlan } from "../publication";
+import { commitPublishedMedia, preparePublicationPlan, toRootFileRef } from "../publication";
+import { resolvePublicationAssetLayout } from "../publication/assetLayout";
 import { createMemoryPublicationJournal } from "../publication/memoryJournal";
 import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "./confirmUncensored";
-import { FileOrganizer } from "./FileOrganizer";
+import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
 import { NfoGenerator } from "./nfo";
 import { parseFileInfo } from "./utils/number";
 
@@ -66,13 +67,17 @@ const fixture = async () => {
   const organizer = new FileOrganizer();
   const deps: UncensoredConfirmDependencies = {
     fileOrganizer: {
-      plan: vi.fn((info) => ({
-        outputDir: output,
-        metadataDir: metadata,
-        targetVideoPath: join(output, `${info.fileName}-leak.mp4`),
-        nfoPath: join(metadata, "FC2-123456-leak.nfo"),
-        strmPath: join(metadata, `${info.fileName}-leak.strm`),
-      })),
+      plan: vi.fn(
+        (info): OrganizePlan => ({
+          outputDir: output,
+          metadataDir: metadata,
+          mode: "move",
+          targetVideoPath: join(output, `${info.fileName}-leak.mp4`),
+          nfoPath: join(metadata, "FC2-123456-leak.nfo"),
+          strmPath: join(metadata, `${info.fileName}-leak.strm`),
+          renameSubtitles: true,
+        }),
+      ),
       resolveOutputPlan: organizer.resolveOutputPlan.bind(organizer),
     },
     localScanService: {
@@ -99,9 +104,50 @@ const fixture = async () => {
         },
       ),
     logger: { info: vi.fn(), warn: vi.fn() },
-    publish: vi.fn(async ({ operationId, plan }) => {
-      const publicationPlan = createPublicationPlan(operationId, "maintenance", plan, [mediaRoot]);
-      await commitPublishedMedia(publicationPlan, {
+    preparePublication: vi.fn(
+      async ({
+        operationId,
+        members,
+        nfoNaming,
+        writeNfo,
+      }: Parameters<UncensoredConfirmDependencies["preparePublication"]>[0]) => {
+        const prepared = await preparePublicationPlan({
+          operationId,
+          operationType: "maintenance",
+          roots: [mediaRoot],
+          identity: {
+            movieId: "movie-1",
+            members: await Promise.all(
+              members.map(async (member) => ({
+                fileId: member.item.fileId,
+                layout: member.layout,
+                existingAssets: member.entry.assets,
+                existingNfoPath: member.existingNfoPath,
+                assetLayout: await resolvePublicationAssetLayout({
+                  layout: member.layout,
+                  config: defaultConfiguration,
+                  existingAssets: member.entry.assets,
+                }),
+                source: toRootFileRef(member.layout.sourceVideoPath, [mediaRoot]),
+              })),
+            ),
+            expected: { files: [], assets: [] },
+          },
+          downloadedAssets: { downloaded: [], sceneImages: [] },
+          actorPhotoPaths: [],
+          nfoNaming,
+          writeNfo,
+        });
+        if (!prepared.plan) throw new Error("expected publication plan");
+        return {
+          ...prepared,
+          plan: prepared.plan,
+          resolve: (ref: { rootId: string; relativePath: string }) => join(root, ref.relativePath),
+        };
+      },
+    ),
+    publish: vi.fn(async ({ plan }) => {
+      await commitPublishedMedia(plan, {
         resolveRoot: async () => mediaRoot,
         journal,
         commit: () => undefined,
@@ -113,10 +159,30 @@ const fixture = async () => {
 
 describe("confirmUncensoredOutputs", () => {
   it.each([
-    false,
-    true,
-  ])("publishes shared NFO, subtitles, STRM and FC2 features as one batch (failure: %s)", async (failure) => {
+    { failure: false, distinctLocations: false },
+    { failure: true, distinctLocations: false },
+    { failure: false, distinctLocations: true },
+    { failure: true, distinctLocations: true },
+  ])("publishes shared NFO, subtitles, STRM and FC2 features as one batch ($failure, $distinctLocations)", async ({
+    failure,
+    distinctLocations,
+  }) => {
     const { source, output, metadata, items, deps, journal } = await fixture();
+    const otherMetadata = join(metadata, "second");
+    if (distinctLocations) {
+      await mkdir(otherMetadata);
+      const originalPlan = deps.fileOrganizer.plan;
+      deps.fileOrganizer.plan = vi.fn((...args: Parameters<typeof originalPlan>) => {
+        const plan = originalPlan(...args);
+        if (!args[0].fileName.includes("CD2")) return plan;
+        return {
+          ...plan,
+          metadataDir: otherMetadata,
+          nfoPath: join(otherMetadata, "FC2-123456-leak.nfo"),
+          strmPath: join(otherMetadata, `${args[0].fileName}-leak.strm`),
+        };
+      });
+    }
     if (failure)
       journal.commit = () => {
         throw new Error("commit failure");
@@ -143,7 +209,11 @@ describe("confirmUncensoredOutputs", () => {
       } else {
         const target = join(output, `${parse(item.videoPath).name}-leak.mp4`);
         expect(await readFile(target, "utf8")).toBe(parse(item.videoPath).base);
-        expect(await readFile(join(metadata, `${parse(item.videoPath).name}-leak.strm`), "utf8")).toBe(target);
+        const itemMetadata = distinctLocations && item.videoPath.includes("CD2") ? otherMetadata : metadata;
+        expect(await readFile(join(itemMetadata, `${parse(item.videoPath).name}-leak.strm`), "utf8")).toBe(target);
+        expect(result.items.find((update) => update.fileId === item.fileId)?.targetNfoPath).toBe(
+          join(itemMetadata, "FC2-123456-leak.nfo"),
+        );
         await expect(readFile(item.videoPath)).rejects.toMatchObject({ code: "ENOENT" });
         expect(await readFile(item.metadataVideoPath, "utf8")).toBe(item.videoPath);
       }
@@ -157,8 +227,22 @@ describe("confirmUncensoredOutputs", () => {
     }
     if (!failure) {
       expect(await readFile(join(metadata, "poster.jpg"), "utf8")).toBe("poster.jpg");
+      if (distinctLocations) {
+        expect(await readFile(join(otherMetadata, "poster.jpg"), "utf8")).toBe("poster.jpg");
+        expect(await readFile(join(otherMetadata, "FC2-123456-leak.nfo"), "utf8")).toBe(
+          await readFile(join(metadata, "FC2-123456-leak.nfo"), "utf8"),
+        );
+      }
       expect(await readFile(join(source, "movie.nfo"), "utf8")).toContain("Original");
     }
+    const [{ plan }] = vi.mocked(deps.publish).mock.calls[0];
+    expect(plan.files).toHaveLength(items.length);
+    expect(new Set(plan.operations.map((operation) => operation.target.relativePath)).size).toBe(
+      plan.operations.length,
+    );
+    expect(
+      new Set(plan.movieAssets.map((asset) => (asset.type === "local" ? asset.file.relativePath : asset.url))).size,
+    ).toBe(plan.movieAssets.length);
   });
 
   it.each([
@@ -190,7 +274,9 @@ describe("confirmUncensoredOutputs", () => {
       expect(result.failures).toEqual([]);
       expect(result.updatedCount).toBe(1);
       expect(result.items[0].targetNfoPath).toBeUndefined();
-      expect(result.items[0].outputAssets.map((asset) => asset.kind)).toContain("strm");
+      expect(vi.mocked(deps.publish).mock.calls[0][0].plan.files[0].assets.map((asset) => asset.kind)).toContain(
+        "strm",
+      );
       expect(deps.nfoGenerator.writeNfo).not.toHaveBeenCalled();
     }
   });

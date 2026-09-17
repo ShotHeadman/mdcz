@@ -184,7 +184,7 @@ export function LibraryIndexView({
             </div>
           </section>
 
-          <section aria-label="媒体库条目" className="flex flex-col gap-3" ref={listRef}>
+          <section aria-label="媒体库影片列表" className="flex flex-col gap-3" ref={listRef}>
             {filteredEntries.length > 0 && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {

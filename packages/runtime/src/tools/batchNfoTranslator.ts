@@ -461,13 +461,17 @@ export const applyBatchNfoTranslations = async (
         {
           operationId: `batch-nfo-translation:${entry.nfoPath}`,
           mediaPaths: registered?.mediaPaths,
-          readOnlyDirectories: registered?.readOnlyDirectories,
           operationType: "maintenance",
-          artifacts: [...artifacts]
+          operations: [...artifacts]
             .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
-            .map(([targetPath, data]) => ({ targetPath, content: { kind: "text", data } })),
-          replaceExistingArtifacts: true,
-          editExistingFiles: true,
+            .map(([targetPath, data]) => ({
+              kind: "write" as const,
+              owner: registered ? ("movie" as const) : ("unmanaged" as const),
+              assetKind: "nfo",
+              targetPath,
+              content: { kind: "text" as const, data },
+              replaceExisting: true,
+            })),
         },
         publication,
       );

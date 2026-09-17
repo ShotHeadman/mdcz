@@ -1,7 +1,8 @@
 import { dirname } from "node:path";
-import { type MediaRoot, resolveRootFile, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 import { crawlerDataSchema } from "@mdcz/shared/serverDtos";
 import type {
   CrawlerData,
@@ -15,14 +16,26 @@ import type {
 } from "@mdcz/shared/types";
 import type { LocalScanService } from "../maintenance/LocalScanService";
 import { buildMovieTags } from "../maintenance/movieTags";
-import { type PreparedPublicationPlan, preparePublicationPlan } from "../publication";
-import { publicationPathKey } from "../publication/boundary";
+import {
+  commitPublishedMedia,
+  type DurablePublicationContext,
+  libraryAssetsFromPublicationPlan,
+  type MoviePublicationPlan,
+  type PublicationFile,
+  type PublicationOutputPort,
+  preparePublicationPlan,
+  registeredMediaLocations,
+  resolvePublicationParticipants,
+  toRootFileRef,
+} from "../publication";
+import { resolvePublicationAssetLayout } from "../publication/assetLayout";
 import type { RuntimeLogger } from "../shared";
-import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
-import { type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
+import type { FileOrganizer, ResolvedPublicationLayout } from "./FileOrganizer";
+import { getNfoWritePaths, type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { parseFileInfo } from "./utils/number";
 
-export interface RuntimeUncensoredConfirmItem {
+export interface RuntimeUncensoredConfirmItem<TContext = undefined> {
+  context?: TContext;
   groupId: string;
   fileId: FileId;
   videoPath: string;
@@ -39,44 +52,68 @@ export interface RuntimeUncensoredConfirmFailure {
   message: string;
 }
 
-export type UncensoredConfirmUpdate = UncensoredConfirmResultItem & {
-  assets: DiscoveredAssets;
-  outputAssets: PreparedPublicationPlan["assets"];
-  removedAssetPaths: string[];
-};
-
 export interface RuntimeUncensoredConfirmResult {
   updatedCount: number;
-  items: UncensoredConfirmUpdate[];
+  items: UncensoredConfirmResultItem[];
   failures: RuntimeUncensoredConfirmFailure[];
 }
 
-interface PreparedUncensoredConfirmItem {
-  item: RuntimeUncensoredConfirmItem;
+interface PreparedUncensoredConfirmItem<TContext> {
+  item: RuntimeUncensoredConfirmItem<TContext>;
   entry: LocalScanEntry;
   effectiveNfoPath?: string;
   nextLocalState: NfoLocalState;
 }
 
-export interface UncensoredConfirmDependencies {
+export interface UncensoredPlanningMember<TContext = undefined> {
+  item: RuntimeUncensoredConfirmItem<TContext>;
+  entry: LocalScanEntry;
+  layout: ResolvedPublicationLayout;
+  existingNfoPath?: string;
+}
+
+export interface UncensoredConfirmedMember<TContext> {
+  item: RuntimeUncensoredConfirmItem<TContext>;
+  publicationFile: PublicationFile;
+  sourceNfoPath?: string;
+  nfoPath?: string;
+}
+
+export interface UncensoredConfirmDependencies<TContext = undefined> {
   fileOrganizer: Pick<FileOrganizer, "plan" | "resolveOutputPlan">;
   localScanService: Pick<LocalScanService, "scanVideo">;
   logger: Pick<RuntimeLogger, "info" | "warn">;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   pathExists: (filePath: string) => Promise<boolean>;
-  /**
-   * `updates` describes what the batch is about to write, so hosts can stage
-   * their business revisions and hand them to the publication commit hook.
-   */
+  preparePublication(input: {
+    operationId: string;
+    members: readonly UncensoredPlanningMember<TContext>[];
+    nfoNaming: "both" | "movie" | "filename";
+    writeNfo: Parameters<typeof preparePublicationPlan>[0]["writeNfo"];
+  }): Promise<{
+    plan: MoviePublicationPlan;
+    assets: DiscoveredAssets;
+    nfoPath?: string;
+    resolve(ref: RootFileRef): string;
+  }>;
   publish(input: {
     operationId: string;
-    plan: PreparedPublicationPlan;
-    updates: readonly UncensoredConfirmUpdate[];
+    plan: MoviePublicationPlan;
+    members: readonly UncensoredConfirmedMember<TContext>[];
   }): Promise<void>;
 }
 
 export interface UncensoredRevisionSources {
-  update: UncensoredConfirmUpdate;
+  plan: MoviePublicationPlan;
+  publicationFile: PublicationFile;
+  nfoPath?: string;
+  file: {
+    id: string;
+    sourceOutcomeId: string | null;
+    partNumber: number | null;
+    partSuffix: string | null;
+    resolution: string | null;
+  };
   outcome: { id: string; crawlerDataJson: string | null };
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   entry: {
@@ -94,10 +131,174 @@ export interface UncensoredRevisionSources {
     number: string | null;
     actors: string[];
     createdAt: Date;
-    assets: Array<{ kind: string; uri: string; rootId: string | null; relativePath: string | null }>;
+    assets: Array<{
+      kind: string;
+      uri: string;
+      rootId: string | null;
+      relativePath: string | null;
+      fileId: string | null;
+      published: boolean;
+    }>;
   };
-  size: number;
-  modifiedAt: Date | null;
+}
+
+export async function confirmUncensoredRunItems<TManifest extends { items: readonly { id: string }[] }>(input: {
+  manifest: TManifest;
+  items: readonly { itemId: string; choice: UncensoredChoice }[];
+  configuration: Configuration;
+  roots: readonly MediaRoot[];
+  repositories: DurablePublicationContext & {
+    library: PublicationOutputPort & {
+      resolveUncensoredFiles(selections: { outcomeId: string; choice: UncensoredChoice }[]): Promise<
+        Array<{
+          choice: UncensoredChoice;
+          file: {
+            id: string;
+            itemId: string;
+            rootId: string | null;
+            rootRelativePath: string | null;
+            sourceOutcomeId: string | null;
+            partNumber: number | null;
+            partSuffix: string | null;
+            resolution: string | null;
+          };
+          outcome: UncensoredRevisionSources["outcome"];
+          entry: UncensoredRevisionSources["entry"];
+        }>
+      >;
+      getEntryById(id: string): Promise<UncensoredRevisionSources["entry"]>;
+    };
+    scrapeRuns: {
+      summary(manifest: TManifest): unknown;
+      latestOutcomes(manifest: TManifest): Array<{
+        id: string;
+        itemId: string;
+        outcome: string;
+        outputRootId: string | null;
+        outputRelativePath: string | null;
+      }>;
+      reviseSuccess(
+        revisions: ReturnType<typeof buildUncensoredRevision>[],
+        movie: ReturnType<typeof buildUncensoredRevision>["movie"],
+      ): unknown;
+    };
+  };
+  dependencies: Omit<UncensoredConfirmDependencies, "publish" | "preparePublication">;
+}): Promise<RuntimeUncensoredConfirmResult> {
+  const { manifest, repositories, roots } = input;
+  if (!repositories.scrapeRuns.summary(manifest)) throw new Error("仅支持对已完成且刮削成功的项目进行无码确认");
+  const outcomes = new Map(
+    repositories.scrapeRuns.latestOutcomes(manifest).map((outcome) => [outcome.itemId, outcome]),
+  );
+  const selections = input.items.map(({ itemId, choice }) => {
+    if (!manifest.items.some((item) => item.id === itemId))
+      throw new Error(`Item does not belong to scrape task: ${itemId}`);
+    const outcome = outcomes.get(itemId);
+    if (!outcome || outcome.outcome !== "success" || !outcome.outputRootId || !outcome.outputRelativePath)
+      throw new Error(`Item does not belong to successful scrape output: ${itemId}`);
+    return { outcomeId: outcome.id, choice };
+  });
+  const files = await repositories.library.resolveUncensoredFiles(selections);
+  const snapshots = new Map(files.map(({ entry }) => [entry.id, JSON.stringify(entry.files)]));
+  const resolveRoot = async (id: string) => {
+    const root = roots.find((root) => root.id === id);
+    if (!root) throw new Error(`Publication root not found: ${id}`);
+    return root;
+  };
+  const resolved = await Promise.all(
+    files.map(async (selected) => {
+      const { rootId, rootRelativePath } = selected.file;
+      if (!rootId || !rootRelativePath)
+        throw new Error(`Successful scrape outcome is missing output facts: ${selected.outcome.id}`);
+      return {
+        ...selected,
+        rootId,
+        rootRelativePath,
+        videoPath: resolveRootRelativePath(await resolveRoot(rootId), rootRelativePath),
+      };
+    }),
+  );
+  const locations = await registeredMediaLocations(
+    repositories.library,
+    resolveRoot,
+    resolved.map((file) => file.videoPath),
+  );
+  return confirmUncensoredOutputs(
+    resolved.map((selected) => {
+      const { choice, file, entry, videoPath } = selected;
+      return {
+        context: selected,
+        fileId: file.id,
+        groupId: entry.id,
+        videoPath,
+        choice,
+        crawlerData: entry.crawlerDataJson ? crawlerDataSchema.parse(JSON.parse(entry.crawlerDataJson)) : undefined,
+        nfoPath: locations.get(videoPath)?.nfoPath,
+        metadataVideoPath: locations.get(videoPath)?.strmPath,
+        registeredAssets: locations.get(videoPath)?.assets,
+      };
+    }),
+    input.configuration,
+    {
+      ...input.dependencies,
+      preparePublication: async ({ operationId, members, nfoNaming, writeNfo }) => {
+        const selected = members[0]?.item.context;
+        if (!selected) throw new Error("Uncensored publication has no selected movie");
+        return await prepareUncensoredPublication({
+          config: input.configuration,
+          operationId,
+          members,
+          nfoNaming,
+          writeNfo,
+          roots,
+          entry: selected.entry,
+          snapshot: repositories.library.publicationSnapshot({
+            paths: members.flatMap(({ layout }) => [
+              layout.sourceVideoPath,
+              layout.targetVideoPath,
+              layout.nfoPath,
+              ...(layout.mirror ? [layout.mirror.targetPath] : []),
+              ...layout.sidecars.flatMap((sidecar) => [
+                sidecar.targetPath,
+                ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : []),
+              ]),
+            ]),
+            includeOwners: true,
+          }),
+        });
+      },
+      publish: async ({ plan: publicationPlan, members }) => {
+        const revisions = members.map(({ item, publicationFile, nfoPath }) => {
+          const target = item.context;
+          if (!target) throw new Error(`Uncensored confirmation item disappeared: ${item.fileId}`);
+          return buildUncensoredRevision({
+            plan: publicationPlan,
+            publicationFile,
+            nfoPath,
+            roots,
+            file: target.file,
+            outcome: target.outcome,
+            entry: target.entry,
+          });
+        });
+        const movie = revisions[0]?.movie;
+        if (!movie) throw new Error("Uncensored publication has no movie write");
+        const published = await commitPublishedMedia(publicationPlan, {
+          journal: repositories.journal,
+          outputs: repositories.library,
+          repairIssues: repositories.repairIssues,
+          resolveRoot,
+          validate: async () => {
+            if (JSON.stringify((await repositories.library.getEntryById(movie.id)).files) !== snapshots.get(movie.id))
+              throw new Error("影片关联的视频文件发生变动，请重新确认");
+          },
+          commit: () => repositories.scrapeRuns.reviseSuccess(revisions, movie),
+        });
+        for (const issue of published.cleanupIssues)
+          input.dependencies.logger.warn(`Uncensored publication cleanup failed: ${toErrorMessage(issue)}`);
+      },
+    },
+  );
 }
 
 /**
@@ -105,74 +306,123 @@ export interface UncensoredRevisionSources {
  * published paths to outcome and library revisions lives here rather than being
  * mirrored in the desktop and server services.
  */
-export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
-  const { update, outcome, entry, size, modifiedAt } = sources;
-  const file = entry.files.find((file) => file.sourceOutcomeId === outcome.id);
-  if (!file) throw new Error("无码确认来源已不属于影片文件");
-  const outputRoot = resolveRootFile(sources.roots, update.targetVideoPath).root;
-  const nfo = update.targetNfoPath ? resolveRootFile(sources.roots, update.targetNfoPath) : undefined;
-  const outputRelativePath = toRootRelativePath(outputRoot, update.targetVideoPath);
-  const nfoRelativePath = nfo?.relativePath ?? null;
-  const crawlerDataJson = entry.crawlerDataJson;
-  if (!crawlerDataJson) throw new Error("影片缺少当前元数据，无法确认无码类型");
-  const crawlerData = crawlerDataSchema.parse(JSON.parse(crawlerDataJson));
-  const updatedAssets = update.outputAssets.map((asset) => {
-    const resolved = asset.targetPath ? resolveRootFile(sources.roots, asset.targetPath) : undefined;
-    const relativePath = resolved?.relativePath ?? null;
-    return {
-      kind: asset.kind,
-      uri: relativePath ?? (asset.url as string),
-      rootId: resolved?.root.id ?? null,
-      relativePath,
-    };
-  });
-  const removed = new Set(update.removedAssetPaths.map(publicationPathKey));
-  const updatedKinds = new Set([
-    "thumb",
-    "poster",
-    "fanart",
-    "trailer",
-    "scene",
-    "actor",
-    ...updatedAssets.map((asset) => asset.kind),
+export const prepareUncensoredPublication = async <TContext = undefined>(input: {
+  config: Configuration;
+  operationId: string;
+  members: readonly UncensoredPlanningMember<TContext>[];
+  nfoNaming: "both" | "movie" | "filename";
+  writeNfo: Parameters<typeof preparePublicationPlan>[0]["writeNfo"];
+  roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+  entry: UncensoredRevisionSources["entry"];
+  snapshot: ReturnType<PublicationOutputPort["publicationSnapshot"]>;
+}): Promise<{
+  plan: MoviePublicationPlan;
+  assets: DiscoveredAssets;
+  nfoPath?: string;
+  resolve(ref: RootFileRef): string;
+}> => {
+  const resolveRoot = async (id: string) => {
+    const root = input.roots.find((root) => root.id === id);
+    if (!root) throw new Error(`Publication root not found: ${id}`);
+    return root;
+  };
+  const outputPaths = input.members.flatMap(({ layout }) => [
+    layout.targetVideoPath,
+    layout.nfoPath,
+    ...(layout.mirror ? [layout.mirror.targetPath] : []),
+    ...layout.sidecars.flatMap((sidecar) => [sidecar.targetPath, ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : [])]),
   ]);
-  const retainedAssets = entry.assets.filter((asset) => {
-    if (updatedKinds.has(asset.kind)) return false;
-    if (!asset.rootId || !asset.relativePath) return true;
-    const root = sources.roots.find((root) => root.id === asset.rootId);
-    if (!root) throw new Error(`Resource root not found: ${asset.rootId}`);
-    return !removed.has(publicationPathKey(resolveRootRelativePath(root, asset.relativePath)));
+  const participants = await resolvePublicationParticipants({
+    members: await Promise.all(
+      input.members.map(async (member) => ({
+        fileId: member.item.fileId,
+        layout: member.layout,
+        existingAssets: member.entry.assets,
+        existingNfoPath: member.existingNfoPath,
+        assetLayout: await resolvePublicationAssetLayout({
+          layout: member.layout,
+          config: input.config,
+          existingAssets: member.entry.assets,
+        }),
+        source: toRootFileRef(member.layout.sourceVideoPath, input.roots),
+      })),
+    ),
+    outputs: outputPaths.map((path) => toRootFileRef(path, input.roots)),
+    movieId: input.entry.id,
+    snapshot: input.snapshot,
+    resolveRoot,
   });
+  const producedKinds = new Set(["thumb", "poster", "fanart", "trailer", "scene", "actor"]);
+  const retainedMovieAssets: AssetRef[] = input.entry.assets.flatMap((asset): AssetRef[] => {
+    if (asset.fileId !== null || producedKinds.has(asset.kind)) return [];
+    return asset.rootId && asset.relativePath
+      ? [{ type: "local", kind: asset.kind, file: { rootId: asset.rootId, relativePath: asset.relativePath } }]
+      : [{ type: "remote", kind: asset.kind, url: asset.uri }];
+  });
+  const prepared = await preparePublicationPlan({
+    operationId: input.operationId,
+    operationType: "maintenance",
+    roots: input.roots,
+    identity: participants,
+    downloadedAssets: { downloaded: [], sceneImages: [] },
+    actorPhotoPaths: [],
+    retainedMovieAssets,
+    nfoNaming: input.nfoNaming,
+    writeNfo: input.writeNfo,
+  });
+  if (!prepared.plan) throw new Error("No media files could be prepared for publication");
+  return {
+    ...prepared,
+    plan: prepared.plan,
+    resolve: (ref) => {
+      const root = input.roots.find((root) => root.id === ref.rootId);
+      if (!root) throw new Error(`Publication root not found: ${ref.rootId}`);
+      return resolveRootRelativePath(root, ref.relativePath);
+    },
+  };
+};
+
+export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
+  const { outcome, entry, file, publicationFile, plan } = sources;
+  if (file.sourceOutcomeId !== outcome.id) throw new Error("待确认的刮削结果已与影片文件解除关联");
+  const nfo = sources.nfoPath ? resolveRootFile(sources.roots, sources.nfoPath) : undefined;
+  const crawlerDataJson = entry.crawlerDataJson;
+  if (!crawlerDataJson) throw new Error("影片缺少抓取到的元数据，无法确认无码类型");
+  const crawlerData = crawlerDataSchema.parse(JSON.parse(crawlerDataJson));
+  if (publicationFile.fileId !== file.id) throw new Error("待发布文件与当前选中的影片记录不匹配");
   return {
     outcomeId: outcome.id,
     crawlerDataJson,
-    nfoRootId: nfo && nfo.root.id !== outputRoot.id ? nfo.root.id : null,
-    nfoRelativePath,
-    outputRootId: outputRoot.id,
-    outputRelativePath,
+    nfoRootId: nfo && nfo.root.id !== publicationFile.target.rootId ? nfo.root.id : null,
+    nfoRelativePath: nfo?.relativePath ?? null,
+    outputRootId: publicationFile.target.rootId,
+    outputRelativePath: publicationFile.target.relativePath,
     uncensoredAmbiguous: false,
-    size,
-    modifiedAt,
+    size: publicationFile.size,
+    modifiedAt: publicationFile.modifiedAt,
+    movie: {
+      id: plan.movieId,
+      assets: libraryAssetsFromPublicationPlan(plan, plan.movieAssets),
+      mediaIdentity: entry.mediaIdentity,
+      title: entry.title ?? crawlerData.title,
+      number: entry.number ?? crawlerData.number,
+      actors: entry.actors,
+      crawlerDataJson,
+      createdAt: entry.createdAt,
+      lastRefreshedAt: new Date(),
+    },
     libraryEntry: {
-      id: entry.id,
       fileId: file.id,
       sourceOutcomeId: outcome.id,
       partNumber: file.partNumber,
       partSuffix: file.partSuffix,
       resolution: file.resolution,
-      rootId: outputRoot.id,
-      rootRelativePath: outputRelativePath,
-      mediaIdentity: entry.mediaIdentity,
-      size,
-      modifiedAt,
-      title: entry.title ?? crawlerData.title,
-      number: entry.number ?? crawlerData.number,
-      actors: entry.actors,
-      crawlerDataJson,
-      assets: [...retainedAssets, ...updatedAssets],
-      lastKnownPath: outputRelativePath,
-      createdAt: entry.createdAt,
-      lastRefreshedAt: new Date(),
+      rootId: publicationFile.target.rootId,
+      rootRelativePath: publicationFile.target.relativePath,
+      size: publicationFile.size,
+      modifiedAt: publicationFile.modifiedAt,
+      assets: libraryAssetsFromPublicationPlan(plan, publicationFile.assets),
+      lastKnownPath: publicationFile.target.relativePath,
     },
   };
 };
@@ -190,21 +440,21 @@ const buildSharedFileInfo = (entries: LocalScanEntry[], outputVideoPath: string)
   };
 };
 
-export const confirmUncensoredOutputs = async (
-  items: RuntimeUncensoredConfirmItem[],
+export const confirmUncensoredOutputs = async <TContext = undefined>(
+  items: RuntimeUncensoredConfirmItem<TContext>[],
   config: Configuration,
-  dependencies: UncensoredConfirmDependencies,
+  dependencies: UncensoredConfirmDependencies<TContext>,
 ): Promise<RuntimeUncensoredConfirmResult> => {
-  const updatedItems: UncensoredConfirmUpdate[] = [];
+  const updatedItems: UncensoredConfirmResultItem[] = [];
   const failures: RuntimeUncensoredConfirmFailure[] = [];
-  const preparedItems: PreparedUncensoredConfirmItem[] = [];
+  const preparedItems: PreparedUncensoredConfirmItem<TContext>[] = [];
   const choices = new Map<string, UncensoredChoice>();
   for (const item of items) {
     const key = item.groupId;
     if (choices.has(key) && choices.get(key) !== item.choice) throw new Error("同一影片不能选择不同的无码类型");
     choices.set(key, item.choice);
   }
-  const fail = (item: RuntimeUncensoredConfirmItem, message: string): void => {
+  const fail = (item: RuntimeUncensoredConfirmItem<TContext>, message: string): void => {
     dependencies.logger.warn(message);
     failures.push({ fileId: item.fileId, videoPath: item.videoPath, message });
   };
@@ -269,7 +519,7 @@ export const confirmUncensoredOutputs = async (
     }
   }
 
-  const batches = new Map<string, PreparedUncensoredConfirmItem[]>();
+  const batches = new Map<string, PreparedUncensoredConfirmItem<TContext>[]>();
   for (const prepared of preparedItems) {
     const key = prepared.item.groupId;
     batches.set(key, [...(batches.get(key) ?? []), prepared]);
@@ -282,10 +532,13 @@ export const confirmUncensoredOutputs = async (
           item.groupId === batchItems[0].item.groupId && failures.some((failure) => failure.fileId === item.fileId),
       )
     ) {
-      for (const prepared of batchItems) fail(prepared.item, "影片中有文件不可用，未修改任何文件");
+      for (const prepared of batchItems)
+        fail(prepared.item, "影片中存在缺失或无法访问的文件，操作已取消（未修改任何文件）");
       continue;
     }
-    const processedItems: Array<PreparedUncensoredConfirmItem & { outputVideoPath: string; plan: OrganizePlan }> = [];
+    const processedItems: Array<
+      PreparedUncensoredConfirmItem<TContext> & { outputVideoPath: string; plan: ResolvedPublicationLayout }
+    > = [];
     for (const prepared of batchItems) {
       try {
         const rawPlan = dependencies.fileOrganizer.plan(
@@ -294,7 +547,12 @@ export const confirmUncensoredOutputs = async (
           config,
           prepared.nextLocalState,
         );
-        const plan = await dependencies.fileOrganizer.resolveOutputPlan(rawPlan, prepared.entry.fileInfo.filePath);
+        const plan = await dependencies.fileOrganizer.resolveOutputPlan(rawPlan, prepared.entry.fileInfo.filePath, {
+          existingMetadataDir: dirname(
+            prepared.effectiveNfoPath ?? prepared.item.metadataVideoPath ?? prepared.item.videoPath,
+          ),
+          strmPathMappings: config.paths.strmPathMappings,
+        });
         const outputVideoPath = plan.targetVideoPath;
         processedItems.push({ ...prepared, outputVideoPath, plan });
       } catch (error) {
@@ -335,102 +593,53 @@ export const confirmUncensoredOutputs = async (
     }
 
     try {
-      const finalizedItems = [];
-      for (const processed of processedItems) {
-        const publication = await preparePublicationPlan({
-          files: [
-            {
-              sourceVideoPath: processed.item.videoPath,
-              outputVideoPath: processed.outputVideoPath,
-              organizePlan: processed.plan,
-            },
-          ],
-          existingAssetDir: dirname(
-            processed.effectiveNfoPath ?? processed.item.metadataVideoPath ?? processed.item.videoPath,
-          ),
-          metadataOutputDir: processed.plan.metadataDir ?? processed.plan.outputDir,
-          downloadedAssets: { downloaded: [], sceneImages: [] },
-          actorPhotoPaths: [],
-          existingAssets: processed.entry.assets,
-          existingNfoPath: processed.effectiveNfoPath,
-          organizeFiles: !config.behavior.metadataOnly,
-          renameSubtitles: !config.behavior.metadataOnly && config.behavior.successFileRename,
-          nfoNaming: config.download.nfoNaming,
-          strmPathMappings: config.paths.strmPathMappings,
-          writeNfo: async (_assets, writeFile) => {
-            for (const [targetPath, content] of nfoArtifacts) await writeFile(targetPath, content);
-            return savedNfoPath;
-          },
-        });
-        finalizedItems.push({ processed, publication });
-      }
-      const plans = finalizedItems.map(({ publication }) => publication.plan);
-      const boundaries = plans.flatMap((plan) => (plan.boundary ? [plan.boundary] : []));
-      const boundary = boundaries.length
-        ? {
-            writeRoots: boundaries.flatMap((value) => value.writeRoots),
-            writablePaths: boundaries.flatMap((value) => value.writablePaths),
-            readOnlyPaths: boundaries.flatMap((value) => value.readOnlyPaths),
-            readOnlyDirectories: boundaries.flatMap((value) => value.readOnlyDirectories),
-          }
-        : undefined;
-      const moves = new Map<string, NonNullable<PreparedPublicationPlan["sidecars"]>[number]>();
-      const artifacts = new Map<string, PreparedPublicationPlan["artifacts"][number]>();
-      for (const plan of plans) {
-        for (const move of plan.sidecars ?? []) {
-          const previous = moves.get(move.targetPath);
-          if (previous && previous.sourcePath !== move.sourcePath)
-            throw new Error(`Conflicting batch sources: ${move.targetPath}`);
-          moves.set(move.targetPath, move);
-        }
-        for (const artifact of plan.artifacts) {
-          const previous = artifacts.get(artifact.targetPath);
-          if (previous) {
-            const sameContent =
-              previous.content.kind === artifact.content.kind &&
-              (previous.content.kind === "file" && artifact.content.kind === "file"
-                ? previous.content.path === artifact.content.path && previous.content.size === artifact.content.size
-                : previous.content.kind !== "file" &&
-                  artifact.content.kind !== "file" &&
-                  Buffer.from(previous.content.data).equals(Buffer.from(artifact.content.data)));
-            if (!sameContent) throw new Error(`Conflicting batch artifacts: ${artifact.targetPath}`);
-          }
-          artifacts.set(artifact.targetPath, artifact);
-        }
-      }
-      const confirmed: UncensoredConfirmUpdate[] = finalizedItems.map(({ processed, publication }) => ({
-        fileId: processed.item.fileId,
-        sourceVideoPath: processed.item.videoPath,
-        sourceNfoPath: processed.effectiveNfoPath,
-        targetVideoPath: processed.outputVideoPath,
-        targetNfoPath: publication.nfoPath,
-        choice: processed.item.choice,
-        assets: publication.assets,
-        outputAssets: publication.plan.assets,
-        removedAssetPaths: [
-          ...publication.plan.obsoletePaths,
-          ...(publication.plan.sidecars ?? [])
-            .filter((move) => move.sourcePath !== move.targetPath)
-            .map((move) => move.sourcePath),
-        ],
+      const operationId = `uncensored-confirm:${processedItems.map(({ item }) => item.fileId).join(":")}`;
+      const planningMembers: UncensoredPlanningMember<TContext>[] = processedItems.map((processed) => ({
+        item: processed.item,
+        entry: processed.entry,
+        layout: processed.plan,
+        existingNfoPath: processed.effectiveNfoPath,
       }));
-      await dependencies.publish({
-        operationId: `uncensored-confirm:${processedItems.map(({ item }) => item.fileId).join(":")}`,
-        plan: {
-          media: plans.flatMap((plan) => plan.media ?? []),
-          boundary,
-          videos: plans.flatMap((plan) => plan.videos ?? []),
-          sidecars: [...moves.values()],
-          artifacts: [...artifacts.values()],
-          assets: plans.flatMap((plan) => plan.assets),
-          obsoletePaths: [],
-          replaceExistingTargetPaths: [...new Set(plans.flatMap((plan) => plan.replaceExistingTargetPaths ?? []))],
+      const publication = await dependencies.preparePublication({
+        operationId,
+        members: planningMembers,
+        nfoNaming: config.download.nfoNaming,
+        writeNfo: async (_assets, writeFile) => {
+          const content = nfoArtifacts.values().next().value;
+          if (content !== undefined) {
+            const targets = new Set(
+              planningMembers.flatMap(
+                ({ layout }) => getNfoWritePaths(layout.nfoPath, config.download.nfoNaming).requiredPaths,
+              ),
+            );
+            for (const targetPath of targets) await writeFile(targetPath, content);
+          }
+          return savedNfoPath;
         },
-        updates: confirmed,
       });
-      for (const update of confirmed) {
-        updatedItems.push(update);
-        dependencies.logger.info(`Updated uncensored choice to "${update.choice}" for ${update.sourceVideoPath}`);
+      const members = planningMembers.map((member): UncensoredConfirmedMember<TContext> => {
+        const publicationFile = publication.plan.files.find((file) => file.fileId === member.item.fileId);
+        if (!publicationFile) throw new Error(`Uncensored publication omitted selected file: ${member.item.fileId}`);
+        return {
+          item: member.item,
+          publicationFile,
+          sourceNfoPath: member.existingNfoPath,
+          nfoPath: publication.nfoPath
+            ? getNfoWritePaths(member.layout.nfoPath, config.download.nfoNaming).canonicalPath
+            : undefined,
+        };
+      });
+      await dependencies.publish({ operationId, plan: publication.plan, members });
+      for (const member of members) {
+        updatedItems.push({
+          fileId: member.item.fileId,
+          sourceVideoPath: member.item.videoPath,
+          sourceNfoPath: member.sourceNfoPath,
+          targetVideoPath: publication.resolve(member.publicationFile.target),
+          targetNfoPath: member.nfoPath,
+          choice: member.item.choice,
+        });
+        dependencies.logger.info(`Updated uncensored choice to "${member.item.choice}" for ${member.item.videoPath}`);
       }
     } catch (error) {
       for (const processed of processedItems)

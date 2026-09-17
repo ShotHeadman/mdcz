@@ -6,6 +6,7 @@ import { toErrorMessage } from "@main/utils/common";
 import { createMediaRoot, deterministicMediaRootId } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
+import type { PublicationOutputPort } from "@mdcz/runtime/publication";
 import type { DownloadManager, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   ActorImageService,
@@ -21,6 +22,7 @@ import { applyDesktopPosterTagBadges, probeVideoMetadataOrWarn } from "./output"
 export const fileOrganizer = new FileOrganizer(loggerService.getLogger("FileOrganizer"));
 
 export interface FileScraperDependencies {
+  outputs?: PublicationOutputPort;
   aggregationService: AggregationService;
   translateService: TranslateService;
   nfoGenerator: NfoGenerator;
@@ -50,7 +52,6 @@ export const createFileScraper = (
     showLogText: () => undefined,
     setProgress: () => undefined,
     showScrapeInfo: () => undefined,
-    showScrapeResult: () => undefined,
     showFailedInfo: () => undefined,
   };
   return new FileScraper(

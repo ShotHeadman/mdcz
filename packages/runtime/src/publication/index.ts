@@ -1,12 +1,13 @@
-export { prepareMediaPathKeys, publicationPathKey } from "./boundary";
 export * from "./commitScrapeTerminalResult";
 export * from "./conflicts";
-export * from "./createPublicationPlan";
 export * from "./journalAdapter";
 export * from "./libraryEntry";
 export * from "./manifest";
+export * from "./participants";
+export { prepareMediaPathKeys, publicationPathKey, publicationRefKey } from "./paths";
 export * from "./preflight";
 export * from "./preparePublicationPlan";
+export * from "./publicationPlan";
 export * from "./publishMedia";
 export * from "./recoverPublications";
 export * from "./registered";

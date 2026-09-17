@@ -279,8 +279,9 @@ export class MaintenanceSession {
       existing.proposedCrawlerData = preview.proposedCrawlerData ?? null;
       existing.imageAlternatives = preview.imageAlternatives;
       existing.entry = preview.entry ?? existing.entry;
-      existing.librarySource = preview.librarySource ?? existing.librarySource;
+      existing.publicationIdentity = preview.publicationIdentity;
       existing.affectedFiles = preview.affectedFiles;
+      existing.files = preview.files;
       existing.updatedAt = now;
       this.touch(now);
       return this.clonePreview(existing);

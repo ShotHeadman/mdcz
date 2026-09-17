@@ -14,8 +14,13 @@ import type {
 } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager, prepareAndExecuteFile } from "../../../helpers/scraper";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  mockConfigManager,
+  preparedPublicationFiles,
+  prepareFilePublication,
+  resolveTestOutputPlan,
+} from "../../../helpers/scraper";
 
 const tempDirs: string[] = [];
 
@@ -103,7 +108,7 @@ const createScraper = ({
     } as unknown as DownloadManager,
     fileOrganizer: {
       plan: vi.fn().mockReturnValue(plan),
-      resolveOutputPlan: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
+      resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer,
     localScanService,
   });
@@ -130,6 +135,9 @@ describe("FileScraper .strm support", () => {
     });
     const plan: OrganizePlan = {
       outputDir: "/output/ABC-123",
+      metadataDir: "/output/ABC-123",
+      mode: "move",
+      renameSubtitles: true,
       targetVideoPath: "/output/ABC-123/ABC-123.strm",
       nfoPath: "/output/ABC-123/ABC-123.nfo",
     };
@@ -137,14 +145,16 @@ describe("FileScraper .strm support", () => {
     const scraper = createScraper({ config, crawlerData, plan, writeNfo });
     const sourcePath = await createTempFile("ABC-123.strm");
 
-    const result = await prepareAndExecuteFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+    const group = await prepareFilePublication(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
       roots: [
         { id: "test-root", hostPath: tmpdir() },
         { id: "output-root", hostPath: "/output" },
       ],
     });
+    onTestFinished(async () => await group.release?.());
+    const [result] = preparedPublicationFiles(group);
 
-    expect(result.status).toBe("success");
+    expect(result.status).toBe("prepared");
     expect(result.fileName).toBe("ABC-123");
     expect(result.crawlerData?.number).toBe("ABC-123");
     expect(writeNfo).toHaveBeenCalledTimes(1);
@@ -160,6 +170,9 @@ describe("FileScraper .strm support", () => {
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
       outputDir: root,
+      metadataDir: root,
+      mode: "move",
+      renameSubtitles: true,
       targetVideoPath: join(root, "ABC-123.strm"),
       nfoPath,
     };
@@ -167,24 +180,28 @@ describe("FileScraper .strm support", () => {
     const scraper = createScraper({ config, crawlerData, plan, writeNfo });
     const sourcePath = await createTempFile("ABC-123.strm");
 
-    const result = await prepareAndExecuteFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+    const group = await prepareFilePublication(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
       roots: [
         { id: "test-root", hostPath: tmpdir() },
         { id: "output-root", hostPath: "/output" },
       ],
     });
+    const [result] = preparedPublicationFiles(group);
+    onTestFinished(async () => await group.release?.());
 
     expect(writeNfo).not.toHaveBeenCalled();
     expect(result.nfo).toEqual({
       rootId: "test-root",
       relativePath: relative(tmpdir(), nfoPath).replaceAll("\\", "/"),
     });
-    expect(result.publicationPlan?.artifacts).toContainEqual({
+    expect(group.publicationPlan?.operations).toContainEqual({
+      kind: "write",
       target: {
         rootId: "test-root",
         relativePath: relative(tmpdir(), movieNfoPath).replaceAll("\\", "/"),
       },
       content: { kind: "text", data: await readFile(nfoPath, "utf8") },
+      replaceExisting: true,
     });
     await expect(readFile(movieNfoPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -201,13 +218,16 @@ describe("FileScraper .strm support", () => {
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
       outputDir: root,
+      metadataDir: root,
+      mode: "move",
+      renameSubtitles: true,
       targetVideoPath: join(root, "ABC-123-U.strm"),
       nfoPath,
     };
     const writeNfo = vi.fn().mockResolvedValue(nfoPath);
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
-      resolveOutputPlan: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
+      resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer;
     const scanVideoMock = vi.fn().mockResolvedValue({
       nfoLocalState: {
@@ -238,7 +258,7 @@ describe("FileScraper .strm support", () => {
       localScanService,
     });
     await writeFile(join(root, "ABC-123-U.strm"), "video");
-    const result = await prepareAndExecuteFile(
+    const group = await prepareFilePublication(
       scraper,
       join(root, "ABC-123-U.strm"),
       { fileIndex: 1, totalFiles: 1 },
@@ -250,6 +270,8 @@ describe("FileScraper .strm support", () => {
         ],
       },
     );
+    onTestFinished(async () => await group.release?.());
+    const [result] = preparedPublicationFiles(group);
 
     expect(fileOrganizer.plan).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -279,6 +301,9 @@ describe("FileScraper .strm support", () => {
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
       outputDir,
+      metadataDir: outputDir,
+      mode: "move",
+      renameSubtitles: true,
       targetVideoPath: join(outputDir, "ABC-123.strm"),
       nfoPath: join(outputDir, "ABC-123.nfo"),
     };
@@ -299,12 +324,19 @@ describe("FileScraper .strm support", () => {
       localScanService,
     });
     await writeFile(join(root, "ABC-123.strm"), "video");
-    await prepareAndExecuteFile(scraper, join(root, "ABC-123.strm"), { fileIndex: 1, totalFiles: 1 }, undefined, {
-      roots: [
-        { id: "test-root", hostPath: tmpdir() },
-        { id: "output-root", hostPath: "/output" },
-      ],
-    });
+    const group = await prepareFilePublication(
+      scraper,
+      join(root, "ABC-123.strm"),
+      { fileIndex: 1, totalFiles: 1 },
+      undefined,
+      {
+        roots: [
+          { id: "test-root", hostPath: tmpdir() },
+          { id: "output-root", hostPath: "/output" },
+        ],
+      },
+    );
+    onTestFinished(async () => await group.release?.());
 
     expect(writeNfo).toHaveBeenCalledWith(
       plan.nfoPath,

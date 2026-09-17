@@ -6,15 +6,13 @@ import {
   storageErrorCodes,
   toRootRelativePath,
 } from "@mdcz/media-store";
-import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { commitRegisteredPublication, resolveRegisteredNfoPaths } from "@mdcz/runtime/publication";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   getNfoReadCandidates,
-  getNfoWritePaths,
   type NfoGenerator,
-  nfoIgnoreFieldsToEnabledFields,
   type PosterCropService,
-  resolveFilenameNfoPath,
+  registeredPosterCropContext,
+  writeNfoPublication,
 } from "@mdcz/runtime/scrape";
 import type {
   NfoReadInput,
@@ -50,7 +48,7 @@ const readExistingNfo = async (
   return null;
 };
 
-const requireRootRelativeAssetPath = (root: MediaRoot, assetPath: string): string => {
+const requireRootRelativeAssetPath = (root: Pick<MediaRoot, "id" | "hostPath">, assetPath: string): string => {
   const relativePath = toRootRelativePath(root, assetPath);
   if (!relativePath) throw new Error(`Poster asset is outside the active media root: ${assetPath}`);
   return relativePath;
@@ -84,62 +82,25 @@ export class ServerNfoAdapter {
 
   async write(input: NfoWriteInput): Promise<NfoWriteResponse> {
     const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
-    const plannedRelativePath = resolveFilenameNfoPath(input.relativePath, input.videoRelativePath);
-    const candidates = getNfoReadCandidates(
-      input.relativePath,
-      configuration.download.nfoNaming,
-      input.videoRelativePath,
-    );
-    const existing = await readExistingNfo(root, candidates);
-    const existingXml = existing?.content.toString("utf-8");
-    const existingLocalState = existingXml ? parseNfoSnapshot(existingXml).localState : undefined;
-    const options = {
-      buildTags: buildMovieTags,
-      enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
-      localState: existingLocalState,
-      nfoNaming: configuration.download.nfoNaming,
-      nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
-    };
-    const xml = existingXml
-      ? this.nfoGenerator.mergeEditableXml(existingXml, input.data, options)
-      : this.nfoGenerator.buildXml(input.data, options);
-    const paths = getNfoWritePaths(plannedRelativePath, configuration.download.nfoNaming);
     const state = await this.persistence.getState();
-    const ownedNfo = await resolveRegisteredNfoPaths(
-      resolveRootRelativePath(root, input.relativePath),
-      state.repositories.library,
-      (id) => this.mediaRoots.get(id),
-    );
-    if (ownedNfo) {
-      paths.requiredPaths = ownedNfo.paths.map((path) => toRootRelativePath(root, path));
-      paths.canonicalPath = input.relativePath;
-    }
-    const registeredRoots = await this.mediaRoots.listRoots();
-    await commitRegisteredPublication(
-      {
-        operationId: `nfo-write:${input.rootId}:${plannedRelativePath}`,
-        operationType: "maintenance",
-        mediaPaths: ownedNfo?.mediaPaths,
-        artifacts: paths.requiredPaths.map((relativePath) => ({
-          targetPath: resolveRootRelativePath(root, relativePath),
-          content: { kind: "text" as const, data: xml },
-        })),
-        replaceExistingArtifacts: true,
-        editExistingFiles: true,
-        readOnlyDirectories: ownedNfo?.readOnlyDirectories,
-      },
-      {
-        roots: registeredRoots,
+    const canonicalPath = await writeNfoPublication({
+      nfoPath: resolveRootRelativePath(root, input.relativePath),
+      videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : undefined,
+      data: input.data,
+      configuration,
+      nfoGenerator: this.nfoGenerator,
+      publication: {
+        roots: await this.mediaRoots.listRoots(),
         journal: state.repositories.publicationJournal,
         outputs: state.repositories.library,
+        library: state.repositories.library,
         repairIssues: state.repositories.libraryRepairIssues,
-        commit: () => undefined,
       },
-    );
+    });
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,
-      effectiveRelativePath: paths.canonicalPath,
+      effectiveRelativePath: toRootRelativePath(root, canonicalPath),
       data: input.data,
     };
   }
@@ -157,19 +118,10 @@ export class ServerPosterCropAdapter {
     const sourceRoot = await this.mediaRoots.get(record.outputRootId ?? record.rootId);
     const videoPath = resolveRootRelativePath(sourceRoot, record.outputRelativePath ?? record.relativePath);
     const state = await this.persistence.getState();
-    const source = await state.repositories.library.resolveMaintenanceSource(videoPath);
-    if (!source) throw new Error("封面编辑需要已登记的媒体输出");
-    const entry = await state.repositories.library.getEntryById(source.libraryItemId);
-    const assets: { thumb?: string; poster?: string } = {};
-    let root = sourceRoot;
-    for (const kind of ["thumb", "poster"] as const) {
-      const asset = entry.assets.find((asset) => asset.kind === kind && asset.rootId && asset.relativePath);
-      if (asset?.rootId && asset.relativePath) {
-        root = await this.mediaRoots.get(asset.rootId);
-        assets[kind] = resolveRootRelativePath(root, asset.relativePath);
-      }
-    }
-    return { root, videoPath, assets };
+    const context = await registeredPosterCropContext(videoPath, state.repositories.library, (id) =>
+      this.mediaRoots.get(id),
+    );
+    return { ...context, root: context.root ?? sourceRoot };
   }
 
   async session(record: ServerScrapeArtifactRecord) {
@@ -195,6 +147,7 @@ export class ServerPosterCropAdapter {
       {
         journal: state.repositories.publicationJournal,
         outputs: state.repositories.library,
+        library: state.repositories.library,
         repairIssues: state.repositories.libraryRepairIssues,
         roots: await this.mediaRoots.listRoots(),
       },

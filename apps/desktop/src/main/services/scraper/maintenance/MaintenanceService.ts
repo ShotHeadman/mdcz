@@ -7,6 +7,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import {
+  createMaintenanceDirectoryTaskPort,
   createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
@@ -84,6 +85,9 @@ export class MaintenanceService {
           ensurePathRecord: async (input) => await mediaRoots.ensurePathRecord(input),
         },
         runtime: this.runtime,
+        directoryTasks: createMaintenanceDirectoryTaskPort(
+          async () => (await this.persistenceService.getState()).repositories.maintenanceDirectoryTasks,
+        ),
         discoverDirectory: async (scope, configuration, signal, onProgress) => {
           const generatedStrms = await registeredOutputPaths(
             (await this.persistenceService.getState()).repositories.library,

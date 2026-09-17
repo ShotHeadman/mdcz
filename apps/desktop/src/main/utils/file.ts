@@ -4,7 +4,6 @@ export {
   hasEnoughDiskSpace,
   listFiles,
   listVideoFiles,
-  moveFileSafely,
   pathExists,
   resolveAvailablePath,
 } from "@mdcz/runtime/scrape/utils/filesystem";

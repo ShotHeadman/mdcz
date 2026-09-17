@@ -1,7 +1,6 @@
 import { copyFile, mkdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
-import { assertPublicationBoundary, guardPublicationFileSystem } from "./boundary";
 import { PublicationJournalAdapter } from "./journalAdapter";
 import { manifestRefs } from "./manifest";
 import { removeCommittedObsoleteFiles } from "./preflight";
@@ -229,13 +228,11 @@ export const recoverPublications = async (options: RecoverPublicationsOptions): 
     const resolve = async (rootId: string, relativePath: string) =>
       await resolveAbsolute(options, rootId, relativePath);
     try {
-      if (manifest.boundary) await assertPublicationBoundary(manifest.boundary);
-      const guardedFileSystem = guardPublicationFileSystem(fileSystem, manifest.boundary);
       if (entry.state === "pending") {
-        await recoverPending(options, guardedFileSystem, entry, manifest, resolve);
+        await recoverPending(options, fileSystem, entry, manifest, resolve);
         continue;
       }
-      await recoverCommitted(options, guardedFileSystem, entry, manifest, resolve);
+      await recoverCommitted(options, fileSystem, entry, manifest, resolve);
     } catch (error) {
       if (isUnavailableError(error)) continue;
       const ref = manifest.entries[0] ?? manifest.obsolete[0] ?? { rootId: "unknown", relativePath: entry.operationId };

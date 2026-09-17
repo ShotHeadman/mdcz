@@ -13,7 +13,7 @@ import type { AssetDecision } from "./types";
 
 type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 
-const SCENE_IMAGE_FILE_PATTERN = /^(?:scene-\d+|fanart\d+)\.(?:jpe?g|png|webp)$/iu;
+export const SCENE_IMAGE_FILE_PATTERN = /^(?:scene-\d+|fanart\d+)\.(?:jpe?g|png|webp)$/iu;
 
 export const resolveExistingAsset = async (assetPath: string): Promise<string | undefined> => {
   return (await pathExists(assetPath)) ? assetPath : undefined;

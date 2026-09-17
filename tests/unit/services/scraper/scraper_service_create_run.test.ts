@@ -141,10 +141,14 @@ describe("ScraperService ref-native start", () => {
     };
     mockConfigManager(configuration);
     const libraryEntry = await state.repositories.library.upsertEntry({
-      rootId: outputRoot.id,
-      rootRelativePath: targetRelativePath,
-      number: "ABF-981",
-      title: "Existing title",
+      movie: { number: "ABF-981", title: "Existing title" },
+      files: [
+        {
+          rootId: outputRoot.id,
+          rootRelativePath: targetRelativePath,
+          fileId: `${outputRoot.id}:${targetRelativePath}`,
+        },
+      ],
     });
     const repository = state.repositories.scrapeRuns;
     const run = await repository.create({
@@ -169,28 +173,33 @@ describe("ScraperService ref-native start", () => {
       return {
         status: "prepared",
         prepared: {
-          sourcePath,
-          fileInfo: { number, part: undefined },
+          fileInfo: { filePath: sourcePath, number, part: undefined },
           crawlerData: { number },
+          roots: [sourceRoot, outputRoot],
           outputPlan: {
-            outputDir: dirname(number === "ABF-981" ? target : join(output, "JAV_output", number, `${number}.mp4`)),
+            mode: "move",
+            sourceVideoPath: sourcePath,
             targetVideoPath: number === "ABF-981" ? target : join(output, "JAV_output", number, `${number}.mp4`),
+            outputDir: dirname(number === "ABF-981" ? target : join(output, "JAV_output", number, `${number}.mp4`)),
+            metadataDir: dirname(number === "ABF-981" ? target : join(output, "JAV_output", number, `${number}.mp4`)),
+            existingMetadataDir: dirname(sourcePath),
             nfoPath: join(metadata, `${number}.nfo`),
+            sidecars: [],
           },
         } as never,
       };
     });
     const executePrepared = vi
       .spyOn(FileScraper.prototype, "executePreparedFiles")
-      .mockImplementation(async (entries) =>
-        entries.map(({ prepared }) => ({
+      .mockImplementation(async (entries) => ({
+        results: entries.map(({ prepared }) => ({
           ...prepared.identity,
           fileName: `${prepared.fileInfo.number}.mp4`,
           status: "skipped",
           error: "test execution skipped",
           assets: [],
         })),
-      );
+      }));
     const launch = await service.retry(run.id);
     await service.waitForIdle();
     expect(FileScraper.prototype.prepareFile).toHaveBeenCalledTimes(4);

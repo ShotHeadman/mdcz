@@ -4,6 +4,7 @@ import {
   createPersistenceDatabase,
   LibraryRepairIssueRepository,
   LibraryRepository,
+  MaintenanceDirectoryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
   PublicationJournalRepository,
@@ -28,6 +29,7 @@ const resolveNativeBinding = (): string =>
     : join(app.getAppPath(), "native", "better_sqlite3.node");
 
 export interface DesktopPersistenceRepositories {
+  maintenanceDirectoryTasks: MaintenanceDirectoryRepository;
   library: LibraryRepository;
   libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
@@ -92,6 +94,8 @@ export class DesktopPersistenceService {
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
+      const maintenanceDirectoryTasks = new MaintenanceDirectoryRepository(database);
+      maintenanceDirectoryTasks.interruptUnfinished();
       const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
       const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
@@ -104,6 +108,7 @@ export class DesktopPersistenceService {
       this.state = {
         database,
         repositories: {
+          maintenanceDirectoryTasks,
           library: new LibraryRepository(database),
           libraryRepairIssues,
           mediaRoots,

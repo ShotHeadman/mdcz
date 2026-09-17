@@ -17,14 +17,22 @@ import type {
   VideoMeta,
 } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../network/networkExecution";
-import { createPublicationPlan, type PublicationPlan, preparePublicationPlan, toRootFileRef } from "../publication";
+import {
+  type MoviePublicationPlan,
+  preparePublicationPlan,
+  retainedRegisteredFeatures,
+  toRootFileRef,
+} from "../publication";
+import { resolvePublicationAssetLayout } from "../publication/assetLayout";
+import { resolvePublicationParticipants } from "../publication/participants";
+import type { PublicationOutputPort } from "../publication/types";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, AggregationService, ManualScrapeOptions } from "./aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "./canonicalizeActorAliases";
 import type { DownloadManager } from "./download";
-import { type FileOrganizer, type OrganizePlan, resolveMetadataOutputDir } from "./FileOrganizer";
+import type { FileOrganizer, ResolvedPublicationLayout } from "./FileOrganizer";
 import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "./media";
-import { findExistingNfoPath, type NfoGenerator, type NfoOptions } from "./nfo";
+import { findExistingNfoPath, getNfoWritePaths, type NfoGenerator, type NfoOptions } from "./nfo";
 import {
   downloadCrawlerAssets,
   prepareOutputCrawlerData,
@@ -45,11 +53,11 @@ export interface RuntimeScrapeSignalService {
     site: Website;
     step: "search" | "download" | "parse" | "organize";
   }): void;
-  showScrapeResult(result: ScrapeResult): void;
   setProgress(value: number, current: number, total: number): void;
 }
 
 export interface FileScraperDependencies {
+  outputs?: PublicationOutputPort;
   actorImageService: RuntimeActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
   aggregationService: Pick<AggregationService, "aggregate"> & {
@@ -69,6 +77,7 @@ export interface FileScraperDependencies {
     fileInfo: FileInfo;
     localState?: NfoLocalState;
     signal?: AbortSignal;
+    signalService: Pick<RuntimeScrapeSignalService, "showLogText" | "setProgress">;
   }): Promise<DownloadedAssets>;
   probeVideoMetadata?(sourcePath: string): Promise<VideoMeta | undefined>;
   signalService: RuntimeScrapeSignalService;
@@ -79,38 +88,43 @@ export type ScrapeExecutionMode = "single" | "batch";
 export interface FileScrapeProgress {
   fileIndex: number;
   totalFiles: number;
+  onProgress?: (percent: number) => void;
 }
 export type FileScrapeOptions = {
+  configuration?: Configuration;
+  localState?: NfoLocalState;
+  signalService?: RuntimeScrapeSignalService;
   manualScrape?: ManualScrapeOptions;
   scrapeSessionId?: string;
   source?: RootFileRef;
   roots?: readonly Pick<MediaRoot, "id" | "hostPath">[];
+  attemptId?: string;
   operationId?: string;
   outputDirectory?: string;
   outputTemplateRoot?: string;
 };
-export type FileScrapeResult = ScrapeResult &
-  (
-    | { status: "success"; publicationPlan: PublicationPlan }
-    | { status: "failed" | "skipped"; publicationPlan?: never }
-  ) & {
-    release?: () => Promise<void>;
-  };
-type FileScrapeFailure = ScrapeResult & { status: "failed" | "skipped"; publicationPlan?: never };
+export interface ScrapeGroupResult {
+  results: ScrapeResult[];
+  publicationPlan?: MoviePublicationPlan;
+  release?: () => Promise<void>;
+}
+type FileScrapeFailure = ScrapeResult & { status: "failed" | "skipped" };
 type ScrapeIdentity = Pick<ScrapeResult, "fileId" | "rootId" | "relativePath" | "fileName" | "part" | "assets">;
 
 export interface PreparedFileScrape {
+  signalService: RuntimeScrapeSignalService;
+  groupMovieId?: string;
   configuration: Configuration;
   fileInfo: FileInfo;
-  sourcePath: string;
   identity: ScrapeIdentity;
   localState?: NfoLocalState;
   videoMeta?: VideoMeta;
   crawlerData: CrawlerData;
   translationError?: string;
   aggregation: AggregationResult;
-  outputPlan: OrganizePlan;
+  outputPlan: ResolvedPublicationLayout;
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+  attemptId: string;
   operationId: string;
 }
 
@@ -147,25 +161,26 @@ export class FileScraper {
   ): Promise<FilePreparationResult> {
     const roots = options.roots;
     if (!roots?.length) throw new Error("Scrape publication requires registered media roots");
-    const configuration = structuredClone(await this.deps.getConfiguration());
+    const configuration = structuredClone(options.configuration ?? (await this.deps.getConfiguration()));
+    const signalService = options.signalService ?? this.deps.signalService;
     const parsedFileInfo = parseFileInfo(filePath, configuration.scrape.filenameIgnoreTokens);
     const fileId = buildFileId(parsedFileInfo.filePath);
     let fileInfo = parsedFileInfo;
     const identity = () => toScrapeIdentity(fileId, fileInfo, options);
-    this.deps.signalService.showScrapeResult({ ...identity(), status: "processing" });
     this.setProgress(progress, 0);
 
     try {
       const resolved = await resolveFileInfoWithSubtitles(filePath, { parsedFileInfo });
       fileInfo = resolved.fileInfo;
       const videoMeta = await this.deps.probeVideoMetadata?.(fileInfo.filePath);
-      const localState = await this.deps.loadExistingNfoLocalState?.(fileInfo.filePath, configuration);
+      const localState =
+        options.localState ?? (await this.deps.loadExistingNfoLocalState?.(fileInfo.filePath, configuration));
       const scrapeSessionId = options.scrapeSessionId ?? this.options.scrapeSessionId;
-      this.deps.signalService.showLogText(
+      signalService.showLogText(
         `Preparing file scrape task ${randomUUID()} for ${fileInfo.fileName} (scrapeSessionId: ${scrapeSessionId ?? "standalone"})`,
       );
       throwIfAborted(signal);
-      this.deps.signalService.showScrapeInfo({ fileInfo, site: configuration.scrape.sites[0], step: "search" });
+      signalService.showScrapeInfo({ fileInfo, site: configuration.scrape.sites[0], step: "search" });
       const aggregation = await this.aggregate(fileInfo, configuration, signal, options.manualScrape);
       throwIfAborted(signal);
       if (!aggregation) {
@@ -184,18 +199,18 @@ export class FileScraper {
       throwIfAborted(signal);
       crawlerData = canonicalizeCrawlerDataActorAliases(crawlerData, configuration);
       const outputPlan = await this.deps.fileOrganizer.resolveOutputPlan(
-        {
-          ...this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration, localState, {
-            executionMode: this.options.mode ?? "batch",
-            outputDirectory: options.outputDirectory,
-            outputTemplateRoot: options.outputTemplateRoot,
-          }),
-          subtitleSidecars: resolved.subtitleSidecars,
-        },
+        this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration, localState, {
+          executionMode: this.options.mode ?? "batch",
+          outputDirectory: options.outputDirectory,
+          outputTemplateRoot: options.outputTemplateRoot,
+        }),
         fileInfo.filePath,
         {
           allowSharedDirectory:
             configuration.naming.assetNamingMode === "followVideo" && configuration.download.nfoNaming === "filename",
+          existingMetadataDir: path.dirname(fileInfo.filePath),
+          strmPathMappings: configuration.paths.strmPathMappings,
+          subtitleSidecars: resolved.subtitleSidecars,
         },
       );
       throwIfAborted(signal);
@@ -203,9 +218,9 @@ export class FileScraper {
       return {
         status: "prepared",
         prepared: {
+          signalService,
           configuration,
           fileInfo,
-          sourcePath: fileInfo.filePath,
           identity: identity(),
           localState,
           videoMeta,
@@ -214,6 +229,7 @@ export class FileScraper {
           aggregation,
           outputPlan,
           roots,
+          attemptId: options.attemptId ?? options.operationId ?? identity().fileId,
           operationId: options.operationId ?? `${scrapeSessionId ?? "scrape"}:${identity().relativePath}`,
         },
       };
@@ -229,40 +245,132 @@ export class FileScraper {
   async executePreparedFiles(
     entries: readonly { prepared: PreparedFileScrape; progress: FileScrapeProgress; caseId?: string }[],
     signal?: AbortSignal,
-  ): Promise<FileScrapeResult[]> {
-    if (!entries.length) return [];
-    const failures = new Map<string, FileScrapeResult>();
-    const ready: (typeof entries)[number][] = [];
-    for (const entry of entries) {
+  ): Promise<ScrapeGroupResult> {
+    if (!entries.length) return { results: [] };
+    const states = entries.map((entry) => ({ ...entry, result: undefined as ScrapeResult | undefined }));
+    const ready: (typeof states)[number][] = [];
+    for (const entry of states) {
       try {
-        const file = await stat(entry.prepared.sourcePath);
+        const file = await stat(entry.prepared.fileInfo.filePath);
         if (!file.isFile()) throw new Error("Scrape source is not a file");
         ready.push(entry);
       } catch (error) {
-        failures.set(
-          entry.prepared.sourcePath,
-          this.failed(entry.prepared.identity, entry.prepared.fileInfo, toErrorMessage(error)),
-        );
+        entry.result = this.failed(entry.prepared.identity, entry.prepared.fileInfo, toErrorMessage(error));
       }
     }
     const first = ready[0];
-    if (!first) return entries.map(({ prepared }) => failures.get(prepared.sourcePath) as FileScrapeResult);
+    if (!first) return { results: states.map((entry) => entry.result as ScrapeResult) };
     const { prepared, progress } = first;
     const { configuration, fileInfo, identity, aggregation, outputPlan: plan } = prepared;
+    const { signalService } = prepared;
+    const { postProcessAssets } = this.deps;
     const roots = [...new Map(ready.flatMap(({ prepared }) => prepared.roots).map((root) => [root.id, root])).values()];
     return await runWithScrapeItem(
       { itemId: identity.fileId, relativePath: identity.relativePath, caseId: first.caseId },
       async () => {
         let stagingDir: string | undefined;
-        let stagingHandedOff = false;
 
         try {
           throwIfAborted(signal);
-          stagingDir = await mkdtemp(path.join(tmpdir(), "mdcz-publication-"));
-          const metadataOutputDir = resolveMetadataOutputDir(plan);
+          const resolveRoot = async (id: string) => {
+            const root =
+              roots.find((root) => root.id === id) ??
+              this.deps.outputs?.publicationRoots().find((root) => root.id === id);
+            if (!root) throw new Error(`Publication root not found: ${id}`);
+            return root;
+          };
+          const toRef = (absolutePath: string) => toRootFileRef(absolutePath, roots);
+          const members = await Promise.all(
+            ready.map(async ({ prepared }) => {
+              const { sourceVideoPath: _sourceVideoPath, ...layout } = prepared.outputPlan;
+              return {
+                source: toRef(prepared.fileInfo.filePath),
+                layout,
+                prepared,
+                assetLayout: await resolvePublicationAssetLayout({
+                  layout: prepared.outputPlan,
+                  config: configuration,
+                  crawlerData: prepared.crawlerData,
+                  movieBaseName: path.basename(plan.nfoPath, ".nfo"),
+                }),
+              };
+            }),
+          );
+          const outputPaths = [
+            ...members.flatMap(({ assetLayout }) => [...assetLayout.staged.values(), ...assetLayout.retained.values()]),
+            ...ready.flatMap(({ prepared }) => {
+              const layout = prepared.outputPlan;
+              return [
+                ...(path.resolve(layout.targetVideoPath) === path.resolve(layout.sourceVideoPath)
+                  ? []
+                  : [layout.targetVideoPath]),
+                ...getNfoWritePaths(layout.nfoPath, configuration.download.nfoNaming).requiredPaths,
+                ...(layout.mirror ? [layout.mirror.targetPath] : []),
+                ...layout.sidecars.flatMap((sidecar) => [
+                  ...(path.resolve(sidecar.targetPath) === path.resolve(sidecar.sourcePath)
+                    ? []
+                    : [sidecar.targetPath]),
+                  ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : []),
+                ]),
+              ];
+            }),
+          ];
+          const outputs = [...new Set(outputPaths)].map(toRef);
+          const ownershipSnapshot = this.deps.outputs?.publicationSnapshot({
+            paths: [...ready.map(({ prepared }) => prepared.outputPlan.sourceVideoPath), ...outputPaths],
+            includeOwners: true,
+          }) ?? { files: [], assets: [] };
+          const featureSnapshot = this.deps.outputs?.publicationSnapshot({ kind: "feature", includeOwners: true });
+          const metadataDirectories = ready.map(({ prepared }) => toRef(prepared.outputPlan.metadataDir));
+          const colocatedFeatures =
+            featureSnapshot?.assets.filter((asset) =>
+              metadataDirectories.some(
+                (directory) =>
+                  directory.rootId === asset.rootId && path.dirname(asset.relativePath) === directory.relativePath,
+              ),
+            ) ?? [];
+          const identityOutputs = [
+            ...outputs,
+            ...colocatedFeatures.map(({ rootId, relativePath }) => ({ rootId, relativePath })),
+          ];
+          const sourceMovieIds = new Set(ready.flatMap(({ prepared }) => prepared.groupMovieId ?? []));
+          if (sourceMovieIds.size > 1) throw new Error("Scrape group contains files from different library movies");
+          const participantFiles = [...ownershipSnapshot.files, ...(featureSnapshot?.files ?? [])].filter(
+            (file, index, files) =>
+              files.findIndex(
+                (candidate) =>
+                  candidate.itemId === file.itemId &&
+                  candidate.fileId === file.fileId &&
+                  candidate.rootId === file.rootId &&
+                  candidate.relativePath === file.relativePath,
+              ) === index,
+          );
+          const participantAssets = [...ownershipSnapshot.assets, ...(featureSnapshot?.assets ?? [])].filter(
+            (asset, index, assets) =>
+              assets.findIndex(
+                (candidate) =>
+                  candidate.itemId === asset.itemId &&
+                  candidate.fileId === asset.fileId &&
+                  candidate.kind === asset.kind &&
+                  candidate.rootId === asset.rootId &&
+                  candidate.relativePath === asset.relativePath,
+              ) === index,
+          );
+          const participants = await resolvePublicationParticipants({
+            members,
+            outputs: identityOutputs,
+            identity: prepared.crawlerData.number || fileInfo.number,
+            movieId: [...sourceMovieIds][0],
+            snapshot: {
+              files: participantFiles,
+              assets: participantAssets,
+            },
+            resolveRoot,
+          });
+          const directory = await mkdtemp(path.join(tmpdir(), "mdcz-publication-"));
+          stagingDir = directory;
+          const metadataOutputDir = plan.metadataDir;
           let crawlerData = prepared.crawlerData;
-          let actorPhotoPaths: string[] = [];
-          let downloadedAssets: DownloadedAssets = { downloaded: [], sceneImages: [] };
           const actorOutput = await prepareOutputCrawlerData({
             actorImageService: this.deps.actorImageService,
             actorSourceProvider: this.deps.actorSourceProvider,
@@ -270,16 +378,16 @@ export class FileScraper {
             crawlerData,
             enabled: true,
             movieDir: stagingDir,
-            sourceVideoPath: prepared.sourcePath,
+            sourceVideoPath: prepared.fileInfo.filePath,
             signal,
           });
           crawlerData = actorOutput.data ?? crawlerData;
-          actorPhotoPaths = actorOutput.actorPhotoPaths;
           throwIfAborted(signal);
           this.setProgress(progress, 60);
-          this.deps.signalService.showScrapeInfo({
+          if (!crawlerData.website) throw new Error("Scrape crawler website not initialized");
+          signalService.showScrapeInfo({
             fileInfo,
-            site: this.requireWebsite(crawlerData),
+            site: crawlerData.website,
             step: "download",
           });
           const downloaded = await downloadCrawlerAssets({
@@ -293,54 +401,61 @@ export class FileScraper {
             existingAssetDir: metadataOutputDir,
             sources: aggregation.sources,
             callbacks: { signal },
-            onLog: (message) => this.deps.signalService.showLogText(message),
-            postProcessAssets: this.deps.postProcessAssets
-              ? async (assets, resolvedCrawlerData) =>
-                  (await this.deps.postProcessAssets?.({
+            onLog: (message) => signalService.showLogText(message),
+            postProcessAssets: postProcessAssets
+              ? (assets, resolvedCrawlerData) =>
+                  postProcessAssets({
                     assets,
                     configuration,
                     crawlerData: resolvedCrawlerData,
                     fileInfo,
                     localState: prepared.localState,
                     signal,
-                  })) ?? assets
+                    signalService,
+                  })
               : undefined,
           });
           crawlerData = downloaded.crawlerData;
-          downloadedAssets = downloaded.assets;
           throwIfAborted(signal);
           this.setProgress(progress, 80);
           const preservedNfoPath = configuration.download.keepNfo
             ? await findExistingNfoPath(plan.nfoPath, configuration.download.nfoNaming, pathExists)
             : undefined;
           const publication = await preparePublicationPlan({
-            files: ready.map(({ prepared }) => ({
-              sourceVideoPath: prepared.sourcePath,
-              outputVideoPath: prepared.outputPlan.targetVideoPath,
-              organizePlan: prepared.outputPlan,
-            })),
-            onFileError: (sourcePath, error) => {
-              const entry = ready.find(({ prepared }) => prepared.sourcePath === sourcePath);
-              if (!entry) throw new Error(`Unknown scrape source: ${sourcePath}`);
-              failures.set(
-                sourcePath,
-                this.failed(entry.prepared.identity, entry.prepared.fileInfo, toErrorMessage(error)),
-              );
+            operationId: prepared.operationId,
+            operationType: "scrape",
+            roots,
+            identity: {
+              ...participants,
+              members: participants.members.map(({ prepared, ...member }) => {
+                const classification = classifyMovie(prepared.fileInfo, crawlerData, prepared.localState);
+                const { fileId: itemId, assets, ...identity } = prepared.identity;
+                return {
+                  ...member,
+                  existingNfoPath: preservedNfoPath,
+                  scrape: {
+                    itemId,
+                    attemptId: prepared.attemptId,
+                    identity,
+                    fileInfo: prepared.fileInfo,
+                    videoMeta: prepared.videoMeta,
+                    error: prepared.translationError,
+                    uncensoredAmbiguous:
+                      classification.uncensored &&
+                      !classification.umr &&
+                      !classification.leak &&
+                      !isLikelyUncensoredNumber(crawlerData.number || prepared.fileInfo.number),
+                  },
+                };
+              }),
             },
+            retainedMovieAssets: retainedRegisteredFeatures(participants.members, participants.expected.assets),
             stagingDir,
-            existingAssetDir: metadataOutputDir,
-            metadataOutputDir,
-            downloadedAssets,
-            actorPhotoPaths,
-            existingNfoPath: preservedNfoPath,
-            organizeFiles:
-              !configuration.behavior.metadataOnly &&
-              (configuration.behavior.successFileMove || configuration.behavior.successFileRename),
-            renameSubtitles: !configuration.behavior.metadataOnly && configuration.behavior.successFileRename,
+            downloadedAssets: downloaded.assets,
+            actorPhotoPaths: actorOutput.actorPhotoPaths,
             nfoNaming: configuration.download.nfoNaming,
-            assetNamingMode: configuration.naming.assetNamingMode,
-            strmPathMappings: configuration.paths.strmPathMappings,
             remoteData: crawlerData,
+            scrape: { crawlerData, sources: aggregation.sources },
             writeNfo: async (assets, writeFile) =>
               await writePreparedNfo({
                 assets,
@@ -352,66 +467,54 @@ export class FileScraper {
                 nfoGenerator: this.deps.nfoGenerator,
                 buildTags: this.deps.buildTags,
                 nfoPath: plan.nfoPath,
-                sourceVideoPath: prepared.sourcePath,
+                sourceVideoPath: prepared.fileInfo.filePath,
                 sources: aggregation.sources,
                 videoMeta: prepared.videoMeta,
                 probeVideoMetadata: this.deps.probeVideoMetadata,
                 writeFile,
               }),
           });
-          throwIfAborted(signal);
-          const publicationPlan = createPublicationPlan(prepared.operationId, "scrape", publication.plan, roots);
-          const toRef = (absolutePath: string) => toRootFileRef(absolutePath, roots);
-          const results = entries.map(({ prepared, progress }): FileScrapeResult => {
-            const failure = failures.get(prepared.sourcePath);
-            if (failure) return failure;
-            const { fileInfo, identity } = prepared;
-            const target = toRef(prepared.outputPlan.targetVideoPath);
-            const video = publicationPlan.media?.find(
-              (media) => media.target.rootId === target.rootId && media.target.relativePath === target.relativePath,
-            );
-            if (!video) throw new Error("Scrape publication plan is missing its media file");
-            const classification = classifyMovie(fileInfo, crawlerData, prepared.localState);
-            const result: FileScrapeResult = {
-              ...identity,
-              status: "success",
-              crawlerData,
-              videoMeta: prepared.videoMeta,
-              output: video.target,
-              ...(publication.nfoPath ? { nfo: toRef(publication.nfoPath) } : {}),
-              assets: video.assets ?? [],
-              sources: aggregation.sources,
-              uncensoredAmbiguous:
-                classification.uncensored &&
-                !classification.umr &&
-                !classification.leak &&
-                !isLikelyUncensoredNumber(crawlerData.number || fileInfo.number),
-              ...(prepared.translationError ? { error: prepared.translationError } : {}),
-              publicationPlan,
+          for (const failure of publication.failed) {
+            const entry = ready.find((item) => item.prepared.attemptId === failure.scrape?.attemptId);
+            if (!entry) throw new Error(`Unknown scrape member: ${failure.fileId}`);
+            entry.result = this.failed(entry.prepared.identity, entry.prepared.fileInfo, toErrorMessage(failure.error));
+          }
+          if (!publication.plan) {
+            await rm(directory, { recursive: true, force: true });
+            stagingDir = undefined;
+            return {
+              results: states.map((entry) => {
+                if (!entry.result) throw new Error(`Scrape member was not marked failed: ${entry.prepared.attemptId}`);
+                return entry.result;
+              }),
             };
-            this.setProgress(progress, 100);
-            this.deps.signalService.showScrapeResult(result);
-            return result;
-          });
-          const successful = results.find((result) => result.status === "success");
-          if (!successful) throw new Error("Scrape publication has no successful files");
-          successful.release = async () => {
-            await rm(stagingDir as string, { recursive: true, force: true });
+          }
+          throwIfAborted(signal);
+          for (const { progress, result } of states) if (!result) this.setProgress(progress, 95);
+          return {
+            results: states.flatMap((entry) => (entry.result ? [entry.result] : [])),
+            publicationPlan: publication.plan,
+            release: () => rm(directory, { recursive: true, force: true }),
           };
-          stagingHandedOff = true;
-          return results;
         } catch (error) {
-          return entries.map(({ prepared, progress }) => {
-            this.setProgress(progress, 100);
-            return (
-              failures.get(prepared.sourcePath) ??
-              (isAbortError(error)
-                ? this.skipped(prepared.identity, "Operation aborted")
-                : this.failed(prepared.identity, prepared.fileInfo, toErrorMessage(error)))
-            );
-          });
-        } finally {
-          if (stagingDir && !stagingHandedOff) await rm(stagingDir, { recursive: true, force: true });
+          if (stagingDir) {
+            try {
+              await rm(stagingDir, { recursive: true, force: true });
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], "Scrape preparation and staging cleanup failed");
+            }
+          }
+          return {
+            results: states.map(({ prepared, progress, result }) => {
+              this.setProgress(progress, 100);
+              return (
+                result ??
+                (isAbortError(error)
+                  ? this.skipped(prepared.identity, "Operation aborted")
+                  : this.failed(prepared.identity, prepared.fileInfo, toErrorMessage(error)))
+              );
+            }),
+          };
         }
       },
     );
@@ -449,23 +552,19 @@ export class FileScraper {
   ): FileScrapeFailure & { status: "failed" } {
     this.deps.logger.error(`Scrape failed for ${fileInfo.filePath}: ${error}`);
     const result = { ...identity, status: "failed" as const, error };
-    this.deps.signalService.showScrapeResult(result);
     this.deps.signalService.showFailedInfo({ fileInfo, error });
     return result;
   }
 
   private skipped(identity: ScrapeIdentity, error: string): FileScrapeFailure & { status: "skipped" } {
-    const result = { ...identity, status: "skipped" as const, error };
-    this.deps.signalService.showScrapeResult(result);
-    return result;
+    return { ...identity, status: "skipped" as const, error };
   }
 
   private setProgress(progress: FileScrapeProgress, percent: number): void {
+    if (progress.onProgress) {
+      progress.onProgress(percent);
+      return;
+    }
     reportItemProgress(this.deps.signalService, progress, percent);
-  }
-
-  private requireWebsite(crawlerData: CrawlerData): Website {
-    if (!crawlerData.website) throw new Error("Scrape crawler website not initialized");
-    return crawlerData.website;
   }
 }

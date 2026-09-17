@@ -260,14 +260,22 @@ export const applyAmazonPosters = async (
           {
             operationId: `amazon-poster:${savedPosterPath}`,
             mediaPaths: registered?.mediaPaths,
-            readOnlyDirectories: registered?.readOnlyDirectories,
             operationType: "maintenance",
-            artifacts: [{ kind: "poster", targetPath: savedPosterPath, content: { kind: "bytes" as const, data } }],
-            replaceExistingArtifacts: true,
+            operations: [
+              {
+                kind: "write",
+                owner: registered ? "movie" : "unmanaged",
+                assetKind: "poster",
+                targetPath: savedPosterPath,
+                content: { kind: "bytes" as const, data },
+                replaceExisting: true,
+              },
+            ],
           },
           {
             journal: dependencies.journal,
             outputs: dependencies.outputs,
+            library: dependencies.library,
             repairIssues: dependencies.repairIssues,
             roots: dependencies.roots,
           },

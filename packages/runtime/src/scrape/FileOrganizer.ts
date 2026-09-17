@@ -5,37 +5,61 @@ import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
-import { findSubtitleSidecars, isGeneratedSidecarVideo, type SubtitleSidecarMatch } from "./media";
+import {
+  buildGeneratedVideoSidecarTargetPath,
+  buildSubtitleSidecarTargetPath,
+  findGeneratedVideoSidecars,
+  findSubtitleSidecars,
+  isGeneratedSidecarVideo,
+  type SubtitleSidecarMatch,
+} from "./media";
 import { getNfoWritePaths } from "./nfo";
 import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
 import { ensureParentDirectory, listVideoFiles } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
-import { mapStrmPath } from "./utils/strm";
+import { mapStrmPath, prepareMovedStrmContent, prepareStrmMirrorContent } from "./utils/strm";
 
 export interface OrganizePlan {
   outputDir: string;
-  metadataDir?: string;
+  metadataDir: string;
   metadataRoot?: string;
+  mode: "preserve" | "move";
   targetVideoPath: string;
   nfoPath: string;
   strmPath?: string;
-  subtitleSidecars?: SubtitleSidecarMatch[];
-  metadataOnly?: boolean;
+  renameSubtitles: boolean;
 }
 
-export const resolveMetadataOutputDir = (plan: OrganizePlan): string => plan.metadataDir ?? plan.outputDir;
+export interface ResolvedPublicationLayout {
+  mode: "preserve" | "move";
+  sourceVideoPath: string;
+  targetVideoPath: string;
+  outputDir: string;
+  metadataDir: string;
+  existingMetadataDir: string;
+  nfoPath: string;
+  mediaContent?: string;
+  mirror?: { targetPath: string; content: string };
+  sidecars: Array<{
+    kind: "subtitle" | "feature";
+    sourcePath: string;
+    targetPath: string;
+    mirrorPath?: string;
+  }>;
+}
 
 /**
  * Parts of one number share the metadata directory and its fixed asset names
  * (poster.jpg, extrafanart, .actors), so serializing publication per NFO file
  * is too narrow: the whole directory has to be covered.
  */
-export const buildScrapePublicationKey = (plan: OrganizePlan): string =>
-  `scrape-publication:${resolve(resolveMetadataOutputDir(plan))}`;
+export const buildScrapePublicationKey = <T extends Pick<OrganizePlan, "metadataDir">>(plan: T): string =>
+  `scrape-publication:${resolve(plan.metadataDir)}`;
 
 interface ResolveOutputPlanOptions {
   createDirectories?: boolean;
   allowSharedDirectory?: boolean;
+  subtitleSidecars?: SubtitleSidecarMatch[];
 }
 
 export interface OrganizePlanOptions {
@@ -107,17 +131,20 @@ export class FileOrganizer {
         outputDir: sourceDir,
         metadataDir,
         metadataRoot,
+        mode: "preserve",
         targetVideoPath: fileInfo.filePath,
         nfoPath,
         strmPath,
-        metadataOnly: true,
+        renameSubtitles: false,
       };
     }
 
     const { directory, useFolderTemplate } = resolveOrganizeDirectory(fileInfo.filePath, config, options);
     const outputDir = useFolderTemplate ? join(directory, layout.folderRelativePath) : directory;
 
-    const targetVideoPath = join(outputDir, layout.targetVideoFileName);
+    const generatedTargetVideoPath = join(outputDir, layout.targetVideoFileName);
+    const moveMedia = config.behavior.successFileMove || config.behavior.successFileRename;
+    const targetVideoPath = moveMedia ? generatedTargetVideoPath : fileInfo.filePath;
     if (!isPathInside(directory, outputDir)) throw new Error("模板结果超出整理目标目录");
     const nfoPath = join(outputDir, layout.nfoFileName);
 
@@ -125,10 +152,11 @@ export class FileOrganizer {
       outputDir,
       metadataDir: outputDir,
       metadataRoot: undefined,
+      mode: moveMedia ? "move" : "preserve",
       targetVideoPath,
       nfoPath,
       strmPath: undefined,
-      metadataOnly: false,
+      renameSubtitles: config.behavior.successFileRename,
     };
   }
 
@@ -146,7 +174,7 @@ export class FileOrganizer {
         file: layout.targetVideoFileName,
         sourcePath: resolve(sample.fileInfo.filePath),
         mediaPath: plan.targetVideoPath,
-        metadataDir: resolveMetadataOutputDir(plan),
+        metadataDir: plan.metadataDir,
         strmFileName: plan.strmPath ? basename(plan.strmPath) : undefined,
         strmContent: plan.strmPath ? mapStrmPath(plan.targetVideoPath, config.paths.strmPathMappings) : undefined,
         subtitles: plan.strmPath ? [`${basename(plan.strmPath, ".strm")}.zh.srt`] : [],
@@ -167,8 +195,11 @@ export class FileOrganizer {
   async resolveOutputPlan(
     plan: OrganizePlan,
     sourceFilePath: string,
-    options: ResolveOutputPlanOptions = {},
-  ): Promise<OrganizePlan> {
+    options: ResolveOutputPlanOptions & {
+      existingMetadataDir?: string;
+      strmPathMappings?: Configuration["paths"]["strmPathMappings"];
+    } = {},
+  ): Promise<ResolvedPublicationLayout> {
     if (options.createDirectories) {
       await ensureParentDirectory(plan.targetVideoPath);
       await ensureParentDirectory(plan.nfoPath);
@@ -177,7 +208,7 @@ export class FileOrganizer {
       }
     }
 
-    const outputRoot = resolveMetadataOutputDir(plan);
+    const outputRoot = plan.metadataDir;
     const sourceDir = resolve(dirname(sourceFilePath));
     const sameDirectoryOutput = sourceDir === resolve(outputRoot);
 
@@ -202,9 +233,48 @@ export class FileOrganizer {
       }
     }
 
+    const moveMedia = plan.mode === "move";
+    const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath));
+    const sidecars: ResolvedPublicationLayout["sidecars"] = subtitleSidecars.map((subtitle) => {
+      const targetPath = moveMedia
+        ? plan.renameSubtitles
+          ? buildSubtitleSidecarTargetPath(subtitle, plan.targetVideoPath)
+          : join(dirname(plan.targetVideoPath), basename(subtitle.path))
+        : subtitle.path;
+      return {
+        kind: "subtitle",
+        sourcePath: subtitle.path,
+        targetPath,
+        ...(plan.strmPath ? { mirrorPath: buildSubtitleSidecarTargetPath(subtitle, plan.strmPath) } : {}),
+      };
+    });
+    for (const feature of await findGeneratedVideoSidecars(sourceFilePath)) {
+      sidecars.push({
+        kind: "feature",
+        sourcePath: feature.path,
+        targetPath: moveMedia
+          ? buildGeneratedVideoSidecarTargetPath(feature, dirname(plan.targetVideoPath), basename(plan.nfoPath, ".nfo"))
+          : feature.path,
+      });
+    }
+    const mediaContent = moveMedia ? await prepareMovedStrmContent(sourceFilePath, plan.targetVideoPath) : undefined;
+    const mirror = plan.strmPath
+      ? {
+          targetPath: plan.strmPath,
+          content: await prepareStrmMirrorContent(sourceFilePath, plan.targetVideoPath, options.strmPathMappings),
+        }
+      : undefined;
     return {
-      ...plan,
-      subtitleSidecars: plan.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath)),
+      mode: moveMedia ? "move" : "preserve",
+      sourceVideoPath: sourceFilePath,
+      targetVideoPath: plan.targetVideoPath,
+      outputDir: plan.outputDir,
+      metadataDir: plan.metadataDir,
+      existingMetadataDir: options.existingMetadataDir ?? dirname(sourceFilePath),
+      nfoPath: plan.nfoPath,
+      ...(mediaContent === undefined ? {} : { mediaContent }),
+      ...(mirror ? { mirror } : {}),
+      sidecars,
     };
   }
 }

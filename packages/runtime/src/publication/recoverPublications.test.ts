@@ -225,10 +225,19 @@ describe("recoverPublications", () => {
     const plan: PublicationPlan = {
       operationId: "op-2",
       operationType: "maintenance",
-      artifacts: [{ target: targetRef, content: { kind: "text", data: "other" } }],
-      assets: [],
+      kind: "unmanaged",
+      files: [],
+      sources: [],
+      operations: [
+        {
+          kind: "write",
+          target: targetRef,
+          content: { kind: "text", data: "other" },
+          replaceExisting: true,
+        },
+      ],
+      movieAssets: [],
       obsolete: [],
-      replaceExistingTargets: [targetRef],
     };
     await expect(
       commitPublishedMedia(plan, {

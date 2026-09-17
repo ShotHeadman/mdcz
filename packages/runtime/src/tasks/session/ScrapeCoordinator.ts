@@ -195,15 +195,16 @@ export class ScrapeCoordinator<TStart, TRun, TManualScrape = unknown, TPrepared 
         runId: id,
         ...description,
         onSnapshot: () => this.host.onInvalidate(this.liveRuns()),
+        ...(description.totalItems === null
+          ? {
+              discover: async (signal: AbortSignal, report: (progress: DiscoveryProgress) => void) => {
+                if (!this.host.discover) throw new Error("Directory discovery is unavailable");
+                entry.run = await this.host.discover(entry.run, signal, report);
+              },
+            }
+          : {}),
         prepare: async (signal) => {
           signal.throwIfAborted();
-          if (description.totalItems === null) {
-            if (!this.host.discover) throw new Error("Directory discovery is unavailable");
-            entry.run = await this.host.discover(entry.run, signal, (progress) =>
-              entry.session.recordDiscovery(progress),
-            );
-            signal.throwIfAborted();
-          }
           if (this.host.describe(entry.run).totalItems === 0) return null;
           return await this.host.createExecution(entry.run, {
             progress: (itemId, percent) => entry.session.recordProgress(itemId, percent),

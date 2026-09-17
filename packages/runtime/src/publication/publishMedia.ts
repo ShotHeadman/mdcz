@@ -4,31 +4,32 @@ import path from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { MediaPathBusyError, mediaPathOwnership } from "../library/mediaPathOwnership";
 import { runtimeLoggerService } from "../shared";
-import { guardPublicationFileSystem, publicationRefKey as refKey } from "./boundary";
 import { PublicationConflictError } from "./conflicts";
 import { manifestRefs } from "./manifest";
-import { prepareOutputRegistration } from "./outputs";
-import { preparePublicationPaths } from "./paths";
+import { prepareOutputValidation } from "./outputValidation";
+import { preparePublicationPaths, publicationRefKey as refKey } from "./paths";
 import {
   assertPublicationFileUnchanged,
   type ObservedPublicationFile,
   observePublicationFile,
-  planMoves,
   planRefs,
   preflightPublication,
   publicationFilesMatch,
+  publicationSources,
   removeCommittedObsoleteFiles,
   toObsoleteObservation,
 } from "./preflight";
+import { publicationOperations } from "./publicationPlan";
 import { isPublicationPathReferenced } from "./registeredOutputs";
 import { restorePublicationFile } from "./restorePublicationFile";
-import {
-  PublicationError,
-  type PublicationFileSystem,
-  type PublicationJournalManifest,
-  type PublicationPlan,
-  type PublicationRepairPort,
-  type PublishMediaOptions,
+import type {
+  PublicationFileSystem,
+  PublicationJournalManifest,
+  PublicationOperation,
+  PublicationPlan,
+  PublicationRepairPort,
+  PublicationResult,
+  PublishMediaOptions,
 } from "./types";
 
 const flushFile = async (filePath: string): Promise<void> => {
@@ -99,6 +100,7 @@ const recordRepair = async (
 };
 
 interface PlannedPublication {
+  operation: PublicationOperation;
   ref: RootFileRef;
   targetPath: string;
   temporaryPath: string;
@@ -110,21 +112,11 @@ interface PlannedPublication {
 }
 
 export const commitPublishedMedia = async <TResult>(
-  requestedPlan: PublicationPlan,
+  plan: PublicationPlan,
   options: PublishMediaOptions<TResult>,
-): Promise<TResult> => {
-  const plan: PublicationPlan = {
-    ...requestedPlan,
-    videos: requestedPlan.videos?.map((move) => ({ ...move })),
-    sidecars: requestedPlan.sidecars?.map((move) => ({ ...move })),
-    obsolete: [...requestedPlan.obsolete],
-    editFiles: requestedPlan.editFiles ? [...requestedPlan.editFiles] : undefined,
-    replaceExistingTargets: requestedPlan.replaceExistingTargets
-      ? [...requestedPlan.replaceExistingTargets]
-      : undefined,
-  };
+): Promise<PublicationResult<TResult>> => {
   const outputs = options.outputs;
-  const fileSystem = guardPublicationFileSystem(options.fileSystem ?? defaultFileSystem, plan.boundary);
+  const fileSystem = options.fileSystem ?? defaultFileSystem;
   const logger = runtimeLoggerService.getLogger("Publication");
   const operationLabel = plan.operationId.slice(-8);
   const phaseCounts = new Map<string, number>();
@@ -147,9 +139,12 @@ export const commitPublishedMedia = async <TResult>(
     return activePhaseStartedAt;
   };
   const lockRefs = uniqueRefs(planRefs(plan));
+  const copySources = publicationOperations(plan).flatMap((operation) =>
+    operation.kind === "copy" ? [operation.sourcePath] : [],
+  );
   const lockStartedAt = startPhase("lock");
-  const paths = await preparePublicationPaths(lockRefs, options, plan.boundary);
-  const lockKeys = new Set(lockRefs.map(paths.key));
+  const paths = await preparePublicationPaths(lockRefs, options, copySources);
+  const lockKeys = new Set([...lockRefs.map(paths.key), ...copySources.map(paths.pathKey)]);
   let release: () => void;
   try {
     release = options.acquireAll?.([...lockKeys]) ?? mediaPathOwnership.acquireAll([...lockKeys]);
@@ -161,7 +156,6 @@ export const commitPublishedMedia = async <TResult>(
   }
   recordPhase("lock", lockStartedAt);
   let journalOpen = false;
-  let committed = false;
   const planned: PlannedPublication[] = [];
   const published: PlannedPublication[] = [];
 
@@ -199,54 +193,87 @@ export const commitPublishedMedia = async <TResult>(
 
   try {
     const unfinished = options.journal.listUnfinished();
-    for (const record of unfinished) await paths.prepare(manifestRefs(record.manifest), record.manifest.boundary);
+    for (const record of unfinished) await paths.prepare(manifestRefs(record.manifest));
     const conflict = unfinished.find((entry) =>
       manifestRefs(entry.manifest).some((ref) => lockKeys.has(paths.key(ref))),
     );
     if (conflict)
-      throw new PublicationConflictError(plan.operationId, conflict.operationId, "目标路径仍属于未完成的发布操作");
+      throw new PublicationConflictError(
+        plan.operationId,
+        conflict.operationId,
+        "目标路径存在未完成的发布操作，请先恢复或清理",
+      );
     const preflightStartedAt = startPhase("preflight");
     await options.validate?.();
-    const registerOutputs = await prepareOutputRegistration(plan, options, fileSystem, paths);
     const resolved = await preflightPublication(plan, paths, fileSystem);
+    const outputValidation = await prepareOutputValidation(plan, options, paths, resolved.observed);
     recordPhase("preflight", preflightStartedAt);
-    const replacing = new Set((plan.replaceExistingTargets ?? []).map(refKey));
-    for (const artifact of plan.artifacts) {
-      const targetPath = resolved.resolve(artifact.target);
+    const orderedOperations = [...publicationOperations(plan)].sort(
+      (left, right) => Number(left.kind === "move") - Number(right.kind === "move"),
+    );
+    for (const operation of orderedOperations) {
+      const targetPath = resolved.resolve(operation.target);
       const targetFact = observedAt(resolved.observed, targetPath);
       const targetExisted = targetFact?.exists === true;
-      if (targetExisted && !replacing.has(refKey(artifact.target))) continue;
+      if (
+        (operation.kind === "copy"
+          ? operation.sourcePath
+          : operation.kind === "move"
+            ? resolved.resolve(operation.source)
+            : undefined) === targetPath
+      )
+        continue;
+      if (targetExisted && !operation.replaceExisting) continue;
       const temporaryPath = createTargetTemporaryPath(targetPath, plan.operationId);
       planned.push({
-        ref: artifact.target,
+        operation,
+        ref: operation.target,
         targetPath,
         temporaryPath,
         backupPath: targetExisted ? createTargetBackupPath(targetPath, plan.operationId) : null,
         targetExisted,
+        ...(operation.kind === "move"
+          ? { sourcePath: resolved.resolve(operation.source), source: operation.source }
+          : {}),
         stage: async () => {
           await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
-          if (artifact.content.kind === "file") {
-            const source = await fileSystem.stat(artifact.content.path);
-            if (!source.isFile() || source.size !== artifact.content.size) {
-              throw new Error(`Publication artifact source changed before mutation: ${artifact.content.path}`);
-            }
+          if (operation.kind !== "write") {
+            const sourcePath = operation.kind === "copy" ? operation.sourcePath : resolved.resolve(operation.source);
+            const source = await fileSystem.stat(sourcePath);
+            const observed = observedAt(resolved.observed, sourcePath);
+            if (
+              !source.isFile() ||
+              source.size !== operation.size ||
+              (observed?.exists === true && (source.size !== observed.size || source.mtimeMs !== observed.mtimeMs))
+            )
+              throw new Error(
+                `Publication source changed before mutation: ${operation.kind === "copy" ? operation.sourcePath : refKey(operation.source)}`,
+              );
             const capacity = await fileSystem.statfs(path.dirname(targetPath));
-            if (capacity.bavail * capacity.bsize < artifact.content.size) {
+            if (operation.kind === "copy" && capacity.bavail * capacity.bsize < operation.size) {
               throw new Error(`Insufficient space for publication target: ${targetPath}`);
             }
-            const writeStartedAt = startPhase("sidecar-copy");
-            await fileSystem.copyFile(artifact.content.path, temporaryPath);
-            recordPhase("sidecar-copy", writeStartedAt);
+            const writeStartedAt = startPhase(operation.kind);
+            if (operation.kind === "copy") {
+              await fileSystem.copyFile(sourcePath, temporaryPath);
+            } else {
+              try {
+                await fileSystem.rename(sourcePath, temporaryPath);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+                if (capacity.bavail * capacity.bsize < operation.size)
+                  throw new Error(`Insufficient space for publication target: ${targetPath}`);
+                await fileSystem.copyFile(sourcePath, temporaryPath);
+              }
+            }
+            recordPhase(operation.kind, writeStartedAt);
             await fileSystem.flush?.(temporaryPath);
             const staged = await fileSystem.stat(temporaryPath);
-            if (!staged.isFile() || staged.size !== artifact.content.size) {
-              throw new Error(
-                `Staged artifact size mismatch for ${artifact.target.rootId}:${artifact.target.relativePath}`,
-              );
-            }
+            if (!staged.isFile() || staged.size !== operation.size)
+              throw new Error(`Staged transfer size mismatch for ${refKey(operation.target)}`);
             return;
           }
-          const data = artifact.content.data;
+          const data = operation.content.data;
           const writeStartedAt = startPhase("sidecar-write");
           const capacity = await fileSystem.statfs(path.dirname(targetPath));
           if (capacity.bavail * capacity.bsize < expectedBytes(data)) {
@@ -259,81 +286,20 @@ export const commitPublishedMedia = async <TResult>(
           recordPhase("flush", flushStartedAt);
           const staged = await fileSystem.stat(temporaryPath);
           if (!staged.isFile() || staged.size !== expectedBytes(data)) {
-            throw new Error(
-              `Staged artifact size mismatch for ${artifact.target.rootId}:${artifact.target.relativePath}`,
-            );
+            throw new Error(`Staged artifact size mismatch for ${refKey(operation.target)}`);
           }
         },
       });
     }
 
-    for (const video of planMoves(plan)) {
-      const content = video.content;
-      const sourcePath = resolved.resolve(video.source);
-      const targetPath = resolved.resolve(video.target);
-      const targetFact = observedAt(resolved.observed, targetPath);
-      const targetExisted = targetFact?.exists === true;
-      if (sourcePath !== targetPath) {
-        const temporaryPath = createTargetTemporaryPath(targetPath, plan.operationId);
-        planned.push({
-          ref: video.target,
-          targetPath,
-          temporaryPath,
-          backupPath: targetExisted ? createTargetBackupPath(targetPath, plan.operationId) : null,
-          targetExisted,
-          ...(content === undefined && !video.preserveSource ? { sourcePath, source: video.source } : {}),
-          stage: async () => {
-            await fileSystem.mkdir(path.dirname(targetPath), { recursive: true });
-            const sourceNow = await fileSystem.stat(sourcePath);
-            const observed = observedAt(resolved.observed, sourcePath);
-            if (
-              !sourceNow.isFile() ||
-              sourceNow.size !== video.size ||
-              (observed?.exists === true &&
-                (sourceNow.size !== observed.size || sourceNow.mtimeMs !== observed.mtimeMs))
-            ) {
-              throw new Error(
-                `Publication source changed before mutation: ${video.source.rootId}:${video.source.relativePath}`,
-              );
-            }
-            const copyStartedAt = startPhase("video-copy");
-            if (content !== undefined || video.preserveSource) {
-              const capacity = await fileSystem.statfs(path.dirname(targetPath));
-              if (capacity.bavail * capacity.bsize < (content === undefined ? video.size : expectedBytes(content))) {
-                throw new Error(`Insufficient space for publication target: ${targetPath}`);
-              }
-              if (content === undefined) await fileSystem.copyFile(sourcePath, temporaryPath);
-              else await fileSystem.writeFile(temporaryPath, content);
-            } else {
-              try {
-                await fileSystem.rename(sourcePath, temporaryPath);
-              } catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
-                const capacity = await fileSystem.statfs(path.dirname(targetPath));
-                if (capacity.bavail * capacity.bsize < video.size) {
-                  throw new Error(`Insufficient space for publication target: ${targetPath}`);
-                }
-                await fileSystem.copyFile(sourcePath, temporaryPath);
-              }
-            }
-            recordPhase("video-copy", copyStartedAt);
-            const flushStartedAt = startPhase("flush");
-            await fileSystem.flush?.(temporaryPath);
-            recordPhase("flush", flushStartedAt);
-            const copied = await fileSystem.stat(temporaryPath);
-            if (!copied.isFile() || copied.size !== (content === undefined ? video.size : expectedBytes(content))) {
-              throw new Error(`Copied video size mismatch for ${video.target.rootId}:${video.target.relativePath}`);
-            }
-          },
-        });
-      }
-    }
-
     const obsolete = uniqueRefs([
-      ...plan.obsolete,
-      ...planMoves(plan)
-        .filter((move) => !move.preserveSource && resolved.resolve(move.source) !== resolved.resolve(move.target))
-        .map((move) => move.source),
+      ...(outputValidation?.obsolete ?? plan.obsolete),
+      ...publicationOperations(plan)
+        .filter(
+          (operation) =>
+            operation.kind === "move" && resolved.resolve(operation.source) !== resolved.resolve(operation.target),
+        )
+        .map((operation) => (operation.kind === "move" ? operation.source : operation.target)),
     ]).map((ref) => {
       const obsoletePath = resolved.resolve(ref);
       const fact = observedAt(resolved.observed, obsoletePath);
@@ -341,7 +307,6 @@ export const commitPublishedMedia = async <TResult>(
       return { ...ref, observed: toObsoleteObservation(fact) };
     });
     const manifest: PublicationJournalManifest = {
-      boundary: plan.boundary,
       entries: planned.map((item) => ({
         rootId: item.ref.rootId,
         relativePath: item.ref.relativePath,
@@ -374,13 +339,9 @@ export const commitPublishedMedia = async <TResult>(
       const expectedTarget = observedAt(resolved.observed, item.targetPath);
       if (!expectedTarget) throw new Error(`Publication target was not observed: ${item.targetPath}`);
       const currentTarget = await observePublicationFile(fileSystem, item.targetPath);
-      const video = plan.videos?.find((video) => refKey(video.target) === refKey(item.ref));
-      if (video && !expectedTarget.exists && currentTarget.exists) {
-        throw new PublicationConflictError(resolved.resolve(video.source), item.targetPath);
-      }
       if (!publicationFilesMatch(expectedTarget, currentTarget))
         throw new PublicationConflictError(
-          plan.media?.[0] ? resolved.resolve(plan.media[0].source) : item.targetPath,
+          publicationSources(plan)[0] ? resolved.resolve(publicationSources(plan)[0].source) : item.targetPath,
           item.targetPath,
           "发布目标在提交前发生变化",
         );
@@ -392,23 +353,20 @@ export const commitPublishedMedia = async <TResult>(
       if (!item.targetExisted) published.push(item);
     }
     recordPhase("rename", renameStartedAt);
-    for (const media of plan.media ?? []) {
+    for (const media of publicationSources(plan)) {
       if (planned.some((item) => item.sourcePath === resolved.resolve(media.source))) continue;
       const expected = observedAt(resolved.observed, resolved.resolve(media.source));
       if (expected) assertPublicationFileUnchanged(expected, await observePublicationFile(fileSystem, expected.path));
     }
     const commitStartedAt = startPhase("commit");
     const result = options.journal.commit(plan.operationId, () => {
-      registerOutputs?.assertCurrent();
-      const result = options.commit();
-      registerOutputs?.register();
-      return result;
+      outputValidation?.assertCurrent();
+      return options.commit();
     });
-    committed = true;
     journalOpen = false;
-    recordPhase("commit", commitStartedAt);
-
+    const cleanupIssues: unknown[] = [];
     try {
+      recordPhase("commit", commitStartedAt);
       const cleanupStartedAt = startPhase("cleanup");
       const retainedObsolete = await removeCommittedObsoleteFiles(
         fileSystem,
@@ -417,59 +375,32 @@ export const commitPublishedMedia = async <TResult>(
         outputs ? (ref) => isPublicationPathReferenced(ref, outputs, options.resolveRoot) : undefined,
       );
       for (const ref of retainedObsolete) {
-        await recordRepair(
-          plan,
-          options.repairIssues,
-          ref,
-          new Error(`Publication obsolete path changed before cleanup: ${ref.rootId}:${ref.relativePath}`),
+        const issue = new Error(
+          `Publication obsolete path changed or remains referenced: ${ref.rootId}:${ref.relativePath}`,
         );
+        cleanupIssues.push(issue);
+        await recordRepair(plan, options.repairIssues, ref, issue);
       }
       for (const item of planned) {
         if (item.backupPath) await fileSystem.rm(item.backupPath, { force: true });
         await fileSystem.rm(item.temporaryPath, { force: true });
       }
-      for (const target of uniqueRefs([
-        ...planMoves(plan).map((move) => move.target),
-        ...plan.artifacts.map(({ target }) => target),
-      ])) {
+      for (const target of uniqueRefs([...publicationOperations(plan).map((operation) => operation.target)])) {
         await options.repairIssues?.resolve(plan.operationId, target.rootId, target.relativePath);
       }
       options.journal.finish(plan.operationId);
       recordPhase("cleanup", cleanupStartedAt);
     } catch (error) {
-      throw new PublicationError(
-        `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
-        plan.operationId,
-        true,
-        { cause: error },
-      );
-    }
-
-    return result;
-  } catch (error) {
-    if (committed) {
-      const publicationError =
-        error instanceof PublicationError && error.committed
-          ? error
-          : new PublicationError(
-              `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
-              plan.operationId,
-              true,
-              { cause: error },
-            );
+      cleanupIssues.push(error);
       try {
-        const target = plan.videos?.[0]?.target ?? plan.artifacts[0]?.target ?? plan.obsolete[0];
+        const target = publicationOperations(plan)[0]?.target ?? plan.obsolete[0];
         await recordRepair(plan, options.repairIssues, target, error);
       } catch (repairError) {
-        throw new PublicationError(
-          `Publication committed but cleanup failed: ${toErrorMessage(error)}`,
-          plan.operationId,
-          true,
-          { cause: new AggregateError([error, repairError]) },
-        );
+        cleanupIssues.push(repairError);
       }
-      throw publicationError;
     }
+    return { value: result, cleanupIssues };
+  } catch (error) {
     if (journalOpen) await rollback(error);
     throw error;
   } finally {

@@ -13,7 +13,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { mockConfigManager } from "../../../helpers/scraper";
+import { mockConfigManager, resolveTestOutputPlan } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -60,12 +60,15 @@ describe("FileScraper plan timing", () => {
     });
     const plan: OrganizePlan = {
       outputDir: "/output/translated",
+      metadataDir: "/output/translated",
+      mode: "move",
+      renameSubtitles: true,
       targetVideoPath: "/output/translated/ABC-123.mp4",
       nfoPath: "/output/translated/ABC-123.nfo",
     };
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
-      resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
+      resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer;
     const actorImageService = {
       prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
@@ -132,7 +135,7 @@ describe("FileScraper plan timing", () => {
       { prepared: preparation.prepared, progress: { fileIndex: 1, totalFiles: 1 } },
     ]);
     onTestFinished(async () => {
-      for (const result of results) await result.release?.();
+      await results.release?.();
     });
     expect(aggregate).toHaveBeenCalledOnce();
     expect(translateCrawlerData).toHaveBeenCalledOnce();

@@ -45,7 +45,10 @@ const commitSuccess = (
 ) => {
   if (!database) throw new Error("Test database is not initialized");
   const committed = database.sqlite.transaction(() =>
-    repository.commitSuccessOutcomes([input], input.libraryEntry),
+    repository.commitSuccessOutcomes(
+      [{ ...input, libraryEntry: input.libraryEntry.files[0] }],
+      input.libraryEntry.movie,
+    ),
   )()[0];
   if (!committed) throw new Error("Scrape success batch did not commit its input");
   return committed;
@@ -237,10 +240,8 @@ describe("ScrapeRunRepository", () => {
       outputRelativePath: "ABC-001/ABC-001.mp4",
       size: 42,
       libraryEntry: {
-        id: "library-abc",
-        rootId: "actual-output",
-        rootRelativePath: "ABC-001/ABC-001.mp4",
-        crawlerDataJson,
+        movie: { id: "library-abc", crawlerDataJson },
+        files: [{ rootId: "actual-output", rootRelativePath: "ABC-001/ABC-001.mp4", fileId: "library-abc" + ":file" }],
       },
     });
 
@@ -266,7 +267,10 @@ describe("ScrapeRunRepository", () => {
       ],
     });
     const library = new LibraryRepository(database as PersistenceDatabase);
-    await library.upsertEntry({ id: "occupied", rootId: "output", rootRelativePath: "occupied.mp4" });
+    await library.upsertEntry({
+      movie: { id: "occupied" },
+      files: [{ rootId: "output", rootRelativePath: "occupied.mp4", fileId: "output:occupied.mp4" }],
+    });
     const input = (itemIndex: number, relativePath: string) => ({
       outcome: "success" as const,
       attemptId: repository.admitAttempt(run.items[itemIndex].id).id,
@@ -274,13 +278,13 @@ describe("ScrapeRunRepository", () => {
       outputRootId: "output",
       outputRelativePath: relativePath,
       size: 1,
-      libraryEntry: { rootId: "output", rootRelativePath: relativePath },
+      libraryEntry: { rootId: "output", rootRelativePath: relativePath, fileId: relativePath },
     });
     const first = input(0, "first.mp4");
     const second = input(1, "occupied.mp4");
 
     expect(() => repository.commitSuccessOutcomes([first, second], { id: "different-owner" })).toThrow(
-      "媒体库路径已属于另一个条目",
+      "媒体库路径已属于另一个文件",
     );
     expect((await repository.get(run.id)).outcomes).toEqual([]);
     expect((await library.listEntries()).map((entry) => entry.id)).toEqual(["occupied"]);
@@ -301,7 +305,10 @@ describe("ScrapeRunRepository", () => {
       outputRootId: "output",
       outputRelativePath: "before.mp4",
       size: 1,
-      libraryEntry: { id: "library-success", rootId: "output", rootRelativePath: "before.mp4" },
+      libraryEntry: {
+        movie: { id: "library-success" },
+        files: [{ rootId: "output", rootRelativePath: "before.mp4", fileId: "library-success" + ":file" }],
+      },
     });
     const revision = {
       outcomeId: success.outcomeId,
@@ -310,28 +317,31 @@ describe("ScrapeRunRepository", () => {
       outputRelativePath: "confirmed.mp4",
       uncensoredAmbiguous: false,
       size: 2,
-      libraryEntry: { id: "library-success", rootId: "output", rootRelativePath: "confirmed.mp4" },
+      libraryEntry: { rootId: "output", rootRelativePath: "confirmed.mp4", fileId: "library-success:file" },
     };
 
     expect(() =>
-      repository.reviseSuccess([
-        revision,
-        {
-          outcomeId: failed.id,
-          crawlerDataJson: "{}",
-          outputRootId: "output",
-          outputRelativePath: "failed.mp4",
-          uncensoredAmbiguous: false,
-          size: 1,
-          libraryEntry: { rootId: "output", rootRelativePath: "failed.mp4" },
-        },
-      ]),
+      repository.reviseSuccess(
+        [
+          revision,
+          {
+            outcomeId: failed.id,
+            crawlerDataJson: "{}",
+            outputRootId: "output",
+            outputRelativePath: "failed.mp4",
+            uncensoredAmbiguous: false,
+            size: 1,
+            libraryEntry: { rootId: "output", rootRelativePath: "failed.mp4", fileId: "fixture-movie:file" },
+          },
+        ],
+        { id: "library-success" },
+      ),
     ).toThrow("Only successful scrape outcomes can be revised");
     expect((await repository.get(run.id)).outcomes).toContainEqual(
       expect.objectContaining({ id: success.outcomeId, outputRelativePath: "before.mp4", size: 1 }),
     );
 
-    repository.reviseSuccess([revision]);
+    repository.reviseSuccess([revision], { id: "library-success" });
     expect((await repository.get(run.id)).outcomes).toContainEqual(
       expect.objectContaining({ id: success.outcomeId, outputRelativePath: "confirmed.mp4", size: 2 }),
     );
@@ -347,7 +357,10 @@ describe("ScrapeRunRepository", () => {
       outputRootId: "actual-output",
       outputRelativePath: "ABC-001.mp4",
       size: 50,
-      libraryEntry: { rootId: "actual-output", rootRelativePath: "ABC-001.mp4" },
+      libraryEntry: {
+        movie: { id: "fixture-movie" },
+        files: [{ rootId: "actual-output", rootRelativePath: "ABC-001.mp4", fileId: "fixture-movie" + ":file" }],
+      },
     });
     await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow(
       "1 item(s) lack an outcome",
@@ -397,7 +410,10 @@ describe("ScrapeRunRepository", () => {
       outputRootId: "out",
       outputRelativePath: "DEF-002.mp4",
       size: 1,
-      libraryEntry: { rootId: "out", rootRelativePath: "DEF-002.mp4" },
+      libraryEntry: {
+        movie: { id: "fixture-movie" },
+        files: [{ rootId: "out", rootRelativePath: "DEF-002.mp4", fileId: "fixture-movie" + ":file" }],
+      },
     });
     await repository.finalize({ runId: run.id, disposition: "completed" });
 

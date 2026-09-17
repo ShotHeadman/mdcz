@@ -573,33 +573,35 @@ describe("buildServer composition integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     await state.repositories.library.upsertEntry({
-      id: "visible-entry",
-      rootId,
-      rootRelativePath: "visible.mp4",
-      size: 7,
-      title: null,
-      number: "ABC-002",
-      createdAt: new Date("2026-05-11T00:00:00.000Z"),
+      movie: { id: "visible-entry", title: null, number: "ABC-002", createdAt: new Date("2026-05-11T00:00:00.000Z") },
+      files: [{ rootId, rootRelativePath: "visible.mp4", size: 7, fileId: `${rootId}:visible.mp4` }],
     });
     const hidden = await state.repositories.library.upsertEntry({
-      id: "hidden-entry",
-      rootId,
-      rootRelativePath: "hidden.mp4",
-      size: 18,
-      title: "Hidden",
-      number: "ABC-001",
-      createdAt: new Date("2026-05-10T00:00:00.000Z"),
+      movie: {
+        id: "hidden-entry",
+        title: "Hidden",
+        number: "ABC-001",
+        createdAt: new Date("2026-05-10T00:00:00.000Z"),
+      },
+      files: [{ rootId, rootRelativePath: "hidden.mp4", size: 18, fileId: `${rootId}:hidden.mp4` }],
     });
     await state.repositories.library.hideFromRecent(hidden.id, new Date("2026-05-12T00:00:00.000Z"));
     for (let index = 0; index < 8; index += 1) {
       await state.repositories.library.upsertEntry({
-        id: `newer-entry-${index}`,
-        rootId,
-        rootRelativePath: `newer-${index}.mp4`,
-        size: 1,
-        title: `Newer ${index}`,
-        number: `ABC-10${index}`,
-        createdAt: new Date(`2026-05-11T00:0${index + 1}:00.000Z`),
+        movie: {
+          id: `newer-entry-${index}`,
+          title: `Newer ${index}`,
+          number: `ABC-10${index}`,
+          createdAt: new Date(`2026-05-11T00:0${index + 1}:00.000Z`),
+        },
+        files: [
+          {
+            rootId,
+            rootRelativePath: `newer-${index}.mp4`,
+            size: 1,
+            fileId: `${rootId}:newer-${index}.mp4`,
+          },
+        ],
       });
     }
 
@@ -641,22 +643,23 @@ describe("buildServer composition integration", () => {
       ["entry-c", "missing-c.mp4", "2026-05-03T00:00:00.000Z"],
     ] as const) {
       await state.repositories.library.upsertEntry({
-        id,
-        rootId,
-        rootRelativePath: relativePath,
-        number: id,
-        size: 1,
-        createdAt: new Date(createdAt),
+        movie: { id, number: id, createdAt: new Date(createdAt) },
+        files: [{ rootId, rootRelativePath: relativePath, size: 1, fileId: `${rootId}:${relativePath}` }],
       });
     }
 
     if (partial) {
       await writeFile(join(root, "present-c.mp4"), "present");
       await state.repositories.library.upsertEntry({
-        id: "entry-c",
-        rootId,
-        rootRelativePath: "present-c.mp4",
-        size: 7,
+        movie: { id: "entry-c" },
+        files: [
+          {
+            rootId,
+            rootRelativePath: "present-c.mp4",
+            size: 7,
+            fileId: `${rootId}:present-c.mp4`,
+          },
+        ],
       });
     }
 
@@ -734,12 +737,8 @@ describe("buildServer composition integration", () => {
       ["profile-empty-name", JSON.stringify({ actor_profiles: [{ name: "  " }] })],
     ] as const) {
       await state.repositories.library.upsertEntry({
-        id,
-        rootId,
-        rootRelativePath: `${id}.mp4`,
-        number: id,
-        crawlerDataJson,
-        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+        movie: { id, number: id, crawlerDataJson, createdAt: new Date("2026-05-01T00:00:00.000Z") },
+        files: [{ rootId, rootRelativePath: `${id}.mp4`, fileId: `${rootId}:${id}.mp4` }],
       });
     }
 

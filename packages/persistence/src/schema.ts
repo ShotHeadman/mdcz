@@ -1,6 +1,19 @@
 import { sql } from "drizzle-orm";
 import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export const maintenanceDirectoryTasks = sqliteTable("maintenance_directory_tasks", {
+  id: text("id").primaryKey(),
+  rootId: text("root_id").notNull(),
+  outputRootId: text("output_root_id").notNull(),
+  outputRelativeDirectory: text("output_relative_directory").notNull(),
+  presetId: text("preset_id").notNull(),
+  scopeJson: text("scope_json").notNull(),
+  configurationJson: text("configuration_json").notNull(),
+  status: text("status").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const mediaRoots = sqliteTable(
   "media_roots",
   {
@@ -265,6 +278,7 @@ export const libraryRepairIssues = sqliteTable(
 );
 
 export const schema = {
+  maintenanceDirectoryTasks,
   mediaRoots,
   scanTasks,
   scanTaskEvents,

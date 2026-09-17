@@ -45,15 +45,15 @@ const plan = {
   nfoPath: "/organized/ABC-123/ABC-123.nfo",
 };
 
-const createScraper = (crawlerData: CrawlerData, presetId: "refresh_data" | "rebuild_all" = "refresh_data") =>
+const createScraper = (
+  crawlerData: CrawlerData,
+  presetId: "refresh_data" | "rebuild_all" = "refresh_data",
+  aggregate = vi.fn().mockResolvedValue({ data: crawlerData, sources: {}, imageAlternatives: {} }),
+) =>
   new MaintenanceFileScraper(
     {
       aggregationService: {
-        aggregate: vi.fn().mockResolvedValue({
-          data: crawlerData,
-          sources: {},
-          imageAlternatives: {},
-        }),
+        aggregate,
       } as never,
       translateService: {
         translateCrawlerData: vi.fn(async (data: CrawlerData) => ({ data, error: null })),
@@ -115,12 +115,19 @@ describe("MaintenanceFileScraper preview diffs", () => {
 
   it("plans rebuild_all path reorganization while refresh_data keeps source path", async () => {
     const crawlerData = createCrawlerData({ title: "Remote Title" });
+    const entry = createEntry();
+    const peer = {
+      ...entry,
+      fileId: "entry-2",
+      fileInfo: { ...entry.fileInfo, filePath: "/media/ABC-123-CD2.mp4", part: { number: 2, suffix: "-CD2" } },
+    };
+    const aggregate = vi.fn().mockResolvedValue({ data: crawlerData, sources: {}, imageAlternatives: {} });
     const refreshResult = await createScraper(crawlerData, "refresh_data").previewFile(
       createEntry(),
       configurationSchema.parse(defaultConfiguration),
     );
-    const rebuildResult = await createScraper(crawlerData, "rebuild_all").previewFile(
-      createEntry(),
+    const rebuildResult = await createScraper(crawlerData, "rebuild_all", aggregate).previewFile(
+      entry,
       configurationSchema.parse({
         ...defaultConfiguration,
         behavior: {
@@ -133,6 +140,8 @@ describe("MaintenanceFileScraper preview diffs", () => {
           successOutputFolder: "JAV_output",
         },
       }),
+      undefined,
+      [entry, peer],
     );
 
     expect(refreshResult.pathDiff).toBeUndefined();
@@ -140,5 +149,10 @@ describe("MaintenanceFileScraper preview diffs", () => {
       currentVideoPath: "/media/ABC-123.mp4",
       targetVideoPath: "/organized/ABC-123/ABC-123.mp4",
     });
+    expect(aggregate).toHaveBeenCalledTimes(1);
+    expect(rebuildResult.affectedFiles?.map((file) => file.currentPath)).toEqual([
+      entry.fileInfo.filePath,
+      peer.fileInfo.filePath,
+    ]);
   });
 });

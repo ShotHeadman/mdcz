@@ -222,10 +222,14 @@ describe("buildServer scrape integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     const entry = await state.repositories.library.upsertEntry({
-      rootId,
-      rootRelativePath: "JAV_output/fixed/ABF-981/ABF-981.mp4",
-      title: "Original title",
-      number: "ABF-981",
+      movie: { title: "Original title", number: "ABF-981" },
+      files: [
+        {
+          rootId,
+          rootRelativePath: "JAV_output/fixed/ABF-981/ABF-981.mp4",
+          fileId: `${rootId}:JAV_output/fixed/ABF-981/ABF-981.mp4`,
+        },
+      ],
     });
     const response = await fastify.inject({
       method: "POST",
@@ -787,14 +791,28 @@ describe("buildServer scrape integration", () => {
     const retainedPath = `${directory}/checksum.txt`;
     await writeFile(join(metadataRoot, retainedPath), "retained resource");
     await state.repositories.library.upsertEntry({
-      ...entry,
-      fileId: entry.files[0].id,
-      rootId: entry.files[0].rootId,
-      rootRelativePath: entry.files[0].rootRelativePath,
-      sourceOutcomeId: entry.files[0].sourceOutcomeId,
-      assets: [
-        ...entry.assets,
-        { kind: "checksum", uri: retainedPath, rootId: result.nfoRootId, relativePath: retainedPath, published: true },
+      movie: {
+        ...entry,
+        assets: [
+          ...entry.assets.filter((asset) => asset.fileId === null),
+          {
+            kind: "checksum",
+            uri: retainedPath,
+            rootId: result.nfoRootId,
+            relativePath: retainedPath,
+            published: true,
+          },
+        ],
+      },
+      files: [
+        {
+          ...entry,
+          fileId: entry.files[0].id,
+          rootId: entry.files[0].rootId,
+          rootRelativePath: entry.files[0].rootRelativePath,
+          sourceOutcomeId: entry.files[0].sourceOutcomeId,
+          assets: entry.assets.filter((asset) => asset.fileId === entry.files[0].id),
+        },
       ],
     });
     const manifest = await state.repositories.scrapeRuns.get(taskId);

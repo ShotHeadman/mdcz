@@ -9,7 +9,13 @@ import type {
   MaintenanceImageAlternatives,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { AggregationService, FileOrganizer, OrganizePlan, SourceMap, TranslateService } from "../scrape";
+import type {
+  AggregationService,
+  FileOrganizer,
+  ResolvedPublicationLayout,
+  SourceMap,
+  TranslateService,
+} from "../scrape";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
@@ -23,7 +29,7 @@ export interface PreparedMaintenanceFile {
   unchangedFieldDiffs?: FieldDiff[];
   aggregationSources?: SourceMap;
   imageAlternatives: MaintenanceImageAlternatives;
-  plan?: OrganizePlan;
+  plan?: ResolvedPublicationLayout;
   pathDiff?: PathDiff;
 }
 
@@ -34,6 +40,7 @@ export interface CommittedMaintenanceFile {
 }
 
 interface MaintenancePreparationDependencies {
+  outputTemplateRoot?: string;
   aggregationService: AggregationService;
   translateService: TranslateService;
   fileOrganizer: FileOrganizer;
@@ -52,6 +59,31 @@ export class MaintenancePreparationService {
     private readonly deps: MaintenancePreparationDependencies,
     private readonly preset: MaintenancePreset,
   ) {}
+
+  async prepareFiles(
+    entry: LocalScanEntry,
+    files: LocalScanEntry[],
+    config: Configuration,
+    options: PrepareOptions,
+    committed?: CommittedMaintenanceFile,
+  ): Promise<{
+    shared: PreparedMaintenanceFile;
+    files: Array<{ entry: LocalScanEntry; plan?: ResolvedPublicationLayout; pathDiff?: PathDiff }>;
+  }> {
+    const shared = committed
+      ? await this.prepareCommittedFile(entry, config, committed, options)
+      : await this.prepareFile(entry, config, options);
+    const members = [];
+    for (const file of files) {
+      if (!this.preset.steps.aggregate && file.scanError) throw new Error(file.scanError);
+      const layout =
+        file.fileInfo.filePath === entry.fileInfo.filePath
+          ? { plan: shared.plan, pathDiff: shared.pathDiff }
+          : await this.buildPlan(file, config, shared.crawlerData, options);
+      members.push({ entry: file, ...layout });
+    }
+    return { shared, files: members };
+  }
 
   async prepareFile(
     entry: LocalScanEntry,
@@ -205,7 +237,7 @@ export class MaintenancePreparationService {
       createDirectories: boolean;
       signal?: AbortSignal;
     },
-  ): Promise<{ plan?: OrganizePlan; pathDiff?: PathDiff }> {
+  ): Promise<{ plan?: ResolvedPublicationLayout; pathDiff?: PathDiff }> {
     throwIfAborted(options.signal);
 
     if (!(this.preset.steps.download || this.preset.steps.generateNfo || this.preset.steps.organize)) {
@@ -222,34 +254,44 @@ export class MaintenancePreparationService {
         ? dirname(entry.nfoPath)
         : entry.strmPath
           ? dirname(entry.strmPath)
-          : (layout.metadataDir ?? layout.outputDir);
+          : layout.metadataDir;
       return {
         plan: await this.deps.fileOrganizer.resolveOutputPlan(
           {
             outputDir: entry.currentDir,
             metadataDir,
             metadataRoot: metadataDir,
+            mode: "preserve",
             targetVideoPath: entry.fileInfo.filePath,
             nfoPath:
               entry.nfoPath && !isMovieNfoBaseName(basename(entry.nfoPath, ".nfo"))
                 ? entry.nfoPath
                 : join(metadataDir, basename(layout.nfoPath)),
             strmPath: entry.strmPath,
+            renameSubtitles: false,
           },
           entry.fileInfo.filePath,
-          { allowSharedDirectory: true },
+          {
+            allowSharedDirectory: true,
+            existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
+            strmPathMappings: config.paths.strmPathMappings,
+          },
         ),
         pathDiff: undefined,
       };
     }
 
     const rawPlan = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState, {
-      outputTemplateRoot: resolve(config.paths.mediaPath, config.paths.successOutputFolder),
+      outputTemplateRoot:
+        this.deps.outputTemplateRoot ??
+        resolve(config.paths.mediaPath || entry.currentDir, config.paths.successOutputFolder),
     });
 
     const plan = await this.deps.fileOrganizer.resolveOutputPlan(rawPlan, entry.fileInfo.filePath, {
       createDirectories: options.createDirectories,
       allowSharedDirectory: config.naming.assetNamingMode === "followVideo" && config.download.nfoNaming === "filename",
+      existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
+      strmPathMappings: config.paths.strmPathMappings,
     });
 
     return {

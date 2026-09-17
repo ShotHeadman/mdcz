@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
-import type { LibraryFileInput, LibraryMovieInput, UpsertLibraryEntryInput } from "./libraryRepository";
+import type { LibraryFileInput, LibraryMovieInput } from "./libraryRepository";
 import { writeLibraryRows } from "./libraryWrite";
-import { libraryItemFiles, scrapeAttempts, scrapeItemOutcomes, scrapeRunItems, scrapeRuns } from "./schema";
+import { scrapeAttempts, scrapeItemOutcomes, scrapeRunItems, scrapeRuns } from "./schema";
 
 export type ScrapeExecutionMode = "single" | "batch";
 export type ScrapeUncensoredChoice = "umr" | "leak" | "uncensored";
@@ -139,7 +139,7 @@ export interface ReviseScrapeSuccessInput {
   uncensoredAmbiguous: boolean;
   size: number;
   modifiedAt?: Date | null;
-  libraryEntry: UpsertLibraryEntryInput;
+  libraryEntry: LibraryFileInput;
 }
 
 export interface FinalizeScrapeRunInput {
@@ -402,32 +402,38 @@ export class ScrapeRunRepository {
     inputs: readonly Extract<CommitScrapeOutcomeInput, { outcome: "success" }>[],
     movie: LibraryMovieInput,
   ): Array<{
+    attemptId: string;
+    fileId: string;
     outcomeId: string;
     entryId: string;
   }> {
     if (inputs.length === 0) throw new Error("Scrape success batch must not be empty");
     return this.database.sqlite.transaction(() => {
       const outcomes = inputs.map((input) => this.writeSuccessOutcome(input));
-      const owners = new Set(outcomes.flatMap((outcome) => (outcome.ownerId ? [outcome.ownerId] : [])));
-      if (movie.id) owners.add(movie.id);
-      if (owners.size > 1) throw new Error("Scrape success group must target one movie");
       const entryId = writeLibraryRows(
         this.database,
-        { ...movie, id: [...owners][0] },
+        movie,
         outcomes.map(({ libraryEntry }) => libraryEntry),
       );
-      return outcomes.map(({ outcomeId }) => ({ outcomeId, entryId }));
+      return outcomes.map(({ outcomeId, libraryEntry, attemptId }) => ({
+        outcomeId,
+        entryId,
+        attemptId,
+        fileId: libraryEntry.fileId,
+      }));
     })();
   }
 
   private writeSuccessOutcome(input: Extract<CommitScrapeOutcomeInput, { outcome: "success" }>): {
+    attemptId: string;
     outcomeId: string;
-    ownerId?: string;
-    libraryEntry: LibraryFileInput;
+    libraryEntry: LibraryFileInput & { fileId: string };
   } {
     const id = input.id ?? randomUUID();
     const completedAt = input.completedAt ?? new Date();
-    const { item, attempt } = this.requireOpenAttempt(input.attemptId);
+    const { attempt } = this.requireOpenAttempt(input.attemptId);
+    const fileId = input.libraryEntry.fileId;
+    if (!fileId) throw new Error("Scrape success requires a declared file ID");
     this.database.db
       .insert(scrapeItemOutcomes)
       .values({
@@ -446,17 +452,12 @@ export class ScrapeRunRepository {
         completedAt,
       })
       .run();
-    const previousFile = this.database.db
-      .select()
-      .from(libraryItemFiles)
-      .where(and(eq(libraryItemFiles.rootId, item.rootId), eq(libraryItemFiles.rootRelativePath, item.relativePath)))
-      .get();
     return {
+      attemptId: input.attemptId,
       outcomeId: id,
-      ownerId: previousFile?.itemId,
       libraryEntry: {
         ...input.libraryEntry,
-        fileId: input.libraryEntry.fileId ?? previousFile?.id,
+        fileId,
         sourceOutcomeId: id,
       },
     };
@@ -466,9 +467,9 @@ export class ScrapeRunRepository {
    * Synchronous so hosts can run it inside the publication journal commit
    * transaction: shared-NFO parts revise together or not at all.
    */
-  reviseSuccess(inputs: readonly ReviseScrapeSuccessInput[]): void {
+  reviseSuccess(inputs: readonly ReviseScrapeSuccessInput[], movie: LibraryMovieInput): void {
     this.database.sqlite.transaction(() => {
-      const libraryEntries: UpsertLibraryEntryInput[] = [];
+      const libraryEntries: LibraryFileInput[] = [];
       for (const input of inputs) {
         const existing = this.database.db
           .select()
@@ -498,12 +499,7 @@ export class ScrapeRunRepository {
           sourceOutcomeId: existing.id,
         });
       }
-      const movie = libraryEntries[0];
-      if (movie) {
-        if (new Set(libraryEntries.map((entry) => entry.id)).size !== 1)
-          throw new Error("Scrape revision group must target one movie");
-        writeLibraryRows(this.database, movie, libraryEntries);
-      }
+      if (libraryEntries.length) writeLibraryRows(this.database, movie, libraryEntries);
     })();
   }
 

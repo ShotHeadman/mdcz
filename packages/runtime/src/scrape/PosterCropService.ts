@@ -87,10 +87,17 @@ export class PosterCropService {
       {
         operationId: `poster-crop:${session.targetPath}`,
         operationType: "maintenance",
-        sourceVideoPath: videoPath,
-        artifacts: [{ kind: "poster", targetPath: session.targetPath, content: { kind: "bytes", data } }],
-        replaceExistingArtifacts: true,
-        readOnlyDirectories: dirname(session.targetPath) === dirname(videoPath) ? [] : [dirname(videoPath)],
+        mediaPaths: [videoPath],
+        operations: [
+          {
+            kind: "write",
+            owner: "movie",
+            assetKind: "poster",
+            targetPath: session.targetPath,
+            content: { kind: "bytes", data },
+            replaceExisting: true,
+          },
+        ],
       },
       publication,
     );

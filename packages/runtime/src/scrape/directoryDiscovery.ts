@@ -7,7 +7,7 @@ import { resolveMediaCandidateScanPlan, type WorkbenchSetupMode } from "@mdcz/sh
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
-import { publicationPathKey } from "../publication/boundary";
+import { publicationPathKey } from "../publication/paths";
 import { runtimeLoggerService } from "../shared";
 import { DEFAULT_VIDEO_EXTENSIONS } from "./utils/filesystem";
 
