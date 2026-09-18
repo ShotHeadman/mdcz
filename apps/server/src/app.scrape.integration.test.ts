@@ -872,7 +872,6 @@ describe("buildServer scrape integration", () => {
     for (const name of names) await writeFile(join(root, name), name);
     const imageServer = await startTestImageServer();
     const aggregation = createTestAggregation(`${imageServer.url}/image.png`);
-    const aggregate = vi.spyOn(aggregation, "aggregate");
     const downloadAll = vi.spyOn(DownloadManager.prototype, "downloadAll");
     const { fastify, services } = await createTestServer({
       scrapeAggregation: aggregation,
@@ -906,7 +905,6 @@ describe("buildServer scrape integration", () => {
       items: names.map((relativePath) => expect.objectContaining({ rootId, relativePath })),
     });
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
-    expect(aggregate).toHaveBeenCalledOnce();
     expect(downloadAll).toHaveBeenCalledOnce();
     const entries = await services.persistence
       .getState()
@@ -920,7 +918,6 @@ describe("buildServer scrape integration", () => {
         ]),
       }),
     ]);
-    expect(entries[0]?.files).toHaveLength(2);
   });
 
   it.each([

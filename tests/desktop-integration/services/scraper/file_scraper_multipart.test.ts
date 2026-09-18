@@ -27,7 +27,23 @@ import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { mediaRoots } from "../../../../packages/persistence/src/schema";
 import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
+import { collectObservableTrace } from "../../../helpers/observableTrace";
 import { mockConfigManager, preparedPublicationFiles, prepareFilePublication } from "../../../helpers/scraper";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<
+    typeof import("node:fs/promises") & { default: typeof import("node:fs/promises") }
+  >();
+  return {
+    ...original,
+    ...Object.fromEntries(
+      Object.keys(original.default).map((key) => [
+        key,
+        (...args: unknown[]) => Reflect.apply(Reflect.get(original.default, key), original.default, args),
+      ]),
+    ),
+  };
+});
 
 const config = configurationSchema.parse({
   ...defaultConfiguration,
@@ -103,6 +119,7 @@ const createPublicationContext = async (root: string, names: string[]) => {
   });
   const attempts = new Map(run.items.map((item) => [item.id, scrapeRuns.admitAttempt(item.id).id]));
   return {
+    database,
     library,
     scrapeRuns,
     attempts,
@@ -192,6 +209,94 @@ const createScraper = (
 };
 
 describe("FileScraper movie groups", () => {
+  it.each(
+    [false, true].flatMap((move) =>
+      [false, true].flatMap((crossDevice) => [1, 2].map((parts) => ({ move, crossDevice, parts }))),
+    ),
+  )("preserves desktop output contracts: move=$move crossDevice=$crossDevice parts=$parts", async ({
+    move,
+    crossDevice,
+    parts,
+  }) => {
+    const root = await createTempDir();
+    const names = parts === 1 ? ["FC2-123456.mp4"] : ["FC2-123456-CD1.mp4", "FC2-123456-CD2.mp4"];
+    for (const name of names) await writeFile(join(root, name), name);
+    const context = await createPublicationContext(root, names);
+    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
+    const output = join(root, "output");
+    const { scraper } = createScraper(aggregate, {
+      outputs: context.library,
+      plan: vi.fn(
+        (file: FileInfo): OrganizePlan => ({
+          outputDir: output,
+          metadataDir: output,
+          mode: move ? "move" : "preserve",
+          renameSubtitles: false,
+          targetVideoPath: move ? join(output, `${file.fileName}${file.extension}`) : file.filePath,
+          nfoPath: join(output, "FC2-123456.nfo"),
+        }),
+      ),
+    });
+    const trace = collectObservableTrace(context.database.sqlite, { media: root }, crossDevice);
+    let observed: ReturnType<typeof trace.stop>;
+    try {
+      const entries = [];
+      for (const [index, name] of names.entries()) {
+        const filePath = join(root, name);
+        const progress = { fileIndex: index + 1, totalFiles: parts };
+        const preparation = await scraper.prepareFile(filePath, progress, undefined, {
+          roots: [context.mediaRoot],
+          attemptId: context.attempts.get(buildFileId(filePath)),
+          source: { rootId: "root", relativePath: name },
+        });
+        if (preparation.status !== "prepared") throw new Error("Expected prepared desktop member");
+        entries.push({ prepared: preparation.prepared, progress });
+      }
+      const group = await scraper.executePreparedFiles(entries);
+      try {
+        if (!group.publicationPlan) throw new Error("Expected desktop publication");
+        const results = await commitScrapeTerminalResults({
+          publicationPlan: group.publicationPlan,
+          items: group.results.map((result) => {
+            const attemptId = context.attempts.get(result.fileId);
+            if (!attemptId) throw new Error("Missing desktop attempt");
+            return { result, attemptId };
+          }),
+          scrapeRuns: context.scrapeRuns,
+          outputs: context.library,
+          journal: context.journal,
+          resolveRoot: context.resolveRoot,
+        });
+        expect(results).toHaveLength(parts);
+        expect(results.every((result) => result.status === "success")).toBe(true);
+      } finally {
+        await group.release?.();
+      }
+    } finally {
+      observed = trace.stop();
+    }
+    expect(aggregate).toHaveBeenCalledOnce();
+    const movies = await context.library.listEntries();
+    expect(movies).toHaveLength(1);
+    expect(movies[0].files).toHaveLength(parts);
+    for (const name of names) {
+      expect(await readFile(join(move ? output : root, name), "utf8")).toBe(name);
+      if (move) await expect(access(join(root, name))).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    if (move && crossDevice) expect(observed.counts["filesystem-result.rename"]).toBe(parts);
+    if (process.env.MDCZ_CAPTURE_BASELINE) {
+      const fs = await import("node:fs/promises");
+      await fs.mkdir(process.env.MDCZ_CAPTURE_BASELINE, { recursive: true });
+      await fs.writeFile(
+        join(
+          process.env.MDCZ_CAPTURE_BASELINE,
+          `desktop-${move ? "move" : "write"}-${crossDevice ? "cross" : "same"}-${parts}.json`,
+        ),
+        `${JSON.stringify({ scenario: { host: "desktop-adapter", move, crossDevice, parts, aggregation: "stub", downloads: "stub" }, ...observed }, null, 2)}\n`,
+      );
+    }
+  });
+
   afterEach(async () => {
     vi.restoreAllMocks();
     for (const database of databases.splice(0)) database.close();
@@ -535,6 +640,10 @@ describe("FileScraper movie groups", () => {
     );
     const context = await createPublicationContext(root, names);
     const { scraper } = createScraper(aggregate, { plan, outputs: context.library });
+    const trace = collectObservableTrace(context.database.sqlite, { media: root });
+    onTestFinished(() => {
+      trace.stop();
+    });
     const entries = await Promise.all(
       paths.map(async (filePath, index) => {
         const progress = { fileIndex: index + 1, totalFiles: paths.length };
@@ -571,6 +680,15 @@ describe("FileScraper movie groups", () => {
       expect(committed.every((result) => result.status === "success")).toBe(true);
     } finally {
       await group.release?.();
+    }
+    const observed = trace.stop();
+    if (process.env.MDCZ_CAPTURE_BASELINE) {
+      const fs = await import("node:fs/promises");
+      await fs.mkdir(process.env.MDCZ_CAPTURE_BASELINE, { recursive: true });
+      await fs.writeFile(
+        join(process.env.MDCZ_CAPTURE_BASELINE, "desktop-move-same-3-feature.json"),
+        `${JSON.stringify({ scenario: { host: "desktop-adapter", move: true, crossDevice: false, parts: 3, aggregation: "stub", downloads: "stub" }, ...observed }, null, 2)}\n`,
+      );
     }
     let movie = await context.library.getEntryById(group.publicationPlan.movieId);
     expect(movie.files).toHaveLength(names.length);

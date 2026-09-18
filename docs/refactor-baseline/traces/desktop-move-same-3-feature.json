@@ -1,0 +1,1600 @@
+{
+  "scenario": {
+    "host": "desktop-adapter",
+    "move": true,
+    "crossDevice": false,
+    "parts": 3,
+    "aggregation": "stub",
+    "downloads": "stub"
+  },
+  "revision": "56905f9cdeac943deb7a4e5c2f63c1018595f8e5",
+  "sourceDiffSha256": "111e6f4b8d349b27f14e237f31295f52bc806901c4024c97445e872abe40bf43",
+  "counts": {
+    "filesystem.mkdir": 4,
+    "filesystem.open": 7,
+    "filesystem.readdir": 24,
+    "filesystem.realpath": 100,
+    "filesystem.rename": 8,
+    "filesystem.rm": 5,
+    "filesystem.stat": 39,
+    "filesystem.statfs": 4,
+    "sql.all": 26,
+    "sql.get": 18,
+    "sql.run": 12,
+    "transaction.begin": 2,
+    "transaction.commit": 2
+  },
+  "events": [
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/FC2-123456-CD1.mp4", "r"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/FC2-123456-CD2.mp4", "r"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/FC2-123456-CD3.mp4", "r"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/extrafanart", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/extrafanart", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/extrafanart", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/.actors", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/.actors", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/.actors", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456/extrafanart", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456/extrafanart", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456/extrafanart", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456/.actors", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456/.actors", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456/.actors", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "readdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": ["select \"id\", \"display_name\", \"host_path\", \"created_at\", \"updated_at\" from \"media_roots\""]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/thumb.jpg\"],[\"root\",\"output/FC2-123456/thumb.jpeg\"],[\"root\",\"output/FC2-123456/thumb.png\"],[\"root\",\"output/FC2-123456/thumb.webp\"],[\"root\",\"output/FC2-123456/poster.jpg\"],[\"root\",\"output/FC2-123456/poster.jpeg\"],[\"root\",\"output/FC2-123456/poster.png\"],[\"root\",\"output/FC2-123456/poster.webp\"],[\"root\",\"output/FC2-123456/fanart.jpg\"],[\"root\",\"output/FC2-123456/fanart.jpeg\"],[\"root\",\"output/FC2-123456/fanart.png\"],[\"root\",\"output/FC2-123456/fanart.webp\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456.nfo\"],[\"root\",\"output/FC2-123456/movie.nfo\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/thumb.jpg\"],[\"root\",\"output/FC2-123456/thumb.jpeg\"],[\"root\",\"output/FC2-123456/thumb.png\"],[\"root\",\"output/FC2-123456/thumb.webp\"],[\"root\",\"output/FC2-123456/poster.jpg\"],[\"root\",\"output/FC2-123456/poster.jpeg\"],[\"root\",\"output/FC2-123456/poster.png\"],[\"root\",\"output/FC2-123456/poster.webp\"],[\"root\",\"output/FC2-123456/fanart.jpg\"],[\"root\",\"output/FC2-123456/fanart.jpeg\"],[\"root\",\"output/FC2-123456/fanart.png\"],[\"root\",\"output/FC2-123456/fanart.webp\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456.nfo\"],[\"root\",\"output/FC2-123456/movie.nfo\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"library_item_files\".\"id\", \"library_item_files\".\"item_id\", \"library_items\".\"media_identity\", \"library_item_files\".\"size\", \"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\" from \"library_item_files\" inner join \"library_items\" on \"library_items\".\"id\" = \"library_item_files\".\"item_id\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/thumb.jpg\"],[\"root\",\"output/FC2-123456/thumb.jpeg\"],[\"root\",\"output/FC2-123456/thumb.png\"],[\"root\",\"output/FC2-123456/thumb.webp\"],[\"root\",\"output/FC2-123456/poster.jpg\"],[\"root\",\"output/FC2-123456/poster.jpeg\"],[\"root\",\"output/FC2-123456/poster.png\"],[\"root\",\"output/FC2-123456/poster.webp\"],[\"root\",\"output/FC2-123456/fanart.jpg\"],[\"root\",\"output/FC2-123456/fanart.jpeg\"],[\"root\",\"output/FC2-123456/fanart.png\"],[\"root\",\"output/FC2-123456/fanart.webp\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456.nfo\"],[\"root\",\"output/FC2-123456/movie.nfo\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/thumb.jpg\"],[\"root\",\"output/FC2-123456/thumb.jpeg\"],[\"root\",\"output/FC2-123456/thumb.png\"],[\"root\",\"output/FC2-123456/thumb.webp\"],[\"root\",\"output/FC2-123456/poster.jpg\"],[\"root\",\"output/FC2-123456/poster.jpeg\"],[\"root\",\"output/FC2-123456/poster.png\"],[\"root\",\"output/FC2-123456/poster.webp\"],[\"root\",\"output/FC2-123456/fanart.jpg\"],[\"root\",\"output/FC2-123456/fanart.jpeg\"],[\"root\",\"output/FC2-123456/fanart.png\"],[\"root\",\"output/FC2-123456/fanart.webp\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456.nfo\"],[\"root\",\"output/FC2-123456/movie.nfo\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": ["select \"id\", \"display_name\", \"host_path\", \"created_at\", \"updated_at\" from \"media_roots\""]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_assets\" where ((\"library_item_assets\".\"kind\" = ? and \"library_item_assets\".\"published\" = ?) or (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?)))",
+        "feature",
+        1,
+        "[]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"library_item_files\".\"id\", \"library_item_files\".\"item_id\", \"library_items\".\"media_identity\", \"library_item_files\".\"size\", \"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\" from \"library_item_files\" inner join \"library_items\" on \"library_items\".\"id\" = \"library_item_files\".\"item_id\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\" from \"library_item_assets\" where ((\"library_item_assets\".\"kind\" = ? and \"library_item_assets\".\"published\" = ?) or (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?)))",
+        "feature",
+        1,
+        "[]"
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/thumb.jpg"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/thumb.jpeg"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/thumb.png"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/thumb.webp"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/poster.jpg"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/poster.jpeg"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/poster.png"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/poster.webp"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/fanart.jpg"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/fanart.jpeg"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/fanart.png"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/fanart.webp"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456.nfo"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/movie.nfo"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456.nfo"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/movie.nfo"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": ["select \"id\", \"host_path\" from \"media_roots\""]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>/output"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "realpath",
+      "args": ["<media>"]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"operation_id\", \"operation_type\", \"state\", \"manifest_json\", \"created_at\" from \"publication_journal\""
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": ["select \"id\", \"display_name\", \"host_path\", \"created_at\", \"updated_at\" from \"media_roots\""]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"library_item_files\".\"id\", \"library_item_files\".\"item_id\", \"library_items\".\"media_identity\", \"library_item_files\".\"size\", \"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\" from \"library_item_files\" inner join \"library_items\" on \"library_items\".\"id\" = \"library_item_files\".\"item_id\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"publication_journal\" (\"operation_id\", \"operation_type\", \"state\", \"manifest_json\", \"created_at\") values (?, ?, ?, ?, ?)",
+        "scrape:FC2-123456-CD1.mp4",
+        "scrape",
+        "pending",
+        "{\"entries\":[{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-花絮.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-花絮.mp4\"}},{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-CD1.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD1.mp4\"}},{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-CD2.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD2.mp4\"}},{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-CD3.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD3.mp4\"}}],\"obsolete\":[{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-花絮.mp4\",\"observed\":{\"exists\":true,\"size\":7,\"mtimeMs\":1789703932542.9373,\"isFile\":true}},{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD1.mp4\",\"observed\":{\"exists\":true,\"size\":48,\"mtimeMs\":1789703932542.9373,\"isFile\":true}},{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD2.mp4\",\"observed\":{\"exists\":true,\"size\":48,\"mtimeMs\":1789703932542.9373,\"isFile\":true}},{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD3.mp4\",\"observed\":{\"exists\":true,\"size\":48,\"mtimeMs\":1789703932542.9373,\"isFile\":true}}]}",
+        1789703932589
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "mkdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "statfs",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": ["<media>/FC2-123456-花絮.mp4", "<media>/output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part", "r+"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "mkdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "statfs",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": ["<media>/FC2-123456-CD1.mp4", "<media>/output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part", "r+"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "mkdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "statfs",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": ["<media>/FC2-123456-CD2.mp4", "<media>/output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part", "r+"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "mkdir",
+      "args": ["<media>/output/FC2-123456", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "statfs",
+      "args": ["<media>/output/FC2-123456"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": ["<media>/FC2-123456-CD3.mp4", "<media>/output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "open",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part", "r+"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part"]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "update \"publication_journal\" set \"manifest_json\" = ? where (\"publication_journal\".\"operation_id\" = ? and \"publication_journal\".\"state\" = ?)",
+        "{\"entries\":[{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-花絮.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-花絮.mp4\"},\"staged\":{\"size\":7,\"mtimeMs\":1789703932542.9373,\"ino\":704442,\"dev\":46}},{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-CD1.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD1.mp4\"},\"staged\":{\"size\":48,\"mtimeMs\":1789703932542.9373,\"ino\":704439,\"dev\":46}},{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-CD2.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD2.mp4\"},\"staged\":{\"size\":48,\"mtimeMs\":1789703932542.9373,\"ino\":704440,\"dev\":46}},{\"rootId\":\"root\",\"relativePath\":\"output/FC2-123456/FC2-123456-CD3.mp4\",\"temporaryPath\":\"output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part\",\"backupPath\":null,\"targetExisted\":false,\"source\":{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD3.mp4\"},\"staged\":{\"size\":48,\"mtimeMs\":1789703932542.9373,\"ino\":704441,\"dev\":46}}],\"obsolete\":[{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-花絮.mp4\",\"observed\":{\"exists\":true,\"size\":7,\"mtimeMs\":1789703932542.9373,\"isFile\":true}},{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD1.mp4\",\"observed\":{\"exists\":true,\"size\":48,\"mtimeMs\":1789703932542.9373,\"isFile\":true}},{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD2.mp4\",\"observed\":{\"exists\":true,\"size\":48,\"mtimeMs\":1789703932542.9373,\"isFile\":true}},{\"rootId\":\"root\",\"relativePath\":\"FC2-123456-CD3.mp4\",\"observed\":{\"exists\":true,\"size\":48,\"mtimeMs\":1789703932542.9373,\"isFile\":true}}]}",
+        "scrape:FC2-123456-CD1.mp4",
+        "pending"
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": [
+        "<media>/output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part",
+        "<media>/output/FC2-123456/FC2-123456-花絮.mp4"
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": [
+        "<media>/output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part",
+        "<media>/output/FC2-123456/FC2-123456-CD1.mp4"
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": [
+        "<media>/output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part",
+        "<media>/output/FC2-123456/FC2-123456-CD2.mp4"
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rename",
+      "args": [
+        "<media>/output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part",
+        "<media>/output/FC2-123456/FC2-123456-CD3.mp4"
+      ]
+    },
+    {
+      "channel": "transaction",
+      "operation": "begin",
+      "args": []
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": ["select \"id\", \"display_name\", \"host_path\", \"created_at\", \"updated_at\" from \"media_roots\""]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"library_item_files\".\"id\", \"library_item_files\".\"item_id\", \"library_items\".\"media_identity\", \"library_item_files\".\"size\", \"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\" from \"library_item_files\" inner join \"library_items\" on \"library_items\".\"id\" = \"library_item_files\".\"item_id\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": ["select \"id\", \"display_name\", \"host_path\", \"created_at\", \"updated_at\" from \"media_roots\""]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"item_id\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"library_item_files\".\"id\", \"library_item_files\".\"item_id\", \"library_items\".\"media_identity\", \"library_item_files\".\"size\", \"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\" from \"library_item_files\" inner join \"library_items\" on \"library_items\".\"id\" = \"library_item_files\".\"item_id\" where (\"library_item_files\".\"root_id\", \"library_item_files\".\"root_relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\" from \"library_item_assets\" where (\"library_item_assets\".\"root_id\", \"library_item_assets\".\"relative_path\") IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')\n      FROM json_each(?))",
+        "[[\"root\",\"FC2-123456-CD1.mp4\"],[\"root\",\"FC2-123456-CD2.mp4\"],[\"root\",\"FC2-123456-CD3.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD1.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD2.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-CD3.mp4\"],[\"root\",\"FC2-123456-花絮.mp4\"],[\"root\",\"output/FC2-123456/FC2-123456-花絮.mp4\"]]"
+      ]
+    },
+    {
+      "channel": "transaction",
+      "operation": "begin",
+      "args": []
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\", \"attempt\", \"admitted_at\" from \"scrape_attempts\" where \"scrape_attempts\".\"id\" = ?",
+        "4eebb74e-3081-42e6-be38-03f64925edf3"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"run_id\", \"ordinal\", \"root_id\", \"relative_path\", \"manual_url\", \"uncensored_choice\" from \"scrape_run_items\" where \"scrape_run_items\".\"id\" = ?",
+        "file:<media>/FC2-123456-CD1.mp4"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\" from \"scrape_item_outcomes\" where \"scrape_item_outcomes\".\"attempt_id\" = ?",
+        "4eebb74e-3081-42e6-be38-03f64925edf3"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"scrape_item_outcomes\" (\"id\", \"attempt_id\", \"outcome\", \"error_message\", \"crawler_data_json\", \"nfo_root_id\", \"nfo_relative_path\", \"output_root_id\", \"output_relative_path\", \"uncensored_ambiguous\", \"size\", \"modified_at\", \"completed_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "1b828d00-eb24-443b-991a-29d553df00c2",
+        "4eebb74e-3081-42e6-be38-03f64925edf3",
+        "success",
+        "null",
+        "{\"title\":\"Sample Title\",\"number\":\"FC2-123456\",\"actors\":[],\"genres\":[],\"scene_images\":[],\"website\":\"dmm\"}",
+        "null",
+        "null",
+        "root",
+        "output/FC2-123456/FC2-123456-CD1.mp4",
+        0,
+        48,
+        1789703932543,
+        1789703932582
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\", \"attempt\", \"admitted_at\" from \"scrape_attempts\" where \"scrape_attempts\".\"id\" = ?",
+        "a63a71f6-74dd-4193-9e52-aafce2da4a4e"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"run_id\", \"ordinal\", \"root_id\", \"relative_path\", \"manual_url\", \"uncensored_choice\" from \"scrape_run_items\" where \"scrape_run_items\".\"id\" = ?",
+        "file:<media>/FC2-123456-CD2.mp4"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\" from \"scrape_item_outcomes\" where \"scrape_item_outcomes\".\"attempt_id\" = ?",
+        "a63a71f6-74dd-4193-9e52-aafce2da4a4e"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"scrape_item_outcomes\" (\"id\", \"attempt_id\", \"outcome\", \"error_message\", \"crawler_data_json\", \"nfo_root_id\", \"nfo_relative_path\", \"output_root_id\", \"output_relative_path\", \"uncensored_ambiguous\", \"size\", \"modified_at\", \"completed_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "4919142e-b7e0-4de6-a446-ab5acd179afc",
+        "a63a71f6-74dd-4193-9e52-aafce2da4a4e",
+        "success",
+        "null",
+        "{\"title\":\"Sample Title\",\"number\":\"FC2-123456\",\"actors\":[],\"genres\":[],\"scene_images\":[],\"website\":\"dmm\"}",
+        "null",
+        "null",
+        "root",
+        "output/FC2-123456/FC2-123456-CD2.mp4",
+        0,
+        48,
+        1789703932543,
+        1789703932582
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\", \"attempt\", \"admitted_at\" from \"scrape_attempts\" where \"scrape_attempts\".\"id\" = ?",
+        "4f21261b-06ee-4479-ba83-c9fae32281ef"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"run_id\", \"ordinal\", \"root_id\", \"relative_path\", \"manual_url\", \"uncensored_choice\" from \"scrape_run_items\" where \"scrape_run_items\".\"id\" = ?",
+        "file:<media>/FC2-123456-CD3.mp4"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\" from \"scrape_item_outcomes\" where \"scrape_item_outcomes\".\"attempt_id\" = ?",
+        "4f21261b-06ee-4479-ba83-c9fae32281ef"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"scrape_item_outcomes\" (\"id\", \"attempt_id\", \"outcome\", \"error_message\", \"crawler_data_json\", \"nfo_root_id\", \"nfo_relative_path\", \"output_root_id\", \"output_relative_path\", \"uncensored_ambiguous\", \"size\", \"modified_at\", \"completed_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "bc936ede-9cef-4e1a-8107-77881e4be26a",
+        "4f21261b-06ee-4479-ba83-c9fae32281ef",
+        "success",
+        "null",
+        "{\"title\":\"Sample Title\",\"number\":\"FC2-123456\",\"actors\":[],\"genres\":[],\"scene_images\":[],\"website\":\"dmm\"}",
+        "null",
+        "null",
+        "root",
+        "output/FC2-123456/FC2-123456-CD3.mp4",
+        0,
+        48,
+        1789703932543,
+        1789703932582
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\" = ? and \"library_item_files\".\"root_relative_path\" = ?) limit ?",
+        "root",
+        "output/FC2-123456/FC2-123456-CD1.mp4",
+        1
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\", \"root_id\", \"root_relative_path\", \"file_name\", \"directory\", \"size\", \"modified_at\", \"last_known_path\", \"part_number\", \"part_suffix\", \"resolution\", \"source_outcome_id\", \"created_at\", \"updated_at\" from \"library_item_files\" where \"library_item_files\".\"id\" = ?",
+        "3c6aa4e6-1074-4744-96b2-bf6af4a577fa"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"outcome\" from \"scrape_item_outcomes\" where \"scrape_item_outcomes\".\"id\" = ?",
+        "1b828d00-eb24-443b-991a-29d553df00c2"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\" = ? and \"library_item_files\".\"root_relative_path\" = ?) limit ?",
+        "root",
+        "output/FC2-123456/FC2-123456-CD2.mp4",
+        1
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\", \"root_id\", \"root_relative_path\", \"file_name\", \"directory\", \"size\", \"modified_at\", \"last_known_path\", \"part_number\", \"part_suffix\", \"resolution\", \"source_outcome_id\", \"created_at\", \"updated_at\" from \"library_item_files\" where \"library_item_files\".\"id\" = ?",
+        "f6033257-02a1-4e81-aa0c-b53952b8a3d5"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"outcome\" from \"scrape_item_outcomes\" where \"scrape_item_outcomes\".\"id\" = ?",
+        "4919142e-b7e0-4de6-a446-ab5acd179afc"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\" from \"library_item_files\" where (\"library_item_files\".\"root_id\" = ? and \"library_item_files\".\"root_relative_path\" = ?) limit ?",
+        "root",
+        "output/FC2-123456/FC2-123456-CD3.mp4",
+        1
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"id\", \"item_id\", \"root_id\", \"root_relative_path\", \"file_name\", \"directory\", \"size\", \"modified_at\", \"last_known_path\", \"part_number\", \"part_suffix\", \"resolution\", \"source_outcome_id\", \"created_at\", \"updated_at\" from \"library_item_files\" where \"library_item_files\".\"id\" = ?",
+        "b8f9029e-6ba4-4bd2-8f81-2c19f3382086"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "get",
+      "args": [
+        "select \"outcome\" from \"scrape_item_outcomes\" where \"scrape_item_outcomes\".\"id\" = ?",
+        "bc936ede-9cef-4e1a-8107-77881e4be26a"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"library_items\" (\"id\", \"media_identity\", \"crawler_data_json\", \"title\", \"number\", \"actors_json\", \"created_at\", \"last_refreshed_at\", \"hidden_from_recent_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict (\"library_items\".\"id\") do update set \"id\" = ?, \"media_identity\" = ?, \"crawler_data_json\" = ?, \"title\" = ?, \"number\" = ?, \"actors_json\" = ?",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261",
+        "FC2-123456",
+        "{\"title\":\"Sample Title\",\"number\":\"FC2-123456\",\"actors\":[],\"genres\":[],\"scene_images\":[],\"website\":\"dmm\"}",
+        "Sample Title",
+        "FC2-123456",
+        "[]",
+        1789703932582,
+        "null",
+        "null",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261",
+        "FC2-123456",
+        "{\"title\":\"Sample Title\",\"number\":\"FC2-123456\",\"actors\":[],\"genres\":[],\"scene_images\":[],\"website\":\"dmm\"}",
+        "Sample Title",
+        "FC2-123456",
+        "[]"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"library_item_files\" (\"id\", \"item_id\", \"root_id\", \"root_relative_path\", \"file_name\", \"directory\", \"size\", \"modified_at\", \"last_known_path\", \"part_number\", \"part_suffix\", \"resolution\", \"source_outcome_id\", \"created_at\", \"updated_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict (\"library_item_files\".\"id\") do update set \"root_id\" = ?, \"root_relative_path\" = ?, \"file_name\" = ?, \"directory\" = ?, \"size\" = ?, \"modified_at\" = ?, \"last_known_path\" = ?, \"part_number\" = ?, \"part_suffix\" = ?, \"resolution\" = ?, \"source_outcome_id\" = ?, \"updated_at\" = ?",
+        "3c6aa4e6-1074-4744-96b2-bf6af4a577fa",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261",
+        "root",
+        "output/FC2-123456/FC2-123456-CD1.mp4",
+        "FC2-123456-CD1.mp4",
+        "output/FC2-123456",
+        48,
+        1789703932543,
+        "output/FC2-123456/FC2-123456-CD1.mp4",
+        1,
+        "-CD1",
+        "null",
+        "1b828d00-eb24-443b-991a-29d553df00c2",
+        1789703932603,
+        1789703932603,
+        "root",
+        "output/FC2-123456/FC2-123456-CD1.mp4",
+        "FC2-123456-CD1.mp4",
+        "output/FC2-123456",
+        48,
+        1789703932543,
+        "output/FC2-123456/FC2-123456-CD1.mp4",
+        1,
+        "-CD1",
+        "null",
+        "1b828d00-eb24-443b-991a-29d553df00c2",
+        1789703932603
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"library_item_files\" (\"id\", \"item_id\", \"root_id\", \"root_relative_path\", \"file_name\", \"directory\", \"size\", \"modified_at\", \"last_known_path\", \"part_number\", \"part_suffix\", \"resolution\", \"source_outcome_id\", \"created_at\", \"updated_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict (\"library_item_files\".\"id\") do update set \"root_id\" = ?, \"root_relative_path\" = ?, \"file_name\" = ?, \"directory\" = ?, \"size\" = ?, \"modified_at\" = ?, \"last_known_path\" = ?, \"part_number\" = ?, \"part_suffix\" = ?, \"resolution\" = ?, \"source_outcome_id\" = ?, \"updated_at\" = ?",
+        "f6033257-02a1-4e81-aa0c-b53952b8a3d5",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261",
+        "root",
+        "output/FC2-123456/FC2-123456-CD2.mp4",
+        "FC2-123456-CD2.mp4",
+        "output/FC2-123456",
+        48,
+        1789703932543,
+        "output/FC2-123456/FC2-123456-CD2.mp4",
+        2,
+        "-CD2",
+        "null",
+        "4919142e-b7e0-4de6-a446-ab5acd179afc",
+        1789703932603,
+        1789703932603,
+        "root",
+        "output/FC2-123456/FC2-123456-CD2.mp4",
+        "FC2-123456-CD2.mp4",
+        "output/FC2-123456",
+        48,
+        1789703932543,
+        "output/FC2-123456/FC2-123456-CD2.mp4",
+        2,
+        "-CD2",
+        "null",
+        "4919142e-b7e0-4de6-a446-ab5acd179afc",
+        1789703932603
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"library_item_files\" (\"id\", \"item_id\", \"root_id\", \"root_relative_path\", \"file_name\", \"directory\", \"size\", \"modified_at\", \"last_known_path\", \"part_number\", \"part_suffix\", \"resolution\", \"source_outcome_id\", \"created_at\", \"updated_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict (\"library_item_files\".\"id\") do update set \"root_id\" = ?, \"root_relative_path\" = ?, \"file_name\" = ?, \"directory\" = ?, \"size\" = ?, \"modified_at\" = ?, \"last_known_path\" = ?, \"part_number\" = ?, \"part_suffix\" = ?, \"resolution\" = ?, \"source_outcome_id\" = ?, \"updated_at\" = ?",
+        "b8f9029e-6ba4-4bd2-8f81-2c19f3382086",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261",
+        "root",
+        "output/FC2-123456/FC2-123456-CD3.mp4",
+        "FC2-123456-CD3.mp4",
+        "output/FC2-123456",
+        48,
+        1789703932543,
+        "output/FC2-123456/FC2-123456-CD3.mp4",
+        3,
+        "-CD3",
+        "null",
+        "bc936ede-9cef-4e1a-8107-77881e4be26a",
+        1789703932603,
+        1789703932603,
+        "root",
+        "output/FC2-123456/FC2-123456-CD3.mp4",
+        "FC2-123456-CD3.mp4",
+        "output/FC2-123456",
+        48,
+        1789703932543,
+        "output/FC2-123456/FC2-123456-CD3.mp4",
+        3,
+        "-CD3",
+        "null",
+        "bc936ede-9cef-4e1a-8107-77881e4be26a",
+        1789703932603
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "all",
+      "args": [
+        "select \"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\" from \"library_item_assets\" where \"library_item_assets\".\"item_id\" = ?",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261"
+      ]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "insert into \"library_item_assets\" (\"id\", \"item_id\", \"file_id\", \"kind\", \"uri\", \"root_id\", \"relative_path\", \"published\", \"historical\", \"created_at\") values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "66343817-2db2-46d9-8a54-4d96abe8cc4f",
+        "a869cf66-a637-40a6-9738-f3c2e2d05261",
+        "null",
+        "feature",
+        "output/FC2-123456/FC2-123456-花絮.mp4",
+        "root",
+        "output/FC2-123456/FC2-123456-花絮.mp4",
+        1,
+        0,
+        1789703932603
+      ]
+    },
+    {
+      "channel": "transaction",
+      "operation": "commit",
+      "args": []
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "update \"publication_journal\" set \"state\" = ? where (\"publication_journal\".\"operation_id\" = ? and \"publication_journal\".\"state\" = ?)",
+        "committed",
+        "scrape:FC2-123456-CD1.mp4",
+        "pending"
+      ]
+    },
+    {
+      "channel": "transaction",
+      "operation": "commit",
+      "args": []
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-花絮.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD1.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD2.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "stat",
+      "args": ["<media>/FC2-123456-CD3.mp4"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rm",
+      "args": ["<media>/output/FC2-123456/FC2-123456-花絮.mp4.bb7e65906e529ca9.part", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rm",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD1.mp4.bb7e65906e529ca9.part", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rm",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD2.mp4.bb7e65906e529ca9.part", "[object Object]"]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rm",
+      "args": ["<media>/output/FC2-123456/FC2-123456-CD3.mp4.bb7e65906e529ca9.part", "[object Object]"]
+    },
+    {
+      "channel": "sql",
+      "operation": "run",
+      "args": [
+        "delete from \"publication_journal\" where \"publication_journal\".\"operation_id\" = ?",
+        "scrape:FC2-123456-CD1.mp4"
+      ]
+    },
+    {
+      "channel": "filesystem",
+      "operation": "rm",
+      "args": ["/tmp/mdcz-publication-kAJ4Bq", "[object Object]"]
+    }
+  ]
+}
