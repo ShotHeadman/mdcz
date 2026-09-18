@@ -1,5 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
@@ -172,7 +171,9 @@ export class MaintenanceFileScraper {
           ].map((path) => toRootFileRef(path, publication.roots)),
         ),
       );
-      stagingDir = await mkdtemp(join(tmpdir(), "mdcz-maintenance-publication-"));
+      const stagingParent = members[0].layout.metadataDir;
+      await mkdir(stagingParent, { recursive: true });
+      stagingDir = await mkdtemp(join(stagingParent, ".mdcz-staging-"));
       const preparedOutputData = await prepareOutputCrawlerData({
         actorImageService: this.actorImageService,
         actorSourceProvider: this.deps.actorSourceProvider,
@@ -232,7 +233,6 @@ export class MaintenanceFileScraper {
           }),
       });
       throwIfAborted(signal);
-      if (!published.plan) throw new Error("No media files could be prepared for publication");
       const file = published.plan.files.find((candidate) => candidate.fileId === entry.fileId);
       if (!file) throw new Error("Maintenance publication requires the selected media member");
       const strm = file.assets.find((asset) => asset.kind === "strm");

@@ -20,13 +20,6 @@ interface PublicationPlanningMember {
   scrape?: PublicationFile["scrape"];
 }
 
-export type PublicationMemberFailure = {
-  fileId: string;
-  source: RootFileRef;
-  scrape?: PublicationFile["scrape"];
-  error: unknown;
-};
-
 export const retainedRegisteredFeatures = (
   members: readonly { layout: { sidecars: readonly { kind: string }[] } }[],
   registered: PublicationParticipants["expected"]["assets"],
@@ -64,8 +57,7 @@ export const preparePublicationPlan = async (input: {
     writeFile: (path: string, content: string) => Promise<void>,
   ): Promise<string | undefined>;
 }): Promise<{
-  plan?: MoviePublicationPlan;
-  failed: PublicationMemberFailure[];
+  plan: MoviePublicationPlan;
   assets: DiscoveredAssets;
   nfoPath?: string;
 }> => {
@@ -73,7 +65,6 @@ export const preparePublicationPlan = async (input: {
   const toRef = (absolutePath: string) => toRootFileRef(absolutePath, input.roots);
   const operations: PublicationOperation[] = [];
   const successful: Array<{ member: (typeof input.identity.members)[number]; file: PublicationFile }> = [];
-  const failed: PublicationMemberFailure[] = [];
   const featureAssets = new Map<string, AssetRef>();
   const downloadedTargets = new Set<string>();
   const obsolete: RootFileRef[] = [];
@@ -90,120 +81,111 @@ export const preparePublicationPlan = async (input: {
   for (const file of input.identity.members) {
     const { layout } = file;
     const sourcePath = sourcePathOf(file);
-    try {
-      const source = await stat(sourcePath);
-      if (!source.isFile()) throw new Error("Publication source is not a file");
-      const fileOperations: PublicationOperation[] = [];
-      const fileObsolete: RootFileRef[] = [];
-      const fileAssets: AssetRef[] = [];
-      const memberOperations: PublicationOperation[] = [];
-      const memberFeatures = new Map<string, AssetRef>();
-      let size = source.size;
-      let modifiedAt = source.mtime;
-      if (layout.mode === "move" && resolve(sourcePath) !== resolve(layout.targetVideoPath)) {
-        if (layout.mediaContent === undefined) {
-          fileOperations.push({
-            kind: "move",
-            source: file.source,
-            target: toRef(layout.targetVideoPath),
-            size: source.size,
-            replaceExisting: false,
-          });
-        } else {
-          fileOperations.push({
-            kind: "write",
-            target: toRef(layout.targetVideoPath),
-            content: { kind: "text", data: layout.mediaContent },
-            replaceExisting: false,
-          });
-          fileObsolete.push(file.source);
-          size = Buffer.byteLength(layout.mediaContent);
-          modifiedAt = new Date();
-        }
-      }
-      if (layout.mirror) {
+    const source = await stat(sourcePath);
+    if (!source.isFile()) throw new Error("Publication source is not a file");
+    const fileOperations: PublicationOperation[] = [];
+    const fileObsolete: RootFileRef[] = [];
+    const fileAssets: AssetRef[] = [];
+    const memberOperations: PublicationOperation[] = [];
+    const memberFeatures = new Map<string, AssetRef>();
+    let size = source.size;
+    let modifiedAt = source.mtime;
+    if (layout.mode === "move" && resolve(sourcePath) !== resolve(layout.targetVideoPath)) {
+      if (layout.mediaContent === undefined) {
         fileOperations.push({
-          kind: "write",
-          target: toRef(layout.mirror.targetPath),
-          content: { kind: "text", data: layout.mirror.content },
-          replaceExisting: true,
-        });
-        fileAssets.push({ type: "local", kind: "strm", file: toRef(layout.mirror.targetPath) });
-      }
-      for (const sidecar of layout.sidecars) {
-        const sidecarSource = await stat(sidecar.sourcePath);
-        if (!sidecarSource.isFile()) throw new Error("Publication sidecar source is not a file");
-        const moving = resolve(sidecar.targetPath) !== resolve(sidecar.sourcePath);
-        if (sidecar.kind === "subtitle") {
-          if (!layout.mirror || moving)
-            fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.targetPath) });
-          if (moving) {
-            fileOperations.push({
-              kind: "move",
-              source: toRef(sidecar.sourcePath),
-              target: toRef(sidecar.targetPath),
-              size: sidecarSource.size,
-              replaceExisting: true,
-            });
-          }
-          if (sidecar.mirrorPath) {
-            fileOperations.push({
-              kind: "copy",
-              sourcePath: sidecar.sourcePath,
-              target: toRef(sidecar.mirrorPath),
-              size: sidecarSource.size,
-              replaceExisting: true,
-            });
-            fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.mirrorPath) });
-          }
-        } else {
-          if (
-            mediaSources.has(resolve(sidecar.sourcePath)) ||
-            featureAssets.has(sidecar.targetPath) ||
-            memberFeatures.has(sidecar.targetPath)
-          )
-            continue;
-          memberFeatures.set(sidecar.targetPath, {
-            type: "local",
-            kind: "feature",
-            file: toRef(sidecar.targetPath),
-          });
-          if (moving) {
-            memberOperations.push({
-              kind: "move",
-              source: toRef(sidecar.sourcePath),
-              target: toRef(sidecar.targetPath),
-              size: sidecarSource.size,
-              replaceExisting: true,
-            });
-          }
-        }
-      }
-      obsolete.push(...fileObsolete);
-      for (const [targetPath, asset] of memberFeatures) featureAssets.set(targetPath, asset);
-      operations.push(...memberOperations);
-      successful.push({
-        member: file,
-        file: {
-          fileId: file.fileId,
+          kind: "move",
           source: file.source,
           target: toRef(layout.targetVideoPath),
-          size,
-          sourceSize: source.size,
-          modifiedAt,
-          assets: fileAssets,
-          operations: fileOperations,
-          scrape: file.scrape,
-        },
-      });
-    } catch (error) {
-      if (input.operationType !== "scrape") throw error;
-      failed.push({ fileId: file.fileId, source: file.source, scrape: file.scrape, error });
+          size: source.size,
+          replaceExisting: false,
+        });
+      } else {
+        fileOperations.push({
+          kind: "write",
+          target: toRef(layout.targetVideoPath),
+          content: { kind: "text", data: layout.mediaContent },
+          replaceExisting: false,
+        });
+        fileObsolete.push(file.source);
+        size = Buffer.byteLength(layout.mediaContent);
+        modifiedAt = new Date();
+      }
     }
-  }
-  if (!successful.length) {
-    if (input.operationType !== "scrape") throw new Error("No media files could be prepared for publication");
-    return { failed, assets: { sceneImages: [], actorPhotos: [] } };
+    if (layout.mirror) {
+      fileOperations.push({
+        kind: "write",
+        target: toRef(layout.mirror.targetPath),
+        content: { kind: "text", data: layout.mirror.content },
+        replaceExisting: true,
+      });
+      fileAssets.push({ type: "local", kind: "strm", file: toRef(layout.mirror.targetPath) });
+    }
+    for (const sidecar of layout.sidecars) {
+      const sidecarSource = await stat(sidecar.sourcePath);
+      if (!sidecarSource.isFile()) throw new Error("Publication sidecar source is not a file");
+      const moving = resolve(sidecar.targetPath) !== resolve(sidecar.sourcePath);
+      if (sidecar.kind === "subtitle") {
+        if (!layout.mirror || moving)
+          fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.targetPath) });
+        if (moving) {
+          fileOperations.push({
+            kind: "move",
+            source: toRef(sidecar.sourcePath),
+            target: toRef(sidecar.targetPath),
+            size: sidecarSource.size,
+            replaceExisting: true,
+          });
+        }
+        if (sidecar.mirrorPath) {
+          fileOperations.push({
+            kind: "copy",
+            sourcePath: sidecar.sourcePath,
+            target: toRef(sidecar.mirrorPath),
+            size: sidecarSource.size,
+            replaceExisting: true,
+          });
+          fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.mirrorPath) });
+        }
+      } else {
+        if (
+          mediaSources.has(resolve(sidecar.sourcePath)) ||
+          featureAssets.has(sidecar.targetPath) ||
+          memberFeatures.has(sidecar.targetPath)
+        )
+          continue;
+        memberFeatures.set(sidecar.targetPath, {
+          type: "local",
+          kind: "feature",
+          file: toRef(sidecar.targetPath),
+        });
+        if (moving) {
+          memberOperations.push({
+            kind: "move",
+            source: toRef(sidecar.sourcePath),
+            target: toRef(sidecar.targetPath),
+            size: sidecarSource.size,
+            replaceExisting: true,
+          });
+        }
+      }
+    }
+    obsolete.push(...fileObsolete);
+    for (const [targetPath, asset] of memberFeatures) featureAssets.set(targetPath, asset);
+    operations.push(...memberOperations);
+    successful.push({
+      member: file,
+      file: {
+        fileId: file.fileId,
+        source: file.source,
+        target: toRef(layout.targetVideoPath),
+        size,
+        sourceSize: source.size,
+        modifiedAt,
+        assets: fileAssets,
+        operations: fileOperations,
+        scrape: file.scrape,
+      },
+    });
   }
 
   const first = successful[0].member;
@@ -260,6 +242,7 @@ export const preparePublicationPlan = async (input: {
               target: toRef(targetPath),
               size: (await stat(sourcePath)).size,
               replaceExisting: true,
+              consume: Boolean(stagedName),
             });
             if (stagedName) downloadedTargets.add(targetPath);
           }
@@ -384,5 +367,5 @@ export const preparePublicationPlan = async (input: {
     obsolete,
     ...(input.scrape ? { scrape: { ...input.scrape, ...(nfoPath ? { nfo: toRef(nfoPath) } : {}) } } : {}),
   };
-  return { assets, nfoPath, plan, failed };
+  return { assets, nfoPath, plan };
 };

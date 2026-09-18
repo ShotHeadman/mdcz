@@ -129,13 +129,14 @@ describe("FileScraper .strm support", () => {
       actors: ["Actor A"],
       genres: ["Tag A"],
     });
+    const outputDir = await createTempDir();
     const plan: OrganizePlan = {
-      outputDir: "/output/ABC-123",
-      metadataDir: "/output/ABC-123",
+      outputDir,
+      metadataDir: outputDir,
       mode: "move",
       renameSubtitles: true,
-      targetVideoPath: "/output/ABC-123/ABC-123.strm",
-      nfoPath: "/output/ABC-123/ABC-123.nfo",
+      targetVideoPath: join(outputDir, "ABC-123.strm"),
+      nfoPath: join(outputDir, "ABC-123.nfo"),
     };
     const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
     const scraper = createScraper({ config, crawlerData, plan, writeNfo });

@@ -287,7 +287,7 @@ describe("ScrapeCoordinator", () => {
     "prepare",
     "preflight",
     "publication",
-  ] as const)("isolates item failures and stops publication conflicts (%s)", async (stage) => {
+  ] as const)("isolates item failures and continues past publication conflicts (%s)", async (stage) => {
     const run: Run = {
       id: `conflict-${stage}`,
       items: [
@@ -321,7 +321,7 @@ describe("ScrapeCoordinator", () => {
     const coordinator = new ScrapeCoordinator(store, host);
     await coordinator.start("start");
     await coordinator.waitForIdle();
-    expect(executeItem).toHaveBeenCalledTimes(stage === "preflight" ? 0 : 1);
+    expect(executeItem).toHaveBeenCalledTimes(stage === "preflight" ? 0 : stage === "publication" ? 2 : 1);
     expect(host.onTerminal).toHaveBeenCalledWith(
       run,
       expect.objectContaining({
@@ -331,7 +331,7 @@ describe("ScrapeCoordinator", () => {
             ? [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })]
             : stage === "preflight"
               ? [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "failed" })]
-              : [expect.objectContaining({ status: "skipped" }), expect.objectContaining({ status: "skipped" })],
+              : [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })],
       }),
     );
     expect(store.finalize).toHaveBeenCalledOnce();

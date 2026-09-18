@@ -84,11 +84,6 @@ describe("desktop input root", () => {
         expect(link.entry.entryPath).toBe(path.join(await realpath(child), "external-file.mp4"));
         expect(link.entry.referentFacts.path).toBe(path.join(await realpath(outside), "XYZ-456.mp4"));
       }
-      await repository.upsert({ ...admitted, id: "historical-alias", hostPath: selection === "alias" ? child : alias });
-      expect(await service.rootAliasDiagnostics()).toEqual([
-        { realPath: await realpath(child), rootIds: expect.arrayContaining([admitted.id, "historical-alias"]) },
-      ]);
-      await expect(repository.get("historical-alias")).resolves.toMatchObject({ id: "historical-alias" });
       if (selection === "alias") {
         await rm(alias);
         await symlink(outside, alias, directoryLinkType);

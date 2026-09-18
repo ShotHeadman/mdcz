@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { LibraryRepository } from "@mdcz/persistence";
@@ -23,7 +23,7 @@ describe("commitRegisteredPublication", () => {
   it.each([
     "movie",
     "unmanaged",
-  ] as const)("journals registered root IDs and respects the %s asset scope", async (owner) => {
+  ] as const)("writes without a journal and respects the %s asset scope", async (owner) => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-registered-"));
     directories.push(directory);
     const nfoPath = path.join(directory, "movie.nfo");
@@ -57,24 +57,7 @@ describe("commitRegisteredPublication", () => {
       files: [{ fileId: "file", rootId: "library", rootRelativePath: "movie.mp4", size: 42, assets: [strm] }],
     });
     const snapshot = vi.spyOn(library, "publicationSnapshot");
-    const originalStage = journal.stage.bind(journal);
-    journal.stage = (operationId, manifest) => {
-      originalStage(operationId, manifest);
-      library.writeEntry({ id: "movie" }, [
-        {
-          fileId: "file",
-          rootId: "library",
-          rootRelativePath: "movie.mp4",
-          assets: [strm, { kind: "subtitle", uri: "movie.srt", rootId: "library", relativePath: "movie.srt" }],
-        },
-      ]);
-    };
-    let begunRootId: string | undefined;
-    const originalBegin = journal.begin.bind(journal);
-    journal.begin = (entry) => {
-      begunRootId = entry.manifest.entries[0]?.rootId;
-      originalBegin(entry);
-    };
+    const begin = vi.spyOn(journal, "begin");
 
     const publication = commitRegisteredPublication(
       {
@@ -106,16 +89,36 @@ describe("commitRegisteredPublication", () => {
       return;
     }
     await publication;
-    expect(begunRootId).toBe("library");
+    expect(begin).not.toHaveBeenCalled();
     const entry = await library.getEntryById("movie");
     expect(entry).toMatchObject({
       title: "Original",
       number: "ABC-123",
       files: [expect.objectContaining({ id: "file", size: 42 })],
     });
-    expect(entry.assets.map((asset) => asset.kind).sort()).toEqual(["nfo", "strm", "subtitle", "trailer"]);
+    expect(entry.assets.map((asset) => asset.kind).sort()).toEqual(["nfo", "strm", "trailer"]);
     expect(snapshot.mock.calls.every(([query]) => query.paths !== undefined)).toBe(true);
     await expect(readFile(nfoPath, "utf8")).resolves.toBe("updated");
+    await commitRegisteredPublication(
+      {
+        operationId: "nfo-write:repeat",
+        operationType: "maintenance",
+        operations: [
+          {
+            kind: "write",
+            owner,
+            assetKind: "nfo",
+            targetPath: nfoPath,
+            content: { kind: "text", data: "updated again" },
+            replaceExisting: true,
+          },
+        ],
+      },
+      { journal, roots, outputs: library, library },
+    );
+    expect(begin).not.toHaveBeenCalled();
+    expect(await readFile(nfoPath, "utf8")).toBe("updated again");
+    expect(await readdir(directory)).toEqual(["movie.nfo"]);
   });
 
   it.each(["outside", "protected-source"])("rejects unsafe unmanaged tool targets: %s", async (scenario) => {

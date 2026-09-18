@@ -46,15 +46,6 @@ export class PublicationJournalRepository {
       .run();
   }
 
-  stage(operationId: string, manifest: unknown): void {
-    const changed = this.database.db
-      .update(publicationJournal)
-      .set({ manifestJson: JSON.stringify(manifest) })
-      .where(and(eq(publicationJournal.operationId, operationId), eq(publicationJournal.state, "pending")))
-      .run();
-    if (changed.changes !== 1) throw new Error(`Publication journal operation is not pending: ${operationId}`);
-  }
-
   commit<T>(operationId: string, write: () => T): T {
     return this.database.sqlite.transaction(() => {
       const result = write();

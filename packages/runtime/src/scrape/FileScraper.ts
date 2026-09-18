@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
@@ -446,7 +445,8 @@ export class FileScraper {
             },
             resolveRoot,
           });
-          const directory = await mkdtemp(path.join(tmpdir(), "mdcz-publication-"));
+          await mkdir(plan.metadataDir, { recursive: true });
+          const directory = await mkdtemp(path.join(plan.metadataDir, ".mdcz-staging-"));
           stagingDir = directory;
           const metadataOutputDir = plan.metadataDir;
           let crawlerData = prepared.crawlerData;
@@ -553,31 +553,6 @@ export class FileScraper {
                 writeFile,
               }),
           });
-          for (const failure of publication.failed) {
-            const entry = ready.find((item) => item.prepared.attemptId === failure.scrape?.attemptId);
-            if (!entry) throw new Error(`Unknown scrape member: ${failure.fileId}`);
-            entry.result = this.failed(entry.prepared.identity, entry.prepared.fileInfo, toErrorMessage(failure.error));
-          }
-          if (publication.failed.length) {
-            const error = toErrorMessage(publication.failed[0].error);
-            await rm(directory, { recursive: true, force: true });
-            stagingDir = undefined;
-            return {
-              results: states.map(
-                (entry) => entry.result ?? this.failed(entry.prepared.identity, entry.prepared.fileInfo, error),
-              ),
-            };
-          }
-          if (!publication.plan) {
-            await rm(directory, { recursive: true, force: true });
-            stagingDir = undefined;
-            return {
-              results: states.map((entry) => {
-                if (!entry.result) throw new Error(`Scrape member was not marked failed: ${entry.prepared.attemptId}`);
-                return entry.result;
-              }),
-            };
-          }
           throwIfAborted(signal);
           for (const { progress, result } of states) if (!result) this.setProgress(progress, 95);
           return {

@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import { createMediaRoot } from "@mdcz/media-store";
@@ -36,16 +36,14 @@ describe("DesktopPersistenceService", () => {
     const { directory, service } = await createService();
     const mediaRoot = join(directory.path, "media");
     await mkdir(mediaRoot, { recursive: true });
-    const target = join(mediaRoot, "movie.nfo");
-    const backup = join(mediaRoot, "movie.nfo.op.bak");
-    await writeFile(target, "published");
-    await writeFile(backup, "original");
+    const target = join(mediaRoot, "movie.mp4");
+    const source = join(mediaRoot, "original.mp4");
+    await writeFile(target, "original");
 
     const state = await service.initialize();
     await state.repositories.mediaRoots.upsert(
       createMediaRoot({ id: "root-1", displayName: "Media", hostPath: mediaRoot }),
     );
-    const { size, mtimeMs, ino, dev } = await stat(target);
     state.repositories.publicationJournal.begin({
       operationId: "op-1",
       operationType: "scrape",
@@ -54,14 +52,11 @@ describe("DesktopPersistenceService", () => {
         entries: [
           {
             rootId: "root-1",
-            relativePath: "movie.nfo",
-            temporaryPath: "movie.nfo.op.part",
-            backupPath: "movie.nfo.op.bak",
-            targetExisted: true,
-            staged: { size, mtimeMs, ino, dev },
+            relativePath: "movie.mp4",
+            temporaryPath: "movie.mp4.op.part",
+            source: { rootId: "root-1", relativePath: "original.mp4" },
           },
         ],
-        obsolete: [],
       },
     });
     await service.close();
@@ -71,6 +66,7 @@ describe("DesktopPersistenceService", () => {
     await restarted.initialize();
 
     expect((await restarted.getState()).repositories.publicationJournal.listUnfinished()).toEqual([]);
-    await expect(readFile(target, "utf8")).resolves.toBe("original");
+    await expect(readFile(source, "utf8")).resolves.toBe("original");
+    await expect(readFile(target)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

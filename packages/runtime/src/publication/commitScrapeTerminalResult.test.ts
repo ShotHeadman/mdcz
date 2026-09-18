@@ -10,7 +10,6 @@ import { PublicationConflictError } from "./conflicts";
 import { createMemoryPublicationJournal } from "./memoryJournal";
 import { preparePublicationPlan } from "./preparePublicationPlan";
 import { toRootFileRef } from "./publicationPlan";
-import type { PublicationFileSystem } from "./types";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -231,6 +230,7 @@ describe("commitScrapeTerminalResults", () => {
     Object.assign(test.plan, {
       movieId: "existing-item",
       expected: snapshot,
+      operations: [],
     });
     await commitScrapeTerminalResults({
       items: [],
@@ -256,25 +256,16 @@ describe("commitScrapeTerminalResults", () => {
   it("preserves successful outcomes when committed publication cleanup fails", async () => {
     const test = await fixture(["movie.mp4"], "metadata");
     const store = scrapeRuns();
-    const fs = await import("node:fs/promises");
-    const fileSystem: PublicationFileSystem = {
-      ...fs,
-      rename: async (source, target) => {
-        if (source === test.sourcePaths[0]) throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
-        await fs.rename(source, target);
-      },
-      rm: async (filePath, options) => {
-        if (filePath === test.sourcePaths[0]) throw new Error("source cleanup failed");
-        await fs.rm(filePath, options);
-      },
+    const journal = createMemoryPublicationJournal();
+    journal.finish = () => {
+      throw new Error("journal cleanup failed");
     };
     const committed = await commitScrapeTerminalResults({
       items: [],
       publicationPlan: test.plan,
       scrapeRuns: store,
       resolveRoot: test.resolveRoot,
-      journal: createMemoryPublicationJournal(),
-      fileSystem,
+      journal,
     });
     expect(committed).toMatchObject([
       { status: "success", resultId: "success-outcome-1", error: expect.stringContaining("媒体库已提交，但清理失败") },

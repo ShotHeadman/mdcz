@@ -152,18 +152,6 @@ export class ConfiguredMediaRootService {
     };
   }
 
-  async rootAliasDiagnostics(): Promise<Array<{ realPath: string; rootIds: string[] }>> {
-    const identities = new Map<string, { realPath: string; rootIds: string[] }>();
-    for (const root of await this.listRoots()) {
-      if (root.realPath === null) continue;
-      const key = filesystemPathKey(root.realPath);
-      const existing = identities.get(key);
-      if (existing) existing.rootIds.push(root.id);
-      else identities.set(key, { realPath: root.realPath, rootIds: [root.id] });
-    }
-    return [...identities.values()].filter((identity) => identity.rootIds.length > 1);
-  }
-
   async assertConfiguredMediaPath(
     configuration: Configuration,
     onUnavailable?: (hostPath: string, error: unknown) => void,

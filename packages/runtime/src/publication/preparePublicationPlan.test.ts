@@ -148,14 +148,14 @@ describe("preparePublicationPlan", () => {
     expect(prepared.plan?.files[0]?.assets.map((asset) => asset.kind)).toEqual(["strm", "subtitle"]);
   });
 
-  it("admits a member's shared operations only after that member finishes preparing", async () => {
+  it("rejects the whole group when a required member cannot be prepared", async () => {
     const context = await fixture();
     const extraVideo = join(context.sourceDir, "ABC-123-CD2.mp4");
     const feature = join(context.sourceDir, "ABC-123-feature.mp4");
     const extraId = randomUUID();
     await Promise.all([writeFile(extraVideo, "video-2"), writeFile(feature, "feature")]);
-    const prepared = await preparePublicationPlan({
-      operationId: "partial-member",
+    const prepared = preparePublicationPlan({
+      operationId: "whole-group",
       operationType: "scrape",
       roots: context.roots,
       identity: {
@@ -196,14 +196,7 @@ describe("preparePublicationPlan", () => {
       nfoNaming: "filename",
       writeNfo: async () => undefined,
     });
-    expect(prepared.plan?.files.map((file) => file.fileId)).toEqual([context.fileId]);
-    expect(prepared.failed.map((failure) => failure.fileId)).toEqual([extraId]);
-    expect(prepared.plan?.movieAssets.map((asset) => asset.kind)).not.toContain("feature");
-    expect(
-      prepared.plan?.operations.some(
-        (operation) => operation.kind === "move" && operation.target.relativePath === "output/ABC-123-feature.mp4",
-      ),
-    ).toBe(false);
+    await expect(prepared).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each([

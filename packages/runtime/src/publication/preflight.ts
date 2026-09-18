@@ -43,7 +43,7 @@ export const planRefs = (plan: PublicationPlan): RootFileRef[] => [
 ];
 
 export const observePublicationFile = async (
-  fileSystem: PublicationFileSystem,
+  fileSystem: Pick<PublicationFileSystem, "stat">,
   filePath: string,
 ): Promise<ObservedPublicationFile> => {
   try {
@@ -111,7 +111,7 @@ export const removeCommittedObsoleteFiles = async (
 export const preflightPublication = async (
   plan: PublicationPlan,
   paths: PublicationPaths,
-  fileSystem: PublicationFileSystem,
+  fileSystem: Pick<PublicationFileSystem, "stat" | "readFile">,
 ): Promise<ResolvedPublicationPlan> => {
   if (!plan.operationId.trim()) throw new Error("Publication operation ID is required");
   const resolve = paths.absolute;
@@ -241,7 +241,7 @@ export const preflightPublication = async (
         `Publication source is missing: ${operation.kind === "copy" ? operation.sourcePath : refLabel(operation.source)}`,
       );
     }
-    if (sourcePath !== targetPath && target.exists && !operation.replaceExisting)
+    if (sourcePath !== targetPath && target.exists && (operation.kind === "move" || !operation.replaceExisting))
       throw new PublicationConflictError(sourcePath, targetPath, "目标附属资源已存在且没有替换权限");
   }
 

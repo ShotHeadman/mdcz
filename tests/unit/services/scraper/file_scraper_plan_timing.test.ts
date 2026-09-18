@@ -59,12 +59,12 @@ describe("FileScraper plan timing", () => {
       title_zh: "翻译标题",
     });
     const plan: OrganizePlan = {
-      outputDir: "/output/translated",
-      metadataDir: "/output/translated",
+      outputDir: join(directory.path, "translated"),
+      metadataDir: join(directory.path, "translated"),
       mode: "move",
       renameSubtitles: true,
-      targetVideoPath: "/output/translated/ABC-123.mp4",
-      nfoPath: "/output/translated/ABC-123.nfo",
+      targetVideoPath: join(directory.path, "translated", "ABC-123.mp4"),
+      nfoPath: join(directory.path, "translated", "ABC-123.nfo"),
     };
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),

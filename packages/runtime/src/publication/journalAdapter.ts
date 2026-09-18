@@ -16,7 +16,6 @@ export interface RawPublicationJournalRecord {
 
 export interface RawPublicationJournal {
   begin(entry: { operationId: string; operationType: string; manifest: unknown; createdAt: Date }): void;
-  stage(operationId: string, manifest: unknown): void;
   commit<T>(operationId: string, write: () => T): T;
   finish(operationId: string): void;
   listUnfinished(): RawPublicationJournalRecord[];
@@ -38,10 +37,6 @@ export class PublicationJournalAdapter implements PublicationJournalPort {
     createdAt: Date;
   }): void {
     this.raw.begin(entry);
-  }
-
-  stage(operationId: string, manifest: PublicationJournalManifest): void {
-    this.raw.stage(operationId, manifest);
   }
 
   commit<T>(operationId: string, write: () => T): T {

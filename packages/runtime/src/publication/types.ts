@@ -14,7 +14,7 @@ export interface PublicationParticipants<TMember extends { source: RootFileRef }
 export type PublicationContent = { kind: "bytes"; data: Buffer } | { kind: "text"; data: string };
 
 export type PublicationOperation = { target: RootFileRef; replaceExisting: boolean } & (
-  | { kind: "copy"; sourcePath: string; size: number }
+  | { kind: "copy"; sourcePath: string; size: number; consume?: boolean }
   | { kind: "move"; source: RootFileRef; size: number }
   | { kind: "write"; content: PublicationContent }
 );
@@ -70,7 +70,6 @@ export interface PublicationFileSystem {
   rename(source: string, target: string): Promise<void>;
   rm(path: string, options: { force: true }): Promise<void>;
   stat(path: string): Promise<Stats>;
-  statfs(path: string): Promise<{ bavail: number; bsize: number }>;
   writeFile(path: string, data: Buffer | string, options?: { flush?: boolean }): Promise<void>;
   flush?(path: string): Promise<void>;
 }
@@ -86,22 +85,12 @@ export interface PublicationRepairPort {
   resolve(operationId: string, rootId: string, relativePath: string): Promise<void> | void;
 }
 
-export interface PublicationFileIdentity {
-  size: number;
-  mtimeMs: number;
-  ino: number;
-  dev: number;
-}
-
 export interface PublicationJournalManifestEntry {
-  staged?: PublicationFileIdentity;
   rootId: string;
   relativePath: string;
   temporaryPath: string;
-  backupPath: string | null;
-  targetExisted: boolean;
-  /** Where a moved file came from; recovery must return the bytes there, never delete them. */
-  source?: RootFileRef;
+  source: RootFileRef;
+  rewritten?: boolean;
 }
 
 export type PublicationObsoleteObservation =
@@ -114,7 +103,6 @@ export interface PublicationJournalManifestObsolete extends RootFileRef {
 
 export interface PublicationJournalManifest {
   entries: PublicationJournalManifestEntry[];
-  obsolete: PublicationJournalManifestObsolete[];
 }
 
 export type PublicationJournalState = "pending" | "committed";
@@ -134,7 +122,6 @@ export interface PublicationJournalPort {
     manifest: PublicationJournalManifest;
     createdAt: Date;
   }): void;
-  stage(operationId: string, manifest: PublicationJournalManifest): void;
   commit<T>(operationId: string, write: () => T): T;
   finish(operationId: string): void;
   listUnfinished(): PublicationJournalRecord[];

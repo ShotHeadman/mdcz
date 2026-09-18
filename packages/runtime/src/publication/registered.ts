@@ -1,11 +1,15 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolveRootRelativePath } from "@mdcz/media-store";
+import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import { runtimeLoggerService } from "../shared";
 import { libraryAssetsFromPublicationPlan } from "./libraryEntry";
+import { prepareOutputValidation } from "./outputValidation";
 import { resolvePublicationParticipants } from "./participants";
+import { preparePublicationPaths } from "./paths";
+import { assertPublicationFileUnchanged, observePublicationFile, planRefs, preflightPublication } from "./preflight";
 import { toRootFileRef } from "./publicationPlan";
-import { commitPublishedMedia } from "./publishMedia";
 import type { PublicationPlan, RegisteredPublicationContext } from "./types";
+import { WriteOutput } from "./WriteOutput";
 
 export interface RegisteredPublicationInput {
   operationId: string;
@@ -119,17 +123,39 @@ export const commitRegisteredPublication = async <TResult>(
       };
     }
   }
-  const published = await commitPublishedMedia(plan, {
-    resolveRoot,
-    journal: options.journal,
-    outputs: options.outputs,
-    repairIssues: options.repairIssues,
-    commit: () => {
-      writeAssets?.();
-      return options.commit ? options.commit() : (undefined as TResult);
-    },
-  });
-  for (const issue of published.cleanupIssues)
-    runtimeLoggerService.getLogger("Publication").warn(`Publication cleanup failed: ${String(issue)}`);
-  return published.value;
+  const paths = await preparePublicationPaths(planRefs(plan), { resolveRoot, outputs: options.outputs });
+  const release = mediaPathOwnership.acquireAll(planRefs(plan).map(paths.key));
+  try {
+    const resolved = await preflightPublication(plan, paths, { stat, readFile });
+    const validation = await prepareOutputValidation(
+      plan,
+      { outputs: options.outputs, resolveRoot },
+      paths,
+      resolved.observed,
+    );
+    const artifacts = [];
+    for (const operation of input.operations) {
+      const ref = toRootFileRef(operation.targetPath, options.roots);
+      const targetPath = resolved.resolve(ref);
+      const observed = resolved.observed.find((file) => file.path === targetPath);
+      if (observed?.exists && !operation.replaceExisting) continue;
+      artifacts.push({ targetPath, data: operation.content.data });
+    }
+    const published = await new WriteOutput().install(artifacts, {
+      validate: async () => {
+        for (const observed of resolved.observed)
+          assertPublicationFileUnchanged(observed, await observePublicationFile({ stat }, observed.path));
+        validation?.assertCurrent();
+      },
+      commit: () => {
+        writeAssets?.();
+        return options.commit ? options.commit() : (undefined as TResult);
+      },
+    });
+    for (const issue of published.cleanupIssues)
+      runtimeLoggerService.getLogger("Publication").warn(`Publication cleanup failed: ${String(issue)}`);
+    return published.value;
+  } finally {
+    release();
+  }
 };

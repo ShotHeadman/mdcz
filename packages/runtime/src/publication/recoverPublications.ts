@@ -1,55 +1,15 @@
-import { copyFile, mkdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
-import { parseWireRelativePath, type RootFileRef } from "@mdcz/shared/mediaRef";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { PublicationJournalAdapter } from "./journalAdapter";
-import { manifestRefs } from "./manifest";
-import { removeCommittedObsoleteFiles } from "./preflight";
-import { isPublicationPathReferenced } from "./registeredOutputs";
-import { restorePublicationFile } from "./restorePublicationFile";
+import { assertMoveTargetAbsent, returnMovedFile } from "./MoveOutput";
+import { outputFileSystem } from "./outputFileSystem";
+import { observePublicationFile } from "./preflight";
 import type {
   PublicationFileSystem,
-  PublicationJournalManifest,
   PublicationJournalPort,
-  PublicationJournalRecord,
   PublicationOutputPort,
   PublicationRepairPort,
 } from "./types";
-
-const defaultFileSystem: PublicationFileSystem = { copyFile, mkdir, readFile, rename, rm, stat, statfs, writeFile };
-
-const unavailableCodes = new Set([
-  "ESTALE",
-  "ENOTCONN",
-  "EIO",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ETIMEDOUT",
-  "EHOSTDOWN",
-  "ENETDOWN",
-  "ENODEV",
-]);
-
-const toErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const errorCode = (error: unknown): string | undefined => (error as NodeJS.ErrnoException).code;
-
-const isUnavailableError = (error: unknown): boolean => {
-  const code = errorCode(error);
-  return code !== undefined && unavailableCodes.has(code);
-};
-
-const exists = async (fileSystem: PublicationFileSystem, filePath: string): Promise<boolean> => {
-  try {
-    await fileSystem.stat(filePath);
-    return true;
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") return false;
-    throw error;
-  }
-};
-
-const repairType = (operationType: string): "scrape" | "maintenance" =>
-  operationType === "scrape" ? "scrape" : "maintenance";
 
 export interface RecoverPublicationsOptions {
   journal: PublicationJournalPort;
@@ -59,184 +19,62 @@ export interface RecoverPublicationsOptions {
   fileSystem?: PublicationFileSystem;
 }
 
-const recordRepair = async (
-  options: RecoverPublicationsOptions,
-  entry: Pick<PublicationJournalRecord, "operationId" | "operationType">,
-  ref: RootFileRef,
-  error: unknown,
-): Promise<void> => {
-  await options.repairIssues?.record({
-    operationId: entry.operationId,
-    operationType: repairType(entry.operationType),
-    rootId: ref.rootId,
-    relativePath: ref.relativePath,
-    errorMessage: toErrorMessage(error),
-  });
-};
-
-const rootsOf = (manifest: PublicationJournalManifest): string[] => [
-  ...new Set(manifestRefs(manifest).map((ref) => ref.rootId)),
-];
-
-const resolveAbsolute = async (
-  options: RecoverPublicationsOptions,
-  rootId: string,
-  relativePath: string,
-): Promise<string> => {
-  const root = await options.resolveRoot(rootId);
-  return resolveRootRelativePath(root, parseWireRelativePath(relativePath));
-};
-
-const allRootsAvailable = async (
-  options: RecoverPublicationsOptions,
-  fileSystem: PublicationFileSystem,
-  manifest: PublicationJournalManifest,
-): Promise<boolean> => {
-  for (const rootId of rootsOf(manifest)) {
-    try {
-      const root = await options.resolveRoot(rootId);
-      await fileSystem.stat(root.hostPath);
-    } catch {
-      return false;
-    }
-  }
-  return true;
-};
-
-const resolveRepairs = async (
-  options: RecoverPublicationsOptions,
-  entry: PublicationJournalRecord,
-  refs: readonly RootFileRef[],
-): Promise<void> => {
-  for (const item of refs) {
-    await options.repairIssues?.resolve(entry.operationId, item.rootId, item.relativePath);
-  }
-};
-
-const recoverPending = async (
-  options: RecoverPublicationsOptions,
-  fileSystem: PublicationFileSystem,
-  entry: PublicationJournalRecord,
-  manifest: PublicationJournalManifest,
-  resolve: (rootId: string, relativePath: string) => Promise<string>,
-): Promise<"done" | "retain"> => {
-  let retained = false;
-  for (const item of [...manifest.entries].reverse()) {
-    const targetPath = await resolve(item.rootId, item.relativePath);
-    const temporaryPath = await resolve(item.rootId, item.temporaryPath);
-    const backupPath = item.backupPath ? await resolve(item.rootId, item.backupPath) : null;
-    try {
-      await restorePublicationFile(fileSystem, {
-        targetPath,
-        temporaryPath,
-        backupPath,
-        targetExisted: item.targetExisted,
-        staged: item.staged,
-        recovering: true,
-        sourcePath: item.source ? await resolve(item.source.rootId, item.source.relativePath) : undefined,
-      });
-      await fileSystem.rm(temporaryPath, { force: true });
-    } catch (error) {
-      if (isUnavailableError(error)) return "retain";
-      await recordRepair(options, entry, item, error);
-      retained = true;
-    }
-  }
-  if (retained) return "retain";
-  await resolveRepairs(options, entry, [...manifest.entries, ...manifest.obsolete]);
-  options.journal.finish(entry.operationId);
-  return "done";
-};
-
-const recoverCommitted = async (
-  options: RecoverPublicationsOptions,
-  fileSystem: PublicationFileSystem,
-  entry: PublicationJournalRecord,
-  manifest: PublicationJournalManifest,
-  resolve: (rootId: string, relativePath: string) => Promise<string>,
-): Promise<"done" | "retain"> => {
-  for (const item of manifest.entries) {
-    const targetPath = await resolve(item.rootId, item.relativePath);
-    const temporaryPath = await resolve(item.rootId, item.temporaryPath);
-    const backupPath = item.backupPath ? await resolve(item.rootId, item.backupPath) : null;
-    try {
-      if (!(await exists(fileSystem, targetPath))) {
-        await recordRepair(
-          options,
-          entry,
-          item,
-          new Error(`Committed publication is missing target: ${item.rootId}:${item.relativePath}`),
-        );
-        return "retain";
-      }
-      if (backupPath) await fileSystem.rm(backupPath, { force: true });
-      await fileSystem.rm(temporaryPath, { force: true });
-    } catch (error) {
-      if (isUnavailableError(error)) return "retain";
-      await recordRepair(options, entry, item, error);
-      return "retain";
-    }
-  }
-  const outputs = options.outputs;
-  let retainedObsolete: RootFileRef[] = [];
-  try {
-    retainedObsolete = await removeCommittedObsoleteFiles(
-      fileSystem,
-      manifest.obsolete,
-      resolve,
-      outputs ? (ref) => isPublicationPathReferenced(ref, outputs, options.resolveRoot) : undefined,
-    );
-  } catch (error) {
-    if (isUnavailableError(error)) return "retain";
-    const ref = manifest.obsolete[0] ?? manifest.entries[0];
-    if (ref) await recordRepair(options, entry, ref, error);
-    return "retain";
-  }
-  for (const ref of retainedObsolete) {
-    await recordRepair(
-      options,
-      entry,
-      ref,
-      new Error(`Committed publication obsolete path changed: ${ref.rootId}:${ref.relativePath}`),
-    );
-  }
-  const retainedKeys = new Set(retainedObsolete.map((ref) => `${ref.rootId}\0${ref.relativePath}`));
-  await resolveRepairs(options, entry, [
-    ...manifest.entries,
-    ...manifest.obsolete.filter((ref) => !retainedKeys.has(`${ref.rootId}\0${ref.relativePath}`)),
-  ]);
-  options.journal.finish(entry.operationId);
-  return "done";
-};
-
 export const recoverPublications = async (options: RecoverPublicationsOptions): Promise<void> => {
-  const fileSystem = options.fileSystem ?? defaultFileSystem;
-  const unfinished = options.journal.listUnfinished();
+  const fs = options.fileSystem ?? outputFileSystem;
+  const resolve = async (ref: RootFileRef) =>
+    resolveRootRelativePath(await options.resolveRoot(ref.rootId), ref.relativePath);
+  const records = options.journal.listUnfinished();
   if (options.journal instanceof PublicationJournalAdapter) {
-    for (const invalid of options.journal.invalidManifests()) {
-      await recordRepair(
-        options,
-        invalid,
-        { rootId: "unknown", relativePath: invalid.operationId },
-        new Error("Publication journal manifest is invalid"),
-      );
-    }
+    for (const invalid of options.journal.invalidManifests())
+      await options.repairIssues?.record({
+        ...invalid,
+        operationType: invalid.operationType === "scrape" ? "scrape" : "maintenance",
+        rootId: "unknown",
+        relativePath: invalid.operationId,
+        errorMessage: "Publication journal manifest is invalid",
+      });
   }
-  for (const entry of unfinished) {
-    const manifest = entry.manifest;
-    if (!(await allRootsAvailable(options, fileSystem, manifest))) continue;
-    const resolve = async (rootId: string, relativePath: string) =>
-      await resolveAbsolute(options, rootId, relativePath);
-    try {
-      if (entry.state === "pending") {
-        await recoverPending(options, fileSystem, entry, manifest, resolve);
-        continue;
+  for (const record of records) {
+    let failed = false;
+    for (const entry of [...record.manifest.entries].reverse()) {
+      try {
+        const source = await resolve(entry.source);
+        const target = await resolve(entry);
+        const staged = await resolve({ rootId: entry.rootId, relativePath: entry.temporaryPath });
+        const sourceExists = (await observePublicationFile(fs, source)).exists;
+        const targetExists = (await observePublicationFile(fs, target)).exists;
+        const stagedExists = (await observePublicationFile(fs, staged)).exists;
+        if (record.state === "pending") {
+          if (!sourceExists) {
+            if (!stagedExists && (!targetExists || entry.rewritten))
+              throw new Error(`Pending move is missing its original bytes: ${source}`);
+            await returnMovedFile(fs, stagedExists ? staged : target, source);
+            if (entry.rewritten && targetExists) await fs.rm(target, { force: true });
+          } else if (targetExists) {
+            throw new Error(`Pending move has both source and target; refusing to delete either: ${target}`);
+          }
+          await fs.rm(staged, { force: true });
+        } else {
+          if (!targetExists) {
+            if (!stagedExists || entry.rewritten) throw new Error(`Committed move is missing its target: ${target}`);
+            await assertMoveTargetAbsent(target);
+            await fs.rename(staged, target);
+          }
+          if (sourceExists) throw new Error(`Committed move source was recreated: ${source}`);
+          await fs.rm(staged, { force: true });
+        }
+        await options.repairIssues?.resolve(record.operationId, entry.rootId, entry.relativePath);
+      } catch (error) {
+        failed = true;
+        await options.repairIssues?.record({
+          operationId: record.operationId,
+          operationType: record.operationType === "scrape" ? "scrape" : "maintenance",
+          rootId: entry.rootId,
+          relativePath: entry.relativePath,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
       }
-      await recoverCommitted(options, fileSystem, entry, manifest, resolve);
-    } catch (error) {
-      if (isUnavailableError(error)) continue;
-      const ref = manifest.entries[0] ?? manifest.obsolete[0] ?? { rootId: "unknown", relativePath: entry.operationId };
-      await recordRepair(options, entry, ref, error);
     }
+    if (!failed) options.journal.finish(record.operationId);
   }
 };

@@ -90,12 +90,17 @@ const createAggregationResult = (data: CrawlerData) => ({
 });
 
 const createPlan = (fileInfo: FileInfo): OrganizePlan => ({
-  outputDir: `/output/${fileInfo.number}`,
-  metadataDir: `/output/${fileInfo.number}`,
+  outputDir: join(parse(fileInfo.filePath).dir, "output", fileInfo.number),
+  metadataDir: join(parse(fileInfo.filePath).dir, "output", fileInfo.number),
   mode: "move",
   renameSubtitles: true,
-  targetVideoPath: `/output/${fileInfo.number}/${fileInfo.fileName}${fileInfo.extension}`,
-  nfoPath: `/output/${fileInfo.number}/${fileInfo.number}.nfo`,
+  targetVideoPath: join(
+    parse(fileInfo.filePath).dir,
+    "output",
+    fileInfo.number,
+    `${fileInfo.fileName}${fileInfo.extension}`,
+  ),
+  nfoPath: join(parse(fileInfo.filePath).dir, "output", fileInfo.number, `${fileInfo.number}.nfo`),
 });
 
 const tempDirs: string[] = [];

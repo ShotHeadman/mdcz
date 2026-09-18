@@ -2,51 +2,25 @@ import { type RootFileRef, rootFileRefSchema, wireRelativePathSchema } from "@md
 import { z } from "zod";
 import type { PublicationJournalManifest } from "./types";
 
-const wireRelativePath = wireRelativePathSchema;
-
-const publicationObsoleteObservationSchema = z.union([
-  z.object({ exists: z.literal(false) }).strict(),
-  z
-    .object({
-      exists: z.literal(true),
-      size: z.number(),
-      mtimeMs: z.number(),
-      isFile: z.boolean(),
-    })
-    .strict(),
-]);
-
-const publicationJournalManifestEntrySchema = rootFileRefSchema
-  .extend({
-    staged: z.object({ size: z.number(), mtimeMs: z.number(), ino: z.number(), dev: z.number() }).strict().optional(),
-    temporaryPath: wireRelativePath,
-    backupPath: z.union([wireRelativePath, z.null()]),
-    targetExisted: z.boolean(),
-    source: rootFileRefSchema.optional(),
-  })
-  .strict();
-
-const publicationJournalManifestObsoleteSchema = rootFileRefSchema
-  .extend({
-    observed: publicationObsoleteObservationSchema,
-  })
-  .strict();
-
-const publicationJournalManifestSchema = z
+const manifestSchema = z
   .object({
-    entries: z.array(publicationJournalManifestEntrySchema),
-    obsolete: z.array(publicationJournalManifestObsoleteSchema),
+    entries: z.array(
+      rootFileRefSchema
+        .extend({
+          source: rootFileRefSchema,
+          temporaryPath: wireRelativePathSchema,
+          rewritten: z.boolean().optional(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 
 export const parsePublicationJournalManifest = (value: unknown): PublicationJournalManifest => {
-  const parsed = publicationJournalManifestSchema.safeParse(value);
+  const parsed = manifestSchema.safeParse(value);
   if (!parsed.success) throw new Error("Publication journal manifest is invalid");
   return parsed.data;
 };
 
-export const manifestRefs = (manifest: PublicationJournalManifest): RootFileRef[] => [
-  ...manifest.entries,
-  ...manifest.entries.flatMap((entry) => (entry.source ? [entry.source] : [])),
-  ...manifest.obsolete,
-];
+export const manifestRefs = (manifest: PublicationJournalManifest): RootFileRef[] =>
+  manifest.entries.flatMap((entry) => [entry, entry.source]);

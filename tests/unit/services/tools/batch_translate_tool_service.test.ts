@@ -192,15 +192,12 @@ describe("BatchTranslateToolService", () => {
     ]);
   });
 
-  it.each([false, true])("batches unique texts and journals translated NFOs (commit failure: %s)", async (failure) => {
+  it("batches unique texts and writes translated NFOs without a journal", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-translation-"));
     tempDirs.push(root);
     const journal = createMemoryPublicationJournal();
     const commit = vi.spyOn(journal, "commit");
-    if (failure)
-      commit.mockImplementation(() => {
-        throw new Error("commit failure");
-      });
+    const begin = vi.spyOn(journal, "begin");
     const config = createConfig({
       download: {
         ...defaultConfiguration.download,
@@ -321,11 +318,12 @@ describe("BatchTranslateToolService", () => {
 
     const secondWrite = writeNfo.mock.calls[1]?.[0] as { crawlerData: { title_zh?: string } };
     expect(secondWrite.crawlerData.title_zh).toBe("相同标题");
-    expect(results.every(({ success }) => success === !failure)).toBe(true);
-    expect(commit).toHaveBeenCalledTimes(2);
+    expect(results.every(({ success }) => success)).toBe(true);
+    expect(commit).not.toHaveBeenCalled();
+    expect(begin).not.toHaveBeenCalled();
     expect(journal.listUnfinished()).toEqual([]);
     for (const number of ["AAA-001", "BBB-002"]) {
-      expect(await readFile(join(root, `${number}.nfo`), "utf8")).toContain(failure ? "Original" : "相同标题");
+      expect(await readFile(join(root, `${number}.nfo`), "utf8")).toContain("相同标题");
     }
   });
 });

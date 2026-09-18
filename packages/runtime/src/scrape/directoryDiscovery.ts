@@ -77,11 +77,6 @@ export const discoverDirectoryFiles = async (input: {
   await input.mediaRoots.assertRootIntegrity([root.id]);
   const output = await input.mediaRoots.prepareOutputDirectory({ hostPath: scope.targetDir });
   if (output.id !== root.id) await input.mediaRoots.assertRootIntegrity([output.id]);
-  for (const aliases of await input.mediaRoots.rootAliasDiagnostics()) {
-    runtimeLoggerService
-      .getLogger("DirectoryDiscovery")
-      .warn(`Equivalent historical roots: ${aliases.rootIds.join(", ")} (${aliases.realPath})`);
-  }
   const scanPath = await realpath(scope.scanDir);
   const namespaceScanPath =
     root.realPath && isPathInside(root.realPath, scanPath)

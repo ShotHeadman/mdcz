@@ -3,6 +3,7 @@ import type { DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../../network/networkExecution";
+import { PublicationConflictError } from "../../publication/conflicts";
 import type { MoviePublicationPlan } from "../../publication/types";
 import { ScrapeTargetConflictError } from "../../scrape/preflightScrapeTask";
 import { TaskExecutor } from "../executor";
@@ -655,7 +656,21 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
       },
       applyResult: async (_group, execution) => {
         this.assertCurrent(generation, ["running", "paused", "stopping"]);
-        const committed = await this.execution.commitItems(execution.results, execution.publicationPlan);
+        let committed: Awaited<ReturnType<typeof this.execution.commitItems>>;
+        try {
+          committed = await this.execution.commitItems(execution.results, execution.publicationPlan);
+        } catch (error) {
+          if (!(error instanceof PublicationConflictError)) throw error;
+          this.assertCurrent(generation, ["running", "paused", "stopping"]);
+          this.error = [this.error, error.message].filter(Boolean).join("\n\n");
+          committed = await this.execution.commitItems(
+            execution.results.map(({ item, attemptId }) => ({
+              item,
+              attemptId,
+              result: createFailedResult(item, error.message),
+            })),
+          );
+        }
         this.assertCurrent(generation, ["running", "paused", "stopping"]);
         this.applyCommittedResults(
           execution.results.map(({ item }) => item),
