@@ -6,9 +6,12 @@ import { Website } from "@mdcz/shared/enums";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commitPublishedMedia, preparePublicationPlan, toRootFileRef } from "../publication";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
+import { MoveOutput } from "../publication/MoveOutput";
 import { createMemoryPublicationJournal } from "../publication/memoryJournal";
+import { toRootFileRef } from "../publication/outputRefs";
+import { prepareMovieOutput } from "../publication/prepareMovieOutput";
+import { WriteOutput } from "../publication/WriteOutput";
 import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "./confirmUncensored";
 import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
 import { NfoGenerator } from "./nfo";
@@ -111,7 +114,7 @@ const fixture = async () => {
         nfoNaming,
         writeNfo,
       }: Parameters<UncensoredConfirmDependencies["preparePublication"]>[0]) => {
-        const prepared = await preparePublicationPlan({
+        const prepared = await prepareMovieOutput({
           operationId,
           operationType: "maintenance",
           roots: [mediaRoot],
@@ -138,20 +141,25 @@ const fixture = async () => {
           nfoNaming,
           writeNfo,
         });
-        if (!prepared.plan) throw new Error("expected publication plan");
         return {
           ...prepared,
-          plan: prepared.plan,
+          output: prepared.output,
           resolve: (ref: { rootId: string; relativePath: string }) => join(root, ref.relativePath),
         };
       },
     ),
-    publish: vi.fn(async ({ plan }) => {
-      await commitPublishedMedia(plan, {
-        resolveRoot: async () => mediaRoot,
-        journal,
-        commit: () => undefined,
-      });
+    publish: vi.fn(async ({ output }) => {
+      const commit = () => undefined;
+      if (output.moves.length)
+        await new MoveOutput().install({
+          operationId: output.operationId,
+          operationType: output.operationType,
+          moves: output.moves,
+          artifacts: output.artifacts,
+          journal,
+          commit,
+        });
+      else await new WriteOutput().install(output.artifacts, { commit });
     }),
   };
   return { source, output, metadata, items, deps, journal };
@@ -235,14 +243,17 @@ describe("confirmUncensoredOutputs", () => {
       }
       expect(await readFile(join(source, "movie.nfo"), "utf8")).toContain("Original");
     }
-    const [{ plan }] = vi.mocked(deps.publish).mock.calls[0];
-    expect(plan.files).toHaveLength(items.length);
-    expect(new Set(plan.operations.map((operation) => operation.target.relativePath)).size).toBe(
-      plan.operations.length,
-    );
+    const [{ output: preparedOutput }] = vi.mocked(deps.publish).mock.calls[0];
+    expect(preparedOutput.files).toHaveLength(items.length);
+    const targets = [
+      ...preparedOutput.moves.map((move) => move.target.relativePath),
+      ...preparedOutput.artifacts.map((artifact) => artifact.targetPath),
+    ];
+    expect(new Set(targets).size).toBe(targets.length);
     expect(
-      new Set(plan.movieAssets.map((asset) => (asset.type === "local" ? asset.file.relativePath : asset.url))).size,
-    ).toBe(plan.movieAssets.length);
+      new Set(preparedOutput.movieAssets.map((asset) => (asset.type === "local" ? asset.file.relativePath : asset.url)))
+        .size,
+    ).toBe(preparedOutput.movieAssets.length);
   });
 
   it.each([
@@ -274,7 +285,7 @@ describe("confirmUncensoredOutputs", () => {
       expect(result.failures).toEqual([]);
       expect(result.updatedCount).toBe(1);
       expect(result.items[0].targetNfoPath).toBeUndefined();
-      expect(vi.mocked(deps.publish).mock.calls[0][0].plan.files[0].assets.map((asset) => asset.kind)).toContain(
+      expect(vi.mocked(deps.publish).mock.calls[0][0].output.files[0].assets.map((asset) => asset.kind)).toContain(
         "strm",
       );
       expect(deps.nfoGenerator.writeNfo).not.toHaveBeenCalled();

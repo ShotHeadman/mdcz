@@ -6,7 +6,8 @@ import {
   resolvePosterEditorCropRegion,
 } from "@mdcz/shared/posterCrop";
 import sharp from "sharp";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import { commitRegisteredPublication } from "../publication/registered";
+import type { RegisteredPublicationContext } from "../publication/types";
 import { resolveExistingImageAsset } from "./download/assets/helpers";
 
 const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);

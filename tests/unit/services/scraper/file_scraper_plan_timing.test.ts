@@ -121,8 +121,8 @@ describe("FileScraper plan timing", () => {
     });
 
     const preparation = await prepareFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
-      source: { rootId: "root", relativePath: "tmp/ABC-123.mp4" },
-      roots: [{ id: "root", hostPath: "/" }],
+      source: { rootId: "root", relativePath: "ABC-123.mp4" },
+      roots: [{ id: "root", hostPath: directory.path }],
     });
     expect(preparation.status).toBe("prepared");
     expect(downloadAll).not.toHaveBeenCalled();

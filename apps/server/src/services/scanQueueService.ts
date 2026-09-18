@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
+  filesystemPathKey,
   listRootFiles,
   type MediaRoot,
   normalizeHostPath,
@@ -8,7 +9,7 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
-import { publicationPathKey, registeredOutputPaths } from "@mdcz/runtime/publication";
+import { registeredOutputPaths } from "@mdcz/runtime";
 import { createMediaFileFilter } from "@mdcz/runtime/scrape";
 import { CandidatePreview, TaskScheduler } from "@mdcz/runtime/tasks";
 import type {
@@ -250,7 +251,7 @@ export class ScanQueueService {
     const files = await listRootFiles(root, "", true, signal, {
       excludeDirectoryPaths: metadataPath ? [metadataPath] : [],
       filterFile: (filePath) =>
-        isPrimaryVideoFileName(path.basename(filePath)) && !generatedStrms.has(publicationPathKey(filePath)),
+        isPrimaryVideoFileName(path.basename(filePath)) && !generatedStrms.has(filesystemPathKey(filePath)),
     });
     const videos = files
       .filter((file) => isPrimaryVideoFileName(path.basename(file.relativePath)))

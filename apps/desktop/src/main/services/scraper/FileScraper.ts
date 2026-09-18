@@ -2,7 +2,7 @@ import { getActorImageCacheDirectory } from "@main/appIdentity";
 import { type Configuration, configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
-import type { PublicationOutputPort } from "@mdcz/runtime/publication";
+import type { PublicationOutputPort } from "@mdcz/runtime/publication/types";
 import type { DownloadManager, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   ActorImageService,

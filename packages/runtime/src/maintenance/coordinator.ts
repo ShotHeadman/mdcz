@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { canonicalizeRootFileRefs, type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
+import {
+  canonicalizeRootFileRefs,
+  filesystemPathKey,
+  type MediaRoot,
+  resolveRootFile,
+  resolveRootRelativePath,
+} from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
@@ -20,8 +26,8 @@ import type {
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
-import { type MoviePublicationPlan, prepareMediaPathKeys } from "../publication";
-import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
+import type { RegisteredMediaLocation } from "../library/registeredMedia";
+import type { PreparedMovieOutput } from "../publication/prepareMovieOutput";
 import { isAbortError } from "../scrape/utils/abort";
 import { TaskExecutor, type TaskExecutorContext } from "../tasks";
 import {
@@ -63,7 +69,7 @@ export interface MaintenanceLibraryPort {
   publishRefresh(input: {
     operationId: string;
     ownershipToken: string;
-    plan: MoviePublicationPlan;
+    output: PreparedMovieOutput;
     crawlerData?: CrawlerData;
     fallbackNumber: string;
     refreshedAt: Date;
@@ -383,7 +389,11 @@ export class MaintenanceSessionCoordinator {
       for (const file of preview.publicationIdentity?.files ?? [])
         refs.push({ rootId: file.rootId, relativePath: file.relativePath });
     await this.deps.roots.assertRootIntegrity(refs.map((ref) => ref.rootId));
-    const keys = await prepareMediaPathKeys(refs, (id) => this.deps.roots.get(id));
+    const keys = await Promise.all(
+      refs.map(async (ref) =>
+        filesystemPathKey(resolveRootRelativePath(await this.deps.roots.get(ref.rootId), ref.relativePath)),
+      ),
+    );
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
     if (this.session !== session) throw new Error("当前维护任务已失效，请重新开始");
@@ -805,7 +815,7 @@ export class MaintenanceSessionCoordinator {
               publication: {
                 operationId: `${sessionId}:${active.preview.id}`,
                 ownershipToken: sessionId,
-                plan: publication.plan,
+                output: publication.output,
                 crawlerData,
                 fallbackNumber: applied.entry.fileInfo.number,
                 refreshedAt: new Date(),

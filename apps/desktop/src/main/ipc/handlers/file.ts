@@ -7,8 +7,8 @@ import { configManager } from "@main/services/config/ConfigManager";
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/utils/file";
 import { resolveRootFile } from "@mdcz/media-store";
+import { registeredOutputPaths } from "@mdcz/runtime";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import {
   createMediaFileFilter,
   getNfoReadCandidates,

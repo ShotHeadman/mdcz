@@ -5,11 +5,9 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { BatchTranslateApplyResultItem, BatchTranslateField, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
-import {
-  commitRegisteredPublication,
-  type RegisteredPublicationContext,
-  resolveRegisteredNfoPaths,
-} from "../publication";
+import { resolveRegisteredNfoPaths } from "../library/registeredMedia";
+import { commitRegisteredPublication } from "../publication/registered";
+import type { RegisteredPublicationContext } from "../publication/types";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,

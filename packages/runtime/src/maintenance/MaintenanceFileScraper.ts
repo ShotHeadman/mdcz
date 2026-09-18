@@ -12,9 +12,13 @@ import type {
   MaintenanceItemResult,
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
-import { type MoviePublicationPlan, preparePublicationPlan, retainedRegisteredFeatures } from "../publication";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
-import { toRootFileRef } from "../publication/publicationPlan";
+import { toRootFileRef } from "../publication/outputRefs";
+import {
+  type PreparedMovieOutput,
+  prepareMovieOutput,
+  retainedRegisteredFeatures,
+} from "../publication/prepareMovieOutput";
 import type { PublicationParticipants } from "../publication/types";
 import {
   type AggregationService,
@@ -64,7 +68,7 @@ export interface MaintenanceFileScraperDependencies {
 }
 
 export type MaintenanceFileScrapeResult = MaintenanceItemResult & {
-  publication?: { plan: MoviePublicationPlan };
+  publication?: { output: PreparedMovieOutput };
   outputRelativePath?: string;
   outputSize?: number;
   outputModifiedAt?: Date;
@@ -201,7 +205,7 @@ export class MaintenanceFileScraper {
       preparedCrawlerData = downloaded.crawlerData;
       throwIfAborted(signal);
       if (!publication) throw new Error("Maintenance publication identity is required");
-      const published = await preparePublicationPlan({
+      const published = await prepareMovieOutput({
         operationId: publication.operationId,
         operationType: "maintenance",
         roots: publication.roots,
@@ -233,7 +237,7 @@ export class MaintenanceFileScraper {
           }),
       });
       throwIfAborted(signal);
-      const file = published.plan.files.find((candidate) => candidate.fileId === entry.fileId);
+      const file = published.output.files.find((candidate) => candidate.fileId === entry.fileId);
       if (!file) throw new Error("Maintenance publication requires the selected media member");
       const strm = file.assets.find((asset) => asset.kind === "strm");
       const targetRoot =
@@ -270,7 +274,7 @@ export class MaintenanceFileScraper {
         outputRelativePath: file.target.relativePath,
         outputSize: file.size,
         outputModifiedAt: file.modifiedAt,
-        publication: { plan: published.plan },
+        publication: { output: published.output },
         release: async () => {
           await rm(stagingDir as string, { recursive: true, force: true });
         },

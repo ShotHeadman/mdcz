@@ -16,14 +16,13 @@ import type {
   VideoMeta,
 } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../network/networkExecution";
-import {
-  type MoviePublicationPlan,
-  preparePublicationPlan,
-  retainedRegisteredFeatures,
-  toRootFileRef,
-} from "../publication";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
-import { resolvePublicationParticipants } from "../publication/participants";
+import { toRootFileRef } from "../publication/outputRefs";
+import {
+  type PreparedMovieOutput,
+  prepareMovieOutput,
+  retainedRegisteredFeatures,
+} from "../publication/prepareMovieOutput";
 import type { PublicationOutputPort } from "../publication/types";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, AggregationService, ManualScrapeOptions } from "./aggregation";
@@ -104,7 +103,7 @@ export type FileScrapeOptions = {
 };
 export interface ScrapeGroupResult {
   results: ScrapeResult[];
-  publicationPlan?: MoviePublicationPlan;
+  output?: PreparedMovieOutput;
   release?: () => Promise<void>;
 }
 type FileScrapeFailure = ScrapeResult & { status: "failed" | "skipped" };
@@ -349,13 +348,6 @@ export class FileScraper {
 
         try {
           throwIfAborted(signal);
-          const resolveRoot = async (id: string) => {
-            const root =
-              roots.find((root) => root.id === id) ??
-              this.deps.outputs?.publicationRoots().find((root) => root.id === id);
-            if (!root) throw new Error(`Publication root not found: ${id}`);
-            return root;
-          };
           const toRef = (absolutePath: string) => toRootFileRef(absolutePath, roots);
           const members = await Promise.all(
             ready.map(async ({ prepared }) => {
@@ -393,24 +385,11 @@ export class FileScraper {
               ];
             }),
           ];
-          const outputs = [...new Set(outputPaths)].map(toRef);
           const ownershipSnapshot = this.deps.outputs?.publicationSnapshot({
             paths: [...ready.map(({ prepared }) => prepared.outputPlan.sourceVideoPath), ...outputPaths],
             includeOwners: true,
           }) ?? { files: [], assets: [] };
           const featureSnapshot = this.deps.outputs?.publicationSnapshot({ kind: "feature", includeOwners: true });
-          const metadataDirectories = ready.map(({ prepared }) => toRef(prepared.outputPlan.metadataDir));
-          const colocatedFeatures =
-            featureSnapshot?.assets.filter((asset) =>
-              metadataDirectories.some(
-                (directory) =>
-                  directory.rootId === asset.rootId && path.dirname(asset.relativePath) === directory.relativePath,
-              ),
-            ) ?? [];
-          const identityOutputs = [
-            ...outputs,
-            ...colocatedFeatures.map(({ rootId, relativePath }) => ({ rootId, relativePath })),
-          ];
           const sourceMovieIds = new Set(ready.flatMap(({ prepared }) => prepared.groupMovieId ?? []));
           if (sourceMovieIds.size > 1) throw new Error("Scrape group contains files from different library movies");
           const participantFiles = [...ownershipSnapshot.files, ...(featureSnapshot?.files ?? [])].filter(
@@ -434,17 +413,25 @@ export class FileScraper {
                   candidate.relativePath === asset.relativePath,
               ) === index,
           );
-          const participants = await resolvePublicationParticipants({
-            members,
-            outputs: identityOutputs,
-            identity: prepared.crawlerData.number || fileInfo.number,
-            movieId: [...sourceMovieIds][0],
-            snapshot: {
-              files: participantFiles,
-              assets: participantAssets,
+          const sourceMatches = members.map((member) =>
+            participantFiles.find(
+              (file) => file.rootId === member.source.rootId && file.relativePath === member.source.relativePath,
+            ),
+          );
+          for (const match of sourceMatches) if (match) sourceMovieIds.add(match.itemId);
+          if (sourceMovieIds.size > 1) throw new Error("Scrape group contains files from different library movies");
+          const movieId = [...sourceMovieIds][0] ?? randomUUID();
+          const participants = {
+            movieId,
+            members: members.map((member, index) => ({
+              ...member,
+              fileId: sourceMatches[index]?.fileId ?? randomUUID(),
+            })),
+            expected: {
+              files: participantFiles.filter((file) => file.itemId === movieId),
+              assets: participantAssets.filter((asset) => asset.itemId === movieId && !asset.historical),
             },
-            resolveRoot,
-          });
+          };
           await mkdir(plan.metadataDir, { recursive: true });
           const directory = await mkdtemp(path.join(plan.metadataDir, ".mdcz-staging-"));
           stagingDir = directory;
@@ -500,7 +487,7 @@ export class FileScraper {
           const preservedNfoPath = configuration.download.keepNfo
             ? await findExistingNfoPath(plan.nfoPath, configuration.download.nfoNaming, pathExists)
             : undefined;
-          const publication = await preparePublicationPlan({
+          const publication = await prepareMovieOutput({
             operationId: prepared.operationId,
             operationType: "scrape",
             roots,
@@ -557,7 +544,7 @@ export class FileScraper {
           for (const { progress, result } of states) if (!result) this.setProgress(progress, 95);
           return {
             results: states.flatMap((entry) => (entry.result ? [entry.result] : [])),
-            publicationPlan: publication.plan,
+            output: publication.output,
             release: () => rm(directory, { recursive: true, force: true }),
           };
         } catch (error) {

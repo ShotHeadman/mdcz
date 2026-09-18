@@ -441,7 +441,7 @@ describe("FileOrganizer naming rules", () => {
           },
         }),
         fileInfo: createFileInfo({
-          filePath: "/input/original-name.mp4",
+          filePath: join(resolve("/input"), "original-name.mp4"),
           fileName: "original-name",
         }),
         crawlerData: createCrawlerData({
@@ -465,7 +465,7 @@ describe("FileOrganizer naming rules", () => {
           },
         }),
         fileInfo: createFileInfo({
-          filePath: "/input/original-name.mp4",
+          filePath: join(resolve("/input"), "original-name.mp4"),
           fileName: "original-name",
         }),
         crawlerData: createCrawlerData({

@@ -191,14 +191,9 @@ describe("FileScraper .strm support", () => {
       rootId: "test-root",
       relativePath: relative(tmpdir(), nfoPath).replaceAll("\\", "/"),
     });
-    expect(group.publicationPlan?.operations).toContainEqual({
-      kind: "write",
-      target: {
-        rootId: "test-root",
-        relativePath: relative(tmpdir(), movieNfoPath).replaceAll("\\", "/"),
-      },
-      content: { kind: "text", data: await readFile(nfoPath, "utf8") },
-      replaceExisting: true,
+    expect(group.output?.artifacts).toContainEqual({
+      targetPath: movieNfoPath,
+      data: await readFile(nfoPath, "utf8"),
     });
     await expect(readFile(movieNfoPath)).rejects.toMatchObject({ code: "ENOENT" });
   });

@@ -4,7 +4,7 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../../network/networkExecution";
 import { PublicationConflictError } from "../../publication/conflicts";
-import type { MoviePublicationPlan } from "../../publication/types";
+import type { PreparedMovieOutput } from "../../publication/prepareMovieOutput";
 import { ScrapeTargetConflictError } from "../../scrape/preflightScrapeTask";
 import { TaskExecutor } from "../executor";
 
@@ -119,7 +119,7 @@ export interface ScrapeRunExecution<TManualScrape = unknown, TPrepared = unknown
     signal: AbortSignal,
   ) => Promise<{
     results: readonly { itemId: string; result: ScrapeResult }[];
-    publicationPlan?: MoviePublicationPlan;
+    output?: PreparedMovieOutput;
     release?: () => Promise<void>;
   }>;
   commitPreparationItem: (
@@ -129,7 +129,7 @@ export interface ScrapeRunExecution<TManualScrape = unknown, TPrepared = unknown
   ) => Promise<ScrapeResult>;
   commitItems: (
     items: readonly { item: ScrapeRunItem<TManualScrape>; result?: ScrapeResult; attemptId: string }[],
-    publicationPlan?: MoviePublicationPlan,
+    output?: PreparedMovieOutput,
   ) => Promise<readonly { itemId: string; result: ScrapeResult }[]>;
 }
 
@@ -152,7 +152,7 @@ type ScrapeExecutionGroup<TManualScrape> = {
   publicationKeys: readonly string[];
 };
 type ScrapeGroupExecution<TManualScrape> = {
-  publicationPlan?: MoviePublicationPlan;
+  output?: PreparedMovieOutput;
   results: Array<{ item: MutableScrapeRunItem<TManualScrape>; result?: ScrapeResult; attemptId: string }>;
   release: () => Promise<void>;
 };
@@ -617,7 +617,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
           const execution = await this.execution.executePreparedItems(preparedItems, context.signal);
           if (execution.release) releases.push(execution.release);
           const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
-          const eligibleIds = new Set(execution.publicationPlan?.files.map((file) => file.scrape?.itemId) ?? []);
+          const eligibleIds = new Set(execution.output?.files.map((file) => file.scrape?.itemId) ?? []);
           if (
             execution.results.length + eligibleIds.size !== admitted.length ||
             groupedResults.size !== execution.results.length
@@ -631,7 +631,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
             return { item, result: executed, attemptId };
           });
           return {
-            publicationPlan: execution.publicationPlan,
+            output: execution.output,
             results,
             release: releaseResources,
           };
@@ -658,7 +658,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
         this.assertCurrent(generation, ["running", "paused", "stopping"]);
         let committed: Awaited<ReturnType<typeof this.execution.commitItems>>;
         try {
-          committed = await this.execution.commitItems(execution.results, execution.publicationPlan);
+          committed = await this.execution.commitItems(execution.results, execution.output);
         } catch (error) {
           if (!(error instanceof PublicationConflictError)) throw error;
           this.assertCurrent(generation, ["running", "paused", "stopping"]);

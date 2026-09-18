@@ -9,12 +9,10 @@ import type {
   AmazonPosterScanItem,
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
+import { resolveRegisteredNfoPaths } from "../library/registeredMedia";
 import type { RuntimeDownloadNetworkClient } from "../network";
-import {
-  commitRegisteredPublication,
-  type RegisteredPublicationContext,
-  resolveRegisteredNfoPaths,
-} from "../publication";
+import { commitRegisteredPublication } from "../publication/registered";
+import type { RegisteredPublicationContext } from "../publication/types";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
 import type { RuntimeLogger } from "../shared";

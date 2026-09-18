@@ -1,17 +1,15 @@
-export * from "./commitScrapeTerminalResult";
 export * from "./conflicts";
-export * from "./journalAdapter";
-export * from "./libraryEntry";
 export * from "./MoveOutput";
 export * from "./manifest";
-export * from "./participants";
-export { prepareMediaPathKeys, publicationPathKey, publicationRefKey } from "./paths";
-export * from "./preflight";
-export * from "./preparePublicationPlan";
-export * from "./publicationPlan";
-export * from "./publishMedia";
+export * from "./outputFileSystem";
 export * from "./recoverPublications";
-export * from "./registered";
-export * from "./registeredOutputs";
-export * from "./types";
+export type {
+  PublicationFileSystem,
+  PublicationJournalManifest,
+  PublicationJournalManifestEntry,
+  PublicationJournalPort,
+  PublicationJournalRecord,
+  PublicationJournalState,
+  PublicationResult,
+} from "./types";
 export * from "./WriteOutput";

@@ -10,7 +10,7 @@ import {
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
+import { parsePublicationJournalManifest, recoverPublications } from "@mdcz/runtime";
 import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
 import type Database from "better-sqlite3";
 import { acquireDatabaseLease } from "../databaseFiles";
@@ -77,10 +77,9 @@ export class ServerPersistenceService {
       maintenanceDirectoryTasks.interruptUnfinished();
       const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
-      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
+      const publicationJournal = new PublicationJournalRepository(database, parsePublicationJournalManifest);
       await recoverPublications({
         journal: publicationJournal,
-        outputs: new LibraryRepository(database),
         repairIssues: libraryRepairIssues,
         resolveRoot: async (rootId) => await mediaRoots.get(rootId),
       });

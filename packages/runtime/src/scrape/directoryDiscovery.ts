@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
-import { type FileWalkOptions, isPathInside, resolveRootFile, walkFiles } from "@mdcz/media-store";
+import { type FileWalkOptions, filesystemPathKey, isPathInside, resolveRootFile, walkFiles } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
@@ -8,7 +8,6 @@ import { resolveMediaCandidateScanPlan, type WorkbenchSetupMode } from "@mdcz/sh
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
-import { publicationPathKey } from "../publication/paths";
 import { runtimeLoggerService } from "../shared";
 import { DirectoryInventory } from "./DirectoryInventory";
 import { DEFAULT_VIDEO_EXTENSIONS } from "./utils/filesystem";
@@ -45,7 +44,7 @@ export const createMediaFileFilter =
   (filePath) =>
     extensions.has(extname(filePath).toLowerCase()) &&
     isPrimaryVideoFileName(filePath) &&
-    !generatedStrms.has(publicationPathKey(filePath)) &&
+    !generatedStrms.has(filesystemPathKey(filePath)) &&
     !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens);
 
 export const discoverDirectoryFiles = async (input: {

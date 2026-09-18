@@ -10,7 +10,8 @@ import type {
   MaintenancePreviewStatus,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { MoviePublicationPlan, PublicationParticipants } from "../publication";
+import type { PreparedMovieOutput } from "../publication/prepareMovieOutput";
+import type { PublicationParticipants } from "../publication/types";
 import {
   type AggregationService,
   applyScrapeNetworkPolicy,
@@ -105,7 +106,7 @@ export interface MaintenanceRuntimeApplySuccess {
   outputRelativePath: string;
   outputSize?: number;
   outputModifiedAt?: Date;
-  publication?: { plan: MoviePublicationPlan };
+  publication?: { output: PreparedMovieOutput };
   release?: () => Promise<void>;
 }
 
@@ -265,7 +266,7 @@ export class MaintenanceRuntime {
       outputRelativePath: result.outputRelativePath,
       outputSize: result.outputSize,
       outputModifiedAt: result.outputModifiedAt,
-      publication: { plan: publication.plan },
+      publication: { output: publication.output },
       release: result.release,
     };
   }

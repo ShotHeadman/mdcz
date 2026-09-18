@@ -1,13 +1,13 @@
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { createMediaRoot, filesystemPathKey, resolveRootRelativePath } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { MaintenanceDirectoryRepository } from "../../../persistence/src/maintenanceDirectoryRepository";
 import { createTestPersistenceDatabase } from "../../../persistence/src/testDatabase";
 import { MediaPathOwnership } from "../library/mediaPathOwnership";
-import type { MoviePublicationPlan } from "../publication";
+import type { PreparedMovieOutput } from "../publication/prepareMovieOutput";
 import { MaintenanceSessionCoordinator } from "./coordinator";
 import { createMaintenanceDirectoryTaskPort } from "./directoryTaskPort";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
@@ -30,25 +30,23 @@ const ref = (relativePath: string) => ({ rootId: root.id, relativePath });
 const finalPlan = (
   sourcePath: string,
   fileId = `${root.id}:${relative(root.hostPath, sourcePath)}`,
-): MoviePublicationPlan => {
+): PreparedMovieOutput => {
   const source = { rootId: root.id, relativePath: relative(root.hostPath, sourcePath) };
   return {
-    kind: "movie",
     movieId: "test-item",
     operationId: "maintenance-test",
     operationType: "maintenance",
-    expected: { files: [], assets: [] },
-    files: [
-      { fileId, source, target: source, size: 1, sourceSize: 1, modifiedAt: new Date(), assets: [], operations: [] },
-    ],
-    operations: [],
+    files: [{ fileId, source, target: source, size: 1, sourceSize: 1, modifiedAt: new Date(), assets: [] }],
+    artifacts: [],
+    moves: [],
+    publishedTargets: [],
+    protectedSourceRoots: [],
     movieAssets: [],
-    obsolete: [],
   };
 };
 
 const finalPublication = (sourcePath: string, fileId?: string) => ({
-  plan: finalPlan(sourcePath, fileId),
+  output: finalPlan(sourcePath, fileId),
 });
 
 const createEntry = (relativePath: string, mediaRoot = root): LocalScanEntry => ({
@@ -758,7 +756,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await started;
 
-    expect(() => fixture.ownership.acquire(join(root.hostPath, "owned.mp4"))).toThrow(
+    expect(() => fixture.ownership.acquire(filesystemPathKey(join(root.hostPath, "owned.mp4")))).toThrow(
       "Media path is already being modified",
     );
     if (notificationFails)
@@ -776,7 +774,7 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(batch.session.status).toBe(closeFirst ? "interrupted" : "stopped");
     expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledOnce();
-    const release = fixture.ownership.acquire(join(root.hostPath, "owned.mp4"));
+    const release = fixture.ownership.acquire(filesystemPathKey(join(root.hostPath, "owned.mp4")));
     release();
   });
 
@@ -806,7 +804,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await apply.completion;
 
-    const release = fixture.ownership.acquire(join(root.hostPath, "owned.mp4"));
+    const release = fixture.ownership.acquire(filesystemPathKey(join(root.hostPath, "owned.mp4")));
     release();
     await fixture.coordinator.close();
   });

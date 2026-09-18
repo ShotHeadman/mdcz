@@ -4,7 +4,6 @@ import path from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { PublicationConflictError } from "./conflicts";
 import { outputFileSystem } from "./outputFileSystem";
-import { observePublicationFile } from "./preflight";
 import type {
   PublicationFileSystem,
   PublicationJournalManifest,
@@ -55,8 +54,9 @@ export class MoveOutput {
     moves: readonly SourceMove[];
     artifacts: readonly WriteArtifact[];
     journal: PublicationJournalPort;
-    validate(): Promise<void> | void;
+    validate?(): Promise<void> | void;
     commit(): TResult;
+    protectedSourceRoots?: readonly string[];
   }): Promise<PublicationResult<TResult>> {
     const fs = this.fileSystem;
     const moves = input.moves.map((move) => {
@@ -74,11 +74,7 @@ export class MoveOutput {
         copied: false,
       };
     });
-    for (const target of [
-      ...moves.map((move) => move.targetPath),
-      ...input.artifacts.map((artifact) => artifact.targetPath),
-    ])
-      await assertMoveTargetAbsent(target);
+    for (const move of moves) await assertMoveTargetAbsent(move.targetPath);
     const manifest: PublicationJournalManifest = {
       entries: moves.map((move) => ({
         ...move.target,
@@ -94,6 +90,7 @@ export class MoveOutput {
       createdAt: new Date(),
     });
     const installedArtifacts: string[] = [];
+    const postCommitCleanupIssues: unknown[] = [];
     let committed = false;
     try {
       const result = await new WriteOutput(fs).install(input.artifacts, {
@@ -137,14 +134,23 @@ export class MoveOutput {
               await fs.rename(move.temporaryPath, move.targetPath);
               move.staged = false;
               move.installed = true;
-              await fs.rm(move.sourcePath, { force: true });
             }
           }
           const value = input.journal.commit(input.operationId, input.commit);
           committed = true;
+          for (const move of moves) {
+            if (!move.copied) continue;
+            try {
+              await fs.rm(move.sourcePath, { force: true });
+            } catch (error) {
+              postCommitCleanupIssues.push(error);
+            }
+          }
           return value;
         },
+        protectedSourceRoots: input.protectedSourceRoots,
       });
+      result.cleanupIssues.push(...postCommitCleanupIssues);
       try {
         for (const move of moves) {
           await fs.rm(move.temporaryPath, { force: true });
@@ -164,8 +170,7 @@ export class MoveOutput {
             await returnMovedFile(fs, move.temporaryPath, move.sourcePath);
             if (move.installed) await fs.rm(move.targetPath, { force: true });
           } else if (move.installed) {
-            if (move.copied && (await observePublicationFile(fs, move.sourcePath)).exists)
-              await fs.rm(move.targetPath, { force: true });
+            if (move.copied) await fs.rm(move.targetPath, { force: true });
             else await returnMovedFile(fs, move.targetPath, move.sourcePath);
           }
           await fs.rm(move.temporaryPath, { force: true });

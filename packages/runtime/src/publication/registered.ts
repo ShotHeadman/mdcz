@@ -1,19 +1,15 @@
-import { readFile, stat } from "node:fs/promises";
-import { resolveRootRelativePath } from "@mdcz/media-store";
+import { stat } from "node:fs/promises";
+import { dirname } from "node:path";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import { runtimeLoggerService } from "../shared";
-import { libraryAssetsFromPublicationPlan } from "./libraryEntry";
-import { prepareOutputValidation } from "./outputValidation";
-import { resolvePublicationParticipants } from "./participants";
-import { preparePublicationPaths } from "./paths";
-import { assertPublicationFileUnchanged, observePublicationFile, planRefs, preflightPublication } from "./preflight";
-import { toRootFileRef } from "./publicationPlan";
-import type { PublicationPlan, RegisteredPublicationContext } from "./types";
+import type { PublicationLibraryAsset } from "./outputLibrary";
+import { toRootFileRef } from "./outputRefs";
+import type { RegisteredPublicationContext } from "./types";
 import { WriteOutput } from "./WriteOutput";
 
 export interface RegisteredPublicationInput {
   operationId: string;
-  operationType: PublicationPlan["operationType"];
+  operationType: "scrape" | "maintenance";
   mediaPaths?: string[];
   operations: Array<{
     kind: "write";
@@ -31,75 +27,64 @@ export const commitRegisteredPublication = async <TResult>(
 ): Promise<TResult | undefined> => {
   if (new Set(input.operations.map((operation) => operation.owner)).size > 1)
     throw new Error("Tool publication must have one ownership scope");
-  const resolveRoot = async (rootId: string) => {
-    const root = options.roots.find((candidate) => candidate.id === rootId);
-    if (!root) throw new Error(`Publication root not found: ${rootId}`);
-    return root;
-  };
-  const sources = await Promise.all(
-    (input.mediaPaths ?? []).map(async (path) => {
-      const stats = await stat(path);
-      return { source: toRootFileRef(path, options.roots), size: stats.size, modifiedAt: stats.mtime };
+
+  const media = await Promise.all(
+    (input.mediaPaths ?? []).map(async (mediaPath) => {
+      const observed = await stat(mediaPath);
+      return { path: mediaPath, size: observed.size, mtimeMs: observed.mtimeMs };
     }),
   );
+  const targets = input.operations.map((operation) => ({
+    operation,
+    ref: toRootFileRef(operation.targetPath, options.roots),
+  }));
+  const pathKey = (value: string) => (process.platform === "win32" ? value.toLowerCase() : value);
+  const protectedMedia = new Set(media.map((entry) => pathKey(entry.path)));
+  if (input.operations.some((operation) => protectedMedia.has(pathKey(operation.targetPath))))
+    throw new Error("Tool output cannot replace a protected source file");
   let writeAssets: (() => void) | undefined;
-  let plan: PublicationPlan = {
-    kind: "unmanaged",
-    files: [],
-    sources,
-    operationId: input.operationId,
-    operationType: input.operationType,
-    movieAssets: [],
-    obsolete: [],
-    operations: input.operations.map(({ owner, assetKind, targetPath, ...operation }) => ({
-      ...operation,
-      target: toRootFileRef(targetPath, options.roots),
-    })),
-  };
+
+  if (options.outputs && input.operations.some((operation) => operation.owner === "unmanaged")) {
+    const targetKeys = new Set(targets.map(({ ref }) => `${ref.rootId}\0${ref.relativePath}`));
+    const occupied = options.outputs
+      .publicationSnapshot({ paths: input.operations.map((operation) => operation.targetPath), includeOwners: true })
+      .assets.some((asset) => !asset.historical && targetKeys.has(`${asset.rootId}\0${asset.relativePath}`));
+    if (occupied) throw new Error("Tool output is already owned by another movie");
+  }
+
   if (options.outputs && input.operations.some((operation) => operation.owner === "movie")) {
-    const requested = [...sources.map((file) => file.source), ...plan.operations.map((operation) => operation.target)];
-    const paths = await Promise.all(
-      requested.map(async (ref) => resolveRootRelativePath(await resolveRoot(ref.rootId), ref.relativePath)),
-    );
-    const participants = await resolvePublicationParticipants({
-      members: sources,
-      outputs: plan.operations.map((operation) => operation.target),
-      snapshot: options.outputs.publicationSnapshot({ paths, includeOwners: true }),
-      resolveRoot,
+    const snapshot = options.outputs.publicationSnapshot({
+      paths: [...media.map((entry) => entry.path), ...input.operations.map((operation) => operation.targetPath)],
+      includeOwners: true,
     });
-    if (participants.expected.files.length) {
-      const { sources: _sources, ...moviePlan } = plan;
-      plan = {
-        ...moviePlan,
-        kind: "movie",
-        movieId: participants.movieId,
-        expected: participants.expected,
-        files: participants.members.map(({ source, fileId, size, modifiedAt }) => ({
-          source,
-          target: source,
-          fileId,
-          size,
-          sourceSize: size,
-          modifiedAt,
-          assets: [],
-          operations: [],
-        })),
-        movieAssets: input.operations.flatMap((operation) =>
-          operation.assetKind
-            ? [
-                {
-                  type: "local" as const,
-                  kind: operation.assetKind,
-                  file: toRootFileRef(operation.targetPath, options.roots),
-                },
-              ]
-            : [],
-        ),
-      };
+    const refKey = (ref: { rootId: string; relativePath: string }) => `${ref.rootId}\0${ref.relativePath}`;
+    const mediaKeys = new Set(media.map((entry) => refKey(toRootFileRef(entry.path, options.roots))));
+    const targetKeys = new Set(targets.map(({ ref }) => refKey(ref)));
+    const owners = new Set([
+      ...snapshot.files.filter((file) => mediaKeys.has(refKey(file))).map((file) => file.itemId),
+      ...snapshot.assets
+        .filter((asset) => !asset.historical && targetKeys.has(refKey(asset)))
+        .map((asset) => asset.itemId),
+    ]);
+    if (owners.size > 1) throw new Error("Tool output paths belong to different library movies");
+    const movieId = [...owners][0];
+    if (movieId) {
       if (!options.library) throw new Error("Registered publication requires scoped library writes");
       const library = options.library;
-      const entry = await library.getEntryById(plan.movieId);
-      const changed = libraryAssetsFromPublicationPlan(plan, plan.movieAssets);
+      const entry = await library.getEntryById(movieId);
+      const changed: PublicationLibraryAsset[] = targets.flatMap(({ operation, ref }) =>
+        operation.assetKind
+          ? [
+              {
+                kind: operation.assetKind,
+                uri: ref.relativePath,
+                rootId: ref.rootId,
+                relativePath: ref.relativePath,
+                published: true,
+              },
+            ]
+          : [],
+      );
       if (changed.some((asset) => asset.kind === "strm" || asset.kind === "subtitle"))
         throw new Error("Registered tools only write movie assets");
       const assets = changed.length
@@ -119,33 +104,34 @@ export const commitRegisteredPublication = async <TResult>(
           ]
         : undefined;
       writeAssets = () => {
-        library.writeEntry({ id: participants.movieId, assets }, []);
+        library.writeEntry({ id: movieId, assets }, []);
       };
     }
   }
-  const paths = await preparePublicationPaths(planRefs(plan), { resolveRoot, outputs: options.outputs });
-  const release = mediaPathOwnership.acquireAll(planRefs(plan).map(paths.key));
-  try {
-    const resolved = await preflightPublication(plan, paths, { stat, readFile });
-    const validation = await prepareOutputValidation(
-      plan,
-      { outputs: options.outputs, resolveRoot },
-      paths,
-      resolved.observed,
-    );
-    const artifacts = [];
-    for (const operation of input.operations) {
-      const ref = toRootFileRef(operation.targetPath, options.roots);
-      const targetPath = resolved.resolve(ref);
-      const observed = resolved.observed.find((file) => file.path === targetPath);
-      if (observed?.exists && !operation.replaceExisting) continue;
-      artifacts.push({ targetPath, data: operation.content.data });
+
+  const artifacts = [];
+  for (const operation of input.operations) {
+    if (!operation.replaceExisting) {
+      const existing = await stat(operation.targetPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (existing) continue;
     }
+    artifacts.push({ targetPath: operation.targetPath, data: operation.content.data });
+  }
+  const release = mediaPathOwnership.acquireAll(
+    [...new Set(artifacts.map((artifact) => dirname(artifact.targetPath)))],
+    input.operationId,
+  );
+  try {
     const published = await new WriteOutput().install(artifacts, {
       validate: async () => {
-        for (const observed of resolved.observed)
-          assertPublicationFileUnchanged(observed, await observePublicationFile({ stat }, observed.path));
-        validation?.assertCurrent();
+        for (const observed of media) {
+          const current = await stat(observed.path);
+          if (current.size !== observed.size || current.mtimeMs !== observed.mtimeMs)
+            throw new Error(`Publication source changed before mutation: ${observed.path}`);
+        }
       },
       commit: () => {
         writeAssets?.();

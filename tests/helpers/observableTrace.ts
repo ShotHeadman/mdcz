@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
 import type { PersistenceDatabase } from "@mdcz/persistence";
 import { vi } from "vitest";
 
@@ -43,9 +44,9 @@ export const collectObservableTrace = (
         crossDevice &&
         operation === "rename" &&
         typeof args[0] === "string" &&
-        args[0].startsWith(`${roots.media}/`) &&
-        /\.mp4$/.test(args[0]) &&
-        !args[0].includes("/output/")
+        !path.relative(roots.media, args[0]).startsWith("..") &&
+        path.extname(args[0]).toLowerCase() === ".mp4" &&
+        !path.relative(roots.media, args[0]).split(path.sep).includes("output")
       ) {
         record("filesystem-result", operation, "EXDEV");
         throw Object.assign(new Error("Fixture cross-device boundary"), { code: "EXDEV" });

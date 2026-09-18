@@ -1,14 +1,10 @@
 import { stat } from "node:fs/promises";
-import { resolveRootRelativePath } from "@mdcz/media-store";
+import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { DiscoveredAssets } from "@mdcz/shared/types";
-import {
-  publicationPathKey,
-  publicationRefKey,
-  resolvePublicationPath,
-  resolvePublicationReferenceKeys,
-} from "./paths";
-import type { PublicationOutputPort, PublishMediaOptions } from "./types";
+import type { PublicationOutputPort } from "../publication/types";
+
+type ResolveRoot = (rootId: string) => Promise<Pick<MediaRoot, "id" | "hostPath">>;
 
 export interface RegisteredMediaLocation {
   groupId?: string;
@@ -20,7 +16,7 @@ export interface RegisteredMediaLocation {
 
 export const registeredMediaLocations = async (
   outputs: PublicationOutputPort,
-  resolveRoot: PublishMediaOptions<unknown>["resolveRoot"],
+  resolveRoot: ResolveRoot,
   mediaPaths: readonly string[],
 ): Promise<Map<string, RegisteredMediaLocation>> => {
   const snapshot = outputs.publicationSnapshot({ paths: mediaPaths, includeOwners: true });
@@ -71,24 +67,9 @@ export const registeredMediaLocations = async (
   );
 };
 
-export const isPublicationPathReferenced = async (
-  ref: RootFileRef,
-  outputs: PublicationOutputPort,
-  resolveRoot: PublishMediaOptions<unknown>["resolveRoot"],
-): Promise<boolean> => {
-  const path = resolveRootRelativePath(await resolveRoot(ref.rootId), ref.relativePath);
-  const snapshot = outputs.publicationSnapshot({ paths: [path] });
-  const keys = await resolvePublicationReferenceKeys([...snapshot.files, ...snapshot.assets, ref], [ref], resolveRoot);
-  const target = keys.get(publicationRefKey(ref));
-  for (const reference of [...snapshot.files, ...snapshot.assets.filter((asset) => !asset.historical)]) {
-    if (keys.get(publicationRefKey(reference)) === target) return true;
-  }
-  return false;
-};
-
 export const registeredOutputPaths = async (
   outputs: PublicationOutputPort,
-  resolveRoot: PublishMediaOptions<unknown>["resolveRoot"],
+  resolveRoot: ResolveRoot,
   kind: string,
 ): Promise<Set<string>> => {
   const assets = outputs.publicationSnapshot({ kind }).assets;
@@ -101,7 +82,7 @@ export const registeredOutputPaths = async (
     assets.map((asset) => {
       const root = roots.get(asset.rootId);
       if (!root) throw new Error(`Resource root not found: ${asset.rootId}`);
-      return publicationPathKey(resolveRootRelativePath(root, asset.relativePath));
+      return filesystemPathKey(resolveRootRelativePath(root, asset.relativePath));
     }),
   );
 };
@@ -109,7 +90,7 @@ export const registeredOutputPaths = async (
 export const resolveRegisteredNfoPaths = async (
   nfoPath: string,
   outputs: PublicationOutputPort,
-  resolveRoot: PublishMediaOptions<unknown>["resolveRoot"],
+  resolveRoot: ResolveRoot,
 ): Promise<{ paths: string[]; mediaPaths: string[] } | undefined> => {
   const snapshot = outputs.publicationSnapshot({ paths: [nfoPath], includeOwners: true });
   const roots = new Map(
@@ -124,13 +105,12 @@ export const resolveRegisteredNfoPaths = async (
     if (!root) throw new Error(`Resource root not found: ${ref.rootId}`);
     return resolveRootRelativePath(root, ref.relativePath);
   };
-  const target = publicationPathKey(await resolvePublicationPath(nfoPath));
+  const target = filesystemPathKey(nfoPath);
   const activeNfos = snapshot.assets.filter((asset) => asset.kind === "nfo" && !asset.historical);
-  const keys = await resolvePublicationReferenceKeys(activeNfos, [], resolveRoot, [nfoPath]);
   const nfos = activeNfos.map((asset) => ({
     ...asset,
     path: absolute(asset),
-    key: keys.get(publicationRefKey(asset)),
+    key: filesystemPathKey(absolute(asset)),
   }));
   const owners = new Set(nfos.filter((asset) => asset.key === target && asset.published).map((asset) => asset.itemId));
   if (!owners.size) return undefined;

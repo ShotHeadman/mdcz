@@ -1,18 +1,18 @@
 import { and, eq } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { type PublicationJournalRow, publicationJournal } from "./schema";
+import { publicationJournal } from "./schema";
 
 export type PublicationJournalState = "pending" | "committed";
 
-export interface PublicationJournalEntry {
+export interface PublicationJournalEntry<TManifest = unknown> {
   operationId: string;
   operationType: string;
   state: PublicationJournalState;
-  manifest: unknown;
+  manifest: TManifest;
   createdAt: Date;
 }
 
-export type BeginPublicationJournalEntry = Omit<PublicationJournalEntry, "state">;
+export type BeginPublicationJournalEntry<TManifest = unknown> = Omit<PublicationJournalEntry<TManifest>, "state">;
 
 const parseManifest = (manifestJson: string): unknown => {
   try {
@@ -22,18 +22,15 @@ const parseManifest = (manifestJson: string): unknown => {
   }
 };
 
-const toEntry = (row: PublicationJournalRow): PublicationJournalEntry => ({
-  operationId: row.operationId,
-  operationType: row.operationType,
-  state: row.state,
-  manifest: parseManifest(row.manifestJson),
-  createdAt: row.createdAt,
-});
+export class PublicationJournalRepository<TManifest = unknown> {
+  private invalid: Array<{ operationId: string; operationType: string }> = [];
 
-export class PublicationJournalRepository {
-  constructor(private readonly database: PersistenceDatabase) {}
+  constructor(
+    private readonly database: PersistenceDatabase,
+    private readonly parse: (value: unknown) => TManifest = (value) => value as TManifest,
+  ) {}
 
-  begin(entry: BeginPublicationJournalEntry): void {
+  begin(entry: BeginPublicationJournalEntry<TManifest>): void {
     this.database.db
       .insert(publicationJournal)
       .values({
@@ -63,7 +60,31 @@ export class PublicationJournalRepository {
     this.database.db.delete(publicationJournal).where(eq(publicationJournal.operationId, operationId)).run();
   }
 
-  listUnfinished(): PublicationJournalEntry[] {
-    return this.database.db.select().from(publicationJournal).all().map(toEntry);
+  listUnfinished(): PublicationJournalEntry<TManifest>[] {
+    this.invalid = [];
+    return this.database.db
+      .select()
+      .from(publicationJournal)
+      .all()
+      .flatMap((row) => {
+        try {
+          return [
+            {
+              operationId: row.operationId,
+              operationType: row.operationType,
+              state: row.state,
+              manifest: this.parse(parseManifest(row.manifestJson)),
+              createdAt: row.createdAt,
+            },
+          ];
+        } catch {
+          this.invalid.push({ operationId: row.operationId, operationType: row.operationType });
+          return [];
+        }
+      });
+  }
+
+  invalidManifests(): Array<{ operationId: string; operationType: string }> {
+    return this.invalid;
   }
 }

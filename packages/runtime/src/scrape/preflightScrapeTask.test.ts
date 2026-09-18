@@ -22,7 +22,10 @@ const target = (itemId: string, sourcePath: string, targetVideoPath: string) => 
 describe("inventory target conflicts", () => {
   it("rejects existing and batch-duplicate extensionless movie names without inspecting unrelated entries", async () => {
     await fs.writeFile(join(root, "ABC-123.mkv"), "existing");
-    await fs.symlink(join(root, "missing"), join(root, "unrelated.link"));
+    const missing = join(root, "missing");
+    await fs.mkdir(missing);
+    await fs.symlink(missing, join(root, "unrelated.link"), process.platform === "win32" ? "junction" : "dir");
+    await fs.rm(missing, { recursive: true });
     const inventory = new DirectoryInventory();
     const stats = vi.spyOn(fs, "stat");
     await expect(
@@ -46,7 +49,7 @@ describe("inventory target conflicts", () => {
     const source = join(root, "media");
     const alias = join(root, "alias");
     await fs.mkdir(source);
-    await fs.symlink(source, alias, "dir");
+    await fs.symlink(source, alias, process.platform === "win32" ? "junction" : "dir");
     await fs.writeFile(join(source, "ABC-123-CD1.mp4"), "video");
     await fs.writeFile(join(source, "ABC-123-CD1-trailer.mp4"), "feature");
     const inventory = new DirectoryInventory();

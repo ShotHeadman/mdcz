@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { isPathInside } from "@mdcz/media-store";
 import { outputFileSystem } from "./outputFileSystem";
 import type { PublicationFileSystem } from "./types";
 
@@ -14,10 +15,11 @@ export class WriteOutput {
   async install<TResult>(
     artifacts: readonly WriteArtifact[],
     options: {
-      validate(): Promise<void> | void;
+      validate?(): Promise<void> | void;
       beforeInstall?(targetPath: string): Promise<void>;
       installed?(targetPath: string): void;
       commit(): TResult | Promise<TResult>;
+      protectedSourceRoots?: readonly string[];
     },
   ): Promise<{ value: TResult; cleanupIssues: unknown[] }> {
     const staged: Array<{ targetPath: string; temporaryPath: string }> = [];
@@ -26,6 +28,9 @@ export class WriteOutput {
     let failure: unknown;
     try {
       for (const artifact of artifacts) {
+        const protectedRoot = options.protectedSourceRoots?.find((root) => isPathInside(root, artifact.targetPath));
+        if (protectedRoot)
+          throw new Error(`Write output target is inside a protected source root: ${artifact.targetPath}`);
         await this.fileSystem.mkdir(path.dirname(artifact.targetPath), { recursive: true });
         const temporaryPath = `${artifact.targetPath}.${randomUUID()}.part`;
         staged.push({ targetPath: artifact.targetPath, temporaryPath });
@@ -48,7 +53,7 @@ export class WriteOutput {
         }
         await this.fileSystem.flush?.(temporaryPath);
       }
-      await options.validate();
+      await options.validate?.();
       for (const artifact of staged) {
         await options.beforeInstall?.(artifact.targetPath);
         await this.fileSystem.rename(artifact.temporaryPath, artifact.targetPath);

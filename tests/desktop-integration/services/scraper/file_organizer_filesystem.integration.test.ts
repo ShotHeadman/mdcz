@@ -3,8 +3,10 @@ import * as fs from "node:fs/promises";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
-import { commitPublishedMedia, preparePublicationPlan, toRootFileRef } from "@mdcz/runtime/publication";
+import { MoveOutput, WriteOutput } from "@mdcz/runtime/publication";
 import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
+import { toRootFileRef } from "@mdcz/runtime/publication/outputRefs";
+import { prepareMovieOutput } from "@mdcz/runtime/publication/prepareMovieOutput";
 import { FileOrganizer, type ResolvedPublicationLayout } from "@mdcz/runtime/scrape";
 import * as fileUtils from "@mdcz/runtime/scrape/utils/filesystem";
 import { Website } from "@mdcz/shared/enums";
@@ -26,7 +28,7 @@ const publishVideo = async (
 ): Promise<string> => {
   const roots = tempDirs.map((hostPath) => ({ id: hostPath, hostPath }));
   const source = toRootFileRef(fileInfo.filePath, roots);
-  const prepared = await preparePublicationPlan({
+  const prepared = await prepareMovieOutput({
     operationId: "organize",
     operationType: "scrape",
     roots,
@@ -42,17 +44,18 @@ const publishVideo = async (
     nfoNaming: config.download.nfoNaming,
     writeNfo: async () => undefined,
   });
-  if (!prepared.plan) throw new Error("No media files could be prepared for publication");
-  await commitPublishedMedia(prepared.plan, {
-    resolveRoot: async (rootId) => {
-      const root = roots.find((root) => root.id === rootId);
-      if (!root) throw new Error(`Missing test root: ${rootId}`);
-      return root;
-    },
-    journal: createMemoryPublicationJournal(),
-    commit: () => undefined,
-    fileSystem: publicationFs,
-  });
+  const output = prepared.output;
+  const commit = () => undefined;
+  if (output.moves.length)
+    await new MoveOutput(publicationFs).install({
+      operationId: output.operationId,
+      operationType: output.operationType,
+      moves: output.moves,
+      artifacts: output.artifacts,
+      journal: createMemoryPublicationJournal(),
+      commit,
+    });
+  else await new WriteOutput(publicationFs).install(output.artifacts, { commit });
   return plan.targetVideoPath;
 };
 

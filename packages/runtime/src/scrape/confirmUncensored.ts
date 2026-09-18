@@ -14,21 +14,20 @@ import type {
   UncensoredChoice,
   UncensoredConfirmResultItem,
 } from "@mdcz/shared/types";
+import { registeredMediaLocations } from "../library/registeredMedia";
 import type { LocalScanService } from "../maintenance/LocalScanService";
 import { buildMovieTags } from "../maintenance/movieTags";
-import {
-  commitPublishedMedia,
-  type DurablePublicationContext,
-  libraryAssetsFromPublicationPlan,
-  type MoviePublicationPlan,
-  type PublicationFile,
-  type PublicationOutputPort,
-  preparePublicationPlan,
-  registeredMediaLocations,
-  resolvePublicationParticipants,
-  toRootFileRef,
-} from "../publication";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
+import { MoveOutput } from "../publication/MoveOutput";
+import { libraryAssetsFromMovieOutput } from "../publication/outputLibrary";
+import { toRootFileRef } from "../publication/outputRefs";
+import {
+  type PreparedMovieFile,
+  type PreparedMovieOutput,
+  prepareMovieOutput,
+} from "../publication/prepareMovieOutput";
+import type { DurablePublicationContext, PublicationOutputPort } from "../publication/types";
+import { WriteOutput } from "../publication/WriteOutput";
 import type { RuntimeLogger } from "../shared";
 import type { FileOrganizer, ResolvedPublicationLayout } from "./FileOrganizer";
 import { getNfoWritePaths, type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
@@ -74,7 +73,7 @@ export interface UncensoredPlanningMember<TContext = undefined> {
 
 export interface UncensoredConfirmedMember<TContext> {
   item: RuntimeUncensoredConfirmItem<TContext>;
-  publicationFile: PublicationFile;
+  publicationFile: PreparedMovieFile;
   sourceNfoPath?: string;
   nfoPath?: string;
 }
@@ -89,23 +88,23 @@ export interface UncensoredConfirmDependencies<TContext = undefined> {
     operationId: string;
     members: readonly UncensoredPlanningMember<TContext>[];
     nfoNaming: "both" | "movie" | "filename";
-    writeNfo: Parameters<typeof preparePublicationPlan>[0]["writeNfo"];
+    writeNfo: Parameters<typeof prepareMovieOutput>[0]["writeNfo"];
   }): Promise<{
-    plan: MoviePublicationPlan;
+    output: PreparedMovieOutput;
     assets: DiscoveredAssets;
     nfoPath?: string;
     resolve(ref: RootFileRef): string;
   }>;
   publish(input: {
     operationId: string;
-    plan: MoviePublicationPlan;
+    output: PreparedMovieOutput;
     members: readonly UncensoredConfirmedMember<TContext>[];
   }): Promise<void>;
 }
 
 export interface UncensoredRevisionSources {
-  plan: MoviePublicationPlan;
-  publicationFile: PublicationFile;
+  output: PreparedMovieOutput;
+  publicationFile: PreparedMovieFile;
   nfoPath?: string;
   file: {
     id: string;
@@ -267,12 +266,12 @@ export async function confirmUncensoredRunItems<TManifest extends { items: reado
           }),
         });
       },
-      publish: async ({ plan: publicationPlan, members }) => {
+      publish: async ({ output, members }) => {
         const revisions = members.map(({ item, publicationFile, nfoPath }) => {
           const target = item.context;
           if (!target) throw new Error(`Uncensored confirmation item disappeared: ${item.fileId}`);
           return buildUncensoredRevision({
-            plan: publicationPlan,
+            output,
             publicationFile,
             nfoPath,
             roots,
@@ -283,17 +282,27 @@ export async function confirmUncensoredRunItems<TManifest extends { items: reado
         });
         const movie = revisions[0]?.movie;
         if (!movie) throw new Error("Uncensored publication has no movie write");
-        const published = await commitPublishedMedia(publicationPlan, {
-          journal: repositories.journal,
-          outputs: repositories.library,
-          repairIssues: repositories.repairIssues,
-          resolveRoot,
-          validate: async () => {
-            if (JSON.stringify((await repositories.library.getEntryById(movie.id)).files) !== snapshots.get(movie.id))
-              throw new Error("影片关联的视频文件发生变动，请重新确认");
-          },
-          commit: () => repositories.scrapeRuns.reviseSuccess(revisions, movie),
-        });
+        const validate = async () => {
+          if (JSON.stringify((await repositories.library.getEntryById(movie.id)).files) !== snapshots.get(movie.id))
+            throw new Error("影片关联的视频文件发生变动，请重新确认");
+        };
+        const commit = () => repositories.scrapeRuns.reviseSuccess(revisions, movie);
+        const published = output.moves.length
+          ? await new MoveOutput().install({
+              operationId: output.operationId,
+              operationType: "maintenance",
+              moves: output.moves,
+              artifacts: output.artifacts,
+              journal: repositories.journal,
+              validate,
+              protectedSourceRoots: output.protectedSourceRoots,
+              commit,
+            })
+          : await new WriteOutput().install(output.artifacts, {
+              validate,
+              protectedSourceRoots: output.protectedSourceRoots,
+              commit,
+            });
         for (const issue of published.cleanupIssues)
           input.dependencies.logger.warn(`Uncensored publication cleanup failed: ${toErrorMessage(issue)}`);
       },
@@ -311,28 +320,18 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
   operationId: string;
   members: readonly UncensoredPlanningMember<TContext>[];
   nfoNaming: "both" | "movie" | "filename";
-  writeNfo: Parameters<typeof preparePublicationPlan>[0]["writeNfo"];
+  writeNfo: Parameters<typeof prepareMovieOutput>[0]["writeNfo"];
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   entry: UncensoredRevisionSources["entry"];
   snapshot: ReturnType<PublicationOutputPort["publicationSnapshot"]>;
 }): Promise<{
-  plan: MoviePublicationPlan;
+  output: PreparedMovieOutput;
   assets: DiscoveredAssets;
   nfoPath?: string;
   resolve(ref: RootFileRef): string;
 }> => {
-  const resolveRoot = async (id: string) => {
-    const root = input.roots.find((root) => root.id === id);
-    if (!root) throw new Error(`Publication root not found: ${id}`);
-    return root;
-  };
-  const outputPaths = input.members.flatMap(({ layout }) => [
-    layout.targetVideoPath,
-    layout.nfoPath,
-    ...(layout.mirror ? [layout.mirror.targetPath] : []),
-    ...layout.sidecars.flatMap((sidecar) => [sidecar.targetPath, ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : [])]),
-  ]);
-  const participants = await resolvePublicationParticipants({
+  const participants = {
+    movieId: input.entry.id,
     members: await Promise.all(
       input.members.map(async (member) => ({
         fileId: member.item.fileId,
@@ -347,11 +346,11 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
         source: toRootFileRef(member.layout.sourceVideoPath, input.roots),
       })),
     ),
-    outputs: outputPaths.map((path) => toRootFileRef(path, input.roots)),
-    movieId: input.entry.id,
-    snapshot: input.snapshot,
-    resolveRoot,
-  });
+    expected: {
+      files: input.snapshot.files.filter((file) => file.itemId === input.entry.id),
+      assets: input.snapshot.assets.filter((asset) => asset.itemId === input.entry.id && !asset.historical),
+    },
+  };
   const producedKinds = new Set(["thumb", "poster", "fanart", "trailer", "scene", "actor"]);
   const retainedMovieAssets: AssetRef[] = input.entry.assets.flatMap((asset): AssetRef[] => {
     if (asset.fileId !== null || producedKinds.has(asset.kind)) return [];
@@ -359,7 +358,7 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
       ? [{ type: "local", kind: asset.kind, file: { rootId: asset.rootId, relativePath: asset.relativePath } }]
       : [{ type: "remote", kind: asset.kind, url: asset.uri }];
   });
-  const prepared = await preparePublicationPlan({
+  const prepared = await prepareMovieOutput({
     operationId: input.operationId,
     operationType: "maintenance",
     roots: input.roots,
@@ -370,10 +369,9 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
     nfoNaming: input.nfoNaming,
     writeNfo: input.writeNfo,
   });
-  if (!prepared.plan) throw new Error("No media files could be prepared for publication");
   return {
     ...prepared,
-    plan: prepared.plan,
+    output: prepared.output,
     resolve: (ref) => {
       const root = input.roots.find((root) => root.id === ref.rootId);
       if (!root) throw new Error(`Publication root not found: ${ref.rootId}`);
@@ -383,7 +381,7 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
 };
 
 export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
-  const { outcome, entry, file, publicationFile, plan } = sources;
+  const { outcome, entry, file, publicationFile, output } = sources;
   if (file.sourceOutcomeId !== outcome.id) throw new Error("待确认的刮削结果已与影片文件解除关联");
   const nfo = sources.nfoPath ? resolveRootFile(sources.roots, sources.nfoPath) : undefined;
   const crawlerDataJson = entry.crawlerDataJson;
@@ -401,8 +399,8 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
     size: publicationFile.size,
     modifiedAt: publicationFile.modifiedAt,
     movie: {
-      id: plan.movieId,
-      assets: libraryAssetsFromPublicationPlan(plan, plan.movieAssets),
+      id: output.movieId,
+      assets: libraryAssetsFromMovieOutput(output, output.movieAssets),
       mediaIdentity: entry.mediaIdentity,
       title: entry.title ?? crawlerData.title,
       number: entry.number ?? crawlerData.number,
@@ -421,7 +419,7 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
       rootRelativePath: publicationFile.target.relativePath,
       size: publicationFile.size,
       modifiedAt: publicationFile.modifiedAt,
-      assets: libraryAssetsFromPublicationPlan(plan, publicationFile.assets),
+      assets: libraryAssetsFromMovieOutput(output, publicationFile.assets),
       lastKnownPath: publicationFile.target.relativePath,
     },
   };
@@ -619,7 +617,7 @@ export const confirmUncensoredOutputs = async <TContext = undefined>(
         },
       });
       const members = planningMembers.map((member): UncensoredConfirmedMember<TContext> => {
-        const publicationFile = publication.plan.files.find((file) => file.fileId === member.item.fileId);
+        const publicationFile = publication.output.files.find((file) => file.fileId === member.item.fileId);
         if (!publicationFile) throw new Error(`Uncensored publication omitted selected file: ${member.item.fileId}`);
         return {
           item: member.item,
@@ -630,7 +628,7 @@ export const confirmUncensoredOutputs = async <TContext = undefined>(
             : undefined,
         };
       });
-      await dependencies.publish({ operationId, plan: publication.plan, members });
+      await dependencies.publish({ operationId, output: publication.output, members });
       for (const member of members) {
         updatedItems.push({
           fileId: member.item.fileId,

@@ -38,17 +38,17 @@ export const resolveTestOutputPlan = (
 ) => testFileOrganizer.resolveOutputPlan(plan, sourcePath, options);
 
 export const preparedPublicationFiles = (group: ScrapeGroupResult) => [
-  ...(group.publicationPlan?.files.map((file) => {
+  ...(group.output?.files.map((file) => {
     const facts = file.scrape;
     if (!facts) throw new Error("Scrape publication has no prepared facts");
     return {
       ...facts.identity,
       fileId: facts.itemId,
       status: "prepared" as const,
-      ...group.publicationPlan?.scrape,
+      ...group.output?.scrape,
       videoMeta: file.scrape?.videoMeta,
       output: file.target,
-      assets: [...(group.publicationPlan?.movieAssets ?? []), ...file.assets],
+      assets: [...(group.output?.movieAssets ?? []), ...file.assets],
       error: file.scrape?.error,
       uncensoredAmbiguous: file.scrape?.uncensoredAmbiguous,
     };

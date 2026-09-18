@@ -1,4 +1,5 @@
 import { toRootRelativePath } from "@mdcz/media-store";
+import { registeredOutputPaths } from "@mdcz/runtime";
 import {
   createMaintenanceDirectoryTaskPort,
   createMaintenanceLibraryPort,
@@ -6,7 +7,6 @@ import {
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {

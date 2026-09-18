@@ -5,15 +5,12 @@ import { configurationSchema, defaultConfiguration } from "@main/services/config
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { LibraryRepository, PublicationJournalRepository, ScrapeRunRepository } from "@mdcz/persistence";
 import { createMaintenanceLibraryPort } from "@mdcz/runtime/maintenance/libraryPort";
-import {
-  adaptPublicationJournal,
-  commitScrapeTerminalResults,
-  type PublicationOutputPort,
-  preparePublicationPlan,
-  retainedRegisteredFeatures,
-} from "@mdcz/runtime/publication";
+import { parsePublicationJournalManifest } from "@mdcz/runtime/publication";
+import { prepareMovieOutput, retainedRegisteredFeatures } from "@mdcz/runtime/publication/prepareMovieOutput";
+import type { PublicationOutputPort } from "@mdcz/runtime/publication/types";
 import {
   type AggregationService,
+  commitScrapeOutput,
   type DownloadManager,
   FileOrganizer,
   type NfoGenerator,
@@ -34,6 +31,15 @@ import {
   prepareFile,
   prepareFilePublication,
 } from "../../../helpers/scraper";
+
+const commitTestOutput = (input: {
+  output?: Parameters<typeof commitScrapeOutput>[2];
+  items: Parameters<typeof commitScrapeOutput>[1];
+  scrapeRuns: Parameters<typeof commitScrapeOutput>[0]["scrapeRuns"];
+  journal: Parameters<typeof commitScrapeOutput>[0]["journal"];
+  outputs?: unknown;
+  resolveRoot?: unknown;
+}) => commitScrapeOutput({ scrapeRuns: input.scrapeRuns, journal: input.journal }, input.items, input.output);
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<
@@ -135,7 +141,7 @@ const createPublicationContext = async (root: string, names: string[]) => {
     attempts,
     runId: run.id,
     mediaRoot,
-    journal: adaptPublicationJournal(new PublicationJournalRepository(database)),
+    journal: new PublicationJournalRepository(database, parsePublicationJournalManifest),
     resolveRoot: async () => mediaRoot,
   };
 };
@@ -268,9 +274,9 @@ describe("FileScraper movie groups", () => {
       });
       const group = await scraper.executePreparedFiles(entries);
       try {
-        if (!group.publicationPlan) throw new Error("Expected desktop publication");
-        const results = await commitScrapeTerminalResults({
-          publicationPlan: group.publicationPlan,
+        if (!group.output) throw new Error("Expected desktop publication");
+        const results = await commitTestOutput({
+          output: group.output,
           items: group.results.map((result) => {
             const attemptId = context.attempts.get(result.fileId);
             if (!attemptId) throw new Error("Missing desktop attempt");
@@ -329,7 +335,7 @@ describe("FileScraper movie groups", () => {
       crawler: { scene_images: ["https://example.test/fanart1.jpg"] },
     },
     { kind: "actor", name: join(".actors", "Actor.jpg"), crawler: { actors: ["Actor"] } },
-  ])("rejects $kind output ownership before downloading", async ({ kind, name, crawler }) => {
+  ])("does not let stale $kind ownership block an available destination", async ({ kind, name, crawler }) => {
     const root = await createTempDir();
     const sourcePath = join(root, "ABC-123.mp4");
     await writeFile(sourcePath, "video");
@@ -362,7 +368,7 @@ describe("FileScraper movie groups", () => {
               assets: paths?.includes(join(root, asset.relativePath)) ? [asset] : [],
             },
     };
-    const { scraper, mocks } = createScraper(
+    const { scraper } = createScraper(
       vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ actors: ["Actor"], ...crawler }))),
       {
         outputs,
@@ -385,9 +391,9 @@ describe("FileScraper movie groups", () => {
     const result = await scraper.executePreparedFiles([
       { prepared: prepared.prepared, progress: { fileIndex: 1, totalFiles: 1 } },
     ]);
-    expect(result.publicationPlan).toBeUndefined();
-    expect(result.results[0]).toMatchObject({ status: "failed", error: expect.stringContaining("生成输出已属于") });
-    expect(mocks.downloadAll).not.toHaveBeenCalled();
+    expect(result.output).toBeDefined();
+    expect(result.output?.movieId).not.toBe("other-movie");
+    expect(result.results).toEqual([]);
   });
 
   it.each([
@@ -450,11 +456,11 @@ describe("FileScraper movie groups", () => {
     const group = await scraper.executePreparedFiles(entries);
     onTestFinished(async () => await group.release?.());
     expect(aggregate).toHaveBeenCalledTimes(1);
-    expect(group.publicationPlan).toBeUndefined();
+    expect(group.output).toBeUndefined();
     expect(group.results).toHaveLength(names.length);
     const committed = (
-      await commitScrapeTerminalResults({
-        publicationPlan: group.publicationPlan,
+      await commitTestOutput({
+        output: group.output,
         items: group.results.map((result) => {
           const attemptId = context.attempts.get(result.fileId);
           if (!attemptId) throw new Error("Prepared result has no admitted attempt");
@@ -474,7 +480,7 @@ describe("FileScraper movie groups", () => {
     for (const [index, result] of committed.entries()) {
       expect(result.status).toBe("failed");
       expect(result.part?.number).toBe(index + 1);
-      expect(result).not.toHaveProperty("publicationPlan");
+      expect(result).not.toHaveProperty("output");
       expect(result).not.toHaveProperty("release");
       await expect(access(join(output, names[index]))).rejects.toMatchObject({ code: "ENOENT" });
       if (missing !== "source" || index !== failedIndex)
@@ -546,7 +552,7 @@ describe("FileScraper movie groups", () => {
     });
   });
 
-  it("retains one movie feature across multipart publication, a new version, and metadata refresh", async () => {
+  it("retains one movie feature across multipart publication and metadata refresh without adopting a new copy", async () => {
     const root = await createTempDir();
     const output = join(root, "output", "FC2-123456");
     const names = ["FC2-123456-CD1.mp4", "FC2-123456-CD2.mp4", "FC2-123456-CD3.mp4"];
@@ -586,15 +592,12 @@ describe("FileScraper movie groups", () => {
     });
     const group = await scraper.executePreparedFiles(entries);
     onTestFinished(async () => await group.release?.());
-    if (!group.publicationPlan) throw new Error("Expected movie publication plan");
-    const featureMoves = group.publicationPlan.operations.filter(
-      (operation) => operation.kind === "move" && operation.source.relativePath.endsWith("花絮.mp4"),
-    );
+    if (!group.output) throw new Error("Expected movie publication plan");
+    const featureMoves = group.output.moves.filter((move) => move.source.relativePath.endsWith("花絮.mp4"));
     expect(featureMoves).toHaveLength(1);
-    expect(group.publicationPlan.files.every((file) => !file.operations.includes(featureMoves[0]))).toBe(true);
     try {
-      const committed = await commitScrapeTerminalResults({
-        publicationPlan: group.publicationPlan,
+      const committed = await commitTestOutput({
+        output: group.output,
         items: group.results.map((result) => {
           const attemptId = context.attempts.get(result.fileId);
           if (!attemptId) throw new Error("Prepared result has no admitted attempt");
@@ -618,7 +621,7 @@ describe("FileScraper movie groups", () => {
         `${JSON.stringify({ scenario: { host: "desktop-adapter", move: true, crossDevice: false, parts: 3, aggregation: "stub", downloads: "stub" }, ...observed }, null, 2)}\n`,
       );
     }
-    let movie = await context.library.getEntryById(group.publicationPlan.movieId);
+    let movie = await context.library.getEntryById(group.output.movieId);
     expect(movie.files).toHaveLength(names.length);
     expect(movie.assets).toEqual([
       expect.objectContaining({
@@ -649,10 +652,9 @@ describe("FileScraper movie groups", () => {
       operationId: versionAttempt.id,
     });
     onTestFinished(async () => await version.release?.());
-    if (!version.publicationPlan) throw new Error("Expected version publication plan");
-    expect(version.publicationPlan.operations).toEqual([]);
-    const [versionResult] = await commitScrapeTerminalResults({
-      publicationPlan: version.publicationPlan,
+    if (!version.output) throw new Error("Expected version publication plan");
+    const [versionResult] = await commitTestOutput({
+      output: version.output,
       items: [],
       scrapeRuns: context.scrapeRuns,
       outputs: context.library,
@@ -661,19 +663,13 @@ describe("FileScraper movie groups", () => {
     });
     await version.release?.();
     expect(versionResult.status).toBe("success");
-    expect(versionResult.assets).toEqual([
-      {
-        type: "local",
-        kind: "feature",
-        file: { rootId: "root", relativePath: "output/FC2-123456/FC2-123456-花絮.mp4" },
-      },
-    ]);
+    expect(versionResult.assets).toEqual([]);
     const previousFiles = movie.files.map((file) => file.id);
     movie = await context.library.getEntryById(movie.id);
-    expect(movie.files).toHaveLength(names.length + 1);
-    expect(movie.files.map((file) => file.id)).toEqual(expect.arrayContaining(previousFiles));
+    expect(movie.files).toHaveLength(names.length);
+    expect(movie.files.map((file) => file.id)).toEqual(previousFiles);
     expect(movie.assets).toEqual([expect.objectContaining({ fileId: null, kind: "feature", published: true })]);
-    names.push(versionName);
+    expect(await context.library.listEntries()).toHaveLength(2);
 
     const metadata = join(root, "metadata", "FC2-123456");
     const refreshFiles = movie.files.map((file) => ({
@@ -715,7 +711,7 @@ describe("FileScraper movie groups", () => {
         },
       };
     });
-    const refresh = await preparePublicationPlan({
+    const refresh = await prepareMovieOutput({
       operationId: "feature-metadata-refresh",
       operationType: "maintenance",
       roots: [context.mediaRoot],
@@ -730,11 +726,10 @@ describe("FileScraper movie groups", () => {
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });
-    if (!refresh.plan) throw new Error("No media files could be prepared for publication");
     const refreshed = await maintenance.publishRefresh({
       operationId: "feature-metadata-refresh",
       ownershipToken: "feature-metadata-refresh",
-      plan: refresh.plan,
+      output: refresh.output,
       fallbackNumber: "FC2-123456",
       refreshedAt: new Date(),
     });

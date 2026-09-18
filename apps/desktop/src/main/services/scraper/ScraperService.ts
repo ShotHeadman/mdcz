@@ -8,13 +8,13 @@ import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
 import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeRunManifest } from "@mdcz/persistence";
+import { registeredOutputPaths } from "@mdcz/runtime";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import { buildMovieTags } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
 import {
   type ActorImageService,
@@ -431,10 +431,7 @@ export class ScraperService {
       admitAttempt: (id) => state.repositories.scrapeRuns.admitAttempt(id),
       publication: {
         scrapeRuns: state.repositories.scrapeRuns,
-        resolveRoot: (id) => state.repositories.mediaRoots.get(id),
         journal: state.repositories.publicationJournal,
-        outputs: state.repositories.library,
-        repairIssues: state.repositories.libraryRepairIssues,
       },
       execution: {
         concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,

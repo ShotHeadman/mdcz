@@ -1,6 +1,5 @@
 import { stat } from "node:fs/promises";
-import { resolveRootRelativePath } from "@mdcz/media-store";
-import { prepareMediaPathKeys } from "../publication/paths";
+import { filesystemPathKey, resolveRootRelativePath } from "@mdcz/media-store";
 import { mediaPathOwnership } from "./mediaPathOwnership";
 
 export const relinkLibraryFile = async <T>(input: {
@@ -22,7 +21,13 @@ export const relinkLibraryFile = async <T>(input: {
     ...input.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
     { rootId: input.rootId, relativePath: input.relativePath },
   ];
-  const release = mediaPathOwnership.acquireAll(await prepareMediaPathKeys(refs, input.resolveRoot));
+  const release = mediaPathOwnership.acquireAll(
+    await Promise.all(
+      refs.map(async (ref) =>
+        filesystemPathKey(resolveRootRelativePath(await input.resolveRoot(ref.rootId), ref.relativePath)),
+      ),
+    ),
+  );
   try {
     const file = await stat(resolveRootRelativePath(input.root, input.relativePath));
     if (!file.isFile()) throw new Error("重定位目标不是文件");

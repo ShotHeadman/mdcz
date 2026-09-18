@@ -1,12 +1,17 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, parse, relative, resolve } from "node:path";
-import { deterministicMediaRootId, isPathInside, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
+import {
+  deterministicMediaRootId,
+  filesystemPathKey,
+  isPathInside,
+  type MediaRoot,
+  toRootRelativePath,
+} from "@mdcz/media-store";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
-import { publicationPathKey } from "../publication/paths";
-import type { RegisteredMediaLocation } from "../publication/registeredOutputs";
+import type { RegisteredMediaLocation } from "../library/registeredMedia";
 import { isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../scrape";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "../scrape/utils/filesystem";
@@ -175,11 +180,11 @@ export class LocalScanService {
       : undefined;
     const generatedStrms = new Set(
       [...(metadata?.registeredOutputs?.values() ?? [])].flatMap((output) =>
-        [...(output.generatedStrmPaths ?? []), ...(output.strmPath ? [output.strmPath] : [])].map(publicationPathKey),
+        [...(output.generatedStrmPaths ?? []), ...(output.strmPath ? [output.strmPath] : [])].map(filesystemPathKey),
       ),
     );
     const videoFiles = candidates.filter(
-      (videoPath) => !isGeneratedSidecarVideo(videoPath) && !generatedStrms.has(publicationPathKey(videoPath)),
+      (videoPath) => !isGeneratedSidecarVideo(videoPath) && !generatedStrms.has(filesystemPathKey(videoPath)),
     );
     this.logger.info(`Found ${videoFiles.length} video file(s)`);
 
@@ -250,7 +255,7 @@ export class LocalScanService {
         isGeneratedSidecarVideo(videoPath) ||
         [...(metadata?.registeredOutputs?.values() ?? [])].some((output) =>
           [...(output.generatedStrmPaths ?? []), ...(output.strmPath ? [output.strmPath] : [])].some(
-            (path) => publicationPathKey(path) === publicationPathKey(videoPath),
+            (path) => filesystemPathKey(path) === filesystemPathKey(videoPath),
           ),
         )
       ) {

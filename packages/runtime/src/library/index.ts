@@ -8,6 +8,7 @@ export * from "./desktopOutputRoot";
 export * from "./entryDto";
 export * from "./mediaPathOwnership";
 export * from "./mediaRootService";
+export * from "./registeredMedia";
 export * from "./relink";
 
 export interface RuntimeLibraryAsset {

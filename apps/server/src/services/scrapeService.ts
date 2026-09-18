@@ -3,10 +3,10 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { ScrapeItemOutcomeRecord, ScrapeRunItemRecord, ScrapeRunManifest } from "@mdcz/persistence";
+import { registeredOutputPaths } from "@mdcz/runtime";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import {
   applyScrapeNetworkPolicy,
   confirmUncensoredRunItems,
@@ -482,10 +482,7 @@ export class ScrapeService {
       admitAttempt: (id) => repository.admitAttempt(id),
       publication: {
         scrapeRuns: repository,
-        resolveRoot: (id) => this.mediaRoots.get(id),
         journal: state.repositories.publicationJournal,
-        outputs: state.repositories.library,
-        repairIssues: state.repositories.libraryRepairIssues,
       },
       transformResult: (item, result) =>
         item.manualScrape?.uncensoredChoice ? { ...result, uncensoredAmbiguous: false } : result,

@@ -1,11 +1,18 @@
+import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
-import { libraryAssetsFromPublicationPlan, type PublicationLibraryAsset } from "../publication/libraryEntry";
-import { resolvePublicationParticipants } from "../publication/participants";
-import { commitPublishedMedia } from "../publication/publishMedia";
-import { registeredMediaLocations } from "../publication/registeredOutputs";
-import type { PublicationJournalPort, PublicationOutputPort, PublicationRepairPort } from "../publication/types";
+import { registeredMediaLocations } from "../library/registeredMedia";
+import { MoveOutput } from "../publication/MoveOutput";
+import { libraryAssetsFromMovieOutput, type PublicationLibraryAsset } from "../publication/outputLibrary";
+import type {
+  PublicationJournalPort,
+  PublicationOutputPort,
+  PublicationRepairPort,
+  PublicationResult,
+} from "../publication/types";
+import { WriteOutput } from "../publication/WriteOutput";
 import type { MaintenanceLibraryPort } from "./coordinator";
 
 export const createMaintenanceLibraryPort = (deps: {
@@ -41,7 +48,7 @@ export const createMaintenanceLibraryPort = (deps: {
   const resolveParticipants: MaintenanceLibraryPort["resolveParticipants"] = async (
     sources,
     outputs = [],
-    identity,
+    _identity,
     movieId,
   ) => {
     const state = await deps.getRepositories();
@@ -66,25 +73,35 @@ export const createMaintenanceLibraryPort = (deps: {
       )
         assets.push(feature);
     }
-    const participants = await resolvePublicationParticipants({
-      outputs,
-      identity,
-      movieId,
-      members: sources.map(({ fileId, ...source }) => ({ source, fileId })),
-      snapshot: { files: snapshot.files, assets },
-      resolveRoot: deps.resolveRoot,
+    const refKey = (ref: { rootId: string; relativePath: string }) => `${ref.rootId}\0${ref.relativePath}`;
+    const sourceKeys = new Set(sources.map(refKey));
+    const outputKeys = new Set(outputs.map(refKey));
+    const owners = new Set([
+      ...(movieId ? [movieId] : []),
+      ...snapshot.files.filter((file) => sourceKeys.has(refKey(file))).map((file) => file.itemId),
+      ...assets.filter((asset) => outputKeys.has(refKey(asset))).map((asset) => asset.itemId),
+    ]);
+    if (owners.size > 1) throw new Error("Maintenance files belong to different library movies");
+    const resolvedMovieId = [...owners][0] ?? randomUUID();
+    const members = sources.map((source) => {
+      const registered = snapshot.files.find((file) => refKey(file) === refKey(source));
+      return { ...source, fileId: registered?.fileId ?? source.fileId ?? randomUUID() };
     });
+    const expected = {
+      files: snapshot.files.filter((file) => file.itemId === resolvedMovieId),
+      assets: assets.filter((asset) => asset.itemId === resolvedMovieId && !asset.historical),
+    };
     return {
-      movieId: participants.movieId,
-      files: participants.expected.files.length
-        ? participants.expected.files
+      movieId: resolvedMovieId,
+      files: expected.files.length
+        ? expected.files
             .map((file) => {
               if (!file.fileId) throw new Error("Registered maintenance file has no ID");
               return { rootId: file.rootId, relativePath: file.relativePath, fileId: file.fileId };
             })
             .sort((left, right) => left.fileId.localeCompare(right.fileId))
-        : participants.members.map(({ source, fileId }) => ({ ...source, fileId })),
-      expected: participants.expected,
+        : members.map(({ rootId, relativePath, fileId }) => ({ rootId, relativePath, fileId })),
+      expected,
     };
   };
   return {
@@ -111,21 +128,21 @@ export const createMaintenanceLibraryPort = (deps: {
       registeredMediaLocations((await deps.getRepositories()).library, deps.resolveRoot, paths),
     publishRefresh: async (input) => {
       const state = await deps.getRepositories();
-      const plan = input.plan;
-      const files = plan.files.map((file) => ({
+      const output = input.output;
+      const files = output.files.map((file) => ({
         fileId: file.fileId,
         rootId: file.target.rootId,
         rootRelativePath: file.target.relativePath,
         size: file.size,
         modifiedAt: file.modifiedAt,
-        assets: libraryAssetsFromPublicationPlan(plan, file.assets),
+        assets: libraryAssetsFromMovieOutput(output, file.assets),
         lastKnownPath: file.target.relativePath,
       }));
       const crawlerData = input.crawlerData;
       const identity = crawlerData?.number || input.fallbackNumber;
       const movie = {
-        id: plan.movieId,
-        assets: libraryAssetsFromPublicationPlan(plan, plan.movieAssets),
+        id: output.movieId,
+        assets: libraryAssetsFromMovieOutput(output, output.movieAssets),
         mediaIdentity: identity,
         number: identity,
         title: crawlerData?.title,
@@ -133,14 +150,31 @@ export const createMaintenanceLibraryPort = (deps: {
         crawlerDataJson: crawlerData ? JSON.stringify(crawlerData) : undefined,
         lastRefreshedAt: input.refreshedAt,
       };
-      const published = await commitPublishedMedia(plan, {
-        resolveRoot: deps.resolveRoot,
-        acquireAll: (keys) => mediaPathOwnership.acquireAll(keys, input.ownershipToken),
-        journal: state.publicationJournal,
-        outputs: state.library,
-        repairIssues: state.libraryRepairIssues,
-        commit: () => ({ libraryItemId: state.library.writeEntry(movie, files) }),
-      });
+      const lockKeys = [
+        ...output.moves.map((move) => dirname(move.targetPath)),
+        ...output.artifacts.map((artifact) => dirname(artifact.targetPath)),
+      ];
+      const release = mediaPathOwnership.acquireAll(lockKeys, input.ownershipToken);
+      let published: PublicationResult<{ libraryItemId: string }>;
+      try {
+        const commit = () => ({ libraryItemId: state.library.writeEntry(movie, files) });
+        published = output.moves.length
+          ? await new MoveOutput().install({
+              operationId: output.operationId,
+              operationType: "maintenance",
+              moves: output.moves,
+              artifacts: output.artifacts,
+              journal: state.publicationJournal,
+              protectedSourceRoots: output.protectedSourceRoots,
+              commit,
+            })
+          : await new WriteOutput().install(output.artifacts, {
+              protectedSourceRoots: output.protectedSourceRoots,
+              commit,
+            });
+      } finally {
+        release();
+      }
       return { ...published.value, cleanupIssues: published.cleanupIssues };
     },
   };

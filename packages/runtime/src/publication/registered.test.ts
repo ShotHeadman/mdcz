@@ -78,7 +78,7 @@ describe("commitRegisteredPublication", () => {
     );
 
     if (owner === "unmanaged") {
-      await expect(publication).rejects.toThrow("已被其他影片占用");
+      await expect(publication).rejects.toThrow("owned by another movie");
       expect(await readFile(nfoPath, "utf8")).toBe("original");
       expect(journal.listUnfinished()).toEqual([]);
       expect((await library.getEntryById("movie")).assets.map((asset) => asset.kind).sort()).toEqual([
@@ -147,7 +147,7 @@ describe("commitRegisteredPublication", () => {
         },
         { journal: createMemoryPublicationJournal(), roots: [{ id: "library", hostPath: directory }] },
       ),
-    ).rejects.toThrow(scenario === "protected-source" ? "受保护的原始文件" : "outside registered roots");
+    ).rejects.toThrow(scenario === "protected-source" ? "protected source file" : "outside registered roots");
     if (scenario === "protected-source") expect(await readFile(outside, "utf8")).toBe("original");
   });
 });

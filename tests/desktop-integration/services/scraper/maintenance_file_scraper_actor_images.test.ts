@@ -175,24 +175,22 @@ describe("MaintenanceFileScraper asset replacement", () => {
     expect(result.status).toBe("success");
     if (decision === "replace") {
       expect(result.updatedEntry?.assets.trailer).toBeUndefined();
-      expect(result.publication?.plan?.obsolete).toEqual([]);
       expect(
-        result.publication?.plan?.operations.some(
-          (operation) => "sourcePath" in operation && operation.sourcePath === oldTrailerPath,
+        result.publication?.output.artifacts.some(
+          (artifact) => "sourcePath" in artifact && artifact.sourcePath === oldTrailerPath,
         ),
       ).toBe(false);
     } else {
       expect(result.updatedEntry?.assets.trailer).toBe(oldTrailerPath);
-      expect(result.publication?.plan?.obsolete.map((ref) => ref.relativePath)).not.toContain(oldTrailerPath);
       expect(
-        result.publication?.plan?.operations.some(
-          (operation) => "sourcePath" in operation && operation.sourcePath === oldTrailerPath,
+        result.publication?.output.artifacts.some(
+          (artifact) => "sourcePath" in artifact && artifact.sourcePath === oldTrailerPath,
         ),
       ).toBe(false);
     }
     expect(
-      result.publication?.plan?.operations.some(
-        (operation) => operation.target.relativePath === "output/ABC-123/ABC-123.mp4",
+      result.publication?.output.publishedTargets.some(
+        (target) => target.relativePath === "output/ABC-123/ABC-123.mp4",
       ),
     ).toBe(false);
     await expect(readFile(oldTrailerPath, "utf8")).resolves.toBe("old-trailer");

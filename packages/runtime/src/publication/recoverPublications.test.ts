@@ -107,11 +107,14 @@ describe("move recovery", () => {
         return { id: "root", hostPath: directory };
       },
     });
-    expect(journal.listUnfinished()).toHaveLength(1);
-    expect(repairIssues.record).toHaveBeenCalledOnce();
     if (scenario === "conflict") {
+      expect(journal.listUnfinished()).toEqual([]);
+      expect(repairIssues.record).not.toHaveBeenCalled();
       expect(await readFile(path.join(directory, "source.mp4"), "utf8")).toBe("original");
-      expect(await readFile(path.join(directory, "target.mp4"), "utf8")).toBe("foreign");
+      await expect(readFile(path.join(directory, "target.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
+    } else {
+      expect(journal.listUnfinished()).toHaveLength(1);
+      expect(repairIssues.record).toHaveBeenCalledOnce();
     }
   });
 });

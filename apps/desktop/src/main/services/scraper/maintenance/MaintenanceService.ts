@@ -2,6 +2,7 @@ import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import { toRootRelativePath } from "@mdcz/media-store";
+import { registeredOutputPaths } from "@mdcz/runtime";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
@@ -15,7 +16,6 @@ import {
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { DirectorySource } from "@mdcz/shared/directoryTasks";

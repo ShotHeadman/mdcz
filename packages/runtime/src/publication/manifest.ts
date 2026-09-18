@@ -1,4 +1,4 @@
-import { type RootFileRef, rootFileRefSchema, wireRelativePathSchema } from "@mdcz/shared/mediaRef";
+import { rootFileRefSchema, wireRelativePathSchema } from "@mdcz/shared/mediaRef";
 import { z } from "zod";
 import type { PublicationJournalManifest } from "./types";
 
@@ -21,6 +21,3 @@ export const parsePublicationJournalManifest = (value: unknown): PublicationJour
   if (!parsed.success) throw new Error("Publication journal manifest is invalid");
   return parsed.data;
 };
-
-export const manifestRefs = (manifest: PublicationJournalManifest): RootFileRef[] =>
-  manifest.entries.flatMap((entry) => [entry, entry.source]);

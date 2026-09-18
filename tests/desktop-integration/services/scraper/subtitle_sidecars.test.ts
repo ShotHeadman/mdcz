@@ -64,50 +64,53 @@ describe("sidecar inventory", () => {
     expect(stats).not.toHaveBeenCalled();
   });
 
-  it("shares alias observations while preserving separate hard-link and symlink entries", async () => {
-    const directory = await fs.mkdtemp(join(tmpdir(), "mdcz-sidecars-"));
-    tempDirs.push(directory);
-    const source = join(directory, "media");
-    const alias = join(directory, "alias");
-    await fs.mkdir(source);
-    await fs.symlink(source, alias, "dir");
-    const subtitle = join(source, "subtitle.txt");
-    const hardlink = join(source, "ABC-123.zh.srt");
-    const symlink = join(source, "ABC-456.zh.srt");
-    await fs.writeFile(subtitle, "subtitle");
-    await fs.link(subtitle, hardlink);
-    await fs.symlink(subtitle, symlink);
-    await fs.writeFile(join(source, "movie.nfo"), "<movie><title>Local title</title><num>ABC-123</num></movie>");
-    const listing = vi.spyOn(fs, "readdir");
-    const stats = vi.spyOn(fs, "stat");
-    const reads = vi.spyOn(fs, "readFile");
-    const inventory = new DirectoryInventory();
-    const directories = await Promise.all([inventory.entries(source), inventory.entries(alias)]);
-    expect(directories[0]).toBe(directories[1]);
-    expect(listing).toHaveBeenCalledTimes(1);
-    expect(reads).not.toHaveBeenCalled();
-    const snapshots = await Promise.all([
-      inventory.loadNfo(join(source, "movie.nfo")),
-      inventory.loadNfo(join(alias, "movie.nfo")),
-    ]);
-    expect(snapshots[0]).toBe(snapshots[1]);
-    expect(snapshots[0]?.crawlerData.title).toBe("Local title");
-    expect(reads).toHaveBeenCalledOnce();
-    const facts = await Promise.all(
-      [subtitle, hardlink, symlink, join(alias, "subtitle.txt")].map((path) => inventory.stats(path)),
-    );
-    expect(facts[0]).toBe(facts[3]);
-    expect(new Set(facts.map((fact) => fact.ino)).size).toBe(1);
-    expect(stats).toHaveBeenCalledTimes(3);
-    for (const [video, expectedSubtitle] of [
-      ["ABC-123.mp4", hardlink],
-      ["ABC-456.mp4", symlink],
-    ]) {
-      const sidecars = await findSubtitleSidecars(join(source, video), inventory);
-      expect(sidecars.map((sidecar) => sidecar.path)).toEqual([expectedSubtitle]);
-      expect(sidecars[0].subtitleTag).toBe("中文字幕");
-    }
-    expect(stats).toHaveBeenCalledTimes(3);
-    expect(listing).toHaveBeenCalledTimes(1);
-  });
+  it.skipIf(process.platform === "win32")(
+    "shares alias observations while preserving separate hard-link and symlink entries",
+    async () => {
+      const directory = await fs.mkdtemp(join(tmpdir(), "mdcz-sidecars-"));
+      tempDirs.push(directory);
+      const source = join(directory, "media");
+      const alias = join(directory, "alias");
+      await fs.mkdir(source);
+      await fs.symlink(source, alias, "dir");
+      const subtitle = join(source, "subtitle.txt");
+      const hardlink = join(source, "ABC-123.zh.srt");
+      const symlink = join(source, "ABC-456.zh.srt");
+      await fs.writeFile(subtitle, "subtitle");
+      await fs.link(subtitle, hardlink);
+      await fs.symlink(subtitle, symlink);
+      await fs.writeFile(join(source, "movie.nfo"), "<movie><title>Local title</title><num>ABC-123</num></movie>");
+      const listing = vi.spyOn(fs, "readdir");
+      const stats = vi.spyOn(fs, "stat");
+      const reads = vi.spyOn(fs, "readFile");
+      const inventory = new DirectoryInventory();
+      const directories = await Promise.all([inventory.entries(source), inventory.entries(alias)]);
+      expect(directories[0]).toBe(directories[1]);
+      expect(listing).toHaveBeenCalledTimes(1);
+      expect(reads).not.toHaveBeenCalled();
+      const snapshots = await Promise.all([
+        inventory.loadNfo(join(source, "movie.nfo")),
+        inventory.loadNfo(join(alias, "movie.nfo")),
+      ]);
+      expect(snapshots[0]).toBe(snapshots[1]);
+      expect(snapshots[0]?.crawlerData.title).toBe("Local title");
+      expect(reads).toHaveBeenCalledOnce();
+      const facts = await Promise.all(
+        [subtitle, hardlink, symlink, join(alias, "subtitle.txt")].map((path) => inventory.stats(path)),
+      );
+      expect(facts[0]).toBe(facts[3]);
+      expect(new Set(facts.map((fact) => fact.ino)).size).toBe(1);
+      expect(stats).toHaveBeenCalledTimes(3);
+      for (const [video, expectedSubtitle] of [
+        ["ABC-123.mp4", hardlink],
+        ["ABC-456.mp4", symlink],
+      ]) {
+        const sidecars = await findSubtitleSidecars(join(source, video), inventory);
+        expect(sidecars.map((sidecar) => sidecar.path)).toEqual([expectedSubtitle]);
+        expect(sidecars[0].subtitleTag).toBe("中文字幕");
+      }
+      expect(stats).toHaveBeenCalledTimes(3);
+      expect(listing).toHaveBeenCalledTimes(1);
+    },
+  );
 });

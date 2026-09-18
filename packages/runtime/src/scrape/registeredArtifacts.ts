@@ -8,14 +8,11 @@ import {
 } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData } from "@mdcz/shared/types";
+import { resolveRegisteredNfoPaths } from "../library/registeredMedia";
 import { buildMovieTags } from "../maintenance/movieTags";
 import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";
-import {
-  commitRegisteredPublication,
-  type PublicationOutputPort,
-  type RegisteredPublicationContext,
-  resolveRegisteredNfoPaths,
-} from "../publication";
+import { commitRegisteredPublication } from "../publication/registered";
+import type { PublicationOutputPort, RegisteredPublicationContext } from "../publication/types";
 import {
   getNfoReadCandidates,
   getNfoWritePaths,

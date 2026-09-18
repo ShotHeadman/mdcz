@@ -7,17 +7,55 @@ import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { ResolvedPublicationLayout } from "../scrape/FileOrganizer";
 import { getNfoWritePaths } from "../scrape/nfo";
 import type { PublicationAssetLayout } from "./assetLayout";
-import { toRootFileRef } from "./publicationPlan";
-import type { MoviePublicationPlan, PublicationFile, PublicationOperation, PublicationParticipants } from "./types";
+import type { SourceMove } from "./MoveOutput";
+import { toRootFileRef } from "./outputRefs";
+import type { PublicationParticipants } from "./types";
+import type { WriteArtifact } from "./WriteOutput";
 
-interface PublicationPlanningMember {
+export interface PreparedMovieFile {
+  fileId: string;
+  source: RootFileRef;
+  target: RootFileRef;
+  size: number;
+  sourceSize: number;
+  modifiedAt: Date;
+  assets: AssetRef[];
+  scrape?: {
+    itemId: string;
+    attemptId: string;
+    identity: Pick<import("@mdcz/shared/types").ScrapeResult, "rootId" | "relativePath" | "fileName" | "part">;
+    fileInfo: import("@mdcz/shared/types").FileInfo;
+    videoMeta?: import("@mdcz/shared/types").VideoMeta;
+    error?: string;
+    uncensoredAmbiguous: boolean;
+  };
+}
+
+export interface PreparedMovieOutput {
+  operationId: string;
+  operationType: "scrape" | "maintenance";
+  movieId: string;
+  files: PreparedMovieFile[];
+  movieAssets: AssetRef[];
+  artifacts: WriteArtifact[];
+  moves: SourceMove[];
+  publishedTargets: RootFileRef[];
+  protectedSourceRoots: string[];
+  scrape?: {
+    crawlerData: CrawlerData;
+    sources: import("@mdcz/shared/types").ScrapeResult["sources"];
+    nfo?: RootFileRef;
+  };
+}
+
+interface MovieOutputMember {
   source: RootFileRef;
   fileId?: string;
   layout: Omit<ResolvedPublicationLayout, "sourceVideoPath">;
   assetLayout: PublicationAssetLayout;
   existingAssets?: DiscoveredAssets;
   existingNfoPath?: string;
-  scrape?: PublicationFile["scrape"];
+  scrape?: PreparedMovieFile["scrape"];
 }
 
 export const retainedRegisteredFeatures = (
@@ -38,11 +76,11 @@ export const retainedRegisteredFeatures = (
           : [],
       );
 
-export const preparePublicationPlan = async (input: {
+export const prepareMovieOutput = async (input: {
   operationId: string;
-  operationType: MoviePublicationPlan["operationType"];
+  operationType: PreparedMovieOutput["operationType"];
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
-  identity: PublicationParticipants<PublicationPlanningMember>;
+  identity: PublicationParticipants<MovieOutputMember>;
   retainedMovieAssets?: AssetRef[];
   stagingDir?: string;
   downloadedAssets: DownloadedAssets;
@@ -51,27 +89,28 @@ export const preparePublicationPlan = async (input: {
   nfoNaming: "both" | "movie" | "filename";
   reuseNfo?: boolean;
   remoteData?: CrawlerData;
-  scrape?: Omit<NonNullable<MoviePublicationPlan["scrape"]>, "nfo">;
+  scrape?: Omit<NonNullable<PreparedMovieOutput["scrape"]>, "nfo">;
   writeNfo(
     assets: DownloadedAssets,
     writeFile: (path: string, content: string) => Promise<void>,
   ): Promise<string | undefined>;
 }): Promise<{
-  plan: MoviePublicationPlan;
+  output: PreparedMovieOutput;
   assets: DiscoveredAssets;
   nfoPath?: string;
 }> => {
   if (!input.identity.members.length) throw new Error("Publication requires at least one media file");
   const toRef = (absolutePath: string) => toRootFileRef(absolutePath, input.roots);
-  const operations: PublicationOperation[] = [];
-  const successful: Array<{ member: (typeof input.identity.members)[number]; file: PublicationFile }> = [];
+  const artifacts: WriteArtifact[] = [];
+  const moves: SourceMove[] = [];
+  const publishedTargets: RootFileRef[] = [];
+  const successful: Array<{ member: (typeof input.identity.members)[number]; file: PreparedMovieFile }> = [];
   const featureAssets = new Map<string, AssetRef>();
   const downloadedTargets = new Set<string>();
-  const obsolete: RootFileRef[] = [];
   const mapped = new Map<string, string>();
   const assetTargets = new Map<string, string>();
   const downloaded = input.downloadedAssets;
-  const sourcePathOf = (file: PublicationPlanningMember) => {
+  const sourcePathOf = (file: MovieOutputMember) => {
     const root = input.roots.find((root) => root.id === file.source.rootId);
     if (!root) throw new Error(`Publication root not found: ${file.source.rootId}`);
     return resolveRootRelativePath(root, file.source.relativePath);
@@ -83,41 +122,43 @@ export const preparePublicationPlan = async (input: {
     const sourcePath = sourcePathOf(file);
     const source = await stat(sourcePath);
     if (!source.isFile()) throw new Error("Publication source is not a file");
-    const fileOperations: PublicationOperation[] = [];
-    const fileObsolete: RootFileRef[] = [];
     const fileAssets: AssetRef[] = [];
-    const memberOperations: PublicationOperation[] = [];
+    const memberMoves: SourceMove[] = [];
     const memberFeatures = new Map<string, AssetRef>();
     let size = source.size;
     let modifiedAt = source.mtime;
     if (layout.mode === "move" && resolve(sourcePath) !== resolve(layout.targetVideoPath)) {
       if (layout.mediaContent === undefined) {
-        fileOperations.push({
-          kind: "move",
+        const target = toRef(layout.targetVideoPath);
+        moves.push({
           source: file.source,
-          target: toRef(layout.targetVideoPath),
+          target,
+          sourcePath,
+          targetPath: layout.targetVideoPath,
           size: source.size,
-          replaceExisting: false,
+          mtimeMs: source.mtimeMs,
         });
+        publishedTargets.push(target);
       } else {
-        fileOperations.push({
-          kind: "write",
-          target: toRef(layout.targetVideoPath),
-          content: { kind: "text", data: layout.mediaContent },
-          replaceExisting: false,
+        const target = toRef(layout.targetVideoPath);
+        moves.push({
+          source: file.source,
+          target,
+          sourcePath,
+          targetPath: layout.targetVideoPath,
+          size: source.size,
+          mtimeMs: source.mtimeMs,
+          rewrittenContent: layout.mediaContent,
         });
-        fileObsolete.push(file.source);
+        publishedTargets.push(target);
         size = Buffer.byteLength(layout.mediaContent);
         modifiedAt = new Date();
       }
     }
     if (layout.mirror) {
-      fileOperations.push({
-        kind: "write",
-        target: toRef(layout.mirror.targetPath),
-        content: { kind: "text", data: layout.mirror.content },
-        replaceExisting: true,
-      });
+      const target = toRef(layout.mirror.targetPath);
+      artifacts.push({ targetPath: layout.mirror.targetPath, data: layout.mirror.content });
+      publishedTargets.push(target);
       fileAssets.push({ type: "local", kind: "strm", file: toRef(layout.mirror.targetPath) });
     }
     for (const sidecar of layout.sidecars) {
@@ -128,22 +169,25 @@ export const preparePublicationPlan = async (input: {
         if (!layout.mirror || moving)
           fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.targetPath) });
         if (moving) {
-          fileOperations.push({
-            kind: "move",
+          const target = toRef(sidecar.targetPath);
+          moves.push({
             source: toRef(sidecar.sourcePath),
-            target: toRef(sidecar.targetPath),
+            target,
+            sourcePath: sidecar.sourcePath,
+            targetPath: sidecar.targetPath,
             size: sidecarSource.size,
-            replaceExisting: true,
+            mtimeMs: sidecarSource.mtimeMs,
           });
+          publishedTargets.push(target);
         }
         if (sidecar.mirrorPath) {
-          fileOperations.push({
-            kind: "copy",
+          const target = toRef(sidecar.mirrorPath);
+          artifacts.push({
             sourcePath: sidecar.sourcePath,
-            target: toRef(sidecar.mirrorPath),
+            targetPath: sidecar.mirrorPath,
             size: sidecarSource.size,
-            replaceExisting: true,
           });
+          publishedTargets.push(target);
           fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.mirrorPath) });
         }
       } else {
@@ -159,19 +203,21 @@ export const preparePublicationPlan = async (input: {
           file: toRef(sidecar.targetPath),
         });
         if (moving) {
-          memberOperations.push({
-            kind: "move",
+          const target = toRef(sidecar.targetPath);
+          memberMoves.push({
             source: toRef(sidecar.sourcePath),
-            target: toRef(sidecar.targetPath),
+            target,
+            sourcePath: sidecar.sourcePath,
+            targetPath: sidecar.targetPath,
             size: sidecarSource.size,
-            replaceExisting: true,
+            mtimeMs: sidecarSource.mtimeMs,
           });
+          publishedTargets.push(target);
         }
       }
     }
-    obsolete.push(...fileObsolete);
     for (const [targetPath, asset] of memberFeatures) featureAssets.set(targetPath, asset);
-    operations.push(...memberOperations);
+    moves.push(...memberMoves);
     successful.push({
       member: file,
       file: {
@@ -182,7 +228,6 @@ export const preparePublicationPlan = async (input: {
         sourceSize: source.size,
         modifiedAt,
         assets: fileAssets,
-        operations: fileOperations,
         scrape: file.scrape,
       },
     });
@@ -236,14 +281,14 @@ export const preparePublicationPlan = async (input: {
           targetPath = stagedName ? file.assetLayout.staged.get(stagedName) : file.assetLayout.retained.get(sourcePath);
           if (!targetPath) throw new Error(`Publication asset has no declared destination: ${sourcePath}`);
           if (stagedName || sourcePath !== targetPath) {
-            operations.push({
-              kind: "copy",
+            const target = toRef(targetPath);
+            artifacts.push({
               sourcePath,
-              target: toRef(targetPath),
+              targetPath,
               size: (await stat(sourcePath)).size,
-              replaceExisting: true,
               consume: Boolean(stagedName),
             });
+            publishedTargets.push(target);
             if (stagedName) downloadedTargets.add(targetPath);
           }
           assetTargets.set(mappingKey, targetPath);
@@ -270,12 +315,9 @@ export const preparePublicationPlan = async (input: {
     : await input.writeNfo({ ...assets, downloaded: [...downloadedTargets] }, async (targetPath, data) => {
         if (!allowedNfoPaths.has(resolve(targetPath)))
           throw new Error(`NFO writer selected an undeclared layout destination: ${targetPath}`);
-        operations.push({
-          kind: "write",
-          target: toRef(targetPath),
-          content: { kind: "text", data },
-          replaceExisting: true,
-        });
+        const target = toRef(targetPath);
+        artifacts.push({ targetPath, data });
+        publishedTargets.push(target);
       });
   const existingNfoPath = first.existingNfoPath;
   if (!nfoPath && existingNfoPath) {
@@ -311,12 +353,9 @@ export const preparePublicationPlan = async (input: {
       if (referencesChanged) content = new XMLBuilder(xmlOptions).build(document);
     }
     for (const targetPath of paths.requiredPaths) {
-      operations.push({
-        kind: "write",
-        target: toRef(targetPath),
-        content: { kind: "text", data: content },
-        replaceExisting: true,
-      });
+      const target = toRef(targetPath);
+      artifacts.push({ targetPath, data: content });
+      publishedTargets.push(target);
     }
   }
 
@@ -334,11 +373,9 @@ export const preparePublicationPlan = async (input: {
     const nfoFiles = new Map<string, RootFileRef>();
     const canonical = toRef(nfoPath);
     nfoFiles.set(`${canonical.rootId}\0${canonical.relativePath}`, canonical);
-    for (const operation of operations) {
-      if (operation.kind === "write" && operation.target.relativePath.toLowerCase().endsWith(".nfo")) {
-        nfoFiles.set(`${operation.target.rootId}\0${operation.target.relativePath}`, operation.target);
-      }
-    }
+    for (const target of publishedTargets)
+      if (target.relativePath.toLowerCase().endsWith(".nfo"))
+        nfoFiles.set(`${target.rootId}\0${target.relativePath}`, target);
     movieAssets.push(...[...nfoFiles.values()].map((file) => ({ type: "local" as const, kind: "nfo", file })));
   }
   for (const asset of input.retainedMovieAssets ?? []) {
@@ -355,17 +392,26 @@ export const preparePublicationPlan = async (input: {
     )
       movieAssets.push(asset);
   }
-  const plan: MoviePublicationPlan = {
-    kind: "movie",
+  const targetRootIds = new Set(successful.map(({ file }) => file.target.rootId));
+  const protectedSourceRoots = [
+    ...new Set(
+      input.identity.members
+        .filter((member) => !targetRootIds.has(member.source.rootId))
+        .map((member) => input.roots.find((root) => root.id === member.source.rootId)?.hostPath)
+        .filter((root): root is string => Boolean(root)),
+    ),
+  ];
+  const output: PreparedMovieOutput = {
     operationId: input.operationId,
     operationType: input.operationType,
     movieId: input.identity.movieId,
-    expected: input.identity.expected,
     files: successful.map((entry) => entry.file),
-    operations,
     movieAssets,
-    obsolete,
+    artifacts,
+    moves,
+    publishedTargets,
+    protectedSourceRoots,
     ...(input.scrape ? { scrape: { ...input.scrape, ...(nfoPath ? { nfo: toRef(nfoPath) } : {}) } } : {}),
   };
-  return { assets, nfoPath, plan };
+  return { assets, nfoPath, output };
 };
