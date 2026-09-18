@@ -337,6 +337,22 @@ export class LibraryRepository {
     };
   }
 
+  inventoryOwnership() {
+    return this.database.sqlite
+      .prepare<
+        [],
+        { rootId: string; relativePath: string; movieId: string; fileId: string | null; kind: "video" | "nfo" | "strm" }
+      >(`
+      SELECT root_id AS rootId, root_relative_path AS relativePath, item_id AS movieId, id AS fileId, 'video' AS kind
+      FROM library_item_files
+      UNION ALL
+      SELECT root_id AS rootId, relative_path AS relativePath, item_id AS movieId, file_id AS fileId, kind
+      FROM library_item_assets
+      WHERE kind IN ('nfo', 'strm') AND published = 1 AND historical = 0 AND root_id IS NOT NULL AND relative_path IS NOT NULL
+    `)
+      .all();
+  }
+
   writeEntry(movie: LibraryMovieInput, files: readonly LibraryFileInput[]): string {
     return this.database.sqlite.transaction(() => writeLibraryRows(this.database, movie, files))();
   }

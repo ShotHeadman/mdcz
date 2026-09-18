@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, open, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  stat,
+  statfs,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { MediaPathBusyError, mediaPathOwnership } from "../library/mediaPathOwnership";
@@ -144,6 +156,30 @@ export const commitPublishedMedia = async <TResult>(
   );
   const lockStartedAt = startPhase("lock");
   const paths = await preparePublicationPaths(lockRefs, options, copySources);
+  for (const operation of publicationOperations(plan)) {
+    if (operation.kind !== "move") continue;
+    const source = paths.key(operation.source);
+    const target = paths.key(operation.target);
+    const entry = await lstat(source).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") throw new Error(`Publication source is missing: ${source}`, { cause: error });
+      throw error;
+    });
+    if (!entry.isSymbolicLink()) continue;
+    const linkTarget = await readlink(source);
+    if (!path.isAbsolute(linkTarget) && path.dirname(source) !== path.dirname(target)) {
+      throw new Error(`Cannot relocate a relative file symlink without preserving its target: ${source}`);
+    }
+    const [sourceParent, targetParent] = await Promise.all([
+      stat(path.dirname(source)),
+      stat(path.dirname(target)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }),
+    ]);
+    if (!targetParent || sourceParent.dev !== targetParent.dev) {
+      throw new Error(`Cannot copy a file symlink as source media: ${source}`);
+    }
+  }
   const lockKeys = new Set([...lockRefs.map(paths.key), ...copySources.map(paths.pathKey)]);
   let release: () => void;
   try {
@@ -261,6 +297,8 @@ export const commitPublishedMedia = async <TResult>(
                 await fileSystem.rename(sourcePath, temporaryPath);
               } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+                if ((await lstat(sourcePath)).isSymbolicLink())
+                  throw new Error(`Cannot copy a file symlink as source media: ${sourcePath}`, { cause: error });
                 if (capacity.bavail * capacity.bsize < operation.size)
                   throw new Error(`Insufficient space for publication target: ${targetPath}`);
                 await fileSystem.copyFile(sourcePath, temporaryPath);

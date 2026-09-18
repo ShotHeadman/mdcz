@@ -167,13 +167,13 @@ export class ScanQueueService {
   private async scanCandidates(input: ScanCandidatesInput, signal: AbortSignal): Promise<ScanCandidatesResponse> {
     if (this.closing) throw new Error("Scan queue is closing");
     const configuration = await this.config.get();
-    const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
     const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
     if (metadataPath) excludeDirPaths.push(metadataPath);
-    await this.mediaRoots.ensurePathRecord({ hostPath: input.scanDir });
+    const admitted = await this.mediaRoots.admitDirectory({ hostPath: input.scanDir });
+    const root = admitted.root;
+    const hostPath = admitted.hostPath;
     const roots = await this.mediaRoots.listRoots();
-    const root = resolveRootFile(roots, hostPath).root;
     const supported = new Set(
       (input.supportedExtensions ?? []).map((extension) => `.${extension.replace(/^\./u, "").toLowerCase()}`),
     );
@@ -187,6 +187,7 @@ export class ScanQueueService {
       warnings,
       excludeDirectoryPaths: excludeDirPaths,
       excludeFileSymlinks: true,
+      deduplicateDirectories: true,
       filterFile: createMediaFileFilter(configuration, generatedStrms, supported.size ? supported : undefined),
     });
     return {

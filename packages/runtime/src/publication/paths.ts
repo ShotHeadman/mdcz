@@ -9,7 +9,7 @@ export const publicationRefKey = (ref: RootFileRef): string => `${ref.rootId}\0$
 export const publicationPathKey = (value: string): string =>
   process.platform === "win32" ? resolve(value).toLowerCase() : resolve(value);
 
-export const resolvePublicationPath = async (value: string): Promise<string> => {
+const resolvePublicationDirectory = async (value: string): Promise<string> => {
   const absolute = resolve(value);
   try {
     return await realpath(absolute);
@@ -22,8 +22,13 @@ export const resolvePublicationPath = async (value: string): Promise<string> => 
     if (entry?.isSymbolicLink()) throw new Error(`Publication path is a dangling link: ${absolute}`);
     const parent = dirname(absolute);
     if (parent === absolute) throw error;
-    return resolve(await resolvePublicationPath(parent), basename(absolute));
+    return resolve(await resolvePublicationDirectory(parent), basename(absolute));
   }
+};
+
+export const resolvePublicationPath = async (value: string): Promise<string> => {
+  const absolute = resolve(value);
+  return resolve(await resolvePublicationDirectory(dirname(absolute)), basename(absolute));
 };
 
 export const resolvePublicationReferenceKeys = async (
@@ -70,7 +75,7 @@ export const preparePublicationPaths = async (
   await Promise.all(
     [...roots.values()].map(async (root) => {
       try {
-        rootPaths.set(root.id, publicationPathKey(await resolvePublicationPath(root.hostPath)));
+        rootPaths.set(root.id, publicationPathKey(await resolvePublicationDirectory(root.hostPath)));
       } catch (error) {
         if (
           requiredRoots.has(root.id) ||

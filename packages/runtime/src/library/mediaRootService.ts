@@ -1,9 +1,11 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
+  canonicalizeRootFileRefs,
+  filesystemPathKey,
+  inspectFileEntry,
   type MediaRoot,
   normalizeHostPath,
-  resolveRootFile,
   resolveRootRelativePath,
   toRootRelativePath,
 } from "@mdcz/media-store";
@@ -52,17 +54,26 @@ export class ConfiguredMediaRootService {
   }
 
   async ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse> {
-    const parsed = mediaRootEnsurePathInputSchema.parse(input);
-    const root = await this.ensurePathRecord(parsed);
+    const { root, relativeDirectory } = await this.admitDirectory(input);
     return {
       ...toMediaRootDto(root),
-      relativeDirectory: toRootRelativePath(root, normalizeHostPath(parsed.hostPath)),
+      relativeDirectory,
     };
   }
 
   async registerPathIntent(hostPath: string): Promise<MediaRoot> {
     this.validatePathSyntax(hostPath.trim());
     return await this.registry.ensurePath(normalizeHostPath(hostPath));
+  }
+
+  async admitDirectory(input: MediaRootEnsurePathInput) {
+    const parsed = mediaRootEnsurePathInputSchema.parse(input);
+    const root = await this.ensurePathRecord(parsed);
+    const relativeDirectory = toRootRelativePath(
+      { hostPath: root.realPath ?? (await realpath(root.hostPath)) },
+      await realpath(parsed.hostPath),
+    );
+    return { root, relativeDirectory, hostPath: resolveRootRelativePath(root, relativeDirectory) };
   }
 
   async ensurePathRecord(input: MediaRootEnsurePathInput): Promise<MediaRoot> {
@@ -90,13 +101,67 @@ export class ConfiguredMediaRootService {
 
   async canonicalizeFileRefs(refs: readonly RootFileRef[]): Promise<RootFileRef[]> {
     const roots = await this.listRoots();
-    const rootsById = new Map(roots.map((root) => [root.id, root]));
-    return refs.map((ref) => {
-      const referencedRoot = rootsById.get(ref.rootId);
-      if (!referencedRoot) throw new Error(`Media root not found: ${ref.rootId}`);
-      const resolved = resolveRootFile(roots, resolveRootRelativePath(referencedRoot, ref.relativePath));
-      return { rootId: resolved.root.id, relativePath: resolved.relativePath };
-    });
+    return canonicalizeRootFileRefs(roots, refs);
+  }
+
+  async admitFileRefs(refs: readonly RootFileRef[]) {
+    const registered = await this.canonicalizeFileRefs(refs);
+    const roots = new Map((await this.listRoots()).map((root) => [root.id, root]));
+    const participants = new Map<
+      string,
+      { ref: RootFileRef; submittedRefs: RootFileRef[]; entry: Awaited<ReturnType<typeof inspectFileEntry>> }
+    >();
+    for (const ref of registered) {
+      const root = roots.get(ref.rootId);
+      if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+      const entry = await inspectFileEntry(resolveRootRelativePath(root, ref.relativePath));
+      const existing = participants.get(entry.entryIdentity);
+      if (existing) existing.submittedRefs.push(ref);
+      else participants.set(entry.entryIdentity, { ref, submittedRefs: [ref], entry });
+    }
+    return [...participants.values()];
+  }
+
+  async assertRootIntegrity(rootIds: Iterable<string>): Promise<void> {
+    for (const id of new Set(rootIds)) {
+      let root = await this.registry.get(id);
+      if (root.realPath === null) {
+        await this.registry.ensurePath(root.hostPath);
+        root = await this.registry.get(id);
+      }
+      const current = await realpath(root.hostPath);
+      if (root.realPath === null || filesystemPathKey(current) !== filesystemPathKey(root.realPath)) {
+        throw new Error(`Media root canonical path changed: ${root.hostPath}`);
+      }
+    }
+  }
+
+  rootIntegrityGuard(checkedRootIds: Iterable<string> = []) {
+    const checks = new Map([...checkedRootIds].map((id) => [id, Promise.resolve()]));
+    return async (rootIds: Iterable<string>): Promise<void> => {
+      await Promise.all(
+        [...new Set(rootIds)].map((id) => {
+          let check = checks.get(id);
+          if (!check) {
+            check = this.assertRootIntegrity([id]);
+            checks.set(id, check);
+          }
+          return check;
+        }),
+      );
+    };
+  }
+
+  async rootAliasDiagnostics(): Promise<Array<{ realPath: string; rootIds: string[] }>> {
+    const identities = new Map<string, { realPath: string; rootIds: string[] }>();
+    for (const root of await this.listRoots()) {
+      if (root.realPath === null) continue;
+      const key = filesystemPathKey(root.realPath);
+      const existing = identities.get(key);
+      if (existing) existing.rootIds.push(root.id);
+      else identities.set(key, { realPath: root.realPath, rootIds: [root.id] });
+    }
+    return [...identities.values()].filter((identity) => identity.rootIds.length > 1);
   }
 
   async assertConfiguredMediaPath(

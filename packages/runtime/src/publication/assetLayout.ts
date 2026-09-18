@@ -1,8 +1,8 @@
-import { readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DiscoveredAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { buildSceneImageFileName, SCENE_IMAGE_FILE_PATTERN } from "../scrape/download/assets/helpers";
 import type { ResolvedPublicationLayout } from "../scrape/FileOrganizer";
 import { sanitizePathSegment } from "../scrape/utils/path";
@@ -19,6 +19,7 @@ export const resolvePublicationAssetLayout = async (input: {
   movieBaseName?: string;
   existingAssets?: DiscoveredAssets;
   assetDecisions?: MaintenanceAssetDecisions;
+  inventory?: DirectoryInventory;
 }): Promise<PublicationAssetLayout> => {
   const { layout, config } = input;
   const names = buildMovieAssetFileNames(
@@ -42,15 +43,11 @@ export const resolvePublicationAssetLayout = async (input: {
     }
   }
 
-  const readEntries = async (directory: string) =>
-    readdir(directory, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return [];
-      throw error;
-    });
+  const inventory = input.inventory ?? new DirectoryInventory();
 
   const scanDirectoryAssets = async (directory: string, isSourceDir: boolean) => {
     const sceneFolder = join(directory, config.paths.sceneImagesFolder);
-    for (const entry of await readEntries(sceneFolder)) {
+    for (const entry of await inventory.entries(sceneFolder)) {
       if (!entry.isFile() || !SCENE_IMAGE_FILE_PATTERN.test(entry.name)) continue;
       const source = join(sceneFolder, entry.name);
       if (!retained.has(source)) {
@@ -63,7 +60,7 @@ export const resolvePublicationAssetLayout = async (input: {
     }
 
     const actorsFolder = join(directory, ".actors");
-    for (const entry of await readEntries(actorsFolder)) {
+    for (const entry of await inventory.entries(actorsFolder)) {
       if (!entry.isFile()) continue;
       const source = join(actorsFolder, entry.name);
       if (!retained.has(source)) {
@@ -72,7 +69,7 @@ export const resolvePublicationAssetLayout = async (input: {
       }
     }
 
-    for (const entry of await readEntries(directory)) {
+    for (const entry of await inventory.entries(directory)) {
       if (!entry.isFile()) continue;
       const ext = parse(entry.name).ext.toLowerCase();
       for (const kind of ["thumb", "poster", "fanart", "trailer"] as const) {

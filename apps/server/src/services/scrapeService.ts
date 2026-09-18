@@ -13,9 +13,11 @@ import {
   createDirectoryScope,
   createScrapeExecution,
   createScrapeExecutionPolicy,
+  DirectoryInventory,
   discoverDirectoryFiles,
   FileOrganizer,
   type MountedRootScrapeRuntime,
+  type MountedRootScrapeRuntimeItemInput,
   NfoGenerator,
   PosterCropService,
   type PreparedMountedRootScrape,
@@ -25,7 +27,6 @@ import {
   ScrapeCoordinator,
   type ScrapeHostExecution,
   type ScrapeHostPort,
-  type ScrapePreparationResult,
   type ScrapeRunItem,
   type ScrapeRunSnapshot,
   type ScrapeWorkflowReporter,
@@ -60,7 +61,7 @@ import {
   type ScrapeTaskControlInput,
   type TaskEventDto,
 } from "@mdcz/shared/serverDtos";
-import type { ScrapeResult, UncensoredChoice } from "@mdcz/shared/types";
+import type { UncensoredChoice } from "@mdcz/shared/types";
 import { toScrapeResultDto } from "../scrapeDtos";
 import type { TaskEventBus } from "../taskEvents";
 import type { ServerConfigService } from "./configService";
@@ -91,21 +92,8 @@ export interface ScrapeServiceResources {
   prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
 }
 
-const createFailedResult = (
-  item: ScrapeRunItem<ServerManualScrape>,
-  error: string,
-  status: "failed" | "skipped" = "failed",
-): ScrapeResult => ({
-  fileId: item.id,
-  rootId: item.rootId,
-  relativePath: item.relativePath,
-  fileName: path.basename(item.sourcePath),
-  status,
-  error,
-  assets: [],
-});
-
 export class ScrapeService {
+  private readonly discoveredInventories = new Map<string, DirectoryInventory>();
   private readonly networkClient: NetworkClient;
   private readonly fileOrganizer = new FileOrganizer();
   private readonly nfoGenerator = new NfoGenerator();
@@ -169,12 +157,14 @@ export class ScrapeService {
           onProgress,
           platform: "server",
         });
-        return await repository.scrapeRuns.fixManifest({
+        const manifest = await repository.scrapeRuns.fixManifest({
           runId: run.id,
           signal,
           discoveryJson: JSON.stringify(found.discovery),
           items: found.refs.map((ref, ordinal) => ({ ...ref, ordinal })),
         });
+        this.discoveredInventories.set(run.id, found.inventory);
+        return manifest;
       },
       createExecution: async (run, reporter) => await this.createExecution(run, reporter),
       onInvalidate: () => this.scheduleScrapeInvalidation(),
@@ -425,10 +415,13 @@ export class ScrapeService {
       throw new Error("Batch scrapes require outputRootId");
     }
     if (!input.executionMode) throw new Error("Scrape executionMode is required");
-    const refs = await this.mediaRoots.canonicalizeFileRefs(input.refs);
+    const inventory = new DirectoryInventory();
+    const refs = await inventory.admitRefs(await this.mediaRoots.canonicalizeFileRefs(input.refs), (id) =>
+      this.mediaRoots.get(id),
+    );
     const rootId = refs[0]?.rootId;
     if (!rootId) throw new Error("Scrape run requires at least one file");
-    return await (await this.persistence.getState()).repositories.scrapeRuns.create({
+    const manifest = await (await this.persistence.getState()).repositories.scrapeRuns.create({
       rootId,
       outputRootId: input.outputRootId ?? null,
       outputRelativeDirectory: input.outputRelativeDirectory || null,
@@ -442,12 +435,19 @@ export class ScrapeService {
         uncensoredChoice: input.uncensoredConfirmed ? "uncensored" : null,
       })),
     });
+    this.discoveredInventories.set(manifest.id, inventory);
+    return manifest;
   }
 
   private async createExecution(
     manifest: ScrapeRunManifest,
     reporter: ScrapeWorkflowReporter,
   ): Promise<ScrapeHostExecution<ServerManualScrape, PreparedMountedRootScrape>> {
+    const outputRootIds = manifest.requestedOutputRootId ? [manifest.requestedOutputRootId] : [];
+    const checkRoots = this.mediaRoots.rootIntegrityGuard(
+      manifest.directoryScopeJson ? [...manifest.items.map((item) => item.rootId), ...outputRootIds] : [],
+    );
+    await checkRoots(outputRootIds);
     for (const rootId of new Set(manifest.items.map((item) => item.rootId))) await this.mediaRoots.get(rootId);
     const requestedOutputRoot = manifest.requestedOutputRootId
       ? await this.mediaRoots.get(manifest.requestedOutputRootId)
@@ -456,14 +456,23 @@ export class ScrapeService {
     applyScrapeNetworkPolicy(this.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: console });
     const state = await this.persistence.getState();
-    const runtime = this.runtime.createExecution(manifest.executionMode, state.repositories.library);
+    const inventory = this.discoveredInventories.get(manifest.id) ?? new DirectoryInventory();
+    const runtime = this.runtime.createExecution(manifest.executionMode, state.repositories.library, inventory);
+    this.discoveredInventories.delete(manifest.id);
     const repository = state.repositories.scrapeRuns;
     return await createScrapeExecution<ServerManualScrape, PreparedMountedRootScrape>({
+      configuration,
+      inventory,
       manifest,
+      ownership: () => state.repositories.library.inventoryOwnership(),
       outputRoot: requestedOutputRoot,
       restGate: policy.restGate ?? undefined,
       resolveRoot: (id) => this.mediaRoots.get(id),
-      enrichItem: (item) => this.prepareScrapeItem(item),
+      enrichItem: async (item) => {
+        const prepared = await this.prepareScrapeItem(item);
+        await checkRoots([prepared.executionSource?.rootId ?? prepared.rootId]);
+        return prepared;
+      },
       manualScrape: (id) => {
         const item = manifest.items.find((item) => item.id === id);
         if (!item) throw new Error(`Scrape item not found: ${id}`);
@@ -493,8 +502,27 @@ export class ScrapeService {
         ),
       execution: {
         concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
-        prepareItem: async (item: ScrapeRunItem<ServerManualScrape>, signal: AbortSignal, attemptId: string) =>
-          await this.prepareItem(manifest, item, configuration, signal, attemptId, reporter, runtime),
+        prepareGroup: async (entries, signal) => {
+          const inputs = await Promise.all(
+            entries.map(({ item, attemptId }) =>
+              this.prepareInput(manifest, item, configuration, signal, attemptId, reporter),
+            ),
+          );
+          const results = await runtime.prepareGroup(inputs);
+          return results.map((result, index) =>
+            result.status === "prepared"
+              ? result
+              : {
+                  status: result.status,
+                  result: {
+                    ...result.result,
+                    fileId: entries[index].item.id,
+                    rootId: entries[index].item.rootId,
+                    relativePath: entries[index].item.relativePath,
+                  },
+                },
+          );
+        },
         executePreparedFiles: async (entries, signal) =>
           await runtime.executePrepared(
             entries.map(({ item, prepared, fileScrape }) => ({
@@ -508,73 +536,58 @@ export class ScrapeService {
     });
   }
 
-  private async prepareItem(
+  private async prepareInput(
     manifest: ScrapeRunManifest,
     item: ScrapeRunItem<ServerManualScrape>,
     configuration: Configuration,
     signal: AbortSignal,
     attemptId: string,
     reporter: ScrapeWorkflowReporter,
-    runtime: MountedRootScrapeRuntime,
-  ): Promise<ScrapePreparationResult<PreparedMountedRootScrape>> {
-    try {
-      const sourceRef = item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath };
-      const root = await this.mediaRoots.get(sourceRef.rootId);
-      const outputRoot = manifest.requestedOutputRootId
-        ? await this.mediaRoots.get(manifest.requestedOutputRootId)
-        : root;
-      const metadataRoot = await this.resolveMetadataRoot(outputRoot, configuration);
-      const runtimeResult = await runtime.prepare({
-        configuration,
-        root,
-        outputRoot: manifest.requestedOutputRootId ? outputRoot : undefined,
-        outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? undefined,
-        relativePath: sourceRef.relativePath,
-        scrapeSessionId: manifest.id,
-        operationId: `${manifest.id}:${attemptId}`,
-        publicationRoots: Array.from(
-          new Map([root, outputRoot, metadataRoot].map((entry) => [entry.id, entry])).values(),
-        ),
-        manualScrape: resolveManualScrapeRoute(item.manualScrape?.manualUrl),
-        localState: item.manualScrape?.uncensoredChoice
-          ? { uncensoredChoice: item.manualScrape.uncensoredChoice }
+  ): Promise<MountedRootScrapeRuntimeItemInput> {
+    const sourceRef = item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath };
+    const root = await this.mediaRoots.get(sourceRef.rootId);
+    const outputRoot = manifest.requestedOutputRootId
+      ? await this.mediaRoots.get(manifest.requestedOutputRootId)
+      : root;
+    const metadataRoot = await this.resolveMetadataRoot(outputRoot, configuration);
+    return {
+      configuration,
+      root,
+      outputRoot: manifest.requestedOutputRootId ? outputRoot : undefined,
+      outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? undefined,
+      relativePath: sourceRef.relativePath,
+      scrapeSessionId: manifest.id,
+      operationId: `${manifest.id}:${attemptId}`,
+      publicationRoots: Array.from(
+        new Map([root, outputRoot, metadataRoot].map((entry) => [entry.id, entry])).values(),
+      ),
+      manualScrape: resolveManualScrapeRoute(item.manualScrape?.manualUrl),
+      localState: item.manualScrape?.uncensoredChoice
+        ? { uncensoredChoice: item.manualScrape.uncensoredChoice }
+        : undefined,
+      outputDirectory:
+        item.manualScrape?.manualUrl && manifest.requestedOutputRootId
+          ? resolveRootRelativePath(outputRoot, manifest.requestedOutputRelativeDirectory ?? "")
           : undefined,
-        outputDirectory:
-          item.manualScrape?.manualUrl && manifest.requestedOutputRootId
-            ? resolveRootRelativePath(outputRoot, manifest.requestedOutputRelativeDirectory ?? "")
-            : undefined,
-        outputTemplateRoot: item.outputTemplateRoot,
-        signal,
-        onEvent: (type, message) => {
-          this.addEvent(manifest.id, type, message, item.id);
-        },
-        onProgress: (value) => {
-          reporter.progress(item.id, value);
-        },
-        onStage: (stage, message) => {
-          reporter.stage({ stage, message, itemId: item.id });
-        },
-      });
-      if (runtimeResult.status === "prepared") return runtimeResult;
-      return {
-        status: runtimeResult.status,
-        result: {
-          ...runtimeResult.result,
-          fileId: item.id,
-          rootId: item.rootId,
-          relativePath: item.relativePath,
-        },
-      };
-    } catch (error) {
-      if (signal.aborted) throw error;
-      return { status: "failed" as const, result: createFailedResult(item, errorMessage(error)) };
-    }
+      outputTemplateRoot: item.outputTemplateRoot,
+      signal,
+      onEvent: (type, message) => {
+        this.addEvent(manifest.id, type, message, item.id);
+      },
+      onProgress: (value) => {
+        reporter.progress(item.id, value);
+      },
+      onStage: (stage, message) => {
+        reporter.stage({ stage, message, itemId: item.id });
+      },
+    };
   }
 
   private async handleTerminalRun(
     manifest: ScrapeRunManifest,
     _snapshot: ScrapeRunSnapshot<ServerManualScrape>,
   ): Promise<void> {
+    this.discoveredInventories.delete(manifest.id);
     const repository = (await this.persistence.getState()).repositories.scrapeRuns;
     const summary = repository.summary(manifest);
     if (!summary) throw new Error(`Scrape run finalization disappeared after update: ${manifest.id}`);

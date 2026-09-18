@@ -1,6 +1,6 @@
-import { readdir, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import type { SubtitleTag } from "@mdcz/shared/types";
+import { DirectoryInventory } from "../DirectoryInventory";
 import { DEFAULT_VIDEO_EXTENSIONS } from "../utils/filesystem";
 import { parseFileInfo } from "../utils/number";
 import {
@@ -71,11 +71,14 @@ export interface SubtitleSidecarMatch {
   subtitleTag: SubtitleTag;
 }
 
-export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleSidecarMatch[]> => {
+export const findSubtitleSidecars = async (
+  videoPath: string,
+  inventory = new DirectoryInventory(),
+): Promise<SubtitleSidecarMatch[]> => {
   const video = parse(videoPath);
   const videoBaseCandidates = buildVideoBaseCandidates(videoPath);
-  const entries = await readdir(video.dir, { withFileTypes: true });
-  const siblingVideos = entries.filter(
+  const entries = await inventory.entries(video.dir);
+  const siblingVideos = (await inventory.mediaEntries(video.dir)).filter(
     (entry) =>
       (entry.isFile() || entry.isSymbolicLink()) &&
       DEFAULT_VIDEO_EXTENSIONS.has(extname(entry.name).toLowerCase()) &&
@@ -92,7 +95,7 @@ export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleS
 
       const sidecarPath = join(video.dir, entry.name);
       if (entry.isSymbolicLink()) {
-        const targetStats = await stat(sidecarPath).catch((error: NodeJS.ErrnoException) => {
+        const targetStats = await inventory.stats(sidecarPath).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return null;
           throw error;
         });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
+import { canonicalizeRootFileRefs, type MediaRoot, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
@@ -36,6 +36,7 @@ export interface MaintenanceRootPort {
   get(rootId: string): Promise<MediaRoot>;
   list(): Promise<MediaRoot[]>;
   ensurePathRecord(input: { hostPath: string }): Promise<MediaRoot>;
+  assertRootIntegrity(rootIds: Iterable<string>): Promise<void>;
 }
 
 export interface MaintenanceDirectoryTaskDefinition {
@@ -127,13 +128,7 @@ const canonicalizeRefs = async (
   refs: readonly MaintenanceSessionRef[],
 ): Promise<MaintenanceSessionRef[]> => {
   const registeredRoots = await roots.list();
-  const rootsById = new Map(registeredRoots.map((root) => [root.id, root]));
-  const canonical = refs.map((ref) => {
-    const referencedRoot = rootsById.get(ref.rootId);
-    if (!referencedRoot) throw new Error(`Media root not found: ${ref.rootId}`);
-    const resolved = resolveRootFile(registeredRoots, resolveRootRelativePath(referencedRoot, ref.relativePath));
-    return { rootId: resolved.root.id, relativePath: resolved.relativePath };
-  });
+  const canonical = canonicalizeRootFileRefs(registeredRoots, refs);
   assertUniqueRefs(canonical);
   return canonical;
 };
@@ -298,6 +293,13 @@ export class MaintenanceSessionCoordinator {
       }
       const canonical = await canonicalizeRefs(this.deps.roots, input.refs);
       const selections = await resolveMovieSelections(this.deps.library, canonical);
+      if (!input.directoryScope)
+        await this.deps.roots.assertRootIntegrity([
+          input.rootId,
+          ...canonical.map((ref) => ref.rootId),
+          ...selections.flatMap((selection) => selection.identity.files.map((file) => file.rootId)),
+          ...(input.outputRootId ? [input.outputRootId] : []),
+        ]);
       const refs = selections.map((selection) => selection.ref);
       this.previewSelections = new Map(selections.map((selection) => [refKey(selection.ref), selection]));
       const root = await this.deps.roots.get(input.rootId);
@@ -380,6 +382,7 @@ export class MaintenanceSessionCoordinator {
     for (const preview of previews)
       for (const file of preview.publicationIdentity?.files ?? [])
         refs.push({ rootId: file.rootId, relativePath: file.relativePath });
+    await this.deps.roots.assertRootIntegrity(refs.map((ref) => ref.rootId));
     const keys = await prepareMediaPathKeys(refs, (id) => this.deps.roots.get(id));
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");

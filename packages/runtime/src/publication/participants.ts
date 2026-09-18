@@ -5,37 +5,6 @@ import { PublicationConflictError } from "./conflicts";
 import { publicationRefKey, resolvePublicationReferenceKeys } from "./paths";
 import type { PublicationOutputPort, PublicationParticipants } from "./types";
 
-export const resolvePublicationSourceOwners = async (input: {
-  sources: readonly RootFileRef[];
-  snapshot: ReturnType<PublicationOutputPort["publicationSnapshot"]>;
-  resolveRoot(rootId: string): Promise<Pick<MediaRoot, "id" | "hostPath">>;
-}): Promise<ReadonlyMap<string, string | null>> => {
-  const keys = await resolvePublicationReferenceKeys(
-    [...input.snapshot.files, ...input.sources],
-    input.sources,
-    input.resolveRoot,
-  );
-  const physicalKey = (ref: RootFileRef) => {
-    const value = keys.get(publicationRefKey(ref));
-    if (!value) throw new Error(`Publication path was not resolved: ${publicationRefKey(ref)}`);
-    return value;
-  };
-  return new Map(
-    input.sources.map((source) => {
-      const owners = new Set(
-        input.snapshot.files.filter((file) => physicalKey(file) === physicalKey(source)).map((file) => file.itemId),
-      );
-      if (owners.size > 1)
-        throw new PublicationConflictError(
-          source.relativePath,
-          source.relativePath,
-          "同一视频文件已被媒体库中的多个影片重复引用",
-        );
-      return [publicationRefKey(source), [...owners][0] ?? null];
-    }),
-  );
-};
-
 export const resolvePublicationParticipants = async <TMember extends { source: RootFileRef; fileId?: string }>(input: {
   members: readonly TMember[];
   outputs?: readonly RootFileRef[];

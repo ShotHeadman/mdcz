@@ -78,6 +78,7 @@ export class MaintenanceService {
       deps.coordinator ??
       new MaintenanceSessionCoordinator({
         roots: {
+          assertRootIntegrity: (ids) => mediaRoots.assertRootIntegrity(ids),
           get: async (rootId) => {
             return await mediaRoots.get(rootId);
           },

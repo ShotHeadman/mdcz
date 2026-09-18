@@ -23,6 +23,7 @@ import {
   createDirectoryScope,
   createScrapeExecution,
   createScrapeExecutionPolicy,
+  DirectoryInventory,
   DownloadManager,
   discoverDirectoryFiles,
   NfoGenerator,
@@ -33,7 +34,6 @@ import {
   ScrapeCoordinator,
   type ScrapeHostExecution,
   type ScrapeHostPort,
-  type ScrapeRunItem,
   type ScrapeRunSnapshot,
   type ScrapeWorkflowReporter,
   toFinalizedScrapeRunSnapshot,
@@ -89,6 +89,7 @@ export class ScraperService {
   > | null = null;
   private terminalSnapshot: ScrapeRunSnapshotDto | null = null;
   private closed = false;
+  private readonly discoveredInventories = new Map<string, DirectoryInventory>();
 
   constructor(
     private readonly signalService: SignalService,
@@ -130,12 +131,14 @@ export class ScraperService {
           onProgress,
           platform: "desktop",
         });
-        return await repository.scrapeRuns.fixManifest({
+        const manifest = await repository.scrapeRuns.fixManifest({
           runId: run.id,
           signal,
           discoveryJson: JSON.stringify(found.discovery),
           items: found.refs.map((ref, ordinal) => ({ ...ref, ordinal })),
         });
+        this.discoveredInventories.set(run.id, found.inventory);
+        return manifest;
       },
       createExecution: async (run, reporter) => await this.createExecution(run, reporter),
       onInvalidate: (runs) => {
@@ -197,7 +200,7 @@ export class ScraperService {
     const refs = input.mode === "single" ? [input.ref] : input.refs;
     if (refs.length === 0) throw new ScraperServiceError("NO_FILES", "No files selected");
     return await this.begin({
-      refs,
+      refs: await this.mediaRoots.canonicalizeFileRefs(refs),
       manualUrl: input.manualUrl,
       mode: input.mode === "single" ? "single" : "batch",
       configuration,
@@ -342,26 +345,37 @@ export class ScraperService {
     const rootId = input.rootId ?? input.refs[0]?.rootId;
     if (!rootId) throw new ScraperServiceError("NO_FILES", "No files selected");
     const state = await this.persistenceService.getState();
-    return await state.repositories.scrapeRuns.create({
+    const inventory = new DirectoryInventory();
+    const refs = await inventory.admitRefs(await this.mediaRoots.canonicalizeFileRefs(input.refs), (id) =>
+      this.mediaRoots.get(id),
+    );
+    const manifest = await state.repositories.scrapeRuns.create({
       rootId,
       outputRootId: input.outputRootId,
       outputRelativeDirectory: input.outputRelativeDirectory || null,
       executionMode: input.mode,
       configurationJson: JSON.stringify(input.configuration),
       directoryScopeJson: input.directoryScope ? JSON.stringify(input.directoryScope) : undefined,
-      items: input.refs.map((ref, ordinal) => ({
+      items: refs.map((ref, ordinal) => ({
         ordinal,
         rootId: ref.rootId,
         relativePath: ref.relativePath,
         manualUrl: input.manualUrl ?? null,
       })),
     });
+    if (!input.directoryScope) this.discoveredInventories.set(manifest.id, inventory);
+    return manifest;
   }
 
   private async createExecution(
     manifest: ScrapeRunManifest,
     reporter: ScrapeWorkflowReporter,
   ): Promise<ScrapeHostExecution<ManualScrapeOptions, PreparedFileScrape>> {
+    const outputRootIds = manifest.requestedOutputRootId ? [manifest.requestedOutputRootId] : [];
+    const checkRoots = this.mediaRoots.rootIntegrityGuard(
+      manifest.directoryScopeJson ? [...manifest.items.map((item) => item.rootId), ...outputRootIds] : [],
+    );
+    await checkRoots(outputRootIds);
     const configuration = configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null"));
     this.configureRuntimeSettings(configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
@@ -376,8 +390,10 @@ export class ScraperService {
     const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
     if (metadataPath) {
       const metadataRoot = await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath });
+      await checkRoots([metadataRoot.id]);
       roots.set(metadataRoot.id, metadataRoot);
     }
+    const inventory = this.discoveredInventories.get(manifest.id) ?? new DirectoryInventory();
     const fileScraper = createFileScraper(
       {
         ...this.createFileScraperDependencies(
@@ -386,10 +402,18 @@ export class ScraperService {
         ),
         outputs: state.repositories.library,
       },
-      { mode: manifest.executionMode, scrapeSessionId: manifest.id },
+      {
+        mode: manifest.executionMode,
+        scrapeSessionId: manifest.id,
+        inventory,
+      },
     );
+    this.discoveredInventories.delete(manifest.id);
     return await createScrapeExecution<ManualScrapeOptions, PreparedFileScrape>({
+      configuration,
+      inventory,
       manifest,
+      ownership: () => state.repositories.library.inventoryOwnership(),
       outputRoot,
       restGate: policy.restGate ?? undefined,
       resolveRoot: async (id) => {
@@ -397,7 +421,11 @@ export class ScraperService {
         roots.set(id, root);
         return root;
       },
-      enrichItem: (item) => this.prepareScrapeItem(item),
+      enrichItem: async (item) => {
+        const prepared = await this.prepareScrapeItem(item);
+        await checkRoots([prepared.executionSource?.rootId ?? prepared.rootId]);
+        return prepared;
+      },
       manualScrape: (id) => resolveManualScrapeRoute(manifest.items.find((item) => item.id === id)?.manualUrl),
       fileScrape: (prepared) => prepared,
       admitAttempt: (id) => state.repositories.scrapeRuns.admitAttempt(id),
@@ -410,29 +438,42 @@ export class ScraperService {
       },
       execution: {
         concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
-        prepareItem: async (item: ScrapeRunItem<ManualScrapeOptions>, signal: AbortSignal, attemptId: string) => {
-          const progress = {
-            fileIndex: 1,
-            totalFiles: manifest.items.length,
-            onProgress: (value: number) => reporter.progress(item.id, value),
-          };
-          const result = await fileScraper.prepareFile(item.sourcePath, progress, signal, {
-            configuration,
-            ...(item.manualScrape ? { manualScrape: item.manualScrape } : {}),
-            source: item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath },
-            roots: [...roots.values()],
-            operationId: `${manifest.id}:${attemptId}`,
-            outputDirectory: item.manualScrape
-              ? resolve(outputRoot.hostPath, manifest.requestedOutputRelativeDirectory ?? "")
-              : undefined,
-            outputTemplateRoot:
-              item.outputTemplateRoot ?? resolve(outputRoot.hostPath, manifest.requestedOutputRelativeDirectory ?? ""),
+        prepareGroup: async (entries, signal) => {
+          const results = await fileScraper.prepareGroup(
+            entries.map(({ item, attemptId }) => {
+              const progress = {
+                fileIndex: 1,
+                totalFiles: manifest.items.length,
+                onProgress: (value: number) => reporter.progress(item.id, value),
+              };
+              return {
+                filePath: item.sourcePath,
+                progress,
+                options: {
+                  configuration,
+                  ...(item.manualScrape ? { manualScrape: item.manualScrape } : {}),
+                  source: item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath },
+                  roots: [...roots.values()],
+                  operationId: `${manifest.id}:${attemptId}`,
+                  outputDirectory: item.manualScrape
+                    ? resolve(outputRoot.hostPath, manifest.requestedOutputRelativeDirectory ?? "")
+                    : undefined,
+                  outputTemplateRoot:
+                    item.outputTemplateRoot ??
+                    resolve(outputRoot.hostPath, manifest.requestedOutputRelativeDirectory ?? ""),
+                },
+              };
+            }),
+            signal,
+          );
+          return results.map((result, index) => {
+            const item = entries[index].item;
+            if (result.status === "prepared") return result;
+            return {
+              status: result.status,
+              result: { ...result, fileId: item.id, rootId: item.rootId, relativePath: item.relativePath },
+            };
           });
-          if (result.status === "prepared") return result;
-          return {
-            status: result.status,
-            result: { ...result, fileId: item.id, rootId: item.rootId, relativePath: item.relativePath },
-          };
         },
         executePreparedFiles: async (entries, signal) =>
           await fileScraper.executePreparedFiles(
@@ -452,6 +493,7 @@ export class ScraperService {
   }
 
   private handleTerminalRun(manifest: ScrapeRunManifest, snapshot: ScrapeRunSnapshot<ManualScrapeOptions>): void {
+    this.discoveredInventories.delete(manifest.id);
     this.terminalSnapshot = this.toSnapshotDto(manifest, snapshot, manifest.startedAt);
     this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot: this.terminalSnapshot });
     this.logger.info(`Scrape run finished: ${snapshot.runId}`);

@@ -1,5 +1,5 @@
 import { type Configuration, configManager } from "@main/services/config";
-import type { FileScraper, ScrapeGroupResult } from "@mdcz/runtime/scrape";
+import type { FileScrapeOptions, FileScrapeProgress, FileScraper, ScrapeGroupResult } from "@mdcz/runtime/scrape";
 import { vi } from "vitest";
 import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
 
@@ -56,11 +56,19 @@ export const preparedPublicationFiles = (group: ScrapeGroupResult) => [
   ...group.results,
 ];
 
+export const prepareFile = async (
+  scraper: FileScraper,
+  filePath: string,
+  progress?: FileScrapeProgress,
+  signal?: AbortSignal,
+  options: FileScrapeOptions = {},
+) => (await scraper.prepareGroup([{ filePath, progress, options }], signal))[0];
+
 export const prepareFilePublication = async (
   scraper: FileScraper,
-  ...args: Parameters<FileScraper["prepareFile"]>
+  ...args: Parameters<typeof prepareFile> extends [FileScraper, ...infer Args] ? Args : never
 ): Promise<ScrapeGroupResult> => {
-  const preparation = await scraper.prepareFile(...args);
+  const preparation = await prepareFile(scraper, ...args);
   if (preparation.status !== "prepared") return { results: [preparation] };
   return await scraper.executePreparedFiles(
     [{ prepared: preparation.prepared, progress: args[1] ?? { fileIndex: 1, totalFiles: 1 } }],

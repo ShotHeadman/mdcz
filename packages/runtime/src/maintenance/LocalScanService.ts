@@ -160,6 +160,7 @@ export class LocalScanService {
             id: deterministicMediaRootId(rootOrPath),
             displayName: rootOrPath,
             hostPath: rootOrPath,
+            realPath: null,
             createdAt: new Date(),
             updatedAt: new Date(),
           }
@@ -227,6 +228,7 @@ export class LocalScanService {
           id: deterministicMediaRootId(filePaths[0] ? dirname(filePaths[0]) : "."),
           displayName: "扫描文件",
           hostPath: dirname(filePaths[0] ?? "."),
+          realPath: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         }

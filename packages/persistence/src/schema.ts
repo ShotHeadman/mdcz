@@ -20,6 +20,7 @@ export const mediaRoots = sqliteTable(
     id: text("id").primaryKey(),
     displayName: text("display_name").notNull(),
     hostPath: text("host_path").notNull(),
+    realPath: text("real_path"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

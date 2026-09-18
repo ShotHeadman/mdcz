@@ -71,7 +71,14 @@ describe("LocalScanService", () => {
     await writeFile(strm, video);
     const oldStrm = join(root, "old-output.strm");
     await writeFile(oldStrm, video);
-    const mediaRoot = { id: "root", hostPath: root, displayName: "root", createdAt: new Date(), updatedAt: new Date() };
+    const mediaRoot = {
+      id: "root",
+      hostPath: root,
+      realPath: null,
+      displayName: "root",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     const locations = {
       mediaPath: "/changed",
       metadataPath: "/changed-metadata",

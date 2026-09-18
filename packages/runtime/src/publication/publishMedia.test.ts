@@ -1,5 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -166,35 +178,64 @@ describe("commitPublishedMedia", () => {
     expect(commit).toHaveBeenCalledTimes(1);
   });
 
-  it.each([false, true])("checks copy capacity only when rename crosses devices: %s", async (crossDevice) => {
-    const test = await fixture();
-    test.plan.operations = test.plan.operations.filter((operation) => operation.kind !== "write");
-    test.plan.movieAssets = [];
-    const fs = await defaultFileSystem();
-    const copy = vi.fn(fs.copyFile);
-    const options = {
-      resolveRoot: test.resolveRoot,
-      journal: createMemoryPublicationJournal(),
-      commit: vi.fn(),
-      fileSystem: {
-        ...fs,
-        copyFile: copy,
-        statfs: async () => ({ bavail: 0, bsize: 1 }),
-        rename: async (source: string, target: string) => {
-          if (crossDevice && source === test.source) throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
-          await fs.rename(source, target);
+  it.each([false, true])("preserves source entries and enforces cross-device copy rules: %s", async (crossDevice) => {
+    const entryKinds = ["regular"];
+    if (process.platform !== "win32") entryKinds.push("absolute-link");
+    if (process.platform !== "win32" && !crossDevice) entryKinds.push("relative-link");
+    for (const entryKind of entryKinds) {
+      const test = await fixture();
+      test.plan.operations = test.plan.operations.filter((operation) => operation.kind !== "write");
+      test.plan.movieAssets = [];
+      const referent = path.join(test.metadataRoot, "referent.mp4");
+      const linkTarget = entryKind === "relative-link" ? path.relative(path.dirname(test.source), referent) : referent;
+      if (entryKind !== "regular") {
+        await writeFile(referent, "video");
+        await rm(test.source);
+        await symlink(linkTarget, test.source);
+        await mkdir(path.dirname(test.target), { recursive: true });
+      }
+      const fs = await defaultFileSystem();
+      const copy = vi.fn(fs.copyFile);
+      const commit = vi.fn(() => "committed");
+      const options = {
+        resolveRoot: test.resolveRoot,
+        journal: createMemoryPublicationJournal(),
+        commit,
+        fileSystem: {
+          ...fs,
+          copyFile: copy,
+          statfs: async () => ({ bavail: 0, bsize: 1 }),
+          rename: async (source: string, target: string) => {
+            if (crossDevice && source === test.source)
+              throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+            await fs.rename(source, target);
+          },
         },
-      },
-    };
-    if (crossDevice) {
-      await expect(commitPublishedMedia(test.plan, options)).rejects.toThrow("Insufficient space");
-      expect(await readFile(test.source, "utf8")).toBe("video");
-      expect(options.commit).not.toHaveBeenCalled();
-    } else {
-      await commitPublishedMedia(test.plan, options);
-      expect(await readFile(test.target, "utf8")).toBe("video");
+      };
+      let error: string | null = null;
+      if (entryKind === "relative-link") error = "preserving its target";
+      else if (crossDevice) error = entryKind === "regular" ? "Insufficient space" : "Cannot copy a file symlink";
+      if (error) {
+        await expect(commitPublishedMedia(test.plan, options)).rejects.toThrow(error);
+        expect(await readFile(test.source, "utf8")).toBe("video");
+        expect(commit).not.toHaveBeenCalled();
+      } else {
+        await expect(commitPublishedMedia(test.plan, options)).resolves.toEqual({
+          value: "committed",
+          cleanupIssues: [],
+        });
+        expect(await readFile(test.target, "utf8")).toBe("video");
+        expect(existsSync(test.source)).toBe(false);
+        expect(commit).toHaveBeenCalledOnce();
+      }
+      if (entryKind !== "regular") {
+        const entry = error ? test.source : test.target;
+        expect((await lstat(entry)).isSymbolicLink()).toBe(true);
+        expect(await readlink(entry)).toBe(linkTarget);
+        expect(await readFile(referent, "utf8")).toBe("video");
+      }
+      expect(copy).not.toHaveBeenCalled();
     }
-    expect(copy).not.toHaveBeenCalled();
   });
 
   it("publishes across roots, commits once, then removes sources and obsolete files", async () => {

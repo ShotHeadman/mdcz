@@ -114,6 +114,7 @@ const createCoordinator = (
   };
   const coordinator = new MaintenanceSessionCoordinator({
     roots: {
+      assertRootIntegrity: vi.fn(async () => undefined),
       get: async (rootId) => {
         const selected = roots.find((candidate) => candidate.id === rootId);
         if (!selected) throw new Error(`Unknown root: ${rootId}`);
@@ -379,7 +380,7 @@ describe("MaintenanceSessionCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it("canonicalizes overlapping-root refs before preview and apply", async () => {
+  it("preserves registered namespaces for overlapping-root refs before preview and apply", async () => {
     const nestedRoot = createMediaRoot({
       id: "root-2",
       displayName: "Nested",
@@ -401,13 +402,13 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await apply.completion;
 
-    expect(previewBatch.items.map((item) => item.rootId).sort()).toEqual([root.id, nestedRoot.id]);
+    expect(previewBatch.items.map((item) => item.rootId).sort()).toEqual([root.id, root.id]);
     expect(
       vi
         .mocked(fixture.runtime.applyEntry)
         .mock.calls.map(([input]) => input.root.id)
         .sort(),
-    ).toEqual([root.id, nestedRoot.id]);
+    ).toEqual([root.id, root.id]);
     await fixture.coordinator.close();
   });
 

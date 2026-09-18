@@ -60,9 +60,10 @@ const createHost = (
     items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
     concurrency,
     admitItem: async (item) => `${item.id}:attempt`,
-    prepareItem: async () => ({ status: "prepared", prepared: undefined }),
-    validatePrepared: vi.fn(async () => undefined),
-    formExecutionGroups: (entries) => entries.map(({ item }) => ({ itemIds: [item.id], publicationKeys: [] })),
+    prepareGroup: async (entries) => entries.map(() => ({ status: "prepared", prepared: undefined })),
+    checkTargets: vi.fn(async () => undefined),
+    movieGroups: entry.items.map((item) => ({ itemIds: [item.id] })),
+    publicationKeys: () => [],
     acquireItems: () => () => undefined,
     executePreparedItems: async (items, signal) => ({
       results: await Promise.all(
@@ -301,11 +302,13 @@ describe("ScrapeCoordinator", () => {
     const create = host.createExecution;
     host.createExecution = async (entry, reporter) => ({
       ...(await create(entry, reporter)),
-      prepareItem: async (item) =>
-        stage === "prepare" && item.id === "one"
-          ? { status: "failed", result: resultFor(item, "failed") }
-          : { status: "prepared", prepared: undefined },
-      validatePrepared: async () => {
+      prepareGroup: async (entries) =>
+        entries.map(({ item }) =>
+          stage === "prepare" && item.id === "one"
+            ? { status: "failed", result: resultFor(item, "failed") }
+            : { status: "prepared", prepared: undefined },
+        ),
+      checkTargets: async () => {
         if (stage === "preflight") throw new PublicationConflictError("/one", "/two");
       },
       commitItems: async (items) =>

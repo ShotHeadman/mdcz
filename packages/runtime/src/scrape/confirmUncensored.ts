@@ -476,6 +476,7 @@ export const confirmUncensoredOutputs = async <TContext = undefined>(
         id: item.fileId,
         displayName: dirname(videoPath),
         hostPath: dirname(videoPath),
+        realPath: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

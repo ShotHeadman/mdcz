@@ -1,19 +1,30 @@
-import type { MediaRoot } from "@mdcz/media-store";
+import { basename, dirname } from "node:path";
+import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import type { Configuration } from "@mdcz/shared/config";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import { commitScrapeTerminalResults } from "../publication/commitScrapeTerminalResult";
-import { resolvePublicationSourceOwners } from "../publication/participants";
-import { prepareMediaPathKeys, publicationRefKey } from "../publication/paths";
-import { toRootFileRef } from "../publication/publicationPlan";
+import { prepareMediaPathKeys } from "../publication/paths";
 import { resolveScrapeAttempts, resolveScrapeRetry } from "../tasks/session/resolveScrapeRetry";
 import type { ScrapeRunExecution, ScrapeRunItem } from "../tasks/session/ScrapeRunSession";
 import { toScrapeResultFromOutcome } from "../tasks/session/scrapeRunSnapshotDto";
+import type { DirectoryInventory } from "./DirectoryInventory";
 import { buildScrapePublicationKey } from "./FileOrganizer";
 import type { PreparedFileScrape, ScrapeGroupResult } from "./FileScraper";
-import { scrapeMovieGroupKey, validatePreparedScrapeFiles } from "./preflightScrapeTask";
+import { checkScrapeTargets } from "./preflightScrapeTask";
+import { parseFileInfo } from "./utils/number";
 
 export async function createScrapeExecution<TManual, TPrepared>(input: {
+  configuration: Configuration;
+  inventory: DirectoryInventory;
+  ownership(): readonly {
+    rootId: string;
+    relativePath: string;
+    movieId: string;
+    fileId: string | null;
+    kind: "video" | "nfo" | "strm";
+  }[];
   manifest: {
     id: string;
     executionGeneration: number;
@@ -27,7 +38,7 @@ export async function createScrapeExecution<TManual, TPrepared>(input: {
   enrichItem(item: ScrapeRunItem<TManual>): ScrapeRunItem<TManual> | Promise<ScrapeRunItem<TManual>>;
   manualScrape(itemId: string): TManual | undefined;
   fileScrape(prepared: TPrepared): PreparedFileScrape;
-  execution: Pick<ScrapeRunExecution<TManual, TPrepared>, "concurrency" | "prepareItem"> & {
+  execution: Pick<ScrapeRunExecution<TManual, TPrepared>, "concurrency" | "prepareGroup"> & {
     executePreparedFiles(
       entries: readonly { item: ScrapeRunItem<TManual>; prepared: TPrepared; fileScrape: PreparedFileScrape }[],
       signal: AbortSignal,
@@ -54,11 +65,75 @@ export async function createScrapeExecution<TManual, TPrepared>(input: {
       return await input.enrichItem({ ...item, ...execution, manualScrape: input.manualScrape(item.id) });
     }),
   );
+  const locations = await Promise.all(
+    input.ownership().map(async (entry) => ({
+      ...entry,
+      path: await input.inventory.entryPath(
+        resolveRootRelativePath(await input.resolveRoot(entry.rootId), entry.relativePath),
+      ),
+    })),
+  );
+  const owners = new Map<string, string>();
+  for (const file of locations) {
+    const identity = filesystemPathKey(file.path);
+    if (file.kind === "strm") {
+      input.inventory.generatedStrms.add(identity);
+      continue;
+    }
+    if (file.kind !== "video") continue;
+    const previous = owners.get(identity);
+    if (previous && previous !== file.movieId) throw new Error(`Media entry belongs to multiple movies: ${file.path}`);
+    owners.set(identity, file.movieId);
+    input.inventory.registeredNfos.set(
+      identity,
+      locations
+        .filter(
+          (asset) =>
+            asset.kind === "nfo" &&
+            asset.movieId === file.movieId &&
+            (asset.fileId === null || asset.fileId === file.fileId),
+        )
+        .map((asset) => asset.path),
+    );
+  }
+  const movieGroups = new Map<string, { itemIds: string[]; movieId?: string; error?: string }>();
+  const observed = new Map<string, { number: string; part?: number }[]>();
+  for (const item of items) {
+    const entryPath = await input.inventory.entryPath(item.sourcePath);
+    const entryIdentity = filesystemPathKey(entryPath);
+    const movieId = owners.get(entryIdentity);
+    const fileInfo = parseFileInfo(item.sourcePath, input.configuration.scrape.filenameIgnoreTokens);
+    const key =
+      movieId ?? `${filesystemPathKey(dirname(entryPath))}\0${fileInfo.number.trim().toUpperCase() || entryIdentity}`;
+    const group = movieGroups.get(key) ?? { itemIds: [], movieId };
+    group.itemIds.push(item.id);
+    const members = observed.get(key) ?? [];
+    members.push({ number: fileInfo.number, part: fileInfo.part?.number });
+    observed.set(key, members);
+    if (!movieId) {
+      const parts = members.flatMap((member) => (member.part === undefined ? [] : [member.part]));
+      if (parts.length && parts.length !== members.length)
+        group.error = "同一影片同时包含分盘文件和独立文件，需要手动核对";
+      if (new Set(parts).size !== parts.length) group.error = "同一影片存在重复分盘号，需要手动核对";
+    }
+    const primary = await input.inventory.mediaEntries(dirname(item.sourcePath));
+    if (
+      fileInfo.extension.toLowerCase() === ".strm" &&
+      !primary.some((entry) => entry.name === basename(item.sourcePath))
+    )
+      group.error = `不能单独刮削生成的媒体附属文件：${item.sourcePath}`;
+    movieGroups.set(key, group);
+  }
   return {
     concurrency: input.execution.concurrency,
-    prepareItem: async (item, signal, attemptId) => {
+    movieGroups: [...movieGroups.values()],
+    prepareGroup: async (entries, signal) => {
       await input.restGate?.waitBeforeStart(signal);
-      return await input.execution.prepareItem(item, signal, attemptId);
+      const results = await input.execution.prepareGroup(entries, signal);
+      const movieId = [...movieGroups.values()].find((group) => group.itemIds.includes(entries[0].item.id))?.movieId;
+      for (const result of results)
+        if (result.status === "prepared") input.fileScrape(result.prepared).groupMovieId = movieId;
+      return results;
     },
     executePreparedItems: async (entries, signal) => {
       const group = await input.execution.executePreparedFiles(
@@ -109,46 +184,17 @@ export async function createScrapeExecution<TManual, TPrepared>(input: {
           .sort()
           .join(","),
       ),
-    formExecutionGroups: (entries) => {
-      const groups = new Map<string, { itemIds: string[]; publicationKeys: string[] }>();
-      for (const { item, prepared } of entries) {
-        const file = input.fileScrape(prepared);
-        const key = scrapeMovieGroupKey({
-          libraryItemId: file.groupMovieId,
-          sourcePath: file.fileInfo.filePath,
-          mediaIdentity: file.crawlerData.number || file.fileInfo.number,
-        });
-        const group = groups.get(key) ?? { itemIds: [], publicationKeys: [] };
-        group.itemIds.push(item.id);
-        group.publicationKeys.push(buildScrapePublicationKey(file.outputPlan));
-        groups.set(key, group);
-      }
-      return [...groups.values()];
-    },
-    validatePrepared: async (entries) => {
+    publicationKeys: (entries) =>
+      entries.map(({ prepared }) => buildScrapePublicationKey(input.fileScrape(prepared).outputPlan)),
+    checkTargets: async (entries) => {
       const files = entries.map(({ item, prepared }) => ({ item, file: input.fileScrape(prepared) }));
-      const sources = files.map(({ file }) => toRootFileRef(file.fileInfo.filePath, file.roots));
-      const owners = input.publication.outputs
-        ? await resolvePublicationSourceOwners({
-            sources,
-            snapshot: input.publication.outputs.publicationSnapshot({
-              paths: files.map(({ file }) => file.fileInfo.filePath),
-              includeOwners: true,
-            }),
-            resolveRoot: input.resolveRoot,
-          })
-        : new Map<string, string | null>();
-      for (const [index, { file }] of files.entries())
-        file.groupMovieId = owners.get(publicationRefKey(sources[index])) ?? undefined;
-      await validatePreparedScrapeFiles(
+      await checkScrapeTargets(
         files.map(({ item, file }) => ({
           itemId: item.id,
           sourcePath: file.fileInfo.filePath,
-          libraryItemId: file.groupMovieId,
           outputPlan: file.outputPlan,
-          mediaIdentity: file.crawlerData.number || file.fileInfo.number,
-          partNumber: file.fileInfo.part?.number ?? null,
         })),
+        input.inventory,
       );
     },
     commitPreparationItem: async (_item, result, attemptId) => {

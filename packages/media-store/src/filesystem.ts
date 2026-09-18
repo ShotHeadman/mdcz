@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Stats } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 import {
   copyFile,
   stat as fsStat,
@@ -93,6 +93,7 @@ export interface FileWalkOptions {
   warnings?: { count: number; paths: string[] };
   // Metadata consumers collect their own results; callback scans return no paths.
   onFile?: (filePath: string, stats: Stats) => void;
+  onDirectory?: (directoryPath: string, canonicalPath: string, entries: readonly Dirent[]) => void;
   onDiagnostic?: (message: string) => void;
   onProgress?: (progress: {
     directories: number;
@@ -193,6 +194,7 @@ export const walkFiles = async (
     const nextAncestors = options.deduplicateDirectories ? ancestors : new Set(ancestors).add(key);
     signal?.throwIfAborted();
     const entries = await measure("readdir", absolutePath, () => readdir(absolutePath, { withFileTypes: true }));
+    options.onDirectory?.(absolutePath, key, entries);
     signal?.throwIfAborted();
     directories += 1;
     for (const entry of entries) {

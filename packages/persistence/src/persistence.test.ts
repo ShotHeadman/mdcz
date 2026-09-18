@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createMediaRoot } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
@@ -205,7 +205,7 @@ describe("Persistence migrations", () => {
       expect(
         database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'maintenance_directory_tasks'").all(),
       ).toEqual([{ name: "maintenance_directory_tasks" }]);
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 6 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -270,7 +270,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 6 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -329,7 +329,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 4 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 3 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
@@ -362,25 +362,40 @@ describe("MediaRootRepository", () => {
   it("reuses the enclosing root for a nested path", async () => {
     database = createTestPersistenceDatabase();
     const repository = new MediaRootRepository(database);
+    const directory = await createTempDirectory("root-parent");
     const root = createMediaRoot({
       id: "root-parent",
       displayName: "Parent",
-      hostPath: "/media",
+      hostPath: directory.path,
       now: new Date("2026-08-22T00:00:00.000Z"),
     });
 
-    await repository.upsert(root);
-    await expect(repository.ensurePath("/media/child")).resolves.toEqual(root);
+    try {
+      await mkdir(join(directory.path, "child"));
+      await repository.upsert(root);
+      const admitted = await repository.ensurePath(join(directory.path, "child"));
+      expect(admitted).toEqual({ ...root, realPath: await realpath(directory.path) });
+      await expect(repository.get(root.id)).resolves.toEqual(admitted);
+    } finally {
+      await directory.cleanup();
+    }
   });
 
   it("coalesces concurrent registrations for the same host path", async () => {
     database = createTestPersistenceDatabase();
     const first = new MediaRootRepository(database);
     const second = new MediaRootRepository(database);
-    const roots = await Promise.all([first.ensurePath("/first", "First"), second.ensurePath("/first", "Second")]);
-
-    expect(roots[0].id).toBe(roots[1].id);
-    await expect(first.list()).resolves.toEqual([roots[0]]);
+    const directory = await createTempDirectory("root-registration");
+    try {
+      const roots = await Promise.all([
+        first.ensurePath(directory.path, "First"),
+        second.ensurePath(directory.path, "Second"),
+      ]);
+      expect(roots[0].id).toBe(roots[1].id);
+      await expect(first.list()).resolves.toEqual([roots[0]]);
+    } finally {
+      await directory.cleanup();
+    }
   });
 
   it("uses stable not-found errors", async () => {

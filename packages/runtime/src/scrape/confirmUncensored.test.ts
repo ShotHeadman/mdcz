@@ -255,7 +255,7 @@ describe("confirmUncensoredOutputs", () => {
     else {
       config.download.generateNfo = false;
       const scanned = await deps.localScanService.scanVideo(
-        { id: "root", hostPath: "", displayName: "", createdAt: new Date(), updatedAt: new Date() },
+        { id: "root", hostPath: "", realPath: null, displayName: "", createdAt: new Date(), updatedAt: new Date() },
         items[0].videoPath,
         "extrafanart",
       );

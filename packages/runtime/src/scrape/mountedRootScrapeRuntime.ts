@@ -7,6 +7,7 @@ import type { PublicationOutputPort } from "../publication/types";
 import type { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, ManualScrapeOptions } from "./aggregation";
+import { DirectoryInventory } from "./DirectoryInventory";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { FileOrganizer, type ScrapeExecutionMode } from "./FileOrganizer";
 import {
@@ -146,6 +147,7 @@ export class MountedRootScrapeRuntime {
   constructor(
     private readonly deps: MountedRootScrapeRuntimeDependencies,
     executionMode: ScrapeExecutionMode = "batch",
+    inventory?: DirectoryInventory,
   ) {
     const signalService: RuntimeScrapeSignalService = {
       showFailedInfo: () => undefined,
@@ -200,49 +202,67 @@ export class MountedRootScrapeRuntime {
         signalService,
         translateService: new TranslateService(networkClient, { logger: runtimeLogger, mappingStore }),
       },
-      { mode: executionMode },
+      { mode: executionMode, inventory: inventory ?? new DirectoryInventory() },
     );
   }
 
-  createExecution(executionMode: ScrapeExecutionMode, outputs?: PublicationOutputPort): MountedRootScrapeRuntime {
-    return new MountedRootScrapeRuntime({ ...this.deps, outputs }, executionMode);
+  createExecution(
+    executionMode: ScrapeExecutionMode,
+    outputs?: PublicationOutputPort,
+    inventory?: DirectoryInventory,
+  ): MountedRootScrapeRuntime {
+    return new MountedRootScrapeRuntime({ ...this.deps, outputs }, executionMode, inventory);
   }
 
-  async prepare(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapePreparationResult> {
-    const signalService = new MountedRootScrapeSignalService(input);
+  async prepareGroup(
+    inputs: readonly MountedRootScrapeRuntimeItemInput[],
+  ): Promise<MountedRootScrapePreparationResult[]> {
+    const services = inputs.map((input) => new MountedRootScrapeSignalService(input));
     try {
-      const roots = input.publicationRoots?.length
-        ? input.publicationRoots
-        : [input.root, input.outputRoot].filter((root): root is MediaRoot => Boolean(root));
-      const result = await this.scraper.prepareFile(
-        resolveRootRelativePath(input.root, input.relativePath),
-        { fileIndex: 1, totalFiles: 1, onProgress: (value) => signalService.setProgress(value) },
-        input.signal,
-        {
-          configuration: input.configuration,
-          localState: input.localState,
-          signalService,
-          manualScrape: input.manualScrape,
-          scrapeSessionId: input.scrapeSessionId,
-          source: { rootId: input.root.id, relativePath: input.relativePath },
-          roots,
-          operationId: input.operationId ?? `${input.scrapeSessionId ?? "scrape"}:${input.relativePath}`,
-          outputDirectory: input.outputDirectory,
-          outputTemplateRoot:
-            input.outputTemplateRoot ??
-            resolveRootRelativePath(input.outputRoot ?? input.root, input.outputRelativeDirectory ?? ""),
-        },
+      const results = await this.scraper.prepareGroup(
+        inputs.map((input, index) => {
+          const signalService = services[index];
+          const roots = input.publicationRoots?.length
+            ? input.publicationRoots
+            : [input.root, input.outputRoot].filter((root): root is MediaRoot => Boolean(root));
+          return {
+            filePath: resolveRootRelativePath(input.root, input.relativePath),
+            progress: {
+              fileIndex: index + 1,
+              totalFiles: inputs.length,
+              onProgress: (value: number) => signalService.setProgress(value),
+            },
+            options: {
+              configuration: input.configuration,
+              localState: input.localState,
+              signalService,
+              manualScrape: input.manualScrape,
+              scrapeSessionId: input.scrapeSessionId,
+              source: { rootId: input.root.id, relativePath: input.relativePath },
+              roots,
+              operationId: input.operationId ?? `${input.scrapeSessionId ?? "scrape"}:${input.relativePath}`,
+              outputDirectory: input.outputDirectory,
+              outputTemplateRoot:
+                input.outputTemplateRoot ??
+                resolveRootRelativePath(input.outputRoot ?? input.root, input.outputRelativeDirectory ?? ""),
+            },
+          };
+        }),
+        inputs[0]?.signal,
       );
-      if (result.status !== "prepared") {
-        return {
-          status: result.status === "skipped" ? "skipped" : "failed",
-          result,
-          error: result.error ?? "刮削失败",
-        };
-      }
-      return { status: "prepared", prepared: { fileScrape: result.prepared, signalService } };
+      return results.map((result, index) => {
+        const signalService = services[index];
+        if (result.status !== "prepared") {
+          return {
+            status: result.status === "skipped" ? "skipped" : "failed",
+            result,
+            error: result.error ?? "刮削失败",
+          };
+        }
+        return { status: "prepared", prepared: { fileScrape: result.prepared, signalService } };
+      });
     } finally {
-      await signalService.flush();
+      await Promise.all(services.map((service) => service.flush()));
     }
   }
 

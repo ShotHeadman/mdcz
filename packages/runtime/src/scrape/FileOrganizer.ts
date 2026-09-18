@@ -5,6 +5,7 @@ import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
+import { DirectoryInventory } from "./DirectoryInventory";
 import {
   buildGeneratedVideoSidecarTargetPath,
   buildSubtitleSidecarTargetPath,
@@ -15,7 +16,7 @@ import {
 } from "./media";
 import { getNfoWritePaths } from "./nfo";
 import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
-import { ensureParentDirectory, listVideoFiles } from "./utils/filesystem";
+import { DEFAULT_VIDEO_EXTENSIONS, ensureParentDirectory } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
 import { mapStrmPath, prepareMovedStrmContent, prepareStrmMirrorContent } from "./utils/strm";
 
@@ -60,6 +61,7 @@ interface ResolveOutputPlanOptions {
   createDirectories?: boolean;
   allowSharedDirectory?: boolean;
   subtitleSidecars?: SubtitleSidecarMatch[];
+  inventory?: DirectoryInventory;
 }
 
 export interface OrganizePlanOptions {
@@ -211,10 +213,17 @@ export class FileOrganizer {
     const outputRoot = plan.metadataDir;
     const sourceDir = resolve(dirname(sourceFilePath));
     const sameDirectoryOutput = sourceDir === resolve(outputRoot);
+    const inventory = options.inventory ?? new DirectoryInventory();
 
     if (sameDirectoryOutput && !options.allowSharedDirectory) {
       const sourceFileInfo = parseFileInfo(sourceFilePath);
-      const videoFiles = await listVideoFiles(sourceDir, false);
+      const videoFiles: string[] = [];
+      for (const entry of await inventory.mediaEntries(sourceDir)) {
+        if (!DEFAULT_VIDEO_EXTENSIONS.has(parseFileInfo(entry.name).extension.toLowerCase())) continue;
+        const candidate = join(sourceDir, entry.name);
+        if (entry.isFile() || (entry.isSymbolicLink() && (await inventory.stats(candidate)).isFile()))
+          videoFiles.push(candidate);
+      }
       const otherVideos = videoFiles.filter((filePath) => {
         if (resolve(filePath) === resolve(sourceFilePath) || isGeneratedSidecarVideo(filePath)) {
           return false;
@@ -234,7 +243,7 @@ export class FileOrganizer {
     }
 
     const moveMedia = plan.mode === "move";
-    const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath));
+    const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath, inventory));
     const sidecars: ResolvedPublicationLayout["sidecars"] = subtitleSidecars.map((subtitle) => {
       const targetPath = moveMedia
         ? plan.renameSubtitles
@@ -248,7 +257,7 @@ export class FileOrganizer {
         ...(plan.strmPath ? { mirrorPath: buildSubtitleSidecarTargetPath(subtitle, plan.strmPath) } : {}),
       };
     });
-    for (const feature of await findGeneratedVideoSidecars(sourceFilePath)) {
+    for (const feature of await findGeneratedVideoSidecars(sourceFilePath, inventory)) {
       sidecars.push({
         kind: "feature",
         sourcePath: feature.path,

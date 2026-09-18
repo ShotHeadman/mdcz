@@ -895,15 +895,19 @@ describe("buildServer scrape integration", () => {
     expect(startResponse.json().result.data).toEqual({ runId: expect.any(String) });
     const taskId = startResponse.json().result.data.runId;
 
-    const liveRunsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/scrape.liveRuns",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(liveRunsResponse.json().result.data.runs[0]).toMatchObject({
-      task: { id: taskId, kind: "scrape" },
-      items: names.map((relativePath) => expect.objectContaining({ rootId, relativePath })),
-    });
+    await expect
+      .poll(async () => {
+        const liveRunsResponse = await fastify.inject({
+          method: "GET",
+          url: "/trpc/scrape.liveRuns",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return liveRunsResponse.json().result.data.runs[0];
+      })
+      .toMatchObject({
+        task: { id: taskId, kind: "scrape" },
+        items: names.map((relativePath) => expect.objectContaining({ rootId, relativePath })),
+      });
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
     expect(downloadAll).toHaveBeenCalledOnce();
     const entries = await services.persistence
@@ -1268,18 +1272,16 @@ describe("buildServer scrape integration", () => {
     // Pause while the first file is still inside its aggregation call, so the second file has
     // not been dequeued yet and stays pending.
     await gated.firstCallStarted;
-    const pauseResponse = fastify.inject({
+    const pausedResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.pause",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
-    await Promise.resolve();
-    gated.releaseFirstCall();
-    const pausedResponse = await pauseResponse;
     expect(pausedResponse.statusCode).toBe(200);
     expect(pausedResponse.json().result.data).toEqual({ runId: taskId });
     await waitForScrapeRunStatus(fastify, token, taskId, "paused");
+    gated.releaseFirstCall();
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
 
     await expect
@@ -1296,7 +1298,7 @@ describe("buildServer scrape integration", () => {
       )
       .toMatchObject({
         task: { id: taskId, status: "paused", continuity: "live" },
-        progress: { percent: 50, completedItems: 0, totalItems: 2 },
+        progress: { percent: 25, completedItems: 0, totalItems: 2 },
         items: expect.arrayContaining([
           expect.objectContaining({ status: "pending" }),
           expect.objectContaining({ status: "pending" }),

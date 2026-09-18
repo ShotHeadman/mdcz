@@ -13,7 +13,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { mockConfigManager, resolveTestOutputPlan } from "../../../helpers/scraper";
+import { mockConfigManager, prepareFile, resolveTestOutputPlan } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -120,7 +120,7 @@ describe("FileScraper plan timing", () => {
       getConfiguration: async () => currentConfig,
     });
 
-    const preparation = await scraper.prepareFile(sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+    const preparation = await prepareFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
       source: { rootId: "root", relativePath: "tmp/ABC-123.mp4" },
       roots: [{ id: "root", hostPath: "/" }],
     });

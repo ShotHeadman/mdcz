@@ -28,7 +28,12 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { mediaRoots } from "../../../../packages/persistence/src/schema";
 import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
 import { collectObservableTrace } from "../../../helpers/observableTrace";
-import { mockConfigManager, preparedPublicationFiles, prepareFilePublication } from "../../../helpers/scraper";
+import {
+  mockConfigManager,
+  preparedPublicationFiles,
+  prepareFile,
+  prepareFilePublication,
+} from "../../../helpers/scraper";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<
@@ -175,13 +180,14 @@ const createScraper = (
     showFailedInfo: vi.fn(),
   };
   const signalService = overrides.signalService ?? defaultSignalService;
+  const translateCrawlerData = vi.fn(async (data: CrawlerData) => ({ data, error: null }));
   const scraper = createFileScraper({
     outputs: overrides.outputs,
     aggregationService: {
       aggregate,
     } as unknown as AggregationService,
     translateService: {
-      translateCrawlerData: vi.fn(async (data: CrawlerData) => ({ data, error: null })),
+      translateCrawlerData,
     } as unknown as TranslateService,
     nfoGenerator: {
       writeNfo: vi.fn(),
@@ -200,6 +206,7 @@ const createScraper = (
   return {
     scraper,
     mocks: {
+      translateCrawlerData,
       downloadAll,
       resolveOutputPlan,
       signalService,
@@ -224,7 +231,7 @@ describe("FileScraper movie groups", () => {
     const context = await createPublicationContext(root, names);
     const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
     const output = join(root, "output");
-    const { scraper } = createScraper(aggregate, {
+    const { scraper, mocks } = createScraper(aggregate, {
       outputs: context.library,
       plan: vi.fn(
         (file: FileInfo): OrganizePlan => ({
@@ -240,18 +247,20 @@ describe("FileScraper movie groups", () => {
     const trace = collectObservableTrace(context.database.sqlite, { media: root }, crossDevice);
     let observed: ReturnType<typeof trace.stop>;
     try {
-      const entries = [];
-      for (const [index, name] of names.entries()) {
-        const filePath = join(root, name);
-        const progress = { fileIndex: index + 1, totalFiles: parts };
-        const preparation = await scraper.prepareFile(filePath, progress, undefined, {
+      const inputs = names.map((name, index) => ({
+        filePath: join(root, name),
+        progress: { fileIndex: index + 1, totalFiles: parts },
+        options: {
           roots: [context.mediaRoot],
-          attemptId: context.attempts.get(buildFileId(filePath)),
+          attemptId: context.attempts.get(buildFileId(join(root, name))),
           source: { rootId: "root", relativePath: name },
-        });
+        },
+      }));
+      const preparations = await scraper.prepareGroup(inputs);
+      const entries = preparations.map((preparation, index) => {
         if (preparation.status !== "prepared") throw new Error("Expected prepared desktop member");
-        entries.push({ prepared: preparation.prepared, progress });
-      }
+        return { prepared: preparation.prepared, progress: inputs[index].progress };
+      });
       const group = await scraper.executePreparedFiles(entries);
       try {
         if (!group.publicationPlan) throw new Error("Expected desktop publication");
@@ -276,6 +285,7 @@ describe("FileScraper movie groups", () => {
       observed = trace.stop();
     }
     expect(aggregate).toHaveBeenCalledOnce();
+    expect(mocks.translateCrawlerData).toHaveBeenCalledOnce();
     const movies = await context.library.listEntries();
     expect(movies).toHaveLength(1);
     expect(movies[0].files).toHaveLength(parts);
@@ -362,7 +372,7 @@ describe("FileScraper movie groups", () => {
         ),
       },
     );
-    const prepared = await scraper.prepareFile(sourcePath, undefined, undefined, {
+    const prepared = await prepareFile(scraper, sourcePath, undefined, undefined, {
       roots: [mediaRoot],
       source: { rootId: "root", relativePath: "ABC-123.mp4" },
     });
@@ -378,7 +388,7 @@ describe("FileScraper movie groups", () => {
   it.each([
     "source",
     "subtitle",
-  ])("publishes the admitted movie files without mutating a failed participant (%s disappears)", async (missing) => {
+  ])("does not partially publish a movie when a participant disappears (%s)", async (missing) => {
     const root = await createTempDir();
     const output = join(root, "output", "FC2-123456");
     const names = ["FC2-123456-CD1.strm", "FC2-123456-CD2.mp4", "FC2-123456-CD3.mp4"];
@@ -416,32 +426,27 @@ describe("FileScraper movie groups", () => {
         return { downloaded: [poster], sceneImages: [], poster };
       }),
     });
-    const entries = await Promise.all(
-      paths.map(async (filePath, index) => {
-        const progress = { fileIndex: index + 1, totalFiles: paths.length };
-        const result = await scraper.prepareFile(filePath, progress, undefined, {
-          roots: [context.mediaRoot],
-          attemptId: context.attempts.get(buildFileId(filePath)),
-          source: { rootId: "root", relativePath: names[index] },
-        });
-        if (result.status !== "prepared") throw new Error("Expected prepared file");
-        return { prepared: result.prepared, progress };
-      }),
-    );
+    const inputs = paths.map((filePath, index) => ({
+      filePath,
+      progress: { fileIndex: index + 1, totalFiles: paths.length },
+      options: {
+        roots: [context.mediaRoot],
+        attemptId: context.attempts.get(buildFileId(filePath)),
+        source: { rootId: "root", relativePath: names[index] },
+      },
+    }));
+    const preparations = await scraper.prepareGroup(inputs);
+    const entries = preparations.map((result, index) => {
+      if (result.status !== "prepared") throw new Error("Expected prepared file");
+      return { prepared: result.prepared, progress: inputs[index].progress };
+    });
     const failedIndex = missing === "source" ? 2 : 0;
     await rm(missing === "source" ? paths[failedIndex] : join(root, subtitleNames[failedIndex]));
     const group = await scraper.executePreparedFiles(entries);
     onTestFinished(async () => await group.release?.());
     expect(aggregate).toHaveBeenCalledTimes(1);
-    expect(mocks.downloadAll).toHaveBeenCalledOnce();
-    if (!group.publicationPlan) throw new Error("Expected a prepared movie publication");
-    expect(group.publicationPlan.files).toHaveLength(2);
-    const expectedPoster = {
-      type: "local",
-      kind: "poster",
-      file: { rootId: "root", relativePath: "output/FC2-123456/poster.jpg" },
-    };
-    expect(group.results).toHaveLength(1);
+    expect(group.publicationPlan).toBeUndefined();
+    expect(group.results).toHaveLength(names.length);
     const committed = (
       await commitScrapeTerminalResults({
         publicationPlan: group.publicationPlan,
@@ -459,47 +464,21 @@ describe("FileScraper movie groups", () => {
     await group.release?.();
     const run = await context.scrapeRuns.get(context.runId);
     expect(run.outcomes).toHaveLength(names.length);
-    expect(run.outcomes.filter((outcome) => outcome.outcome === "success")).toHaveLength(2);
-    const movie = await context.library.getEntryById(group.publicationPlan.movieId);
-    expect(movie.files).toHaveLength(2);
-    expect(movie.assets.filter((asset) => asset.kind === "feature")).toEqual([
-      expect.objectContaining({ fileId: null, relativePath: "output/FC2-123456/FC2-123456-花絮.mp4", published: true }),
-    ]);
-    expect(movie.assets).toContainEqual(
-      expect.objectContaining({ fileId: null, kind: "poster", relativePath: "output/FC2-123456/poster.jpg" }),
-    );
+    expect(run.outcomes.every((outcome) => outcome.outcome === "failed")).toBe(true);
+    expect(await context.library.listEntries()).toEqual([]);
     for (const [index, result] of committed.entries()) {
-      expect(result.status).toBe(index === failedIndex ? "failed" : "success");
+      expect(result.status).toBe("failed");
       expect(result.part?.number).toBe(index + 1);
       expect(result).not.toHaveProperty("publicationPlan");
       expect(result).not.toHaveProperty("release");
-      if (index === failedIndex) {
-        await expect(readFile(join(output, names[index]))).rejects.toMatchObject({ code: "ENOENT" });
-        if (missing === "subtitle") expect(await readFile(paths[index], "utf8")).toBe(strmContent);
-        expect(movie.files.some((file) => file.rootRelativePath.endsWith(names[index]))).toBe(false);
-        continue;
-      }
-      expect(result.assets).toContainEqual(expectedPoster);
-      expect(result.assets.filter((asset) => asset.kind === "subtitle")).toEqual([
-        {
-          type: "local",
-          kind: "subtitle",
-          file: { rootId: "root", relativePath: `output/FC2-123456/${subtitleNames[index]}` },
-        },
-      ]);
-      const file = movie.files.find((file) => file.sourceOutcomeId === result.resultId);
-      expect(file).toBeDefined();
-      expect(movie.assets.filter((asset) => asset.fileId === file?.id)).toEqual([
-        expect.objectContaining({ kind: "subtitle", relativePath: `output/FC2-123456/${subtitleNames[index]}` }),
-      ]);
-      expect(await readFile(join(output, subtitleNames[index]), "utf8")).toBe(subtitleNames[index]);
-      await expect(access(paths[index])).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(access(join(output, names[index]))).rejects.toMatchObject({ code: "ENOENT" });
+      if (missing !== "source" || index !== failedIndex)
+        expect(await readFile(paths[index], "utf8")).toBe(index ? names[index] : strmContent);
     }
-    expect(await readFile(join(output, "poster.jpg"), "utf8")).toBe("poster");
-    expect(await readFile(join(output, "FC2-123456-花絮.mp4"), "utf8")).toBe("feature");
+    expect(await readFile(join(root, "FC2-123456-花絮.mp4"), "utf8")).toBe("feature");
     expect(context.journal.listUnfinished()).toEqual([]);
-    const stagingDir = mocks.downloadAll.mock.calls[0][0];
-    await expect(access(stagingDir)).rejects.toMatchObject({ code: "ENOENT" });
+    if (missing === "source") expect(mocks.downloadAll).not.toHaveBeenCalled();
+    else await expect(access(mocks.downloadAll.mock.calls[0][0])).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps aggregation requests separate for different numbers", async () => {
@@ -539,24 +518,17 @@ describe("FileScraper movie groups", () => {
     const { scraper } = createScraper(aggregate);
     const [part1Path, part2Path] = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4");
 
-    const groups = await Promise.all([
-      prepareFilePublication(scraper, part1Path, { fileIndex: 1, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-      prepareFilePublication(scraper, part2Path, { fileIndex: 2, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-    ]);
-    onTestFinished(async () => {
-      for (const group of groups) await group.release?.();
-    });
-    const [part1, part2] = groups.map((group) => group.results[0]);
+    const [part1, part2] = await scraper.prepareGroup(
+      [part1Path, part2Path].map((filePath) => ({
+        filePath,
+        options: {
+          roots: [
+            { id: "test-root", hostPath: tmpdir() },
+            { id: "output-root", hostPath: "/output" },
+          ],
+        },
+      })),
+    );
 
     expect(aggregate).toHaveBeenCalledTimes(1);
     expect(part1).toMatchObject({
@@ -567,57 +539,6 @@ describe("FileScraper movie groups", () => {
       status: "failed",
       error: "aggregate failed",
     });
-  });
-
-  it("prepares same-number multipart files independently while sharing aggregation", async () => {
-    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
-    let markFirstStarted: (() => void) | undefined;
-    const firstStarted = new Promise<void>((resolve) => {
-      markFirstStarted = resolve;
-    });
-    let releaseFirst: (() => void) | undefined;
-    const holdFirst = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    const resolveOutputPlan = vi.fn(async (plan: OrganizePlan) => {
-      if (resolveOutputPlan.mock.calls.length === 1) {
-        markFirstStarted?.();
-        await holdFirst;
-      }
-      return plan;
-    });
-    const [part1Path, part2Path] = await createTempFiles("FC2-123456-1.mp4", "FC2-123456-2.mp4");
-    const { scraper } = createScraper(aggregate, { resolveOutputPlan });
-
-    const firstPromise = scraper.prepareFile(part1Path, { fileIndex: 1, totalFiles: 2 }, undefined, {
-      roots: [
-        { id: "test-root", hostPath: tmpdir() },
-        { id: "output-root", hostPath: "/output" },
-      ],
-    });
-    await firstStarted;
-
-    const secondPromise = scraper.prepareFile(part2Path, { fileIndex: 2, totalFiles: 2 }, undefined, {
-      roots: [
-        { id: "test-root", hostPath: tmpdir() },
-        { id: "output-root", hostPath: "/output" },
-      ],
-    });
-    try {
-      const second = await secondPromise;
-      expect(second.status).toBe("prepared");
-      expect(resolveOutputPlan).toHaveBeenCalledTimes(2);
-      expect(aggregate).toHaveBeenCalledTimes(1);
-    } finally {
-      releaseFirst?.();
-      await firstPromise;
-    }
-
-    const [first, second] = await Promise.all([firstPromise, secondPromise]);
-
-    expect(first.status).toBe("prepared");
-    expect(second.status).toBe("prepared");
-    expect(resolveOutputPlan).toHaveBeenCalledTimes(2);
   });
 
   it("retains one movie feature across multipart publication, a new version, and metadata refresh", async () => {
@@ -644,18 +565,20 @@ describe("FileScraper movie groups", () => {
     onTestFinished(() => {
       trace.stop();
     });
-    const entries = await Promise.all(
-      paths.map(async (filePath, index) => {
-        const progress = { fileIndex: index + 1, totalFiles: paths.length };
-        const preparation = await scraper.prepareFile(filePath, progress, undefined, {
-          roots: [context.mediaRoot],
-          attemptId: context.attempts.get(buildFileId(filePath)),
-          source: { rootId: "root", relativePath: names[index] },
-        });
-        if (preparation.status !== "prepared") throw new Error("Expected prepared movie file");
-        return { prepared: preparation.prepared, progress };
-      }),
-    );
+    const inputs = paths.map((filePath, index) => ({
+      filePath,
+      progress: { fileIndex: index + 1, totalFiles: paths.length },
+      options: {
+        roots: [context.mediaRoot],
+        attemptId: context.attempts.get(buildFileId(filePath)),
+        source: { rootId: "root", relativePath: names[index] },
+      },
+    }));
+    const preparations = await scraper.prepareGroup(inputs);
+    const entries = preparations.map((preparation, index) => {
+      if (preparation.status !== "prepared") throw new Error("Expected prepared movie file");
+      return { prepared: preparation.prepared, progress: inputs[index].progress };
+    });
     const group = await scraper.executePreparedFiles(entries);
     onTestFinished(async () => await group.release?.());
     if (!group.publicationPlan) throw new Error("Expected movie publication plan");

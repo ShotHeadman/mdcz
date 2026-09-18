@@ -5,6 +5,7 @@ export * from "./canonicalizeActorAliases";
 export * from "./confirmUncensored";
 export * from "./crawlerOptions";
 export * from "./createScrapeExecution";
+export * from "./DirectoryInventory";
 export * from "./directoryDiscovery";
 export * from "./download";
 export * from "./executionPolicy";

@@ -34,6 +34,7 @@ export class MaintenanceService {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
       roots: {
+        assertRootIntegrity: (ids) => this.mediaRoots.assertRootIntegrity(ids),
         get: async (rootId) => await this.mediaRoots.get(rootId),
         list: async () => await this.mediaRoots.listRoots(),
         ensurePathRecord: async (input) => await this.mediaRoots.ensurePathRecord(input),

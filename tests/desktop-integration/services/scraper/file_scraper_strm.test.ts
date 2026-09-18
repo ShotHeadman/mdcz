@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
-import type { LocalScanService } from "@mdcz/runtime/maintenance";
 import type {
   AggregationService,
   DownloadManager,
@@ -81,13 +80,11 @@ const createScraper = ({
   crawlerData,
   plan,
   writeNfo,
-  localScanService,
 }: {
   config: ReturnType<typeof createConfig>;
   crawlerData: CrawlerData;
   plan: OrganizePlan;
   writeNfo: ReturnType<typeof vi.fn>;
-  localScanService?: Pick<LocalScanService, "scanVideo">;
 }) => {
   mockConfigManager(config);
   return createFileScraper({
@@ -110,7 +107,6 @@ const createScraper = ({
       plan: vi.fn().mockReturnValue(plan),
       resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer,
-    localScanService,
   });
 };
 
@@ -229,14 +225,10 @@ describe("FileScraper .strm support", () => {
       plan: vi.fn().mockReturnValue(plan),
       resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer;
-    const scanVideoMock = vi.fn().mockResolvedValue({
-      nfoLocalState: {
-        uncensoredChoice: "umr",
-      },
-    });
-    const localScanService: Pick<LocalScanService, "scanVideo"> = {
-      scanVideo: async () => (await scanVideoMock()) as Awaited<ReturnType<LocalScanService["scanVideo"]>>,
-    };
+    await writeFile(
+      join(root, "ABC-123-U.nfo"),
+      "<movie><title>Local title</title><num>ABC-123</num><tag>破解</tag></movie>",
+    );
     mockConfigManager(config);
     const scraper = createFileScraper({
       aggregationService: {
@@ -255,7 +247,6 @@ describe("FileScraper .strm support", () => {
         }),
       } as unknown as DownloadManager,
       fileOrganizer,
-      localScanService,
     });
     await writeFile(join(root, "ABC-123-U.strm"), "video");
     const group = await prepareFilePublication(
@@ -308,20 +299,15 @@ describe("FileScraper .strm support", () => {
       nfoPath: join(outputDir, "ABC-123.nfo"),
     };
     const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
-    const localScanService: Pick<LocalScanService, "scanVideo"> = {
-      scanVideo: vi.fn().mockResolvedValue({
-        nfoLocalState: {
-          uncensoredChoice: "leak",
-          tags: ["保留标签"],
-        },
-      } as Awaited<ReturnType<LocalScanService["scanVideo"]>>),
-    };
+    await writeFile(
+      join(root, "ABC-123.nfo"),
+      "<movie><title>Local title</title><num>ABC-123</num><tag>流出</tag><tag>保留标签</tag></movie>",
+    );
     const scraper = createScraper({
       config,
       crawlerData,
       plan,
       writeNfo,
-      localScanService,
     });
     await writeFile(join(root, "ABC-123.strm"), "video");
     const group = await prepareFilePublication(

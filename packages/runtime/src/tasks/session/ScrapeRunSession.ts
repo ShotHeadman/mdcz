@@ -89,25 +89,26 @@ type ScrapeItemPreparation<TPrepared> = { attemptId: string } & (
   | ScrapePreparationResult<TPrepared>
 );
 
+export interface MovieGroup {
+  itemIds: readonly string[];
+  movieId?: string;
+  error?: string;
+}
+
 export interface ScrapeRunExecution<TManualScrape = unknown, TPrepared = unknown> {
   executionGeneration?: number;
   items: readonly ScrapeRunItem<TManualScrape>[];
   initialItems?: readonly ScrapeRunItemInitialState<TManualScrape>[];
   concurrency: number;
   acquireItems: (items: readonly ScrapeRunItem<TManualScrape>[]) => Promise<() => void> | (() => void);
-  formExecutionGroups: (
-    items: readonly { item: ScrapeRunItem<TManualScrape>; prepared: TPrepared }[],
-  ) => readonly { itemIds: readonly string[]; publicationKeys: readonly string[] }[];
+  movieGroups: readonly MovieGroup[];
+  publicationKeys: (items: readonly { item: ScrapeRunItem<TManualScrape>; prepared: TPrepared }[]) => readonly string[];
   admitItem: (item: ScrapeRunItem<TManualScrape>) => Promise<string>;
-  prepareItem: (
-    item: ScrapeRunItem<TManualScrape>,
+  prepareGroup: (
+    entries: readonly { item: ScrapeRunItem<TManualScrape>; attemptId: string }[],
     signal: AbortSignal,
-    attemptId: string,
-  ) => Promise<ScrapePreparationResult<TPrepared>>;
-  validatePrepared(
-    items: readonly { item: ScrapeRunItem<TManualScrape>; prepared: TPrepared }[],
-    failedItems: readonly ScrapeRunItem<TManualScrape>[],
-  ): Promise<void>;
+  ) => Promise<readonly ScrapePreparationResult<TPrepared>[]>;
+  checkTargets(items: readonly { item: ScrapeRunItem<TManualScrape>; prepared: TPrepared }[]): Promise<void>;
   executePreparedItems: (
     items: readonly {
       item: ScrapeRunItem<TManualScrape>;
@@ -477,6 +478,19 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
       if (this.items.some(isUnprepared)) return;
     }
 
+    for (const item of this.items) {
+      const preparation = this.preparationByItemId.get(item.id);
+      if (
+        item.status !== "pending" ||
+        !preparation ||
+        preparation.status === "admitted" ||
+        preparation.status === "prepared"
+      )
+        continue;
+      const committed = await this.execution.commitPreparationItem(item, preparation.result, preparation.attemptId);
+      this.assertCurrent(generation, ["running", "paused", "stopping"]);
+      this.applyCommittedResult(item, committed);
+    }
     const pending = this.items.filter((item) => item.status === "pending");
     const prepared = pending.flatMap((item) => {
       const preparation = this.preparationByItemId.get(item.id);
@@ -485,16 +499,16 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     if (!this.preflightPassed) {
       this.recordStage({ stage: "check-output", message: "冲突预检" });
       try {
-        await this.execution.validatePrepared(
-          prepared,
-          pending.filter((item) => this.preparationByItemId.get(item.id)?.status === "failed"),
-        );
+        await this.execution.checkTargets(prepared);
         this.preflightPassed = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const itemIds = new Set(
           error instanceof ScrapeTargetConflictError ? error.conflicts.map((conflict) => conflict.itemId) : [],
         );
+        for (const group of this.execution.movieGroups) {
+          if (group.itemIds.some((id) => itemIds.has(id))) for (const id of group.itemIds) itemIds.add(id);
+        }
         const conflictedItems = pending.filter((item) => itemIds.has(item.id));
         const failedItems = conflictedItems.length > 0 ? conflictedItems : pending;
         if (this.status !== "running") return;
@@ -532,29 +546,27 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
       return;
     }
     this.recordStage({ stage: "execute", message: "整理归档" });
-    const groups = this.execution.formExecutionGroups(prepared);
+    const groups = this.execution.movieGroups
+      .map((group) => ({
+        itemIds: group.itemIds.filter((id) => pending.some((item) => item.id === id)),
+      }))
+      .filter((group) => group.itemIds.length);
     const groupedIds = new Set<string>();
     const executionGroups = groups.map(
-      ({ itemIds, publicationKeys }): ScrapeExecutionGroup<TManualScrape> => ({
-        publicationKeys: [...new Set(publicationKeys)].sort(),
+      ({ itemIds }): ScrapeExecutionGroup<TManualScrape> => ({
+        publicationKeys: [
+          ...new Set(this.execution.publicationKeys(prepared.filter(({ item }) => itemIds.includes(item.id)))),
+        ].sort(),
         items: itemIds.map((id) => {
           const item = this.itemsById.get(id);
-          if (
-            !item ||
-            item.status !== "pending" ||
-            this.preparationByItemId.get(id)?.status !== "prepared" ||
-            groupedIds.has(id)
-          )
+          if (!item || item.status !== "pending" || groupedIds.has(id))
             throw new Error(`Invalid scrape execution group item: ${id}`);
           groupedIds.add(id);
           return item;
         }),
       }),
     );
-    if (groupedIds.size !== prepared.length) throw new Error("Scrape execution groups omitted prepared items");
-    for (const item of pending) {
-      if (!groupedIds.has(item.id)) executionGroups.push({ items: [item], publicationKeys: [] });
-    }
+    if (groupedIds.size !== pending.length) throw new Error("Movie groups omitted pending items");
     const executor = new TaskExecutor<ScrapeExecutionGroup<TManualScrape>, ScrapeGroupExecution<TManualScrape>>({
       concurrency: this.execution.concurrency,
       gate: {
@@ -592,25 +604,26 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
           for (const key of group.publicationKeys) releases.push(await this.acquirePublication(key, context.signal));
           const admitted = group.items.map((item) => {
             const preparation = this.preparationByItemId.get(item.id);
-            if (!preparation || preparation.status === "admitted")
+            if (!preparation || preparation.status !== "prepared")
               throw new Error(`Scrape item was not prepared: ${item.id}`);
             return { item, preparation, attemptId: preparation.attemptId };
           });
-          const preparedItems = admitted.flatMap(({ item, preparation, attemptId }) =>
-            preparation.status === "prepared" ? [{ item, prepared: preparation.prepared, attemptId }] : [],
-          );
+          const preparedItems = admitted.map(({ item, preparation, attemptId }) => ({
+            item,
+            prepared: preparation.prepared,
+            attemptId,
+          }));
           const execution = await this.execution.executePreparedItems(preparedItems, context.signal);
           if (execution.release) releases.push(execution.release);
           const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
           const eligibleIds = new Set(execution.publicationPlan?.files.map((file) => file.scrape?.itemId) ?? []);
           if (
-            execution.results.length + eligibleIds.size !== preparedItems.length ||
+            execution.results.length + eligibleIds.size !== admitted.length ||
             groupedResults.size !== execution.results.length
           ) {
             throw new Error("Scrape group execution returned an incomplete result set");
           }
-          const results = admitted.map(({ item, preparation, attemptId }) => {
-            if (preparation.status !== "prepared") return { item, result: preparation.result, attemptId };
+          const results = admitted.map(({ item, attemptId }) => {
             const executed = groupedResults.get(item.id);
             if (!executed && !eligibleIds.has(item.id))
               throw new Error(`Scrape group execution omitted item: ${item.id}`);
@@ -660,38 +673,62 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
 
   private async prepareItems(items: MutableScrapeRunItem<TManualScrape>[], generation: number): Promise<void> {
     this.recordStage({ stage: "prepare", message: "获取信息" });
-    const executor = new TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapePreparationResult<TPrepared>>({
+    const groups = this.execution.movieGroups
+      .map((group) => ({ ...group, items: group.itemIds.flatMap((id) => items.find((item) => item.id === id) ?? []) }))
+      .filter((group) => group.items.length);
+    const executor = new TaskExecutor<(typeof groups)[number], readonly ScrapePreparationResult<TPrepared>[]>({
       concurrency: this.execution.concurrency,
       gate: {
-        beforeItem: async (item) => {
+        beforeItem: async (group) => {
           this.assertCurrent(generation, ["running"]);
-          await this.admitItem(item);
-          item.status = "processing";
-          item.error = null;
+          for (const item of group.items) {
+            await this.admitItem(item);
+            item.status = "processing";
+            item.error = null;
+          }
           this.emitSnapshot();
         },
         beforeResult: async () => this.assertCurrent(generation, ["running", "paused", "stopping"]),
       },
-      runItem: async (item, context) => {
-        const preparation = this.preparationByItemId.get(item.id);
-        if (!preparation) throw new Error(`Scrape item was not admitted: ${item.id}`);
-        return await runWithScrapeItem(
+      runItem: async (group, context) => {
+        const error = group.error;
+        if (error) return group.items.map((item) => ({ status: "failed", result: createFailedResult(item, error) }));
+        const entries = group.items.map((item) => {
+          const preparation = this.preparationByItemId.get(item.id);
+          if (!preparation) throw new Error(`Scrape item was not admitted: ${item.id}`);
+          return { item, attemptId: preparation.attemptId };
+        });
+        const item = group.items[0];
+        const results = await runWithScrapeItem(
           { itemId: item.id, relativePath: item.relativePath, caseId: item.caseId },
-          async () => await this.execution.prepareItem(item, context.signal, preparation.attemptId),
+          async () => await this.execution.prepareGroup(entries, context.signal),
         );
+        if (results.length !== group.items.length) throw new Error("Movie preparation omitted members");
+        const failure = results.find((result) => result.status !== "prepared");
+        if (!failure) return results;
+        return group.items.map((item) => ({
+          status: failure.status,
+          result:
+            failure.status === "skipped"
+              ? createSkippedResult(item, failure.result.error ?? "Movie preparation skipped")
+              : createFailedResult(item, failure.result.error ?? "Movie preparation failed"),
+        }));
       },
-      applyResult: async (item, result) => {
+      applyResult: async (group, results) => {
         this.assertCurrent(generation, ["running", "paused", "stopping"]);
-        const preparation = this.preparationByItemId.get(item.id);
-        if (!preparation) throw new Error(`Scrape item was not admitted: ${item.id}`);
-        this.preparationByItemId.set(item.id, { ...result, attemptId: preparation.attemptId });
-        item.status = "pending";
+        for (const [index, item] of group.items.entries()) {
+          const result = results[index];
+          const preparation = this.preparationByItemId.get(item.id);
+          if (!preparation) throw new Error(`Scrape item was not admitted: ${item.id}`);
+          this.preparationByItemId.set(item.id, { ...result, attemptId: preparation.attemptId });
+          item.status = "pending";
+        }
         this.emitSnapshot();
       },
     });
     this.executor = executor;
     try {
-      await executor.execute(items, this.shutdownController.signal);
+      await executor.execute(groups, this.shutdownController.signal);
     } finally {
       if (this.executor === executor) this.executor = null;
     }

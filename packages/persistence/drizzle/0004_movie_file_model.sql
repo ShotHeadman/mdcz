@@ -78,3 +78,18 @@ WHERE `file_id` IS NULL;
 CREATE UNIQUE INDEX `library_item_assets_file_scope_idx`
 ON `library_item_assets` (`item_id`, `file_id`, `kind`, ifnull(`root_id`, ''), ifnull(`relative_path`, `uri`))
 WHERE `file_id` IS NOT NULL;
+--> statement-breakpoint
+CREATE TABLE `maintenance_directory_tasks` (
+  `id` text PRIMARY KEY NOT NULL,
+  `root_id` text NOT NULL,
+  `output_root_id` text NOT NULL,
+  `output_relative_directory` text NOT NULL,
+  `preset_id` text NOT NULL,
+  `scope_json` text NOT NULL,
+  `configuration_json` text NOT NULL,
+  `status` text NOT NULL,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL
+) STRICT;
+--> statement-breakpoint
+ALTER TABLE `media_roots` ADD `real_path` text;
