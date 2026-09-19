@@ -1,11 +1,10 @@
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { DesktopPersistenceState } from "@main/services/persistence";
-import { fileOrganizer } from "@main/services/scraper/FileScraper";
 import { pathExists } from "@main/utils/file";
 import type { ScrapeRunManifest } from "@mdcz/persistence";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
-import { confirmUncensoredRunItems as confirmRunItems, nfoGenerator } from "@mdcz/runtime/scrape";
+import { confirmUncensoredRunItems as confirmRunItems, FileOrganizer, nfoGenerator } from "@mdcz/runtime/scrape";
 import type { UncensoredChoice, UncensoredConfirmResponse } from "@mdcz/shared/types";
 
 export const confirmUncensoredRunItems = async (input: {
@@ -25,7 +24,7 @@ export const confirmUncensoredRunItems = async (input: {
       repairIssues: repositories.libraryRepairIssues,
     },
     dependencies: {
-      fileOrganizer,
+      fileOrganizer: new FileOrganizer(loggerService.getLogger("FileOrganizer")),
       localScanService: new LocalScanService(),
       logger: loggerService.getLogger("ConfirmUncensored"),
       nfoGenerator,

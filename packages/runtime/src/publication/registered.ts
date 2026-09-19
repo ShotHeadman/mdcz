@@ -48,7 +48,7 @@ export const commitRegisteredPublication = async <TResult>(
     const targetKeys = new Set(targets.map(({ ref }) => `${ref.rootId}\0${ref.relativePath}`));
     const occupied = options.outputs
       .publicationSnapshot({ paths: input.operations.map((operation) => operation.targetPath), includeOwners: true })
-      .assets.some((asset) => !asset.historical && targetKeys.has(`${asset.rootId}\0${asset.relativePath}`));
+      .assets.some((asset) => targetKeys.has(`${asset.rootId}\0${asset.relativePath}`));
     if (occupied) throw new Error("Tool output is already owned by another movie");
   }
 
@@ -62,9 +62,7 @@ export const commitRegisteredPublication = async <TResult>(
     const targetKeys = new Set(targets.map(({ ref }) => refKey(ref)));
     const owners = new Set([
       ...snapshot.files.filter((file) => mediaKeys.has(refKey(file))).map((file) => file.itemId),
-      ...snapshot.assets
-        .filter((asset) => !asset.historical && targetKeys.has(refKey(asset)))
-        .map((asset) => asset.itemId),
+      ...snapshot.assets.filter((asset) => targetKeys.has(refKey(asset))).map((asset) => asset.itemId),
     ]);
     if (owners.size > 1) throw new Error("Tool output paths belong to different library movies");
     const movieId = [...owners][0];
@@ -91,7 +89,6 @@ export const commitRegisteredPublication = async <TResult>(
         ? [
             ...entry.assets.filter(
               (asset) =>
-                !asset.historical &&
                 asset.fileId === null &&
                 !changed.some(
                   (replacement) =>

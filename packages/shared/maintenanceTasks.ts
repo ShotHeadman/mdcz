@@ -50,9 +50,7 @@ export interface MaintenancePublicationIdentity {
   files: Array<RootFileRef & { fileId: string }>;
   expected: {
     files: Array<RootFileRef & { itemId: string; fileId?: string; mediaIdentity?: string | null; size?: number }>;
-    assets: Array<
-      RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean; historical: boolean }
-    >;
+    assets: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean }>;
   };
 }
 

@@ -65,7 +65,7 @@ export const retainedRegisteredFeatures = (
   members.some((member) => member.layout.sidecars.some((sidecar) => sidecar.kind === "feature"))
     ? []
     : registered.flatMap((asset) =>
-        asset.fileId === null && asset.kind === "feature" && !asset.historical
+        asset.fileId === null && asset.kind === "feature"
           ? [
               {
                 type: "local" as const,

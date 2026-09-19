@@ -46,10 +46,9 @@ const seedFailedFinalizedRun = async (directory: string, persistence: DesktopPer
     createdAt: new Date("2026-08-28T00:00:00.000Z"),
     items: [{ ordinal: 0, rootId: root.id, relativePath: "ABC-001.mp4" }],
   });
-  const attempt = state.repositories.scrapeRuns.admitAttempt(run.items[0].id);
-  await state.repositories.scrapeRuns.commitOutcome({
+  state.repositories.scrapeRuns.commitOutcome({
     outcome: "failed",
-    attemptId: attempt.id,
+    itemId: run.items[0].id,
     error: "latest failure",
   });
   await state.repositories.scrapeRuns.finalize({

@@ -194,7 +194,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const release = promiseWithResolvers<void>();
     let signal: AbortSignal | undefined;
     const database = createTestPersistenceDatabase();
-    const repository = new MaintenanceDirectoryRepository(database);
+    const repository = new MaintenanceDirectoryRepository();
     const directoryTasks = createMaintenanceDirectoryTaskPort(async () => repository);
     const fixture = createCoordinator({}, [root], {
       directoryTasks,

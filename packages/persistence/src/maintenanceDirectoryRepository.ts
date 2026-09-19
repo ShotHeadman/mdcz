@@ -1,9 +1,18 @@
-import { eq, inArray } from "drizzle-orm";
-import type { PersistenceDatabase } from "./database";
-import { maintenanceDirectoryTasks } from "./schema";
+export interface MaintenanceDirectoryTaskRow {
+  id: string;
+  rootId: string;
+  outputRootId: string;
+  outputRelativeDirectory: string;
+  presetId: string;
+  scopeJson: string;
+  configurationJson: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export class MaintenanceDirectoryRepository {
-  constructor(private readonly database: PersistenceDatabase) {}
+  private readonly tasks = new Map<string, MaintenanceDirectoryTaskRow>();
 
   save(input: {
     id: string;
@@ -15,46 +24,34 @@ export class MaintenanceDirectoryRepository {
     configurationJson: string;
   }): void {
     const now = new Date();
-    this.database.db
-      .insert(maintenanceDirectoryTasks)
-      .values({
-        id: input.id,
-        rootId: input.rootId,
-        outputRootId: input.outputRootId,
-        outputRelativeDirectory: input.outputRelativeDirectory,
-        presetId: input.presetId,
-        scopeJson: input.scopeJson,
-        configurationJson: input.configurationJson,
-        status: "queued",
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+    this.tasks.set(input.id, {
+      ...input,
+      status: "queued",
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
-  get(id: string) {
-    const row = this.database.db
-      .select()
-      .from(maintenanceDirectoryTasks)
-      .where(eq(maintenanceDirectoryTasks.id, id))
-      .get();
+  get(id: string): MaintenanceDirectoryTaskRow {
+    const row = this.tasks.get(id);
     if (!row) throw new Error(`Maintenance directory task not found: ${id}`);
     return row;
   }
 
   setStatus(id: string, status: string): void {
-    this.database.db
-      .update(maintenanceDirectoryTasks)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(maintenanceDirectoryTasks.id, id))
-      .run();
+    const row = this.tasks.get(id);
+    if (row) {
+      row.status = status;
+      row.updatedAt = new Date();
+    }
   }
 
   interruptUnfinished(): void {
-    this.database.db
-      .update(maintenanceDirectoryTasks)
-      .set({ status: "interrupted", updatedAt: new Date() })
-      .where(inArray(maintenanceDirectoryTasks.status, ["queued", "discovering", "running", "paused", "stopping"]))
-      .run();
+    for (const row of this.tasks.values()) {
+      if (["queued", "discovering", "running", "paused", "stopping"].includes(row.status)) {
+        row.status = "interrupted";
+        row.updatedAt = new Date();
+      }
+    }
   }
 }

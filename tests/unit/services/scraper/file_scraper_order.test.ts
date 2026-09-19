@@ -1,5 +1,4 @@
 import { type Configuration, configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse } from "@mdcz/runtime/crawler/base/types";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -14,7 +13,7 @@ import {
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { mockConfigManager, prepareFile } from "../../../helpers/scraper";
+import { createFileScraper, mockConfigManager, prepareFile } from "../../../helpers/scraper";
 
 class OrderedStubCrawlerProvider extends CrawlerProvider {
   readonly calledSites: Website[] = [];

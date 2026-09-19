@@ -7,8 +7,13 @@ import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
-import { AggregationService, DownloadManager, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
-import { fileOrganizer } from "../FileScraper";
+import {
+  AggregationService,
+  DownloadManager,
+  FileOrganizer,
+  NfoGenerator,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
 import { applyDesktopPosterTagBadges } from "../output";
 import { translationMappingStore } from "../translationMappingStore";
 
@@ -34,7 +39,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
       imageHostCooldownStore: options.imageHostCooldownStore,
       logger: loggerService.getLogger("DownloadManager"),
     }),
-    fileOrganizer,
+    fileOrganizer: new FileOrganizer(loggerService.getLogger("FileOrganizer")),
     networkPolicyClient: options.networkClient,
     nfoGenerator: new NfoGenerator(),
     postProcessAssets: async ({ configuration, ...input }) =>

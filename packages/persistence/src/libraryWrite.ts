@@ -3,7 +3,7 @@ import path from "node:path";
 import { and, eq, inArray } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import type { LibraryFileInput, LibraryMovieInput } from "./libraryRepository";
-import { libraryItemAssets, libraryItemFiles, libraryItems, scrapeItemOutcomes } from "./schema";
+import { libraryItemAssets, libraryItemFiles, libraryItems } from "./schema";
 
 const assetKey = (asset: {
   fileId: string | null;
@@ -38,16 +38,6 @@ export const writeLibraryRows = (
     }
     const declaredFile = database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, input.fileId)).get();
     if (declaredFile && declaredFile.itemId !== id) throw new Error("Library file belongs to another movie");
-    if (input.sourceOutcomeId) {
-      const outcome = database.db
-        .select({ outcome: scrapeItemOutcomes.outcome })
-        .from(scrapeItemOutcomes)
-        .where(eq(scrapeItemOutcomes.id, input.sourceOutcomeId))
-        .get();
-      if (outcome?.outcome !== "success") {
-        throw new Error(`Library file source must be a successful scrape outcome: ${input.sourceOutcomeId}`);
-      }
-    }
     return { input, fileId: input.fileId };
   });
   const scopes = [
@@ -109,7 +99,6 @@ export const writeLibraryRows = (
         partNumber: input.partNumber ?? null,
         partSuffix: input.partSuffix ?? null,
         resolution: input.resolution ?? null,
-        sourceOutcomeId: input.sourceOutcomeId ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -126,7 +115,6 @@ export const writeLibraryRows = (
           partNumber: input.partNumber,
           partSuffix: input.partSuffix,
           resolution: input.resolution,
-          sourceOutcomeId: input.sourceOutcomeId,
           updatedAt: now,
         },
       })
@@ -173,10 +161,10 @@ export const writeLibraryRows = (
     if (!previous) continue;
     retainedIds.add(previous.id);
     const published = previous.published || desired.published;
-    if (previous.historical || previous.relativePath !== desired.relativePath || previous.published !== published) {
+    if (previous.relativePath !== desired.relativePath || previous.published !== published) {
       database.db
         .update(libraryItemAssets)
-        .set({ historical: false, relativePath: desired.relativePath, published })
+        .set({ relativePath: desired.relativePath, published })
         .where(eq(libraryItemAssets.id, previous.id))
         .run();
     }
@@ -185,17 +173,7 @@ export const writeLibraryRows = (
   const obsoleteIds: string[] = [];
   for (const previous of affectedAssets) {
     if (retainedIds.has(previous.id)) continue;
-    if (previous.published && previous.kind === "strm") {
-      if (!previous.historical) {
-        database.db
-          .update(libraryItemAssets)
-          .set({ historical: true })
-          .where(eq(libraryItemAssets.id, previous.id))
-          .run();
-      }
-    } else {
-      obsoleteIds.push(previous.id);
-    }
+    obsoleteIds.push(previous.id);
   }
   if (obsoleteIds.length > 0) {
     database.db.delete(libraryItemAssets).where(inArray(libraryItemAssets.id, obsoleteIds)).run();
@@ -207,7 +185,6 @@ export const writeLibraryRows = (
       ...asset,
       id: randomUUID(),
       itemId: id,
-      historical: false,
       createdAt: now,
     }));
   if (inserted.length > 0) database.db.insert(libraryItemAssets).values(inserted).run();

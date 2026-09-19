@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PersistenceDatabase } from "./database";
 import { LibraryRepository, type UpsertLibraryEntryInput } from "./libraryRepository";
 import { mediaRoots } from "./schema";
-import { type CommitScrapeOutcomeInput, ScrapeRunRepository } from "./scrapeRunRepository";
+import { ScrapeRunRepository } from "./scrapeRunRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 let database: PersistenceDatabase | undefined;
@@ -39,8 +39,12 @@ const createRun = async (repository: ScrapeRunRepository, id = "run-1") =>
 
 const commitSuccess = (
   repository: ScrapeRunRepository,
-  input: Omit<Extract<CommitScrapeOutcomeInput, { outcome: "success" }>, "libraryEntry"> & {
+  input: {
+    itemId: string;
     libraryEntry: UpsertLibraryEntryInput;
+    error?: string | null;
+    uncensoredAmbiguous?: boolean;
+    completedAt?: Date;
   },
 ) => {
   if (!database) throw new Error("Test database is not initialized");
@@ -88,7 +92,6 @@ describe("ScrapeRunRepository", () => {
       configurationJson: '{"scrape":"captured"}',
       manifestFixedAt: null,
       items: [],
-      attempts: [],
     });
     await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow("Cannot finalize");
     const controller = new AbortController();
@@ -108,11 +111,10 @@ describe("ScrapeRunRepository", () => {
     if (outcome === "empty" || outcome === "files") {
       const fixed = await repository.fixManifest(input);
       expect(fixed.manifestFixedAt).toBeInstanceOf(Date);
-      expect(fixed.attempts).toEqual([]);
       await expect(repository.fixManifest(input)).rejects.toThrow("Cannot fix");
       if (outcome === "files") {
         repository.commitOutcome({
-          attemptId: repository.admitAttempt(fixed.items[0].id).id,
+          itemId: fixed.items[0].id,
           outcome: "failed",
           error: "failure",
         });
@@ -137,20 +139,22 @@ describe("ScrapeRunRepository", () => {
     const rerun = await repository.rerunDirectory(run.id);
     expect(rerun.id).not.toBe(run.id);
     expect(rerun).toMatchObject({
+      previousRunId: run.id,
       directoryScopeJson: JSON.stringify(scope),
       configurationJson: '{"scrape":"captured"}',
       manifestFixedAt: null,
       items: [],
-      attempts: [],
     });
     if (outcome === "files") {
       const retry = await repository.retry(run.id);
-      expect(retry.id).toBe(run.id);
+      expect(retry.id).not.toBe(run.id);
+      expect(retry.previousRunId).toBe(run.id);
+      expect(retry.configurationJson).toBe('{"scrape":"captured"}');
       expect(retry.items.map((item) => item.relativePath)).toEqual(["one.mp4"]);
-      expect(retry.manifestFixedAt).toEqual(stored.manifestFixedAt);
     }
   });
-  it("stores one ordered aggregate across the three scrape tables", async () => {
+
+  it("stores one ordered aggregate of scrape run and run items", async () => {
     const repository = createRepository();
     const run = await createRun(repository);
 
@@ -160,10 +164,9 @@ describe("ScrapeRunRepository", () => {
       requestedOutputRootId: "requested-output",
       requestedOutputRelativeDirectory: null,
       disposition: null,
-      outcomes: [],
       items: [
-        { id: "run-1:item-1", ordinal: 0, relativePath: "ABC-001.mp4" },
-        { id: "run-1:item-2", ordinal: 1, relativePath: "DEF-002.mp4" },
+        { id: "run-1:item-1", ordinal: 0, relativePath: "ABC-001.mp4", status: null },
+        { id: "run-1:item-2", ordinal: 1, relativePath: "DEF-002.mp4", status: null },
       ],
     });
     expect(await repository.list()).toEqual([run]);
@@ -185,14 +188,14 @@ describe("ScrapeRunRepository", () => {
         ],
       });
     const settleFailed = async (run: Awaited<ReturnType<typeof create>>) => {
-      await repository.commitOutcome({
+      repository.commitOutcome({
         outcome: "failed",
-        attemptId: repository.admitAttempt(run.items[0].id).id,
+        itemId: run.items[0].id,
         error: "failed",
       });
-      await repository.commitOutcome({
+      repository.commitOutcome({
         outcome: "skipped",
-        attemptId: repository.admitAttempt(run.items[1].id).id,
+        itemId: run.items[1].id,
       });
       await repository.finalize({ runId: run.id, disposition: "failed" });
     };
@@ -208,37 +211,12 @@ describe("ScrapeRunRepository", () => {
     expect((await repository.get(unfinished.id)).disposition).toBeNull();
   });
 
-  it("stores one final outcome for each admitted attempt", async () => {
-    const repository = createRepository();
-    const run = await createRun(repository);
-    const attempt = repository.admitAttempt(run.items[0].id);
-    const outcome = await repository.commitOutcome({
-      id: "first",
-      outcome: "failed",
-      attemptId: attempt.id,
-      error: "network failed",
-    });
-
-    const reloaded = await repository.get(run.id);
-    expect(reloaded.attempts).toEqual([attempt]);
-    expect(reloaded.outcomes).toEqual([outcome]);
-    expect(() => repository.commitOutcome({ outcome: "skipped", attemptId: attempt.id })).toThrow(
-      "Scrape attempt already has an outcome",
-    );
-  });
-
   it("commits a success and its library entry atomically", async () => {
     const repository = createRepository();
     const run = await createRun(repository);
     const crawlerDataJson = JSON.stringify({ title: "ABC", number: "ABC-001" });
     const committed = commitSuccess(repository, {
-      id: "success-1",
-      outcome: "success",
-      attemptId: repository.admitAttempt(run.items[0].id).id,
-      crawlerDataJson,
-      outputRootId: "actual-output",
-      outputRelativePath: "ABC-001/ABC-001.mp4",
-      size: 42,
+      itemId: run.items[0].id,
       libraryEntry: {
         movie: { id: "library-abc", crawlerDataJson },
         files: [{ rootId: "actual-output", rootRelativePath: "ABC-001/ABC-001.mp4", fileId: "library-abc" + ":file" }],
@@ -246,128 +224,33 @@ describe("ScrapeRunRepository", () => {
     });
 
     const reloaded = await repository.get(run.id);
-    expect(reloaded.outcomes).toContainEqual(
-      expect.objectContaining({ id: committed.outcomeId, outcome: "success", size: 42 }),
-    );
+    expect(reloaded.items[0]).toMatchObject({
+      id: run.items[0].id,
+      status: "success",
+      libraryFileId: "library-abc:file",
+    });
     expect(await new LibraryRepository(database as PersistenceDatabase).getEntryById(committed.entryId)).toMatchObject({
       id: "library-abc",
-      files: [expect.objectContaining({ sourceOutcomeId: "success-1" })],
+      files: [expect.objectContaining({ id: "library-abc:file", sourceItemId: run.items[0].id })],
     });
   });
 
-  it("commits a success batch atomically", async () => {
-    const repository = createRepository();
-    const run = await repository.create({
-      id: "atomic-run",
-      rootId: "root-1",
-      executionMode: "batch",
-      items: [
-        { id: "first", ordinal: 0, rootId: "root-1", relativePath: "first.mp4" },
-        { id: "second", ordinal: 1, rootId: "root-1", relativePath: "second.mp4" },
-      ],
-    });
-    const library = new LibraryRepository(database as PersistenceDatabase);
-    await library.upsertEntry({
-      movie: { id: "occupied" },
-      files: [{ rootId: "output", rootRelativePath: "occupied.mp4", fileId: "output:occupied.mp4" }],
-    });
-    const input = (itemIndex: number, relativePath: string) => ({
-      outcome: "success" as const,
-      attemptId: repository.admitAttempt(run.items[itemIndex].id).id,
-      crawlerDataJson: "{}",
-      outputRootId: "output",
-      outputRelativePath: relativePath,
-      size: 1,
-      libraryEntry: { rootId: "output", rootRelativePath: relativePath, fileId: relativePath },
-    });
-    const first = input(0, "first.mp4");
-    const second = input(1, "occupied.mp4");
-
-    expect(() => repository.commitSuccessOutcomes([first, second], { id: "different-owner" })).toThrow(
-      "媒体库路径已属于另一个文件",
-    );
-    expect((await repository.get(run.id)).outcomes).toEqual([]);
-    expect((await library.listEntries()).map((entry) => entry.id)).toEqual(["occupied"]);
-  });
-
-  it("revises successful facts as one atomic batch while preserving outcome identity", async () => {
-    const repository = createRepository();
-    const run = await createRun(repository);
-    const failed = await repository.commitOutcome({
-      outcome: "failed",
-      attemptId: repository.admitAttempt(run.items[0].id).id,
-      error: "failed",
-    });
-    const success = commitSuccess(repository, {
-      outcome: "success",
-      attemptId: repository.admitAttempt(run.items[1].id).id,
-      crawlerDataJson: "{}",
-      outputRootId: "output",
-      outputRelativePath: "before.mp4",
-      size: 1,
-      libraryEntry: {
-        movie: { id: "library-success" },
-        files: [{ rootId: "output", rootRelativePath: "before.mp4", fileId: "library-success" + ":file" }],
-      },
-    });
-    const revision = {
-      outcomeId: success.outcomeId,
-      crawlerDataJson: JSON.stringify({ title: "Confirmed" }),
-      outputRootId: "output",
-      outputRelativePath: "confirmed.mp4",
-      uncensoredAmbiguous: false,
-      size: 2,
-      libraryEntry: { rootId: "output", rootRelativePath: "confirmed.mp4", fileId: "library-success:file" },
-    };
-
-    expect(() =>
-      repository.reviseSuccess(
-        [
-          revision,
-          {
-            outcomeId: failed.id,
-            crawlerDataJson: "{}",
-            outputRootId: "output",
-            outputRelativePath: "failed.mp4",
-            uncensoredAmbiguous: false,
-            size: 1,
-            libraryEntry: { rootId: "output", rootRelativePath: "failed.mp4", fileId: "fixture-movie:file" },
-          },
-        ],
-        { id: "library-success" },
-      ),
-    ).toThrow("Only successful scrape outcomes can be revised");
-    expect((await repository.get(run.id)).outcomes).toContainEqual(
-      expect.objectContaining({ id: success.outcomeId, outputRelativePath: "before.mp4", size: 1 }),
-    );
-
-    repository.reviseSuccess([revision], { id: "library-success" });
-    expect((await repository.get(run.id)).outcomes).toContainEqual(
-      expect.objectContaining({ id: success.outcomeId, outputRelativePath: "confirmed.mp4", size: 2 }),
-    );
-  });
-
-  it("finalizes once and derives summary facts from latest outcomes", async () => {
+  it("finalizes once and derives summary facts", async () => {
     const repository = createRepository();
     const run = await createRun(repository);
     commitSuccess(repository, {
-      outcome: "success",
-      attemptId: repository.admitAttempt(run.items[0].id).id,
-      crawlerDataJson: "{}",
-      outputRootId: "actual-output",
-      outputRelativePath: "ABC-001.mp4",
-      size: 50,
+      itemId: run.items[0].id,
       libraryEntry: {
         movie: { id: "fixture-movie" },
-        files: [{ rootId: "actual-output", rootRelativePath: "ABC-001.mp4", fileId: "fixture-movie" + ":file" }],
+        files: [{ rootId: "actual-output", rootRelativePath: "ABC-001.mp4", fileId: "fixture-movie:file" }],
       },
     });
     await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow(
       "1 item(s) lack an outcome",
     );
-    await repository.commitOutcome({
+    repository.commitOutcome({
       outcome: "failed",
-      attemptId: repository.admitAttempt(run.items[1].id).id,
+      itemId: run.items[1].id,
       error: "not found",
     });
     const finalized = await repository.finalize({
@@ -385,114 +268,58 @@ describe("ScrapeRunRepository", () => {
       successCount: 1,
       failedCount: 1,
       skippedCount: 0,
-      totalBytes: 50,
-      outputRootId: "actual-output",
+      totalBytes: 0,
+      outputRootId: "requested-output",
       error: null,
     });
-    expect(finalized.requestedOutputRootId).toBe("requested-output");
-    await expect(repository.finalize({ runId: run.id, disposition: "completed" })).resolves.toMatchObject({
-      id: run.id,
-      disposition: "failed",
-    });
   });
-  it("appends retry attempts to the same run without re-admitting successes", async () => {
+
+  it("retries as a new run referencing previousRunId without re-admitting successes", async () => {
     const repository = createRepository();
     const run = await createRun(repository);
-    await repository.commitOutcome({
+    repository.commitOutcome({
       outcome: "failed",
-      attemptId: repository.admitAttempt(run.items[0].id).id,
+      itemId: run.items[0].id,
       error: "network failed",
     });
     commitSuccess(repository, {
-      outcome: "success",
-      attemptId: repository.admitAttempt(run.items[1].id).id,
-      crawlerDataJson: "{}",
-      outputRootId: "out",
-      outputRelativePath: "DEF-002.mp4",
-      size: 1,
+      itemId: run.items[1].id,
       libraryEntry: {
         movie: { id: "fixture-movie" },
-        files: [{ rootId: "out", rootRelativePath: "DEF-002.mp4", fileId: "fixture-movie" + ":file" }],
+        files: [{ rootId: "out", rootRelativePath: "DEF-002.mp4", fileId: "fixture-movie:file" }],
       },
     });
     await repository.finalize({ runId: run.id, disposition: "completed" });
 
     const retry = await repository.retry(run.id);
 
-    expect(retry.id).toBe(run.id);
-    expect(retry.items).toHaveLength(2);
-    expect(retry.attempts).toEqual([
-      expect.objectContaining({ itemId: run.items[0].id, attempt: 1 }),
-      expect.objectContaining({ itemId: run.items[0].id, attempt: 2 }),
-      expect.objectContaining({ itemId: run.items[1].id, attempt: 1 }),
-    ]);
-    const retryAttempt = retry.attempts.find((attempt) => attempt.itemId === run.items[0].id && attempt.attempt === 2);
-    if (!retryAttempt) throw new Error("Retry attempt was not admitted");
-    const retryFailure = repository.commitOutcome({
-      id: "retry-failure",
-      outcome: "failed",
-      attemptId: retryAttempt.id,
-      error: "still unavailable",
-    });
-    const finalizedRetry = await repository.finalize({
-      runId: run.id,
-      disposition: "failed",
-      error: "retry failed",
-      completedAt: new Date("2026-08-24T05:00:00.000Z"),
-    });
-
-    expect(repository.latestOutcomes(finalizedRetry)).toEqual([
-      retryFailure,
-      expect.objectContaining({ itemId: run.items[1].id, outcome: "success" }),
-    ]);
-    expect(finalizedRetry).toMatchObject({
-      id: run.id,
-      disposition: "failed",
-      completedAt: new Date("2026-08-24T05:00:00.000Z"),
-      error: "retry failed",
-    });
-    const successfulRetry = await repository.retry(run.id, [run.items[1].id]);
-    expect(successfulRetry.attempts).toContainEqual(expect.objectContaining({ itemId: run.items[1].id, attempt: 2 }));
-    const interrupted = await createRun(repository, "interrupted");
-    await repository.finalize({ runId: interrupted.id, disposition: "interrupted" });
-    await expect(repository.retry(interrupted.id)).rejects.toThrow("Only completed, failed, or stopped");
+    expect(retry.id).not.toBe(run.id);
+    expect(retry.previousRunId).toBe(run.id);
+    expect(retry.items).toHaveLength(1);
+    expect(retry.items[0].relativePath).toBe("ABC-001.mp4");
+    expect(retry.items[0].status).toBeNull();
   });
 
-  it("requires only interrupted finalization when the latest admitted attempt has no outcome", async () => {
+  it("interrupts unfinished runs and unsettled items on shutdown", async () => {
     const repository = createRepository();
     const run = await createRun(repository);
-    repository.admitAttempt(run.items[0].id);
-
-    await expect(repository.finalize({ runId: run.id, disposition: "failed" })).rejects.toThrow(
-      "2 item(s) lack an outcome",
-    );
-    await expect(repository.finalize({ runId: run.id, disposition: "interrupted" })).resolves.toMatchObject({
-      id: run.id,
-      disposition: "interrupted",
-    });
-  });
-
-  it("interrupts a finalized run when shutdown finds an open retry attempt", async () => {
-    const repository = createRepository();
-    const run = await createRun(repository);
-    await repository.commitOutcome({
+    repository.commitOutcome({
       outcome: "failed",
-      attemptId: repository.admitAttempt(run.items[0].id).id,
+      itemId: run.items[0].id,
       error: "retry me",
     });
-    await repository.commitOutcome({
-      outcome: "skipped",
-      attemptId: repository.admitAttempt(run.items[1].id).id,
-    });
-    await repository.finalize({ runId: run.id, disposition: "failed" });
-    await repository.retry(run.id);
 
     repository.interruptUnfinished(new Date("2026-08-24T06:00:00.000Z"));
 
-    await expect(repository.get(run.id)).resolves.toMatchObject({
+    const reloaded = await repository.get(run.id);
+    expect(reloaded).toMatchObject({
       disposition: "interrupted",
       completedAt: new Date("2026-08-24T06:00:00.000Z"),
       error: "Interrupted by shutdown",
+    });
+    expect(reloaded.items[1]).toMatchObject({
+      status: "failed",
+      errorMessage: "任务已中断",
     });
   });
 });

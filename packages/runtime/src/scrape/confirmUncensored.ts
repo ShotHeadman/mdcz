@@ -108,18 +108,17 @@ export interface UncensoredRevisionSources {
   nfoPath?: string;
   file: {
     id: string;
-    sourceOutcomeId: string | null;
+    itemId?: string;
     partNumber: number | null;
     partSuffix: string | null;
     resolution: string | null;
   };
-  outcome: { id: string; crawlerDataJson: string | null };
+  outcome: { id: string };
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   entry: {
     crawlerDataJson: string | null;
     files: Array<{
       id: string;
-      sourceOutcomeId: string | null;
       partNumber: number | null;
       partSuffix: string | null;
       resolution: string | null;
@@ -153,15 +152,13 @@ export async function confirmUncensoredRunItems<TManifest extends { items: reado
           choice: UncensoredChoice;
           file: {
             id: string;
-            itemId: string;
             rootId: string | null;
             rootRelativePath: string | null;
-            sourceOutcomeId: string | null;
             partNumber: number | null;
             partSuffix: string | null;
             resolution: string | null;
           };
-          outcome: UncensoredRevisionSources["outcome"];
+          outcome: { id: string };
           entry: UncensoredRevisionSources["entry"];
         }>
       >;
@@ -169,7 +166,7 @@ export async function confirmUncensoredRunItems<TManifest extends { items: reado
     };
     scrapeRuns: {
       summary(manifest: TManifest): unknown;
-      latestOutcomes(manifest: TManifest): Array<{
+      itemResults(manifest: TManifest): Array<{
         id: string;
         itemId: string;
         outcome: string;
@@ -186,9 +183,7 @@ export async function confirmUncensoredRunItems<TManifest extends { items: reado
 }): Promise<RuntimeUncensoredConfirmResult> {
   const { manifest, repositories, roots } = input;
   if (!repositories.scrapeRuns.summary(manifest)) throw new Error("仅支持对已完成且刮削成功的项目进行无码确认");
-  const outcomes = new Map(
-    repositories.scrapeRuns.latestOutcomes(manifest).map((outcome) => [outcome.itemId, outcome]),
-  );
+  const outcomes = new Map(repositories.scrapeRuns.itemResults(manifest).map((outcome) => [outcome.itemId, outcome]));
   const selections = input.items.map(({ itemId, choice }) => {
     if (!manifest.items.some((item) => item.id === itemId))
       throw new Error(`Item does not belong to scrape task: ${itemId}`);
@@ -348,7 +343,7 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
     ),
     expected: {
       files: input.snapshot.files.filter((file) => file.itemId === input.entry.id),
-      assets: input.snapshot.assets.filter((asset) => asset.itemId === input.entry.id && !asset.historical),
+      assets: input.snapshot.assets.filter((asset) => asset.itemId === input.entry.id),
     },
   };
   const producedKinds = new Set(["thumb", "poster", "fanart", "trailer", "scene", "actor"]);
@@ -382,7 +377,6 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
 
 export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
   const { outcome, entry, file, publicationFile, output } = sources;
-  if (file.sourceOutcomeId !== outcome.id) throw new Error("待确认的刮削结果已与影片文件解除关联");
   const nfo = sources.nfoPath ? resolveRootFile(sources.roots, sources.nfoPath) : undefined;
   const crawlerDataJson = entry.crawlerDataJson;
   if (!crawlerDataJson) throw new Error("影片缺少抓取到的元数据，无法确认无码类型");
@@ -411,7 +405,6 @@ export const buildUncensoredRevision = (sources: UncensoredRevisionSources) => {
     },
     libraryEntry: {
       fileId: file.id,
-      sourceOutcomeId: outcome.id,
       partNumber: file.partNumber,
       partSuffix: file.partSuffix,
       resolution: file.resolution,

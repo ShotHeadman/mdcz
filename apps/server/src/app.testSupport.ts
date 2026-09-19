@@ -3,12 +3,7 @@ import { join } from "node:path";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
-import {
-  ActorImageService,
-  type AggregationResult,
-  type MountedRootScrapeAggregationService,
-  MountedRootScrapeRuntime,
-} from "@mdcz/runtime/scrape";
+import { ActorImageService, type AggregationResult } from "@mdcz/runtime/scrape";
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { FastifyInstance } from "fastify";
@@ -21,7 +16,7 @@ import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
 import { ServerPersistenceService } from "./services/persistenceService";
 import type { RuntimeActionService } from "./services/runtimeActionService";
-import { ScrapeService } from "./services/scrapeService";
+import type { ScrapeServiceResources } from "./services/scrapeService";
 import { createTaskEventBus } from "./taskEvents";
 
 export interface TestServerOptions {
@@ -32,7 +27,7 @@ export interface TestServerOptions {
     url?: string;
   };
   runtimeActions?: RuntimeActionService;
-  scrapeAggregation?: MountedRootScrapeAggregationService;
+  scrapeAggregation?: ScrapeServiceResources["aggregationService"];
   createMaintenanceRuntime?: (config: ServerConfigService) => MaintenanceRuntime;
 }
 
@@ -84,7 +79,12 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       automationWebhook: options.automationWebhook,
     },
     webStaticDir: options.webStaticDir ?? false,
-    resources: { networkClient, imageHostCooldownStore },
+    resources: {
+      networkClient,
+      imageHostCooldownStore,
+      actorImageService,
+      aggregationService: options.scrapeAggregation,
+    },
     services: {
       auth:
         options.environmentPassword === undefined
@@ -95,19 +95,6 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       persistence,
       runtimeActions: options.runtimeActions,
       taskEvents,
-      scrape: options.scrapeAggregation
-        ? new ScrapeService(persistence, mediaRoots, config, taskEvents, {
-            networkClient,
-            runtime: new MountedRootScrapeRuntime({
-              config,
-              aggregationService: options.scrapeAggregation,
-              networkClient,
-              imageHostCooldownStore,
-              actorImageService,
-            }),
-            imageHostCooldownStore,
-          })
-        : undefined,
       maintenance: options.createMaintenanceRuntime
         ? new MaintenanceService(persistence, mediaRoots, taskEvents, options.createMaintenanceRuntime(config))
         : undefined,
@@ -234,7 +221,7 @@ export const startTestImageServer = async (imageBytes: Buffer = createTestPngByt
 export const createTestAggregation = (
   imageUrl: string,
   options: TestAggregationOptions = {},
-): MountedRootScrapeAggregationService => ({
+): NonNullable<ScrapeServiceResources["aggregationService"]> => ({
   async aggregate(number: string, _configuration: Configuration): Promise<AggregationResult> {
     return {
       data: {

@@ -6,6 +6,26 @@ ALTER TABLE `scrape_runs` ADD `manifest_fixed_at` integer;
 --> statement-breakpoint
 ALTER TABLE `scrape_runs` ADD `discovery_json` text;
 --> statement-breakpoint
+ALTER TABLE `scrape_runs` ADD `previous_run_id` text;
+--> statement-breakpoint
+ALTER TABLE `scrape_runs` DROP COLUMN `execution_generation`;
+--> statement-breakpoint
+ALTER TABLE `scrape_runs` DROP COLUMN `revision`;
+--> statement-breakpoint
+ALTER TABLE `scrape_run_items` ADD `status` text CHECK (`status` IS NULL OR `status` IN ('success', 'failed', 'skipped'));
+--> statement-breakpoint
+ALTER TABLE `scrape_run_items` ADD `error_message` text;
+--> statement-breakpoint
+ALTER TABLE `scrape_run_items` ADD `uncensored_ambiguous` integer NOT NULL DEFAULT 0 CHECK (`uncensored_ambiguous` IN (0, 1));
+--> statement-breakpoint
+ALTER TABLE `scrape_run_items` ADD `library_file_id` text;
+--> statement-breakpoint
+ALTER TABLE `scrape_run_items` ADD `completed_at` integer;
+--> statement-breakpoint
+DROP TABLE `scrape_item_outcomes`;
+--> statement-breakpoint
+DROP TABLE `scrape_attempts`;
+--> statement-breakpoint
 DROP TABLE `library_item_assets`;
 --> statement-breakpoint
 DROP TABLE `library_item_files`;
@@ -37,7 +57,6 @@ CREATE TABLE `library_item_files` (
   `part_number` integer CHECK (`part_number` IS NULL OR `part_number` >= 1),
   `part_suffix` text,
   `resolution` text,
-  `source_outcome_id` text REFERENCES `scrape_item_outcomes`(`id`) ON DELETE SET NULL,
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL,
   UNIQUE (`item_id`, `id`)
@@ -52,7 +71,6 @@ CREATE TABLE `library_item_assets` (
   `root_id` text REFERENCES `media_roots`(`id`) ON DELETE RESTRICT,
   `relative_path` text,
   `published` integer NOT NULL DEFAULT 0 CHECK (`published` IN (0, 1)),
-  `historical` integer NOT NULL DEFAULT 0 CHECK (`historical` IN (0, 1)),
   `created_at` integer NOT NULL,
   CHECK ((`root_id` IS NULL) = (`relative_path` IS NULL)),
   CHECK ((`kind` IN ('strm', 'subtitle')) = (`file_id` IS NOT NULL)),
@@ -62,8 +80,6 @@ CREATE TABLE `library_item_assets` (
 CREATE INDEX `library_items_created_at_idx` ON `library_items` (`created_at`, `id`);
 --> statement-breakpoint
 CREATE UNIQUE INDEX `library_item_files_root_path_idx` ON `library_item_files` (`root_id`, `root_relative_path`);
---> statement-breakpoint
-CREATE INDEX `library_item_files_source_outcome_idx` ON `library_item_files` (`source_outcome_id`);
 --> statement-breakpoint
 CREATE INDEX `library_item_assets_item_idx` ON `library_item_assets` (`item_id`);
 --> statement-breakpoint
@@ -78,18 +94,5 @@ WHERE `file_id` IS NULL;
 CREATE UNIQUE INDEX `library_item_assets_file_scope_idx`
 ON `library_item_assets` (`item_id`, `file_id`, `kind`, ifnull(`root_id`, ''), ifnull(`relative_path`, `uri`))
 WHERE `file_id` IS NOT NULL;
---> statement-breakpoint
-CREATE TABLE `maintenance_directory_tasks` (
-  `id` text PRIMARY KEY NOT NULL,
-  `root_id` text NOT NULL,
-  `output_root_id` text NOT NULL,
-  `output_relative_directory` text NOT NULL,
-  `preset_id` text NOT NULL,
-  `scope_json` text NOT NULL,
-  `configuration_json` text NOT NULL,
-  `status` text NOT NULL,
-  `created_at` integer NOT NULL,
-  `updated_at` integer NOT NULL
-) STRICT;
 --> statement-breakpoint
 ALTER TABLE `media_roots` ADD `real_path` text;

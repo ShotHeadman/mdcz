@@ -42,7 +42,6 @@ export const registeredMediaLocations = async (
       location.generatedStrmPaths.push(path);
     }
     byItem.set(asset.itemId, location);
-    if (asset.historical) continue;
     if (asset.kind === "nfo") location.nfoPath ??= path;
     else if (asset.kind === "strm") location.strmPath ??= path;
     else if (asset.kind === "scene") location.assets.sceneImages.push(path);
@@ -57,7 +56,7 @@ export const registeredMediaLocations = async (
         ...(byItem.get(file.itemId) ?? { assets: { sceneImages: [], actorPhotos: [] } }),
         groupId: file.itemId,
         strmPath: snapshot.assets
-          .filter((asset) => asset.fileId === file.fileId && asset.kind === "strm" && !asset.historical)
+          .filter((asset) => asset.fileId === file.fileId && asset.kind === "strm")
           .map(absolute)[0],
         generatedStrmPaths: snapshot.assets
           .filter((asset) => asset.fileId === file.fileId && asset.kind === "strm" && asset.published)
@@ -106,7 +105,7 @@ export const resolveRegisteredNfoPaths = async (
     return resolveRootRelativePath(root, ref.relativePath);
   };
   const target = filesystemPathKey(nfoPath);
-  const activeNfos = snapshot.assets.filter((asset) => asset.kind === "nfo" && !asset.historical);
+  const activeNfos = snapshot.assets.filter((asset) => asset.kind === "nfo");
   const nfos = activeNfos.map((asset) => ({
     ...asset,
     path: absolute(asset),

@@ -94,7 +94,7 @@ export class DesktopPersistenceService {
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
-      const maintenanceDirectoryTasks = new MaintenanceDirectoryRepository(database);
+      const maintenanceDirectoryTasks = new MaintenanceDirectoryRepository();
       maintenanceDirectoryTasks.interruptUnfinished();
       const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);

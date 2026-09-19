@@ -89,7 +89,7 @@ export const createMaintenanceLibraryPort = (deps: {
     });
     const expected = {
       files: snapshot.files.filter((file) => file.itemId === resolvedMovieId),
-      assets: assets.filter((asset) => asset.itemId === resolvedMovieId && !asset.historical),
+      assets: assets.filter((asset) => asset.itemId === resolvedMovieId),
     };
     return {
       movieId: resolvedMovieId,

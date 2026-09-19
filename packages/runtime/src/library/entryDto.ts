@@ -27,7 +27,7 @@ type LibraryEntryDtoSource = Pick<
       rootRelativePath: string;
       modifiedAt: Date | null;
       sourceRunId: string | null;
-      sourceOutcomeId: string | null;
+      sourceItemId: string | null;
     }
   >;
 };
@@ -61,7 +61,7 @@ export const toLibraryEntryDto = (
       partSuffix: file.partSuffix,
       resolution: file.resolution,
       runId: file.sourceRunId,
-      scrapeOutcomeId: file.sourceOutcomeId,
+      scrapeOutcomeId: file.sourceItemId,
       available: null,
       availabilityError: null,
     };

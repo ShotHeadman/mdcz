@@ -96,6 +96,7 @@ export type FileScrapeOptions = {
   scrapeSessionId?: string;
   source?: RootFileRef;
   roots?: readonly Pick<MediaRoot, "id" | "hostPath">[];
+  itemId?: string;
   attemptId?: string;
   operationId?: string;
   outputDirectory?: string;
@@ -123,6 +124,7 @@ export interface PreparedFileScrape {
   aggregation: AggregationResult;
   outputPlan: ResolvedPublicationLayout;
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+  itemId: string;
   attemptId: string;
   operationId: string;
 }
@@ -290,7 +292,8 @@ export class FileScraper {
             aggregation,
             outputPlan,
             roots,
-            attemptId: options.attemptId ?? options.operationId ?? identity.fileId,
+            itemId: options.itemId ?? options.attemptId ?? options.operationId ?? identity.fileId,
+            attemptId: options.attemptId ?? options.itemId ?? options.operationId ?? identity.fileId,
             operationId: options.operationId ?? `${scrapeSessionId ?? "scrape"}:${identity.relativePath}`,
           },
         });
@@ -429,7 +432,7 @@ export class FileScraper {
             })),
             expected: {
               files: participantFiles.filter((file) => file.itemId === movieId),
-              assets: participantAssets.filter((asset) => asset.itemId === movieId && !asset.historical),
+              assets: participantAssets.filter((asset) => asset.itemId === movieId),
             },
           };
           await mkdir(plan.metadataDir, { recursive: true });
@@ -495,7 +498,8 @@ export class FileScraper {
               ...participants,
               members: participants.members.map(({ prepared, ...member }) => {
                 const classification = classifyMovie(prepared.fileInfo, crawlerData, prepared.localState);
-                const { fileId: itemId, assets, ...identity } = prepared.identity;
+                const { assets, ...identity } = prepared.identity;
+                const itemId = prepared.itemId ?? prepared.attemptId ?? prepared.identity.fileId;
                 return {
                   ...member,
                   existingNfoPath: preservedNfoPath,

@@ -1,8 +1,8 @@
 import { extname } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { ConfigValidationError, configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
-import { fileOrganizer } from "@main/services/scraper/FileScraper";
 import { toErrorMessage } from "@main/utils/common";
+import { FileOrganizer } from "@mdcz/runtime/scrape";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { dialog } from "electron";
@@ -16,6 +16,8 @@ import {
   configSaveInputSchema,
 } from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
+
+const fileOrganizer = new FileOrganizer();
 
 export const createConfigHandlers = (
   context: ServiceContainer,

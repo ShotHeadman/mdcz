@@ -58,12 +58,7 @@ const createCompletedRun = async (
     scrapeRuns.commitSuccessOutcomes(
       [
         {
-          outcome: "success",
-          attemptId: scrapeRuns.admitAttempt(manifest.items[0].id).id,
-          crawlerDataJson: JSON.stringify({ number: input.id }),
-          outputRootId: "root-1",
-          outputRelativePath: input.outputRelativePath,
-          size: input.size,
+          itemId: manifest.items[0].id,
           completedAt: input.completedAt,
           libraryEntry: {
             fileId: `${input.id}:file`,

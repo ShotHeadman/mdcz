@@ -31,20 +31,10 @@ const addSuccessfulOutcomes = (...ids: string[]): void => {
     .prepare("INSERT INTO scrape_runs (id, root_id, execution_mode, created_at) VALUES (?, ?, 'batch', ?)")
     .run("source-run", "root-1", 1);
   const insertItem = database.sqlite.prepare(
-    "INSERT INTO scrape_run_items (id, run_id, ordinal, root_id, relative_path) VALUES (?, 'source-run', ?, 'root-1', ?)",
-  );
-  const insertAttempt = database.sqlite.prepare(
-    "INSERT INTO scrape_attempts (id, item_id, attempt, admitted_at) VALUES (?, ?, 1, ?)",
-  );
-  const insertOutcome = database.sqlite.prepare(
-    "INSERT INTO scrape_item_outcomes (id, attempt_id, outcome, completed_at) VALUES (?, ?, 'success', ?)",
+    "INSERT INTO scrape_run_items (id, run_id, ordinal, root_id, relative_path, status, completed_at) VALUES (?, 'source-run', ?, 'root-1', ?, 'success', 1)",
   );
   ids.forEach((id, ordinal) => {
-    const itemId = `source-item-${ordinal}`;
-    const attemptId = `source-attempt-${ordinal}`;
-    insertItem.run(itemId, ordinal, `${id}.mp4`);
-    insertAttempt.run(attemptId, itemId, 1);
-    insertOutcome.run(id, attemptId, 1);
+    insertItem.run(id, ordinal, `${id}.mp4`);
   });
 };
 
@@ -67,12 +57,10 @@ describe("Persistence migrations", () => {
     expect(tables).toContain("scan_task_events");
     expect(tables).toContain("scrape_runs");
     expect(tables).toContain("scrape_run_items");
-    expect(tables).toContain("scrape_item_outcomes");
     expect(tables).toContain("library_items");
     expect(tables).toContain("library_item_files");
     expect(tables).toContain("library_item_assets");
     expect(tables).toContain("__drizzle_migrations");
-    expect(tables).toContain("maintenance_directory_tasks");
 
     const indexes = database.sqlite
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
@@ -83,7 +71,6 @@ describe("Persistence migrations", () => {
         "library_item_assets_item_idx",
         "library_item_assets_output_idx",
         "library_item_files_root_path_idx",
-        "library_item_files_source_outcome_idx",
         "scan_results_task_root_path_idx",
         "scan_tasks_queue_idx",
         "scan_task_events_task_created_at_idx",
@@ -202,9 +189,9 @@ describe("Persistence migrations", () => {
       );
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
-      expect(
-        database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'maintenance_directory_tasks'").all(),
-      ).toEqual([{ name: "maintenance_directory_tasks" }]);
+      expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_runs'").all()).toEqual([
+        { name: "scrape_runs" },
+      ]);
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
 
       expect(
@@ -223,9 +210,9 @@ describe("Persistence migrations", () => {
         { id: "mdcz-metadata-output" },
         { id: "path-deterministic" },
       ]);
-      expect(database.sqlite.prepare("SELECT id, outcome FROM scrape_item_outcomes").all()).toEqual([
-        { id: "scrape-outcome-1", outcome: "success" },
-      ]);
+      expect(
+        database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_item_outcomes'").all(),
+      ).toEqual([]);
       expect(database.sqlite.prepare("SELECT * FROM library_items").all()).toEqual([]);
       expect(database.sqlite.prepare("SELECT * FROM library_item_files").all()).toEqual([]);
       expect(database.sqlite.prepare("SELECT * FROM library_item_assets").all()).toEqual([]);
@@ -496,33 +483,37 @@ describe("LibraryRepository", () => {
         {
           rootId: "root-1",
           rootRelativePath: "A.mp4",
-          sourceOutcomeId: "outcome-1",
           assets: [],
           fileId: "root-1:A.mp4",
         },
       ],
     });
+    database.sqlite
+      .prepare("UPDATE scrape_run_items SET library_file_id = ? WHERE id = ?")
+      .run("root-1:A.mp4", "outcome-1");
     await repository.upsertEntry({
       movie: { id: "entry-2" },
       files: [
         {
           rootId: "root-1",
           rootRelativePath: "B.mp4",
-          sourceOutcomeId: "outcome-2",
           fileId: "root-1:B.mp4",
         },
       ],
     });
+    database.sqlite
+      .prepare("UPDATE scrape_run_items SET library_file_id = ? WHERE id = ?")
+      .run("root-1:B.mp4", "outcome-2");
 
-    const entries = await repository.getEntriesBySourceOutcomeIds(["outcome-1", "outcome-2", "missing"]);
+    const entries = await repository.getEntriesByRunItemIds(["outcome-1", "outcome-2", "missing"]);
     expect([...entries.keys()].sort()).toEqual(["outcome-1", "outcome-2"]);
     expect(entries.get("outcome-1")).toMatchObject({
       id: "entry-1",
       assets: [expect.objectContaining({ kind: "poster", uri: "A.jpg" })],
     });
-    await expect(repository.getEntryBySourceOutcomeId("outcome-2")).resolves.toMatchObject({ id: "entry-2" });
-    await expect(repository.getEntryBySourceOutcomeId("missing")).resolves.toBeNull();
-    await expect(repository.getEntriesBySourceOutcomeIds([])).resolves.toEqual(new Map());
+    await expect(repository.getEntryByRunItemId("outcome-2")).resolves.toMatchObject({ id: "entry-2" });
+    await expect(repository.getEntryByRunItemId("missing")).resolves.toBeNull();
+    await expect(repository.getEntriesByRunItemIds([])).resolves.toEqual(new Map());
   });
 
   it("paginates library entries with a stable created-at and id cursor", async () => {
@@ -727,7 +718,7 @@ describe("LibraryRepository", () => {
     expect(() =>
       database?.sqlite
         .prepare(
-          "INSERT INTO library_item_assets (id, item_id, file_id, kind, uri, published, historical, created_at) VALUES (?, ?, ?, 'strm', ?, 0, 0, ?)",
+          "INSERT INTO library_item_assets (id, item_id, file_id, kind, uri, published, created_at) VALUES (?, ?, ?, 'strm', ?, 0, ?)",
         )
         .run("bad-asset", "entry-1", second.files[0].id, "B.strm", 1),
     ).toThrow(/FOREIGN KEY constraint failed/u);

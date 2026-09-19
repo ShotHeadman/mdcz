@@ -2,15 +2,20 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { LibraryRepository, PublicationJournalRepository, ScrapeRunRepository } from "@mdcz/persistence";
 import { createMaintenanceLibraryPort } from "@mdcz/runtime/maintenance/libraryPort";
 import { parsePublicationJournalManifest } from "@mdcz/runtime/publication";
-import { prepareMovieOutput, retainedRegisteredFeatures } from "@mdcz/runtime/publication/prepareMovieOutput";
-import type { PublicationOutputPort } from "@mdcz/runtime/publication/types";
+import { toCommittedMovie } from "@mdcz/runtime/publication/committedMovie";
+import { MoveOutput } from "@mdcz/runtime/publication/MoveOutput";
+import {
+  type PreparedMovieOutput,
+  prepareMovieOutput,
+  retainedRegisteredFeatures,
+} from "@mdcz/runtime/publication/prepareMovieOutput";
+import type { PublicationJournalPort, PublicationOutputPort } from "@mdcz/runtime/publication/types";
+import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
 import {
   type AggregationService,
-  commitScrapeOutput,
   type DownloadManager,
   FileOrganizer,
   type NfoGenerator,
@@ -26,20 +31,63 @@ import { mediaRoots } from "../../../../packages/persistence/src/schema";
 import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
 import { collectObservableTrace } from "../../../helpers/observableTrace";
 import {
+  createFileScraper,
   mockConfigManager,
   preparedPublicationFiles,
   prepareFile,
   prepareFilePublication,
 } from "../../../helpers/scraper";
 
-const commitTestOutput = (input: {
-  output?: Parameters<typeof commitScrapeOutput>[2];
-  items: Parameters<typeof commitScrapeOutput>[1];
-  scrapeRuns: Parameters<typeof commitScrapeOutput>[0]["scrapeRuns"];
-  journal: Parameters<typeof commitScrapeOutput>[0]["journal"];
-  outputs?: unknown;
-  resolveRoot?: unknown;
-}) => commitScrapeOutput({ scrapeRuns: input.scrapeRuns, journal: input.journal }, input.items, input.output);
+const installTestOutput = async (input: {
+  output: PreparedMovieOutput;
+  library: LibraryRepository;
+  journal: PublicationJournalPort;
+}) => {
+  const { output, library, journal } = input;
+  const committedMovie = toCommittedMovie(output);
+  const commit = () =>
+    library.writeEntry(
+      {
+        id: committedMovie.id,
+        assets: committedMovie.assets.filter((asset) => asset.fileId === null),
+        mediaIdentity: committedMovie.mediaIdentity,
+        number: committedMovie.number,
+        title: committedMovie.title,
+        actors: [...committedMovie.actors],
+        crawlerDataJson: committedMovie.crawlerDataJson,
+      },
+      committedMovie.files.map((file) => ({
+        fileId: file.fileId,
+        rootId: file.rootId,
+        rootRelativePath: file.rootRelativePath,
+        size: file.size,
+        modifiedAt: file.modifiedAtMs === null ? null : new Date(file.modifiedAtMs),
+        partNumber: file.partNumber,
+        partSuffix: file.partSuffix,
+        resolution: file.resolution,
+        assets: committedMovie.assets.filter((asset) => asset.fileId === file.fileId),
+      })),
+    );
+
+  if (output.moves.length) {
+    await new MoveOutput().install({
+      operationId: output.operationId,
+      operationType: "scrape",
+      moves: output.moves,
+      artifacts: output.artifacts,
+      journal,
+      protectedSourceRoots: output.protectedSourceRoots,
+      commit,
+    });
+  } else {
+    await new WriteOutput().install(output.artifacts, {
+      protectedSourceRoots: output.protectedSourceRoots,
+      commit,
+    });
+  }
+
+  return committedMovie;
+};
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<
@@ -133,7 +181,7 @@ const createPublicationContext = async (root: string, names: string[]) => {
       ordinal,
     })),
   });
-  const attempts = new Map(run.items.map((item) => [item.id, scrapeRuns.admitAttempt(item.id).id]));
+  const attempts = new Map(run.items.map((item) => [item.id, item.id]));
   return {
     database,
     library,
@@ -275,20 +323,12 @@ describe("FileScraper movie groups", () => {
       const group = await scraper.executePreparedFiles(entries);
       try {
         if (!group.output) throw new Error("Expected desktop publication");
-        const results = await commitTestOutput({
+        const committedMovie = await installTestOutput({
           output: group.output,
-          items: group.results.map((result) => {
-            const attemptId = context.attempts.get(result.fileId);
-            if (!attemptId) throw new Error("Missing desktop attempt");
-            return { result, attemptId };
-          }),
-          scrapeRuns: context.scrapeRuns,
-          outputs: context.library,
+          library: context.library,
           journal: context.journal,
-          resolveRoot: context.resolveRoot,
         });
-        expect(results).toHaveLength(parts);
-        expect(results.every((result) => result.status === "success")).toBe(true);
+        expect(committedMovie.files).toHaveLength(parts);
       } finally {
         await group.release?.();
       }
@@ -458,24 +498,8 @@ describe("FileScraper movie groups", () => {
     expect(aggregate).toHaveBeenCalledTimes(1);
     expect(group.output).toBeUndefined();
     expect(group.results).toHaveLength(names.length);
-    const committed = (
-      await commitTestOutput({
-        output: group.output,
-        items: group.results.map((result) => {
-          const attemptId = context.attempts.get(result.fileId);
-          if (!attemptId) throw new Error("Prepared result has no admitted attempt");
-          return { result, attemptId };
-        }),
-        scrapeRuns: context.scrapeRuns,
-        outputs: context.library,
-        journal: context.journal,
-        resolveRoot: context.resolveRoot,
-      })
-    ).sort((a, b) => (a.part?.number ?? 0) - (b.part?.number ?? 0));
+    const committed = [...group.results].sort((a, b) => (a.part?.number ?? 0) - (b.part?.number ?? 0));
     await group.release?.();
-    const run = await context.scrapeRuns.get(context.runId);
-    expect(run.outcomes).toHaveLength(names.length);
-    expect(run.outcomes.every((outcome) => outcome.outcome === "failed")).toBe(true);
     expect(await context.library.listEntries()).toEqual([]);
     for (const [index, result] of committed.entries()) {
       expect(result.status).toBe("failed");
@@ -596,19 +620,11 @@ describe("FileScraper movie groups", () => {
     const featureMoves = group.output.moves.filter((move) => move.source.relativePath.endsWith("花絮.mp4"));
     expect(featureMoves).toHaveLength(1);
     try {
-      const committed = await commitTestOutput({
+      await installTestOutput({
         output: group.output,
-        items: group.results.map((result) => {
-          const attemptId = context.attempts.get(result.fileId);
-          if (!attemptId) throw new Error("Prepared result has no admitted attempt");
-          return { result, attemptId };
-        }),
-        scrapeRuns: context.scrapeRuns,
-        outputs: context.library,
+        library: context.library,
         journal: context.journal,
-        resolveRoot: context.resolveRoot,
       });
-      expect(committed.every((result) => result.status === "success")).toBe(true);
     } finally {
       await group.release?.();
     }
@@ -644,7 +660,7 @@ describe("FileScraper movie groups", () => {
       executionMode: "batch",
       items: [{ id: buildFileId(versionPath), rootId: "root", relativePath: versionName, ordinal: 0 }],
     });
-    const versionAttempt = context.scrapeRuns.admitAttempt(versionRun.items[0].id);
+    const versionAttempt = versionRun.items[0];
     const version = await prepareFilePublication(scraper, versionPath, undefined, undefined, {
       roots: [context.mediaRoot],
       attemptId: versionAttempt.id,
@@ -653,17 +669,13 @@ describe("FileScraper movie groups", () => {
     });
     onTestFinished(async () => await version.release?.());
     if (!version.output) throw new Error("Expected version publication plan");
-    const [versionResult] = await commitTestOutput({
+    const versionMovie = await installTestOutput({
       output: version.output,
-      items: [],
-      scrapeRuns: context.scrapeRuns,
-      outputs: context.library,
+      library: context.library,
       journal: context.journal,
-      resolveRoot: context.resolveRoot,
     });
     await version.release?.();
-    expect(versionResult.status).toBe("success");
-    expect(versionResult.assets).toEqual([]);
+    expect(versionMovie.assets).toEqual([]);
     const previousFiles = movie.files.map((file) => file.id);
     movie = await context.library.getEntryById(movie.id);
     expect(movie.files).toHaveLength(names.length);

@@ -1,19 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const maintenanceDirectoryTasks = sqliteTable("maintenance_directory_tasks", {
-  id: text("id").primaryKey(),
-  rootId: text("root_id").notNull(),
-  outputRootId: text("output_root_id").notNull(),
-  outputRelativeDirectory: text("output_relative_directory").notNull(),
-  presetId: text("preset_id").notNull(),
-  scopeJson: text("scope_json").notNull(),
-  configurationJson: text("configuration_json").notNull(),
-  status: text("status").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
-
 export const mediaRoots = sqliteTable(
   "media_roots",
   {
@@ -75,8 +62,7 @@ export const scrapeRuns = sqliteTable(
   "scrape_runs",
   {
     id: text("id").primaryKey(),
-    executionGeneration: integer("execution_generation").notNull().default(0),
-    revision: integer("revision").notNull().default(0),
+    previousRunId: text("previous_run_id"),
     rootId: text("root_id").notNull(),
     outputRootId: text("output_root_id"),
     outputRelativeDirectory: text("output_relative_directory"),
@@ -113,6 +99,11 @@ export const scrapeRunItems = sqliteTable(
     relativePath: text("relative_path").notNull(),
     manualUrl: text("manual_url"),
     uncensoredChoice: text("uncensored_choice").$type<"umr" | "leak" | "uncensored">(),
+    status: text("status").$type<"success" | "failed" | "skipped">(),
+    errorMessage: text("error_message"),
+    uncensoredAmbiguous: integer("uncensored_ambiguous", { mode: "boolean" }).notNull().default(false),
+    libraryFileId: text("library_file_id"),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
   },
   (table) => [
     check("scrape_run_items_ordinal_check", sql`${table.ordinal} >= 0`),
@@ -120,50 +111,12 @@ export const scrapeRunItems = sqliteTable(
       "scrape_run_items_uncensored_choice_check",
       sql`${table.uncensoredChoice} is null or ${table.uncensoredChoice} in ('umr', 'leak', 'uncensored')`,
     ),
+    check(
+      "scrape_run_items_status_check",
+      sql`${table.status} is null or ${table.status} in ('success', 'failed', 'skipped')`,
+    ),
     uniqueIndex("scrape_run_items_run_ordinal_idx").on(table.runId, table.ordinal),
     uniqueIndex("scrape_run_items_run_root_path_idx").on(table.runId, table.rootId, table.relativePath),
-  ],
-);
-
-export const scrapeItemOutcomes = sqliteTable(
-  "scrape_item_outcomes",
-  {
-    id: text("id").primaryKey(),
-    attemptId: text("attempt_id")
-      .notNull()
-      .references(() => scrapeAttempts.id, { onDelete: "cascade" }),
-    outcome: text("outcome").$type<"success" | "failed" | "skipped">().notNull(),
-    errorMessage: text("error_message"),
-    crawlerDataJson: text("crawler_data_json"),
-    nfoRootId: text("nfo_root_id"),
-    nfoRelativePath: text("nfo_relative_path"),
-    outputRootId: text("output_root_id"),
-    outputRelativePath: text("output_relative_path"),
-    uncensoredAmbiguous: integer("uncensored_ambiguous", { mode: "boolean" }).notNull().default(false),
-    size: integer("size").notNull().default(0),
-    modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
-    completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [
-    check("scrape_item_outcomes_outcome_check", sql`${table.outcome} in ('success', 'failed', 'skipped')`),
-    check("scrape_item_outcomes_size_check", sql`${table.size} >= 0`),
-    uniqueIndex("scrape_item_outcomes_attempt_idx").on(table.attemptId),
-  ],
-);
-
-export const scrapeAttempts = sqliteTable(
-  "scrape_attempts",
-  {
-    id: text("id").primaryKey(),
-    itemId: text("item_id")
-      .notNull()
-      .references(() => scrapeRunItems.id, { onDelete: "cascade" }),
-    attempt: integer("attempt").notNull(),
-    admittedAt: integer("admitted_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [
-    check("scrape_attempts_attempt_check", sql`${table.attempt} >= 1`),
-    uniqueIndex("scrape_attempts_item_attempt_idx").on(table.itemId, table.attempt),
   ],
 );
 
@@ -214,13 +167,11 @@ export const libraryItemFiles = sqliteTable(
     partNumber: integer("part_number"),
     partSuffix: text("part_suffix"),
     resolution: text("resolution"),
-    sourceOutcomeId: text("source_outcome_id").references(() => scrapeItemOutcomes.id, { onDelete: "set null" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
     uniqueIndex("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
-    index("library_item_files_source_outcome_idx").on(table.sourceOutcomeId),
     check("library_item_files_part_number_check", sql`${table.partNumber} is null or ${table.partNumber} >= 1`),
   ],
 );
@@ -238,7 +189,6 @@ export const libraryItemAssets = sqliteTable(
     rootId: text("root_id").references(() => mediaRoots.id, { onDelete: "restrict" }),
     relativePath: text("relative_path"),
     published: integer("published", { mode: "boolean" }).notNull().default(false),
-    historical: integer("historical", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
@@ -279,15 +229,12 @@ export const libraryRepairIssues = sqliteTable(
 );
 
 export const schema = {
-  maintenanceDirectoryTasks,
   mediaRoots,
   scanTasks,
   scanTaskEvents,
   scanResults,
   scrapeRuns,
   scrapeRunItems,
-  scrapeAttempts,
-  scrapeItemOutcomes,
   publicationJournal,
   libraryRepairIssues,
   libraryItems,
@@ -307,10 +254,6 @@ export type ScrapeRunRow = typeof scrapeRuns.$inferSelect;
 export type InsertScrapeRunRow = typeof scrapeRuns.$inferInsert;
 export type ScrapeRunItemRow = typeof scrapeRunItems.$inferSelect;
 export type InsertScrapeRunItemRow = typeof scrapeRunItems.$inferInsert;
-export type ScrapeAttemptRow = typeof scrapeAttempts.$inferSelect;
-export type InsertScrapeAttemptRow = typeof scrapeAttempts.$inferInsert;
-export type ScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferSelect;
-export type InsertScrapeItemOutcomeRow = typeof scrapeItemOutcomes.$inferInsert;
 export type PublicationJournalRow = typeof publicationJournal.$inferSelect;
 export type InsertPublicationJournalRow = typeof publicationJournal.$inferInsert;
 export type LibraryItemRow = typeof libraryItems.$inferSelect;

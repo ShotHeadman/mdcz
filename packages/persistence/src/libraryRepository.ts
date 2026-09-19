@@ -11,8 +11,6 @@ import {
   libraryItemFiles,
   libraryItems,
   mediaRoots,
-  scrapeAttempts,
-  scrapeItemOutcomes,
   scrapeRunItems,
 } from "./schema";
 
@@ -60,7 +58,6 @@ export interface LibraryFileInput {
   rootRelativePath: string;
   size?: number;
   modifiedAt?: Date | null;
-  sourceOutcomeId?: string | null;
   partNumber?: number | null;
   partSuffix?: string | null;
   resolution?: string | null;
@@ -135,7 +132,7 @@ export interface LibraryItemFileRecord {
   partNumber: number | null;
   partSuffix: string | null;
   resolution: string | null;
-  sourceOutcomeId: string | null;
+  sourceItemId: string | null;
   sourceRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -150,7 +147,6 @@ export interface LibraryItemAssetRecord {
   rootId: string | null;
   relativePath: string | null;
   published: boolean;
-  historical: boolean;
   createdAt: Date;
 }
 
@@ -172,6 +168,7 @@ const safeActors = (value: string): string[] => {
 const toLibraryItemFileRecord = (
   row: LibraryItemFileRow,
   sourceRunId: string | null = null,
+  sourceItemId: string | null = null,
 ): LibraryItemFileRecord => ({
   id: row.id,
   itemId: row.itemId,
@@ -185,7 +182,7 @@ const toLibraryItemFileRecord = (
   partNumber: row.partNumber,
   partSuffix: row.partSuffix,
   resolution: row.resolution,
-  sourceOutcomeId: row.sourceOutcomeId,
+  sourceItemId,
   sourceRunId,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
@@ -200,7 +197,6 @@ const toLibraryItemAssetRecord = (row: LibraryItemAssetRow): LibraryItemAssetRec
   rootId: row.rootId,
   relativePath: row.relativePath,
   published: row.published,
-  historical: row.historical,
   createdAt: row.createdAt,
 });
 
@@ -313,11 +309,7 @@ export class LibraryRepository {
       assets: this.database.db
         .select()
         .from(libraryItemAssets)
-        .where(
-          owners.length
-            ? or(assetWhere, and(inArray(libraryItemAssets.itemId, owners), eq(libraryItemAssets.historical, false)))
-            : assetWhere,
-        )
+        .where(owners.length ? or(assetWhere, inArray(libraryItemAssets.itemId, owners)) : assetWhere)
         .all()
         .flatMap((asset) =>
           asset.rootId && asset.relativePath
@@ -329,7 +321,6 @@ export class LibraryRepository {
                   rootId: asset.rootId,
                   relativePath: asset.relativePath,
                   published: asset.published,
-                  historical: asset.historical,
                 },
               ]
             : [],
@@ -348,7 +339,7 @@ export class LibraryRepository {
       UNION ALL
       SELECT root_id AS rootId, relative_path AS relativePath, item_id AS movieId, file_id AS fileId, kind
       FROM library_item_assets
-      WHERE kind IN ('nfo', 'strm') AND published = 1 AND historical = 0 AND root_id IS NOT NULL AND relative_path IS NOT NULL
+      WHERE kind IN ('nfo', 'strm') AND published = 1 AND root_id IS NOT NULL AND relative_path IS NOT NULL
     `)
       .all();
   }
@@ -428,14 +419,17 @@ export class LibraryRepository {
     return this.getEntryById(file.itemId);
   }
 
-  async resolveUncensoredFiles<TChoice extends string>(selections: readonly { outcomeId: string; choice: TChoice }[]) {
+  async resolveUncensoredFiles<TChoice extends string>(
+    selections: readonly { outcomeId?: string; itemId?: string; choice: TChoice }[],
+  ) {
     const choices = new Map<string, TChoice>();
     for (const selection of selections) {
-      const file = this.database.db
-        .select()
-        .from(libraryItemFiles)
-        .where(eq(libraryItemFiles.sourceOutcomeId, selection.outcomeId))
-        .get();
+      const targetId = selection.itemId ?? selection.outcomeId;
+      if (!targetId) continue;
+      const runItem = this.database.db.select().from(scrapeRunItems).where(eq(scrapeRunItems.id, targetId)).get();
+      const file = runItem?.libraryFileId
+        ? this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, runItem.libraryFileId)).get()
+        : null;
       if (!file) throw new Error("刮削结果已不属于已登记影片文件，请刷新媒体库");
       const previous = choices.get(file.itemId);
       if (previous !== undefined && previous !== selection.choice) throw new Error("同一影片不能选择不同的无码类型");
@@ -445,14 +439,11 @@ export class LibraryRepository {
     for (const [itemId, choice] of choices) {
       const entry = await this.getEntryById(itemId);
       for (const file of entry.files) {
-        if (!file.sourceOutcomeId) throw new Error(`影片文件缺少刮削来源：${file.rootRelativePath}`);
-        const outcome = this.database.db
-          .select()
-          .from(scrapeItemOutcomes)
-          .where(eq(scrapeItemOutcomes.id, file.sourceOutcomeId))
-          .get();
-        if (!outcome || outcome.outcome !== "success") throw new Error("影片文件刮削来源已失效");
-        result.push({ file, choice, outcome, entry });
+        const runItem = file.sourceItemId
+          ? this.database.db.select().from(scrapeRunItems).where(eq(scrapeRunItems.id, file.sourceItemId)).get()
+          : null;
+        if (!runItem || runItem.status !== "success") throw new Error("影片文件刮削来源已失效");
+        result.push({ file, choice, outcome: runItem, entry });
       }
     }
     return result;
@@ -498,21 +489,32 @@ export class LibraryRepository {
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
   }
 
-  async getEntryBySourceOutcomeId(sourceOutcomeId: string): Promise<LibraryEntryRecord | null> {
-    return (await this.getEntriesBySourceOutcomeIds([sourceOutcomeId])).get(sourceOutcomeId) ?? null;
+  async getEntryByRunItemId(runItemId: string): Promise<LibraryEntryRecord | null> {
+    return (await this.getEntriesByRunItemIds([runItemId])).get(runItemId) ?? null;
   }
 
-  async getEntriesBySourceOutcomeIds(sourceOutcomeIds: string[]): Promise<Map<string, LibraryEntryRecord>> {
-    const ids = [...new Set(sourceOutcomeIds.map((id) => id.trim()).filter(Boolean))];
+  async getEntriesByRunItemIds(runItemIds: string[]): Promise<Map<string, LibraryEntryRecord>> {
+    const ids = [...new Set(runItemIds.map((id) => id.trim()).filter(Boolean))];
     if (ids.length === 0) return new Map();
-    const sourceFiles = this.database.db
+    const runItems = this.database.db
       .select({
-        itemId: libraryItemFiles.itemId,
-        sourceOutcomeId: libraryItemFiles.sourceOutcomeId,
+        itemId: scrapeRunItems.id,
+        libraryFileId: scrapeRunItems.libraryFileId,
       })
-      .from(libraryItemFiles)
-      .where(inArray(libraryItemFiles.sourceOutcomeId, ids))
+      .from(scrapeRunItems)
+      .where(inArray(scrapeRunItems.id, ids))
       .all();
+    const libraryFileIds = runItems.map((r) => r.libraryFileId).filter((id): id is string => Boolean(id));
+    const sourceFiles = libraryFileIds.length
+      ? this.database.db
+          .select({
+            id: libraryItemFiles.id,
+            itemId: libraryItemFiles.itemId,
+          })
+          .from(libraryItemFiles)
+          .where(inArray(libraryItemFiles.id, libraryFileIds))
+          .all()
+      : [];
     const itemIds = [...new Set(sourceFiles.map((file) => file.itemId))];
     const items = itemIds.length
       ? this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, itemIds)).all()
@@ -523,12 +525,15 @@ export class LibraryRepository {
     ]);
     const entries = new Map<string, LibraryEntryRecord>();
     const itemById = new Map(items.map((item) => [item.id, item]));
-    for (const sourceFile of sourceFiles) {
-      if (!sourceFile.sourceOutcomeId) continue;
-      const item = itemById.get(sourceFile.itemId);
+    const fileIdToItemId = new Map(sourceFiles.map((f) => [f.id, f.itemId]));
+    for (const runItem of runItems) {
+      if (!runItem.libraryFileId) continue;
+      const itemId = fileIdToItemId.get(runItem.libraryFileId);
+      if (!itemId) continue;
+      const item = itemById.get(itemId);
       if (!item) continue;
       entries.set(
-        sourceFile.sourceOutcomeId,
+        runItem.itemId,
         toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
       );
     }
@@ -757,16 +762,14 @@ export class LibraryRepository {
     const rows =
       ids.length > 0
         ? this.database.db
-            .select({ file: libraryItemFiles, sourceRunId: scrapeRunItems.runId })
+            .select({ file: libraryItemFiles, sourceRunId: scrapeRunItems.runId, sourceItemId: scrapeRunItems.id })
             .from(libraryItemFiles)
-            .leftJoin(scrapeItemOutcomes, eq(scrapeItemOutcomes.id, libraryItemFiles.sourceOutcomeId))
-            .leftJoin(scrapeAttempts, eq(scrapeAttempts.id, scrapeItemOutcomes.attemptId))
-            .leftJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
+            .leftJoin(scrapeRunItems, eq(scrapeRunItems.libraryFileId, libraryItemFiles.id))
             .where(inArray(libraryItemFiles.itemId, ids))
             .orderBy(libraryItemFiles.createdAt)
             .all()
         : [];
-    return groupByItem(rows.map((row) => toLibraryItemFileRecord(row.file, row.sourceRunId)));
+    return groupByItem(rows.map((row) => toLibraryItemFileRecord(row.file, row.sourceRunId, row.sourceItemId)));
   }
 
   private async listAssetsForItems(ids: string[]): Promise<Map<string, LibraryItemAssetRecord[]>> {
@@ -775,7 +778,7 @@ export class LibraryRepository {
         ? this.database.db
             .select()
             .from(libraryItemAssets)
-            .where(and(inArray(libraryItemAssets.itemId, ids), eq(libraryItemAssets.historical, false)))
+            .where(inArray(libraryItemAssets.itemId, ids))
             .orderBy(libraryItemAssets.kind)
             .all()
         : [];

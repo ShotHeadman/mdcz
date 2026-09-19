@@ -1,5 +1,4 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type {
   ActorImageService,
   AggregationService,
@@ -13,7 +12,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { mockConfigManager, prepareFile, resolveTestOutputPlan } from "../../../helpers/scraper";
+import { createFileScraper, mockConfigManager, prepareFile, resolveTestOutputPlan } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",

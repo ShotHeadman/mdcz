@@ -2,7 +2,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import * as scraperOutput from "@main/services/scraper/output";
 import type {
   AggregationService,
@@ -16,6 +15,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
+  createFileScraper,
   mockConfigManager,
   preparedPublicationFiles,
   prepareFilePublication,

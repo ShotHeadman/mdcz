@@ -1,7 +1,48 @@
 import { type Configuration, configManager } from "@main/services/config";
-import type { FileScrapeOptions, FileScrapeProgress, FileScraper, ScrapeGroupResult } from "@mdcz/runtime/scrape";
+import {
+  ActorImageService,
+  type CreateFileScraperOptions,
+  type FileScrapeOptions,
+  type FileScrapeProgress,
+  FileScraper,
+  type FileScraperDependencies,
+  type ScrapeGroupResult,
+} from "@mdcz/runtime/scrape";
 import { vi } from "vitest";
 import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
+
+type TestFileScraperDependencies = Omit<
+  FileScraperDependencies,
+  "actorImageService" | "getConfiguration" | "logger" | "signalService"
+> &
+  Partial<Pick<FileScraperDependencies, "actorImageService" | "getConfiguration" | "logger" | "signalService">>;
+
+export const createFileScraper = (
+  deps: TestFileScraperDependencies,
+  options: CreateFileScraperOptions = {},
+): FileScraper => {
+  const logger = deps.logger ?? console;
+  return new FileScraper(
+    {
+      ...deps,
+      actorImageService:
+        deps.actorImageService ??
+        new ActorImageService({
+          cacheRoot: "/tmp/actor-image-cache",
+          logger: "debug" in logger ? logger : { ...logger, debug: () => undefined },
+        }),
+      getConfiguration: deps.getConfiguration ?? (async () => await configManager.getValidated()),
+      logger,
+      signalService: deps.signalService ?? {
+        setProgress: () => {},
+        showLogText: () => {},
+        showScrapeInfo: () => {},
+        showFailedInfo: () => {},
+      },
+    },
+    options,
+  );
+};
 
 const getByPath = (target: Record<string, unknown>, path: string): unknown => {
   let cursor: unknown = target;

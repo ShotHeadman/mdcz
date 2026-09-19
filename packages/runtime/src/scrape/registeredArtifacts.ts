@@ -91,9 +91,7 @@ export async function registeredPosterCropContext(
   const assets: { thumb?: string; poster?: string } = {};
   let root: RegisteredPublicationContext["roots"][number] | undefined;
   for (const kind of ["thumb", "poster"] as const) {
-    const asset = entry.assets.find(
-      (asset) => asset.kind === kind && !asset.historical && asset.rootId && asset.relativePath,
-    );
+    const asset = entry.assets.find((asset) => asset.kind === kind && asset.rootId && asset.relativePath);
     if (!asset?.rootId || !asset.relativePath) continue;
     root = await resolveRoot(asset.rootId);
     assets[kind] = resolveRootRelativePath(root, asset.relativePath);

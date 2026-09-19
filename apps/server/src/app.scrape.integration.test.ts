@@ -1,11 +1,6 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import {
-  type AggregationResult,
-  DownloadManager,
-  type MountedRootScrapeAggregationService,
-  PosterWatermarkService,
-} from "@mdcz/runtime/scrape";
+import { type AggregationResult, DownloadManager, PosterWatermarkService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,8 +15,11 @@ import {
   syncMediaRootFromConfig,
   waitForScrapeRunStatus,
 } from "./app.testSupport";
+import type { ScrapeServiceResources } from "./services/scrapeService";
 
-const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScrapeAggregationService => ({
+const createAmbiguousUncensoredAggregation = (
+  imageUrl: string,
+): NonNullable<ScrapeServiceResources["aggregationService"]> => ({
   async aggregate(number: string): Promise<AggregationResult> {
     return {
       data: {
@@ -64,7 +62,7 @@ const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScra
 const createGatedAggregation = (
   imageUrl: string,
 ): {
-  aggregation: MountedRootScrapeAggregationService;
+  aggregation: NonNullable<ScrapeServiceResources["aggregationService"]>;
   aggregatedNumbers: string[];
   firstCallStarted: Promise<void>;
   releaseFirstCall: () => void;
@@ -157,7 +155,7 @@ describe("buildServer scrape integration", () => {
     const manifest = await (await services.persistence.getState()).repositories.scrapeRuns.get(taskId);
     expect(manifest.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
     expect(manifest.manifestFixedAt === null).toBe(kind === "missing");
-    if (kind !== "files") expect(manifest.attempts).toEqual([]);
+    if (kind !== "files") expect(manifest.items).toEqual([]);
     if (kind === "missing") {
       const retry = await fastify.inject({
         method: "POST",
@@ -810,7 +808,6 @@ describe("buildServer scrape integration", () => {
           fileId: entry.files[0].id,
           rootId: entry.files[0].rootId,
           rootRelativePath: entry.files[0].rootRelativePath,
-          sourceOutcomeId: entry.files[0].sourceOutcomeId,
           assets: entry.assets.filter((asset) => asset.fileId === entry.files[0].id),
         },
       ],
@@ -827,15 +824,14 @@ describe("buildServer scrape integration", () => {
     expect(confirmed.assets.map((asset) => asset.kind)).toEqual(
       expect.arrayContaining(["nfo", "strm", "subtitle", "poster", "checksum"]),
     );
-    const revised = (await state.repositories.scrapeRuns.get(taskId)).outcomes.find(
-      (outcome) => outcome.id === result.id,
-    );
+    const run = await state.repositories.scrapeRuns.get(taskId);
+    const revised = run.items.find((item) => item.id === result.id);
     if (!revised) throw new Error("Confirmation outcome disappeared");
     expect(confirmed.assets).toContainEqual(
       expect.objectContaining({
         kind: "nfo",
-        rootId: revised.nfoRootId ?? revised.outputRootId,
-        relativePath: revised.nfoRelativePath,
+        rootId: result.nfoRootId,
+        relativePath: nfoRelativePath,
       }),
     );
     const localFiles = [
@@ -963,13 +959,13 @@ describe("buildServer scrape integration", () => {
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
     const initialResults = await services.persistence.getState().then(async (state) => {
       const run = await state.repositories.scrapeRuns.get(taskId);
-      return state.repositories.scrapeRuns.latestOutcomes(run);
+      return state.repositories.scrapeRuns.itemResults(run);
     });
     const initialResult = initialResults[0];
     expect(initialResult?.outputRelativePath).not.toBe(names[0]);
     await expect(readFile(join(root, names[0]))).rejects.toMatchObject({ code: "ENOENT" });
     const state = await services.persistence.getState();
-    const originalEntry = await state.repositories.library.getEntryBySourceOutcomeId(initialResult.id);
+    const originalEntry = await state.repositories.library.getEntryByRunItemId(initialResult.id);
     if (!originalEntry) throw new Error("Expected registered movie");
 
     const pendingConfirmationResponse = await fastify.inject({
@@ -1002,7 +998,7 @@ describe("buildServer scrape integration", () => {
     if (scenario === "missing" || scenario === "conflicting" || scenario === "rollback") {
       expect(confirmResponse.statusCode).toBe(400);
       if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("output files not found");
-      expect(state.repositories.scrapeRuns.latestOutcomes(await state.repositories.scrapeRuns.get(taskId))).toEqual(
+      expect(state.repositories.scrapeRuns.itemResults(await state.repositories.scrapeRuns.get(taskId))).toEqual(
         initialResults,
       );
       expect((await state.repositories.library.getEntryById(originalEntry.id)).files).toEqual(originalEntry.files);
@@ -1191,8 +1187,7 @@ describe("buildServer scrape integration", () => {
     });
     await state.repositories.scrapeRuns.commitOutcome({
       outcome: "failed",
-      id: "failed-outcome",
-      attemptId: state.repositories.scrapeRuns.admitAttempt("failed-item").id,
+      itemId: "failed-item",
       error: "boom",
       completedAt: new Date(1_700_000_001_000),
     });
@@ -1219,7 +1214,7 @@ describe("buildServer scrape integration", () => {
     });
     expect(historyResponse.json().result.data.results).toEqual([
       expect.objectContaining({
-        id: "failed-outcome",
+        id: "failed-item",
         persistenceState: "terminal",
         status: "failed",
         error: "boom",

@@ -70,9 +70,7 @@ export interface PublicationOutputPort {
   publicationRoots(): Array<Pick<MediaRoot, "id" | "hostPath">>;
   publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }): {
     files: Array<RootFileRef & { itemId: string; fileId?: string; mediaIdentity?: string | null; size?: number }>;
-    assets: Array<
-      RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean; historical: boolean }
-    >;
+    assets: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean }>;
   };
 }
 
@@ -85,7 +83,7 @@ export interface DurablePublicationContext {
 export interface RegisteredPublicationContext extends DurablePublicationContext {
   library?: {
     getEntryById(id: string): Promise<{
-      assets: Array<PublicationLibraryAsset & { fileId: string | null; historical: boolean }>;
+      assets: Array<PublicationLibraryAsset & { fileId: string | null }>;
     }>;
     writeEntry(
       movie: { id: string; assets?: PublicationLibraryAsset[] },
