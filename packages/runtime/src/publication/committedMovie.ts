@@ -1,5 +1,5 @@
+import type { PreparedMovieOutput } from "./movieArtifacts";
 import type { PublicationLibraryAsset } from "./outputLibrary";
-import type { PreparedMovieOutput } from "./prepareMovieOutput";
 
 export interface CommittedMovieFile {
   readonly fileId: string;
@@ -29,13 +29,15 @@ export interface CommittedMovie {
   readonly sourceMap: Readonly<Record<string, string>>;
 }
 
-export const toCommittedMovie = (output: PreparedMovieOutput): CommittedMovie => {
-  const group = output.scrape;
+export const toCommittedMovie = (
+  output: Pick<PreparedMovieOutput, "movieId" | "files" | "movieAssets" | "publishedTargets">,
+  group: NonNullable<PreparedMovieOutput["scrape"]>,
+): CommittedMovie => {
   if (!group || !output.files.length) {
-    throw new Error("Scrape output requires prepared movie facts and files");
+    throw new Error("Committed movie requires metadata and files");
   }
   const identity = group.crawlerData.number.trim() || output.files[0].scrape?.identity.fileName;
-  if (!identity) throw new Error("Scrape movie has no media identity");
+  if (!identity) throw new Error("Committed movie has no media identity");
   const crawlerDataJson = JSON.stringify(group.crawlerData);
 
   const refKey = (ref: { rootId: string; relativePath: string }) => `${ref.rootId}\0${ref.relativePath}`;
@@ -60,16 +62,16 @@ export const toCommittedMovie = (output: PreparedMovieOutput): CommittedMovie =>
   );
 
   const files: CommittedMovieFile[] = output.files.map((video) => {
-    const facts = video.scrape;
+    const facts = video.fileInfo;
     return Object.freeze({
       fileId: video.fileId,
       rootId: video.target.rootId,
       rootRelativePath: video.target.relativePath,
       size: video.size,
       modifiedAtMs: video.modifiedAt?.getTime() ?? null,
-      partNumber: facts?.fileInfo.part?.number ?? null,
-      partSuffix: facts?.fileInfo.part?.suffix ?? null,
-      resolution: facts?.fileInfo.resolution ?? null,
+      partNumber: facts?.part?.number ?? null,
+      partSuffix: facts?.part?.suffix ?? null,
+      resolution: facts?.resolution ?? null,
     });
   });
 

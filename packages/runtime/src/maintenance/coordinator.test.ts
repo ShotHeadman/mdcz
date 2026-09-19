@@ -1,15 +1,14 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMediaRoot, filesystemPathKey, resolveRootRelativePath } from "@mdcz/media-store";
+import { createMediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { LocalScanEntry } from "@mdcz/shared/types";
-import { describe, expect, it, vi } from "vitest";
-import { MaintenanceDirectoryRepository } from "../../../persistence/src/maintenanceDirectoryRepository";
-import { createTestPersistenceDatabase } from "../../../persistence/src/testDatabase";
-import { MediaPathOwnership } from "../library/mediaPathOwnership";
-import type { PreparedMovieOutput } from "../publication/prepareMovieOutput";
-import { MaintenanceSessionCoordinator } from "./coordinator";
-import { createMaintenanceDirectoryTaskPort } from "./directoryTaskPort";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { PublicationConflictError } from "../publication/conflicts";
+import type { PublicationJournalPort } from "../publication/types";
+import { type MaintenancePersistencePort, MaintenanceSessionCoordinator } from "./coordinator";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
 
 type PromiseResolvers<T> = {
@@ -26,28 +25,6 @@ const promiseWithResolvers = <T>(): PromiseResolvers<T> => promiseConstructor.wi
 
 const root = createMediaRoot({ id: "root-1", displayName: "Media", hostPath: process.cwd() });
 const ref = (relativePath: string) => ({ rootId: root.id, relativePath });
-
-const finalPlan = (
-  sourcePath: string,
-  fileId = `${root.id}:${relative(root.hostPath, sourcePath)}`,
-): PreparedMovieOutput => {
-  const source = { rootId: root.id, relativePath: relative(root.hostPath, sourcePath) };
-  return {
-    movieId: "test-item",
-    operationId: "maintenance-test",
-    operationType: "maintenance",
-    files: [{ fileId, source, target: source, size: 1, sourceSize: 1, modifiedAt: new Date(), assets: [] }],
-    artifacts: [],
-    moves: [],
-    publishedTargets: [],
-    protectedSourceRoots: [],
-    movieAssets: [],
-  };
-};
-
-const finalPublication = (sourcePath: string, fileId?: string) => ({
-  output: finalPlan(sourcePath, fileId),
-});
 
 const createEntry = (relativePath: string, mediaRoot = root): LocalScanEntry => ({
   fileId: relativePath,
@@ -99,16 +76,17 @@ const createCoordinator = (
   } as unknown as MaintenanceRuntime;
   runtime.createSession = vi.fn(async () => runtime);
   const events: unknown[] = [];
-  const ownership = new MediaPathOwnership();
   const library = {
-    resolveParticipants: vi.fn(async (sources: Array<{ rootId: string; relativePath: string }>) => ({
-      movieId: `test-item:${sources.map((source) => `${source.rootId}:${source.relativePath}`).join("|")}`,
-      files: sources.map((source) => ({ ...source, fileId: `${source.rootId}:${source.relativePath}` })),
-      expected: { files: [], assets: [] },
-    })),
-    assertPublication: vi.fn(async () => undefined),
-    registeredOutputs: vi.fn(async () => new Map()),
-    publishRefresh: vi.fn(async () => ({ libraryItemId: "test-item", cleanupIssues: [] as unknown[] })),
+    inventoryOwnership: vi.fn<Awaited<ReturnType<MaintenancePersistencePort["get"]>>["library"]["inventoryOwnership"]>(
+      () => [],
+    ),
+    writeEntry: vi.fn(() => "test-item"),
+  };
+  const publicationJournal: PublicationJournalPort = {
+    begin: vi.fn(),
+    commit: <T>(_operationId: string, commit: () => T): T => commit(),
+    finish: vi.fn(),
+    listUnfinished: vi.fn(() => []),
   };
   const coordinator = new MaintenanceSessionCoordinator({
     roots: {
@@ -119,68 +97,47 @@ const createCoordinator = (
         return selected;
       },
       list: async () => roots,
-      ensurePathRecord: async () => root,
     },
     runtime,
-    library,
-    directoryTasks: {
-      save: vi.fn(async () => undefined),
-      get: vi.fn(async () => {
-        throw new Error("Directory task not found");
-      }),
-      setStatus: vi.fn(async () => undefined),
-    },
+    persistence: { get: async () => ({ library, publicationJournal }) },
     events: {
       publish: (event) => {
         events.push(event);
       },
     },
-    acquireAll: (refs, owner) => ownership.acquireAll(refs, owner),
     ...overrides,
   });
-  return { coordinator, events, library, ownership, runtime };
+  return { coordinator, events, library, publicationJournal, runtime };
 };
 
 describe("MaintenanceSessionCoordinator", () => {
-  it.each(["membership", "fileInfo", "localState"] as const)("revalidates movie %s before apply", async (change) => {
-    const fixture = createCoordinator();
-    const member = { fileId: "file-1", rootId: root.id, relativePath: "one.mp4" };
-    const source = {
-      movieId: "movie-1",
-      files: [member],
-      expected: {
-        files: [{ rootId: root.id, relativePath: "one.mp4", itemId: "movie-1", fileId: "file-1" }],
-        assets: [],
-      },
-    };
-    fixture.library.resolveParticipants.mockResolvedValue(source as never);
+  it("fixes ownership and reuses preview observations throughout apply", async () => {
+    const fixture = createCoordinator({
+      applyEntry: vi.fn(async ({ entry }) => ({
+        status: "success" as const,
+        entry,
+        outputRelativePath: entry.ref.relativePath,
+      })),
+    });
+    fixture.library.inventoryOwnership.mockReturnValue([
+      { rootId: root.id, relativePath: "one.mp4", movieId: "movie-1", fileId: "file-1", kind: "video", published: 1 },
+    ]);
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "refresh_data",
+      presetId: "refresh_metadata",
       refs: [ref("one.mp4")],
     });
     const batch = await preview.completion;
-    expect(batch.items[0]?.affectedFiles?.map((file) => file.fileId)).toEqual([member.fileId]);
-    expect(batch.items[0]?.publicationIdentity?.files.map((file) => file.fileId)).toEqual([member.fileId]);
-    if (change === "membership")
-      fixture.library.assertPublication.mockRejectedValue(new Error("影片关联的视频文件发生变动，请重新预览"));
-    else
-      fixture.runtime.scanRefs = vi.fn(async () => {
-        const entry = createEntry("one.mp4");
-        if (change === "fileInfo") entry.fileInfo.isSubtitled = true;
-        else entry.nfoLocalState = { userTags: ["changed"] } as never;
-        return [entry];
-      });
+    expect(batch.items[0].movieGroup?.files[0].fileId).toBe("file-1");
+    fixture.library.inventoryOwnership.mockReturnValue([]);
     const apply = await fixture.coordinator.beginApply({
       sessionId: preview.session.id,
-      selections: [{ previewId: batch.items[0]?.id ?? "" }],
+      selections: [{ previewId: batch.items[0].id }],
     });
-    const result = await apply.completion;
-    expect(result.applied).toEqual([
-      expect.objectContaining({ status: "failed", error: expect.stringContaining("重新预览") }),
-    ]);
-    expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
-    expect(fixture.library.publishRefresh).not.toHaveBeenCalled();
+    expect((await apply.completion).applied[0].status).toBe("success");
+    expect(fixture.library.inventoryOwnership).toHaveBeenCalledOnce();
+    expect(fixture.runtime.scanRefs).toHaveBeenCalledOnce();
+    expect(vi.mocked(fixture.runtime.applyEntry).mock.calls[0][0].files).toEqual(batch.items[0].files);
     await fixture.coordinator.close();
   });
   it.each([
@@ -193,11 +150,8 @@ describe("MaintenanceSessionCoordinator", () => {
     const entered = promiseWithResolvers<void>();
     const release = promiseWithResolvers<void>();
     let signal: AbortSignal | undefined;
-    const database = createTestPersistenceDatabase();
-    const repository = new MaintenanceDirectoryRepository();
-    const directoryTasks = createMaintenanceDirectoryTaskPort(async () => repository);
+    let rerunning = false;
     const fixture = createCoordinator({}, [root], {
-      directoryTasks,
       discoverDirectory: async (_scope, _configuration, currentSignal, report) => {
         signal = currentSignal;
         report({ directories: 1, candidates: 0, elapsedMs: 1, skipped: 0, currentPath: root.hostPath, warnings: [] });
@@ -205,12 +159,12 @@ describe("MaintenanceSessionCoordinator", () => {
         await release.promise;
         currentSignal.throwIfAborted();
         if (outcome === "failed") throw new Error("mount failed");
-        return outcome === "empty" ? [] : [ref("one.mp4")];
+        return outcome === "empty" ? [] : [ref(rerunning ? "new.mp4" : "one.mp4")];
       },
     });
     const handle = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "read_local",
+      presetId: "inspect_local",
       refs: [],
       configuration: defaultConfiguration,
       directoryScope: {
@@ -249,35 +203,25 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(fixture.runtime.scanRefs).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
     expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
     if (outcome !== "interrupted") {
-      await fixture.coordinator.close();
-      const restarted = createCoordinator({}, [root], {
-        directoryTasks,
-        discoverDirectory: async (_scope, configuration) => {
-          expect(configuration).toEqual(defaultConfiguration);
-          if (outcome === "failed") throw new Error("mount failed");
-          return outcome === "empty" ? [] : [ref("new.mp4")];
-        },
-      });
-      const rerun = await restarted.coordinator.rerunDirectory(handle.session.id);
+      rerunning = true;
+      const rerun = await fixture.coordinator.rerunDirectory(handle.session.id);
       expect(rerun.session.id).not.toBe(handle.session.id);
       if (outcome === "failed") await expect(rerun.completion).rejects.toThrow("mount failed");
       else await rerun.completion;
-      expect(vi.mocked(restarted.runtime.createSession).mock.calls.at(-1)?.[0].configuration).toEqual(
+      expect(vi.mocked(fixture.runtime.createSession).mock.calls.at(-1)?.[0].configuration).toEqual(
         defaultConfiguration,
       );
-      expect((await restarted.coordinator.getActiveSession())?.refs).toEqual(
+      expect((await fixture.coordinator.getActiveSession())?.refs).toEqual(
         outcome === "empty" || outcome === "failed" ? [] : [ref("new.mp4")],
       );
-      await restarted.coordinator.close();
     }
     await fixture.coordinator.close();
-    database.close();
   });
   it("reserves preview startup against concurrent previews and applies and releases it after scan failure", async () => {
     const scanning = promiseWithResolvers<void>();
     const scanned = promiseWithResolvers<LocalScanEntry[]>();
     const fixture = createCoordinator();
-    const input = { rootId: root.id, presetId: "read_local" as const, refs: [ref("one.mp4")] };
+    const input = { rootId: root.id, presetId: "inspect_local" as const, refs: [ref("one.mp4")] };
     const first = await fixture.coordinator.startPreview(input);
     const batch = await first.completion;
     vi.mocked(fixture.runtime.scanRefs).mockImplementationOnce(async () => {
@@ -305,7 +249,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const fixture = createCoordinator();
     const first = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "refresh_data",
+      presetId: "refresh_metadata",
       refs: [ref("one.mp4")],
     });
     await first.completion;
@@ -315,7 +259,7 @@ describe("MaintenanceSessionCoordinator", () => {
 
     const second = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "refresh_data",
+      presetId: "refresh_metadata",
       refs: [ref("two.mp4")],
     });
     expect(second.session.id).not.toBe(first.session.id);
@@ -324,8 +268,8 @@ describe("MaintenanceSessionCoordinator", () => {
   });
 
   it.each([
-    "read_local",
-    "organize_files",
+    "inspect_local",
+    "local_organize",
   ] as const)("scans unregistered refs once and retains their %s layout", async (presetId) => {
     const scanRefs = vi.fn(async () => [createEntry("one.mp4")]);
     const targetPath = resolveRootRelativePath(root, "organized/one.mp4");
@@ -373,8 +317,17 @@ describe("MaintenanceSessionCoordinator", () => {
       { fileId: `${root.id}:one.mp4`, currentPath: createEntry("one.mp4").fileInfo.filePath, targetPath },
     ]);
     expect(batch.items[0]?.affectedFiles?.map((file) => file.fileId)).toEqual(
-      batch.items[0]?.publicationIdentity?.files.map((file) => file.fileId),
+      batch.items[0]?.movieGroup?.files.map((file) => file.fileId),
     );
+    if (presetId === "inspect_local") {
+      await expect(
+        fixture.coordinator.beginApply({
+          sessionId: handle.session.id,
+          selections: [{ previewId: batch.items[0].id }],
+        }),
+      ).rejects.toThrow("不支持执行");
+      expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
+    }
     await fixture.coordinator.close();
   });
 
@@ -390,7 +343,7 @@ describe("MaintenanceSessionCoordinator", () => {
     );
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: [ref("one.mp4"), ref("nested/two.mp4")],
     });
     const previewBatch = await preview.completion;
@@ -428,7 +381,7 @@ describe("MaintenanceSessionCoordinator", () => {
 
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: [ref("one.mp4")],
     });
     const previewBatch = await preview.completion;
@@ -442,73 +395,32 @@ describe("MaintenanceSessionCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it.each(["commit", "cleanup"])("preserves the library commit boundary when %s fails", async (failure) => {
-    const order: string[] = [];
-    const outputPath = fileURLToPath(import.meta.url);
+  it.each(["conflict", "failure"] as const)("continues the batch after a movie %s", async (outcome) => {
     const fixture = createCoordinator({
       applyEntry: vi.fn(async ({ entry }) => {
-        order.push("apply");
-        return {
-          status: "success" as const,
-          entry: { ...entry, fileInfo: { ...entry.fileInfo, filePath: outputPath } },
-          outputRelativePath: "one.mp4",
-          publication: finalPublication(outputPath),
-        };
+        if (entry.fileInfo.number === "one") {
+          if (outcome === "conflict") throw new PublicationConflictError("source", "target", "occupied");
+          throw new Error("database unavailable");
+        }
+        return { status: "success" as const, entry, outputRelativePath: entry.ref.relativePath };
       }),
-    });
-    fixture.library.publishRefresh.mockImplementation(async () => {
-      order.push("commit");
-      if (failure === "commit") throw new Error("database unavailable");
-      return { libraryItemId: "test-item", cleanupIssues: [new Error("cleanup unavailable")] };
     });
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
-      refs: [ref(relative(root.hostPath, outputPath))],
+      presetId: "local_organize",
+      refs: [ref("one.mp4"), ref("two.mp4")],
     });
-    const previewBatch = await preview.completion;
+    const batch = await preview.completion;
     const apply = await fixture.coordinator.beginApply({
       sessionId: preview.session.id,
-      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
+      selections: batch.items.map((item) => ({ previewId: item.id })),
     });
-    const batch = await apply.completion;
-
-    expect(order).toEqual(["apply", "commit"]);
-    expect(batch.applied).toEqual([
-      expect.objectContaining({
-        status: failure === "commit" ? "failed" : "success",
-        error: expect.stringContaining(failure === "commit" ? "维护发布失败" : "cleanup unavailable"),
-      }),
+    const result = await apply.completion;
+    expect(result.applied.map((item) => item.status)).toEqual([
+      outcome === "conflict" ? "skipped" : "failed",
+      "success",
     ]);
-    await fixture.coordinator.close();
-  });
-
-  it("releases prepared staging when output stat fails", async () => {
-    const release = vi.fn(async () => undefined);
-    const fixture = createCoordinator({
-      applyEntry: vi.fn(async ({ entry }) => ({
-        status: "success" as const,
-        entry,
-        outputRelativePath: "missing.mp4",
-        publication: finalPublication(resolveRootRelativePath(root, "missing/mdcz-output.mp4")),
-        release,
-      })),
-    });
-    fixture.library.publishRefresh.mockRejectedValue(new Error("output missing"));
-    const preview = await fixture.coordinator.startPreview({
-      rootId: root.id,
-      presetId: "organize_files",
-      refs: [ref("one.mp4")],
-    });
-    const previewBatch = await preview.completion;
-    const apply = await fixture.coordinator.beginApply({
-      sessionId: preview.session.id,
-      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
-    });
-    const batch = await apply.completion;
-
-    expect(batch.applied).toEqual([expect.objectContaining({ status: "failed" })]);
-    expect(release).toHaveBeenCalledOnce();
+    expect(result.session).toMatchObject({ status: "completed", successCount: 1, failedCount: 1 });
     await fixture.coordinator.close();
   });
 
@@ -523,7 +435,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const handle = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "refresh_data",
+      presetId: "refresh_metadata",
       refs: ["one.mp4", "two.mp4", "three.mp4"].map(ref),
     });
     await started;
@@ -564,7 +476,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: ["one.mp4", "two.mp4", "three.mp4"].map(ref),
     });
     const previewBatch = await preview.completion;
@@ -611,7 +523,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const previewHandle = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: [ref("one.mp4"), ref("two.mp4")],
     });
     const previewBatch = await previewHandle.completion;
@@ -644,7 +556,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const previewHandle = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: [ref("one.mp4"), ref("two.mp4")],
     });
     const previewBatch = await previewHandle.completion;
@@ -677,37 +589,25 @@ describe("MaintenanceSessionCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it.each([
-    "prepare",
-    "publish",
-  ] as const)("stops during %s without discarding a committed publication", async (phase) => {
+  it.each([false, true])("records the actual output result when stopping (committed=%s)", async (committed) => {
     const { promise: blocked, resolve: releaseApply } = promiseWithResolvers<void>();
     const { promise: started, resolve: applyStarted } = promiseWithResolvers<void>();
     const outputPath = fileURLToPath(import.meta.url);
     const fixture = createCoordinator({
-      applyEntry: vi.fn(async ({ entry }) => {
-        if (phase === "prepare") {
-          applyStarted();
-          await blocked;
-        }
+      applyEntry: vi.fn(async ({ entry, signal }) => {
+        applyStarted();
+        await blocked;
+        if (!committed) signal?.throwIfAborted();
         return {
           status: "success" as const,
           entry: { ...entry, fileInfo: { ...entry.fileInfo, filePath: outputPath } },
           outputRelativePath: "one.mp4",
-          publication: finalPublication(outputPath),
         };
       }),
     });
-    fixture.library.publishRefresh.mockImplementation(async () => {
-      if (phase === "publish") {
-        applyStarted();
-        await blocked;
-      }
-      return { libraryItemId: "committed", cleanupIssues: [] };
-    });
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: [ref(relative(root.hostPath, outputPath))],
     });
     const previewBatch = await preview.completion;
@@ -721,8 +621,8 @@ describe("MaintenanceSessionCoordinator", () => {
     releaseApply();
     await Promise.all([stopping, repeatedStop]);
     const batch = await apply.completion;
-    expect(fixture.library.publishRefresh).toHaveBeenCalledTimes(phase === "publish" ? 1 : 0);
-    expect(batch.applied).toEqual([expect.objectContaining({ status: phase === "publish" ? "success" : "skipped" })]);
+    expect(fixture.library.writeEntry).not.toHaveBeenCalled();
+    expect(batch.applied).toEqual([expect.objectContaining({ status: committed ? "success" : "skipped" })]);
     await fixture.coordinator.close();
   });
 
@@ -731,10 +631,7 @@ describe("MaintenanceSessionCoordinator", () => {
     { closeFirst: true, notificationFails: false },
     { closeFirst: false, notificationFails: true },
     { closeFirst: true, notificationFails: true },
-  ])("settles overlapping termination and releases ownership ($closeFirst, $notificationFails)", async ({
-    closeFirst,
-    notificationFails,
-  }) => {
+  ])("settles overlapping termination ($closeFirst, $notificationFails)", async ({ closeFirst, notificationFails }) => {
     const { promise: started, resolve: applyStarted } = promiseWithResolvers<void>();
     const fixture = createCoordinator({
       applyEntry: vi.fn(async ({ signal }) => {
@@ -746,7 +643,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const preview = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "organize_files",
+      presetId: "local_organize",
       refs: [ref("owned.mp4")],
     });
     const previewBatch = await preview.completion;
@@ -756,9 +653,6 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     await started;
 
-    expect(() => fixture.ownership.acquire(filesystemPathKey(join(root.hostPath, "owned.mp4")))).toThrow(
-      "Media path is already being modified",
-    );
     if (notificationFails)
       vi.spyOn(fixture.events, "push").mockImplementation(() => {
         throw new Error("notification unavailable");
@@ -774,38 +668,70 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(batch.session.status).toBe(closeFirst ? "interrupted" : "stopped");
     expect(batch.applied).toEqual([expect.objectContaining({ status: "skipped" })]);
     expect(vi.mocked(fixture.runtime.applyEntry)).toHaveBeenCalledOnce();
-    const release = fixture.ownership.acquire(filesystemPathKey(join(root.hostPath, "owned.mp4")));
-    release();
   });
 
-  it.each(["completed", "failed"] as const)("releases media path ownership when apply is %s", async (outcome) => {
-    const outputPath = fileURLToPath(import.meta.url);
-    const fixture = createCoordinator({
-      applyEntry: vi.fn(async ({ entry }) =>
-        outcome === "failed"
-          ? { status: "failed" as const, error: "apply failed" }
-          : {
-              status: "success" as const,
-              entry,
-              outputRelativePath: "owned.mp4",
-              publication: finalPublication(outputPath),
-            },
-      ),
-    });
+  it("admits entry identities, expands parts, and rejects duplicate parts and generated STRMs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mdcz-maintenance-groups-"));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    await mkdir(join(directory, "nested"));
+    const names = ["ABC-123-CD1.mp4", "ABC-123-CD2.mp4"];
+    for (const name of names) await writeFile(join(directory, "nested", name), "video");
+    const parent = createMediaRoot({ id: "parent", displayName: "Parent", hostPath: directory });
+    const nested = createMediaRoot({ id: "nested", displayName: "Nested", hostPath: join(directory, "nested") });
+    const fixture = createCoordinator({}, [parent, nested]);
+    onTestFinished(() => fixture.coordinator.close());
+    const selected = { rootId: parent.id, relativePath: `nested/${names[0]}` };
     const preview = await fixture.coordinator.startPreview({
-      rootId: root.id,
-      presetId: "organize_files",
-      refs: [ref("owned.mp4")],
+      rootId: parent.id,
+      presetId: "local_organize",
+      refs: [selected, selected, { rootId: nested.id, relativePath: names[0] }],
     });
-    const previewBatch = await preview.completion;
-    const apply = await fixture.coordinator.beginApply({
-      sessionId: preview.session.id,
-      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
-    });
-    await apply.completion;
+    const batch = await preview.completion;
+    expect(batch.items).toHaveLength(1);
+    expect(batch.items[0].movieGroup?.files.map((file) => file.relativePath)).toEqual(
+      names.map((name) => `nested/${name}`),
+    );
 
-    const release = fixture.ownership.acquire(filesystemPathKey(join(root.hostPath, "owned.mp4")));
-    release();
-    await fixture.coordinator.close();
+    fixture.library.inventoryOwnership.mockReturnValue([
+      { ...selected, movieId: "existing", fileId: "owned", kind: "video", published: 1 },
+    ]);
+    const owned = await fixture.coordinator.startPreview({
+      rootId: nested.id,
+      presetId: "inspect_local",
+      refs: [{ rootId: nested.id, relativePath: names[0] }],
+    });
+    expect((await owned.completion).items[0].movieGroup).toMatchObject({
+      movieId: "existing",
+      files: [{ rootId: nested.id, relativePath: names[0], fileId: "owned" }],
+    });
+
+    fixture.library.inventoryOwnership.mockReturnValue([]);
+    await writeFile(join(directory, "nested", "ABC-123-CD01.mkv"), "duplicate");
+    await expect(
+      fixture.coordinator.startPreview({
+        rootId: parent.id,
+        presetId: "local_organize",
+        refs: [selected],
+      }),
+    ).rejects.toThrow("重复分盘号");
+
+    fixture.library.inventoryOwnership.mockReturnValue([
+      {
+        rootId: nested.id,
+        relativePath: "generated.strm",
+        movieId: "existing",
+        fileId: null,
+        kind: "strm",
+        published: 1,
+      },
+    ]);
+    await writeFile(join(directory, "nested", "generated.strm"), names[0]);
+    await expect(
+      fixture.coordinator.startPreview({
+        rootId: nested.id,
+        presetId: "local_organize",
+        refs: [{ rootId: nested.id, relativePath: "generated.strm" }],
+      }),
+    ).rejects.toThrow("生成的视频附属文件");
   });
 });

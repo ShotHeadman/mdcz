@@ -38,11 +38,7 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
         };
       }
 
-      if (
-        snapshot.task.executionGeneration < previous.task.executionGeneration ||
-        (snapshot.task.executionGeneration === previous.task.executionGeneration &&
-          snapshot.task.revision < previous.task.revision)
-      ) {
+      if (snapshot.task.revision < previous.task.revision) {
         return state;
       }
 

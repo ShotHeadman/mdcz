@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
 import { MoveOutput, WriteOutput } from "@mdcz/runtime/publication";
 import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
+import { prepareMovieArtifacts } from "@mdcz/runtime/publication/movieArtifacts";
 import { toRootFileRef } from "@mdcz/runtime/publication/outputRefs";
-import { prepareMovieOutput } from "@mdcz/runtime/publication/prepareMovieOutput";
 import { FileOrganizer, type ResolvedPublicationLayout } from "@mdcz/runtime/scrape";
+import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import * as fileUtils from "@mdcz/runtime/scrape/utils/filesystem";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,28 +29,21 @@ const publishVideo = async (
 ): Promise<string> => {
   const roots = tempDirs.map((hostPath) => ({ id: hostPath, hostPath }));
   const source = toRootFileRef(fileInfo.filePath, roots);
-  const prepared = await prepareMovieOutput({
-    operationId: "organize",
-    operationType: "scrape",
+  const prepared = await prepareMovieArtifacts({
+    inventory: new DirectoryInventory(),
     roots,
-    identity: {
-      movieId: randomUUID(),
-      members: [
-        { source, fileId: randomUUID(), layout: plan, assetLayout: { staged: new Map(), retained: new Map() } },
-      ],
-      expected: { files: [], assets: [] },
-    },
+    members: [{ source, fileId: randomUUID(), layout: plan, assetLayout: { staged: new Map(), retained: new Map() } }],
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
     nfoNaming: config.download.nfoNaming,
     writeNfo: async () => undefined,
   });
-  const output = prepared.output;
+  const output = prepared;
   const commit = () => undefined;
   if (output.moves.length)
     await new MoveOutput(publicationFs).install({
-      operationId: output.operationId,
-      operationType: output.operationType,
+      operationId: "organize",
+      operationType: "scrape",
       moves: output.moves,
       artifacts: output.artifacts,
       journal: createMemoryPublicationJournal(),

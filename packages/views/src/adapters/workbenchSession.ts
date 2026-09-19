@@ -177,7 +177,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     await options.port.preview(refs, options.presetId, options.targetDir);
     await options.onRefreshConfig?.();
     options.toast.success(
-      options.presetId === "read_local" ? `本地读取已启动，共 ${options.candidates.length} 项` : "维护预览已启动",
+      options.presetId === "inspect_local" ? `本地读取已启动，共 ${options.candidates.length} 项` : "维护预览已启动",
     );
   } catch (error) {
     if (options.toErrorMessage(error) === "Operation aborted") {

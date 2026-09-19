@@ -236,7 +236,7 @@ export const runWorkbenchRefreshJourney = async (input: {
   });
 
   await openWorkbenchMaintenanceMode(input.page, input.target);
-  await selectWorkbenchMaintenancePreset(input.page, "刷新数据");
+  await selectWorkbenchMaintenancePreset(input.page, "原地更新");
   await setWorkbenchScanAndTargetDirs(input.page, input.fixture);
   await waitForWorkbenchCandidate(input.page, input.fixture.fileName);
   await startWorkbenchMaintenance(input.page);

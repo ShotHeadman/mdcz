@@ -167,7 +167,7 @@ export interface IpcError {
 
 // ── Maintenance Mode ──────────────────────────────────────────────
 
-export type MaintenancePresetId = "read_local" | "refresh_data" | "organize_files" | "rebuild_all";
+export type MaintenancePresetId = "inspect_local" | "refresh_metadata" | "local_organize" | "rebuild_all";
 /** Assets discovered on disk for an existing video. */
 export interface DiscoveredAssets {
   thumb?: string;

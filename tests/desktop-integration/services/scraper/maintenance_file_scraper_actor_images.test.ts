@@ -1,16 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { getMaintenancePreset as getPreset } from "@mdcz/runtime/maintenance";
 import { MaintenanceFileScraper } from "@mdcz/runtime/maintenance/MaintenanceFileScraper";
-import type {
-  DownloadManager,
-  FileOrganizer,
-  NfoGenerator,
-  OrganizePlan,
-  TranslateService,
-} from "@mdcz/runtime/scrape";
+import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
+import type { DownloadManager, FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
+import { NfoGenerator } from "@mdcz/runtime/scrape/nfo";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -60,13 +57,13 @@ const createEntry = (
 });
 
 const publication = (root: string) => ({
-  validateOutputs: vi.fn(async () => {}),
+  journal: createMemoryPublicationJournal(),
+  commit: vi.fn(),
   operationId: "maintenance-test",
   roots: [{ id: "test-root", hostPath: root }],
   identity: {
     movieId: "movie-1",
-    members: [{ fileId: "entry-1", source: { rootId: "test-root", relativePath: "ABC-123.mp4" } }],
-    expected: { files: [], assets: [] },
+    assets: [],
   },
 });
 
@@ -83,17 +80,12 @@ const createScraperHarness = (root: string, downloadAll: ReturnType<typeof vi.fn
   const config = configurationSchema.parse(defaultConfiguration);
   const scraper = new MaintenanceFileScraper(
     {
+      inventory: new DirectoryInventory(),
       aggregationService: { aggregate: vi.fn() } as never,
       translateService: {
         translateCrawlerData: vi.fn(async (data: CrawlerData) => ({ data, error: null })),
       } as unknown as TranslateService,
-      nfoGenerator: {
-        writeNfo: vi.fn(async () => {
-          await mkdir(outputDir, { recursive: true });
-          await writeFile(plan.nfoPath, "nfo");
-          return plan.nfoPath;
-        }),
-      } as unknown as NfoGenerator,
+      nfoGenerator: new NfoGenerator(),
       downloadManager: { downloadAll } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
@@ -104,7 +96,7 @@ const createScraperHarness = (root: string, downloadAll: ReturnType<typeof vi.fn
         prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
       } as never,
     },
-    getPreset("refresh_data"),
+    getPreset("refresh_metadata"),
   );
 
   return { scraper, config };
@@ -120,14 +112,16 @@ describe("MaintenanceFileScraper asset replacement", () => {
 
   it("forces refreshed thumb and derived fanart when the committed thumb URL changes", async () => {
     const root = await createTempDir();
-    const downloadAll = vi.fn().mockResolvedValue({
-      thumb: join(root, "output", "ABC-123", "thumb.jpg"),
-      downloaded: [join(root, "output", "ABC-123", "thumb.jpg")],
-      sceneImages: [],
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    await writeFile(join(root, "ABC-123.nfo"), "<movie />");
+    const downloadAll = vi.fn<DownloadManager["downloadAll"]>(async (outputDir) => {
+      const thumb = join(outputDir, "thumb.jpg");
+      await writeFile(thumb, "new-thumb");
+      return { thumb, downloaded: [thumb], sceneImages: [] };
     });
     const { scraper, config } = createScraperHarness(root, downloadAll);
 
-    await scraper.processFile(
+    const result = await scraper.processFile(
       createEntry(root, createCrawlerData({ thumb_url: "https://example.com/thumb-old.jpg" })),
       config,
       { fileIndex: 1, totalFiles: 1 },
@@ -142,6 +136,8 @@ describe("MaintenanceFileScraper asset replacement", () => {
         forceReplace: expect.objectContaining({ thumb: true, fanart: true }),
       }),
     );
+    expect(result.status).toBe("success");
+    await expect(readFile(join(root, "ABC-123.mp4"), "utf8")).resolves.toBe("video");
   });
 
   it.each([
@@ -152,6 +148,7 @@ describe("MaintenanceFileScraper asset replacement", () => {
     const oldTrailerPath = join(root, "trailer.mp4");
     await writeFile(oldTrailerPath, "old-trailer", "utf8");
     await writeFile(join(root, "ABC-123.mp4"), "video", "utf8");
+    await writeFile(join(root, "ABC-123.nfo"), "<movie />");
     const { scraper, config } = createScraperHarness(
       root,
       vi.fn().mockResolvedValue({ downloaded: [], sceneImages: [] }),
@@ -175,24 +172,10 @@ describe("MaintenanceFileScraper asset replacement", () => {
     expect(result.status).toBe("success");
     if (decision === "replace") {
       expect(result.updatedEntry?.assets.trailer).toBeUndefined();
-      expect(
-        result.publication?.output.artifacts.some(
-          (artifact) => "sourcePath" in artifact && artifact.sourcePath === oldTrailerPath,
-        ),
-      ).toBe(false);
     } else {
       expect(result.updatedEntry?.assets.trailer).toBe(oldTrailerPath);
-      expect(
-        result.publication?.output.artifacts.some(
-          (artifact) => "sourcePath" in artifact && artifact.sourcePath === oldTrailerPath,
-        ),
-      ).toBe(false);
     }
-    expect(
-      result.publication?.output.publishedTargets.some(
-        (target) => target.relativePath === "output/ABC-123/ABC-123.mp4",
-      ),
-    ).toBe(false);
+    await expect(readFile(join(root, "ABC-123.mp4"), "utf8")).resolves.toBe("video");
     await expect(readFile(oldTrailerPath, "utf8")).resolves.toBe("old-trailer");
   });
 });

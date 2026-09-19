@@ -41,22 +41,20 @@ describe("task executor", () => {
     expect(applied).toEqual(action === "pause" ? [1] : []);
   });
 
-  it("waits for sibling workers and finalizes produced results when publication fails", async () => {
-    const started = deferred();
+  it("applies sibling results concurrently and finalizes both when one fails", async () => {
+    const siblingApplied = deferred();
     const release = deferred();
     const finalized: number[] = [];
     let settled = false;
     const executor = new TaskExecutor<number, number>({
       concurrency: 2,
-      runItem: async (item) => {
-        if (item === 2) {
-          started.resolve();
-          await release.promise;
+      runItem: async (item) => item,
+      applyResult: async (item) => {
+        if (item === 1) await release.promise;
+        else {
+          siblingApplied.resolve();
+          throw new Error("publication failed");
         }
-        return item;
-      },
-      applyResult: async () => {
-        throw new Error("publication failed");
       },
       finalizeResult: async (_item, result) => {
         finalized.push(result);
@@ -65,7 +63,7 @@ describe("task executor", () => {
     const run = executor.execute([1, 2, 3]).finally(() => {
       settled = true;
     });
-    await started.promise;
+    await siblingApplied.promise;
     expect(settled).toBe(false);
     release.resolve();
     await expect(run).rejects.toThrow("publication failed");
@@ -97,8 +95,6 @@ const executionFor = (): ScrapeRunExecution<unknown, string> => {
     admitItem: async (item) => `${item.id}:attempt`,
     prepareGroup: async (entries) => entries.map(({ item }) => ({ status: "prepared", prepared: item.id })),
     checkTargets: async () => undefined,
-    publicationKeys: () => [],
-    acquireItems: () => () => undefined,
     executePreparedItems: async (entries) => ({
       results: entries.map(({ item }) => ({ itemId: item.id, result: resultFor(item) })),
     }),

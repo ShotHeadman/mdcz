@@ -1,15 +1,14 @@
-import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import type { DirectoryInventory } from "../scrape/DirectoryInventory";
 import type { ResolvedPublicationLayout } from "../scrape/FileOrganizer";
 import { getNfoWritePaths } from "../scrape/nfo";
 import type { PublicationAssetLayout } from "./assetLayout";
 import type { SourceMove } from "./MoveOutput";
 import { toRootFileRef } from "./outputRefs";
-import type { PublicationParticipants } from "./types";
 import type { WriteArtifact } from "./WriteOutput";
 
 export interface PreparedMovieFile {
@@ -20,6 +19,7 @@ export interface PreparedMovieFile {
   sourceSize: number;
   modifiedAt: Date;
   assets: AssetRef[];
+  fileInfo?: Pick<import("@mdcz/shared/types").FileInfo, "part" | "resolution">;
   scrape?: {
     itemId: string;
     attemptId: string;
@@ -31,16 +31,19 @@ export interface PreparedMovieFile {
   };
 }
 
-export interface PreparedMovieOutput {
-  operationId: string;
-  operationType: "scrape" | "maintenance";
-  movieId: string;
+export interface MovieArtifacts {
   files: PreparedMovieFile[];
   movieAssets: AssetRef[];
   artifacts: WriteArtifact[];
   moves: SourceMove[];
   publishedTargets: RootFileRef[];
   protectedSourceRoots: string[];
+}
+
+export interface PreparedMovieOutput extends MovieArtifacts {
+  operationId: string;
+  operationType: "scrape" | "maintenance";
+  movieId: string;
   scrape?: {
     crawlerData: CrawlerData;
     sources: import("@mdcz/shared/types").ScrapeResult["sources"];
@@ -51,6 +54,7 @@ export interface PreparedMovieOutput {
 interface MovieOutputMember {
   source: RootFileRef;
   fileId?: string;
+  fileInfo?: PreparedMovieFile["fileInfo"];
   layout: Omit<ResolvedPublicationLayout, "sourceVideoPath">;
   assetLayout: PublicationAssetLayout;
   existingAssets?: DiscoveredAssets;
@@ -60,7 +64,7 @@ interface MovieOutputMember {
 
 export const retainedRegisteredFeatures = (
   members: readonly { layout: { sidecars: readonly { kind: string }[] } }[],
-  registered: PublicationParticipants["expected"]["assets"],
+  registered: readonly (RootFileRef & { fileId: string | null; kind: string })[],
 ): AssetRef[] =>
   members.some((member) => member.layout.sidecars.some((sidecar) => sidecar.kind === "feature"))
     ? []
@@ -76,11 +80,10 @@ export const retainedRegisteredFeatures = (
           : [],
       );
 
-export const prepareMovieOutput = async (input: {
-  operationId: string;
-  operationType: PreparedMovieOutput["operationType"];
+export const prepareMovieArtifacts = async (input: {
+  inventory: DirectoryInventory;
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
-  identity: PublicationParticipants<MovieOutputMember>;
+  members: Array<MovieOutputMember & { fileId: string }>;
   retainedMovieAssets?: AssetRef[];
   stagingDir?: string;
   downloadedAssets: DownloadedAssets;
@@ -89,22 +92,22 @@ export const prepareMovieOutput = async (input: {
   nfoNaming: "both" | "movie" | "filename";
   reuseNfo?: boolean;
   remoteData?: CrawlerData;
-  scrape?: Omit<NonNullable<PreparedMovieOutput["scrape"]>, "nfo">;
   writeNfo(
     assets: DownloadedAssets,
     writeFile: (path: string, content: string) => Promise<void>,
   ): Promise<string | undefined>;
-}): Promise<{
-  output: PreparedMovieOutput;
-  assets: DiscoveredAssets;
-  nfoPath?: string;
-}> => {
-  if (!input.identity.members.length) throw new Error("Publication requires at least one media file");
+}): Promise<
+  MovieArtifacts & {
+    assets: DiscoveredAssets;
+    nfoPath?: string;
+  }
+> => {
+  if (!input.members.length) throw new Error("Publication requires at least one media file");
   const toRef = (absolutePath: string) => toRootFileRef(absolutePath, input.roots);
   const artifacts: WriteArtifact[] = [];
   const moves: SourceMove[] = [];
   const publishedTargets: RootFileRef[] = [];
-  const successful: Array<{ member: (typeof input.identity.members)[number]; file: PreparedMovieFile }> = [];
+  const successful: Array<{ member: (typeof input.members)[number]; file: PreparedMovieFile }> = [];
   const featureAssets = new Map<string, AssetRef>();
   const downloadedTargets = new Set<string>();
   const mapped = new Map<string, string>();
@@ -115,12 +118,12 @@ export const prepareMovieOutput = async (input: {
     if (!root) throw new Error(`Publication root not found: ${file.source.rootId}`);
     return resolveRootRelativePath(root, file.source.relativePath);
   };
-  const mediaSources = new Set(input.identity.members.map((file) => resolve(sourcePathOf(file))));
+  const mediaSources = new Set(input.members.map((file) => resolve(sourcePathOf(file))));
 
-  for (const file of input.identity.members) {
+  for (const file of input.members) {
     const { layout } = file;
     const sourcePath = sourcePathOf(file);
-    const source = await stat(sourcePath);
+    const source = await input.inventory.stats(sourcePath);
     if (!source.isFile()) throw new Error("Publication source is not a file");
     const fileAssets: AssetRef[] = [];
     const memberMoves: SourceMove[] = [];
@@ -162,7 +165,7 @@ export const prepareMovieOutput = async (input: {
       fileAssets.push({ type: "local", kind: "strm", file: toRef(layout.mirror.targetPath) });
     }
     for (const sidecar of layout.sidecars) {
-      const sidecarSource = await stat(sidecar.sourcePath);
+      const sidecarSource = await input.inventory.stats(sidecar.sourcePath);
       if (!sidecarSource.isFile()) throw new Error("Publication sidecar source is not a file");
       const moving = resolve(sidecar.targetPath) !== resolve(sidecar.sourcePath);
       if (sidecar.kind === "subtitle") {
@@ -228,6 +231,7 @@ export const prepareMovieOutput = async (input: {
         sourceSize: source.size,
         modifiedAt,
         assets: fileAssets,
+        fileInfo: file.fileInfo ?? file.scrape?.fileInfo,
         scrape: file.scrape,
       },
     });
@@ -245,7 +249,7 @@ export const prepareMovieOutput = async (input: {
       : undefined;
   };
   const locationAssets = new Map<string, AssetRef>();
-  const locations = new Map<string, (typeof input.identity.members)[number]>();
+  const locations = new Map<string, (typeof input.members)[number]>();
   for (const { member: file } of successful) {
     if (!locations.has(file.layout.metadataDir)) locations.set(file.layout.metadataDir, file);
   }
@@ -285,7 +289,7 @@ export const prepareMovieOutput = async (input: {
             artifacts.push({
               sourcePath,
               targetPath,
-              size: (await stat(sourcePath)).size,
+              size: (await input.inventory.stats(sourcePath)).size,
               consume: Boolean(stagedName),
             });
             publishedTargets.push(target);
@@ -323,7 +327,8 @@ export const prepareMovieOutput = async (input: {
   if (!nfoPath && existingNfoPath) {
     const paths = getNfoWritePaths(first.layout.nfoPath, input.nfoNaming);
     nfoPath = paths.canonicalPath;
-    let content = await readFile(existingNfoPath, "utf-8");
+    let content = await input.inventory.readNfo(existingNfoPath);
+    if (content === undefined) throw new Error(`NFO source is missing: ${existingNfoPath}`);
     const relativeLayoutChanged =
       resolve(first.layout.existingMetadataDir) !== resolve(first.layout.metadataDir) ||
       [...mapped].some(([source, target]) => source !== target);
@@ -395,23 +400,20 @@ export const prepareMovieOutput = async (input: {
   const targetRootIds = new Set(successful.map(({ file }) => file.target.rootId));
   const protectedSourceRoots = [
     ...new Set(
-      input.identity.members
+      input.members
         .filter((member) => !targetRootIds.has(member.source.rootId))
         .map((member) => input.roots.find((root) => root.id === member.source.rootId)?.hostPath)
         .filter((root): root is string => Boolean(root)),
     ),
   ];
-  const output: PreparedMovieOutput = {
-    operationId: input.operationId,
-    operationType: input.operationType,
-    movieId: input.identity.movieId,
+  return {
+    assets,
+    nfoPath,
     files: successful.map((entry) => entry.file),
     movieAssets,
     artifacts,
     moves,
     publishedTargets,
     protectedSourceRoots,
-    ...(input.scrape ? { scrape: { ...input.scrape, ...(nfoPath ? { nfo: toRef(nfoPath) } : {}) } } : {}),
   };
-  return { assets, nfoPath, output };
 };

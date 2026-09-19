@@ -2,7 +2,6 @@ export * from "./database";
 export * from "./errors";
 export * from "./libraryRepairIssueRepository";
 export * from "./libraryRepository";
-export * from "./maintenanceDirectoryRepository";
 export * from "./mediaRootRepository";
 export * from "./migrate";
 export * from "./publicationJournalRepository";

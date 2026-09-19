@@ -55,7 +55,7 @@ const createHost = (
 ): ScrapeHostPort<string, Run, undefined> => ({
   create: vi.fn(async () => run),
   runId: (entry) => entry.id,
-  describe: (entry) => ({ executionGeneration: 0, totalItems: entry.items.length }),
+  describe: (entry) => ({ totalItems: entry.items.length }),
   createExecution: async (entry) => ({
     items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
     concurrency,
@@ -63,8 +63,6 @@ const createHost = (
     prepareGroup: async (entries) => entries.map(() => ({ status: "prepared", prepared: undefined })),
     checkTargets: vi.fn(async () => undefined),
     movieGroups: entry.items.map((item) => ({ itemIds: [item.id] })),
-    publicationKeys: () => [],
-    acquireItems: () => () => undefined,
     executePreparedItems: async (items, signal) => ({
       results: await Promise.all(
         items.map(async ({ item }) => ({
@@ -96,7 +94,7 @@ describe("ScrapeCoordinator", () => {
     let discoverySignal: AbortSignal | undefined;
     const execute = vi.fn(async (item: ScrapeRunItem) => resultFor(item, "success"));
     const host = createHost(run, execute);
-    host.describe = (entry) => ({ executionGeneration: 0, totalItems: fixed ? entry.items.length : null });
+    host.describe = (entry) => ({ totalItems: fixed ? entry.items.length : null });
     host.discover = vi.fn(async (entry, signal, report) => {
       discoverySignal = signal;
       report({ directories: 3, candidates: 1, skipped: 0, elapsedMs: 10, currentPath: "/media/sub", warnings: [] });

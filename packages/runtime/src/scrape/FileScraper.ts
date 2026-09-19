@@ -17,12 +17,12 @@ import type {
 } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../network/networkExecution";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
-import { toRootFileRef } from "../publication/outputRefs";
 import {
   type PreparedMovieOutput,
-  prepareMovieOutput,
+  prepareMovieArtifacts,
   retainedRegisteredFeatures,
-} from "../publication/prepareMovieOutput";
+} from "../publication/movieArtifacts";
+import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, AggregationService, ManualScrapeOptions } from "./aggregation";
@@ -490,42 +490,37 @@ export class FileScraper {
           const preservedNfoPath = configuration.download.keepNfo
             ? await findExistingNfoPath(plan.nfoPath, configuration.download.nfoNaming, pathExists)
             : undefined;
-          const publication = await prepareMovieOutput({
-            operationId: prepared.operationId,
-            operationType: "scrape",
+          const publication = await prepareMovieArtifacts({
+            inventory: prepared.inventory ?? new DirectoryInventory(),
             roots,
-            identity: {
-              ...participants,
-              members: participants.members.map(({ prepared, ...member }) => {
-                const classification = classifyMovie(prepared.fileInfo, crawlerData, prepared.localState);
-                const { assets, ...identity } = prepared.identity;
-                const itemId = prepared.itemId ?? prepared.attemptId ?? prepared.identity.fileId;
-                return {
-                  ...member,
-                  existingNfoPath: preservedNfoPath,
-                  scrape: {
-                    itemId,
-                    attemptId: prepared.attemptId,
-                    identity,
-                    fileInfo: prepared.fileInfo,
-                    videoMeta: prepared.videoMeta,
-                    error: prepared.translationError,
-                    uncensoredAmbiguous:
-                      classification.uncensored &&
-                      !classification.umr &&
-                      !classification.leak &&
-                      !isLikelyUncensoredNumber(crawlerData.number || prepared.fileInfo.number),
-                  },
-                };
-              }),
-            },
+            members: participants.members.map(({ prepared, ...member }) => {
+              const classification = classifyMovie(prepared.fileInfo, crawlerData, prepared.localState);
+              const { assets, ...identity } = prepared.identity;
+              const itemId = prepared.itemId ?? prepared.attemptId ?? prepared.identity.fileId;
+              return {
+                ...member,
+                existingNfoPath: preservedNfoPath,
+                scrape: {
+                  itemId,
+                  attemptId: prepared.attemptId,
+                  identity,
+                  fileInfo: prepared.fileInfo,
+                  videoMeta: prepared.videoMeta,
+                  error: prepared.translationError,
+                  uncensoredAmbiguous:
+                    classification.uncensored &&
+                    !classification.umr &&
+                    !classification.leak &&
+                    !isLikelyUncensoredNumber(crawlerData.number || prepared.fileInfo.number),
+                },
+              };
+            }),
             retainedMovieAssets: retainedRegisteredFeatures(participants.members, participants.expected.assets),
             stagingDir,
             downloadedAssets: downloaded.assets,
             actorPhotoPaths: actorOutput.actorPhotoPaths,
             nfoNaming: configuration.download.nfoNaming,
             remoteData: crawlerData,
-            scrape: { crawlerData, sources: aggregation.sources },
             writeNfo: async (assets, writeFile) =>
               await writePreparedNfo({
                 assets,
@@ -548,7 +543,17 @@ export class FileScraper {
           for (const { progress, result } of states) if (!result) this.setProgress(progress, 95);
           return {
             results: states.flatMap((entry) => (entry.result ? [entry.result] : [])),
-            output: publication.output,
+            output: {
+              ...publication,
+              operationId: prepared.operationId,
+              operationType: "scrape",
+              movieId: participants.movieId,
+              scrape: {
+                crawlerData,
+                sources: aggregation.sources,
+                nfo: publication.nfoPath ? toRootFileRef(publication.nfoPath, roots) : undefined,
+              },
+            },
             release: () => rm(directory, { recursive: true, force: true }),
           };
         } catch (error) {

@@ -2,14 +2,11 @@ import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import { toRootRelativePath } from "@mdcz/media-store";
-import { registeredOutputPaths } from "@mdcz/runtime";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import {
-  createMaintenanceDirectoryTaskPort,
-  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
@@ -83,18 +80,9 @@ export class MaintenanceService {
             return await mediaRoots.get(rootId);
           },
           list: async () => await mediaRoots.listRoots(),
-          ensurePathRecord: async (input) => await mediaRoots.ensurePathRecord(input),
         },
         runtime: this.runtime,
-        directoryTasks: createMaintenanceDirectoryTaskPort(
-          async () => (await this.persistenceService.getState()).repositories.maintenanceDirectoryTasks,
-        ),
-        discoverDirectory: async (scope, configuration, signal, onProgress) => {
-          const generatedStrms = await registeredOutputPaths(
-            (await this.persistenceService.getState()).repositories.library,
-            (id) => mediaRoots.get(id),
-            "strm",
-          );
+        discoverDirectory: async (scope, configuration, signal, onProgress, inventory, generatedStrms) => {
           return (
             await discoverDirectoryFiles({
               scope,
@@ -102,23 +90,21 @@ export class MaintenanceService {
               signal,
               onProgress,
               generatedStrms,
+              inventory,
               mediaRoots,
               platform: "desktop",
             })
           ).refs;
         },
-        library: createMaintenanceLibraryPort({
-          getRepositories: async () => {
+        persistence: {
+          get: async () => {
             const { repositories } = await this.persistenceService.getState();
             return {
               library: repositories.library,
-              mediaRoots: repositories.mediaRoots,
               publicationJournal: repositories.publicationJournal,
-              libraryRepairIssues: repositories.libraryRepairIssues,
             };
           },
-          resolveRoot: async (rootId) => await mediaRoots.get(rootId),
-        }),
+        },
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       });
   }
@@ -193,7 +179,7 @@ export class MaintenanceService {
     if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.requireActiveSession();
     if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
-    if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    if (presetId === "inspect_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
     if (selections.some((selection) => !previewIds.has(selection.previewId))) {
       throw new Error("维护项目不属于当前任务");

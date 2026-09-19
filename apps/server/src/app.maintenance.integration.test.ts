@@ -164,7 +164,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { source: { kind: "directory", scanDir: source, recursive: true }, presetId: "read_local" },
+      payload: { source: { kind: "directory", scanDir: source, recursive: true }, presetId: "inspect_local" },
     });
     expect(response.statusCode).toBe(200);
     const sessionId = response.json().result.data.sessionId;
@@ -192,7 +192,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { rootId, presetId: "organize_files", refs: [] },
+      payload: { rootId, presetId: "local_organize", refs: [] },
     });
     const startResponse = await fastify.inject({
       method: "POST",
@@ -200,7 +200,7 @@ describe("buildServer maintenance integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         rootId,
-        presetId: "organize_files",
+        presetId: "local_organize",
         refs: ["ABC-201.mp4", "ABC-203.mp4"].map((relativePath) => ({ rootId, relativePath })),
       },
     });
@@ -254,7 +254,7 @@ describe("buildServer maintenance integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         rootId,
-        presetId: "organize_files",
+        presetId: "local_organize",
         refs: ["ABC-211.mp4", "ABC-212.mp4"].map((relativePath) => ({ rootId, relativePath })),
       },
     });
@@ -282,7 +282,7 @@ describe("buildServer maintenance integration", () => {
     expect(completed.previews.map((item) => item.relativePath)).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
   });
 
-  it("starts a read_local preview from selected files", async () => {
+  it("starts a inspect_local preview from selected files", async () => {
     const root = await createTempRoot("maintenance-selected-root");
     await writeMaintenanceInput(root, "ABC-225", "Local Title ABC-225");
     const { fastify } = await createTestServer();
@@ -295,7 +295,7 @@ describe("buildServer maintenance integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         rootId,
-        presetId: "read_local",
+        presetId: "inspect_local",
         refs: [{ rootId, relativePath: "ABC-225.mp4" }],
       },
     });
@@ -357,7 +357,7 @@ describe("buildServer maintenance integration", () => {
       fastify,
       token,
       rootId,
-      "organize_files",
+      "local_organize",
       [relativePath],
       outputRelative,
     );
@@ -381,7 +381,7 @@ describe("buildServer maintenance integration", () => {
       payload: { query: "ABC-125", limit: 20 },
     });
     expect(session.previews[0]).toMatchObject({
-      presetId: "organize_files",
+      presetId: "local_organize",
       relativePath,
       status: "ready",
       proposedCrawlerData: { number: "ABC-125", title: "Local Title ABC-125" },
@@ -412,8 +412,8 @@ describe("buildServer maintenance integration", () => {
     "multipart",
     "missing",
     "added",
-    "removed",
-    "relinked",
+    "metadata-changed",
+    "conflict",
     "offline",
     "rollback",
   ] as const)("publishes the complete movie or preserves all files (%s)", async (scenario) => {
@@ -485,13 +485,12 @@ describe("buildServer maintenance integration", () => {
         files: [{ fileId: "new-file", rootId, rootRelativePath: "ABC-300-CD3.mp4" }],
       });
     }
-    if (scenario === "removed") state.repositories.library.removeFile(`maintenance-file:${sourceNames[1]}`);
-    if (scenario === "relinked")
-      await state.repositories.library.relinkFile({
-        fileId: `maintenance-file:${sourceNames[1]}`,
-        rootId,
-        rootRelativePath: "relocated.mp4",
-      });
+    if (scenario === "metadata-changed")
+      await writeFile(join(root, "ABC-300.nfo"), "<movie><title>Changed after approval</title></movie>");
+    if (scenario === "conflict") {
+      await mkdir(join(root, "JAV_output", "ABC-300"), { recursive: true });
+      await writeFile(join(root, "JAV_output", "ABC-300", sourceNames[0]), "occupied");
+    }
     if (scenario === "offline")
       await state.repositories.mediaRoots.upsert({
         ...(await state.repositories.mediaRoots.get(rootId)),
@@ -515,7 +514,7 @@ describe("buildServer maintenance integration", () => {
     }
     expect(applyResponse.statusCode).toBe(200);
     expect(applyResponse.json().result.data).toEqual({ sessionId });
-    const failed = scenario !== "single" && scenario !== "multipart";
+    const failed = scenario !== "single" && scenario !== "multipart" && scenario !== "added";
     const appliedSession = await waitForMaintenanceSession(
       fastify,
       token,
@@ -524,11 +523,16 @@ describe("buildServer maintenance integration", () => {
       failed ? "failed" : "completed",
     );
     if (failed) {
-      expect(appliedSession.currentBatch?.items[0]).toMatchObject({ status: "failed" });
-      await expect(readFile(join(root, sourceNames[0]), "utf8")).resolves.toBeTruthy();
-      await expect(access(join(root, "JAV_output", "ABC-300", sourceNames[0]))).rejects.toMatchObject({
-        code: "ENOENT",
+      expect(appliedSession.currentBatch?.items[0]).toMatchObject({
+        status: scenario === "conflict" ? "skipped" : "failed",
       });
+      await expect(readFile(join(root, sourceNames[0]), "utf8")).resolves.toBeTruthy();
+      if (scenario === "conflict")
+        await expect(readFile(join(root, "JAV_output", "ABC-300", sourceNames[0]), "utf8")).resolves.toBe("occupied");
+      else
+        await expect(access(join(root, "JAV_output", "ABC-300", sourceNames[0]))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
       if (scenario === "rollback")
         expect((await state.repositories.library.getEntryById(before.id)).files).toEqual(before.files);
       return;
@@ -544,7 +548,7 @@ describe("buildServer maintenance integration", () => {
     expect(downloadAll).toHaveBeenCalledOnce();
     const refreshed = await state.repositories.library.getEntryById("maintenance-movie");
     expect(refreshed.files.map((file) => file.id).sort()).toEqual(
-      sourceNames.map((name) => `maintenance-file:${name}`).sort(),
+      [...sourceNames.map((name) => `maintenance-file:${name}`), ...(scenario === "added" ? ["new-file"] : [])].sort(),
     );
     const organizedNfoContent = await readFile(organizedNfo, "utf8");
     expect(organizedNfoContent).toContain("Remote Title ABC-300");
@@ -635,7 +639,7 @@ describe("buildServer maintenance integration", () => {
         },
       ],
     });
-    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "refresh_data", [
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "refresh_metadata", [
       `${baseName}.mp4`,
     ]);
     expect(session.previews[0].pathDiff).toBeFalsy();

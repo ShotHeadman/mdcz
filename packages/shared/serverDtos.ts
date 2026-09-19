@@ -12,7 +12,7 @@ import { assetRefSchema, type RootFileRef, rootFileRefSchema, wireRelativeDirect
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
-export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
+export const maintenancePresetIdSchema = z.enum(["inspect_local", "refresh_metadata", "local_organize", "rebuild_all"]);
 export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({
@@ -224,7 +224,6 @@ export const scrapeRunTaskSchema = z.object({
   skippedCount: z.number().int().nonnegative(),
   error: z.string().nullable(),
   revision: z.number().int().nonnegative(),
-  executionGeneration: z.number().int().nonnegative(),
   continuity: z.enum(["live", "final", "interrupted"]),
 });
 

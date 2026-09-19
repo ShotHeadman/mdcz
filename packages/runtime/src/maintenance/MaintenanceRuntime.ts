@@ -1,6 +1,7 @@
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import type { MaintenanceMovieGroup } from "@mdcz/shared/maintenanceTasks";
 import type {
   CrawlerData,
   FieldDiff,
@@ -10,8 +11,8 @@ import type {
   MaintenancePreviewStatus,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { PreparedMovieOutput } from "../publication/prepareMovieOutput";
-import type { PublicationParticipants } from "../publication/types";
+import type { CommittedMovie } from "../publication/committedMovie";
+import type { PublicationJournalPort } from "../publication/types";
 import {
   type AggregationService,
   applyScrapeNetworkPolicy,
@@ -22,6 +23,7 @@ import {
   type TranslateService,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { LocalScanService } from "./LocalScanService";
 import {
   MaintenanceFileScraper,
@@ -86,10 +88,11 @@ export interface MaintenanceRuntimeApplyEntryInput {
     assetDecisions?: import("@mdcz/shared/types").MaintenanceAssetDecisions;
   };
   publication: {
-    validateOutputs(outputs: readonly import("@mdcz/shared/mediaRef").RootFileRef[]): Promise<void>;
+    journal: PublicationJournalPort;
+    commit(movie: CommittedMovie): void;
     operationId: string;
     roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
-    identity: Pick<PublicationParticipants, "movieId" | "expected">;
+    identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
   };
   progress?: { fileIndex: number; totalFiles: number };
   signalService?: MaintenanceSignalService;
@@ -106,8 +109,7 @@ export interface MaintenanceRuntimeApplySuccess {
   outputRelativePath: string;
   outputSize?: number;
   outputModifiedAt?: Date;
-  publication?: { output: PreparedMovieOutput };
-  release?: () => Promise<void>;
+  error?: string | null;
 }
 
 export interface MaintenanceRuntimeApplyFailure {
@@ -144,6 +146,7 @@ export class MaintenanceRuntime {
     private readonly deps: MaintenanceRuntimeDependencies,
     private readonly sourceMediaPath?: string,
     private readonly outputTemplateRoot?: string,
+    readonly inventory = new DirectoryInventory(),
   ) {}
 
   async getConfiguration(): Promise<Configuration> {
@@ -155,6 +158,7 @@ export class MaintenanceRuntime {
   }
 
   async createSession(input: {
+    inventory: DirectoryInventory;
     configuration?: Configuration;
     root: MediaRoot;
     outputRoot: MediaRoot;
@@ -172,6 +176,7 @@ export class MaintenanceRuntime {
       { ...this.deps, config: { get: async () => config } },
       sourceMediaPath,
       outputBaseDirectory,
+      input.inventory,
     );
   }
 
@@ -187,12 +192,13 @@ export class MaintenanceRuntime {
     signal?: AbortSignal;
     registeredOutputs?: Map<string, { nfoPath?: string; strmPath?: string }>;
   }): Promise<LocalScanEntry[]> {
-    const config = await this.getPresetConfig("read_local");
+    const config = await this.getPresetConfig("inspect_local");
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
     return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal, {
       mediaPath: this.sourceMediaPath ?? config.paths.mediaPath,
       metadataPath: "",
       registeredOutputs: input.registeredOutputs,
+      inventory: this.inventory,
     });
   }
 
@@ -225,13 +231,8 @@ export class MaintenanceRuntime {
 
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {
     const preset = getMaintenancePreset(input.presetId);
-    if (!supportsMaintenanceExecution(preset)) {
-      return {
-        status: "success",
-        entry: input.entry,
-        outputRelativePath: this.toRelativePath(input.root, input.entry.fileInfo.filePath),
-      };
-    }
+    if (!supportsMaintenanceExecution(preset))
+      throw new Error(`Maintenance preset ${preset.id} does not support execution`);
 
     const entry = input.entry;
     const config = await this.getPresetConfig(input.presetId);
@@ -251,10 +252,6 @@ export class MaintenanceRuntime {
     }
 
     const updatedEntry = result.updatedEntry ?? entry;
-    const publication = result.publication;
-    if (!publication) {
-      return { status: "failed", error: "维护应用未生成发布计划" };
-    }
     if (!result.outputRelativePath) throw new Error("Maintenance publication requires the selected media member");
     return {
       status: "success",
@@ -266,8 +263,7 @@ export class MaintenanceRuntime {
       outputRelativePath: result.outputRelativePath,
       outputSize: result.outputSize,
       outputModifiedAt: result.outputModifiedAt,
-      publication: { output: publication.output },
-      release: result.release,
+      error: result.error,
     };
   }
 
@@ -303,6 +299,7 @@ export class MaintenanceRuntime {
 
   private createFileScraperDependencies(signalService?: MaintenanceSignalService): MaintenanceFileScraperDependencies {
     return {
+      inventory: this.inventory,
       outputTemplateRoot: this.outputTemplateRoot,
       actorImageService: this.deps.actorImageService,
       actorSourceProvider: this.deps.actorSourceProvider,

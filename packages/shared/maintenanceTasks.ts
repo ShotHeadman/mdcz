@@ -45,18 +45,15 @@ export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
 
 export type MaintenanceSessionPreviewStatus = "pending" | "processing" | "ready" | "blocked" | "applied" | "failed";
 
-export interface MaintenancePublicationIdentity {
+export interface MaintenanceMovieGroup {
   movieId: string;
   files: Array<RootFileRef & { fileId: string }>;
-  expected: {
-    files: Array<RootFileRef & { itemId: string; fileId?: string; mediaIdentity?: string | null; size?: number }>;
-    assets: Array<RootFileRef & { itemId: string; fileId: string | null; kind: string; published: boolean }>;
-  };
+  assets: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
 }
 
 export interface MaintenanceSessionPreview {
   files?: LocalScanEntry[];
-  publicationIdentity?: MaintenancePublicationIdentity;
+  movieGroup?: MaintenanceMovieGroup;
   affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   id: string;
   sessionId: string;
@@ -143,7 +140,6 @@ export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProg
   presetId: MaintenancePresetId;
   phase: MaintenanceSessionPhase;
   status: MaintenanceSessionStatus;
-  generation: number;
   refs: MaintenanceSessionRef[];
   timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
   error: string | null;

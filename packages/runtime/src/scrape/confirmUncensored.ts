@@ -19,16 +19,14 @@ import type { LocalScanService } from "../maintenance/LocalScanService";
 import { buildMovieTags } from "../maintenance/movieTags";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
 import { MoveOutput } from "../publication/MoveOutput";
+import { type PreparedMovieFile, type PreparedMovieOutput, prepareMovieArtifacts } from "../publication/movieArtifacts";
 import { libraryAssetsFromMovieOutput } from "../publication/outputLibrary";
+import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
-import {
-  type PreparedMovieFile,
-  type PreparedMovieOutput,
-  prepareMovieOutput,
-} from "../publication/prepareMovieOutput";
 import type { DurablePublicationContext, PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import type { RuntimeLogger } from "../shared";
+import { DirectoryInventory } from "./DirectoryInventory";
 import type { FileOrganizer, ResolvedPublicationLayout } from "./FileOrganizer";
 import { getNfoWritePaths, type NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "./nfo";
 import { parseFileInfo } from "./utils/number";
@@ -88,7 +86,7 @@ export interface UncensoredConfirmDependencies<TContext = undefined> {
     operationId: string;
     members: readonly UncensoredPlanningMember<TContext>[];
     nfoNaming: "both" | "movie" | "filename";
-    writeNfo: Parameters<typeof prepareMovieOutput>[0]["writeNfo"];
+    writeNfo: Parameters<typeof prepareMovieArtifacts>[0]["writeNfo"];
   }): Promise<{
     output: PreparedMovieOutput;
     assets: DiscoveredAssets;
@@ -282,22 +280,32 @@ export async function confirmUncensoredRunItems<TManifest extends { items: reado
             throw new Error("影片关联的视频文件发生变动，请重新确认");
         };
         const commit = () => repositories.scrapeRuns.reviseSuccess(revisions, movie);
-        const published = output.moves.length
-          ? await new MoveOutput().install({
-              operationId: output.operationId,
-              operationType: "maintenance",
-              moves: output.moves,
-              artifacts: output.artifacts,
-              journal: repositories.journal,
-              validate,
-              protectedSourceRoots: output.protectedSourceRoots,
-              commit,
-            })
-          : await new WriteOutput().install(output.artifacts, {
-              validate,
-              protectedSourceRoots: output.protectedSourceRoots,
-              commit,
-            });
+        const release = await acquireOutputDirectories([
+          ...output.moves.map((move) => move.targetPath),
+          ...output.artifacts.map((artifact) => artifact.targetPath),
+        ]);
+        const published = await (async () => {
+          try {
+            return output.moves.length
+              ? await new MoveOutput().install({
+                  operationId: output.operationId,
+                  operationType: "maintenance",
+                  moves: output.moves,
+                  artifacts: output.artifacts,
+                  journal: repositories.journal,
+                  validate,
+                  protectedSourceRoots: output.protectedSourceRoots,
+                  commit,
+                })
+              : await new WriteOutput().install(output.artifacts, {
+                  validate,
+                  protectedSourceRoots: output.protectedSourceRoots,
+                  commit,
+                });
+          } finally {
+            release();
+          }
+        })();
         for (const issue of published.cleanupIssues)
           input.dependencies.logger.warn(`Uncensored publication cleanup failed: ${toErrorMessage(issue)}`);
       },
@@ -315,7 +323,7 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
   operationId: string;
   members: readonly UncensoredPlanningMember<TContext>[];
   nfoNaming: "both" | "movie" | "filename";
-  writeNfo: Parameters<typeof prepareMovieOutput>[0]["writeNfo"];
+  writeNfo: Parameters<typeof prepareMovieArtifacts>[0]["writeNfo"];
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   entry: UncensoredRevisionSources["entry"];
   snapshot: ReturnType<PublicationOutputPort["publicationSnapshot"]>;
@@ -353,11 +361,10 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
       ? [{ type: "local", kind: asset.kind, file: { rootId: asset.rootId, relativePath: asset.relativePath } }]
       : [{ type: "remote", kind: asset.kind, url: asset.uri }];
   });
-  const prepared = await prepareMovieOutput({
-    operationId: input.operationId,
-    operationType: "maintenance",
+  const prepared = await prepareMovieArtifacts({
+    inventory: new DirectoryInventory(),
     roots: input.roots,
-    identity: participants,
+    members: participants.members,
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
     retainedMovieAssets,
@@ -366,7 +373,12 @@ export const prepareUncensoredPublication = async <TContext = undefined>(input: 
   });
   return {
     ...prepared,
-    output: prepared.output,
+    output: {
+      ...prepared,
+      movieId: participants.movieId,
+      operationId: input.operationId,
+      operationType: "maintenance",
+    },
     resolve: (ref) => {
       const root = input.roots.find((root) => root.id === ref.rootId);
       if (!root) throw new Error(`Publication root not found: ${ref.rootId}`);

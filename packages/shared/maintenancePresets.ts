@@ -8,21 +8,21 @@ export interface MaintenancePresetMeta {
 }
 
 export const MAINTENANCE_PRESET_META: Record<MaintenancePresetId, MaintenancePresetMeta> = {
-  read_local: {
-    id: "read_local",
-    label: "读取本地",
+  inspect_local: {
+    id: "inspect_local",
+    label: "本地查看",
     description: "扫描本地文件，读取现有 NFO 与资源状态",
     supportsExecution: false,
   },
-  refresh_data: {
-    id: "refresh_data",
-    label: "刷新数据",
+  refresh_metadata: {
+    id: "refresh_metadata",
+    label: "原地更新",
     description: "联网刷新元数据，对比NFO差异",
     supportsExecution: true,
   },
-  organize_files: {
-    id: "organize_files",
-    label: "整理目录",
+  local_organize: {
+    id: "local_organize",
+    label: "本地整理",
     description: "按规则重新组织文件目录结构",
     supportsExecution: true,
   },

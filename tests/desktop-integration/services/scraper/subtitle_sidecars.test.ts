@@ -29,6 +29,9 @@ describe("sidecar inventory", () => {
       join(directory, "unrelated.txt"),
     ])
       await fs.writeFile(path, "content");
+    const nfoPath = join(directory, "movie.nfo");
+    const xml = "<movie><title>Local title</title><num>FC2-1234567</num></movie>";
+    await fs.writeFile(nfoPath, xml);
     const entries = await fs.readdir(directory, { withFileTypes: true });
     const inventory = new DirectoryInventory();
     inventory.observeDirectory(directory, directory, entries);
@@ -62,6 +65,17 @@ describe("sidecar inventory", () => {
     }
     expect(listing).not.toHaveBeenCalled();
     expect(stats).not.toHaveBeenCalled();
+    await inventory.stats(nfoPath);
+    const reads = vi.spyOn(fs, "readFile");
+    const [snapshot, content] = await Promise.all([inventory.loadNfo(nfoPath), inventory.readNfo(nfoPath)]);
+    expect(snapshot?.crawlerData.number).toBe("FC2-1234567");
+    expect(content).toBe(xml);
+    expect(reads).toHaveBeenCalledOnce();
+    await inventory.assertUnchanged([nfoPath]);
+    await fs.writeFile(nfoPath, "<movie><title>Changed</title></movie>");
+    await expect(inventory.assertUnchanged([nfoPath])).rejects.toThrow("preview again");
+    expect(await inventory.loadNfo(nfoPath)).toBe(snapshot);
+    expect(reads).toHaveBeenCalledOnce();
   });
 
   it.skipIf(process.platform === "win32")(

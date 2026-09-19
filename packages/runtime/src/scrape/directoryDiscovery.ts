@@ -55,11 +55,12 @@ export const discoverDirectoryFiles = async (input: {
   signal: AbortSignal;
   platform: "desktop" | "server";
   onProgress: (progress: DiscoveryProgress) => void;
+  inventory?: DirectoryInventory;
 }): Promise<{ refs: RootFileRef[]; discovery: DiscoveryProgress; inventory: DirectoryInventory }> => {
   const { scope, signal } = input;
   const started = performance.now();
   const warnings = { count: 0, paths: [] as string[] };
-  const inventory = new DirectoryInventory();
+  const inventory = input.inventory ?? new DirectoryInventory();
   for (const path of input.generatedStrms) inventory.generatedStrms.add(await inventory.entryPath(path));
   const canonicalDirectories = new Map<string, string>();
   const found: string[] = [];

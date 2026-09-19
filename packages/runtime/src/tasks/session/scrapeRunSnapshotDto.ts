@@ -89,7 +89,6 @@ export const toScrapeRunSnapshotDto = (input: {
       rootId: input.manifest.rootId,
       rootDisplayName: input.rootDisplayName,
       revision: input.snapshot.revision,
-      executionGeneration: input.snapshot.executionGeneration,
       status: input.snapshot.status,
       createdAt: input.manifest.createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),

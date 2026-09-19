@@ -1,8 +1,7 @@
 import { stat } from "node:fs/promises";
-import { dirname } from "node:path";
-import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import { runtimeLoggerService } from "../shared";
 import type { PublicationLibraryAsset } from "./outputLibrary";
+import { acquireOutputDirectories } from "./outputMutex";
 import { toRootFileRef } from "./outputRefs";
 import type { RegisteredPublicationContext } from "./types";
 import { WriteOutput } from "./WriteOutput";
@@ -117,10 +116,7 @@ export const commitRegisteredPublication = async <TResult>(
     }
     artifacts.push({ targetPath: operation.targetPath, data: operation.content.data });
   }
-  const release = mediaPathOwnership.acquireAll(
-    [...new Set(artifacts.map((artifact) => dirname(artifact.targetPath)))],
-    input.operationId,
-  );
+  const release = await acquireOutputDirectories(artifacts.map((artifact) => artifact.targetPath));
   try {
     const published = await new WriteOutput().install(artifacts, {
       validate: async () => {

@@ -21,7 +21,7 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
   onReturnToSetup: vi.fn(),
   onStop: vi.fn(),
   paused: false,
-  presetLabel: "读取本地",
+  presetLabel: "本地查看",
   previewPending: false,
   progressValue: 0,
   readyCount: 1,
@@ -34,8 +34,8 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
 });
 
 function PresetSelectionHarness() {
-  const [presetId, setPresetId] = useState<"read_local" | "refresh_data" | "organize_files" | "rebuild_all">(
-    "read_local",
+  const [presetId, setPresetId] = useState<"inspect_local" | "refresh_metadata" | "local_organize" | "rebuild_all">(
+    "inspect_local",
   );
 
   return (
@@ -73,7 +73,7 @@ function OrganizeHarness({ onExecute }: { onExecute: () => void }) {
   return (
     <MaintenanceBatchBarView
       {...createBatchBarProps({
-        presetLabel: "整理目录",
+        presetLabel: "本地整理",
         supportsExecution: true,
         hasPreviewResults,
         onPreview: async () => {
@@ -131,9 +131,9 @@ test("maintenance setup selects all four presets through semantic buttons", asyn
   await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
 
   for (const [label, presetId] of [
-    ["读取本地", "read_local"],
-    ["刷新数据", "refresh_data"],
-    ["整理目录", "organize_files"],
+    ["本地查看", "inspect_local"],
+    ["原地更新", "refresh_metadata"],
+    ["本地整理", "local_organize"],
     ["全量重整", "rebuild_all"],
   ] as const) {
     await screen.getByRole("button", { name: new RegExp(label, "u") }).click();

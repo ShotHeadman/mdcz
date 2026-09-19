@@ -1,5 +1,5 @@
 import type { AssetRef } from "@mdcz/shared/mediaRef";
-import type { PreparedMovieFile, PreparedMovieOutput } from "./prepareMovieOutput";
+import type { PreparedMovieFile, PreparedMovieOutput } from "./movieArtifacts";
 
 const refKey = (ref: { rootId: string; relativePath: string }): string => `${ref.rootId}\0${ref.relativePath}`;
 
@@ -12,7 +12,7 @@ export interface PublicationLibraryAsset {
 }
 
 export const libraryAssetsFromMovieOutput = (
-  output: PreparedMovieOutput,
+  output: Pick<PreparedMovieOutput, "publishedTargets">,
   assets: readonly AssetRef[],
 ): PublicationLibraryAsset[] => {
   const published = new Set([...output.publishedTargets.map(refKey)]);

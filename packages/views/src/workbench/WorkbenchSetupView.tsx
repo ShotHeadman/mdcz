@@ -242,7 +242,7 @@ export function WorkbenchSetupView({
           <section className="mb-10">
             <div
               className={
-                mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all"
+                mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all"
                   ? "grid gap-6 lg:grid-cols-2 lg:gap-8"
                   : "grid gap-6"
               }
@@ -257,7 +257,7 @@ export function WorkbenchSetupView({
                 supportsBrowse={!isServer}
                 loadSuggestions={onSuggestScanDir ? (value) => onSuggestScanDir({ path: value }) : undefined}
               />
-              {mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all" ? (
+              {mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all" ? (
                 <PathControl
                   label="输出目录"
                   value={targetDir}

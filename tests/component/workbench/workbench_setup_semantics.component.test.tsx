@@ -52,7 +52,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   expect(onStartDirectory).toHaveBeenCalledWith(
     { kind: "directory", scanDir: rootDir, recursive: true },
     "/output",
-    "read_local",
+    "inspect_local",
   );
   const input = screen.getByPlaceholder("请选择需要扫描的媒体目录");
   await input.fill("/next");
@@ -99,7 +99,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   expect(onStartDirectory).toHaveBeenLastCalledWith(
     { kind: "directory", scanDir: "/changed", recursive: false },
     "/changed",
-    "read_local",
+    "inspect_local",
   );
   await screen.getByRole("button", { name: "预览并选择文件" }).click();
   await expect.poll(() => requests.length).toBe(5);
@@ -150,7 +150,7 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       scanning={false}
       startPending={false}
       supportedExtensions={[".mp4"]}
-      presetId="read_local"
+      presetId="inspect_local"
       runSummary=""
       primaryDisabled
       isServer

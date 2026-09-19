@@ -9,10 +9,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
 import { MoveOutput } from "../publication/MoveOutput";
 import { createMemoryPublicationJournal } from "../publication/memoryJournal";
+import { prepareMovieArtifacts } from "../publication/movieArtifacts";
 import { toRootFileRef } from "../publication/outputRefs";
-import { prepareMovieOutput } from "../publication/prepareMovieOutput";
 import { WriteOutput } from "../publication/WriteOutput";
 import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "./confirmUncensored";
+import { DirectoryInventory } from "./DirectoryInventory";
 import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
 import { NfoGenerator } from "./nfo";
 import { parseFileInfo } from "./utils/number";
@@ -114,28 +115,23 @@ const fixture = async () => {
         nfoNaming,
         writeNfo,
       }: Parameters<UncensoredConfirmDependencies["preparePublication"]>[0]) => {
-        const prepared = await prepareMovieOutput({
-          operationId,
-          operationType: "maintenance",
+        const prepared = await prepareMovieArtifacts({
+          inventory: new DirectoryInventory(),
           roots: [mediaRoot],
-          identity: {
-            movieId: "movie-1",
-            members: await Promise.all(
-              members.map(async (member) => ({
-                fileId: member.item.fileId,
+          members: await Promise.all(
+            members.map(async (member) => ({
+              fileId: member.item.fileId,
+              layout: member.layout,
+              existingAssets: member.entry.assets,
+              existingNfoPath: member.existingNfoPath,
+              assetLayout: await resolvePublicationAssetLayout({
                 layout: member.layout,
+                config: defaultConfiguration,
                 existingAssets: member.entry.assets,
-                existingNfoPath: member.existingNfoPath,
-                assetLayout: await resolvePublicationAssetLayout({
-                  layout: member.layout,
-                  config: defaultConfiguration,
-                  existingAssets: member.entry.assets,
-                }),
-                source: toRootFileRef(member.layout.sourceVideoPath, [mediaRoot]),
-              })),
-            ),
-            expected: { files: [], assets: [] },
-          },
+              }),
+              source: toRootFileRef(member.layout.sourceVideoPath, [mediaRoot]),
+            })),
+          ),
           downloadedAssets: { downloaded: [], sceneImages: [] },
           actorPhotoPaths: [],
           nfoNaming,
@@ -143,7 +139,7 @@ const fixture = async () => {
         });
         return {
           ...prepared,
-          output: prepared.output,
+          output: { ...prepared, movieId: "movie-1", operationId, operationType: "maintenance" as const },
           resolve: (ref: { rootId: string; relativePath: string }) => join(root, ref.relativePath),
         };
       },

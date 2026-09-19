@@ -273,10 +273,9 @@ describe("web maintenance action port", () => {
       rootId: "root-1",
       outputRootId: "root-1",
       outputRelativeDirectory: "",
-      presetId: "refresh_data",
+      presetId: "refresh_metadata",
       phase: "preview",
       status: "running",
-      generation: 1,
       refs: [{ rootId: "root-1", relativePath: "ABC-001.mp4" }],
       timestamps: {
         createdAt: new Date("2026-05-12T00:00:00.000Z"),
@@ -297,7 +296,7 @@ describe("web maintenance action port", () => {
     vi.spyOn(api.maintenance, "getActiveSession").mockResolvedValue(session);
     const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({ sessionId: session.id });
 
-    await createWebMaintenanceActionPort().preview([createEntry().ref], "refresh_data");
+    await createWebMaintenanceActionPort().preview([createEntry().ref], "refresh_metadata");
     await createWebMaintenanceActionPort().pause();
 
     expect(selectMaintenanceSessionId(useMaintenanceStore.getState())).toBe("maintenance-task-1");

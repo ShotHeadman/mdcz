@@ -42,13 +42,13 @@ import type {
   UncensoredConfirmResponse,
   VideoMeta,
 } from "@mdcz/shared/types";
-import { mediaPathOwnership } from "../library/mediaPathOwnership";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { registeredOutputPaths } from "../library/registeredMedia";
 import type { NetworkClient } from "../network";
 import { toCommittedMovie } from "../publication/committedMovie";
 import { MoveOutput } from "../publication/MoveOutput";
 import { movieOutputResultAssets } from "../publication/outputLibrary";
+import { acquireOutputDirectories } from "../publication/outputMutex";
 import { WriteOutput } from "../publication/WriteOutput";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
 import {
@@ -67,7 +67,7 @@ import { DirectoryInventory } from "./DirectoryInventory";
 import { createDirectoryScope, discoverDirectoryFiles } from "./directoryDiscovery";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executionPolicy";
-import { buildScrapePublicationKey, FileOrganizer } from "./FileOrganizer";
+import { FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedFileScrape, type RuntimeScrapeSignalService } from "./FileScraper";
 import { NfoGenerator } from "./nfo";
 import { checkScrapeTargets } from "./preflightScrapeTask";
@@ -248,10 +248,7 @@ export class ScrapeRunner {
     this.host = {
       create: async (input) => await this.createRun(input),
       runId: (run) => run.id,
-      describe: (run) => ({
-        executionGeneration: 0,
-        totalItems: run.manifestFixedAt ? run.items.length : null,
-      }),
+      describe: (run) => ({ totalItems: run.manifestFixedAt ? run.items.length : null }),
       discover: async (run, signal, onProgress) => await this.discoverRun(run, signal, onProgress),
       createExecution: async (run, reporter) => await this.createExecution(run, reporter),
       onInvalidate: (runs) => {
@@ -348,7 +345,6 @@ export class ScrapeRunner {
           rootId: "none",
           rootDisplayName: "none",
           revision: 0,
-          executionGeneration: 0,
           status: "stopped",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -830,7 +826,7 @@ export class ScrapeRunner {
     const owners = new Map<string, string>();
     for (const file of locations) {
       const identity = filesystemPathKey(file.path);
-      if (file.kind === "strm") {
+      if (file.kind === "strm" && file.published) {
         inventory.generatedStrms.add(identity);
         continue;
       }
@@ -888,7 +884,6 @@ export class ScrapeRunner {
     }
 
     return {
-      executionGeneration: 0,
       concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
       items,
       initialItems: manifest.items.map((item) => ({
@@ -897,16 +892,7 @@ export class ScrapeRunner {
         error: item.errorMessage,
       })),
       movieGroups: [...movieGroups.values()],
-      acquireItems: async (targetItems) =>
-        mediaPathOwnership.acquireAll(
-          targetItems.map((i) => filesystemPathKey(i.sourcePath)),
-          targetItems
-            .map((i) => i.id)
-            .sort()
-            .join(","),
-        ),
       admitItem: async (item) => item.id,
-      publicationKeys: (entries) => entries.map(({ prepared }) => buildScrapePublicationKey(prepared.outputPlan)),
       prepareGroup: async (entries, signal) => {
         await policy.restGate?.waitBeforeStart(signal);
         const results = await fileScraper.prepareGroup(
@@ -1008,7 +994,8 @@ export class ScrapeRunner {
           });
         }
 
-        const committedMovie = toCommittedMovie(output);
+        if (!output.scrape) throw new Error("Scrape output requires movie metadata");
+        const committedMovie = toCommittedMovie(output, output.scrape);
         const completedAt = new Date();
         const committedFiles = new Map(committedMovie.files.map((file) => [file.fileId, file]));
 
@@ -1050,21 +1037,29 @@ export class ScrapeRunner {
           });
         };
 
-        if (output.moves.length > 0) {
-          await new MoveOutput(this.deps.persistence.fileSystem).install({
-            operationId: output.operationId,
-            operationType: "scrape",
-            moves: output.moves,
-            artifacts: output.artifacts,
-            journal: this.deps.persistence.publicationJournal,
-            protectedSourceRoots: output.protectedSourceRoots,
-            commit,
-          });
-        } else {
-          await new WriteOutput(this.deps.persistence.fileSystem).install(output.artifacts, {
-            protectedSourceRoots: output.protectedSourceRoots,
-            commit,
-          });
+        const release = await acquireOutputDirectories([
+          ...output.moves.map((move) => move.targetPath),
+          ...output.artifacts.map((artifact) => artifact.targetPath),
+        ]);
+        try {
+          if (output.moves.length > 0) {
+            await new MoveOutput(this.deps.persistence.fileSystem).install({
+              operationId: output.operationId,
+              operationType: "scrape",
+              moves: output.moves,
+              artifacts: output.artifacts,
+              journal: this.deps.persistence.publicationJournal,
+              protectedSourceRoots: output.protectedSourceRoots,
+              commit,
+            });
+          } else {
+            await new WriteOutput(this.deps.persistence.fileSystem).install(output.artifacts, {
+              protectedSourceRoots: output.protectedSourceRoots,
+              commit,
+            });
+          }
+        } finally {
+          release();
         }
 
         return entries.map((entry) => {
@@ -1173,7 +1168,6 @@ export class ScrapeRunner {
         rootId: manifest.rootId,
         rootDisplayName: root?.displayName ?? manifest.rootId,
         revision: 0,
-        executionGeneration: 0,
         status: manifest.disposition ?? "interrupted",
         createdAt: manifest.createdAt.toISOString(),
         updatedAt: (manifest.completedAt ?? manifest.createdAt).toISOString(),

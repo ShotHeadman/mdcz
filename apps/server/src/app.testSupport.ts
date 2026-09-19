@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { ActorSourceProvider, ActorSourceRegistry } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -83,6 +84,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       networkClient,
       imageHostCooldownStore,
       actorImageService,
+      actorSourceProvider: new ActorSourceProvider({ registry: new ActorSourceRegistry() }),
       aggregationService: options.scrapeAggregation,
     },
     services: {

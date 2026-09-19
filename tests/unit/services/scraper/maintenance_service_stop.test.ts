@@ -50,32 +50,35 @@ const createFixture = async () => {
   const runtime = {
     getConfiguration: vi.fn(async () => defaultConfiguration),
     scanRefs: vi.fn(async () => [entry]),
-    previewMovie: vi.fn(async ({ root }: { root: { id: string } }) => ({
-      entry,
-      rootId: root.id,
-      relativePath: path.basename(filePath),
-      status: "ready" as const,
-      error: null,
-      fieldDiffs: [
-        {
-          kind: "value" as const,
-          field: "title" as const,
-          label: "标题",
-          oldValue: "old title",
-          newValue: "new title",
-          changed: true,
+    previewMovie: vi.fn(
+      async ({ root, entry, files }: { root: { id: string }; entry: LocalScanEntry; files: LocalScanEntry[] }) => ({
+        entry,
+        files,
+        rootId: root.id,
+        relativePath: path.basename(filePath),
+        status: "ready" as const,
+        error: null,
+        fieldDiffs: [
+          {
+            kind: "value" as const,
+            field: "title" as const,
+            label: "标题",
+            oldValue: "old title",
+            newValue: "new title",
+            changed: true,
+          },
+        ],
+        unchangedFieldDiffs: [],
+        pathDiff: null,
+        proposedCrawlerData: {
+          title: "new title",
+          number: "ABP-123",
+          actors: [],
+          genres: [],
+          scene_images: [],
         },
-      ],
-      unchangedFieldDiffs: [],
-      pathDiff: null,
-      proposedCrawlerData: {
-        title: "new title",
-        number: "ABP-123",
-        actors: [],
-        genres: [],
-        scene_images: [],
-      },
-    })),
+      }),
+    ),
     applyEntry: vi.fn(),
   } as unknown as MaintenanceRuntime;
   runtime.createSession = vi.fn(async () => runtime);
@@ -115,7 +118,7 @@ describe("desktop maintenance facade", () => {
 
   it("returns execute acknowledgement timing before deferred apply settles and maps committed fields", async () => {
     const fixture = await createFixture();
-    const previewHandle = await fixture.service.startPreview([fixture.entry.ref], "refresh_data");
+    const previewHandle = await fixture.service.startPreview([fixture.entry.ref], "refresh_metadata");
     const preview = (await previewHandle.completion).items[0];
     expect(preview).toBeDefined();
     expect(previewHandle.session).toMatchObject({ phase: "preview", refs: [fixture.entry.ref] });
@@ -143,7 +146,7 @@ describe("desktop maintenance facade", () => {
     });
     const handle = await fixture.service.execute(
       [{ previewId: preview?.id ?? "", fieldSelections: { title: "old" } }],
-      "refresh_data",
+      "refresh_metadata",
     );
     expect(vi.mocked(fixture.runtime.applyEntry)).not.toHaveBeenCalled();
 
@@ -152,7 +155,7 @@ describe("desktop maintenance facade", () => {
     expect(vi.mocked(fixture.runtime.applyEntry).mock.calls[0]?.[0].committed?.crawlerData?.title).toBe("old title");
     expect(fixture.signalService.publishTaskSnapshot).toHaveBeenLastCalledWith({
       resource: "maintenance",
-      snapshot: expect.objectContaining({ phase: "apply", status: "failed", completedEntries: 1 }),
+      snapshot: expect.objectContaining({ phase: "apply", status: "completed", completedEntries: 1 }),
     });
   });
 });

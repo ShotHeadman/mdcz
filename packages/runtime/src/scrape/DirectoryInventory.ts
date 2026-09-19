@@ -14,6 +14,7 @@ export class DirectoryInventory {
   private readonly directories = new Map<string, Promise<readonly Dirent[]>>();
   private readonly fileStats = new Map<string, Promise<Stats>>();
   private readonly nfos = new Map<string, Promise<ParsedNfoSnapshot | undefined>>();
+  private readonly nfoContents = new Map<string, Promise<string | undefined>>();
 
   observeDirectory(path: string, canonicalPath: string, entries: readonly Dirent[]): void {
     this.directoryPaths.set(filesystemPathKey(path), Promise.resolve(canonicalPath));
@@ -69,19 +70,44 @@ export class DirectoryInventory {
     return join(await this.canonicalDirectory(dirname(path)), basename(path));
   }
 
+  async assertUnchanged(paths: readonly string[]): Promise<void> {
+    for (const path of new Set(paths)) {
+      const observed = await this.stats(path);
+      const current = await fs.stat(path);
+      if (
+        observed.dev !== current.dev ||
+        observed.ino !== current.ino ||
+        observed.size !== current.size ||
+        observed.mtimeMs !== current.mtimeMs
+      ) {
+        throw new Error(`Local metadata changed; preview again: ${path}`);
+      }
+    }
+  }
+
   async loadNfo(path: string): Promise<ParsedNfoSnapshot | undefined> {
     const entryPath = await this.entryPath(path);
     const key = filesystemPathKey(entryPath);
     let pending = this.nfos.get(key);
     if (!pending) {
-      pending = fs
-        .readFile(entryPath, "utf8")
-        .then(parseNfoSnapshot)
-        .catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return undefined;
-          throw error;
-        });
+      pending = this.readNfo(entryPath).then((content) =>
+        content === undefined ? undefined : parseNfoSnapshot(content),
+      );
       this.nfos.set(key, pending);
+    }
+    return await pending;
+  }
+
+  async readNfo(path: string): Promise<string | undefined> {
+    const entryPath = await this.entryPath(path);
+    const key = filesystemPathKey(entryPath);
+    let pending = this.nfoContents.get(key);
+    if (!pending) {
+      pending = fs.readFile(entryPath, "utf8").catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      this.nfoContents.set(key, pending);
     }
     return await pending;
   }

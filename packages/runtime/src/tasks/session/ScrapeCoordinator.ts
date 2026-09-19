@@ -35,7 +35,7 @@ export type ScrapeHostExecution<TManualScrape, TPrepared> = ScrapeRunExecution<T
 export interface ScrapeHostPort<TStart, TRun, TManualScrape = unknown, TPrepared = unknown> {
   create(input: TStart): Promise<TRun>;
   runId(run: TRun): string;
-  describe(run: TRun): { executionGeneration: number; totalItems: number | null };
+  describe(run: TRun): { totalItems: number | null };
   discover?(run: TRun, signal: AbortSignal, onProgress: (progress: DiscoveryProgress) => void): Promise<TRun>;
   createExecution(run: TRun, reporter: ScrapeWorkflowReporter): Promise<ScrapeHostExecution<TManualScrape, TPrepared>>;
   onInvalidate(runs: Array<{ run: TRun; snapshot: ScrapeRunSnapshot<TManualScrape>; startedAt: Date | null }>): void;

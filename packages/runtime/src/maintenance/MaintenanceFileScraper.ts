@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { MaintenanceMovieGroup } from "@mdcz/shared/maintenanceTasks";
 import type {
   CrawlerData,
   DiscoveredAssets,
@@ -13,13 +14,14 @@ import type {
   MaintenancePreviewItem,
 } from "@mdcz/shared/types";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
-import { toRootFileRef } from "../publication/outputRefs";
-import {
-  type PreparedMovieOutput,
-  prepareMovieOutput,
-  retainedRegisteredFeatures,
-} from "../publication/prepareMovieOutput";
-import type { PublicationParticipants } from "../publication/types";
+import type { CommittedMovie } from "../publication/committedMovie";
+import { toCommittedMovie } from "../publication/committedMovie";
+import { PublicationConflictError } from "../publication/conflicts";
+import { MoveOutput } from "../publication/MoveOutput";
+import { prepareMovieArtifacts, retainedRegisteredFeatures } from "../publication/movieArtifacts";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import type { PublicationJournalPort } from "../publication/types";
+import { WriteOutput } from "../publication/WriteOutput";
 import {
   type AggregationService,
   type DownloadManager,
@@ -32,8 +34,8 @@ import {
   writePreparedNfo,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
+import type { DirectoryInventory } from "../scrape/DirectoryInventory";
 import type { FileScraperDependencies } from "../scrape/FileScraper";
-import { getNfoWritePaths } from "../scrape/nfo";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { runtimeLoggerService } from "../shared";
 import {
@@ -55,6 +57,7 @@ type MaintenanceProgressState = {
 };
 
 export interface MaintenanceFileScraperDependencies {
+  inventory: DirectoryInventory;
   outputTemplateRoot?: string;
   actorImageService?: RuntimeActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
@@ -68,11 +71,9 @@ export interface MaintenanceFileScraperDependencies {
 }
 
 export type MaintenanceFileScrapeResult = MaintenanceItemResult & {
-  publication?: { output: PreparedMovieOutput };
   outputRelativePath?: string;
   outputSize?: number;
   outputModifiedAt?: Date;
-  release?: () => Promise<void>;
 };
 
 export class MaintenanceFileScraper {
@@ -91,6 +92,7 @@ export class MaintenanceFileScraper {
     };
     this.preparationService = new MaintenancePreparationService(
       {
+        inventory: deps.inventory,
         aggregationService: deps.aggregationService,
         translateService: deps.translateService,
         fileOrganizer: deps.fileOrganizer,
@@ -109,10 +111,11 @@ export class MaintenanceFileScraper {
     committed?: CommittedMaintenanceFile,
     files: LocalScanEntry[] = [entry],
     publication?: {
-      validateOutputs(outputs: readonly import("@mdcz/shared/mediaRef").RootFileRef[]): Promise<void>;
+      journal: PublicationJournalPort;
+      commit(movie: CommittedMovie): void;
       operationId: string;
       roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
-      identity: Pick<PublicationParticipants, "movieId" | "expected">;
+      identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
     },
   ): Promise<MaintenanceFileScrapeResult> {
     const { fileInfo } = entry;
@@ -120,16 +123,13 @@ export class MaintenanceFileScraper {
     this.setProgress(progress, 0);
 
     let stagingDir: string | undefined;
-    let stagingHandedOff = false;
     try {
       throwIfAborted(signal);
-      const group = await this.preparationService.prepareFiles(
+      const group = await this.preparationService.prepareApply(
         entry,
         files,
         config,
         {
-          createDirectories: false,
-          emitLogs: true,
           onProgress: (stepPercent) => this.setProgress(progress, stepPercent),
           signal,
         },
@@ -146,8 +146,10 @@ export class MaintenanceFileScraper {
           return {
             source: file.ref,
             fileId: file.fileId,
+            fileInfo: file.fileInfo,
             layout,
             assetLayout: await resolvePublicationAssetLayout({
+              inventory: this.deps.inventory,
               layout: plan,
               config,
               crawlerData,
@@ -160,34 +162,23 @@ export class MaintenanceFileScraper {
           };
         }),
       );
-      await publication.validateOutputs(
-        members.flatMap(({ layout, assetLayout }) =>
-          [
-            layout.targetVideoPath,
-            ...getNfoWritePaths(layout.nfoPath, config.download.nfoNaming).requiredPaths,
-            ...(layout.mirror ? [layout.mirror.targetPath] : []),
-            ...layout.sidecars.flatMap((sidecar) => [
-              sidecar.targetPath,
-              ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : []),
-            ]),
-            ...assetLayout.staged.values(),
-            ...assetLayout.retained.values(),
-          ].map((path) => toRootFileRef(path, publication.roots)),
-        ),
-      );
       const stagingParent = members[0].layout.metadataDir;
-      await mkdir(stagingParent, { recursive: true });
-      stagingDir = await mkdtemp(join(stagingParent, ".mdcz-staging-"));
-      const preparedOutputData = await prepareOutputCrawlerData({
-        actorImageService: this.actorImageService,
-        actorSourceProvider: this.deps.actorSourceProvider,
-        config,
-        crawlerData,
-        enabled: Boolean(plan && (this.preset.steps.generateNfo || this.preset.steps.download)),
-        movieDir: stagingDir,
-        sourceVideoPath: fileInfo.filePath,
-        signal,
-      });
+      if (this.preset.dataSource === "online") {
+        await mkdir(stagingParent, { recursive: true });
+        stagingDir = await mkdtemp(join(stagingParent, ".mdcz-staging-"));
+      }
+      const preparedOutputData = stagingDir
+        ? await prepareOutputCrawlerData({
+            actorImageService: this.actorImageService,
+            actorSourceProvider: this.deps.actorSourceProvider,
+            config,
+            crawlerData,
+            enabled: Boolean(plan),
+            movieDir: stagingDir,
+            sourceVideoPath: fileInfo.filePath,
+            signal,
+          })
+        : { data: crawlerData, actorPhotoPaths: [] };
       throwIfAborted(signal);
       let preparedCrawlerData = preparedOutputData.data;
       const preparedActorPhotoPaths = preparedOutputData.actorPhotoPaths;
@@ -204,17 +195,11 @@ export class MaintenanceFileScraper {
       );
       preparedCrawlerData = downloaded.crawlerData;
       throwIfAborted(signal);
-      if (!publication) throw new Error("Maintenance publication identity is required");
-      const published = await prepareMovieOutput({
-        operationId: publication.operationId,
-        operationType: "maintenance",
+      const published = await prepareMovieArtifacts({
+        inventory: this.deps.inventory,
         roots: publication.roots,
-        identity: {
-          movieId: publication.identity.movieId,
-          expected: publication.identity.expected,
-          members,
-        },
-        retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.expected.assets),
+        members,
+        retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.assets),
         stagingDir,
         downloadedAssets: downloaded.assets,
         actorPhotoPaths: preparedActorPhotoPaths,
@@ -225,7 +210,7 @@ export class MaintenanceFileScraper {
             assets,
             config,
             crawlerData: preparedCrawlerData,
-            enabled: Boolean(this.preset.steps.generateNfo && plan),
+            enabled: Boolean(this.preset.dataSource === "online" && plan),
             fileInfo,
             localState: entry.nfoLocalState,
             buildTags: buildMovieTags,
@@ -237,7 +222,7 @@ export class MaintenanceFileScraper {
           }),
       });
       throwIfAborted(signal);
-      const file = published.output.files.find((candidate) => candidate.fileId === entry.fileId);
+      const file = published.files.find((candidate) => candidate.fileId === entry.fileId);
       if (!file) throw new Error("Maintenance publication requires the selected media member");
       const strm = file.assets.find((asset) => asset.kind === "strm");
       const targetRoot =
@@ -263,6 +248,45 @@ export class MaintenanceFileScraper {
         assets: published.assets,
       });
       this.setProgress(progress, 100);
+      const output = published;
+      if (!preparedCrawlerData) throw new Error("Maintenance output requires movie metadata");
+      const movie = toCommittedMovie(
+        { ...output, movieId: publication.identity.movieId },
+        { crawlerData: preparedCrawlerData, sources: aggregationSources },
+      );
+      const unlock = await acquireOutputDirectories([
+        ...output.moves.map((move) => move.targetPath),
+        ...output.artifacts.map((artifact) => artifact.targetPath),
+      ]);
+      let cleanupIssues: unknown[];
+      try {
+        throwIfAborted(signal);
+        const validate = async () => {
+          throwIfAborted(signal);
+          await this.deps.inventory.assertUnchanged(files.flatMap((file) => (file.nfoPath ? [file.nfoPath] : [])));
+          throwIfAborted(signal);
+        };
+        const commit = () => publication.commit(movie);
+        const installed = output.moves.length
+          ? await new MoveOutput().install({
+              operationId: publication.operationId,
+              operationType: "maintenance",
+              moves: output.moves,
+              artifacts: output.artifacts,
+              protectedSourceRoots: output.protectedSourceRoots,
+              journal: publication.journal,
+              validate,
+              commit,
+            })
+          : await new WriteOutput().install(output.artifacts, {
+              protectedSourceRoots: output.protectedSourceRoots,
+              validate,
+              commit,
+            });
+        cleanupIssues = installed.cleanupIssues;
+      } finally {
+        unlock();
+      }
       const result: MaintenanceFileScrapeResult = {
         fileId: entry.fileId,
         status: "success",
@@ -274,26 +298,17 @@ export class MaintenanceFileScraper {
         outputRelativePath: file.target.relativePath,
         outputSize: file.size,
         outputModifiedAt: file.modifiedAt,
-        publication: { output: published.output },
-        release: async () => {
-          await rm(stagingDir as string, { recursive: true, force: true });
-        },
+        ...(cleanupIssues.length ? { error: cleanupIssues.map((error) => toErrorMessage(error)).join("; ") } : {}),
       };
-      stagingHandedOff = true;
       return result;
     } catch (error) {
-      if (isAbortError(error)) {
-        this.logger.info(`Maintenance aborted for ${fileInfo.filePath}`);
-        this.setProgress(progress, 100);
-        return this.buildFailedResult(entry, "Operation aborted");
-      }
-
+      if (isAbortError(error) || error instanceof PublicationConflictError) throw error;
       const message = toErrorMessage(error);
       this.logger.error(`Maintenance failed for ${fileInfo.filePath}: ${message}`);
       this.setProgress(progress, 100);
       return this.buildFailedResult(entry, message);
     } finally {
-      if (stagingDir && !stagingHandedOff) await rm(stagingDir, { recursive: true, force: true });
+      if (stagingDir) await rm(stagingDir, { recursive: true, force: true });
     }
   }
 
@@ -306,11 +321,7 @@ export class MaintenanceFileScraper {
     MaintenancePreviewItem & { affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }> }
   > {
     try {
-      const group = await this.preparationService.prepareFiles(entry, files, config, {
-        createDirectories: false,
-        emitLogs: false,
-        signal,
-      });
+      const group = await this.preparationService.preview(entry, files, config, signal);
       const prepared = group.shared;
 
       return {
@@ -324,7 +335,7 @@ export class MaintenanceFileScraper {
         affectedFiles: group.files.map(({ entry, plan }) => ({
           fileId: entry.fileId,
           currentPath: entry.fileInfo.filePath,
-          targetPath: this.preset.steps.organize && plan ? plan.targetVideoPath : entry.fileInfo.filePath,
+          targetPath: this.preset.output === "move" && plan ? plan.targetVideoPath : entry.fileInfo.filePath,
         })),
       };
     } catch (error) {
@@ -393,7 +404,7 @@ export class MaintenanceFileScraper {
       downloaded: [],
     };
 
-    if (!(this.preset.steps.download && outputDir && preparedCrawlerData)) {
+    if (!(this.preset.dataSource === "online" && outputDir && preparedCrawlerData)) {
       return { assets, crawlerData: preparedCrawlerData };
     }
 

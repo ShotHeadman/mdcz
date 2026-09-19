@@ -1,8 +1,5 @@
 import { toRootRelativePath } from "@mdcz/media-store";
-import { registeredOutputPaths } from "@mdcz/runtime";
 import {
-  createMaintenanceDirectoryTaskPort,
-  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
@@ -37,18 +34,9 @@ export class MaintenanceService {
         assertRootIntegrity: (ids) => this.mediaRoots.assertRootIntegrity(ids),
         get: async (rootId) => await this.mediaRoots.get(rootId),
         list: async () => await this.mediaRoots.listRoots(),
-        ensurePathRecord: async (input) => await this.mediaRoots.ensurePathRecord(input),
       },
       runtime: this.runtime,
-      directoryTasks: createMaintenanceDirectoryTaskPort(
-        async () => (await this.persistence.getState()).repositories.maintenanceDirectoryTasks,
-      ),
-      discoverDirectory: async (scope, configuration, signal, onProgress) => {
-        const generatedStrms = await registeredOutputPaths(
-          (await this.persistence.getState()).repositories.library,
-          (id) => this.mediaRoots.get(id),
-          "strm",
-        );
+      discoverDirectory: async (scope, configuration, signal, onProgress, inventory, generatedStrms) => {
         return (
           await discoverDirectoryFiles({
             scope,
@@ -56,23 +44,21 @@ export class MaintenanceService {
             signal,
             onProgress,
             generatedStrms,
+            inventory,
             mediaRoots: this.mediaRoots,
             platform: "server",
           })
         ).refs;
       },
-      library: createMaintenanceLibraryPort({
-        getRepositories: async () => {
+      persistence: {
+        get: async () => {
           const { repositories } = await this.persistence.getState();
           return {
             library: repositories.library,
-            mediaRoots: repositories.mediaRoots,
             publicationJournal: repositories.publicationJournal,
-            libraryRepairIssues: repositories.libraryRepairIssues,
           };
         },
-        resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
-      }),
+      },
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
     });
   }

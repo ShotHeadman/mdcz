@@ -116,7 +116,7 @@ export function WorkbenchSetupAdapter({
     [candidates],
   );
   const scanning = scanStatus === "scanning";
-  const needsTarget = mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all";
+  const needsTarget = mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all";
   const draftDirty =
     Boolean(draftDir.trim()) !== Boolean(scanDir.trim()) ||
     normalizeComparableHostPath(draftDir) !== normalizeComparableHostPath(scanDir);

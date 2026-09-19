@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { LibraryRepository, PublicationJournalRepository, ScrapeRunRepository } from "@mdcz/persistence";
-import { createMaintenanceLibraryPort } from "@mdcz/runtime/maintenance/libraryPort";
 import { parsePublicationJournalManifest } from "@mdcz/runtime/publication";
 import { toCommittedMovie } from "@mdcz/runtime/publication/committedMovie";
 import { MoveOutput } from "@mdcz/runtime/publication/MoveOutput";
 import {
   type PreparedMovieOutput,
-  prepareMovieOutput,
+  prepareMovieArtifacts,
   retainedRegisteredFeatures,
-} from "@mdcz/runtime/publication/prepareMovieOutput";
+} from "@mdcz/runtime/publication/movieArtifacts";
+import { libraryAssetsFromMovieOutput } from "@mdcz/runtime/publication/outputLibrary";
 import type { PublicationJournalPort, PublicationOutputPort } from "@mdcz/runtime/publication/types";
 import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
 import {
@@ -23,6 +23,7 @@ import {
   type RuntimeScrapeSignalService,
   type TranslateService,
 } from "@mdcz/runtime/scrape";
+import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import { Website } from "@mdcz/shared/enums";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
@@ -44,7 +45,8 @@ const installTestOutput = async (input: {
   journal: PublicationJournalPort;
 }) => {
   const { output, library, journal } = input;
-  const committedMovie = toCommittedMovie(output);
+  if (!output.scrape) throw new Error("Scrape output requires movie metadata");
+  const committedMovie = toCommittedMovie(output, output.scrape);
   const commit = () =>
     library.writeEntry(
       {
@@ -688,21 +690,11 @@ describe("FileScraper movie groups", () => {
       fileId: file.id,
       sourceAbsolutePath: join(root, file.rootRelativePath),
     }));
-    const maintenance = createMaintenanceLibraryPort({
-      getRepositories: async () => ({
-        library: context.library,
-        mediaRoots: { list: async () => [context.mediaRoot] },
-        publicationJournal: context.journal,
-      }),
-      resolveRoot: context.resolveRoot,
-    });
-    const maintenanceIdentity = await maintenance.resolveParticipants(
-      movie.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
-    );
     const members = refreshFiles.map((file) => {
-      const member = maintenanceIdentity.files.find((candidate) => candidate.fileId === file.fileId);
+      const member = movie.files.find((candidate) => candidate.id === file.fileId);
       if (!member) throw new Error(`Missing publication member: ${file.fileId}`);
-      const { fileId, ...source } = member;
+      const fileId = member.id;
+      const source = { rootId: member.rootId, relativePath: member.rootRelativePath };
       return {
         source,
         fileId,
@@ -723,29 +715,41 @@ describe("FileScraper movie groups", () => {
         },
       };
     });
-    const refresh = await prepareMovieOutput({
-      operationId: "feature-metadata-refresh",
-      operationType: "maintenance",
+    const refresh = await prepareMovieArtifacts({
+      inventory: new DirectoryInventory(),
       roots: [context.mediaRoot],
-      identity: {
-        movieId: maintenanceIdentity.movieId,
-        expected: maintenanceIdentity.expected,
+      members,
+      retainedMovieAssets: retainedRegisteredFeatures(
         members,
-      },
-      retainedMovieAssets: retainedRegisteredFeatures(members, maintenanceIdentity.expected.assets),
+        movie.assets.flatMap((asset) =>
+          asset.rootId && asset.relativePath
+            ? [{ ...asset, rootId: asset.rootId, relativePath: asset.relativePath }]
+            : [],
+        ),
+      ),
       downloadedAssets: { downloaded: [], sceneImages: [] },
       actorPhotoPaths: [],
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });
-    const refreshed = await maintenance.publishRefresh({
-      operationId: "feature-metadata-refresh",
-      ownershipToken: "feature-metadata-refresh",
-      output: refresh.output,
-      fallbackNumber: "FC2-123456",
-      refreshedAt: new Date(),
+    await new WriteOutput().install(refresh.artifacts, {
+      protectedSourceRoots: refresh.protectedSourceRoots,
+      commit: () =>
+        context.library.writeEntry(
+          {
+            id: movie.id,
+            assets: libraryAssetsFromMovieOutput(refresh, refresh.movieAssets),
+          },
+          refresh.files.map((file) => ({
+            fileId: file.fileId,
+            rootId: file.target.rootId,
+            rootRelativePath: file.target.relativePath,
+            size: file.size,
+            modifiedAt: file.modifiedAt,
+            assets: libraryAssetsFromMovieOutput(refresh, file.assets),
+          })),
+        ),
     });
-    expect(refreshed.cleanupIssues).toEqual([]);
     const afterRefresh = await context.library.getEntryById(movie.id);
     expect(afterRefresh.assets.filter((asset) => asset.kind === "feature")).toEqual([
       expect.objectContaining({ fileId: null, relativePath: "output/FC2-123456/FC2-123456-花絮.mp4", published: true }),

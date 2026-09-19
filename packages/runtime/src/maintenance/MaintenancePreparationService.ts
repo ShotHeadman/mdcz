@@ -17,6 +17,7 @@ import type {
   TranslateService,
 } from "../scrape";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
+import type { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
@@ -40,6 +41,7 @@ export interface CommittedMaintenanceFile {
 }
 
 interface MaintenancePreparationDependencies {
+  inventory: DirectoryInventory;
   outputTemplateRoot?: string;
   aggregationService: AggregationService;
   translateService: TranslateService;
@@ -48,8 +50,6 @@ interface MaintenancePreparationDependencies {
 }
 
 interface PrepareOptions {
-  createDirectories: boolean;
-  emitLogs?: boolean;
   onProgress?: (stepPercent: number) => void;
   signal?: AbortSignal;
 }
@@ -60,11 +60,26 @@ export class MaintenancePreparationService {
     private readonly preset: MaintenancePreset,
   ) {}
 
-  async prepareFiles(
+  async preview(entry: LocalScanEntry, files: LocalScanEntry[], config: Configuration, signal?: AbortSignal) {
+    return await this.prepareFiles(entry, files, config, { signal }, false);
+  }
+
+  async prepareApply(
     entry: LocalScanEntry,
     files: LocalScanEntry[],
     config: Configuration,
     options: PrepareOptions,
+    committed?: CommittedMaintenanceFile,
+  ) {
+    return await this.prepareFiles(entry, files, config, options, true, committed);
+  }
+
+  private async prepareFiles(
+    entry: LocalScanEntry,
+    files: LocalScanEntry[],
+    config: Configuration,
+    options: PrepareOptions,
+    emitLogs: boolean,
     committed?: CommittedMaintenanceFile,
   ): Promise<{
     shared: PreparedMaintenanceFile;
@@ -72,38 +87,38 @@ export class MaintenancePreparationService {
   }> {
     const shared = committed
       ? await this.prepareCommittedFile(entry, config, committed, options)
-      : await this.prepareFile(entry, config, options);
+      : await this.prepareFile(entry, config, options, emitLogs);
     const members = [];
     for (const file of files) {
-      if (!this.preset.steps.aggregate && file.scanError) throw new Error(file.scanError);
+      if (this.preset.dataSource === "local" && file.scanError) throw new Error(file.scanError);
       const layout =
         file.fileInfo.filePath === entry.fileInfo.filePath
           ? { plan: shared.plan, pathDiff: shared.pathDiff }
-          : await this.buildPlan(file, config, shared.crawlerData, options);
+          : await this.buildPlan(file, config, shared.crawlerData, options.signal);
       members.push({ entry: file, ...layout });
     }
     return { shared, files: members };
   }
 
-  async prepareFile(
+  private async prepareFile(
     entry: LocalScanEntry,
     config: Configuration,
     options: PrepareOptions,
+    emitLogs: boolean,
   ): Promise<PreparedMaintenanceFile> {
     const { fileInfo } = entry;
-    const { steps } = this.preset;
     let crawlerData: CrawlerData | undefined;
     let aggregationSources: SourceMap | undefined;
     let imageAlternatives: MaintenanceImageAlternatives = {};
 
     throwIfAborted(options.signal);
 
-    if (!steps.aggregate && entry.scanError) {
+    if (this.preset.dataSource === "local" && entry.scanError) {
       throw new Error(entry.scanError);
     }
 
-    if (steps.aggregate) {
-      if (options.emitLogs) {
+    if (this.preset.dataSource === "online") {
+      if (emitLogs) {
         this.deps.signalService.showLogText(`[${fileInfo.number}] Fetching metadata online...`);
       }
 
@@ -123,12 +138,12 @@ export class MaintenancePreparationService {
 
     options.onProgress?.(30);
 
-    if (steps.translate) {
+    if (this.preset.dataSource === "online") {
       if (!crawlerData) {
         throw new Error("无元数据可供翻译");
       }
 
-      if (options.emitLogs) {
+      if (emitLogs) {
         this.deps.signalService.showLogText(`[${fileInfo.number}] Translating metadata...`);
       }
       crawlerData = (await this.deps.translateService.translateCrawlerData(crawlerData, config, options.signal)).data;
@@ -140,19 +155,18 @@ export class MaintenancePreparationService {
       crawlerData,
       aggregationSources,
       imageAlternatives,
-      createDirectories: options.createDirectories,
       onProgress: options.onProgress,
       signal: options.signal,
     });
   }
 
-  async prepareCommittedFile(
+  private async prepareCommittedFile(
     entry: LocalScanEntry,
     config: Configuration,
     committed: CommittedMaintenanceFile,
-    options: Pick<PrepareOptions, "createDirectories" | "onProgress">,
+    options: Pick<PrepareOptions, "onProgress">,
   ): Promise<PreparedMaintenanceFile> {
-    if (!this.preset.steps.aggregate && entry.scanError) {
+    if (this.preset.dataSource === "local" && entry.scanError) {
       throw new Error(entry.scanError);
     }
 
@@ -161,7 +175,6 @@ export class MaintenancePreparationService {
       config,
       crawlerData: committed.crawlerData ?? entry.crawlerData,
       imageAlternatives: committed.imageAlternatives ?? {},
-      createDirectories: options.createDirectories,
       onProgress: options.onProgress,
     });
   }
@@ -172,7 +185,6 @@ export class MaintenancePreparationService {
     crawlerData?: CrawlerData;
     aggregationSources?: SourceMap;
     imageAlternatives: MaintenanceImageAlternatives;
-    createDirectories: boolean;
     onProgress?: (stepPercent: number) => void;
     signal?: AbortSignal;
   }): Promise<PreparedMaintenanceFile> {
@@ -191,10 +203,7 @@ export class MaintenancePreparationService {
 
     input.onProgress?.(50);
 
-    const { plan, pathDiff } = await this.buildPlan(input.entry, input.config, crawlerData, {
-      createDirectories: input.createDirectories,
-      signal: input.signal,
-    });
+    const { plan, pathDiff } = await this.buildPlan(input.entry, input.config, crawlerData, input.signal);
 
     return {
       crawlerData,
@@ -213,7 +222,7 @@ export class MaintenancePreparationService {
     crawlerData: CrawlerData | undefined,
     imageAlternatives: MaintenanceImageAlternatives,
   ): { fieldDiffs?: FieldDiff[]; unchangedFieldDiffs?: FieldDiff[] } {
-    if (!this.preset.steps.aggregate || !crawlerData) {
+    if (this.preset.dataSource === "local" || !crawlerData) {
       return { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
     }
 
@@ -233,14 +242,11 @@ export class MaintenancePreparationService {
     entry: LocalScanEntry,
     config: Configuration,
     crawlerData: CrawlerData | undefined,
-    options: {
-      createDirectories: boolean;
-      signal?: AbortSignal;
-    },
+    signal?: AbortSignal,
   ): Promise<{ plan?: ResolvedPublicationLayout; pathDiff?: PathDiff }> {
-    throwIfAborted(options.signal);
+    throwIfAborted(signal);
 
-    if (!(this.preset.steps.download || this.preset.steps.generateNfo || this.preset.steps.organize)) {
+    if (this.preset.output === "none") {
       return { plan: undefined, pathDiff: undefined };
     }
 
@@ -248,7 +254,7 @@ export class MaintenancePreparationService {
       throw new Error("本地 NFO 不存在或无法解析，无法执行后续步骤");
     }
 
-    if (!this.preset.steps.organize) {
+    if (this.preset.output === "write") {
       const layout = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState);
       const metadataDir = entry.nfoPath
         ? dirname(entry.nfoPath)
@@ -275,6 +281,7 @@ export class MaintenancePreparationService {
             allowSharedDirectory: true,
             existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
             strmPathMappings: config.paths.strmPathMappings,
+            inventory: this.deps.inventory,
           },
         ),
         pathDiff: undefined,
@@ -288,10 +295,10 @@ export class MaintenancePreparationService {
     });
 
     const plan = await this.deps.fileOrganizer.resolveOutputPlan(rawPlan, entry.fileInfo.filePath, {
-      createDirectories: options.createDirectories,
       allowSharedDirectory: config.naming.assetNamingMode === "followVideo" && config.download.nfoNaming === "filename",
       existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
       strmPathMappings: config.paths.strmPathMappings,
+      inventory: this.deps.inventory,
     });
 
     return {

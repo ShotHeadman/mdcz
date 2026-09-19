@@ -1,6 +1,7 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { getMaintenancePreset as getPreset } from "@mdcz/runtime/maintenance";
 import { MaintenanceFileScraper } from "@mdcz/runtime/maintenance/MaintenanceFileScraper";
+import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
@@ -47,11 +48,12 @@ const plan = {
 
 const createScraper = (
   crawlerData: CrawlerData,
-  presetId: "refresh_data" | "rebuild_all" = "refresh_data",
+  presetId: "refresh_metadata" | "rebuild_all" = "refresh_metadata",
   aggregate = vi.fn().mockResolvedValue({ data: crawlerData, sources: {}, imageAlternatives: {} }),
 ) =>
   new MaintenanceFileScraper(
     {
+      inventory: new DirectoryInventory(),
       aggregationService: {
         aggregate,
       } as never,
@@ -113,7 +115,7 @@ describe("MaintenanceFileScraper preview diffs", () => {
     expect(result.pathDiff).toBeUndefined();
   });
 
-  it("plans rebuild_all path reorganization while refresh_data keeps source path", async () => {
+  it("plans rebuild_all path reorganization while refresh_metadata keeps source path", async () => {
     const crawlerData = createCrawlerData({ title: "Remote Title" });
     const entry = createEntry();
     const peer = {
@@ -122,7 +124,7 @@ describe("MaintenanceFileScraper preview diffs", () => {
       fileInfo: { ...entry.fileInfo, filePath: "/media/ABC-123-CD2.mp4", part: { number: 2, suffix: "-CD2" } },
     };
     const aggregate = vi.fn().mockResolvedValue({ data: crawlerData, sources: {}, imageAlternatives: {} });
-    const refreshResult = await createScraper(crawlerData, "refresh_data").previewFile(
+    const refreshResult = await createScraper(crawlerData, "refresh_metadata").previewFile(
       createEntry(),
       configurationSchema.parse(defaultConfiguration),
     );
