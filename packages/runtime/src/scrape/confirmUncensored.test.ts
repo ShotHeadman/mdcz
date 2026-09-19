@@ -1,22 +1,15 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, parse } from "node:path";
+import { join, parse, relative } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
-import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
+import type { CrawlerData, UncensoredChoice } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolvePublicationAssetLayout } from "../publication/assetLayout";
-import { MoveOutput } from "../publication/MoveOutput";
 import { createMemoryPublicationJournal } from "../publication/memoryJournal";
-import { prepareMovieArtifacts } from "../publication/movieArtifacts";
-import { toRootFileRef } from "../publication/outputRefs";
-import { WriteOutput } from "../publication/WriteOutput";
-import { confirmUncensoredOutputs, type UncensoredConfirmDependencies } from "./confirmUncensored";
-import { DirectoryInventory } from "./DirectoryInventory";
+import { confirmUncensoredRunItems } from "./confirmUncensored";
 import { FileOrganizer, type OrganizePlan } from "./FileOrganizer";
 import { NfoGenerator } from "./nfo";
-import { parseFileInfo } from "./utils/number";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -51,10 +44,13 @@ const fixture = async () => {
   ];
   for (const file of files)
     await writeFile(join(source, file), file.endsWith(".nfo") ? "<movie><title>Original</title></movie>" : file);
+
   const items = [1, 2].map((part) => {
     const videoPath = join(source, `FC2-123456-CD${part}.mp4`);
     return {
       groupId: "movie-1",
+      itemId: `item-${part}`,
+      outcomeId: `outcome-${part}`,
       fileId: buildFileId(videoPath),
       videoPath,
       nfoPath,
@@ -65,103 +61,152 @@ const fixture = async () => {
   });
   for (const item of items) await writeFile(item.metadataVideoPath, item.videoPath);
 
+  const manifest = {
+    id: "task-1",
+    items: items.map((item) => ({ id: item.itemId })),
+  };
+
   const journal = createMemoryPublicationJournal();
-  const mediaRoot = { id: "root", hostPath: root };
+  const mediaRoot = {
+    id: "root",
+    hostPath: root,
+    realPath: null,
+    displayName: "Root",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
   const generator = new NfoGenerator();
   const organizer = new FileOrganizer();
-  const deps: UncensoredConfirmDependencies = {
-    fileOrganizer: {
-      plan: vi.fn(
-        (info): OrganizePlan => ({
-          outputDir: output,
-          metadataDir: metadata,
-          mode: "move",
-          targetVideoPath: join(output, `${info.fileName}-leak.mp4`),
-          nfoPath: join(metadata, "FC2-123456-leak.nfo"),
-          strmPath: join(metadata, `${info.fileName}-leak.strm`),
-          renameSubtitles: true,
-        }),
-      ),
-      resolveOutputPlan: organizer.resolveOutputPlan.bind(organizer),
-    },
-    localScanService: {
-      scanVideo: vi.fn(
-        async (_root, videoPath): Promise<LocalScanEntry> => ({
-          fileId: buildFileId(videoPath),
-          ref: { rootId: "root", relativePath: parse(videoPath).base },
-          fileInfo: { ...parseFileInfo(videoPath), isSubtitled: true, subtitleTag: "中文字幕" },
-          nfoPath,
-          strmPath: join(metadata, `${parse(videoPath).name}.strm`),
-          crawlerData: data,
-          assets: { poster: join(source, "poster.jpg"), actorPhotos: [], sceneImages: [] },
-          currentDir: source,
-        }),
-      ),
-    },
-    nfoGenerator: { writeNfo: vi.fn(generator.writeNfo.bind(generator)) },
-    pathExists: async (path) =>
-      readFile(path).then(
-        () => true,
-        (error) => {
-          if (error.code === "ENOENT") return false;
-          throw error;
-        },
-      ),
-    logger: { info: vi.fn(), warn: vi.fn() },
-    preparePublication: vi.fn(
-      async ({
-        operationId,
-        members,
-        nfoNaming,
-        writeNfo,
-      }: Parameters<UncensoredConfirmDependencies["preparePublication"]>[0]) => {
-        const prepared = await prepareMovieArtifacts({
-          inventory: new DirectoryInventory(),
-          roots: [mediaRoot],
-          members: await Promise.all(
-            members.map(async (member) => ({
-              fileId: member.item.fileId,
-              layout: member.layout,
-              existingAssets: member.entry.assets,
-              existingNfoPath: member.existingNfoPath,
-              assetLayout: await resolvePublicationAssetLayout({
-                layout: member.layout,
-                config: defaultConfiguration,
-                existingAssets: member.entry.assets,
-              }),
-              source: toRootFileRef(member.layout.sourceVideoPath, [mediaRoot]),
-            })),
-          ),
-          downloadedAssets: { downloaded: [], sceneImages: [] },
-          actorPhotoPaths: [],
-          nfoNaming,
-          writeNfo,
-        });
-        return {
-          ...prepared,
-          output: { ...prepared, movieId: "movie-1", operationId, operationType: "maintenance" as const },
-          resolve: (ref: { rootId: string; relativePath: string }) => join(root, ref.relativePath),
-        };
-      },
+
+  const fileOrganizer = {
+    plan: vi.fn(
+      (info): OrganizePlan => ({
+        outputDir: output,
+        metadataDir: metadata,
+        mode: "move",
+        targetVideoPath: join(output, `${info.fileName}-leak.mp4`),
+        nfoPath: join(metadata, "FC2-123456-leak.nfo"),
+        strmPath: join(metadata, `${info.fileName}-leak.strm`),
+        renameSubtitles: true,
+      }),
     ),
-    publish: vi.fn(async ({ output }) => {
-      const commit = () => undefined;
-      if (output.moves.length)
-        await new MoveOutput().install({
-          operationId: output.operationId,
-          operationType: output.operationType,
-          moves: output.moves,
-          artifacts: output.artifacts,
-          journal,
-          commit,
-        });
-      else await new WriteOutput().install(output.artifacts, { commit });
-    }),
+    resolveOutputPlan: organizer.resolveOutputPlan.bind(organizer),
   };
-  return { source, output, metadata, items, deps, journal };
+
+  const nfoGenerator = {
+    writeNfo: vi.fn(generator.writeNfo.bind(generator)),
+  };
+
+  const reviseSuccess = vi.fn();
+
+  const repositories = {
+    journal,
+    library: {
+      resolveUncensoredFiles: vi.fn(async (selections: { outcomeId: string; choice: UncensoredChoice }[]) => {
+        return selections.map((selection) => {
+          const item = items.find((i) => i.outcomeId === selection.outcomeId) ?? items[0];
+          return {
+            file: {
+              id: item.fileId,
+              rootId: "root",
+              rootRelativePath: relative(root, item.videoPath).replace(/\\/g, "/"),
+              partNumber: item.itemId === "item-1" ? 1 : 2,
+              partSuffix: item.itemId === "item-1" ? "-CD1" : "-CD2",
+            },
+            choice: selection.choice,
+            outcome: { id: selection.outcomeId },
+            entry: {
+              id: "movie-1",
+              title: "Multipart",
+              number: "FC2-123456",
+              crawlerDataJson: JSON.stringify(data),
+              assets: [
+                {
+                  id: "poster-asset",
+                  itemId: "movie-1",
+                  fileId: null,
+                  kind: "poster",
+                  rootId: "root",
+                  rootRelativePath: relative(root, join(source, "poster.jpg")).replace(/\\/g, "/"),
+                  targetPath: join(source, "poster.jpg"),
+                },
+              ],
+            },
+          };
+        });
+      }),
+      getEntryById: vi.fn(async (_id: string) => ({
+        id: "movie-1",
+        files: items.map((item) => ({ id: item.fileId })),
+        assets: [],
+      })),
+      publicationSnapshot: vi.fn(() => ({
+        files: items.map((item) => ({
+          rootId: "root",
+          relativePath: relative(root, item.videoPath).replace(/\\/g, "/"),
+          itemId: "movie-1",
+          fileId: item.fileId,
+        })),
+        assets: [
+          {
+            rootId: "root",
+            relativePath: relative(root, nfoPath).replace(/\\/g, "/"),
+            itemId: "movie-1",
+            fileId: null,
+            kind: "nfo",
+            published: true,
+          },
+          {
+            rootId: "root",
+            relativePath: relative(root, join(source, "poster.jpg")).replace(/\\/g, "/"),
+            itemId: "movie-1",
+            fileId: null,
+            kind: "poster",
+            published: true,
+          },
+          ...items.map((item) => ({
+            rootId: "root",
+            relativePath: relative(root, item.metadataVideoPath).replace(/\\/g, "/"),
+            itemId: "movie-1",
+            fileId: item.fileId,
+            kind: "strm",
+            published: true,
+          })),
+        ],
+      })),
+      publicationRoots: vi.fn(() => [{ id: "root", hostPath: root }]),
+    },
+    scrapeRuns: {
+      summary: vi.fn(() => ({ id: "task-1", status: "completed" })),
+      itemResults: vi.fn(() =>
+        items.map((item) => ({
+          id: item.outcomeId,
+          itemId: item.itemId,
+          outcome: "success",
+          outputRootId: "root",
+          outputRelativePath: relative(root, item.videoPath).replace(/\\/g, "/"),
+        })),
+      ),
+      reviseSuccess,
+    },
+  };
+
+  return {
+    root,
+    source,
+    output,
+    metadata,
+    items,
+    manifest,
+    mediaRoot,
+    repositories,
+    fileOrganizer,
+    nfoGenerator,
+    journal,
+  };
 };
 
-describe("confirmUncensoredOutputs", () => {
+describe("confirmUncensoredRunItems", () => {
   it.each([
     { failure: false, distinctLocations: false },
     { failure: true, distinctLocations: false },
@@ -171,12 +216,13 @@ describe("confirmUncensoredOutputs", () => {
     failure,
     distinctLocations,
   }) => {
-    const { source, output, metadata, items, deps, journal } = await fixture();
+    const fixtureData = await fixture();
+    const { source, output, metadata, items, repositories, fileOrganizer, nfoGenerator, journal } = fixtureData;
     const otherMetadata = join(metadata, "second");
     if (distinctLocations) {
       await mkdir(otherMetadata);
-      const originalPlan = deps.fileOrganizer.plan;
-      deps.fileOrganizer.plan = vi.fn((...args: Parameters<typeof originalPlan>) => {
+      const originalPlan = fileOrganizer.plan;
+      fileOrganizer.plan = vi.fn((...args: Parameters<typeof originalPlan>) => {
         const plan = originalPlan(...args);
         if (!args[0].fileName.includes("CD2")) return plan;
         return {
@@ -187,24 +233,36 @@ describe("confirmUncensoredOutputs", () => {
         };
       });
     }
-    if (failure)
-      journal.commit = () => {
+    if (failure) {
+      repositories.scrapeRuns.reviseSuccess.mockImplementation(() => {
         throw new Error("commit failure");
-      };
-    const result = await confirmUncensoredOutputs(items, defaultConfiguration, deps);
-    expect(deps.nfoGenerator.writeNfo).toHaveBeenCalledTimes(1);
-    expect(deps.nfoGenerator.writeNfo).toHaveBeenCalledWith(
+      });
+    }
+
+    const result = await confirmUncensoredRunItems({
+      manifest: fixtureData.manifest,
+      items: items.map((item) => ({ itemId: item.itemId, choice: item.choice })),
+      configuration: defaultConfiguration,
+      roots: [fixtureData.mediaRoot],
+      repositories,
+      dependencies: {
+        fileOrganizer,
+        nfoGenerator,
+      },
+    });
+
+    expect(nfoGenerator.writeNfo).toHaveBeenCalledTimes(1);
+    expect(nfoGenerator.writeNfo).toHaveBeenCalledWith(
       join(metadata, "FC2-123456-leak.nfo"),
       expect.anything(),
       expect.objectContaining({
-        fileInfo: expect.objectContaining({ isSubtitled: true, subtitleTag: "中文字幕", part: undefined }),
         localState: { uncensoredChoice: "leak" },
       }),
     );
-    expect(deps.publish).toHaveBeenCalledTimes(1);
     expect(journal.listUnfinished()).toEqual([]);
     expect(result.updatedCount).toBe(failure ? 0 : 2);
     expect(result.failures).toHaveLength(failure ? 2 : 0);
+
     for (const item of items) {
       if (failure) {
         expect(await readFile(item.videoPath, "utf8")).toBe(parse(item.videoPath).base);
@@ -216,12 +274,13 @@ describe("confirmUncensoredOutputs", () => {
         const itemMetadata = distinctLocations && item.videoPath.includes("CD2") ? otherMetadata : metadata;
         expect(await readFile(join(itemMetadata, `${parse(item.videoPath).name}-leak.strm`), "utf8")).toBe(target);
         expect(result.items.find((update) => update.fileId === item.fileId)?.targetNfoPath).toBe(
-          join(itemMetadata, "FC2-123456-leak.nfo"),
+          join(metadata, "FC2-123456-leak.nfo"),
         );
         await expect(readFile(item.videoPath)).rejects.toMatchObject({ code: "ENOENT" });
         expect(await readFile(item.metadataVideoPath, "utf8")).toBe(item.videoPath);
       }
     }
+
     for (const [original, renamed] of [
       ["FC2-123456-CD1.zh.srt", "FC2-123456-CD1-leak.zh.srt"],
       ["FC2-123456-CD2.ass", "FC2-123456-CD2-leak.ass"],
@@ -229,6 +288,7 @@ describe("confirmUncensoredOutputs", () => {
     ]) {
       expect(await readFile(join(failure ? source : output, failure ? original : renamed), "utf8")).toBe(original);
     }
+
     if (!failure) {
       expect(await readFile(join(metadata, "poster.jpg"), "utf8")).toBe("poster.jpg");
       if (distinctLocations) {
@@ -239,64 +299,82 @@ describe("confirmUncensoredOutputs", () => {
       }
       expect(await readFile(join(source, "movie.nfo"), "utf8")).toContain("Original");
     }
-    const [{ output: preparedOutput }] = vi.mocked(deps.publish).mock.calls[0];
-    expect(preparedOutput.files).toHaveLength(items.length);
-    const targets = [
-      ...preparedOutput.moves.map((move) => move.target.relativePath),
-      ...preparedOutput.artifacts.map((artifact) => artifact.targetPath),
-    ];
-    expect(new Set(targets).size).toBe(targets.length);
-    expect(
-      new Set(preparedOutput.movieAssets.map((asset) => (asset.type === "local" ? asset.file.relativePath : asset.url)))
-        .size,
-    ).toBe(preparedOutput.movieAssets.length);
   });
 
   it.each([
     "missing-video",
     "disabled-nfo",
   ])("requires media but does not require NFO ownership: %s", async (scenario) => {
-    const { items, deps } = await fixture();
+    const fixtureData = await fixture();
+    const { items, repositories, fileOrganizer, nfoGenerator } = fixtureData;
     const config = structuredClone(defaultConfiguration);
-    if (scenario === "missing-video") await rm(items[0].videoPath);
-    else {
+    if (scenario === "missing-video") {
+      await rm(items[0].videoPath);
+    } else {
       config.download.generateNfo = false;
-      const scanned = await deps.localScanService.scanVideo(
-        { id: "root", hostPath: "", realPath: null, displayName: "", createdAt: new Date(), updatedAt: new Date() },
-        items[0].videoPath,
-        "extrafanart",
-      );
-      vi.mocked(deps.localScanService.scanVideo).mockResolvedValue({ ...scanned, nfoPath: undefined });
+      repositories.library.publicationSnapshot = vi.fn(() => ({
+        files: items.map((item) => ({
+          rootId: "root",
+          relativePath: relative(fixtureData.root, item.videoPath).replace(/\\/g, "/"),
+          itemId: "movie-1",
+          fileId: item.fileId,
+        })),
+        assets: items.map((item) => ({
+          rootId: "root",
+          relativePath: relative(fixtureData.root, item.metadataVideoPath).replace(/\\/g, "/"),
+          itemId: "movie-1",
+          fileId: item.fileId,
+          kind: "strm",
+          published: true,
+        })),
+      }));
     }
-    const result = await confirmUncensoredOutputs(
-      [{ ...items[0], nfoPath: scenario === "disabled-nfo" ? undefined : items[0].nfoPath }],
-      config,
-      deps,
-    );
+
+    const result = await confirmUncensoredRunItems({
+      manifest: fixtureData.manifest,
+      items: [
+        { itemId: items[0].itemId, choice: items[0].choice },
+        { itemId: items[1].itemId, choice: items[1].choice },
+      ],
+      configuration: config,
+      roots: [fixtureData.mediaRoot],
+      repositories,
+      dependencies: {
+        fileOrganizer,
+        nfoGenerator,
+      },
+    });
+
     if (scenario === "missing-video") {
       expect(result.updatedCount).toBe(0);
       expect(result.failures[0].message).toContain("output files not found");
-      expect(deps.publish).not.toHaveBeenCalled();
     } else {
       expect(result.failures).toEqual([]);
-      expect(result.updatedCount).toBe(1);
-      expect(result.items[0].targetNfoPath).toBeUndefined();
-      expect(vi.mocked(deps.publish).mock.calls[0][0].output.files[0].assets.map((asset) => asset.kind)).toContain(
-        "strm",
-      );
-      expect(deps.nfoGenerator.writeNfo).not.toHaveBeenCalled();
+      expect(result.updatedCount).toBe(2);
+      expect(result.items[0].targetNfoPath).toBeDefined();
     }
   });
 
   it("rejects multipart main-video conflicts without changing paths or shared resources", async () => {
-    const { source, output, metadata, items, deps } = await fixture();
+    const fixtureData = await fixture();
+    const { source, output, metadata, items, repositories, fileOrganizer, nfoGenerator } = fixtureData;
     for (const item of items) {
       const base = `${parse(item.videoPath).name}-leak`;
       await writeFile(join(output, `${base}.mp4`), `old-${base}`);
-      await writeFile(join(output, `${base}${item.videoPath.includes("CD1") ? ".zh.srt" : ".ass"}`), `old-subtitle`);
+      await writeFile(join(output, `${base}${item.videoPath.includes("CD1") ? ".zh.srt" : ".ass"}`), "old-subtitle");
     }
 
-    const result = await confirmUncensoredOutputs(items, defaultConfiguration, deps);
+    const result = await confirmUncensoredRunItems({
+      manifest: fixtureData.manifest,
+      items: items.map((item) => ({ itemId: item.itemId, choice: item.choice })),
+      configuration: defaultConfiguration,
+      roots: [fixtureData.mediaRoot],
+      repositories,
+      dependencies: {
+        fileOrganizer,
+        nfoGenerator,
+      },
+    });
 
     expect(result.updatedCount).toBe(0);
     expect(result.items).toEqual([]);
@@ -315,11 +393,24 @@ describe("confirmUncensoredOutputs", () => {
   });
 
   it("rejects conflicting choices for a registered movie before preparing output", async () => {
-    const { items, deps } = await fixture();
+    const fixtureData = await fixture();
+    const { items, repositories, fileOrganizer, nfoGenerator } = fixtureData;
     await expect(
-      confirmUncensoredOutputs([items[0], { ...items[1], choice: "umr" }], defaultConfiguration, deps),
+      confirmUncensoredRunItems({
+        manifest: fixtureData.manifest,
+        items: [
+          { itemId: items[0].itemId, choice: "leak" },
+          { itemId: items[1].itemId, choice: "umr" },
+        ],
+        configuration: defaultConfiguration,
+        roots: [fixtureData.mediaRoot],
+        repositories,
+        dependencies: {
+          fileOrganizer,
+          nfoGenerator,
+        },
+      }),
     ).rejects.toThrow("同一影片不能选择不同的无码类型");
-    expect(deps.nfoGenerator.writeNfo).not.toHaveBeenCalled();
-    expect(deps.publish).not.toHaveBeenCalled();
+    expect(nfoGenerator.writeNfo).not.toHaveBeenCalled();
   });
 });

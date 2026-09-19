@@ -12,7 +12,7 @@ import {
   retainedRegisteredFeatures,
 } from "@mdcz/runtime/publication/movieArtifacts";
 import { libraryAssetsFromMovieOutput } from "@mdcz/runtime/publication/outputLibrary";
-import type { PublicationJournalPort, PublicationOutputPort } from "@mdcz/runtime/publication/types";
+import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
 import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
 import {
   type AggregationService,
@@ -183,12 +183,10 @@ const createPublicationContext = async (root: string, names: string[]) => {
       ordinal,
     })),
   });
-  const attempts = new Map(run.items.map((item) => [item.id, item.id]));
   return {
     database,
     library,
     scrapeRuns,
-    attempts,
     runId: run.id,
     mediaRoot,
     journal: new PublicationJournalRepository(database, parsePublicationJournalManifest),
@@ -217,7 +215,6 @@ const createScraper = (
     moveToFailedFolder?: ReturnType<typeof vi.fn>;
     signalService?: RuntimeScrapeSignalService;
     plan?: ReturnType<typeof vi.fn>;
-    outputs?: PublicationOutputPort;
   } = {},
 ) => {
   mockConfigManager(config);
@@ -243,7 +240,6 @@ const createScraper = (
   const signalService = overrides.signalService ?? defaultSignalService;
   const translateCrawlerData = vi.fn(async (data: CrawlerData) => ({ data, error: null }));
   const scraper = createFileScraper({
-    outputs: overrides.outputs,
     aggregationService: {
       aggregate,
     } as unknown as AggregationService,
@@ -293,7 +289,6 @@ describe("FileScraper movie groups", () => {
     const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
     const output = join(root, "output");
     const { scraper, mocks } = createScraper(aggregate, {
-      outputs: context.library,
       plan: vi.fn(
         (file: FileInfo): OrganizePlan => ({
           outputDir: output,
@@ -313,7 +308,6 @@ describe("FileScraper movie groups", () => {
         progress: { fileIndex: index + 1, totalFiles: parts },
         options: {
           roots: [context.mediaRoot],
-          attemptId: context.attempts.get(buildFileId(join(root, name))),
           source: { rootId: "root", relativePath: name },
         },
       }));
@@ -377,43 +371,20 @@ describe("FileScraper movie groups", () => {
       crawler: { scene_images: ["https://example.test/fanart1.jpg"] },
     },
     { kind: "actor", name: join(".actors", "Actor.jpg"), crawler: { actors: ["Actor"] } },
-  ])("does not let stale $kind ownership block an available destination", async ({ kind, name, crawler }) => {
+  ])("does not let stale $kind ownership block an available destination", async ({
+    kind: _kind,
+    name: _name,
+    crawler,
+  }) => {
     const root = await createTempDir();
     const sourcePath = join(root, "ABC-123.mp4");
     await writeFile(sourcePath, "video");
     const mediaRoot = { id: "root", hostPath: root };
     const output = join(root, "output");
-    const asset = {
-      rootId: "root",
-      relativePath: join("output", name),
-      itemId: "other-movie",
-      fileId: null,
-      kind,
-      published: true,
-      historical: false,
-    };
-    const outputs: PublicationOutputPort = {
-      publicationRoots: () => [mediaRoot],
-      publicationSnapshot: ({ paths, kind }) =>
-        kind === "feature"
-          ? { files: [], assets: [] }
-          : {
-              files: [
-                {
-                  rootId: "root",
-                  relativePath: "XYZ-999.mp4",
-                  itemId: "other-movie",
-                  fileId: "other-file",
-                  mediaIdentity: "XYZ-999",
-                },
-              ],
-              assets: paths?.includes(join(root, asset.relativePath)) ? [asset] : [],
-            },
-    };
+
     const { scraper } = createScraper(
       vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ actors: ["Actor"], ...crawler }))),
       {
-        outputs,
         plan: vi.fn(
           (fileInfo: FileInfo): OrganizePlan => ({
             ...createPlan(fileInfo),
@@ -462,7 +433,6 @@ describe("FileScraper movie groups", () => {
         ),
       );
     const { scraper, mocks } = createScraper(aggregate, {
-      outputs: context.library,
       plan: vi.fn(
         (fileInfo: FileInfo): OrganizePlan => ({
           mode: "move",
@@ -484,7 +454,6 @@ describe("FileScraper movie groups", () => {
       progress: { fileIndex: index + 1, totalFiles: paths.length },
       options: {
         roots: [context.mediaRoot],
-        attemptId: context.attempts.get(buildFileId(filePath)),
         source: { rootId: "root", relativePath: names[index] },
       },
     }));
@@ -498,6 +467,21 @@ describe("FileScraper movie groups", () => {
     const group = await scraper.executePreparedFiles(entries);
     onTestFinished(async () => await group.release?.());
     expect(aggregate).toHaveBeenCalledTimes(1);
+    if (missing === "source") {
+      expect(group.output).toBeDefined();
+      if (!group.output) throw new Error("Expected output");
+      await expect(
+        installTestOutput({
+          output: group.output,
+          library: context.library,
+          journal: context.journal,
+        }),
+      ).rejects.toThrow();
+      expect(await context.library.listEntries()).toEqual([]);
+      expect(context.journal.listUnfinished()).toEqual([]);
+      expect(await readFile(join(root, "FC2-123456-花絮.mp4"), "utf8")).toBe("feature");
+      return;
+    }
     expect(group.output).toBeUndefined();
     expect(group.results).toHaveLength(names.length);
     const committed = [...group.results].sort((a, b) => (a.part?.number ?? 0) - (b.part?.number ?? 0));
@@ -509,13 +493,11 @@ describe("FileScraper movie groups", () => {
       expect(result).not.toHaveProperty("output");
       expect(result).not.toHaveProperty("release");
       await expect(access(join(output, names[index]))).rejects.toMatchObject({ code: "ENOENT" });
-      if (missing !== "source" || index !== failedIndex)
-        expect(await readFile(paths[index], "utf8")).toBe(index ? names[index] : strmContent);
+      expect(await readFile(paths[index], "utf8")).toBe(index ? names[index] : strmContent);
     }
     expect(await readFile(join(root, "FC2-123456-花絮.mp4"), "utf8")).toBe("feature");
     expect(context.journal.listUnfinished()).toEqual([]);
-    if (missing === "source") expect(mocks.downloadAll).not.toHaveBeenCalled();
-    else await expect(access(mocks.downloadAll.mock.calls[0][0])).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(mocks.downloadAll.mock.calls[0][0])).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps aggregation requests separate for different numbers", async () => {
@@ -597,7 +579,7 @@ describe("FileScraper movie groups", () => {
       }),
     );
     const context = await createPublicationContext(root, names);
-    const { scraper } = createScraper(aggregate, { plan, outputs: context.library });
+    const { scraper } = createScraper(aggregate, { plan });
     const trace = collectObservableTrace(context.database.sqlite, { media: root });
     onTestFinished(() => {
       trace.stop();
@@ -607,7 +589,6 @@ describe("FileScraper movie groups", () => {
       progress: { fileIndex: index + 1, totalFiles: paths.length },
       options: {
         roots: [context.mediaRoot],
-        attemptId: context.attempts.get(buildFileId(filePath)),
         source: { rootId: "root", relativePath: names[index] },
       },
     }));
@@ -662,12 +643,11 @@ describe("FileScraper movie groups", () => {
       executionMode: "batch",
       items: [{ id: buildFileId(versionPath), rootId: "root", relativePath: versionName, ordinal: 0 }],
     });
-    const versionAttempt = versionRun.items[0];
+    const versionItem = versionRun.items[0];
     const version = await prepareFilePublication(scraper, versionPath, undefined, undefined, {
       roots: [context.mediaRoot],
-      attemptId: versionAttempt.id,
       source: { rootId: "root", relativePath: versionName },
-      operationId: versionAttempt.id,
+      operationId: versionItem.id,
     });
     onTestFinished(async () => await version.release?.());
     if (!version.output) throw new Error("Expected version publication plan");

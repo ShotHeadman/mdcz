@@ -59,7 +59,6 @@ const createHost = (
   createExecution: async (entry) => ({
     items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
     concurrency,
-    admitItem: async (item) => `${item.id}:attempt`,
     prepareGroup: async (entries) => entries.map(() => ({ status: "prepared", prepared: undefined })),
     checkTargets: vi.fn(async () => undefined),
     movieGroups: entry.items.map((item) => ({ itemIds: [item.id] })),

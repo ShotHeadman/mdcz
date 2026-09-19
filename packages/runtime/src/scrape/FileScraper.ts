@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
@@ -23,7 +23,6 @@ import {
   retainedRegisteredFeatures,
 } from "../publication/movieArtifacts";
 import { toRootFileRef } from "../publication/outputRefs";
-import type { PublicationOutputPort } from "../publication/types";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, AggregationService, ManualScrapeOptions } from "./aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "./canonicalizeActorAliases";
@@ -31,7 +30,7 @@ import { DirectoryInventory } from "./DirectoryInventory";
 import type { DownloadManager } from "./download";
 import type { FileOrganizer, ResolvedPublicationLayout } from "./FileOrganizer";
 import { resolveFileInfoWithSubtitles } from "./media";
-import { findExistingNfoPath, getNfoWritePaths, type NfoGenerator, type NfoOptions } from "./nfo";
+import { findExistingNfoPath, type NfoGenerator, type NfoOptions } from "./nfo";
 import {
   downloadCrawlerAssets,
   prepareOutputCrawlerData,
@@ -56,12 +55,9 @@ export interface RuntimeScrapeSignalService {
 }
 
 export interface FileScraperDependencies {
-  outputs?: PublicationOutputPort;
   actorImageService: RuntimeActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
-  aggregationService: Pick<AggregationService, "aggregate"> & {
-    getFailureSummary?(number: string): string | undefined;
-  };
+  aggregationService: Pick<AggregationService, "aggregate">;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
   getConfiguration(): Promise<Configuration>;
@@ -97,7 +93,6 @@ export type FileScrapeOptions = {
   source?: RootFileRef;
   roots?: readonly Pick<MediaRoot, "id" | "hostPath">[];
   itemId?: string;
-  attemptId?: string;
   operationId?: string;
   outputDirectory?: string;
   outputTemplateRoot?: string;
@@ -114,6 +109,7 @@ export interface PreparedFileScrape {
   inventory?: DirectoryInventory;
   signalService: RuntimeScrapeSignalService;
   groupMovieId?: string;
+  groupAssets?: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
   configuration: Configuration;
   fileInfo: FileInfo;
   identity: ScrapeIdentity;
@@ -125,7 +121,6 @@ export interface PreparedFileScrape {
   outputPlan: ResolvedPublicationLayout;
   roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
   itemId: string;
-  attemptId: string;
   operationId: string;
 }
 
@@ -152,22 +147,35 @@ export class FileScraper {
   ) {}
 
   async prepareGroup(
-    entries: readonly { filePath: string; progress?: FileScrapeProgress; options: FileScrapeOptions }[],
+    entries: readonly {
+      filePath: string;
+      fileInfo?: FileInfo;
+      groupMovieId?: string;
+      groupFileId?: string;
+      groupAssets?: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
+      progress?: FileScrapeProgress;
+      options: FileScrapeOptions;
+    }[],
     signal?: AbortSignal,
   ): Promise<FilePreparationResult[]> {
     if (!entries.length) return [];
     const configuration = structuredClone(entries[0].options.configuration ?? (await this.deps.getConfiguration()));
     const inventory = this.options.inventory ?? new DirectoryInventory();
-    const members = entries.map(({ filePath, options, progress }, index) => {
-      const fileInfo = parseFileInfo(filePath, configuration.scrape.filenameIgnoreTokens);
-      return {
-        options,
-        progress: progress ?? { fileIndex: index + 1, totalFiles: entries.length },
-        fileInfo,
-        identity: toScrapeIdentity(buildFileId(fileInfo.filePath), fileInfo, options),
-        signalService: options.signalService ?? this.deps.signalService,
-      };
-    });
+    const members = entries.map(
+      ({ filePath, fileInfo: providedFileInfo, groupMovieId, groupFileId, groupAssets, options, progress }, index) => {
+        const fileInfo = providedFileInfo ?? parseFileInfo(filePath, configuration.scrape.filenameIgnoreTokens);
+        const fileId = groupFileId ?? buildFileId(fileInfo.filePath);
+        return {
+          options,
+          groupMovieId,
+          groupAssets,
+          progress: progress ?? { fileIndex: index + 1, totalFiles: entries.length },
+          fileInfo,
+          identity: toScrapeIdentity(fileId, fileInfo, options),
+          signalService: options.signalService ?? this.deps.signalService,
+        };
+      },
+    );
     try {
       throwIfAborted(signal);
       const inspected = [];
@@ -232,11 +240,6 @@ export class FileScraper {
         options.manualScrape,
       );
       throwIfAborted(signal);
-      if (!aggregation) {
-        const error =
-          this.deps.aggregationService.getFailureSummary?.(fileInfo.number) ?? "No crawler returned metadata";
-        return members.map((member) => this.failed(member.identity, member.fileInfo, error));
-      }
 
       const translation = await this.deps.translateService.translateCrawlerData(
         aggregation.data,
@@ -258,6 +261,8 @@ export class FileScraper {
         videoMeta,
         subtitleSidecars,
         roots,
+        groupMovieId,
+        groupAssets,
       } of inspected) {
         const outputPlan = await this.deps.fileOrganizer.resolveOutputPlan(
           this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration, localState, {
@@ -282,6 +287,8 @@ export class FileScraper {
           prepared: {
             inventory,
             signalService,
+            groupMovieId,
+            groupAssets,
             configuration,
             fileInfo,
             identity,
@@ -292,8 +299,7 @@ export class FileScraper {
             aggregation,
             outputPlan,
             roots,
-            itemId: options.itemId ?? options.attemptId ?? options.operationId ?? identity.fileId,
-            attemptId: options.attemptId ?? options.itemId ?? options.operationId ?? identity.fileId,
+            itemId: options.itemId ?? options.operationId ?? identity.fileId,
             operationId: options.operationId ?? `${scrapeSessionId ?? "scrape"}:${identity.relativePath}`,
           },
         });
@@ -313,37 +319,14 @@ export class FileScraper {
     signal?: AbortSignal,
   ): Promise<ScrapeGroupResult> {
     if (!entries.length) return { results: [] };
-    const states = entries.map((entry) => ({ ...entry, result: undefined as ScrapeResult | undefined }));
-    const ready: (typeof states)[number][] = [];
-    for (const entry of states) {
-      try {
-        const file = await stat(entry.prepared.fileInfo.filePath);
-        if (!file.isFile()) throw new Error("Scrape source is not a file");
-        ready.push(entry);
-      } catch (error) {
-        entry.result = this.failed(entry.prepared.identity, entry.prepared.fileInfo, toErrorMessage(error));
-      }
-    }
-    const first = ready[0];
-    const failed = states.find((entry) => entry.result);
-    if (failed)
-      return {
-        results: states.map(
-          (entry) =>
-            entry.result ??
-            this.failed(
-              entry.prepared.identity,
-              entry.prepared.fileInfo,
-              failed.result?.error ?? "Movie source validation failed",
-            ),
-        ),
-      };
-    if (!first) return { results: [] };
+    const first = entries[0];
     const { prepared, progress } = first;
     const { configuration, fileInfo, identity, aggregation, outputPlan: plan } = prepared;
     const { signalService } = prepared;
     const { postProcessAssets } = this.deps;
-    const roots = [...new Map(ready.flatMap(({ prepared }) => prepared.roots).map((root) => [root.id, root])).values()];
+    const roots = [
+      ...new Map(entries.flatMap(({ prepared }) => prepared.roots).map((root) => [root.id, root])).values(),
+    ];
     return await runWithScrapeItem(
       { itemId: identity.fileId, relativePath: identity.relativePath, caseId: first.caseId },
       async () => {
@@ -353,7 +336,7 @@ export class FileScraper {
           throwIfAborted(signal);
           const toRef = (absolutePath: string) => toRootFileRef(absolutePath, roots);
           const members = await Promise.all(
-            ready.map(async ({ prepared }) => {
+            entries.map(async ({ prepared }) => {
               const { sourceVideoPath: _sourceVideoPath, ...layout } = prepared.outputPlan;
               return {
                 source: toRef(prepared.fileInfo.filePath),
@@ -369,71 +352,15 @@ export class FileScraper {
               };
             }),
           );
-          const outputPaths = [
-            ...members.flatMap(({ assetLayout }) => [...assetLayout.staged.values(), ...assetLayout.retained.values()]),
-            ...ready.flatMap(({ prepared }) => {
-              const layout = prepared.outputPlan;
-              return [
-                ...(path.resolve(layout.targetVideoPath) === path.resolve(layout.sourceVideoPath)
-                  ? []
-                  : [layout.targetVideoPath]),
-                ...getNfoWritePaths(layout.nfoPath, configuration.download.nfoNaming).requiredPaths,
-                ...(layout.mirror ? [layout.mirror.targetPath] : []),
-                ...layout.sidecars.flatMap((sidecar) => [
-                  ...(path.resolve(sidecar.targetPath) === path.resolve(sidecar.sourcePath)
-                    ? []
-                    : [sidecar.targetPath]),
-                  ...(sidecar.mirrorPath ? [sidecar.mirrorPath] : []),
-                ]),
-              ];
-            }),
-          ];
-          const ownershipSnapshot = this.deps.outputs?.publicationSnapshot({
-            paths: [...ready.map(({ prepared }) => prepared.outputPlan.sourceVideoPath), ...outputPaths],
-            includeOwners: true,
-          }) ?? { files: [], assets: [] };
-          const featureSnapshot = this.deps.outputs?.publicationSnapshot({ kind: "feature", includeOwners: true });
-          const sourceMovieIds = new Set(ready.flatMap(({ prepared }) => prepared.groupMovieId ?? []));
-          if (sourceMovieIds.size > 1) throw new Error("Scrape group contains files from different library movies");
-          const participantFiles = [...ownershipSnapshot.files, ...(featureSnapshot?.files ?? [])].filter(
-            (file, index, files) =>
-              files.findIndex(
-                (candidate) =>
-                  candidate.itemId === file.itemId &&
-                  candidate.fileId === file.fileId &&
-                  candidate.rootId === file.rootId &&
-                  candidate.relativePath === file.relativePath,
-              ) === index,
-          );
-          const participantAssets = [...ownershipSnapshot.assets, ...(featureSnapshot?.assets ?? [])].filter(
-            (asset, index, assets) =>
-              assets.findIndex(
-                (candidate) =>
-                  candidate.itemId === asset.itemId &&
-                  candidate.fileId === asset.fileId &&
-                  candidate.kind === asset.kind &&
-                  candidate.rootId === asset.rootId &&
-                  candidate.relativePath === asset.relativePath,
-              ) === index,
-          );
-          const sourceMatches = members.map((member) =>
-            participantFiles.find(
-              (file) => file.rootId === member.source.rootId && file.relativePath === member.source.relativePath,
-            ),
-          );
-          for (const match of sourceMatches) if (match) sourceMovieIds.add(match.itemId);
-          if (sourceMovieIds.size > 1) throw new Error("Scrape group contains files from different library movies");
-          const movieId = [...sourceMovieIds][0] ?? randomUUID();
+          const movieId = entries[0].prepared.groupMovieId ?? randomUUID();
+          const movieAssets = entries[0].prepared.groupAssets ?? [];
           const participants = {
             movieId,
-            members: members.map((member, index) => ({
+            members: members.map((member) => ({
               ...member,
-              fileId: sourceMatches[index]?.fileId ?? randomUUID(),
+              fileId: member.prepared.identity.fileId,
             })),
-            expected: {
-              files: participantFiles.filter((file) => file.itemId === movieId),
-              assets: participantAssets.filter((asset) => asset.itemId === movieId),
-            },
+            assets: movieAssets,
           };
           await mkdir(plan.metadataDir, { recursive: true });
           const directory = await mkdtemp(path.join(plan.metadataDir, ".mdcz-staging-"));
@@ -496,13 +423,12 @@ export class FileScraper {
             members: participants.members.map(({ prepared, ...member }) => {
               const classification = classifyMovie(prepared.fileInfo, crawlerData, prepared.localState);
               const { assets, ...identity } = prepared.identity;
-              const itemId = prepared.itemId ?? prepared.attemptId ?? prepared.identity.fileId;
+              const itemId = prepared.itemId ?? prepared.identity.fileId;
               return {
                 ...member,
                 existingNfoPath: preservedNfoPath,
                 scrape: {
                   itemId,
-                  attemptId: prepared.attemptId,
                   identity,
                   fileInfo: prepared.fileInfo,
                   videoMeta: prepared.videoMeta,
@@ -515,7 +441,7 @@ export class FileScraper {
                 },
               };
             }),
-            retainedMovieAssets: retainedRegisteredFeatures(participants.members, participants.expected.assets),
+            retainedMovieAssets: retainedRegisteredFeatures(participants.members, participants.assets),
             stagingDir,
             downloadedAssets: downloaded.assets,
             actorPhotoPaths: actorOutput.actorPhotoPaths,
@@ -540,9 +466,9 @@ export class FileScraper {
               }),
           });
           throwIfAborted(signal);
-          for (const { progress, result } of states) if (!result) this.setProgress(progress, 95);
+          for (const { progress } of entries) this.setProgress(progress, 95);
           return {
-            results: states.flatMap((entry) => (entry.result ? [entry.result] : [])),
+            results: [],
             output: {
               ...publication,
               operationId: prepared.operationId,
@@ -565,14 +491,11 @@ export class FileScraper {
             }
           }
           return {
-            results: states.map(({ prepared, progress, result }) => {
+            results: entries.map(({ prepared, progress }) => {
               this.setProgress(progress, 100);
-              return (
-                result ??
-                (isAbortError(error)
-                  ? this.skipped(prepared.identity, "Operation aborted")
-                  : this.failed(prepared.identity, prepared.fileInfo, toErrorMessage(error)))
-              );
+              return isAbortError(error)
+                ? this.skipped(prepared.identity, "Operation aborted")
+                : this.failed(prepared.identity, prepared.fileInfo, toErrorMessage(error));
             }),
           };
         }

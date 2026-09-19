@@ -2,6 +2,7 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
+import { ScrapeTargetConflictError } from "./scrape/preflightScrapeTask";
 import { type ScrapeRunExecution, type ScrapeRunItem, ScrapeRunSession, TaskExecutor } from "./tasks";
 
 const deferred = () => {
@@ -92,7 +93,6 @@ const executionFor = (): ScrapeRunExecution<unknown, string> => {
     items,
     movieGroups: [{ itemIds: ["one", "two"] }, { itemIds: ["independent"] }],
     concurrency: 1,
-    admitItem: async (item) => `${item.id}:attempt`,
     prepareGroup: async (entries) => entries.map(({ item }) => ({ status: "prepared", prepared: item.id })),
     checkTargets: async () => undefined,
     executePreparedItems: async (entries) => ({
@@ -148,18 +148,29 @@ describe("scrape movie groups", () => {
     expect(session.snapshot()).toMatchObject({ status: "completed", progress: { completedItems: 3 } });
   });
 
-  it("fails an entire movie when a member cannot prepare while publishing independent movies", async () => {
+  it.each([
+    "preparation-failure",
+    "target-conflict",
+  ] as const)("fails an entire movie on %s while publishing independent movies", async (scenario) => {
     const execution = executionFor();
-    execution.prepareGroup = async (entries) =>
-      entries.map(({ item }) =>
-        item.id === "one"
-          ? { status: "failed", result: resultFor(item, "failed") }
-          : { status: "prepared", prepared: item.id },
-      );
+    if (scenario === "preparation-failure") {
+      execution.prepareGroup = async (entries) =>
+        entries.map(({ item }) =>
+          item.id === "one"
+            ? { status: "failed", result: resultFor(item, "failed") }
+            : { status: "prepared", prepared: item.id },
+        );
+    } else {
+      execution.checkTargets = async () => {
+        throw new ScrapeTargetConflictError([
+          { itemId: "one", sourcePath: "/media/one.mp4", targetPath: "/target/one.mp4", message: "conflict" },
+        ]);
+      };
+    }
     const execute = vi.fn(execution.executePreparedItems);
     execution.executePreparedItems = execute;
     const session = new ScrapeRunSession({
-      runId: "member-failure",
+      runId: `${scenario}-run`,
       totalItems: 3,
       prepare: async () => execution,
       onSnapshot: () => undefined,

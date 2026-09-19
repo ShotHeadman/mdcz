@@ -51,7 +51,6 @@ export interface ScrapeServiceResources {
   mappingStore?: TranslationMappingStore;
   aggregationService?: Pick<AggregationService, "aggregate"> & {
     clearCache?: () => void;
-    getFailureSummary?: (number: string) => string | undefined;
   };
   prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
 }
@@ -107,6 +106,7 @@ export class ScrapeService {
         scrapeRuns: state.repositories.scrapeRuns,
         library: state.repositories.library,
         publicationJournal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
         mediaRoots: this.mediaRoots,
       },
       getConfiguration: async () => await this.config.get(),

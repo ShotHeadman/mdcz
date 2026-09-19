@@ -85,7 +85,7 @@ const createGatedAggregation = (
       releaseFirstCall();
     },
     aggregation: {
-      async aggregate(number, configuration, signal, manualScrape): Promise<AggregationResult | null> {
+      async aggregate(number, configuration, signal, manualScrape): Promise<AggregationResult> {
         const isFirstCall = aggregatedNumbers.length === 0;
         aggregatedNumbers.push(number);
         if (isFirstCall) {
@@ -202,9 +202,10 @@ describe("buildServer scrape integration", () => {
     const aggregation = createTestAggregation("https://unused.example/image.png");
     const aggregateOriginal = aggregation.aggregate.bind(aggregation);
     const aggregate = vi.spyOn(aggregation, "aggregate");
-    aggregate.mockImplementation(async (...args) =>
-      failure === "metadata" && args[0] === "ABF-981" ? null : await aggregateOriginal(...args),
-    );
+    aggregate.mockImplementation(async (...args) => {
+      if (failure === "metadata" && args[0] === "ABF-981") throw new Error("Metadata failure");
+      return await aggregateOriginal(...args);
+    });
     const { fastify, services } = await createTestServer({ scrapeAggregation: aggregation });
     await services.config.update({
       naming: { folderTemplate: "fixed/{number}", fileTemplate: "{number}" },

@@ -1,11 +1,12 @@
 import { mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { deterministicMediaRootId, findEnclosingMediaRoot } from "@mdcz/media-store";
+import { deterministicMediaRootId, filesystemPathKey, findEnclosingMediaRoot } from "@mdcz/media-store";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it } from "vitest";
 import { createTempDirectory } from "../../../../tests/harness/tempDirectory";
 import { MediaRootRepository } from "../../../persistence/src/mediaRootRepository";
 import { createTestPersistenceDatabase } from "../../../persistence/src/testDatabase";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { discoverDirectoryFiles } from "../scrape/directoryDiscovery";
 import { resolveDesktopInputRootPath } from "./desktopInputRoot";
 import { ConfiguredMediaRootService } from "./mediaRootService";
@@ -60,9 +61,12 @@ describe("desktop input root", () => {
         { rootId: admitted.id, relativePath: "ABC-123.mp4" },
       ];
       await expect(service.canonicalizeFileRefs(refs)).resolves.toEqual(refs);
-      const participants = await service.admitFileRefs(refs);
+      const inventory = new DirectoryInventory();
+      const participants = await inventory.admitRefs(refs, (id) => service.get(id));
       expect(participants).toHaveLength(1);
-      expect(participants[0].submittedRefs).toEqual(refs);
+      expect(
+        inventory.submittedRefs.get(filesystemPathKey(path.join(await realpath(admitted.hostPath), "ABC-123.mp4"))),
+      ).toEqual(refs);
       await symlink(outside, path.join(child, "external"), directoryLinkType);
       const discovery = await discoverDirectoryFiles({
         scope: { kind: "directory", scanDir: child, recursive: true, targetDir: child, excludeDirPaths: [] },
@@ -74,15 +78,14 @@ describe("desktop input root", () => {
         onProgress: () => undefined,
       });
       expect(discovery.refs).toHaveLength(2);
-      const entries = await service.admitFileRefs(discovery.refs);
-      expect(entries.map(({ entry }) => entry.referentFacts.path)).toContain(
-        path.join(await realpath(outside), "XYZ-456.mp4"),
-      );
+      const entries = await inventory.admitRefs(discovery.refs, (id) => service.get(id));
+      expect(entries).toHaveLength(2);
       if (process.platform !== "win32") {
         await symlink(path.join(outside, "XYZ-456.mp4"), path.join(child, "external-file.mp4"));
-        const [link] = await service.admitFileRefs([{ rootId: admitted.id, relativePath: "external-file.mp4" }]);
-        expect(link.entry.entryPath).toBe(path.join(await realpath(child), "external-file.mp4"));
-        expect(link.entry.referentFacts.path).toBe(path.join(await realpath(outside), "XYZ-456.mp4"));
+        const [link] = await inventory.admitRefs([{ rootId: admitted.id, relativePath: "external-file.mp4" }], (id) =>
+          service.get(id),
+        );
+        expect(link.relativePath).toBe("external-file.mp4");
       }
       if (selection === "alias") {
         await rm(alias);

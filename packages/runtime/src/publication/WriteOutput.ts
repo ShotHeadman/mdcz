@@ -20,6 +20,7 @@ export class WriteOutput {
       installed?(targetPath: string): void;
       commit(): TResult | Promise<TResult>;
       protectedSourceRoots?: readonly string[];
+      protectedMediaFiles?: readonly string[];
     },
   ): Promise<{ value: TResult; cleanupIssues: unknown[] }> {
     const staged: Array<{ targetPath: string; temporaryPath: string }> = [];
@@ -27,13 +28,25 @@ export class WriteOutput {
     let result: { value: TResult; cleanupIssues: unknown[] } | undefined;
     let failure: unknown;
     try {
+      const pathKey = (value: string) =>
+        process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+      const protectedMedia = new Set((options.protectedMediaFiles ?? []).map(pathKey));
+
       for (const artifact of artifacts) {
+        if (protectedMedia.has(pathKey(artifact.targetPath)))
+          throw new Error(`Write output target cannot overwrite a source media file: ${artifact.targetPath}`);
         const protectedRoot = options.protectedSourceRoots?.find((root) => isPathInside(root, artifact.targetPath));
         if (protectedRoot)
           throw new Error(`Write output target is inside a protected source root: ${artifact.targetPath}`);
         await this.fileSystem.mkdir(path.dirname(artifact.targetPath), { recursive: true });
         const temporaryPath = `${artifact.targetPath}.${randomUUID()}.part`;
         staged.push({ targetPath: artifact.targetPath, temporaryPath });
+        const expectedSize =
+          "data" in artifact
+            ? typeof artifact.data === "string"
+              ? Buffer.byteLength(artifact.data, "utf8")
+              : artifact.data.length
+            : artifact.size;
         if ("data" in artifact) {
           await this.fileSystem.writeFile(temporaryPath, artifact.data, { flush: true });
         } else {
@@ -48,10 +61,10 @@ export class WriteOutput {
               await this.fileSystem.copyFile(artifact.sourcePath, temporaryPath);
             }
           } else await this.fileSystem.copyFile(artifact.sourcePath, temporaryPath);
-          if ((await this.fileSystem.stat(temporaryPath)).size !== artifact.size)
-            throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
         }
         await this.fileSystem.flush?.(temporaryPath);
+        if ((await this.fileSystem.stat(temporaryPath)).size !== expectedSize)
+          throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
       }
       await options.validate?.();
       for (const artifact of staged) {

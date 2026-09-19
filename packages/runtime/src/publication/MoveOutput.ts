@@ -8,6 +8,7 @@ import type {
   PublicationFileSystem,
   PublicationJournalManifest,
   PublicationJournalPort,
+  PublicationRepairPort,
   PublicationResult,
 } from "./types";
 import { type WriteArtifact, WriteOutput } from "./WriteOutput";
@@ -54,21 +55,21 @@ export class MoveOutput {
     moves: readonly SourceMove[];
     artifacts: readonly WriteArtifact[];
     journal: PublicationJournalPort;
+    repairIssues?: PublicationRepairPort;
     validate?(): Promise<void> | void;
     commit(): TResult;
     protectedSourceRoots?: readonly string[];
   }): Promise<PublicationResult<TResult>> {
     const fs = this.fileSystem;
     const moves = input.moves.map((move) => {
-      const temporaryName = `${move.target.relativePath}.${randomUUID()}.part`;
+      const temporaryRelativePath = `${move.target.relativePath}.${randomUUID()}.part`;
+      const rewrittenTemporaryRelativePath = `${temporaryRelativePath}.rewrite.part`;
       return {
         ...move,
-        temporaryName,
-        temporaryPath: path.join(path.dirname(move.targetPath), path.basename(temporaryName)),
-        rewrittenTemporaryPath: path.join(
-          path.dirname(move.targetPath),
-          `${path.basename(temporaryName)}.rewrite.part`,
-        ),
+        temporaryRelativePath,
+        rewrittenTemporaryRelativePath,
+        temporaryPath: path.join(path.dirname(move.targetPath), path.basename(temporaryRelativePath)),
+        rewrittenTemporaryPath: path.join(path.dirname(move.targetPath), path.basename(rewrittenTemporaryRelativePath)),
         installed: false,
         staged: false,
         copied: false,
@@ -79,7 +80,8 @@ export class MoveOutput {
       entries: moves.map((move) => ({
         ...move.target,
         source: move.source,
-        temporaryPath: move.temporaryName,
+        temporaryPath:
+          move.rewrittenContent === undefined ? move.temporaryRelativePath : move.rewrittenTemporaryRelativePath,
         ...(move.rewrittenContent !== undefined ? { rewritten: true } : {}),
       })),
     };
@@ -97,6 +99,8 @@ export class MoveOutput {
         validate: input.validate,
         beforeInstall: assertMoveTargetAbsent,
         installed: (target) => installedArtifacts.push(target),
+        protectedSourceRoots: input.protectedSourceRoots,
+        protectedMediaFiles: input.moves.map((move) => move.sourcePath),
         commit: async () => {
           for (const move of moves) {
             await fs.mkdir(path.dirname(move.targetPath), { recursive: true });
@@ -105,12 +109,12 @@ export class MoveOutput {
               throw new Error(`Publication source changed before mutation: ${move.sourcePath}`);
             await assertMoveTargetAbsent(move.targetPath);
             if (move.rewrittenContent !== undefined) {
-              await returnMovedFile(fs, move.sourcePath, move.temporaryPath);
-              move.staged = true;
               await fs.writeFile(move.rewrittenTemporaryPath, move.rewrittenContent, { flush: true });
+              move.staged = true;
               await fs.flush?.(move.rewrittenTemporaryPath);
               await assertMoveTargetAbsent(move.targetPath);
               await fs.rename(move.rewrittenTemporaryPath, move.targetPath);
+              move.staged = false;
               move.installed = true;
               continue;
             }
@@ -139,26 +143,42 @@ export class MoveOutput {
           const value = input.journal.commit(input.operationId, input.commit);
           committed = true;
           for (const move of moves) {
-            if (!move.copied) continue;
+            if (!move.copied && move.rewrittenContent === undefined) continue;
             try {
               await fs.rm(move.sourcePath, { force: true });
             } catch (error) {
               postCommitCleanupIssues.push(error);
+              try {
+                await input.repairIssues?.record({
+                  operationId: input.operationId,
+                  operationType: input.operationType,
+                  rootId: move.target.rootId,
+                  relativePath: move.target.relativePath,
+                  errorMessage: error instanceof Error ? error.message : String(error),
+                });
+              } catch (repairError) {
+                postCommitCleanupIssues.push(repairError);
+              }
             }
           }
           return value;
         },
-        protectedSourceRoots: input.protectedSourceRoots,
       });
       result.cleanupIssues.push(...postCommitCleanupIssues);
-      try {
-        for (const move of moves) {
+      for (const move of moves) {
+        try {
           await fs.rm(move.temporaryPath, { force: true });
           await fs.rm(move.rewrittenTemporaryPath, { force: true });
+        } catch (error) {
+          result.cleanupIssues.push(error);
         }
-        input.journal.finish(input.operationId);
-      } catch (error) {
-        result.cleanupIssues.push(error);
+      }
+      if (result.cleanupIssues.length === 0) {
+        try {
+          input.journal.finish(input.operationId);
+        } catch (error) {
+          result.cleanupIssues.push(error);
+        }
       }
       return result;
     } catch (error) {
@@ -166,11 +186,8 @@ export class MoveOutput {
       const failures: unknown[] = [];
       for (const move of [...moves].reverse()) {
         try {
-          if (move.staged && move.rewrittenContent !== undefined) {
-            await returnMovedFile(fs, move.temporaryPath, move.sourcePath);
-            if (move.installed) await fs.rm(move.targetPath, { force: true });
-          } else if (move.installed) {
-            if (move.copied) await fs.rm(move.targetPath, { force: true });
+          if (move.installed) {
+            if (move.copied || move.rewrittenContent !== undefined) await fs.rm(move.targetPath, { force: true });
             else await returnMovedFile(fs, move.targetPath, move.sourcePath);
           }
           await fs.rm(move.temporaryPath, { force: true });

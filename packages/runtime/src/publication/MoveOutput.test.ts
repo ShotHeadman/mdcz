@@ -54,6 +54,30 @@ describe("MoveOutput", () => {
     ).rejects.toThrow("commit failed");
     await expect(readFile(test.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const rewritten = await fixture();
+    const rewrittenJournal = createMemoryPublicationJournal();
+    let recordedManifestTemporaryPath = "";
+    await expect(
+      new MoveOutput().install({
+        operationId: "rewrite",
+        operationType: "scrape",
+        moves: [{ ...rewritten.move, rewrittenContent: "rewritten" }],
+        artifacts: [],
+        journal: rewrittenJournal,
+        commit: () => {
+          expect(existsSync(rewritten.sourcePath)).toBe(true);
+          const unfinished = rewrittenJournal.listUnfinished();
+          recordedManifestTemporaryPath = unfinished[0]?.manifest.entries[0]?.temporaryPath ?? "";
+          throw new Error("commit failed");
+        },
+      }),
+    ).rejects.toThrow("commit failed");
+    expect(recordedManifestTemporaryPath.startsWith("library/")).toBe(true);
+    expect(recordedManifestTemporaryPath.endsWith(".part.rewrite.part")).toBe(true);
+    await expect(readFile(rewritten.sourcePath, "utf8")).resolves.toBe("video");
+    await expect(readFile(rewritten.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(rewrittenJournal.listUnfinished()).toEqual([]);
   });
 
   it("keeps the cross-device source through commit and deletes it afterward", async () => {
@@ -78,6 +102,38 @@ describe("MoveOutput", () => {
     expect(commit).toHaveBeenCalledOnce();
     await expect(readFile(test.targetPath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const failedCleanup = await fixture();
+    const failedCleanupJournal = createMemoryPublicationJournal();
+    const repairIssues = { record: vi.fn(), resolve: vi.fn() };
+    const failedRename = vi.fn(async (source: string, target: string) => {
+      if (source === failedCleanup.sourcePath) throw Object.assign(new Error("cross device"), { code: "EXDEV" });
+      await fs.rename(source, target);
+    });
+    const remove: typeof outputFileSystem.rm = async (target, options) => {
+      if (target === failedCleanup.sourcePath) throw new Error("source is locked");
+      await fs.rm(target, options);
+    };
+    const failedResult = await new MoveOutput({ ...outputFileSystem, rename: failedRename, rm: remove }).install({
+      operationId: "cleanup-failure",
+      operationType: "scrape",
+      moves: [failedCleanup.move],
+      artifacts: [],
+      journal: failedCleanupJournal,
+      repairIssues,
+      commit: () => "committed",
+    });
+    expect(failedResult.cleanupIssues).toHaveLength(1);
+    expect(failedCleanupJournal.listUnfinished()).toMatchObject([{ state: "committed" }]);
+    expect(repairIssues.record).toHaveBeenCalledWith({
+      operationId: "cleanup-failure",
+      operationType: "scrape",
+      rootId: failedCleanup.move.target.rootId,
+      relativePath: failedCleanup.move.target.relativePath,
+      errorMessage: "source is locked",
+    });
+    await expect(readFile(failedCleanup.sourcePath, "utf8")).resolves.toBe("video");
+    await expect(readFile(failedCleanup.targetPath, "utf8")).resolves.toBe("video");
   });
 
   it("rejects an occupied media destination before mutation", async () => {

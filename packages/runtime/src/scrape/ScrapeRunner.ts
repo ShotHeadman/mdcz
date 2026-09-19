@@ -1,5 +1,5 @@
-import { basename, dirname, posix } from "node:path";
-import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { posix } from "node:path";
+import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type {
   LibraryEntryRecord,
   LibraryRepository,
@@ -69,11 +69,11 @@ import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executionPolicy";
 import { FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedFileScrape, type RuntimeScrapeSignalService } from "./FileScraper";
+import { admitMovieGroups } from "./movieGroups";
 import { NfoGenerator } from "./nfo";
 import { checkScrapeTargets } from "./preflightScrapeTask";
 import { TranslateService } from "./TranslateService";
 import type { TranslationMappingStore } from "./translate/types";
-import { parseFileInfo } from "./utils/number";
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5000;
 
@@ -154,6 +154,7 @@ export interface ScrapeRunnerDependencies {
     scrapeRuns: ScrapeRunRepository;
     library: LibraryRepository;
     publicationJournal: import("../publication/types").PublicationJournalPort;
+    repairIssues: import("../publication/types").PublicationRepairPort;
     mediaRoots: ConfiguredMediaRootService;
     fileSystem?: import("../publication/types").PublicationFileSystem;
   };
@@ -188,7 +189,6 @@ export interface ScrapeRunnerDependencies {
   onError?: (runId: string, error: unknown) => Promise<void> | void;
   aggregationService?: Pick<AggregationService, "aggregate"> & {
     clearCache?: () => void;
-    getFailureSummary?: (number: string) => string | undefined;
   };
 }
 
@@ -212,6 +212,7 @@ const toRootRelativePath = (root: MediaRoot, absolutePath: string): string => {
 };
 
 export class ScrapeRunner {
+  private readonly rootGuards = new Map<string, ReturnType<ConfiguredMediaRootService["rootIntegrityGuard"]>>();
   private readonly discoveredInventories = new Map<string, DirectoryInventory>();
   private readonly rootDisplayNames = new Map<string, string>();
   private readonly logger: RuntimeLogger;
@@ -263,6 +264,7 @@ export class ScrapeRunner {
         this.terminalSnapshots.set(run.id, dto);
         this.lastTerminalSnapshot = dto;
         this.discoveredInventories.delete(run.id);
+        this.rootGuards.delete(run.id);
         this.aggregationService.clearCache?.();
         await this.deps.onTerminal?.(run, dto);
       },
@@ -667,15 +669,22 @@ export class ScrapeRunner {
     const rawRefs = normalized.mode === "single" ? [normalized.ref] : normalized.refs;
     const canonicalRefs = await this.deps.persistence.mediaRoots.canonicalizeFileRefs(rawRefs);
     const inventory = new DirectoryInventory();
-    const refs = await inventory.admitRefs(canonicalRefs, (id) => this.deps.persistence.mediaRoots.get(id));
+    const manualScrape = resolveManualScrapeRoute(normalized.manualUrl);
+    const groups = await admitMovieGroups({
+      refs: canonicalRefs.map((ref) => ({ ...ref, manualScrape })),
+      ownership: this.deps.persistence.library.inventoryOwnership(),
+      resolveRoot: (id) => this.deps.persistence.mediaRoots.get(id),
+      inventory,
+      configuration,
+    });
 
-    const rootId = refs[0]?.rootId;
+    const members = groups.flatMap((group) => group.members);
+    const rootId = members[0]?.source.rootId ?? canonicalRefs[0]?.rootId;
     if (!rootId) throw new ScrapeRunnerError("NO_FILES", "No files selected");
     const root = await this.deps.persistence.mediaRoots.get(rootId);
     this.rootDisplayNames.set(root.id, root.displayName);
 
-    const outputRootId =
-      normalized.mode === "single" ? (normalized.outputRootId ?? refs[0].rootId) : normalized.outputRootId;
+    const outputRootId = normalized.mode === "single" ? (normalized.outputRootId ?? rootId) : normalized.outputRootId;
     const outputRelativeDirectory = normalized.outputRelativeDirectory || null;
 
     const manifest = await this.deps.persistence.scrapeRuns.create({
@@ -684,10 +693,10 @@ export class ScrapeRunner {
       outputRelativeDirectory,
       executionMode: normalized.mode,
       configurationJson: JSON.stringify(configuration),
-      items: refs.map((ref, ordinal) => ({
+      items: members.map((member, ordinal) => ({
         ordinal,
-        rootId: ref.rootId,
-        relativePath: ref.relativePath,
+        rootId: member.source.rootId,
+        relativePath: member.source.relativePath,
         manualUrl: normalized.manualUrl ?? null,
       })),
     });
@@ -706,6 +715,8 @@ export class ScrapeRunner {
     }
 
     const repository = this.deps.persistence;
+    const checkRoots = repository.mediaRoots.rootIntegrityGuard();
+    this.rootGuards.set(run.id, checkRoots);
     const generatedStrms = await registeredOutputPaths(
       repository.library,
       (id) => repository.mediaRoots.get(id),
@@ -715,6 +726,7 @@ export class ScrapeRunner {
       scope: directoryTaskScopeSchema.parse(JSON.parse(run.directoryScopeJson)),
       configuration: configurationSchema.parse(JSON.parse(run.configurationJson)),
       mediaRoots: repository.mediaRoots,
+      checkRoots,
       generatedStrms,
       signal,
       onProgress,
@@ -737,7 +749,8 @@ export class ScrapeRunner {
     reporter: ScrapeWorkflowReporter,
   ): Promise<ScrapeHostExecution<RunnerManualScrape, PreparedFileScrape>> {
     const outputRootIds = manifest.requestedOutputRootId ? [manifest.requestedOutputRootId] : [];
-    const checkRoots = this.deps.persistence.mediaRoots.rootIntegrityGuard();
+    const checkRoots = this.rootGuards.get(manifest.id) ?? this.deps.persistence.mediaRoots.rootIntegrityGuard();
+    this.rootGuards.set(manifest.id, checkRoots);
     await checkRoots([...new Set([...manifest.items.map((item) => item.rootId), ...outputRootIds])]);
 
     const configuration = configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null"));
@@ -766,7 +779,6 @@ export class ScrapeRunner {
 
     const fileScraper = new FileScraper(
       {
-        outputs: this.deps.persistence.library,
         aggregationService: this.aggregationService,
         translateService: this.translateService,
         nfoGenerator: this.nfoGenerator,
@@ -811,76 +823,48 @@ export class ScrapeRunner {
       }),
     );
 
-    const ownershipEntries = this.deps.persistence.library.inventoryOwnership();
-    const locations = await Promise.all(
-      ownershipEntries.map(async (entry) => {
-        const root = roots.get(entry.rootId) ?? (await this.deps.persistence.mediaRoots.get(entry.rootId));
-        roots.set(entry.rootId, root);
-        return {
-          ...entry,
-          path: await inventory.entryPath(resolveRootRelativePath(root, entry.relativePath)),
-        };
-      }),
-    );
+    const groups = await admitMovieGroups({
+      refs: items.map((item) => ({
+        rootId: item.rootId,
+        relativePath: item.relativePath,
+        manualScrape: item.manualScrape,
+      })),
+      ownership: this.deps.persistence.library.inventoryOwnership(),
+      resolveRoot: async (id) => roots.get(id) ?? (await this.deps.persistence.mediaRoots.get(id)),
+      inventory,
+      configuration,
+    });
 
-    const owners = new Map<string, string>();
-    for (const file of locations) {
-      const identity = filesystemPathKey(file.path);
-      if (file.kind === "strm" && file.published) {
-        inventory.generatedStrms.add(identity);
-        continue;
+    const itemByKey = new Map(items.map((item) => [`${item.rootId}\0${item.relativePath}`, item]));
+    const movieGroups: Array<{ itemIds: string[]; movieId?: string; error?: string }> = [];
+    const groupFactsByItemId = new Map<
+      string,
+      {
+        movieId: string;
+        fileId: string;
+        assets: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
       }
-      if (file.kind !== "video") continue;
-      const previous = owners.get(identity);
-      if (previous && previous !== file.movieId)
-        throw new Error(`Media entry belongs to multiple movies: ${file.path}`);
-      owners.set(identity, file.movieId);
-      inventory.registeredNfos.set(
-        identity,
-        locations
-          .filter(
-            (asset) =>
-              asset.kind === "nfo" &&
-              asset.movieId === file.movieId &&
-              (asset.fileId === null || asset.fileId === file.fileId),
-          )
-          .map((asset) => asset.path),
-      );
-    }
+    >();
 
-    const movieGroups = new Map<string, { itemIds: string[]; movieId?: string; error?: string }>();
-    const movieIdsByItemId = new Map<string, string | undefined>();
-    const observed = new Map<string, { number: string; part?: number }[]>();
-    for (const item of items) {
-      const entryPath = await inventory.entryPath(item.sourcePath);
-      const entryIdentity = filesystemPathKey(entryPath);
-      const movieId = owners.get(entryIdentity);
-      const fileInfo = parseFileInfo(item.sourcePath, configuration.scrape.filenameIgnoreTokens);
-      const key =
-        movieId ?? `${filesystemPathKey(dirname(entryPath))}\0${fileInfo.number.trim().toUpperCase() || entryIdentity}`;
-      const group = movieGroups.get(key) ?? { itemIds: [], movieId };
-      group.itemIds.push(item.id);
-      movieIdsByItemId.set(item.id, movieId);
-      const members = observed.get(key) ?? [];
-      members.push({ number: fileInfo.number, part: fileInfo.part?.number });
-      observed.set(key, members);
-      if (!movieId) {
-        const parts = members.flatMap((member) => (member.part === undefined ? [] : [member.part]));
-        if (parts.length && parts.length !== members.length) {
-          group.error = "同一影片同时包含分盘文件和独立文件，需要手动核对";
-        }
-        if (new Set(parts).size !== parts.length) {
-          group.error = "同一影片存在重复分盘号，需要手动核对";
-        }
+    for (const group of groups) {
+      const itemIds: string[] = [];
+      for (const member of group.members) {
+        const item = itemByKey.get(`${member.source.rootId}\0${member.source.relativePath}`);
+        if (!item) continue;
+        itemIds.push(item.id);
+        groupFactsByItemId.set(item.id, {
+          movieId: group.movieId,
+          fileId: member.fileId,
+          assets: group.assets,
+        });
       }
-      const primary = await inventory.mediaEntries(dirname(item.sourcePath));
-      if (
-        fileInfo.extension.toLowerCase() === ".strm" &&
-        !primary.some((entry) => entry.name === basename(item.sourcePath))
-      ) {
-        group.error = `不能单独刮削生成的媒体附属文件：${item.sourcePath}`;
+      if (itemIds.length > 0) {
+        movieGroups.push({
+          itemIds,
+          movieId: group.movieId,
+          error: group.error,
+        });
       }
-      movieGroups.set(key, group);
     }
 
     return {
@@ -891,15 +875,18 @@ export class ScrapeRunner {
         status: (item.status ?? "pending") as Exclude<ScrapeRunItemRecord["status"], null | "processing">,
         error: item.errorMessage,
       })),
-      movieGroups: [...movieGroups.values()],
-      admitItem: async (item) => item.id,
+      movieGroups,
       prepareGroup: async (entries, signal) => {
         await policy.restGate?.waitBeforeStart(signal);
         const results = await fileScraper.prepareGroup(
           entries.map(({ item }) => {
             const uncensoredChoice = manifestItemsById.get(item.id)?.uncensoredChoice;
+            const facts = groupFactsByItemId.get(item.id);
             return {
               filePath: item.sourcePath,
+              groupMovieId: facts?.movieId,
+              groupFileId: facts?.fileId,
+              groupAssets: facts?.assets,
               progress: {
                 fileIndex: 1,
                 totalFiles: manifest.items.length,
@@ -913,7 +900,6 @@ export class ScrapeRunner {
                 localState: uncensoredChoice ? { uncensoredChoice } : undefined,
                 scrapeSessionId: manifest.id,
                 itemId: item.id,
-                attemptId: item.id,
                 operationId: `${manifest.id}:${item.id}`,
                 outputTemplateRoot: resolveRootRelativePath(
                   outputRoot,
@@ -931,10 +917,6 @@ export class ScrapeRunner {
           }),
           signal,
         );
-        const movieId = movieIdsByItemId.get(entries[0].item.id);
-        for (const result of results) {
-          if (result.status === "prepared") result.prepared.groupMovieId = movieId;
-        }
         return results.map((result) => (result.status === "prepared" ? result : { status: result.status, result }));
       },
       checkTargets: async (entries) => {
@@ -1043,18 +1025,22 @@ export class ScrapeRunner {
         ]);
         try {
           if (output.moves.length > 0) {
-            await new MoveOutput(this.deps.persistence.fileSystem).install({
+            const published = await new MoveOutput(this.deps.persistence.fileSystem).install({
               operationId: output.operationId,
               operationType: "scrape",
               moves: output.moves,
               artifacts: output.artifacts,
               journal: this.deps.persistence.publicationJournal,
+              repairIssues: this.deps.persistence.repairIssues,
               protectedSourceRoots: output.protectedSourceRoots,
               commit,
             });
+            for (const issue of published.cleanupIssues)
+              this.logger.warn(`Scrape publication cleanup failed: ${toErrorMessage(issue)}`);
           } else {
             await new WriteOutput(this.deps.persistence.fileSystem).install(output.artifacts, {
               protectedSourceRoots: output.protectedSourceRoots,
+              protectedMediaFiles: output.protectedMediaFiles,
               commit,
             });
           }

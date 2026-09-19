@@ -56,11 +56,13 @@ export const discoverDirectoryFiles = async (input: {
   platform: "desktop" | "server";
   onProgress: (progress: DiscoveryProgress) => void;
   inventory?: DirectoryInventory;
+  checkRoots?: (rootIds: Iterable<string>) => Promise<void>;
 }): Promise<{ refs: RootFileRef[]; discovery: DiscoveryProgress; inventory: DirectoryInventory }> => {
   const { scope, signal } = input;
   const started = performance.now();
   const warnings = { count: 0, paths: [] as string[] };
   const inventory = input.inventory ?? new DirectoryInventory();
+  const checkRoots = input.checkRoots ?? input.mediaRoots.rootIntegrityGuard();
   for (const path of input.generatedStrms) inventory.generatedStrms.add(await inventory.entryPath(path));
   const canonicalDirectories = new Map<string, string>();
   const found: string[] = [];
@@ -74,9 +76,9 @@ export const discoverDirectoryFiles = async (input: {
   };
   signal.throwIfAborted();
   const root = await input.mediaRoots.registerPathIntent(scope.scanDir);
-  await input.mediaRoots.assertRootIntegrity([root.id]);
+  await checkRoots([root.id]);
   const output = await input.mediaRoots.prepareOutputDirectory({ hostPath: scope.targetDir });
-  if (output.id !== root.id) await input.mediaRoots.assertRootIntegrity([output.id]);
+  await checkRoots([output.id]);
   const scanPath = await realpath(scope.scanDir);
   const namespaceScanPath =
     root.realPath && isPathInside(root.realPath, scanPath)
@@ -118,7 +120,7 @@ export const discoverDirectoryFiles = async (input: {
     const ref = { rootId: resolved.root.id, relativePath: resolved.relativePath };
     refs.set(`${ref.rootId}\0${ref.relativePath}`, ref);
   }
-  await input.mediaRoots.assertRootIntegrity(
+  await checkRoots(
     new Set([...refs.values()].map((ref) => ref.rootId).filter((id) => id !== root.id && id !== output.id)),
   );
   discovery = { ...discovery, candidates: refs.size, currentPath: null };

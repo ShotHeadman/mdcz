@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import { type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
@@ -22,7 +22,6 @@ export interface PreparedMovieFile {
   fileInfo?: Pick<import("@mdcz/shared/types").FileInfo, "part" | "resolution">;
   scrape?: {
     itemId: string;
-    attemptId: string;
     identity: Pick<import("@mdcz/shared/types").ScrapeResult, "rootId" | "relativePath" | "fileName" | "part">;
     fileInfo: import("@mdcz/shared/types").FileInfo;
     videoMeta?: import("@mdcz/shared/types").VideoMeta;
@@ -38,6 +37,7 @@ export interface MovieArtifacts {
   moves: SourceMove[];
   publishedTargets: RootFileRef[];
   protectedSourceRoots: string[];
+  protectedMediaFiles: string[];
 }
 
 export interface PreparedMovieOutput extends MovieArtifacts {
@@ -62,23 +62,40 @@ interface MovieOutputMember {
   scrape?: PreparedMovieFile["scrape"];
 }
 
+const MANAGED_MOVIE_ASSET_KINDS = new Set(["nfo", "poster", "fanart", "thumb", "trailer", "scene", "actor"]);
+
 export const retainedRegisteredFeatures = (
   members: readonly { layout: { sidecars: readonly { kind: string }[] } }[],
   registered: readonly (RootFileRef & { fileId: string | null; kind: string })[],
-): AssetRef[] =>
-  members.some((member) => member.layout.sidecars.some((sidecar) => sidecar.kind === "feature"))
-    ? []
-    : registered.flatMap((asset) =>
-        asset.fileId === null && asset.kind === "feature"
-          ? [
-              {
-                type: "local" as const,
-                kind: asset.kind,
-                file: { rootId: asset.rootId, relativePath: asset.relativePath },
-              },
-            ]
-          : [],
-      );
+): AssetRef[] => {
+  const hasFeatureSidecar = members.some((member) =>
+    member.layout.sidecars.some((sidecar) => sidecar.kind === "feature"),
+  );
+  return registered.flatMap((asset) => {
+    if (asset.fileId !== null) return [];
+    if (asset.kind === "feature") {
+      return hasFeatureSidecar
+        ? []
+        : [
+            {
+              type: "local" as const,
+              kind: asset.kind,
+              file: { rootId: asset.rootId, relativePath: asset.relativePath },
+            },
+          ];
+    }
+    if (!MANAGED_MOVIE_ASSET_KINDS.has(asset.kind)) {
+      return [
+        {
+          type: "local" as const,
+          kind: asset.kind,
+          file: { rootId: asset.rootId, relativePath: asset.relativePath },
+        },
+      ];
+    }
+    return [];
+  });
+};
 
 export const prepareMovieArtifacts = async (input: {
   inventory: DirectoryInventory;
@@ -323,6 +340,24 @@ export const prepareMovieArtifacts = async (input: {
         artifacts.push({ targetPath, data });
         publishedTargets.push(target);
       });
+  const writtenNfos = artifacts.filter(
+    (a): a is Extract<WriteArtifact, { data: unknown }> =>
+      a.targetPath.toLowerCase().endsWith(".nfo") && "data" in a && a.data !== undefined,
+  );
+  if (writtenNfos.length > 0) {
+    for (const { member: file } of successful) {
+      const required = getNfoWritePaths(file.layout.nfoPath, input.nfoNaming).requiredPaths;
+      for (const reqPath of required) {
+        if (!artifacts.some((a) => resolve(a.targetPath) === resolve(reqPath))) {
+          const baseName = basename(reqPath);
+          const match = writtenNfos.find((n) => basename(n.targetPath) === baseName) ?? writtenNfos[0];
+          const target = toRef(reqPath);
+          artifacts.push({ targetPath: reqPath, data: match.data });
+          publishedTargets.push(target);
+        }
+      }
+    }
+  }
   const existingNfoPath = first.existingNfoPath;
   if (!nfoPath && existingNfoPath) {
     const paths = getNfoWritePaths(first.layout.nfoPath, input.nfoNaming);
@@ -397,6 +432,10 @@ export const prepareMovieArtifacts = async (input: {
     )
       movieAssets.push(asset);
   }
+  for (const artifact of artifacts) {
+    if (mediaSources.has(resolve(artifact.targetPath)))
+      throw new Error(`Artifact target cannot overwrite a source media file: ${artifact.targetPath}`);
+  }
   const targetRootIds = new Set(successful.map(({ file }) => file.target.rootId));
   const protectedSourceRoots = [
     ...new Set(
@@ -415,5 +454,6 @@ export const prepareMovieArtifacts = async (input: {
     moves,
     publishedTargets,
     protectedSourceRoots,
+    protectedMediaFiles: [...mediaSources],
   };
 };

@@ -113,7 +113,7 @@ export const writePreparedNfo = async (input: {
   crawlerData?: CrawlerData;
   enabled: boolean;
   fileInfo: FileInfo;
-  nfoGenerator: NfoGenerator;
+  nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   nfoPath?: string;
   sourceVideoPath: string;
   localState?: NfoLocalState;

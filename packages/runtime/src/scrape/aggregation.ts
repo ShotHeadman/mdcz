@@ -54,12 +54,6 @@ export interface ManualScrapeOptions {
   detailUrl?: string;
 }
 
-interface CacheEntry {
-  result: AggregationResult;
-  expiresAt: number;
-}
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 200;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
@@ -84,8 +78,8 @@ interface CrawlerExecutionContext {
 }
 
 export class AggregationService {
-  private readonly cache = new Map<string, CacheEntry>();
-  private readonly failureSummaries = new Map<string, string>();
+  private readonly cache = new Map<string, AggregationResult>();
+  private readonly inFlight = new Map<string, Promise<AggregationResult>>();
   private readonly logger: RuntimeLogger;
 
   constructor(
@@ -100,15 +94,37 @@ export class AggregationService {
     config: Configuration,
     signal?: AbortSignal,
     manualScrape?: ManualScrapeOptions,
-  ): Promise<AggregationResult | null> {
-    const cacheKey = this.buildCacheKey(number, manualScrape);
-    const cached = this.getFromCache(cacheKey);
+  ): Promise<AggregationResult> {
+    const key = this.buildKey(number, manualScrape);
+    const cached = this.cache.get(key);
     if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
       this.logger.info(`Cache hit for ${number}`);
-      this.clearFailureSummary(number);
       return cached;
     }
 
+    const pending = this.inFlight.get(key);
+    if (pending) {
+      return await pending;
+    }
+
+    const execution = this.executeAggregation(key, number, config, signal, manualScrape);
+    this.inFlight.set(key, execution);
+    try {
+      return await execution;
+    } finally {
+      this.inFlight.delete(key);
+    }
+  }
+
+  private async executeAggregation(
+    key: string,
+    number: string,
+    config: Configuration,
+    signal?: AbortSignal,
+    manualScrape?: ManualScrapeOptions,
+  ): Promise<AggregationResult> {
     const { admitted: enabledSites, rejected: rejectedSites } = this.resolveActiveSites(number, config, manualScrape);
     if (rejectedSites.length > 0) {
       this.logger.info(
@@ -119,9 +135,8 @@ export class AggregationService {
     }
     if (enabledSites.length === 0) {
       const message = `No active sites for ${number}`;
-      this.recordFailureSummary(number, message);
       this.logger.warn(message);
-      return null;
+      throw new Error(message);
     }
 
     this.logger.info(`Aggregating ${number} from ${enabledSites.length} sites: ${enabledSites.join(", ")}`);
@@ -159,9 +174,8 @@ export class AggregationService {
 
     if (successes.size === 0) {
       const message = summarizeFailedSiteResults(number, siteResults);
-      this.recordFailureSummary(number, message);
       this.logger.warn(message);
-      return null;
+      throw new Error(message);
     }
 
     const stats: AggregationStats = {
@@ -184,34 +198,21 @@ export class AggregationService {
       this.logger.warn(
         `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
       );
-      this.recordFailureSummary(number, `Aggregated data for ${number} does not meet minimum threshold`);
-      return null;
+      throw new Error(`Aggregated data for ${number} does not meet minimum threshold`);
     }
 
     const result: AggregationResult = { data, sources, imageAlternatives, stats };
-    this.putInCache(cacheKey, result);
-    this.clearFailureSummary(number);
+    this.putInCache(key, result);
     return result;
-  }
-
-  getFailureSummary(number: string): string | undefined {
-    return this.failureSummaries.get(this.normalizeFailureSummaryKey(number));
-  }
-
-  private recordFailureSummary(number: string, message: string): void {
-    this.failureSummaries.set(this.normalizeFailureSummaryKey(number), message);
-  }
-
-  private clearFailureSummary(number: string): void {
-    this.failureSummaries.delete(this.normalizeFailureSummaryKey(number));
-  }
-
-  private normalizeFailureSummaryKey(number: string): string {
-    return number.trim().toUpperCase();
   }
 
   clearCache(): void {
     this.cache.clear();
+    this.inFlight.clear();
+  }
+
+  dispose(): void {
+    this.clearCache();
   }
 
   private resolveActiveSites(
@@ -479,47 +480,22 @@ export class AggregationService {
     return new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
   }
 
-  private getFromCache(key: string): AggregationResult | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (Date.now() >= entry.expiresAt) {
-      this.cache.delete(key);
-      return null;
-    }
-    this.cache.delete(key);
-    this.cache.set(key, entry);
-    return entry.result;
-  }
-
   private putInCache(key: string, result: AggregationResult): void {
     if (this.cache.has(key)) {
       this.cache.delete(key);
     }
-    this.cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-    this.pruneCache();
-  }
-
-  private pruneCache(): void {
-    this.evictExpired();
+    this.cache.set(key, result);
     while (this.cache.size > MAX_CACHE_ENTRIES) {
       const oldestKey = this.cache.keys().next().value;
-      if (!oldestKey) {
-        return;
-      }
+      if (!oldestKey) return;
       this.cache.delete(oldestKey);
     }
   }
 
-  private evictExpired(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.cache) {
-      if (now >= entry.expiresAt) {
-        this.cache.delete(key);
-      }
-    }
-  }
-
-  private buildCacheKey(number: string, manualScrape?: ManualScrapeOptions): string {
-    return manualScrape ? `${number}::manual::${manualScrape.site}::${manualScrape.detailUrl ?? ""}` : number;
+  private buildKey(number: string, manualScrape?: ManualScrapeOptions): string {
+    const mode = manualScrape ? "manual" : "auto";
+    const site = manualScrape?.site ?? "";
+    const detailUrl = manualScrape?.detailUrl ?? "";
+    return `${number.trim().toUpperCase()}::${mode}::${site}::${detailUrl}`;
   }
 }

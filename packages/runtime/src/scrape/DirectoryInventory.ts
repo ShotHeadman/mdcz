@@ -1,7 +1,7 @@
 import type { Dirent, Stats } from "node:fs";
 import fs from "node:fs/promises";
 import { basename, dirname, join, parse } from "node:path";
-import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { filesystemPathKey, inspectFileEntry, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { type ParsedNfoSnapshot, parseNfoSnapshot } from "../maintenance/nfoSnapshot";
@@ -118,8 +118,16 @@ export class DirectoryInventory {
   ): Promise<RootFileRef[]> {
     const admitted = new Map<string, RootFileRef>();
     for (const ref of refs) {
-      const path = resolveRootRelativePath(await resolveRoot(ref.rootId), ref.relativePath);
-      const identity = filesystemPathKey(await this.entryPath(path));
+      const filePath = resolveRootRelativePath(await resolveRoot(ref.rootId), ref.relativePath);
+      let identity: string;
+      try {
+        const entry = await inspectFileEntry(filePath);
+        this.observeFile(entry.entryPath, entry.stats);
+        identity = entry.entryIdentity;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        identity = filesystemPathKey(await this.entryPath(filePath));
+      }
       const submitted = this.submittedRefs.get(identity) ?? [];
       if (!submitted.some((item) => item.rootId === ref.rootId && item.relativePath === ref.relativePath))
         submitted.push(ref);

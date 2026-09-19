@@ -479,7 +479,7 @@ describe("AggregationService", () => {
     expect(result?.sources.scene_images).toBe(Website.PPVDATABANK);
   });
 
-  it("returns null when no result clears the aggregation threshold", async () => {
+  it("throws when no result clears the aggregation threshold", async () => {
     const cases = [
       {
         provider: new MultiResultCrawlerProvider(new Map<Website, CrawlerData>()),
@@ -494,8 +494,30 @@ describe("AggregationService", () => {
     ];
 
     for (const { provider, config } of cases) {
-      await expect(new AggregationService(provider).aggregate("ABF-075", config)).resolves.toBeNull();
+      await expect(new AggregationService(provider).aggregate("ABF-075", config)).rejects.toThrow();
     }
+  });
+
+  it("coalesces in-flight requests and does not cache failures", async () => {
+    const siteResults = makeSiteResults([Website.DMM, { thumb_url: "https://example.com/thumb.jpg" }]);
+    const provider = new MultiResultCrawlerProvider(siteResults, { [Website.DMM]: 20 });
+    const service = new AggregationService(provider);
+    const config = makeConfig({ scrape: { sites: [Website.DMM] } });
+
+    const [first, second] = await Promise.all([
+      service.aggregate("ABF-075", config),
+      service.aggregate("ABF-075", config),
+    ]);
+
+    expect(first).toBe(second);
+    expect(provider.calledSites.length).toBe(1);
+
+    const failingProvider = new MultiResultCrawlerProvider(new Map());
+    const failingService = new AggregationService(failingProvider);
+    await expect(failingService.aggregate("ABF-075", config)).rejects.toThrow();
+    expect(failingProvider.calledSites.length).toBe(1);
+    await expect(failingService.aggregate("ABF-075", config)).rejects.toThrow();
+    expect(failingProvider.calledSites.length).toBe(2);
   });
 
   it("caches results until clearCache is called", async () => {
@@ -589,7 +611,10 @@ describe("AggregationService", () => {
 
   it("passes manual detail URLs to the forced crawler", async () => {
     const detailUrl = "https://video.dmm.co.jp/av/content/?id=1abf00075";
-    const siteResults = makeSiteResults([Website.DMM_TV, { title: "DMM TV Title" }]);
+    const siteResults = makeSiteResults([
+      Website.DMM_TV,
+      { title: "DMM TV Title", thumb_url: "https://video.example/thumb.jpg" },
+    ]);
     const provider = new RecordingCrawlerProvider(siteResults);
 
     await new AggregationService(provider).aggregate("ABF-075", makeConfig(), undefined, {

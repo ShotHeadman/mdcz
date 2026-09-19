@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   canonicalizeRootFileRefs,
   filesystemPathKey,
-  inspectFileEntry,
   type MediaRoot,
   normalizeHostPath,
   resolveRootRelativePath,
@@ -102,24 +101,6 @@ export class ConfiguredMediaRootService {
   async canonicalizeFileRefs(refs: readonly RootFileRef[]): Promise<RootFileRef[]> {
     const roots = await this.listRoots();
     return canonicalizeRootFileRefs(roots, refs);
-  }
-
-  async admitFileRefs(refs: readonly RootFileRef[]) {
-    const registered = await this.canonicalizeFileRefs(refs);
-    const roots = new Map((await this.listRoots()).map((root) => [root.id, root]));
-    const participants = new Map<
-      string,
-      { ref: RootFileRef; submittedRefs: RootFileRef[]; entry: Awaited<ReturnType<typeof inspectFileEntry>> }
-    >();
-    for (const ref of registered) {
-      const root = roots.get(ref.rootId);
-      if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
-      const entry = await inspectFileEntry(resolveRootRelativePath(root, ref.relativePath));
-      const existing = participants.get(entry.entryIdentity);
-      if (existing) existing.submittedRefs.push(ref);
-      else participants.set(entry.entryIdentity, { ref, submittedRefs: [ref], entry });
-    }
-    return [...participants.values()];
   }
 
   async assertRootIntegrity(rootIds: Iterable<string>): Promise<void> {

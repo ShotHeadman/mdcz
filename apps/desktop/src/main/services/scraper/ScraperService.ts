@@ -55,6 +55,7 @@ export class ScraperService {
         scrapeRuns: state.repositories.scrapeRuns,
         library: state.repositories.library,
         publicationJournal: state.repositories.publicationJournal,
+        repairIssues: state.repositories.libraryRepairIssues,
         mediaRoots: this.mediaRoots,
       },
       getConfiguration: async () => await configManager.getValidated(),

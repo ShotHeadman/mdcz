@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
 import {
   canonicalizeRootFileRefs,
   filesystemPathKey,
   type MediaRoot,
   resolveRootRelativePath,
-  toRootRelativePath,
 } from "@mdcz/media-store";
+import type { LibraryRepository } from "@mdcz/persistence";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
@@ -25,11 +24,10 @@ import type {
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { PublicationConflictError } from "../publication/conflicts";
-import type { PublicationLibraryAsset } from "../publication/outputLibrary";
 import type { PublicationJournalPort } from "../publication/types";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import { admitMovieGroups, type MovieOwnership } from "../scrape/movieGroups";
 import { isAbortError } from "../scrape/utils/abort";
-import { parseFileInfo } from "../scrape/utils/number";
 import { TaskExecutor, type TaskExecutorContext } from "../tasks";
 import {
   InactiveMaintenanceSessionError,
@@ -57,40 +55,9 @@ interface MaintenanceDirectoryDefinition {
 
 type MaintenanceMovieGroup = SharedMaintenanceMovieGroup;
 
-interface MaintenanceLibraryRepository {
-  inventoryOwnership(): Array<
-    RootFileRef & { movieId: string; fileId: string | null; kind: string; published: number }
-  >;
-
-  writeEntry(
-    movie: {
-      id: string;
-      mediaIdentity: string;
-      title?: string;
-      number: string;
-      actors?: string[];
-      crawlerDataJson?: string;
-      lastRefreshedAt: Date;
-      assets: PublicationLibraryAsset[];
-    },
-    files: Array<{
-      fileId: string;
-      rootId: string;
-      rootRelativePath: string;
-      size: number;
-      modifiedAt: Date | null;
-      partNumber?: number | null;
-      partSuffix?: string | null;
-      resolution?: string | null;
-      assets: PublicationLibraryAsset[];
-      lastKnownPath: string;
-    }>,
-  ): string;
-}
-
 export interface MaintenancePersistencePort {
   get(): Promise<{
-    library: MaintenanceLibraryRepository;
+    library: LibraryRepository;
     publicationJournal: PublicationJournalPort;
   }>;
 }
@@ -151,108 +118,38 @@ const canonicalizeRefs = async (
 
 const resolveMovieSelections = async (
   roots: MaintenanceRootPort,
-  ownership: ReturnType<MaintenanceLibraryRepository["inventoryOwnership"]>,
+  ownership: readonly MovieOwnership[],
   refs: readonly MaintenanceSessionRef[],
   inventory: DirectoryInventory,
   configuration: Configuration,
 ): Promise<MaintenanceMovieSelection[]> => {
-  const locations = await Promise.all(
-    ownership.map(async (entry) => ({
-      ...entry,
-      path: await inventory.entryPath(resolveRootRelativePath(await roots.get(entry.rootId), entry.relativePath)),
-    })),
-  );
-  const owners = new Map<string, (typeof locations)[number]>();
-  for (const entry of locations) {
-    const key = filesystemPathKey(entry.path);
-    if (entry.kind === "strm" && entry.published) inventory.generatedStrms.add(key);
-    if (entry.kind !== "video") continue;
-    const previous = owners.get(key);
-    if (previous && previous.movieId !== entry.movieId)
-      throw new Error(`Media entry belongs to multiple movies: ${entry.path}`);
-    owners.set(key, entry);
-  }
-  const movies = new Map<string, MaintenanceMovieSelection>();
-  for (const ref of await inventory.admitRefs(refs, (id) => roots.get(id))) {
-    const root = await roots.get(ref.rootId);
-    const path = resolveRootRelativePath(root, ref.relativePath);
-    const canonical = await inventory.entryPath(path);
-    if (inventory.generatedStrms.has(filesystemPathKey(canonical)))
-      throw new Error(`不能单独维护生成的视频附属文件：${path}`);
-    const owner = owners.get(filesystemPathKey(canonical));
-    const info = parseFileInfo(path, configuration.scrape.filenameIgnoreTokens);
-    const key = owner?.movieId ?? `${filesystemPathKey(dirname(canonical))}\0${info.number.toUpperCase() || canonical}`;
-    const existing = movies.get(key);
-    if (existing) {
-      if (!owner && !existing.identity.files.some((file) => refKey(file) === refKey(ref)))
-        existing.identity.files.push({ ...ref, fileId: `${ref.rootId}:${ref.relativePath}` });
-      continue;
-    }
-    const movieId = owner?.movieId ?? randomUUID();
-    const sources: Array<RootFileRef & { fileId: string }> = owner
-      ? locations
-          .filter((entry) => entry.kind === "video" && entry.movieId === movieId)
-          .map((entry) => ({
-            rootId: entry.fileId === owner.fileId ? ref.rootId : entry.rootId,
-            relativePath: entry.fileId === owner.fileId ? ref.relativePath : entry.relativePath,
-            fileId:
-              entry.fileId ??
-              (() => {
-                throw new Error("Registered media has no file ID");
-              })(),
-          }))
-      : [{ ...ref, fileId: `${ref.rootId}:${ref.relativePath}` }];
-    if (!owner && info.part) {
-      for (const sibling of await inventory.mediaEntries(dirname(path))) {
-        const siblingPath = join(dirname(path), sibling.name);
-        const parsed = parseFileInfo(siblingPath, configuration.scrape.filenameIgnoreTokens);
-        if (!parsed.part || parsed.number.toUpperCase() !== info.number.toUpperCase()) continue;
-        if (owners.has(filesystemPathKey(await inventory.entryPath(siblingPath)))) continue;
-        const siblingRef = { rootId: root.id, relativePath: toRootRelativePath(root, siblingPath) };
-        if (!sources.some((entry) => refKey(entry) === refKey(siblingRef)))
-          sources.push({ ...siblingRef, fileId: `${root.id}:${siblingRef.relativePath}` });
-      }
-    }
-    const files: typeof sources = [];
-    const seen = new Set<string>();
-    for (const source of sources) {
-      const path = resolveRootRelativePath(await roots.get(source.rootId), source.relativePath);
-      const identity = filesystemPathKey(await inventory.entryPath(path));
-      if (seen.has(identity)) continue;
-      seen.add(identity);
-      files.push(source);
-    }
+  const groups = await admitMovieGroups({
+    refs,
+    ownership,
+    resolveRoot: (id) => roots.get(id),
+    inventory,
+    configuration,
+  });
+
+  return groups.map((group) => {
+    if (group.error) throw new Error(group.error);
+    const files = group.members.map((member) => ({
+      rootId: member.source.rootId,
+      relativePath: member.source.relativePath,
+      fileId: member.fileId,
+    }));
     files.sort((left, right) => refKey(left).localeCompare(refKey(right)));
     const selected = files[0];
-    movies.set(key, {
+    if (!selected) throw new Error("影片缺少有效文件");
+    return {
       ref: { rootId: selected.rootId, relativePath: selected.relativePath },
       identity: {
-        movieId,
+        movieId: group.movieId,
         files,
-        assets: locations
-          .filter((entry) => entry.kind !== "video" && entry.movieId === movieId)
-          .map((entry) => ({
-            rootId: entry.rootId,
-            relativePath: entry.relativePath,
-            fileId: entry.fileId,
-            kind: entry.kind,
-            published: Boolean(entry.published),
-          })),
+        assets: group.assets,
       },
-    });
-  }
-  for (const selection of movies.values()) {
-    const parts = new Set<number>();
-    for (const file of selection.identity.files) {
-      const part = parseFileInfo(file.relativePath, configuration.scrape.filenameIgnoreTokens).part?.number;
-      if (part === undefined) continue;
-      if (parts.has(part)) throw new Error("影片存在重复分盘号");
-      parts.add(part);
-    }
-    if (parts.size && parts.size !== selection.identity.files.length)
-      throw new Error("同一影片同时包含分盘文件和独立文件，需要手动核对");
-  }
-  return [...movies.values()];
+    };
+  });
 };
 
 const scanMembers = async (
@@ -323,7 +220,7 @@ const scanMembers = async (
 export class MaintenanceSessionCoordinator {
   private runtime: MaintenanceRuntime;
   private inventory = new DirectoryInventory();
-  private ownership: ReturnType<MaintenanceLibraryRepository["inventoryOwnership"]> = [];
+  private ownership: MovieOwnership[] = [];
   private session: MaintenanceSession | null = null;
   private active: ActiveExecution | null = null;
   private executionPromise: Promise<void> | null = null;
@@ -661,7 +558,7 @@ export class MaintenanceSessionCoordinator {
         if (!this.deps.discoverDirectory || !setup?.configuration) throw new Error("目录扫描缺少必要配置");
         let progressNotification = Promise.resolve();
         let progressError: unknown;
-        const generatedStrms = new Set(
+        const generatedStrms = new Set<string>(
           await Promise.all(
             this.ownership
               .filter((entry) => entry.kind === "strm" && entry.published)

@@ -33,6 +33,7 @@ export const inspectFileEntry = async (value: string) => {
   const referent = linkTarget === null ? entry : await stat(entryPath);
   if (!referent.isFile()) throw new Error(`Media entry is not a file: ${value}`);
   return {
+    stats: referent,
     entryPath,
     entryIdentity: filesystemPathKey(entryPath),
     traversalIdentity: filesystemPathKey(path.dirname(entryPath)),

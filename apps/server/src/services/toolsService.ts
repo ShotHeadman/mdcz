@@ -23,6 +23,7 @@ import {
   scanAmazonPosters,
   scanBatchNfoTranslations,
 } from "@mdcz/runtime/tools";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
 import type { ToolCatalogResponse, ToolExecuteInput, ToolExecuteResponse } from "@mdcz/shared/serverDtos";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
@@ -89,22 +90,27 @@ export class ToolsService {
         return { toolId: input.toolId, ok: true, message: `已创建刮削任务 ${task.task.id}`, data: task };
       }
       case "crawler-tester": {
-        const config = await this.config.get();
-        const result = await this.aggregation.aggregate(
-          input.number,
-          config,
-          undefined,
-          resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
-        );
-        if (!result) {
-          return { toolId: input.toolId, ok: false, message: "未抓取到可聚合结果" };
+        try {
+          const config = await this.config.get();
+          const result = await this.aggregation.aggregate(
+            input.number,
+            config,
+            undefined,
+            resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
+          );
+          return {
+            toolId: input.toolId,
+            ok: true,
+            message: `爬虫测试完成：${result.stats.successCount}/${result.stats.totalSites} 成功`,
+            data: result,
+          };
+        } catch (error) {
+          return {
+            toolId: input.toolId,
+            ok: false,
+            message: toErrorMessage(error),
+          };
         }
-        return {
-          toolId: input.toolId,
-          ok: true,
-          message: `爬虫测试完成：${result.stats.successCount}/${result.stats.totalSites} 成功`,
-          data: result,
-        };
       }
       case "media-library-tools": {
         const server = input.server ?? "jellyfin";

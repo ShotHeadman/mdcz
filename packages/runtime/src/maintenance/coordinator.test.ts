@@ -99,7 +99,12 @@ const createCoordinator = (
       list: async () => roots,
     },
     runtime,
-    persistence: { get: async () => ({ library, publicationJournal }) },
+    persistence: {
+      get: async () => ({
+        library: library as unknown as import("@mdcz/persistence").LibraryRepository,
+        publicationJournal,
+      }),
+    },
     events: {
       publish: (event) => {
         events.push(event);

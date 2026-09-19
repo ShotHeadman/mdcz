@@ -22,15 +22,16 @@ describe("WriteOutput", () => {
     await expect(readFile(targetPath, "utf8")).resolves.toBe("new");
   });
 
-  it("rejects targets inside protected source roots", async () => {
+  it.each(["protected-root", "protected-media"])("rejects unsafe write targets: %s", async (scenario) => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-write-output-"));
     directories.push(directory);
     const targetPath = path.join(directory, "movie.nfo");
     await expect(
       new WriteOutput().install([{ targetPath, data: "new" }], {
-        protectedSourceRoots: [directory],
+        protectedSourceRoots: scenario === "protected-root" ? [directory] : undefined,
+        protectedMediaFiles: scenario === "protected-media" ? [targetPath] : undefined,
         commit: () => undefined,
       }),
-    ).rejects.toThrow("protected source root");
+    ).rejects.toThrow(scenario === "protected-root" ? "protected source root" : "cannot overwrite a source media file");
   });
 });
