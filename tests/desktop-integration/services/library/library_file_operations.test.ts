@@ -15,16 +15,26 @@ it.each([false, true])("removes a file index and keeps disk files (last file: %s
     await new MediaRootRepository(database).upsert(root);
     for (const name of ["CD1.mp4", "CD2.mp4", "CD2.srt", "movie.nfo", "poster.jpg"])
       await writeFile(join(directory.path, name), name);
-    if (!last) await library.upsertEntry({ id: "movie", fileId: "cd1", rootId: root.id, rootRelativePath: "CD1.mp4" });
+    if (!last)
+      await library.upsertEntry({
+        movie: { id: "movie" },
+        files: [{ fileId: "cd1", rootId: root.id, rootRelativePath: "CD1.mp4" }],
+      });
     await library.upsertEntry({
-      id: "movie",
-      fileId: "cd2",
-      rootId: root.id,
-      rootRelativePath: "CD2.mp4",
-      assets: [
-        { kind: "subtitle", uri: "CD2.srt", rootId: root.id, relativePath: "CD2.srt", published: true },
-        { kind: "nfo", uri: "movie.nfo", rootId: root.id, relativePath: "movie.nfo", published: true },
-        { kind: "poster", uri: "poster.jpg", rootId: root.id, relativePath: "poster.jpg", published: true },
+      movie: {
+        id: "movie",
+        assets: [
+          { kind: "nfo", uri: "movie.nfo", rootId: root.id, relativePath: "movie.nfo", published: true },
+          { kind: "poster", uri: "poster.jpg", rootId: root.id, relativePath: "poster.jpg", published: true },
+        ],
+      },
+      files: [
+        {
+          fileId: "cd2",
+          rootId: root.id,
+          rootRelativePath: "CD2.mp4",
+          assets: [{ kind: "subtitle", uri: "CD2.srt", rootId: root.id, relativePath: "CD2.srt", published: true }],
+        },
       ],
     });
 

@@ -83,8 +83,7 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
     await ipc.app.showItemInFolder(target);
   },
   openMetadataFolder: async (item) => {
-    const strm = item.assets?.find((asset) => asset.type === "local" && asset.kind === "strm");
-    const target = item.nfoRef ?? (strm?.type === "local" ? strm.file : item.nfoPath);
+    const target = item.nfoRef ?? item.nfoPath;
     if (target) await ipc.app.showItemInFolder(target);
   },
   readNfo: async (item: DetailViewItem, path: string) => {

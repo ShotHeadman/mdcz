@@ -97,11 +97,6 @@ const buildMaintenanceSnapshotView = (snapshot: MaintenanceActiveSessionSnapshot
                   batchId: snapshot.currentBatch?.id,
                   status: result?.status ?? item.status,
                   ...(result?.error ? { error: result.error } : {}),
-                  ...(result?.crawlerData ? { crawlerData: result.crawlerData } : {}),
-                  ...(result?.entry ? { updatedEntry: result.entry } : {}),
-                  ...(result?.fieldDiffs ? { fieldDiffs: result.fieldDiffs } : {}),
-                  ...(result?.unchangedFieldDiffs ? { unchangedFieldDiffs: result.unchangedFieldDiffs } : {}),
-                  ...(result?.pathDiff ? { pathDiff: result.pathDiff } : {}),
                 },
               ],
             ];
@@ -134,7 +129,7 @@ const initialState = () => ({
   retiredSessionIds: [] as string[],
   selectedIds: [] as string[],
   activeId: null as string | null,
-  presetId: "read_local" as MaintenancePresetId,
+  presetId: "inspect_local" as MaintenancePresetId,
   filter: "all" as MaintenanceFilter,
   currentPath: "",
   pending: false,
@@ -175,8 +170,6 @@ export const useMaintenanceStore = create<MaintenanceState>()((set) => ({
   setSnapshot: (snapshot) =>
     set((state) => {
       if (snapshot && state.retiredSessionIds.includes(snapshot.id)) return state;
-      if (snapshot && state.snapshot?.id === snapshot.id && snapshot.generation < state.snapshot.generation)
-        return state;
       const retiredSessionIds =
         state.snapshot && state.snapshot.id !== snapshot?.id
           ? [...state.retiredSessionIds, state.snapshot.id]

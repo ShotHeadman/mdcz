@@ -1,11 +1,11 @@
-import { readdir } from "node:fs/promises";
-import { extname, join } from "node:path";
+import type { Dirent } from "node:fs";
+import { basename, dirname, extname } from "node:path";
 
 import type { CrawlerData } from "@mdcz/shared/types";
 import { toErrorMessage } from "../../../shared";
 import type { ImageAlternatives } from "../../aggregation";
+import type { DirectoryInventory } from "../../DirectoryInventory";
 import { isAbortError } from "../../utils/abort";
-import { pathExists } from "../../utils/filesystem";
 import { buildImageFilePathVariants, normalizeImageFileExtension, replaceImageFileExtension } from "../../utils/image";
 import { normalizeUrl } from "../ImageHostCooldownTracker";
 import type { SceneImageSet } from "../SceneImageDownloader";
@@ -13,19 +13,31 @@ import type { AssetDecision } from "./types";
 
 type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 
-const SCENE_IMAGE_FILE_PATTERN = /^(?:scene-\d+|fanart\d+)\.(?:jpe?g|png|webp)$/iu;
+export const SCENE_IMAGE_FILE_PATTERN = /^(?:scene-\d+|fanart\d+)\.(?:jpe?g|png|webp)$/iu;
 
-export const resolveExistingAsset = async (assetPath: string): Promise<string | undefined> => {
-  return (await pathExists(assetPath)) ? assetPath : undefined;
+const entryNameMatches = (entryName: string, candidateName: string): boolean =>
+  process.platform === "win32" ? entryName.toLowerCase() === candidateName.toLowerCase() : entryName === candidateName;
+
+const directoryHasFile = (entries: readonly Dirent[], name: string): boolean =>
+  entries.some((entry) => (entry.isFile() || entry.isSymbolicLink()) && entryNameMatches(entry.name, name));
+
+export const resolveExistingAsset = async (
+  assetPath: string,
+  inventory: DirectoryInventory,
+): Promise<string | undefined> => {
+  const entries = await inventory.entries(dirname(assetPath));
+  return directoryHasFile(entries, basename(assetPath)) ? assetPath : undefined;
 };
 
-export const resolveExistingImageAsset = async (assetPath: string): Promise<string | undefined> => {
+export const resolveExistingImageAsset = async (
+  assetPath: string,
+  inventory: DirectoryInventory,
+): Promise<string | undefined> => {
+  const directory = dirname(assetPath);
+  const entries = await inventory.entries(directory);
   for (const candidatePath of buildImageFilePathVariants(assetPath)) {
-    if (await pathExists(candidatePath)) {
-      return candidatePath;
-    }
+    if (directoryHasFile(entries, basename(candidatePath))) return candidatePath;
   }
-
   return undefined;
 };
 
@@ -37,17 +49,19 @@ export const buildImageAssetPathFromSource = (targetPath: string, sourcePath: st
 export const resolveSingleAsset = async ({
   targetPath,
   existingPath = targetPath,
+  inventory,
   keepExisting,
   fallbackToExistingOnFailure = true,
   create,
 }: {
   targetPath: string;
   existingPath?: string;
+  inventory: DirectoryInventory;
   keepExisting: boolean;
   fallbackToExistingOnFailure?: boolean;
   create: () => Promise<string | null>;
 }): Promise<{ assetPath?: string; createdPath?: string }> => {
-  const resolvedExistingPath = await resolveExistingAsset(existingPath);
+  const resolvedExistingPath = await resolveExistingAsset(existingPath, inventory);
   if (keepExisting && resolvedExistingPath) {
     return { assetPath: resolvedExistingPath };
   }
@@ -254,16 +268,4 @@ export const getSceneImageSets = (
   }
 
   return sets;
-};
-
-export const listExistingSceneImages = async (sceneDir: string): Promise<string[]> => {
-  try {
-    const entries = await readdir(sceneDir, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isFile() && SCENE_IMAGE_FILE_PATTERN.test(entry.name))
-      .map((entry) => join(sceneDir, entry.name))
-      .sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
 };

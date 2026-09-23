@@ -194,7 +194,7 @@ export interface ServerApiContract {
     resume(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     rerunDirectory(input: ScrapeRerunDirectoryInput): Promise<ScrapeMutationAckDto>;
-    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScrapeMutationAckDto>;
+    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<import("./types").UncensoredConfirmResponse>;
     start(input: ScrapeStartInput): Promise<ScrapeMutationAckDto>;
     stop(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
   };

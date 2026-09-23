@@ -1,50 +1,39 @@
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 
-export interface MaintenanceSteps {
-  aggregate: boolean;
-  translate: boolean;
-  download: boolean;
-  generateNfo: boolean;
-  organize: boolean;
-}
-
 export interface MaintenancePreset {
   id: MaintenancePresetId;
   label: string;
   description: string;
   requiresNetwork: boolean;
-  steps: MaintenanceSteps;
+  supportsExecution: boolean;
+  dataSource: "local" | "online";
+  output: "none" | "write" | "move";
+  assetPolicy: "preserve" | "refresh" | "replace";
   configOverrides: DeepPartial<Configuration>;
 }
 
 export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset> = {
-  read_local: {
-    id: "read_local",
-    label: "读取本地",
+  inspect_local: {
+    id: "inspect_local",
+    label: "本地查看",
     description: "不联网，只读取当前目录内现有视频、NFO、图片等本地产物",
     requiresNetwork: false,
-    steps: {
-      aggregate: false,
-      translate: false,
-      download: false,
-      generateNfo: false,
-      organize: false,
-    },
+    supportsExecution: false,
+    dataSource: "local",
+    output: "none",
+    assetPolicy: "preserve",
     configOverrides: {},
   },
-  refresh_data: {
-    id: "refresh_data",
-    label: "刷新数据",
+  refresh_metadata: {
+    id: "refresh_metadata",
+    label: "原地更新",
     description: "联网重新获取元数据和资源，生成字段替换和图片替换计划",
     requiresNetwork: true,
-    steps: {
-      aggregate: true,
-      translate: true,
-      download: true,
-      generateNfo: true,
-      organize: false,
-    },
+    supportsExecution: true,
+    dataSource: "online",
+    output: "write",
+    assetPolicy: "refresh",
     configOverrides: {
       download: {
         keepThumb: true,
@@ -59,18 +48,15 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
       },
     },
   },
-  organize_files: {
-    id: "organize_files",
-    label: "整理目录",
+  local_organize: {
+    id: "local_organize",
+    label: "本地整理",
     description: "以本地已有元数据为主，按当前模板重命名文件、目录并重排结构",
     requiresNetwork: false,
-    steps: {
-      aggregate: false,
-      translate: false,
-      download: false,
-      generateNfo: false,
-      organize: true,
-    },
+    supportsExecution: true,
+    dataSource: "local",
+    output: "move",
+    assetPolicy: "preserve",
     configOverrides: {
       behavior: {
         successFileMove: true,
@@ -83,13 +69,10 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
     label: "全量重整",
     description: "先联网刷新数据，再按当前模板完整重排目录与文件",
     requiresNetwork: true,
-    steps: {
-      aggregate: true,
-      translate: true,
-      download: true,
-      generateNfo: true,
-      organize: true,
-    },
+    supportsExecution: true,
+    dataSource: "online",
+    output: "move",
+    assetPolicy: "replace",
     configOverrides: {
       download: {
         keepThumb: false,
@@ -106,7 +89,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
   },
 };
 
-export const supportsMaintenanceExecution = (preset: MaintenancePreset): boolean =>
-  Object.values(preset.steps).some(Boolean);
+export const supportsMaintenanceExecution = (preset: MaintenancePreset): boolean => preset.supportsExecution;
 
 export const getMaintenancePreset = (id: MaintenancePresetId): MaintenancePreset => MAINTENANCE_PRESETS[id];

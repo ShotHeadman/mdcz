@@ -332,12 +332,11 @@ export function DetailPanelAdapter({
       onOpenMetadataFolder={
         item &&
         port.openMetadataFolder &&
-        (item.assets?.some((asset) => asset.kind === "strm") ||
-          (item.nfoRef &&
-            item.fileRef &&
-            (item.nfoRef.rootId !== item.fileRef.rootId ||
-              item.nfoRef.relativePath.split("/").slice(0, -1).join("/") !==
-                item.fileRef.relativePath.split("/").slice(0, -1).join("/"))))
+        item.nfoRef &&
+        item.fileRef &&
+        (item.nfoRef.rootId !== item.fileRef.rootId ||
+          item.nfoRef.relativePath.split("/").slice(0, -1).join("/") !==
+            item.fileRef.relativePath.split("/").slice(0, -1).join("/"))
           ? () => {
               void port.openMetadataFolder?.(item);
             }

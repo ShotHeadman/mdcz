@@ -1,4 +1,4 @@
-import { extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
+import { expandScrapeRetryItems, extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { describe, expect, it } from "vitest";
 
 describe("extractNumber", () => {
@@ -189,6 +189,53 @@ describe("parseFileInfo", () => {
         suffix: "-③",
       },
     });
+
+    expect(
+      expandScrapeRetryItems(
+        [
+          { id: "a", rootId: "r", relativePath: "ABC-123-A.mp4" },
+          { id: "b", rootId: "r", relativePath: "ABC-123-B.mp4" },
+          { id: "c", rootId: "r", relativePath: "FC2-123456-①.mp4" },
+          { id: "d", rootId: "r", relativePath: "FC2-123456-②.mp4" },
+        ],
+        ["a"],
+      ),
+    ).toEqual(["a", "b"]);
+    expect(
+      expandScrapeRetryItems(
+        [
+          { id: "a", rootId: "r", relativePath: "ABC-123-A.mp4" },
+          { id: "b", rootId: "r", relativePath: "ABC-123-B.mp4" },
+          { id: "c", rootId: "r", relativePath: "FC2-123456-①.mp4" },
+          { id: "d", rootId: "r", relativePath: "FC2-123456-②.mp4" },
+        ],
+        ["c"],
+      ),
+    ).toEqual(["c", "d"]);
+    expect(
+      expandScrapeRetryItems(
+        [
+          { id: "cd1", rootId: "r", relativePath: "ABC-300-CD1.mp4", status: "failed" },
+          { id: "cd2", rootId: "r", relativePath: "ABC-300-CD2.mp4", status: "success" },
+        ],
+        ["cd1"],
+      ),
+    ).toEqual(["cd1", "cd2"]);
+    for (const manualUrl of [undefined, "https://example.test/movie"]) {
+      const unnamed = [
+        { id: "one", rootId: "r", relativePath: "clip.mp4", manualUrl },
+        { id: "two", rootId: "r", relativePath: "other.mp4", manualUrl },
+      ];
+      expect(expandScrapeRetryItems(unnamed, ["one"], ["clip", "other"])).toEqual(["one"]);
+    }
+    const scoped = [
+      { id: "one", rootId: "r", relativePath: "ABC-123-CD1.mp4", manualUrl: "one" },
+      { id: "two", rootId: "r", relativePath: "ABC-123-CD2.mp4", manualUrl: "one" },
+      { id: "url", rootId: "r", relativePath: "ABC-123-CD3.mp4", manualUrl: "two" },
+      { id: "dir", rootId: "r", relativePath: "other/ABC-123-CD2.mp4", manualUrl: "one" },
+      { id: "root", rootId: "other", relativePath: "ABC-123-CD2.mp4", manualUrl: "one" },
+    ];
+    expect(expandScrapeRetryItems(scoped, ["one"])).toEqual(["one", "two"]);
   });
 
   it("distinguishes uncensored and subtitle suffixes and keeps resolution metadata", () => {

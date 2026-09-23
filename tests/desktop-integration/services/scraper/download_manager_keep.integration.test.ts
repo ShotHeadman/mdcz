@@ -527,7 +527,7 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("refreshes or preserves primary artwork according to keep and validation rules", async () => {
+  it("refreshes or preserves primary artwork according to keep flags, decisions, and validation", async () => {
     const cases = [
       {
         valid: true,
@@ -535,14 +535,34 @@ describe("DownloadManager keep flags", () => {
         force: false,
         content: "downloaded:https://example.com/thumb-new.jpg",
         downloaded: true,
+        probes: 1,
       },
-      { valid: false, keep: false, force: false, content: "old-thumb", downloaded: false },
+      { valid: false, keep: false, force: false, content: "old-thumb", downloaded: false, probes: 1 },
       {
         valid: true,
         keep: true,
         force: true,
         content: "downloaded:https://example.com/thumb-new.jpg",
         downloaded: true,
+        probes: 1,
+      },
+      {
+        valid: true,
+        keep: false,
+        force: false,
+        decision: "preserve",
+        content: "old-thumb",
+        downloaded: false,
+        probes: 0,
+      },
+      {
+        valid: true,
+        keep: true,
+        force: false,
+        decision: "replace",
+        content: "downloaded:https://example.com/thumb-new.jpg",
+        downloaded: true,
+        probes: 1,
       },
     ] as const;
 
@@ -561,14 +581,65 @@ describe("DownloadManager keep flags", () => {
           downloadTrailer: false,
         }),
         {},
-        testCase.force ? { forceReplace: { thumb: true } } : undefined,
+        {
+          forceReplace: testCase.force ? { thumb: true } : undefined,
+          assetDecisions: "decision" in testCase ? { thumb: testCase.decision } : undefined,
+        },
       );
       expect(assets.thumb).toBe(join(root, "thumb.jpg"));
       expect(assets.downloaded).toEqual(testCase.downloaded ? [join(root, "thumb.jpg")] : []);
       await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(testCase.content);
-      expect(networkClient.probe).toHaveBeenCalledTimes(1);
-      expect(networkClient.download).toHaveBeenCalledTimes(1);
+      expect(networkClient.probe).toHaveBeenCalledTimes(testCase.probes);
+      expect(networkClient.download).toHaveBeenCalledTimes(testCase.probes);
     }
+
+    vi.restoreAllMocks();
+    const { root, manager, networkClient } = await createSubject({
+      "poster.jpg": "old-poster",
+      "fanart.jpg": "old-fanart",
+    });
+    const stagingDir = await createTempDir();
+    mockValid();
+    const preserved = await manager.downloadAll(
+      stagingDir,
+      createCrawlerData({
+        thumb_url: "https://example.com/thumb-new.jpg",
+        poster_url: "https://example.com/poster-new.jpg",
+      }),
+      dl({
+        keepThumb: false,
+        keepPoster: false,
+        keepFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      }),
+      {},
+      { assetDecisions: { poster: "preserve", fanart: "preserve" } },
+      { existingAssetDir: root },
+    );
+    expect(preserved.poster).toBe(join(root, "poster.jpg"));
+    expect(preserved.fanart).toBe(join(root, "fanart.jpg"));
+    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(["https://example.com/thumb-new.jpg"]);
+    await expect(readFile(join(root, "poster.jpg"), "utf8")).resolves.toBe("old-poster");
+    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("old-fanart");
+
+    vi.restoreAllMocks();
+    const replacement = await createSubject({ "poster.jpg": "old-poster", "fanart.jpg": "old-fanart" });
+    const replacementStage = await createTempDir();
+    mockValid();
+    const replaced = await replacement.manager.downloadAll(
+      replacementStage,
+      createCrawlerData({ poster_url: "https://example.com/poster-new.jpg" }),
+      dl({ downloadThumb: false, keepPoster: true, downloadSceneImages: false, downloadTrailer: false }),
+      {},
+      { assetDecisions: { poster: "replace", fanart: "preserve" } },
+      { existingAssetDir: replacement.root },
+    );
+    expect(replaced.poster).toBe(join(replacementStage, "poster.jpg"));
+    expect(replaced.fanart).toBe(join(replacement.root, "fanart.jpg"));
+    expect(replacement.networkClient.download.mock.calls.map(([url]) => url)).toEqual([
+      "https://example.com/poster-new.jpg",
+    ]);
   });
 
   it("saves downloaded WebP artwork with WebP file extensions", async () => {

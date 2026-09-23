@@ -62,7 +62,6 @@ export class TaskExecutor<TItem, TResult> {
 
     let nextIndex = 0;
     let fatalError: unknown;
-    let publicationTail = Promise.resolve();
     const context: TaskExecutorContext = {
       signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
     };
@@ -81,20 +80,10 @@ export class TaskExecutor<TItem, TResult> {
           if (this.stopRequested || fatalError !== undefined) continue;
           result = await this.deps.runItem(item, context);
           hasResult = true;
-          const previousPublication = publicationTail;
-          let releasePublication!: () => void;
-          publicationTail = new Promise<void>((resolve) => {
-            releasePublication = resolve;
-          });
-          await previousPublication;
-          try {
-            if (this.stopRequested || fatalError !== undefined) continue;
-            await this.deps.gate?.beforeResult?.(item, context);
-            if (this.stopRequested || fatalError !== undefined) continue;
-            await this.deps.applyResult(item, result, context);
-          } finally {
-            releasePublication();
-          }
+          if (this.stopRequested || fatalError !== undefined) continue;
+          await this.deps.gate?.beforeResult?.(item, context);
+          if (this.stopRequested || fatalError !== undefined) continue;
+          await this.deps.applyResult(item, result, context);
         } catch (error) {
           if (fatalError === undefined) {
             fatalError = error;

@@ -1,4 +1,5 @@
 import type { FileInfo } from "@mdcz/shared/types";
+import type { DirectoryInventory } from "../DirectoryInventory";
 import { parseFileInfo } from "../utils/number";
 import { preferSubtitleTag } from "../utils/subtitles";
 import {
@@ -16,6 +17,7 @@ export interface ResolveFileInfoWithSubtitlesOptions {
   escapeStrings?: string[];
   parsedFileInfo?: FileInfo;
   subtitleSidecars?: SubtitleSidecarMatch[];
+  inventory?: DirectoryInventory;
 }
 
 export const resolveFileInfoWithSubtitles = async (
@@ -23,7 +25,7 @@ export const resolveFileInfoWithSubtitles = async (
   options: ResolveFileInfoWithSubtitlesOptions = {},
 ): Promise<FileInfoWithSubtitles> => {
   const parsedFileInfo = options.parsedFileInfo ?? parseFileInfo(filePath, options.escapeStrings ?? []);
-  const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(filePath));
+  const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(filePath, options.inventory));
   const subtitleTag = preferSubtitleTag(
     parsedFileInfo.subtitleTag,
     getPreferredSubtitleTagFromSidecars(subtitleSidecars),

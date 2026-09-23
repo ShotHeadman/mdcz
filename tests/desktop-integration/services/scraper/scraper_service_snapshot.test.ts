@@ -9,7 +9,7 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const directories: string[] = [];
 const persistenceServices: DesktopPersistenceService[] = [];
@@ -46,17 +46,13 @@ const seedFailedFinalizedRun = async (directory: string, persistence: DesktopPer
     createdAt: new Date("2026-08-28T00:00:00.000Z"),
     items: [{ ordinal: 0, rootId: root.id, relativePath: "ABC-001.mp4" }],
   });
-  const attempt = state.repositories.scrapeRuns.admitAttempt(run.items[0].id);
-  await state.repositories.scrapeRuns.commitOutcome({
-    outcome: "failed",
-    attemptId: attempt.id,
-    error: "latest failure",
-  });
   await state.repositories.scrapeRuns.finalize({
     runId: run.id,
     disposition: "failed",
     startedAt: new Date("2026-08-28T00:01:00.000Z"),
     completedAt,
+    failedCount: 1,
+    error: "latest failure",
   });
 };
 
@@ -71,6 +67,8 @@ describe("ScraperService.getSnapshot", () => {
   it("does not restore a finalized single-file run as the active snapshot", async () => {
     const { directory, persistence, service } = await createHarness();
     await seedFailedFinalizedRun(directory, persistence);
-    expect(await service.getSnapshot()).toBeNull();
+    const initialize = vi.spyOn(persistence, "initialize");
+    expect(await Promise.all([service.getSnapshot(), service.getSnapshot()])).toEqual([null, null]);
+    expect(initialize).toHaveBeenCalledOnce();
   });
 });

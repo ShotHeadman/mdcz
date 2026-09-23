@@ -4,7 +4,6 @@ import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createFileHandlers } from "@main/ipc/handlers/file";
 import { configManager } from "@main/services/config/ConfigManager";
-import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
@@ -76,10 +75,9 @@ const createContext = (mediaRoots?: {
       return root;
     });
   const library = {
-    resolveMaintenanceSource: vi.fn(async () => null),
+    publicationRoots: () => [],
     publicationSnapshot: () => ({ files: [], assets: [] }),
-    registerPublishedOutputs: vi.fn(),
-    releaseOutputReferences: vi.fn(),
+    writeEntry: vi.fn(() => "item"),
   };
   return {
     windowService: {
@@ -89,7 +87,6 @@ const createContext = (mediaRoots?: {
       getState: async () => ({
         repositories: {
           library,
-          publicationJournal: createMemoryPublicationJournal(),
           mediaRoots: { ensurePath, get, list, upsert },
         },
       }),
@@ -317,11 +314,32 @@ describe("createFileHandlers", () => {
     const context = createContext({ list: async () => [{ id: "media", hostPath: root }] });
     const library = (await context.persistenceService.getState()).repositories.library;
     Object.assign(library, {
-      resolveMaintenanceSource: async () => ({ libraryItemId: "item" }),
-      getEntryById: async () => ({ assets: [{ kind: "thumb", rootId: "media", relativePath: "thumb.jpg" }] }),
+      getEntryById: async () => ({
+        assets: [
+          {
+            kind: "thumb",
+            uri: "thumb.jpg",
+            fileId: null,
+            rootId: "media",
+            relativePath: "thumb.jpg",
+            published: true,
+            historical: false,
+          },
+        ],
+      }),
       publicationSnapshot: () => ({
-        files: [{ itemId: "item", rootId: "media", relativePath: "ABC-123.mp4" }],
-        assets: [{ itemId: "item", kind: "thumb", rootId: "media", relativePath: "thumb.jpg", published: true }],
+        files: [{ itemId: "item", fileId: "file", rootId: "media", relativePath: "ABC-123.mp4" }],
+        assets: [
+          {
+            itemId: "item",
+            fileId: null,
+            kind: "thumb",
+            rootId: "media",
+            relativePath: "thumb.jpg",
+            published: true,
+            historical: false,
+          },
+        ],
       }),
     });
     const handlers = createFileHandlers(context);
@@ -345,6 +363,16 @@ describe("createFileHandlers", () => {
     );
     expect(saved.revision).toEqual(expect.any(String));
     expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);
+    expect(library.writeEntry).toHaveBeenCalledWith(
+      {
+        id: "item",
+        assets: [
+          expect.objectContaining({ kind: "thumb", relativePath: "thumb.jpg", published: true }),
+          expect.objectContaining({ kind: "poster", relativePath: "poster.jpg", published: true }),
+        ],
+      },
+      [],
+    );
   });
 
   it("does not persist media roots for file reads", async () => {

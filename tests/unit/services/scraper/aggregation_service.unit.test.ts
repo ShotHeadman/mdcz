@@ -172,7 +172,7 @@ describe("AggregationService", () => {
 
     await runWithScrapeItem(
       { itemId: "item", relativePath: "movie.mp4", caseId: "movie-case" },
-      async () => await new AggregationService(provider).aggregate("ABF-075", config),
+      async () => await new AggregationService(provider, { config }).aggregate("ABF-075"),
     );
     releaseLateReads();
     await Promise.all(lateReads);
@@ -199,7 +199,7 @@ describe("AggregationService", () => {
       scrape: { sites: [Website.DMM, Website.AVWIKIDB] },
     });
 
-    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+    const result = await new AggregationService(provider, { config }).aggregate("ABF-075");
 
     expect(provider.calledSites).toEqual([Website.DMM, Website.AVWIKIDB]);
     expect(result).not.toBeNull();
@@ -223,7 +223,7 @@ describe("AggregationService", () => {
     config.aggregation.perCrawlerTimeoutMs = 5;
     config.aggregation.globalTimeoutMs = 1_000;
 
-    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+    const result = await new AggregationService(provider, { config }).aggregate("ABF-075");
 
     const dmmResult = result?.stats.siteResults.find((siteResult) => siteResult.site === Website.DMM);
     expect(dmmResult?.success).toBe(false);
@@ -252,7 +252,7 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+    const result = await new AggregationService(provider, { config }).aggregate("ABF-075");
 
     expect(result).not.toBeNull();
     expect(result?.data.durationSeconds).toBe(7_200);
@@ -293,9 +293,8 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults), { config }).aggregate(
       "FC2-4515706",
-      config,
     );
 
     expect(result).not.toBeNull();
@@ -343,9 +342,8 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults), { config }).aggregate(
       "FC2-2896877",
-      config,
     );
 
     expect(result).not.toBeNull();
@@ -399,9 +397,8 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults), { config }).aggregate(
       "ABF-075",
-      config,
     );
 
     expect(result?.data.title).toBe("DMM TV Title");
@@ -455,9 +452,8 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults), { config }).aggregate(
       "FC2-4663355",
-      config,
     );
 
     expect(result).not.toBeNull();
@@ -479,7 +475,7 @@ describe("AggregationService", () => {
     expect(result?.sources.scene_images).toBe(Website.PPVDATABANK);
   });
 
-  it("returns null when no result clears the aggregation threshold", async () => {
+  it("throws when no result clears the aggregation threshold", async () => {
     const cases = [
       {
         provider: new MultiResultCrawlerProvider(new Map<Website, CrawlerData>()),
@@ -494,60 +490,59 @@ describe("AggregationService", () => {
     ];
 
     for (const { provider, config } of cases) {
-      await expect(new AggregationService(provider).aggregate("ABF-075", config)).resolves.toBeNull();
+      await expect(new AggregationService(provider, { config }).aggregate("ABF-075")).rejects.toThrow();
     }
   });
 
-  it("caches results until clearCache is called", async () => {
+  it("coalesces in-flight requests and does not cache failures", async () => {
     const siteResults = makeSiteResults([Website.DMM, { thumb_url: "https://example.com/thumb.jpg" }]);
+    const config = makeConfig({ scrape: { sites: [Website.DMM] } });
+    const provider = new MultiResultCrawlerProvider(siteResults, { [Website.DMM]: 20 });
+    const service = new AggregationService(provider, { config });
 
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
-    const config = makeConfig();
+    const [first, second] = await Promise.all([service.aggregate("ABF-075"), service.aggregate("ABF-075")]);
 
-    const first = await service.aggregate("ABF-075", config);
-    const firstCallCount = provider.calledSites.length;
-    const second = await service.aggregate("ABF-075", config);
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
+    expect(provider.calledSites.length).toBe(1);
 
-    expect(first).not.toBeNull();
-    expect(second).toBe(first);
-    expect(provider.calledSites.length).toBe(firstCallCount);
-
-    service.clearCache();
-    await service.aggregate("ABF-075", config);
-    expect(provider.calledSites.length).toBe(firstCallCount * 2);
+    const failingProvider = new MultiResultCrawlerProvider(new Map());
+    const failingService = new AggregationService(failingProvider, { config });
+    await expect(failingService.aggregate("ABF-075")).rejects.toThrow();
+    expect(failingProvider.calledSites.length).toBe(1);
+    await expect(failingService.aggregate("ABF-075")).rejects.toThrow();
+    expect(failingProvider.calledSites.length).toBe(2);
   });
 
-  it("caps the cache and keeps recently used entries", async () => {
-    const siteResults = makeSiteResults([
-      Website.DMM,
-      { number: undefined, thumb_url: "https://example.com/thumb.jpg" },
-    ]);
+  it("reuses successful results for the life of the service", async () => {
+    const siteResults = makeSiteResults([Website.DMM, { thumb_url: "https://example.com/thumb.jpg" }]);
+    const provider = new MultiResultCrawlerProvider(siteResults);
+    const service = new AggregationService(provider, { config: makeConfig() });
 
-    const provider = new RecordingCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
-    const config = makeConfig({
-      scrape: { sites: [Website.DMM] },
-    });
+    const first = await service.aggregate("ABF-075");
+    const firstCallCount = provider.calledSites.length;
+    first.data.title = "mutated";
+    const second = await service.aggregate("ABF-075");
 
-    for (let index = 1; index <= 200; index++) {
-      await service.aggregate(`ABF-${index.toString().padStart(3, "0")}`, config);
-    }
+    expect(second.data.title).not.toBe("mutated");
+    expect(provider.calledSites.length).toBe(firstCallCount);
+  });
 
-    await service.aggregate("ABF-001", config);
-    await service.aggregate("ABF-201", config);
-    await service.aggregate("ABF-002", config);
-    await service.aggregate("ABF-001", config);
+  it("keeps a shared in-flight lookup when one waiter aborts", async () => {
+    const siteResults = makeSiteResults([Website.DMM, { thumb_url: "https://example.com/thumb.jpg" }]);
+    const config = makeConfig({ scrape: { sites: [Website.DMM] } });
+    const provider = new MultiResultCrawlerProvider(siteResults, { [Website.DMM]: 40 });
+    const service = new AggregationService(provider, { config });
+    const waiter = new AbortController();
 
-    const callCountByNumber = provider.calledNumbers.reduce<Record<string, number>>((counts, number) => {
-      counts[number] = (counts[number] ?? 0) + 1;
-      return counts;
-    }, {});
+    const first = service.aggregate("ABF-075", { signal: waiter.signal });
+    const second = service.aggregate("ABF-075");
+    await Promise.resolve();
+    waiter.abort();
 
-    expect(callCountByNumber["ABF-001"]).toBe(1);
-    expect(callCountByNumber["ABF-002"]).toBe(2);
-    expect(callCountByNumber["ABF-201"]).toBe(1);
-    expect((service as unknown as { cache: Map<string, unknown> }).cache.size).toBe(200);
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    await expect(second).resolves.toMatchObject({ data: { number: "ABF-075" } });
+    expect(provider.calledSites.length).toBe(1);
   });
 
   it("stops launching lower-priority sites once minimum threshold is satisfied", async () => {
@@ -562,7 +557,7 @@ describe("AggregationService", () => {
     });
 
     const provider = new MultiResultCrawlerProvider(siteResults);
-    await new AggregationService(provider).aggregate("ABF-075", config);
+    await new AggregationService(provider, { config }).aggregate("ABF-075");
 
     expect(provider.calledSites).toEqual([Website.DMM]);
   });
@@ -578,8 +573,8 @@ describe("AggregationService", () => {
       scrape: { sites: [Website.DMM, Website.DMM_TV, Website.JAVDB] },
     });
 
-    const result = await new AggregationService(provider).aggregate("ABF-075", config, undefined, {
-      site: Website.DMM_TV,
+    const result = await new AggregationService(provider, { config }).aggregate("ABF-075", {
+      manualScrape: { site: Website.DMM_TV },
     });
 
     expect(result?.data.website).toBe(Website.DMM_TV);
@@ -589,12 +584,14 @@ describe("AggregationService", () => {
 
   it("passes manual detail URLs to the forced crawler", async () => {
     const detailUrl = "https://video.dmm.co.jp/av/content/?id=1abf00075";
-    const siteResults = makeSiteResults([Website.DMM_TV, { title: "DMM TV Title" }]);
+    const siteResults = makeSiteResults([
+      Website.DMM_TV,
+      { title: "DMM TV Title", thumb_url: "https://video.example/thumb.jpg" },
+    ]);
     const provider = new RecordingCrawlerProvider(siteResults);
 
-    await new AggregationService(provider).aggregate("ABF-075", makeConfig(), undefined, {
-      site: Website.DMM_TV,
-      detailUrl,
+    await new AggregationService(provider, { config: makeConfig() }).aggregate("ABF-075", {
+      manualScrape: { site: Website.DMM_TV, detailUrl },
     });
 
     expect(provider.calledSites).toEqual([Website.DMM_TV]);
@@ -610,7 +607,7 @@ describe("AggregationService", () => {
       network: { fantiaCookie: "" },
     });
 
-    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+    const result = await new AggregationService(provider, { config }).aggregate("ABF-075");
 
     expect(provider.calledSites).toEqual([Website.DMM]);
     expect(result?.stats.failedCount).toBe(0);

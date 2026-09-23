@@ -1,6 +1,48 @@
 import { type Configuration, configManager } from "@main/services/config";
-import type { FileScrapeResult, FileScraper } from "@mdcz/runtime/scrape";
+import {
+  ActorImageService,
+  type CreateFileScraperOptions,
+  type FileScrapeOptions,
+  type FileScrapeProgress,
+  FileScraper,
+  type FileScraperDependencies,
+  type ScrapeGroupResult,
+} from "@mdcz/runtime/scrape";
 import { vi } from "vitest";
+import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
+
+type TestFileScraperDependencies = Omit<
+  FileScraperDependencies,
+  "actorImageService" | "getConfiguration" | "logger" | "signalService"
+> &
+  Partial<Pick<FileScraperDependencies, "actorImageService" | "getConfiguration" | "logger" | "signalService">>;
+
+export const createFileScraper = (
+  deps: TestFileScraperDependencies,
+  options: CreateFileScraperOptions = {},
+): FileScraper => {
+  const logger = deps.logger ?? console;
+  return new FileScraper(
+    {
+      ...deps,
+      actorImageService:
+        deps.actorImageService ??
+        new ActorImageService({
+          cacheRoot: "/tmp/actor-image-cache",
+          logger: "debug" in logger ? logger : { ...logger, debug: () => undefined },
+        }),
+      getConfiguration: deps.getConfiguration ?? (async () => await configManager.getValidated()),
+      logger,
+      signalService: deps.signalService ?? {
+        setProgress: () => {},
+        showLogText: () => {},
+        showScrapeInfo: () => {},
+        showFailedInfo: () => {},
+      },
+    },
+    options,
+  );
+};
 
 const getByPath = (target: Record<string, unknown>, path: string): unknown => {
   let cursor: unknown = target;
@@ -29,16 +71,45 @@ export const mockConfigManager = (config: Configuration): void => {
   });
 };
 
-export const prepareAndExecuteFile = async (
+const testFileOrganizer = new FileOrganizer();
+export const resolveTestOutputPlan = (
+  plan: OrganizePlan,
+  sourcePath: string,
+  options?: Parameters<FileOrganizer["resolveOutputPlan"]>[2],
+) => testFileOrganizer.resolveOutputPlan(plan, sourcePath, options);
+
+export const preparedPublicationFiles = (group: ScrapeGroupResult) => [
+  ...(group.output?.files.map((file) => {
+    const facts = file.scrape;
+    if (!facts) throw new Error("Scrape publication has no prepared facts");
+    return {
+      ...facts.identity,
+      fileId: facts.itemId,
+      status: "prepared" as const,
+      ...group.output?.scrape,
+      videoMeta: file.scrape?.videoMeta,
+      output: file.target,
+      assets: [...(group.output?.movieAssets ?? []), ...file.assets],
+      error: file.scrape?.error,
+      uncensoredAmbiguous: file.scrape?.uncensoredAmbiguous,
+    };
+  }) ?? []),
+  ...group.results,
+];
+
+export const prepareFile = async (
   scraper: FileScraper,
-  ...args: Parameters<FileScraper["prepareFile"]>
-): Promise<FileScrapeResult> => {
-  const preparation = await scraper.prepareFile(...args);
-  if (preparation.status !== "prepared") return preparation;
-  const [result] = await scraper.executePreparedFiles(
-    [{ prepared: preparation.prepared, progress: args[1] ?? { fileIndex: 1, totalFiles: 1 } }],
-    args[2],
-  );
-  if (!result) throw new Error("Test scrape group omitted its file");
-  return result;
+  filePath: string,
+  progress?: FileScrapeProgress,
+  signal?: AbortSignal,
+  options: FileScrapeOptions = {},
+) => scraper.prepareGroup([{ filePath, progress, options }], signal);
+
+export const prepareFilePublication = async (
+  scraper: FileScraper,
+  ...args: Parameters<typeof prepareFile> extends [FileScraper, ...infer Args] ? Args : never
+): Promise<ScrapeGroupResult> => {
+  const preparation = await prepareFile(scraper, ...args);
+  if (preparation.status !== "prepared") return { results: [preparation] };
+  return await scraper.executePreparedFiles(preparation.prepared, args[2]);
 };

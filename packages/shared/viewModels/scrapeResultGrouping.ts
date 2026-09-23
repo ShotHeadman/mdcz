@@ -1,11 +1,5 @@
 import type { AssetRef } from "@mdcz/shared/mediaRef";
-import type {
-  CrawlerData,
-  ScrapeResult,
-  ScrapeResultStatus,
-  UncensoredChoice,
-  UncensoredConfirmResultItem,
-} from "@mdcz/shared/types";
+import type { CrawlerData, ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import type { ScrapeFileRefDto } from "../serverDtos";
 import { deriveGroupingDirectoryFromPath } from "./multipartDisplay";
 import {
@@ -132,21 +126,8 @@ export const buildScrapeResultGroups = (results: ScrapeResult[]): ScrapeResultGr
   });
 };
 
-export const buildAmbiguousUncensoredScrapeGroups = (results: ScrapeResult[]): ScrapeResultGroup[] =>
-  buildScrapeResultGroups(results).filter((group) => getAmbiguousUncensoredItemsForScrapeGroup(group).length > 0);
-
-export const getAmbiguousUncensoredItemsForScrapeGroup = (
-  group: ScrapeResultGroup,
-): Array<ScrapeResult & { nfoPath: string }> =>
-  group.items.flatMap((item) => {
-    const nfoPath = scrapeResultNfoPath(item);
-    return nfoPath && item.uncensoredAmbiguous === true ? [{ ...item, nfoPath }] : [];
-  });
-
 export const getScrapeResultGroupNfoPath = (group: ScrapeResultGroup): string | undefined =>
-  getAmbiguousUncensoredItemsForScrapeGroup(group)[0]?.nfoPath ??
-  group.items.map(scrapeResultNfoPath).find((nfoPath) => Boolean(nfoPath)) ??
-  scrapeResultNfoPath(group.display);
+  group.items.map(scrapeResultNfoPath).find((nfoPath) => Boolean(nfoPath)) ?? scrapeResultNfoPath(group.display);
 
 export const findScrapeResultGroupItem = (
   group: ScrapeResultGroup,
@@ -189,37 +170,6 @@ export const buildScrapeResultGroupActionContext = (
     nfoPath: getScrapeResultGroupNfoPath(group),
     targets,
     videoPaths: [...new Set(targets.map((target) => target.filePath))],
-  };
-};
-
-export const buildUncensoredConfirmItemsForScrapeGroups = (
-  groups: ScrapeResultGroup[],
-  choicesByGroupId: Record<string, UncensoredChoice>,
-): Array<{ itemId: string; choice: UncensoredChoice }> =>
-  groups.flatMap((group) =>
-    getAmbiguousUncensoredItemsForScrapeGroup(group).map((item) => ({
-      itemId: item.fileId,
-      choice: choicesByGroupId[group.id] ?? "uncensored",
-    })),
-  );
-
-export const summarizeUncensoredConfirmResultForScrapeGroups = (
-  groups: ScrapeResultGroup[],
-  updates: UncensoredConfirmResultItem[],
-): { successCount: number; failedCount: number } => {
-  const updatedItemIds = new Set(updates.map((item) => item.fileId));
-  const submittedGroups = groups
-    .map((group) => ({
-      items: getAmbiguousUncensoredItemsForScrapeGroup(group),
-    }))
-    .filter((group) => group.items.length > 0);
-
-  const successCount = submittedGroups.filter((group) =>
-    group.items.every((item) => updatedItemIds.has(item.fileId)),
-  ).length;
-  return {
-    successCount,
-    failedCount: submittedGroups.length - successCount,
   };
 };
 

@@ -1,11 +1,8 @@
-import { toRootRelativePath } from "@mdcz/media-store";
 import {
-  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
@@ -33,41 +30,32 @@ export class MaintenanceService {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
       roots: {
+        assertRootIntegrity: (ids) => this.mediaRoots.assertRootIntegrity(ids),
         get: async (rootId) => await this.mediaRoots.get(rootId),
         list: async () => await this.mediaRoots.listRoots(),
-        ensurePathRecord: async (input) => await this.mediaRoots.ensurePathRecord(input),
       },
       runtime: this.runtime,
-      discoverDirectory: async (scope, configuration, signal, onProgress) => {
-        const generatedStrms = await registeredOutputPaths(
-          (await this.persistence.getState()).repositories.library,
-          (id) => this.mediaRoots.get(id),
-          "strm",
-        );
+      discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
         return (
           await discoverDirectoryFiles({
             scope,
             configuration,
             signal,
             onProgress,
-            generatedStrms,
+            inventory,
             mediaRoots: this.mediaRoots,
             platform: "server",
           })
         ).refs;
       },
-      library: createMaintenanceLibraryPort({
-        getRepositories: async () => {
+      persistence: {
+        get: async () => {
           const { repositories } = await this.persistence.getState();
           return {
             library: repositories.library,
-            mediaRoots: repositories.mediaRoots,
-            publicationJournal: repositories.publicationJournal,
-            libraryRepairIssues: repositories.libraryRepairIssues,
           };
         },
-        resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
-      }),
+      },
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
     });
   }
@@ -86,14 +74,17 @@ export class MaintenanceService {
         configuration,
         "maintenance",
       );
-      const root = await this.mediaRoots.registerPathIntent(directoryScope.scanDir);
-      const output = await this.mediaRoots.registerPathIntent(directoryScope.targetDir);
+      const scan = await this.mediaRoots.admitDirectory({ hostPath: directoryScope.scanDir });
+      const output =
+        directoryScope.targetDir === directoryScope.scanDir
+          ? { id: scan.root.id, relativeDirectory: scan.relativeDirectory }
+          : await this.mediaRoots.prepareOutputDirectory({ hostPath: directoryScope.targetDir });
       const handle = await this.coordinator.startPreview({
-        rootId: root.id,
+        rootId: scan.root.id,
         presetId: input.presetId,
         refs: [],
         outputRootId: output.id,
-        outputRelativeDirectory: toRootRelativePath(output, directoryScope.targetDir),
+        outputRelativeDirectory: output.relativeDirectory,
         directoryScope,
         configuration,
       });

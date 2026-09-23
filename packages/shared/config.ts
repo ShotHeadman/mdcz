@@ -10,7 +10,7 @@ import {
   LLM_REASONING_OPTIONS,
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
-import { isLocalAbsolutePrefix, localPathPrefixKey, localPathStyle } from "./localPath";
+import { localPathStyle } from "./localPath";
 import {
   DEFAULT_POSTER_TAG_BADGE_TYPES,
   POSTER_TAG_BADGE_POSITION_OPTIONS,
@@ -242,15 +242,9 @@ const uiSchema = z.object({
   useCustomTitleBar: z.boolean().default(true),
 });
 
-const strmPathMappingSchema = z.object({
-  from: z.string().trim().min(1, "源路径前缀不能为空"),
-  to: z.string().trim().min(1, "目标路径前缀不能为空"),
-});
-
 const pathsSchema = z.object({
   mediaPath: z.string().default(""),
   metadataPath: z.string().default(""),
-  strmPathMappings: z.array(strmPathMappingSchema).default([]),
   actorPhotoFolder: z.string().default(""),
   successOutputFolder: z.string().default("JAV_output"),
   defaultScanExcludeDirs: z.array(z.string()).default(["JAV_output"]),
@@ -263,7 +257,6 @@ const behaviorSchema = z.object({
   metadataOnly: z.boolean().default(false),
   successFileMove: z.boolean().default(true),
   successFileRename: z.boolean().default(true),
-  generateStrm: z.boolean().default(false),
   updateCheck: z.boolean().default(true),
 });
 
@@ -446,25 +439,6 @@ export const configurationSchema = z
         path: ["paths", "metadataPath"],
         message: "元数据输出目录必须使用绝对路径",
       });
-    const mappingSources = new Set<string>();
-    for (const [index, mapping] of data.paths.strmPathMappings.entries()) {
-      for (const field of ["from", "to"] as const) {
-        if (!isLocalAbsolutePrefix(mapping[field]))
-          ctx.addIssue({
-            code: "custom",
-            path: ["paths", "strmPathMappings", index, field],
-            message: "路径前缀必须是 Windows、UNC 或 POSIX 绝对路径，不能包含 . 或 .. 路径段",
-          });
-      }
-      const key = `${localPathStyle(mapping.from)}:${localPathPrefixKey(mapping.from)}`;
-      if (mappingSources.has(key))
-        ctx.addIssue({
-          code: "custom",
-          path: ["paths", "strmPathMappings", index, "from"],
-          message: "源路径前缀不能重复",
-        });
-      mappingSources.add(key);
-    }
 
     if (sharedDirectoryMode && data.naming.assetNamingMode !== "followVideo") {
       ctx.addIssue({

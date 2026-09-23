@@ -154,6 +154,8 @@ describe("buildMaintenanceApplyData", () => {
       thumb_url: ["https://example.com/thumb-alt.jpg"],
     });
     expect(item.assetDecisions).toEqual({
+      thumb: "replace",
+      poster: "preserve",
       fanart: "replace",
     });
 
@@ -337,6 +339,8 @@ describe("buildMaintenanceApplyData", () => {
     expect(item.crawlerData?.fanart_url).toBeUndefined();
     expect(item.crawlerData?.fanart_source_url).toBeUndefined();
     expect(item.assetDecisions).toEqual({
+      thumb: "preserve",
+      poster: "preserve",
       fanart: "preserve",
     });
   });

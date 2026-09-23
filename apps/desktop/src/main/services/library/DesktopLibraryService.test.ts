@@ -21,11 +21,9 @@ describe("DesktopLibraryService deletion", () => {
               assets: [{ id: "asset-1", kind: "poster", rootId: "media", relativePath: "ABC-123/poster.jpg" }],
             }),
           },
-          libraryRepairIssues: {},
           mediaRoots: {
             list: async () => [{ id: "media", hostPath: "C:/media" }],
           },
-          publicationJournal: {},
         },
       }),
     } as never);

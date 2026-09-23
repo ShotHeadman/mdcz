@@ -1,16 +1,13 @@
 import {
   createPersistenceDatabase,
-  LibraryRepairIssueRepository,
   LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
-  PublicationJournalRepository,
   runMigrations,
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
-import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
+import { cleanupPublicationStaging } from "@mdcz/runtime";
 import type Database from "better-sqlite3";
 import { acquireDatabaseLease } from "../databaseFiles";
 
@@ -18,9 +15,7 @@ import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
   library: LibraryRepository;
-  libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
-  publicationJournal: PublicationJournalPort;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
 }
@@ -71,22 +66,13 @@ export class ServerPersistenceService {
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
-      const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
-      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
-      await recoverPublications({
-        journal: publicationJournal,
-        outputs: new LibraryRepository(database),
-        repairIssues: libraryRepairIssues,
-        resolveRoot: async (rootId) => await mediaRoots.get(rootId),
-      });
+      await cleanupPublicationStaging(await mediaRoots.list());
       this.state = {
         database,
         repositories: {
           library: new LibraryRepository(database),
-          libraryRepairIssues,
           mediaRoots,
-          publicationJournal,
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
         },

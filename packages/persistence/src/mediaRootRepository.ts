@@ -1,8 +1,9 @@
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   createMediaRoot,
   deterministicMediaRootId,
-  findEnclosingMediaRoot,
+  filesystemPathKey,
   type MediaRoot,
   normalizeHostPath,
 } from "@mdcz/media-store";
@@ -17,6 +18,7 @@ const toMediaRoot = (row: MediaRootRow): PersistedMediaRoot => ({
   id: row.id,
   displayName: row.displayName,
   hostPath: row.hostPath,
+  realPath: row.realPath,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -30,6 +32,7 @@ const writeMediaRoot = (database: PersistenceDatabase, root: MediaRoot): void =>
       set: {
         displayName: root.displayName,
         hostPath: root.hostPath,
+        realPath: root.realPath,
         updatedAt: root.updatedAt,
       },
     })
@@ -47,14 +50,42 @@ export class MediaRootRepository {
 
   async ensurePath(hostPath: string, displayName?: string): Promise<PersistedMediaRoot> {
     const normalizedPath = normalizeHostPath(hostPath);
+    const canonicalPath = await realpath(normalizedPath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (canonicalPath !== null && !(await stat(canonicalPath)).isDirectory())
+      throw new Error(`Media root is not a directory: ${hostPath}`);
+    for (const root of await this.list()) {
+      if (root.realPath !== null) continue;
+      try {
+        const canonical = await realpath(root.hostPath);
+        await this.upsert({ ...root, realPath: canonical });
+      } catch (error) {
+        if (
+          !["ENOENT", "ENODEV", "ENOTCONN", "ENETUNREACH", "EHOSTUNREACH", "ETIMEDOUT"].includes(
+            (error as NodeJS.ErrnoException).code ?? "",
+          )
+        )
+          throw error;
+      }
+    }
     const transaction = this.database.sqlite.transaction(() => {
       const roots = this.database.db.select().from(mediaRoots).all().map(toMediaRoot);
-      const enclosing = findEnclosingMediaRoot(normalizedPath, roots);
-      if (enclosing) return enclosing;
+      const equivalent =
+        canonicalPath === null
+          ? undefined
+          : roots.find(
+              (root) => root.realPath !== null && filesystemPathKey(root.realPath) === filesystemPathKey(canonicalPath),
+            );
+      if (equivalent) return equivalent;
+      const existing = roots.find((root) => filesystemPathKey(root.hostPath) === filesystemPathKey(normalizedPath));
+      if (existing) return existing;
       const root = createMediaRoot({
         id: deterministicMediaRootId(normalizedPath),
         displayName: displayName ?? (path.basename(normalizedPath) || normalizedPath),
         hostPath: normalizedPath,
+        realPath: canonicalPath,
       });
       writeMediaRoot(this.database, root);
       return root;

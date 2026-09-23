@@ -137,7 +137,7 @@ export function LibraryIndexView({
             <Metric label="可用" value={availableCount} />
             <Metric className="text-amber-600 dark:text-amber-400" label="不可用" value={unavailableCount} />
             <Metric label={isAvailabilityLoading ? "检查中" : "未检查"} value={unknownCount} />
-            <Metric label="全部文件大小" value={formatBytes(totalBytes ?? totalSize)} />
+            <Metric label="总大小" value={formatBytes(totalBytes ?? totalSize)} />
           </header>
 
           {errorMessage && (
@@ -184,7 +184,7 @@ export function LibraryIndexView({
             </div>
           </section>
 
-          <section aria-label="媒体库条目" className="flex flex-col gap-3" ref={listRef}>
+          <section aria-label="媒体库影片列表" className="flex flex-col gap-3" ref={listRef}>
             {filteredEntries.length > 0 && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -379,7 +379,7 @@ function LibraryEntryRow({
           {LinkComponent ? (
             <LinkComponent className={detailClass} entry={entry}>
               <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
-                文件刮削来源
+                刮削信息
               </Badge>
             </LinkComponent>
           ) : null}
@@ -519,7 +519,7 @@ function LibraryFileRow({
         )}
         {onRelinkFile && (
           <Button size="sm" variant="ghost" onClick={() => setAction("relink")}>
-            重定位
+            重新关联
           </Button>
         )}
         {onRemoveFile && (
@@ -537,14 +537,15 @@ function LibraryFileRow({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{action === "remove" ? "从媒体库移除" : "重定位文件"}</DialogTitle>
+            <DialogTitle>{action === "remove" ? "从媒体库移除" : "重新关联文件"}</DialogTitle>
           </DialogHeader>
           <p className="break-all">{path}</p>
           {action === "remove" ? (
             <>
               <p>
-                移除这个文件的记录及其专属资源记录。
-                {entry.fileRefs.length === 1 ? "这是最后一个文件，空影片记录也将移除。" : "其他文件和公共资源保留。"}
+                {entry.fileRefs.length === 1
+                  ? "这是最后一个文件，将同时从媒体库移除该影片记录。"
+                  : "将从媒体库移除该文件记录，其他分盘文件仍会保留。"}
               </p>
               <p>磁盘文件保持不变。</p>
             </>
@@ -552,7 +553,7 @@ function LibraryFileRow({
             <>
               <p>所在媒体目录：{file.rootDisplayName}</p>
               <label htmlFor={`relink-path-${file.id}`}>
-                相对路径
+                新相对路径
                 <Input
                   id={`relink-path-${file.id}`}
                   value={relativePath}

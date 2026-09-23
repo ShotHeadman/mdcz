@@ -6,7 +6,11 @@ import {
   resolvePosterEditorCropRegion,
 } from "@mdcz/shared/posterCrop";
 import sharp from "sharp";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import { type MovieLibrary, writePublishedMovie } from "../library/registeredMedia";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
+import { WriteOutput } from "../publication/WriteOutput";
+import { DirectoryInventory } from "./DirectoryInventory";
 import { resolveExistingImageAsset } from "./download/assets/helpers";
 
 const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);
@@ -52,8 +56,9 @@ export class PosterCropService {
               : names.poster,
           )
         : join(outputDir, names.poster));
-    const thumbPath = assets ? assets.thumb : await resolveExistingImageAsset(thumbTargetPath);
-    const posterPath = assets ? assets.poster : await resolveExistingImageAsset(posterTargetPath);
+    const inventory = new DirectoryInventory();
+    const thumbPath = assets ? assets.thumb : await resolveExistingImageAsset(thumbTargetPath, inventory);
+    const posterPath = assets ? assets.poster : await resolveExistingImageAsset(posterTargetPath, inventory);
     const sourcePath = thumbPath ?? posterPath;
     if (!sourcePath) throw new Error("No local thumb or poster is available for editing");
 
@@ -74,8 +79,12 @@ export class PosterCropService {
     videoPath: string,
     assetNamingMode: AssetNamingMode,
     crop: NormalizedCropRegion,
-    publication: RegisteredPublicationContext,
     assets?: { thumb?: string; poster?: string },
+    movie?: {
+      library: MovieLibrary;
+      movieId: string;
+      roots: readonly { id: string; hostPath: string }[];
+    },
   ): Promise<PosterCropSession & { revision: string }> {
     const session = await this.prepare(videoPath, assetNamingMode, assets);
     const extension = extname(session.targetPath).toLowerCase() || ".jpg";
@@ -83,17 +92,30 @@ export class PosterCropService {
     const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
     const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
     const data = await encodePoster(source, extension).toBuffer();
-    await commitRegisteredPublication(
-      {
-        operationId: `poster-crop:${session.targetPath}`,
-        operationType: "maintenance",
-        sourceVideoPath: videoPath,
-        artifacts: [{ kind: "poster", targetPath: session.targetPath, content: { kind: "bytes", data } }],
-        replaceExistingArtifacts: true,
-        readOnlyDirectories: dirname(session.targetPath) === dirname(videoPath) ? [] : [dirname(videoPath)],
-      },
-      publication,
+    const inventory = new DirectoryInventory();
+    const release = await acquireOutputDirectories([session.targetPath], (directory) =>
+      inventory.canonicalDirectory(directory),
     );
+    try {
+      await new WriteOutput().install([{ targetPath: session.targetPath, data }], {
+        protectedMediaFiles: [videoPath],
+        commit: async () => {
+          if (!movie) return;
+          const ref = toRootFileRef(session.targetPath, movie.roots);
+          await writePublishedMovie(movie.library, movie.movieId, [
+            {
+              kind: "poster",
+              uri: ref.relativePath,
+              rootId: ref.rootId,
+              relativePath: ref.relativePath,
+              published: true,
+            },
+          ]);
+        },
+      });
+    } finally {
+      release();
+    }
     return { ...session, revision: String(Date.now()) };
   }
 }

@@ -79,6 +79,7 @@ export class LibraryService {
       ...input,
       root,
       files: current.files,
+      resolveRoot: (id) => this.mediaRoots.get(id),
       relink: (file) => state.repositories.library.relinkFile(file),
     });
     return { entry: await this.toDto(entry, await this.loadRootMap(), true) };
@@ -167,7 +168,6 @@ export class LibraryService {
         totalBytes: output.totalBytes,
         outputAt: output.outputAt,
         rootPath: output.rootPath,
-        unresolvedRepairCount: state.repositories.libraryRepairIssues.countUnresolved(),
       },
       recentAcquisitions,
     };

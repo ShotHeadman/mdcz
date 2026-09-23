@@ -1,5 +1,4 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type {
   ActorImageService,
   AggregationService,
@@ -13,7 +12,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { mockConfigManager } from "../../../helpers/scraper";
+import { createFileScraper, mockConfigManager, prepareFile, resolveTestOutputPlan } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -59,13 +58,16 @@ describe("FileScraper plan timing", () => {
       title_zh: "翻译标题",
     });
     const plan: OrganizePlan = {
-      outputDir: "/output/translated",
-      targetVideoPath: "/output/translated/ABC-123.mp4",
-      nfoPath: "/output/translated/ABC-123.nfo",
+      outputDir: join(directory.path, "translated"),
+      metadataDir: join(directory.path, "translated"),
+      mode: "move",
+      renameSubtitles: true,
+      targetVideoPath: join(directory.path, "translated", "ABC-123.mp4"),
+      nfoPath: join(directory.path, "translated", "ABC-123.nfo"),
     };
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
-      resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
+      resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer;
     const actorImageService = {
       prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
@@ -117,9 +119,9 @@ describe("FileScraper plan timing", () => {
       getConfiguration: async () => currentConfig,
     });
 
-    const preparation = await scraper.prepareFile(sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
-      source: { rootId: "root", relativePath: "tmp/ABC-123.mp4" },
-      roots: [{ id: "root", hostPath: "/" }],
+    const preparation = await prepareFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+      source: { rootId: "root", relativePath: "ABC-123.mp4" },
+      roots: [{ id: "root", hostPath: directory.path }],
     });
     expect(preparation.status).toBe("prepared");
     expect(downloadAll).not.toHaveBeenCalled();
@@ -128,11 +130,9 @@ describe("FileScraper plan timing", () => {
       naming: { ...currentConfig.naming, fileTemplate: "changed-{number}" },
     };
     if (preparation.status !== "prepared") throw new Error("Expected prepared scrape");
-    const results = await scraper.executePreparedFiles([
-      { prepared: preparation.prepared, progress: { fileIndex: 1, totalFiles: 1 } },
-    ]);
+    const results = await scraper.executePreparedFiles(preparation.prepared);
     onTestFinished(async () => {
-      for (const result of results) await result.release?.();
+      await results.release?.();
     });
     expect(aggregate).toHaveBeenCalledOnce();
     expect(translateCrawlerData).toHaveBeenCalledOnce();
@@ -149,7 +149,7 @@ describe("FileScraper plan timing", () => {
         executionMode: "batch",
       },
     );
-    expect(downloadAll.mock.calls[0]?.[5]).toEqual({
+    expect(downloadAll.mock.calls[0]?.[5]).toMatchObject({
       movieBaseName: "ABC-123",
       existingAssetDir: plan.outputDir,
     });

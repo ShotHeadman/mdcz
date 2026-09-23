@@ -2,7 +2,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import * as scraperOutput from "@main/services/scraper/output";
 import type {
   AggregationService,
@@ -14,8 +13,14 @@ import type {
 } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager, prepareAndExecuteFile } from "../../../helpers/scraper";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  createFileScraper,
+  mockConfigManager,
+  preparedPublicationFiles,
+  prepareFilePublication,
+  resolveTestOutputPlan,
+} from "../../../helpers/scraper";
 
 const tempDirs: string[] = [];
 
@@ -97,7 +102,7 @@ describe("FileScraper subtitle sidecars", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn((_fileInfo: FileInfo) => plan),
-        resolveOutputPlan: vi.fn(async (nextPlan: OrganizePlan) => nextPlan),
+        resolveOutputPlan: vi.fn(resolveTestOutputPlan),
       } as unknown as FileOrganizer,
     });
   };
@@ -111,6 +116,9 @@ describe("FileScraper subtitle sidecars", () => {
     const outputDir = join(root, "output", "ABC-123");
     const plan: OrganizePlan = {
       outputDir,
+      metadataDir: outputDir,
+      mode: "move",
+      renameSubtitles: true,
       targetVideoPath: join(outputDir, "ABC-123.mp4"),
       nfoPath: join(outputDir, "ABC-123.nfo"),
     };
@@ -121,12 +129,14 @@ describe("FileScraper subtitle sidecars", () => {
     const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
     const scraper = createScraper(plan, writeNfo);
 
-    const result = await prepareAndExecuteFile(scraper, videoPath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+    const group = await prepareFilePublication(scraper, videoPath, { fileIndex: 1, totalFiles: 1 }, undefined, {
       roots: [{ id: "test-root", hostPath: tmpdir() }],
     });
+    onTestFinished(async () => await group.release?.());
+    const [result] = preparedPublicationFiles(group);
     const nfoOptions = writeNfo.mock.calls[0]?.[2] as { fileInfo?: FileInfo } | undefined;
 
-    expect(result.status).toBe("success");
+    expect(result.status).toBe("prepared");
     expect(nfoOptions?.fileInfo?.isSubtitled).toBe(true);
     expect(nfoOptions?.fileInfo?.subtitleTag).toBe(expectedSubtitleTag);
   });

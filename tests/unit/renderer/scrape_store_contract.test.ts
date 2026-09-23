@@ -52,7 +52,7 @@ describe("scrape store contract", () => {
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
   });
 
-  it("uses manifest item ids for retry and keeps unaffected items in retry snapshots", () => {
+  it("uses manifest item ids and keeps unaffected items when retry starts a new run", () => {
     const completed = buildScrapeSnapshot({
       task: { ...buildScrapeSnapshot().task, revision: 80, totalItems: 2, successCount: 1, failedCount: 1 },
       items: [
@@ -64,7 +64,7 @@ describe("scrape store contract", () => {
 
     useScrapeStore.getState().setSnapshot(
       buildScrapeSnapshot({
-        task: { ...completed.task, status: "running", completedAt: null, executionGeneration: 1, revision: 20 },
+        task: { ...completed.task, id: "retry-run", status: "running", completedAt: null, revision: 1 },
         progress: { percent: 50, completedItems: 1, totalItems: 2 },
         items: [completed.items[0], buildScrapeLiveItem({ id: "item-failed", resultId: null, status: "processing" })],
       }),

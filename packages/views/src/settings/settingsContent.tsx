@@ -24,10 +24,9 @@ import {
   DialogTitle,
   DialogTrigger,
   FormControl,
-  Input,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { CircleHelp, FolderOpen, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -182,7 +181,6 @@ const NAMING_PREVIEW_FIELD_KEYS = [
   "paths.mediaPath",
   "paths.metadataPath",
   "paths.successOutputFolder",
-  "paths.strmPathMappings",
   "paths.sceneImagesFolder",
   "download.generateNfo",
   "download.downloadThumb",
@@ -1168,14 +1166,9 @@ export function MediaOrganizeSection() {
 
 export function MetadataExportSection() {
   const form = useFormContext<FieldValues>();
-  const services = useSettingsServices();
   const search = useOptionalSettingsSearch();
   const metadataOnly = Boolean(form.watch("behavior.metadataOnly"));
-  const generateStrm = Boolean(form.watch("behavior.generateStrm"));
-
   const shouldMountChildren = shouldMountConditionalSettings(metadataOnly, search);
-  const isStrmMappingsVisible =
-    generateStrm || Boolean(search?.hasActiveFilters && search.isFieldVisible("paths.strmPathMappings"));
 
   return (
     <>
@@ -1190,7 +1183,7 @@ export function MetadataExportSection() {
             name="paths.metadataPath"
             label="元数据输出目录"
             isDirectory
-            description="存放 NFO、海报及 .strm 播放流文件的目录。"
+            description="存放 NFO 与海报的目录。"
             rules={{
               validate: (value) => {
                 if (metadataOnly && !String(value ?? "").trim()) {
@@ -1200,96 +1193,6 @@ export function MetadataExportSection() {
               },
             }}
           />
-          <BoolField
-            name="behavior.generateStrm"
-            label="同时生成 .strm 播放流文件"
-            description="在元数据目录生成 .strm 文件，供 Emby / Jellyfin 挂载串流播放。"
-          />
-          {isStrmMappingsVisible && (
-            <div className="space-y-4 pt-1 pl-4 border-l-2 border-border/40 animate-in fade-in duration-200">
-              {services.isServer && (
-                <p className="text-xs text-muted-foreground">
-                  源路径和输出目录属于 MDCz 服务端文件系统；STRM 映射目标属于播放器可见路径，无需服务端能够访问。
-                </p>
-              )}
-              <BaseField
-                name="paths.strmPathMappings"
-                label="STRM 路径映射（可选）"
-                layout="vertical"
-                commitMode="debounce"
-                description="当媒体服务器访问视频的路径与本机不同时（如 Docker 或 NAS），替换 .strm 中的路径。"
-              >
-                {(field) => {
-                  const mappings = (field.value ?? []) as Configuration["paths"]["strmPathMappings"];
-                  return (
-                    <div className="space-y-2">
-                      {mappings.length > 0 && (
-                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 px-0.5 text-xs font-medium text-muted-foreground">
-                          <span>MDCz 可见路径前缀</span>
-                          <span>播放器可见路径前缀</span>
-                          <span className="w-8" />
-                        </div>
-                      )}
-                      {mappings.map((mapping, index) => (
-                        <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                          {(["from", "to"] as const).map((key) => {
-                            const error = form.getFieldState(
-                              `paths.strmPathMappings.${index}.${key}`,
-                              form.formState,
-                            ).error;
-                            return (
-                              <div key={key}>
-                                <Input
-                                  aria-label={`${index + 1} ${key === "from" ? "MDCz 可见路径前缀" : "播放器可见路径前缀"}`}
-                                  aria-invalid={Boolean(error)}
-                                  placeholder={key === "from" ? "D:\\Downloads" : "/mnt/downloads"}
-                                  value={mapping[key]}
-                                  onBlur={field.onBlur}
-                                  onChange={(event) =>
-                                    field.onChange(
-                                      mappings.map((rule, i) =>
-                                        i === index ? { ...rule, [key]: event.target.value } : rule,
-                                      ),
-                                    )
-                                  }
-                                />
-                                {error?.message && <span className="text-xs text-destructive">{error.message}</span>}
-                              </div>
-                            );
-                          })}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-9 text-muted-foreground hover:text-foreground"
-                            onClick={() => field.onChange(mappings.filter((_, i) => i !== index))}
-                            aria-label={`删除第 ${index + 1} 条路径映射`}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      ))}
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => field.onChange([...mappings, { from: "", to: "" }])}
-                        >
-                          添加路径映射
-                        </Button>
-                        {mappings.length === 0 && (
-                          <span className="text-xs text-muted-foreground">
-                            未配置路径映射时，.strm 将直接使用原始媒体路径。
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }}
-              </BaseField>
-            </div>
-          )}
         </div>
       )}
     </>

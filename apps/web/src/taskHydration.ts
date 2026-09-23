@@ -55,23 +55,9 @@ export const applyPendingUncensoredConfirmation = (
   response: ScrapePendingUncensoredConfirmationResponse,
   previous: TaskHydrationState,
 ): TaskHydrationState => {
-  const byTask = new Map<string, typeof response.items>();
-  for (const item of response.items) {
-    const items = byTask.get(item.taskId) ?? [];
-    items.push(item);
-    byTask.set(item.taskId, items);
-  }
-  const scrapeTaskId = selectScrapeTaskId(useScrapeStore.getState());
-  const taskId =
-    (previous.uncensoredTaskId && byTask.has(previous.uncensoredTaskId) ? previous.uncensoredTaskId : "") ||
-    (scrapeTaskId && byTask.has(scrapeTaskId) ? scrapeTaskId : "") ||
-    response.items[0]?.taskId ||
-    "";
-  const items = taskId ? (byTask.get(taskId) ?? []) : [];
   return {
     ...previous,
-    shouldOpenUncensoredDialog: items.length > 0,
-    uncensoredTaskId: taskId,
-    ambiguousUncensoredItems: items.map(({ taskId: _taskId, ...item }) => item),
+    shouldOpenUncensoredDialog: response.items.length > 0,
+    ambiguousUncensoredItems: response.items,
   };
 };

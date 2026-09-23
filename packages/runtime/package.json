@@ -10,6 +10,7 @@
   "dependencies": {
     "@mdcz/shared": "workspace:*",
     "@mdcz/media-store": "workspace:*",
+    "@mdcz/persistence": "workspace:*",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.3.0",
     "impit": "^0.13.0",

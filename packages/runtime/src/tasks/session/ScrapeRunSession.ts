@@ -1,8 +1,10 @@
 import { basename } from "node:path";
 import type { DiscoveryProgress } from "@mdcz/shared/directoryTasks";
-import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../../network/networkExecution";
+import { PublicationConflictError } from "../../publication/conflicts";
+import type { PreparedMovieOutput } from "../../publication/movieArtifacts";
+import type { MovieGroup } from "../../scrape/movieGroups";
 import { ScrapeTargetConflictError } from "../../scrape/preflightScrapeTask";
 import { TaskExecutor } from "../executor";
 
@@ -20,28 +22,18 @@ export type ScrapeRunLiveStatus =
   | "interrupted";
 export type ScrapeRunItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 
-export interface ScrapeRunItem<TManualScrape = unknown> {
+export interface ScrapeRunItem {
   id: string;
   rootId: string;
   relativePath: string;
   sourcePath: string;
-  manualScrape?: TManualScrape;
-  executionSource?: RootFileRef;
-  outputTemplateRoot?: string;
   caseId?: string;
 }
 
-export interface ScrapeRunItemSnapshot<TManualScrape = unknown> extends ScrapeRunItem<TManualScrape> {
+export type ScrapeRunItemSnapshot<TItem extends ScrapeRunItem = ScrapeRunItem> = TItem & {
   status: ScrapeRunItemStatus;
   error: string | null;
   result?: ScrapeResult;
-}
-
-export type ScrapeRunItemInitialState<TManualScrape = unknown> = Pick<
-  ScrapeRunItemSnapshot<TManualScrape>,
-  "id" | "error" | "result"
-> & {
-  status: Exclude<ScrapeRunItemStatus, "processing">;
 };
 
 export interface ScrapeRunProgress {
@@ -65,15 +57,13 @@ export interface ScrapeRunLogEntry {
   relativePath: string | null;
 }
 
-export interface ScrapeRunSnapshot<TManualScrape = unknown> {
+export interface ScrapeRunSnapshot<TItem extends ScrapeRunItem = ScrapeRunItem> {
   runId: string;
-  executionGeneration: number;
-  generation: number;
   revision: number;
   status: ScrapeRunLiveStatus;
   progress: ScrapeRunProgress;
   discovery?: DiscoveryProgress;
-  items: ScrapeRunItemSnapshot<TManualScrape>[];
+  items: ScrapeRunItemSnapshot<TItem>[];
   latestStage: ScrapeRunStageSnapshot | null;
   logs: ScrapeRunLogEntry[];
   error: string | null;
@@ -83,62 +73,49 @@ export type ScrapePreparationResult<TPrepared> =
   | { status: "prepared"; prepared: TPrepared }
   | { status: "failed" | "skipped"; result: ScrapeResult };
 
-export interface ScrapeRunExecution<TManualScrape = unknown, TPrepared = unknown> {
-  executionGeneration?: number;
-  items: readonly ScrapeRunItem<TManualScrape>[];
-  initialItems?: readonly ScrapeRunItemInitialState<TManualScrape>[];
+export interface ScrapeRunExecution<TItem extends ScrapeRunItem = ScrapeRunItem, TPrepared = unknown> {
   concurrency: number;
-  acquireItems: (items: readonly ScrapeRunItem<TManualScrape>[]) => () => void;
-  getExecutionGroupKey?: (item: ScrapeRunItem<TManualScrape>, prepared: TPrepared) => string;
-  getPublicationKey?: (item: ScrapeRunItem<TManualScrape>, prepared: TPrepared) => string;
-  admitItem: (item: ScrapeRunItem<TManualScrape>) => Promise<string>;
-  prepareItem: (
-    item: ScrapeRunItem<TManualScrape>,
-    signal: AbortSignal,
-    attemptId: string,
-  ) => Promise<ScrapePreparationResult<TPrepared>>;
-  validatePrepared(
-    items: readonly { item: ScrapeRunItem<TManualScrape>; prepared: TPrepared }[],
-    failedItems: readonly ScrapeRunItem<TManualScrape>[],
-  ): Promise<void>;
-  executePreparedItems: (
-    items: readonly {
-      item: ScrapeRunItem<TManualScrape>;
+  movieGroups: readonly MovieGroup<TItem>[];
+  prepareGroup: (group: MovieGroup<TItem>, signal: AbortSignal) => Promise<ScrapePreparationResult<TPrepared>>;
+  checkTargets: (groups: readonly { group: MovieGroup<TItem>; prepared: TPrepared }[]) => Promise<void>;
+  executePreparedGroup: (
+    group: {
+      group: MovieGroup<TItem>;
       prepared: TPrepared;
-      attemptId: string;
-    }[],
+    },
     signal: AbortSignal,
-  ) => Promise<readonly { itemId: string; result: ScrapeResult & { release?: () => Promise<void> } }[]>;
-  commitPreparationItem: (
-    item: ScrapeRunItem<TManualScrape>,
-    result: ScrapeResult,
-    attemptId: string,
-  ) => Promise<ScrapeResult>;
+  ) => Promise<{
+    results: readonly { itemId: string; result: ScrapeResult }[];
+    output?: PreparedMovieOutput;
+    release?: () => Promise<void>;
+  }>;
   commitItems: (
-    items: readonly { item: ScrapeRunItem<TManualScrape>; result: ScrapeResult; attemptId: string }[],
+    items: readonly { item: TItem; result?: ScrapeResult }[],
+    output?: PreparedMovieOutput,
   ) => Promise<readonly { itemId: string; result: ScrapeResult }[]>;
 }
 
-export interface ScrapeRunSessionOptions<TManualScrape = unknown, TPrepared = unknown> {
+export interface ScrapeRunSessionOptions<TItem extends ScrapeRunItem = ScrapeRunItem, TPrepared = unknown> {
   runId: string;
-  executionGeneration?: number;
   totalItems: number | null;
-  prepare: (signal: AbortSignal) => Promise<ScrapeRunExecution<TManualScrape, TPrepared> | null>;
-  onSnapshot: (snapshot: ScrapeRunSnapshot<TManualScrape>) => void;
+  discover?: (signal: AbortSignal, report: (progress: DiscoveryProgress) => void) => Promise<void>;
+  prepare: (signal: AbortSignal) => Promise<ScrapeRunExecution<TItem, TPrepared> | null>;
+  onSnapshot: (snapshot: ScrapeRunSnapshot<TItem>) => void;
 }
 
-interface MutableScrapeRunItem<TManualScrape> extends ScrapeRunItem<TManualScrape> {
-  status: ScrapeRunItemStatus;
-  error: string | null;
-  result?: ScrapeResult;
-}
-type ScrapeExecutionGroup<TManualScrape> = { key: string; items: MutableScrapeRunItem<TManualScrape>[] };
-type ScrapeGroupExecution<TManualScrape> = {
-  results: Array<{ item: MutableScrapeRunItem<TManualScrape>; result: ScrapeResult; attemptId: string }>;
+type MutableScrapeRunItem<TItem extends ScrapeRunItem> = ScrapeRunItemSnapshot<TItem> & {
+  progress: number;
+};
+type RuntimeMovieGroup<TItem extends ScrapeRunItem, TPrepared> = MovieGroup<MutableScrapeRunItem<TItem>> & {
+  preparation?: ScrapePreparationResult<TPrepared>;
+};
+type ScrapeGroupExecution<TItem extends ScrapeRunItem> = {
+  output?: PreparedMovieOutput;
+  results: Array<{ item: MutableScrapeRunItem<TItem>; result?: ScrapeResult }>;
   release: () => Promise<void>;
 };
 
-class StaleScrapeRunGenerationError extends Error {}
+class InactiveScrapeRunError extends Error {}
 
 const isTerminalItemStatus = (status: ScrapeRunItemStatus): boolean =>
   status === "success" || status === "failed" || status === "skipped";
@@ -148,8 +125,8 @@ const toTerminalItemStatus = (status: ScrapeResultStatus): ScrapeRunItemStatus =
   throw new Error(`Scrape commit returned non-terminal status: ${status}`);
 };
 
-const createSkippedResult = <TManualScrape>(
-  item: MutableScrapeRunItem<TManualScrape>,
+const createSkippedResult = <TItem extends ScrapeRunItem>(
+  item: MutableScrapeRunItem<TItem>,
   error: string,
 ): ScrapeResult => ({
   fileId: item.id,
@@ -161,7 +138,10 @@ const createSkippedResult = <TManualScrape>(
   assets: [],
 });
 
-const createFailedResult = <TManualScrape>(item: MutableScrapeRunItem<TManualScrape>, error: string): ScrapeResult => ({
+const createFailedResult = <TItem extends ScrapeRunItem>(
+  item: MutableScrapeRunItem<TItem>,
+  error: string,
+): ScrapeResult => ({
   fileId: item.id,
   rootId: item.rootId,
   relativePath: item.relativePath,
@@ -171,77 +151,73 @@ const createFailedResult = <TManualScrape>(item: MutableScrapeRunItem<TManualScr
   assets: [],
 });
 
-export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
-  private items: MutableScrapeRunItem<TManualScrape>[] = [];
-  private itemsById = new Map<string, MutableScrapeRunItem<TManualScrape>>();
-  private executionConfig: ScrapeRunExecution<TManualScrape, TPrepared> | null = null;
+export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrepared = unknown> {
+  private movieGroups: RuntimeMovieGroup<TItem, TPrepared>[] = [];
+  private itemsById = new Map<string, MutableScrapeRunItem<TItem>>();
+  private executionConfig: ScrapeRunExecution<TItem, TPrepared> | null = null;
   private totalItems: number | null;
   private discovery?: DiscoveryProgress;
   private started = false;
   private readonly discoveryController = new AbortController();
   private readonly logs: ScrapeRunLogEntry[] = [];
-  private generation = 0;
   private revision = 0;
   private status: ScrapeRunLiveStatus = "queued";
   private latestStage: ScrapeRunStageSnapshot | null = null;
   private error: string | null = null;
-  private readonly progressByItemId = new Map<string, number>();
-  private readonly attemptIdByItemId = new Map<string, string>();
-  private readonly preparedByItemId = new Map<string, TPrepared>();
-  private readonly preparationFailureByItemId = new Map<string, ScrapeResult>();
-  private readonly publicationChains = new Map<string, Promise<void>>();
   private preflightPassed = false;
   private readonly shutdownController = new AbortController();
   private executor: { pause(): void; stop(): void } | null = null;
   private runPromise: Promise<void> | null = null;
-  private stopPromise: Promise<ScrapeRunSnapshot<TManualScrape>> | null = null;
+  private stopPromise: Promise<ScrapeRunSnapshot<TItem>> | null = null;
 
-  constructor(private readonly options: ScrapeRunSessionOptions<TManualScrape, TPrepared>) {
+  constructor(private readonly options: ScrapeRunSessionOptions<TItem, TPrepared>) {
     if (!options.runId.trim()) throw new Error("Scrape run ID must not be empty");
     this.totalItems = options.totalItems;
   }
 
-  private get execution(): ScrapeRunExecution<TManualScrape, TPrepared> {
+  private get execution(): ScrapeRunExecution<TItem, TPrepared> {
     if (!this.executionConfig) throw new Error("Scrape execution is not prepared");
     return this.executionConfig;
   }
 
-  private mountExecution(options: ScrapeRunExecution<TManualScrape, TPrepared>): void {
+  private get items(): MutableScrapeRunItem<TItem>[] {
+    return this.movieGroups.flatMap((group) => group.members);
+  }
+
+  private mountExecution(options: ScrapeRunExecution<TItem, TPrepared>): void {
     if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1) {
       throw new Error("Scrape run concurrency must be a positive integer");
     }
 
     const ids = new Set<string>();
     const paths = new Set<string>();
-    const initialItemsById = new Map<string, ScrapeRunItemInitialState<TManualScrape>>();
-    for (const initialItem of options.initialItems ?? []) {
-      if (initialItemsById.has(initialItem.id)) throw new Error(`Duplicate initial scrape item ID: ${initialItem.id}`);
-      initialItemsById.set(initialItem.id, initialItem);
-    }
-    const items = options.items.map((item): MutableScrapeRunItem<TManualScrape> => {
-      if (!item.id.trim()) throw new Error("Scrape item ID must not be empty");
-      if (!item.rootId.trim()) throw new Error(`Scrape item root ID must not be empty: ${item.id}`);
-      if (!item.relativePath.trim()) throw new Error(`Scrape item relative path must not be empty: ${item.id}`);
-      if (!item.sourcePath.trim()) throw new Error(`Scrape item source path must not be empty: ${item.id}`);
-      if (ids.has(item.id)) throw new Error(`Duplicate scrape item ID: ${item.id}`);
-      ids.add(item.id);
-      const pathKey = `${item.rootId}\u0000${item.relativePath}`;
-      if (paths.has(pathKey)) throw new Error(`Duplicate scrape item path: ${item.rootId}:${item.relativePath}`);
-      paths.add(pathKey);
-      const initial = initialItemsById.get(item.id);
-      return {
-        ...item,
-        status: initial?.status ?? "pending",
-        error: initial?.error ?? null,
-        ...(initial?.result ? { result: initial.result } : {}),
-      };
-    });
-    for (const initialItem of initialItemsById.values()) {
-      if (!ids.has(initialItem.id)) throw new Error(`Initial scrape item is not in the session: ${initialItem.id}`);
-    }
-    this.items = items;
-    this.itemsById = new Map(items.map((item) => [item.id, item]));
-    this.totalItems = items.length;
+    this.movieGroups = options.movieGroups.map(
+      (group): RuntimeMovieGroup<TItem, TPrepared> => ({
+        movieId: group.movieId,
+        error: group.error,
+        assets: group.assets ?? [],
+        members: group.members.map((member): MutableScrapeRunItem<TItem> => {
+          if (!member.id.trim()) throw new Error("Scrape item ID must not be empty");
+          if (!member.rootId.trim()) throw new Error(`Scrape item root ID must not be empty: ${member.id}`);
+          if (!member.relativePath.trim()) throw new Error(`Scrape item relative path must not be empty: ${member.id}`);
+          if (!member.sourcePath.trim()) throw new Error(`Scrape item source path must not be empty: ${member.id}`);
+          if (ids.has(member.id)) throw new Error(`Duplicate scrape item ID: ${member.id}`);
+          ids.add(member.id);
+          const pathKey = `${member.rootId}\u0000${member.relativePath}`;
+          if (paths.has(pathKey))
+            throw new Error(`Duplicate scrape item path: ${member.rootId}:${member.relativePath}`);
+          paths.add(pathKey);
+          return {
+            ...member,
+            status: "pending",
+            error: null,
+            progress: 0,
+          };
+        }),
+      }),
+    );
+    this.itemsById = new Map(this.items.map((item) => [item.id, item]));
+    this.totalItems = this.items.length;
     this.executionConfig = options;
     this.emitSnapshot();
   }
@@ -252,9 +228,9 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.startDrain();
   }
 
-  async pause(): Promise<ScrapeRunSnapshot<TManualScrape>> {
+  async pause(): Promise<ScrapeRunSnapshot<TItem>> {
     if (this.status === "paused") return this.snapshot();
-    if (this.status === "discovering") throw new Error("目录扫描不支持暂停，请停止任务");
+    if (this.status === "discovering") throw new Error("扫描中不支持暂停，请直接停止任务");
     if (this.status !== "queued" && this.status !== "running")
       throw new Error(`Cannot pause scrape run in ${this.status} state`);
     this.executor?.pause();
@@ -268,45 +244,23 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.setStatus(this.runPromise ? "running" : "queued");
   }
 
-  stop(): Promise<ScrapeRunSnapshot<TManualScrape>> {
+  stop(): Promise<ScrapeRunSnapshot<TItem>> {
     this.stopPromise ??= this.finishStop();
     return this.stopPromise;
   }
 
-  private async finishStop(): Promise<ScrapeRunSnapshot<TManualScrape>> {
+  private async finishStop(): Promise<ScrapeRunSnapshot<TItem>> {
     if (this.isTerminalStatus()) return this.snapshot();
     this.setStatus("stopping");
     this.discoveryController.abort();
     this.executor?.stop();
     await this.waitForIdle();
-    this.generation += 1;
-    this.emitSnapshot();
-
     if (!this.started || !this.executionConfig) {
       this.setStatus("stopped");
       return this.snapshot();
     }
     try {
-      const terminalInputs = [];
-      for (const item of this.items) {
-        if (isTerminalItemStatus(item.status)) continue;
-        const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.execution.admitItem(item));
-        this.attemptIdByItemId.set(item.id, attemptId);
-        terminalInputs.push({ item, result: createSkippedResult(item, "刮削已停止"), attemptId });
-      }
-      const committed = new Map(
-        (terminalInputs.length ? await this.execution.commitItems(terminalInputs) : []).map(({ itemId, result }) => [
-          itemId,
-          result,
-        ]),
-      );
-      if (committed.size !== terminalInputs.length)
-        throw new Error("Scrape stop commit returned an incomplete result set");
-      for (const { item } of terminalInputs) {
-        const result = committed.get(item.id);
-        if (!result) throw new Error(`Scrape stop commit omitted item: ${item.id}`);
-        this.applyCommittedResult(item, result);
-      }
+      await this.skipOutstandingItems("刮削已停止");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const terminalError = new AggregateError(
@@ -332,8 +286,6 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     }
     if (this.isTerminalStatus()) return;
     this.setStatus("stopping");
-    this.generation += 1;
-    this.emitSnapshot();
     this.shutdownController.abort(new Error("Scrape run interrupted by shutdown"));
     this.discoveryController.abort(this.shutdownController.signal.reason);
     this.executor?.stop();
@@ -341,18 +293,14 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.setStatus("interrupted");
   }
 
-  snapshot(): ScrapeRunSnapshot<TManualScrape> {
+  snapshot(): ScrapeRunSnapshot<TItem> {
     const completedItems = this.items.filter((item) => isTerminalItemStatus(item.status)).length;
     const totalItems = this.totalItems;
     const reportedPercent = Math.round(
-      ((completedItems + [...this.progressByItemId.values()].reduce((total, percent) => total + percent / 100, 0)) /
-        (totalItems || 1)) *
-        100,
+      ((completedItems + this.items.reduce((total, item) => total + item.progress / 100, 0)) / (totalItems || 1)) * 100,
     );
     return {
       runId: this.options.runId,
-      executionGeneration: this.options.executionGeneration ?? 0,
-      generation: this.generation,
       revision: this.revision,
       status: this.status,
       progress: {
@@ -361,7 +309,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
         totalItems,
       },
       ...(this.discovery ? { discovery: structuredClone(this.discovery) } : {}),
-      items: this.items.map((item) => ({ ...item })),
+      items: this.items.map(({ progress: _progress, ...item }) => item as ScrapeRunItemSnapshot<TItem>),
       latestStage: this.latestStage ? { ...this.latestStage } : null,
       logs: this.logs.map((entry) => ({ ...entry, timestamp: new Date(entry.timestamp) })),
       error: this.error,
@@ -374,6 +322,17 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.emitSnapshot();
   }
 
+  updateLibraryFiles(updates: ReadonlyMap<string, Partial<ScrapeResult>>): void {
+    let changed = false;
+    for (const item of this.items) {
+      const update = item.result?.resultId ? updates.get(item.result.resultId) : undefined;
+      if (!update || !item.result) continue;
+      item.result = { ...item.result, ...update };
+      changed = true;
+    }
+    if (changed) this.emitSnapshot();
+  }
+
   /**
    * The session is the sole progress authority; hosts must not maintain a
    * second counter with different units.
@@ -382,8 +341,8 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     const item = this.itemsById.get(itemId);
     if (!item || isTerminalItemStatus(item.status)) return;
     const nextPercent = Math.min(100, Math.max(0, Number.isFinite(percent) ? percent : 0));
-    if (nextPercent <= (this.progressByItemId.get(itemId) ?? 0)) return;
-    this.progressByItemId.set(itemId, nextPercent);
+    if (nextPercent <= item.progress) return;
+    item.progress = nextPercent;
     this.emitSnapshot();
   }
 
@@ -418,12 +377,11 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
 
   private startDrain(): void {
     if (this.runPromise || this.status !== "running") return;
-    const generation = this.generation;
     const run = Promise.resolve()
-      .then(() => this.drain(generation))
+      .then(() => this.drain())
       .catch(async (error: unknown) => {
-        if (error instanceof StaleScrapeRunGenerationError) return;
-        await this.handleFatalError(generation, error);
+        if (error instanceof InactiveScrapeRunError) return;
+        await this.handleFatalError(error);
       });
     const tracked = run.finally(() => {
       if (this.runPromise === tracked) this.runPromise = null;
@@ -438,17 +396,23 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.runPromise = tracked;
   }
 
-  private async drain(generation: number): Promise<void> {
-    this.assertCurrent(generation, ["running"]);
+  private async drain(): Promise<void> {
+    this.assertActive(["running"]);
     if (!this.started) {
       this.started = true;
-      if (this.totalItems === null) {
+      if (this.options.discover) {
         this.setStatus("discovering");
         this.recordStage({ stage: "discovering", message: "正在扫描视频文件" });
+        await this.options.discover(this.discoveryController.signal, (progress) => {
+          this.recordDiscovery(progress);
+        });
+        this.assertActive(["discovering"]);
+        this.discoveryController.signal.throwIfAborted();
+        this.setStatus("running");
       }
       const execution = await this.options.prepare(this.discoveryController.signal);
-      this.assertCurrent(generation, ["running", "discovering", "paused", "stopping"]);
-      // Stop still needs the prepared execution to settle admitted retry attempts.
+      this.assertActive(["running", "discovering", "paused", "stopping"]);
+      // Stop still needs the prepared execution to commit outstanding items.
       if (execution) this.mountExecution(execution);
       this.discoveryController.signal.throwIfAborted();
       if (!execution) this.totalItems = 0;
@@ -461,178 +425,190 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     }
     if (this.status !== "running") return;
     if (this.items.every((item) => isTerminalItemStatus(item.status))) {
-      this.completeLiveRunIfSettled(generation);
+      this.completeLiveRunIfSettled();
       return;
     }
-    const unprepared = this.items.filter(
-      (item) =>
-        item.status === "pending" &&
-        !this.preparedByItemId.has(item.id) &&
-        !this.preparationFailureByItemId.has(item.id),
+    const unprepared = this.movieGroups.filter(
+      (group) => !group.preparation && group.members.some((item) => item.status === "pending"),
     );
     if (unprepared.length > 0) {
-      await this.prepareItems(unprepared, generation);
+      await this.prepareGroups(unprepared);
       if (this.status !== "running") return;
       if (
-        this.items.some(
-          (item) =>
-            item.status === "pending" &&
-            !this.preparedByItemId.has(item.id) &&
-            !this.preparationFailureByItemId.has(item.id),
-        )
-      ) {
+        this.movieGroups.some((group) => !group.preparation && group.members.some((item) => item.status === "pending"))
+      )
         return;
-      }
     }
 
-    if (!this.preflightPassed) {
+    for (const group of this.movieGroups) {
+      const preparation = group.preparation;
+      if (!preparation || preparation.status === "prepared") continue;
+      for (const item of group.members) {
+        if (item.status !== "pending") continue;
+        const result =
+          preparation.status === "skipped"
+            ? createSkippedResult(item, preparation.result.error ?? "Movie preparation skipped")
+            : createFailedResult(item, preparation.result.error ?? "Movie preparation failed");
+        const committed = await this.execution.commitItems([{ item, result }]);
+        this.assertActive(["running", "paused", "stopping"]);
+        this.applyCommittedResults([item], committed);
+      }
+    }
+    const pending = this.items.filter((item) => item.status === "pending");
+    const preparedGroups = this.movieGroups.flatMap((group) => {
+      const pendingMembers = group.members.filter((item) => item.status === "pending");
+      return group.preparation?.status === "prepared" && pendingMembers.length
+        ? [{ group, prepared: group.preparation.prepared }]
+        : [];
+    });
+    if (!this.preflightPassed && preparedGroups.length > 0) {
       this.recordStage({ stage: "check-output", message: "冲突预检" });
       try {
-        await this.execution.validatePrepared(
-          this.items.flatMap((item) => {
-            if (item.status !== "pending") return [];
-            if (!this.preparedByItemId.has(item.id)) return [];
-            return [{ item, prepared: this.preparedByItemId.get(item.id) as TPrepared }];
-          }),
-          this.items.filter((item) => this.preparationFailureByItemId.get(item.id)?.status === "failed"),
-        );
+        await this.execution.checkTargets(preparedGroups);
         this.preflightPassed = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const itemIds = new Set(
           error instanceof ScrapeTargetConflictError ? error.conflicts.map((conflict) => conflict.itemId) : [],
         );
-        const preparedItems = this.items.filter((item) => item.status === "pending");
-        const conflictedItems = preparedItems.filter((item) => itemIds.has(item.id));
-        const failedItems = conflictedItems.length > 0 ? conflictedItems : preparedItems;
-        const conflicts = new Map<string, ScrapeResult>();
-        for (const item of failedItems) {
-          const itemMessage =
-            error instanceof ScrapeTargetConflictError && itemIds.has(item.id)
-              ? new ScrapeTargetConflictError(error.conflicts.filter((conflict) => conflict.itemId === item.id)).message
-              : message;
-          conflicts.set(item.id, createFailedResult(item, itemMessage));
+        for (const { group } of preparedGroups) {
+          if (group.members.some((m) => itemIds.has(m.id))) {
+            for (const m of group.members) itemIds.add(m.id);
+          }
         }
+        const conflictedItems = pending.filter((item) => itemIds.has(item.id));
+        const failedItems = conflictedItems.length > 0 ? conflictedItems : pending;
         if (this.status !== "running") return;
-        if (conflictedItems.length > 0) {
-          await this.finishPreflightConflicts(generation, conflicts);
+        this.assertActive(["running"]);
+        const messages = new Set<string>();
+        for (const item of failedItems) {
+          if (item.status !== "pending") continue;
+          const directConflicts =
+            error instanceof ScrapeTargetConflictError
+              ? error.conflicts.filter((conflict) => conflict.itemId === item.id)
+              : [];
+          const groupConflicts =
+            error instanceof ScrapeTargetConflictError
+              ? error.conflicts.filter((conflict) => itemIds.has(conflict.itemId))
+              : [];
+          const itemMessage =
+            directConflicts.length > 0
+              ? new ScrapeTargetConflictError(directConflicts).message
+              : groupConflicts.length > 0
+                ? new ScrapeTargetConflictError(groupConflicts).message
+                : message;
+          if (itemMessage) messages.add(itemMessage);
+          const committed = await this.execution.commitItems([{ item, result: createFailedResult(item, itemMessage) }]);
+          this.applyCommittedResults([item], committed);
+        }
+        if (conflictedItems.length === 0) {
+          this.error = [...messages].join("\n\n") || message;
+          this.setStatus("failed");
           return;
         }
-        await this.finishPreparationFailure(generation, conflicts, message);
-        return;
+        if (messages.size > 0) this.error = [this.error, ...messages].filter(Boolean).join("\n\n");
+        this.preflightPassed = true;
       }
     }
 
     if (this.status !== "running") return;
-    const pending = this.items.filter((item) => item.status === "pending");
-    if (pending.length === 0) {
-      this.completeLiveRunIfSettled(generation);
+    const remainingPending = this.items.filter((item) => item.status === "pending");
+    if (remainingPending.length === 0) {
+      this.completeLiveRunIfSettled();
       return;
     }
     this.recordStage({ stage: "execute", message: "整理归档" });
-    const groups = new Map<string, MutableScrapeRunItem<TManualScrape>[]>();
-    for (const item of pending) {
-      const prepared = this.preparedByItemId.get(item.id) as TPrepared;
-      const key = this.preparedByItemId.has(item.id)
-        ? (this.execution.getExecutionGroupKey?.(item, prepared) ?? item.id)
-        : item.id;
-      const group = groups.get(key) ?? [];
-      group.push(item);
-      groups.set(key, group);
-    }
-    const executionGroups = [...groups].map(([key, items]): ScrapeExecutionGroup<TManualScrape> => ({ key, items }));
-    const executor = new TaskExecutor<ScrapeExecutionGroup<TManualScrape>, ScrapeGroupExecution<TManualScrape>>({
+    const executionGroups = this.movieGroups.flatMap((group) => {
+      const pendingMembers = group.members.filter((item) => item.status === "pending");
+      if (!pendingMembers.length || group.preparation?.status !== "prepared") return [];
+      return [{ group, prepared: group.preparation.prepared }];
+    });
+    const executor = new TaskExecutor<(typeof executionGroups)[number], ScrapeGroupExecution<TItem>>({
       concurrency: this.execution.concurrency,
       gate: {
-        beforeItem: async (group) => {
-          this.assertCurrent(generation, ["running"]);
-          for (const item of group.items) {
-            const attemptId = await this.execution.admitItem(item);
-            this.attemptIdByItemId.set(item.id, attemptId);
-            item.status = "processing";
-            item.error = null;
+        beforeItem: async (entry) => {
+          this.assertActive(["running"]);
+          for (const item of entry.group.members) {
+            if (item.status === "pending") {
+              item.status = "processing";
+              item.error = null;
+            }
           }
           this.emitSnapshot();
         },
-        beforeResult: async () => this.assertCurrent(generation, ["running", "paused", "stopping"]),
+        beforeResult: async () => this.assertActive(["running", "paused", "stopping"]),
       },
-      runItem: async (group, context) => {
-        const releases = [this.execution.acquireItems(group.items)];
-        const publicationKeys = [
-          ...new Set(
-            group.items.flatMap((item) => {
-              if (!this.preparedByItemId.has(item.id)) return [];
-              const prepared = this.preparedByItemId.get(item.id) as TPrepared;
-              const key = this.execution.getPublicationKey?.(item, prepared);
-              return key ? [key] : [];
-            }),
-          ),
-        ].sort();
+      runItem: async (entry, context) => {
+        let release: (() => void | Promise<void>) | undefined;
+        const releaseResources = async () => {
+          const cleanup = release;
+          release = undefined;
+          if (cleanup) await cleanup();
+        };
         try {
-          for (const key of publicationKeys) releases.push(await this.acquirePublication(key, context.signal));
-          const results: ScrapeGroupExecution<TManualScrape>["results"] = [];
-          const preparedItems = group.items.flatMap((item) => {
-            if (!this.preparedByItemId.has(item.id)) return [];
-            const attemptId = this.attemptIdByItemId.get(item.id);
-            if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
-            return [{ item, prepared: this.preparedByItemId.get(item.id) as TPrepared, attemptId }];
-          });
-          const groupedResults = new Map(
-            (await this.execution.executePreparedItems(preparedItems, context.signal)).map(({ itemId, result }) => [
-              itemId,
-              result,
-            ]),
-          );
-          if (groupedResults.size !== preparedItems.length) {
+          this.assertActive(["running", "paused"]);
+          const execution = await this.execution.executePreparedGroup(entry, context.signal);
+          release = execution.release;
+          const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
+          const eligibleIds = new Set(execution.output?.files.map((file) => file.scrape?.itemId) ?? []);
+          const pendingItems = entry.group.members.filter((m) => m.status === "processing" || m.status === "pending");
+          if (
+            execution.results.length + eligibleIds.size !== pendingItems.length ||
+            groupedResults.size !== execution.results.length
+          ) {
             throw new Error("Scrape group execution returned an incomplete result set");
           }
-          for (const item of group.items) {
-            const attemptId = this.attemptIdByItemId.get(item.id);
-            if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
-            const failure = this.preparationFailureByItemId.get(item.id);
-            if (failure) {
-              results.push({ item, result: failure, attemptId });
-              continue;
-            }
-            if (!this.preparedByItemId.has(item.id)) throw new Error(`Scrape item was not prepared: ${item.id}`);
+          const results = pendingItems.map((item) => {
             const executed = groupedResults.get(item.id);
-            if (!executed) throw new Error(`Scrape group execution omitted item: ${item.id}`);
-            const { release, ...result } = executed;
-            if (release) releases.push(release);
-            results.push({ item, result, attemptId });
-          }
+            if (!executed && !eligibleIds.has(item.id))
+              throw new Error(`Scrape group execution omitted item: ${item.id}`);
+            return { item, result: executed };
+          });
           return {
+            output: execution.output,
             results,
-            release: async () => {
-              for (const release of [...releases].reverse()) await release();
-            },
+            release: releaseResources,
           };
         } catch (error) {
-          for (const release of [...releases].reverse()) await release();
+          try {
+            await releaseResources();
+          } catch (cleanupError) {
+            const message = error instanceof Error ? error.message : String(error);
+            const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+            throw new AggregateError([error, cleanupError], `${message}; resource cleanup failed: ${cleanupMessage}`);
+          }
           throw error;
         }
       },
-      finalizeResult: async (_group, execution) => await execution.release(),
-      onFinalizeError: (group, releaseError) => {
+      finalizeResult: async (_entry, execution) => await execution.release(),
+      onFinalizeError: (entry, releaseError) => {
         this.recordLog({
           level: "warn",
           message: `Staging cleanup failed: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
-          itemId: group.items[0]?.id,
+          itemId: entry.group.members[0]?.id,
         });
       },
-      applyResult: async (_group, execution) => {
-        this.assertCurrent(generation, ["running", "paused", "stopping"]);
-        const committed = await this.execution.commitItems(execution.results);
-        const committedByItemId = new Map(committed.map((entry) => [entry.itemId, entry.result]));
-        if (committedByItemId.size !== execution.results.length) {
-          throw new Error("Scrape group commit returned an incomplete result set");
+      applyResult: async (_entry, execution) => {
+        this.assertActive(["running", "paused", "stopping"]);
+        let committed: Awaited<ReturnType<typeof this.execution.commitItems>>;
+        try {
+          committed = await this.execution.commitItems(execution.results, execution.output);
+        } catch (error) {
+          if (!(error instanceof PublicationConflictError)) throw error;
+          this.assertActive(["running", "paused", "stopping"]);
+          this.error = [this.error, error.message].filter(Boolean).join("\n\n");
+          committed = await this.execution.commitItems(
+            execution.results.map(({ item }) => ({
+              item,
+              result: createFailedResult(item, error.message),
+            })),
+          );
         }
-        this.assertCurrent(generation, ["running", "paused", "stopping"]);
-        for (const { item } of execution.results) {
-          const result = committedByItemId.get(item.id);
-          if (!result) throw new Error(`Scrape group commit omitted item: ${item.id}`);
-          this.applyCommittedResult(item, result);
-        }
+        this.assertActive(["running", "paused", "stopping"]);
+        this.applyCommittedResults(
+          execution.results.map(({ item }) => item),
+          committed,
+        );
       },
     });
     this.executor = executor;
@@ -643,133 +619,92 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     }
   }
 
-  private async prepareItems(items: MutableScrapeRunItem<TManualScrape>[], generation: number): Promise<void> {
+  private async prepareGroups(groups: RuntimeMovieGroup<TItem, TPrepared>[]): Promise<void> {
     this.recordStage({ stage: "prepare", message: "获取信息" });
-    const executor = new TaskExecutor<MutableScrapeRunItem<TManualScrape>, ScrapePreparationResult<TPrepared>>({
+    const executor = new TaskExecutor<RuntimeMovieGroup<TItem, TPrepared>, ScrapePreparationResult<TPrepared>>({
       concurrency: this.execution.concurrency,
       gate: {
-        beforeItem: async (item) => {
-          this.assertCurrent(generation, ["running"]);
-          const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.execution.admitItem(item));
-          this.attemptIdByItemId.set(item.id, attemptId);
-          item.status = "processing";
-          item.error = null;
+        beforeItem: async (group) => {
+          this.assertActive(["running"]);
+          for (const item of group.members) {
+            item.status = "processing";
+            item.error = null;
+          }
           this.emitSnapshot();
         },
-        beforeResult: async () => this.assertCurrent(generation, ["running", "paused", "stopping"]),
+        beforeResult: async () => this.assertActive(["running", "paused", "stopping"]),
       },
-      runItem: async (item, context) => {
-        const attemptId = this.attemptIdByItemId.get(item.id);
-        if (!attemptId) throw new Error(`Scrape item was not admitted: ${item.id}`);
+      runItem: async (group, context) => {
+        const error = group.error;
+        if (error) return { status: "failed", result: createFailedResult(group.members[0], error) };
+        const item = group.members[0];
         return await runWithScrapeItem(
           { itemId: item.id, relativePath: item.relativePath, caseId: item.caseId },
-          async () => await this.execution.prepareItem(item, context.signal, attemptId),
+          async () => await this.execution.prepareGroup(group, context.signal),
         );
       },
-      applyResult: async (item, result) => {
-        this.assertCurrent(generation, ["running", "paused", "stopping"]);
-        if (result.status === "prepared") this.preparedByItemId.set(item.id, result.prepared);
-        else this.preparationFailureByItemId.set(item.id, result.result);
-        item.status = "pending";
+      applyResult: async (group, result) => {
+        this.assertActive(["running", "paused", "stopping"]);
+        group.preparation =
+          result.status === "prepared"
+            ? result
+            : {
+                status: result.status,
+                result:
+                  result.status === "skipped"
+                    ? createSkippedResult(group.members[0], result.result.error ?? "Movie preparation skipped")
+                    : createFailedResult(group.members[0], result.result.error ?? "Movie preparation failed"),
+              };
+        for (const item of group.members) item.status = "pending";
         this.emitSnapshot();
       },
     });
     this.executor = executor;
     try {
-      await executor.execute(items, this.shutdownController.signal);
+      await executor.execute(groups, this.shutdownController.signal);
     } finally {
       if (this.executor === executor) this.executor = null;
     }
   }
 
-  private async acquirePublication(key: string, signal: AbortSignal): Promise<() => void> {
-    const previous = this.publicationChains.get(key) ?? Promise.resolve();
-    let unlock!: () => void;
-    const current = new Promise<void>((resolve) => {
-      unlock = resolve;
-    });
-    const chain = previous.catch(() => undefined).then(async () => await current);
-    this.publicationChains.set(key, chain);
-    const release = () => {
-      unlock();
-      if (this.publicationChains.get(key) === chain) this.publicationChains.delete(key);
-    };
-    if (signal.aborted) {
-      release();
-      throw signal.reason;
-    }
-    let rejectAbort!: (reason: unknown) => void;
-    const abort = () => rejectAbort(signal.reason);
-    const cancelled = new Promise<never>((_, reject) => {
-      rejectAbort = reject;
-      signal.addEventListener("abort", abort, { once: true });
-    });
-    try {
-      await Promise.race([previous.catch(() => undefined), cancelled]);
-    } catch (error) {
-      release();
-      throw error;
-    } finally {
-      signal.removeEventListener("abort", abort);
-    }
-    return release;
-  }
-
-  private async finishPreparationFailure(
-    generation: number,
-    conflicts: ReadonlyMap<string, ScrapeResult>,
-    message: string,
-  ): Promise<void> {
-    this.assertCurrent(generation, ["running"]);
-    const messages = new Set<string>();
-    for (const item of this.items) {
-      if (!this.preparedByItemId.has(item.id) && !this.preparationFailureByItemId.has(item.id)) continue;
-      const failed = conflicts.get(item.id) ?? this.preparationFailureByItemId.get(item.id);
-      const result = failed ?? createSkippedResult(item, "因存在文件冲突已跳过");
-      if (failed?.error) messages.add(failed.error);
-      const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.execution.admitItem(item));
-      this.attemptIdByItemId.set(item.id, attemptId);
-      const committed = await this.execution.commitPreparationItem(item, result, attemptId);
-      this.applyCommittedResult(item, committed);
-    }
-    this.error = [...messages].join("\n\n") || message;
-    this.preparedByItemId.clear();
-    this.preparationFailureByItemId.clear();
-    this.setStatus("failed");
-  }
-
-  private async finishPreflightConflicts(
-    generation: number,
-    conflicts: ReadonlyMap<string, ScrapeResult>,
-  ): Promise<void> {
-    this.assertCurrent(generation, ["running"]);
-    const messages = new Set<string>();
-    for (const [itemId, result] of conflicts) {
-      const item = this.itemsById.get(itemId);
-      if (!item || item.status !== "pending") continue;
-      if (result.error) messages.add(result.error);
-      const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.execution.admitItem(item));
-      this.attemptIdByItemId.set(item.id, attemptId);
-      const committed = await this.execution.commitPreparationItem(item, result, attemptId);
-      this.preparedByItemId.delete(item.id);
-      this.preparationFailureByItemId.delete(item.id);
-      this.applyCommittedResult(item, committed);
-    }
-    if (messages.size > 0) this.error = [this.error, ...messages].filter(Boolean).join("\n\n");
-    this.preflightPassed = false;
-  }
-
-  private applyCommittedResult(item: MutableScrapeRunItem<TManualScrape>, result: ScrapeResult): void {
+  private applyCommittedResult(item: MutableScrapeRunItem<TItem>, result: ScrapeResult): void {
     item.status = toTerminalItemStatus(result.status);
-    this.progressByItemId.delete(item.id);
+    item.progress = 0;
     item.error = result.error?.trim() || null;
     item.result = result;
     this.emitSnapshot();
     if (this.runPromise === null && this.status === "running") this.startDrain();
   }
 
-  private completeLiveRunIfSettled(generation: number): void {
-    this.assertCurrent(generation, ["running"]);
+  private applyCommittedResults(
+    items: readonly MutableScrapeRunItem<TItem>[],
+    committed: readonly { itemId: string; result: ScrapeResult }[],
+  ): void {
+    const results = new Map(committed.map(({ itemId, result }) => [itemId, result]));
+    if (committed.length !== items.length || results.size !== items.length)
+      throw new Error("Scrape commit returned an incomplete result set");
+    for (const item of items) {
+      const result = results.get(item.id);
+      if (!result) throw new Error(`Scrape commit omitted item: ${item.id}`);
+      this.applyCommittedResult(item, result);
+    }
+  }
+
+  private async skipOutstandingItems(message: string): Promise<void> {
+    const terminalInputs = [];
+    for (const item of this.items) {
+      if (isTerminalItemStatus(item.status)) continue;
+      terminalInputs.push({ item, result: createSkippedResult(item, message) });
+    }
+    const committed = terminalInputs.length ? await this.execution.commitItems(terminalInputs) : [];
+    this.applyCommittedResults(
+      terminalInputs.map(({ item }) => item),
+      committed,
+    );
+  }
+
+  private completeLiveRunIfSettled(): void {
+    this.assertActive(["running"]);
     if (this.items.some((item) => !isTerminalItemStatus(item.status))) return;
     const hasSuccess = this.items.some((item) => item.status === "success");
     if (!hasSuccess && this.items.some((item) => item.status === "skipped")) {
@@ -778,36 +713,16 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.setStatus(this.items.every((item) => item.status === "success") ? "completed" : "failed");
   }
 
-  private async handleFatalError(generation: number, error: unknown): Promise<void> {
-    if (generation !== this.generation || this.status === "stopping" || this.isTerminalStatus()) return;
+  private async handleFatalError(error: unknown): Promise<void> {
+    if (this.status === "stopping" || this.isTerminalStatus()) return;
     this.error = error instanceof Error ? error.message : String(error);
     this.recordLog({ level: "error", message: this.error });
     if (!this.executionConfig) {
       this.setStatus("failed");
       return;
     }
-    const skipMessage = "任务发生错误已中止";
     try {
-      const terminalInputs = [];
-      for (const item of this.items) {
-        if (isTerminalItemStatus(item.status)) continue;
-        const attemptId = this.attemptIdByItemId.get(item.id) ?? (await this.execution.admitItem(item));
-        this.attemptIdByItemId.set(item.id, attemptId);
-        terminalInputs.push({ item, result: createSkippedResult(item, skipMessage), attemptId });
-      }
-      const committed = new Map(
-        (terminalInputs.length ? await this.execution.commitItems(terminalInputs) : []).map(({ itemId, result }) => [
-          itemId,
-          result,
-        ]),
-      );
-      if (committed.size !== terminalInputs.length)
-        throw new Error("Scrape failure commit returned an incomplete result set");
-      for (const { item } of terminalInputs) {
-        const result = committed.get(item.id);
-        if (!result) throw new Error(`Scrape failure commit omitted item: ${item.id}`);
-        this.applyCommittedResult(item, result);
-      }
+      await this.skipOutstandingItems("任务发生错误已中止");
     } catch (commitError) {
       const commitMessage = commitError instanceof Error ? commitError.message : String(commitError);
       const originalMessage = error instanceof Error ? error.message : String(error);
@@ -823,9 +738,9 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     this.setStatus("failed");
   }
 
-  private assertCurrent(generation: number, allowedStatuses: readonly ScrapeRunLiveStatus[]): void {
-    if (generation !== this.generation || !allowedStatuses.includes(this.status)) {
-      throw new StaleScrapeRunGenerationError(`Stale scrape result for ${this.options.runId}`);
+  private assertActive(allowedStatuses: readonly ScrapeRunLiveStatus[]): void {
+    if (!allowedStatuses.includes(this.status)) {
+      throw new InactiveScrapeRunError(`Inactive scrape result for ${this.options.runId}`);
     }
   }
 
@@ -833,8 +748,7 @@ export class ScrapeRunSession<TManualScrape = unknown, TPrepared = unknown> {
     if (this.status === status) return;
     this.status = status;
     if (this.isTerminalStatus()) {
-      this.preparedByItemId.clear();
-      this.preparationFailureByItemId.clear();
+      for (const group of this.movieGroups) delete group.preparation;
     }
     this.emitSnapshot();
   }

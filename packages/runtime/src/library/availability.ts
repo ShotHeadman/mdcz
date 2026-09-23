@@ -69,7 +69,7 @@ export class LibraryAvailabilityChecker {
           return {
             id: file.id,
             available: root ? (this.cache.get(keyFor(root, file.rootRelativePath))?.available ?? false) : null,
-            availabilityError: root ? this.error(root, file.rootRelativePath) : "媒体根目录未登记",
+            availabilityError: root ? this.error(root, file.rootRelativePath) : "对应媒体目录已不存在",
           };
         });
         return { id: entry.id, available: libraryAvailability(fileRefs), fileRefs };

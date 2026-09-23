@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import { createMediaRoot } from "@mdcz/media-store";
@@ -32,45 +32,32 @@ describe("DesktopPersistenceService", () => {
     expect(service.initialized).toBe(true);
   });
 
-  it("recovers a pending publication when initialize runs", async () => {
+  it("sweeps namespaced publication staging when initialize runs", async () => {
     const { directory, service } = await createService();
     const mediaRoot = join(directory.path, "media");
     await mkdir(mediaRoot, { recursive: true });
-    const target = join(mediaRoot, "movie.nfo");
-    const backup = join(mediaRoot, "movie.nfo.op.bak");
-    await writeFile(target, "published");
-    await writeFile(backup, "original");
 
     const state = await service.initialize();
     await state.repositories.mediaRoots.upsert(
       createMediaRoot({ id: "root-1", displayName: "Media", hostPath: mediaRoot }),
     );
-    const { size, mtimeMs, ino, dev } = await stat(target);
-    state.repositories.publicationJournal.begin({
-      operationId: "op-1",
-      operationType: "scrape",
-      createdAt: new Date(),
-      manifest: {
-        entries: [
-          {
-            rootId: "root-1",
-            relativePath: "movie.nfo",
-            temporaryPath: "movie.nfo.op.part",
-            backupPath: "movie.nfo.op.bak",
-            targetExisted: true,
-            staged: { size, mtimeMs, ino, dev },
-          },
-        ],
-        obsolete: [],
-      },
-    });
+    const stagedFile = join(mediaRoot, "movie.mp4.mdcz-staging-test.part");
+    const stagedDirectory = join(mediaRoot, "nested", ".mdcz-staging-assets");
+    const unrelatedPart = join(mediaRoot, "user-download.part");
+    await mkdir(stagedDirectory, { recursive: true });
+    await Promise.all([
+      writeFile(stagedFile, "staged"),
+      writeFile(join(stagedDirectory, "poster.jpg"), "staged"),
+      writeFile(unrelatedPart, "keep"),
+    ]);
     await service.close();
 
     const restarted = new DesktopPersistenceService(join(directory.path, "data", "mdcz.sqlite"), null);
     services.push(restarted);
     await restarted.initialize();
 
-    expect((await restarted.getState()).repositories.publicationJournal.listUnfinished()).toEqual([]);
-    await expect(readFile(target, "utf8")).resolves.toBe("original");
+    await expect(readFile(stagedFile)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(stagedDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(unrelatedPart, "utf8")).resolves.toBe("keep");
   });
 });

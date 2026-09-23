@@ -2,11 +2,6 @@ import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
-  buildAmbiguousUncensoredScrapeGroups,
-  buildUncensoredConfirmItemsForScrapeGroups,
-  summarizeUncensoredConfirmResultForScrapeGroups,
-} from "@mdcz/shared/viewModels/scrapeResultGrouping";
-import {
   activateNewScrapeTask,
   MaintenanceWorkbenchAdapter,
   ScrapeWorkbenchAdapter,
@@ -14,30 +9,24 @@ import {
   useScrapeTerminalError,
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
-import { ScrapeStartErrorDialog, UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
 import {
   changeMaintenancePreset,
   selectMaintenanceExecutionStatus,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import {
-  runScrapeRequest,
-  selectIsScraping,
-  selectScrapeResults,
-  selectScrapeStatus,
-  selectScrapeTaskId,
-  useScrapeStore,
-} from "@mdcz/views/state/scrapeStore";
+import { runScrapeRequest, selectIsScraping, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createDesktopWorkbenchPorts } from "@/adapters/ports";
 import { pauseScrape, resumeScrape, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
+import ScrapeCompletionDialog from "@/components/workbench/ScrapeCompletionDialog";
 import WorkbenchSetup from "@/components/workbench/WorkbenchSetup";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/configQueries";
 
@@ -50,17 +39,14 @@ export const Route = createFileRoute("/workbench")({
 
 export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintenance" }) {
   const queryClient = useQueryClient();
-  const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
   const [startError, setStartError] = useState<unknown>(null);
   const configQ = useCurrentConfig();
   const workbenchPorts = useMemo(() => createDesktopWorkbenchPorts(), []);
 
-  const { isScraping, scrapeStatus, results, scrapeTaskId } = useScrapeStore(
+  const { isScraping, results } = useScrapeStore(
     useShallow((state) => ({
       isScraping: selectIsScraping(state),
-      scrapeStatus: selectScrapeStatus(state),
       results: selectScrapeResults(state),
-      scrapeTaskId: selectScrapeTaskId(state),
     })),
   );
   const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
@@ -72,23 +58,6 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   );
 
   const maintenanceBusy = maintenanceStatus !== "idle";
-  const ambiguousItems = useMemo(() => buildAmbiguousUncensoredScrapeGroups(results), [results]);
-  const ambiguousDialogItems = useMemo(
-    () =>
-      ambiguousItems.map((group) => ({
-        id: group.id,
-        ref: {
-          rootId: group.display.rootId,
-          relativePath: group.display.relativePath,
-        },
-        fileId: group.display.fileId,
-        fileName: group.display.fileName,
-        number: group.display.crawlerData?.number ?? group.display.fileName.replace(/\.[^.]+$/u, ""),
-        title: group.display.crawlerData?.title_zh ?? group.display.crawlerData?.title ?? null,
-        nfoRelativePath: group.display.nfo?.relativePath ?? null,
-      })),
-    [ambiguousItems],
-  );
   const failedPaths = useMemo(
     () =>
       results
@@ -100,17 +69,6 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   useScrapeTerminalError(setStartError);
   const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, routeIntent);
   const showSetup = sessionSnapshot.showSetup;
-
-  // Detect scrape completion and check for ambiguous uncensored items
-  const prevScrapeStatusRef = useRef(scrapeStatus);
-  useEffect(() => {
-    const prev = prevScrapeStatusRef.current;
-    prevScrapeStatusRef.current = scrapeStatus;
-
-    if ((prev === "running" || prev === "stopping") && scrapeStatus === "idle" && ambiguousItems.length > 0) {
-      setUncensoredDialogOpen(true);
-    }
-  }, [ambiguousItems, scrapeStatus]);
 
   useEffect(() => {
     if (sessionSnapshot.workbenchMode !== workbenchMode) {
@@ -134,10 +92,10 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
         activateNewScrapeTask();
         await ipc.scraper.start({ mode: "directory", source, targetDir });
       }
-      toast.success("目录任务已提交");
+      toast.success("任务已提交");
     } catch (error) {
-      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setError(toErrorMessage(error));
-      setStartError(error);
+      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setPending(false);
+      throw error;
     }
   };
 
@@ -241,38 +199,6 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
   };
 
-  const handleConfirmUncensored = async (selections: UncensoredConfirmSelection[]) => {
-    const choicesByGroupId = Object.fromEntries(selections.map((selection) => [selection.id, selection.choice]));
-    const confirmItems = buildUncensoredConfirmItemsForScrapeGroups(ambiguousItems, choicesByGroupId);
-    const taskId = scrapeTaskId;
-
-    if (confirmItems.length === 0 || !taskId) {
-      toast.info("没有可提交的条目");
-      return;
-    }
-
-    await runScrapeRequest(async () => {
-      const result = await ipc.scraper.confirmUncensored({ taskId, items: confirmItems });
-      const { successCount, failedCount } = summarizeUncensoredConfirmResultForScrapeGroups(
-        ambiguousItems,
-        result.items,
-      );
-
-      if (failedCount === 0) {
-        toast.success(`已更新 ${successCount} 个条目的无码类型`);
-        return;
-      }
-
-      if (successCount > 0) {
-        toast.warning(`成功 ${successCount} 条，失败 ${failedCount} 条`);
-        throw new Error(`成功 ${successCount} 条，失败 ${failedCount} 条`);
-      }
-
-      toast.error(`成功 0 条，失败 ${failedCount} 条`);
-      throw new Error(`成功 0 条，失败 ${failedCount} 条`);
-    });
-  };
-
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 min-h-0">
@@ -291,14 +217,17 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
               onStartMaintenance={handleStartSelectedMaintenance}
             />
           ) : workbenchMode === "scrape" ? (
-            <ScrapeWorkbenchAdapter
-              ports={workbenchPorts}
-              onPauseScrape={handlePauseScrape}
-              onResumeScrape={handleResumeScrape}
-              onStopScrape={handleStopScrape}
-              onRetryFailed={handleRetryFailed}
-              failedCount={failedPaths.length}
-            />
+            <>
+              <ScrapeWorkbenchAdapter
+                ports={workbenchPorts}
+                onPauseScrape={handlePauseScrape}
+                onResumeScrape={handleResumeScrape}
+                onStopScrape={handleStopScrape}
+                onRetryFailed={handleRetryFailed}
+                failedCount={failedPaths.length}
+              />
+              <ScrapeCompletionDialog />
+            </>
           ) : (
             <MaintenanceWorkbenchAdapter ports={workbenchPorts} />
           )}
@@ -306,12 +235,6 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       </div>
 
       <ScrapeStartErrorDialog error={startError} onClose={() => setStartError(null)} />
-      <UncensoredConfirmDialog
-        open={uncensoredDialogOpen && ambiguousDialogItems.length > 0}
-        onOpenChange={setUncensoredDialogOpen}
-        items={ambiguousDialogItems}
-        onConfirm={handleConfirmUncensored}
-      />
     </div>
   );
 }

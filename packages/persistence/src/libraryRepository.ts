@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { and, desc, eq, inArray, isNotNull, isNull, or, type SQL, sql } from "drizzle-orm";
+import { filesystemPathKey } from "@mdcz/media-store";
+import { and, asc, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { writeLibraryRows } from "./libraryWrite";
 import {
@@ -11,9 +12,6 @@ import {
   libraryItemFiles,
   libraryItems,
   mediaRoots,
-  scrapeAttempts,
-  scrapeItemOutcomes,
-  scrapeRunItems,
 } from "./schema";
 
 export interface LibraryEntryRecord {
@@ -30,6 +28,7 @@ export interface LibraryEntryRecord {
   createdAt: Date;
   lastRefreshedAt: Date | null;
   hiddenFromRecentAt: Date | null;
+  uncensoredAmbiguous: boolean;
   files: LibraryItemFileRecord[];
   assets: LibraryItemAssetRecord[];
 }
@@ -41,32 +40,39 @@ export interface LibraryMovieInput {
   number?: string | null;
   actors?: string[];
   crawlerDataJson?: string | null;
+  uncensoredAmbiguous?: boolean;
   createdAt?: Date;
   lastRefreshedAt?: Date | null;
+  assets?: LibraryAssetInput[];
+}
+
+export interface LibraryAssetInput {
+  kind: string;
+  uri: string;
+  rootId?: string | null;
+  relativePath?: string | null;
+  published?: boolean;
 }
 
 export interface LibraryFileInput {
   fileId?: string;
+  entryIdentity?: string;
+  sourceEntryIdentity?: string;
   rootId: string;
   rootRelativePath: string;
   size?: number;
   modifiedAt?: Date | null;
-  sourceOutcomeId?: string | null;
   partNumber?: number | null;
   partSuffix?: string | null;
   resolution?: string | null;
-  assets?: Array<{
-    kind: string;
-    fileId?: string | null;
-    uri: string;
-    rootId?: string | null;
-    relativePath?: string | null;
-    published?: boolean;
-  }>;
+  assets?: LibraryAssetInput[];
   lastKnownPath?: string | null;
 }
 
-export type UpsertLibraryEntryInput = LibraryMovieInput & LibraryFileInput;
+export interface UpsertLibraryEntryInput {
+  movie: LibraryMovieInput;
+  files: LibraryFileInput[];
+}
 
 export interface LibraryEntriesCursor {
   createdAt: Date;
@@ -130,7 +136,7 @@ export interface LibraryItemFileRecord {
   partNumber: number | null;
   partSuffix: string | null;
   resolution: string | null;
-  sourceOutcomeId: string | null;
+  sourceItemId: string | null;
   sourceRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -145,81 +151,14 @@ export interface LibraryItemAssetRecord {
   rootId: string | null;
   relativePath: string | null;
   published: boolean;
-  historical: boolean;
   createdAt: Date;
 }
 
-export interface CommitMaintenanceRefreshInput {
-  files: Array<{
-    librarySource?: MaintenanceLibrarySourceRecord;
-    sourceAbsolutePath: string;
-    targetAbsolutePath: string;
-    size: number;
-    modifiedAt: Date;
-    outputAssets?: Array<{ kind: string; rootId: string; relativePath: string }>;
-  }>;
-  crawlerData?: MaintenanceCrawlerDataRecord;
-  fallbackNumber: string;
-  assets: MaintenanceDiscoveredAssetsRecord;
-  removedAssets?: Array<{ rootId: string; relativePath: string }>;
-  refreshedAt: Date;
-}
-
-export interface MaintenanceLibrarySourceRecord {
-  files: Array<{ libraryFileId: string; rootId: string; rootRelativePath: string }>;
-  nfo?: { rootId: string; relativePath: string };
-  strm?: { rootId: string; relativePath: string };
-  libraryItemId: string;
-  libraryFileId: string;
-  rootId: string;
-  rootRelativePath: string;
-}
-
-export interface MaintenanceCrawlerDataRecord {
-  title: string;
-  number: string;
-  actors: string[];
-  thumb_url?: string;
-  poster_url?: string;
-  fanart_url?: string;
-  thumb_source_url?: string;
-  poster_source_url?: string;
-  fanart_source_url?: string;
-  trailer_source_url?: string;
-  scene_images: string[];
-  trailer_url?: string;
-}
-
-export interface MaintenanceDiscoveredAssetsRecord {
-  thumb?: string;
-  poster?: string;
-  fanart?: string;
-  sceneImages: string[];
-  trailer?: string;
-  actorPhotos: string[];
-}
-
-export type RootPathCandidate = {
+type RootPathCandidate = {
   hostPath: string;
   rootId: string;
   rootRelativePath: string;
 };
-
-type MaintenanceAssetInput = {
-  kind: string;
-  uri: string;
-  rootId: string | null;
-  relativePath: string | null;
-};
-
-export interface PreparedMaintenanceRefresh {
-  movie: LibraryMovieInput & { id: string };
-  files: Array<{
-    librarySource: MaintenanceLibrarySourceRecord | undefined;
-    targetCandidates: RootPathCandidate[];
-    libraryEntry: LibraryFileInput;
-  }>;
-}
 
 const safeActors = (value: string): string[] => {
   try {
@@ -233,6 +172,7 @@ const safeActors = (value: string): string[] => {
 const toLibraryItemFileRecord = (
   row: LibraryItemFileRow,
   sourceRunId: string | null = null,
+  sourceItemId: string | null = null,
 ): LibraryItemFileRecord => ({
   id: row.id,
   itemId: row.itemId,
@@ -246,7 +186,7 @@ const toLibraryItemFileRecord = (
   partNumber: row.partNumber,
   partSuffix: row.partSuffix,
   resolution: row.resolution,
-  sourceOutcomeId: row.sourceOutcomeId,
+  sourceItemId,
   sourceRunId,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
@@ -261,7 +201,6 @@ const toLibraryItemAssetRecord = (row: LibraryItemAssetRow): LibraryItemAssetRec
   rootId: row.rootId,
   relativePath: row.relativePath,
   published: row.published,
-  historical: row.historical,
   createdAt: row.createdAt,
 });
 
@@ -318,6 +257,7 @@ const toLibraryEntryRecord = (
     createdAt: item.createdAt,
     lastRefreshedAt: item.lastRefreshedAt,
     hiddenFromRecentAt: item.hiddenFromRecentAt,
+    uncensoredAmbiguous: item.uncensoredAmbiguous,
     files,
     assets,
   };
@@ -327,6 +267,10 @@ const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value
 
 export class LibraryRepository {
   constructor(private readonly database: PersistenceDatabase) {}
+
+  publicationRoots() {
+    return this.database.db.select({ id: mediaRoots.id, hostPath: mediaRoots.hostPath }).from(mediaRoots).all();
+  }
 
   publicationSnapshot(query: { paths?: readonly string[]; kind?: string; includeOwners?: boolean }) {
     const roots = this.database.db.select().from(mediaRoots).all();
@@ -370,11 +314,7 @@ export class LibraryRepository {
       assets: this.database.db
         .select()
         .from(libraryItemAssets)
-        .where(
-          owners.length
-            ? or(assetWhere, and(inArray(libraryItemAssets.itemId, owners), eq(libraryItemAssets.historical, false)))
-            : assetWhere,
-        )
+        .where(owners.length ? or(assetWhere, inArray(libraryItemAssets.itemId, owners)) : assetWhere)
         .all()
         .flatMap((asset) =>
           asset.rootId && asset.relativePath
@@ -386,7 +326,6 @@ export class LibraryRepository {
                   rootId: asset.rootId,
                   relativePath: asset.relativePath,
                   published: asset.published,
-                  historical: asset.historical,
                 },
               ]
             : [],
@@ -394,215 +333,58 @@ export class LibraryRepository {
     };
   }
 
-  registerPublishedOutputs(
-    outputs: Array<{ itemId: string; fileId: string | null; kind: string; rootId: string; relativePath: string }>,
-  ): void {
-    for (const output of outputs) {
-      const where = and(
-        eq(libraryItemAssets.itemId, output.itemId),
-        eq(libraryItemAssets.rootId, output.rootId),
-        eq(libraryItemAssets.relativePath, output.relativePath),
-        eq(libraryItemAssets.kind, output.kind),
-        output.fileId ? eq(libraryItemAssets.fileId, output.fileId) : isNull(libraryItemAssets.fileId),
-      );
-      const existing = this.database.db.select().from(libraryItemAssets).where(where).get();
-      if (existing)
-        this.database.db.update(libraryItemAssets).set({ published: true, historical: false }).where(where).run();
-      else
-        this.database.db
-          .insert(libraryItemAssets)
-          .values({ ...output, id: randomUUID(), uri: output.relativePath, published: true, createdAt: new Date() })
-          .run();
-    }
+  inventoryOwnership(refs?: readonly { rootId: string; relativePath: string; entryIdentity?: string }[]) {
+    if (refs?.length === 0) return [];
+    const roots = new Map(
+      this.database.db
+        .select()
+        .from(mediaRoots)
+        .all()
+        .map((root) => [root.id, root]),
+    );
+    const identities = refs
+      ? JSON.stringify(
+          refs.map((ref) => {
+            if (ref.entryIdentity) return ref.entryIdentity;
+            const root = roots.get(ref.rootId);
+            if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+            return filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, ref.relativePath));
+          }),
+        )
+      : null;
+    return this.database.sqlite
+      .prepare<
+        [string | null, string | null],
+        {
+          rootId: string;
+          relativePath: string;
+          movieId: string;
+          fileId: string | null;
+          kind: string;
+          published: number;
+        }
+      >(`
+      WITH selected AS (SELECT DISTINCT item_id FROM library_item_files
+        WHERE ? IS NULL OR entry_identity IN (SELECT value FROM json_each(?)))
+      SELECT root_id AS rootId, root_relative_path AS relativePath, item_id AS movieId, id AS fileId, 'video' AS kind, 1 AS published
+      FROM library_item_files WHERE item_id IN (SELECT item_id FROM selected)
+      UNION ALL
+      SELECT root_id AS rootId, relative_path AS relativePath, item_id AS movieId, file_id AS fileId, kind, published
+      FROM library_item_assets WHERE item_id IN (SELECT item_id FROM selected) AND root_id IS NOT NULL AND relative_path IS NOT NULL
+    `)
+      .all(identities, identities);
   }
 
-  releaseOutputReferences(refs: Array<{ rootId: string; relativePath: string }>): void {
-    for (const ref of refs)
-      this.database.db
-        .delete(libraryItemAssets)
-        .where(and(eq(libraryItemAssets.rootId, ref.rootId), eq(libraryItemAssets.relativePath, ref.relativePath)))
-        .run();
+  writeEntry(movie: LibraryMovieInput, files: readonly LibraryFileInput[]): string {
+    return this.database.sqlite.transaction(() => writeLibraryRows(this.database, movie, files))();
   }
 
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
-    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, input, [input]));
+    const movie = { ...input.movie, id: input.movie.id ?? randomUUID() };
+    const files = input.files.map((file) => ({ ...file, fileId: file.fileId ?? randomUUID() }));
+    const transaction = this.database.sqlite.transaction(() => writeLibraryRows(this.database, movie, files));
     const id = transaction();
     return await this.getEntryById(id);
-  }
-
-  async resolveMaintenanceSource(absolutePath: string): Promise<MaintenanceLibrarySourceRecord | null> {
-    const matches = this.findLibraryFilesAtAbsolutePath(absolutePath);
-    const itemIds = new Set(matches.map(({ file }) => file.itemId));
-    if (itemIds.size > 1) {
-      throw new Error(`同一实际文件被多个媒体库条目引用：${absolutePath}`);
-    }
-    const match = matches[0];
-    const assets = match ? ((await this.listAssetsForItems([match.file.itemId])).get(match.file.itemId) ?? []) : [];
-    const output = (kind: string) => {
-      const asset = assets.find(
-        (asset) =>
-          asset.kind === kind &&
-          asset.rootId &&
-          asset.relativePath &&
-          (asset.fileId === null || asset.fileId === match?.file.id),
-      );
-      return asset?.rootId && asset.relativePath
-        ? { rootId: asset.rootId, relativePath: asset.relativePath }
-        : undefined;
-    };
-    return match
-      ? {
-          files: this.database.db
-            .select()
-            .from(libraryItemFiles)
-            .where(eq(libraryItemFiles.itemId, match.file.itemId))
-            .all()
-            .map((file) => ({ libraryFileId: file.id, rootId: file.rootId, rootRelativePath: file.rootRelativePath }))
-            .sort((a, b) => a.libraryFileId.localeCompare(b.libraryFileId)),
-          nfo: output("nfo"),
-          strm: output("strm"),
-          libraryItemId: match.file.itemId,
-          libraryFileId: match.file.id,
-          rootId: match.file.rootId,
-          rootRelativePath: match.file.rootRelativePath,
-        }
-      : null;
-  }
-
-  async preflightMaintenanceRefresh(input: {
-    librarySource?: MaintenanceLibrarySourceRecord;
-    sourceAbsolutePath: string;
-    targetAbsolutePath: string;
-  }): Promise<void> {
-    this.assertMaintenanceSource(input.librarySource);
-    if (
-      input.librarySource &&
-      !this.pathCandidates(input.sourceAbsolutePath).some(
-        (candidate) =>
-          candidate.rootId === input.librarySource?.rootId &&
-          candidate.rootRelativePath === input.librarySource.rootRelativePath,
-      )
-    ) {
-      throw new Error("维护源文件位置已变化，请重新预览");
-    }
-    const candidates = this.pathCandidates(input.targetAbsolutePath);
-    if (candidates.length === 0) {
-      throw new Error(`维护目标路径不属于任何已注册媒体目录：${input.targetAbsolutePath}`);
-    }
-    this.assertNoMaintenanceTargetConflict(candidates, input.librarySource?.libraryItemId);
-  }
-
-  async prepareRefresh(input: CommitMaintenanceRefreshInput): Promise<PreparedMaintenanceRefresh> {
-    if (input.files.length === 0) throw new Error("维护刷新文件集合不能为空");
-    const itemIds = new Set(
-      input.files.flatMap((file) => (file.librarySource ? [file.librarySource.libraryItemId] : [])),
-    );
-    if (itemIds.size > 1) throw new Error("维护刷新文件不属于同一影片");
-    const itemId = [...itemIds][0] ?? randomUUID();
-    const files = input.files.map((file) => {
-      this.assertMaintenanceSource(file.librarySource);
-      const targetCandidates = this.pathCandidates(file.targetAbsolutePath);
-      if (targetCandidates.length === 0) {
-        throw new Error(`维护目标路径不属于任何已注册媒体目录：${file.targetAbsolutePath}`);
-      }
-      this.assertNoMaintenanceTargetConflict(targetCandidates, file.librarySource?.libraryItemId);
-      const target = chooseRootCandidate(targetCandidates, file.librarySource?.rootId);
-      const previousFile = file.librarySource
-        ? this.database.db
-            .select()
-            .from(libraryItemFiles)
-            .where(eq(libraryItemFiles.id, file.librarySource.libraryFileId))
-            .get()
-        : undefined;
-      return {
-        file,
-        targetCandidates,
-        target,
-        previousFile,
-        fileId: file.librarySource?.libraryFileId ?? randomUUID(),
-      };
-    });
-    const changedAssets = this.buildMaintenanceAssets(input, files[0]?.target.rootId as string);
-    const fileAssets = files.flatMap(({ file, fileId }) =>
-      (file.outputAssets ?? []).map((asset) => ({
-        ...asset,
-        fileId: asset.kind === "strm" || asset.kind === "subtitle" ? fileId : null,
-        uri: asset.relativePath,
-      })),
-    );
-    const changedKinds = new Set([
-      "thumb",
-      "poster",
-      "fanart",
-      "trailer",
-      "scene",
-      "actor",
-      ...changedAssets.map((asset) => asset.kind),
-    ]);
-    const removedKeys = new Set((input.removedAssets ?? []).map((asset) => `${asset.rootId}:${asset.relativePath}`));
-    const previousAssets = itemIds.size ? ((await this.listAssetsForItems([itemId])).get(itemId) ?? []) : [];
-    const assets = [
-      ...previousAssets.filter(
-        (asset) =>
-          !removedKeys.has(`${asset.rootId}:${asset.relativePath}`) &&
-          (asset.fileId
-            ? !fileAssets.some((replacement) => replacement.fileId === asset.fileId && replacement.kind === asset.kind)
-            : !changedKinds.has(asset.kind)),
-      ),
-      ...changedAssets,
-      ...fileAssets,
-    ];
-    const crawlerDataJson = input.crawlerData ? JSON.stringify(input.crawlerData) : null;
-    const mediaIdentity = input.crawlerData?.number?.trim() || input.fallbackNumber.trim() || null;
-    const title = input.crawlerData?.title ?? null;
-    const number = input.crawlerData?.number ?? input.fallbackNumber ?? null;
-    const existingItem = itemIds.size
-      ? this.database.db.select().from(libraryItems).where(eq(libraryItems.id, itemId)).limit(1).get()
-      : null;
-    return {
-      movie: {
-        id: itemId,
-        mediaIdentity,
-        title,
-        number,
-        actors: input.crawlerData?.actors ?? [],
-        crawlerDataJson,
-        createdAt: existingItem?.createdAt ?? input.refreshedAt,
-        lastRefreshedAt: input.refreshedAt,
-      },
-      files: files.map(({ file, targetCandidates, target, previousFile, fileId }, index) => ({
-        librarySource: file.librarySource,
-        targetCandidates,
-        libraryEntry: {
-          fileId,
-          partNumber: previousFile?.partNumber,
-          partSuffix: previousFile?.partSuffix,
-          resolution: previousFile?.resolution,
-          rootId: target.rootId,
-          rootRelativePath: target.rootRelativePath,
-          size: file.size,
-          modifiedAt: file.modifiedAt,
-          sourceOutcomeId: previousFile?.sourceOutcomeId ?? null,
-          ...(index === 0 ? { assets } : {}),
-          lastKnownPath: target.rootRelativePath,
-        },
-      })),
-    };
-  }
-
-  writeRefresh(prepared: PreparedMaintenanceRefresh): { libraryItemId: string } {
-    for (const file of prepared.files) {
-      this.assertMaintenanceSource(file.librarySource);
-      this.assertNoMaintenanceTargetConflict(file.targetCandidates, file.librarySource?.libraryItemId);
-    }
-    return this.database.sqlite.transaction(() => {
-      writeLibraryRows(
-        this.database,
-        prepared.movie,
-        prepared.files.map((file) => file.libraryEntry),
-      );
-      return { libraryItemId: prepared.movie.id };
-    })();
   }
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {
@@ -618,6 +400,7 @@ export class LibraryRepository {
 
   async relinkFile(input: {
     fileId: string;
+    entryIdentity?: string;
     rootId: string;
     rootRelativePath: string;
     size?: number;
@@ -628,11 +411,13 @@ export class LibraryRepository {
     const root = this.database.db.select().from(mediaRoots).where(eq(mediaRoots.id, input.rootId)).get();
     if (!root) throw new Error(`Media root not found: ${input.rootId}`);
     if (
-      this.findLibraryFilesAtAbsolutePath(path.resolve(root.hostPath, input.rootRelativePath)).some(
-        (match) => match.file.id !== file.id,
+      [...new Set([root.hostPath, root.realPath].filter((value): value is string => Boolean(value)))].some((base) =>
+        this.findLibraryFilesAtAbsolutePath(path.resolve(base, input.rootRelativePath)).some(
+          (match) => match.file.id !== file.id,
+        ),
       )
     )
-      throw new Error("重定位目标实际路径已属于另一个文件");
+      throw new Error("目标路径已属于另一个文件");
     const occupied = this.database.db
       .select({ id: libraryItemFiles.id })
       .from(libraryItemFiles)
@@ -650,6 +435,9 @@ export class LibraryRepository {
       .set({
         rootId: input.rootId,
         rootRelativePath: input.rootRelativePath,
+        entryIdentity:
+          input.entryIdentity ??
+          filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, input.rootRelativePath)),
         fileName: path.posix.basename(input.rootRelativePath),
         directory: directory === "." ? "" : directory,
         size: input.size ?? 0,
@@ -666,36 +454,6 @@ export class LibraryRepository {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
     if (!file) throw new Error(`Library file not found: ${fileId}`);
     return this.getEntryById(file.itemId);
-  }
-
-  async resolveUncensoredFiles<TChoice extends string>(selections: readonly { outcomeId: string; choice: TChoice }[]) {
-    const choices = new Map<string, TChoice>();
-    for (const selection of selections) {
-      const file = this.database.db
-        .select()
-        .from(libraryItemFiles)
-        .where(eq(libraryItemFiles.sourceOutcomeId, selection.outcomeId))
-        .get();
-      if (!file) throw new Error("刮削结果已不属于已登记影片文件，请刷新媒体库");
-      const previous = choices.get(file.itemId);
-      if (previous !== undefined && previous !== selection.choice) throw new Error("同一影片不能选择不同的无码类型");
-      choices.set(file.itemId, selection.choice);
-    }
-    const result = [];
-    for (const [itemId, choice] of choices) {
-      const entry = await this.getEntryById(itemId);
-      for (const file of entry.files) {
-        if (!file.sourceOutcomeId) throw new Error(`影片文件缺少刮削来源：${file.rootRelativePath}`);
-        const outcome = this.database.db
-          .select()
-          .from(scrapeItemOutcomes)
-          .where(eq(scrapeItemOutcomes.id, file.sourceOutcomeId))
-          .get();
-        if (!outcome || outcome.outcome !== "success") throw new Error("影片文件刮削来源已失效");
-        result.push({ file, choice, outcome, entry });
-      }
-    }
-    return result;
   }
 
   removeFile(fileId: string): void {
@@ -723,7 +481,15 @@ export class LibraryRepository {
     const row = this.database.db
       .select()
       .from(libraryItemFiles)
-      .where(sql`${libraryItemFiles.rootId} = ${rootId} AND ${libraryItemFiles.rootRelativePath} = ${rootRelativePath}`)
+      .where(
+        and(
+          eq(libraryItemFiles.rootId, rootId),
+          or(
+            eq(libraryItemFiles.rootRelativePath, rootRelativePath),
+            eq(libraryItemFiles.lastKnownPath, rootRelativePath),
+          ),
+        ),
+      )
       .limit(1)
       .get();
     if (!row) {
@@ -733,46 +499,30 @@ export class LibraryRepository {
   }
 
   async getEntryById(id: string): Promise<LibraryEntryRecord> {
-    const item = await this.getLibraryItem(id);
+    const item = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).get();
+    if (!item) {
+      const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, id)).get();
+      if (file) {
+        const entry = await this.getEntryById(file.itemId);
+        return {
+          ...entry,
+          files: [...entry.files.filter((f) => f.id === file.id), ...entry.files.filter((f) => f.id !== file.id)],
+        };
+      }
+      throw new Error(`Library entry not found: ${id}`);
+    }
     const [files, assets] = await Promise.all([this.listFilesForItems([id]), this.listAssetsForItems([id])]);
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
   }
 
-  async getEntryBySourceOutcomeId(sourceOutcomeId: string): Promise<LibraryEntryRecord | null> {
-    return (await this.getEntriesBySourceOutcomeIds([sourceOutcomeId])).get(sourceOutcomeId) ?? null;
-  }
-
-  async getEntriesBySourceOutcomeIds(sourceOutcomeIds: string[]): Promise<Map<string, LibraryEntryRecord>> {
-    const ids = [...new Set(sourceOutcomeIds.map((id) => id.trim()).filter(Boolean))];
-    if (ids.length === 0) return new Map();
-    const sourceFiles = this.database.db
-      .select({
-        itemId: libraryItemFiles.itemId,
-        sourceOutcomeId: libraryItemFiles.sourceOutcomeId,
-      })
-      .from(libraryItemFiles)
-      .where(inArray(libraryItemFiles.sourceOutcomeId, ids))
+  async listPendingUncensored(): Promise<LibraryEntryRecord[]> {
+    const rows = this.database.db
+      .select({ id: libraryItems.id })
+      .from(libraryItems)
+      .where(eq(libraryItems.uncensoredAmbiguous, true))
       .all();
-    const itemIds = [...new Set(sourceFiles.map((file) => file.itemId))];
-    const items = itemIds.length
-      ? this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, itemIds)).all()
-      : [];
-    const [filesByItem, assetsByItem] = await Promise.all([
-      this.listFilesForItems(itemIds),
-      this.listAssetsForItems(itemIds),
-    ]);
-    const entries = new Map<string, LibraryEntryRecord>();
-    const itemById = new Map(items.map((item) => [item.id, item]));
-    for (const sourceFile of sourceFiles) {
-      if (!sourceFile.sourceOutcomeId) continue;
-      const item = itemById.get(sourceFile.itemId);
-      if (!item) continue;
-      entries.set(
-        sourceFile.sourceOutcomeId,
-        toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
-      );
-    }
-    return entries;
+    if (rows.length === 0) return [];
+    return await this.getEntriesByIds(rows.map((row) => row.id));
   }
 
   async getEntriesByIds(ids: string[]): Promise<LibraryEntryRecord[]> {
@@ -948,21 +698,24 @@ export class LibraryRepository {
     roots = this.database.db.select().from(mediaRoots).all(),
   ): RootPathCandidate[] {
     const resolvedPath = path.resolve(absolutePath);
+    const seen = new Set<string>();
     return roots
-      .flatMap((root): RootPathCandidate[] => {
-        const resolvedRootPath = path.resolve(root.hostPath);
-        const relative = path.relative(resolvedRootPath, resolvedPath);
-        if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-          return [];
-        }
-        return [
-          {
-            hostPath: resolvedRootPath,
-            rootId: root.id,
-            rootRelativePath: relative.replace(/\\/gu, "/"),
+      .flatMap((root): RootPathCandidate[] =>
+        [...new Set([root.hostPath, root.realPath].filter((value): value is string => Boolean(value)))].flatMap(
+          (base): RootPathCandidate[] => {
+            const resolvedRootPath = path.resolve(base);
+            const relative = path.relative(resolvedRootPath, resolvedPath);
+            if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+              return [];
+            }
+            const rootRelativePath = relative.replace(/\\/gu, "/");
+            const key = `${root.id}\0${rootRelativePath}`;
+            if (seen.has(key)) return [];
+            seen.add(key);
+            return [{ hostPath: resolvedRootPath, rootId: root.id, rootRelativePath }];
           },
-        ];
-      })
+        ),
+      )
       .sort((left, right) => right.hostPath.length - left.hostPath.length || left.rootId.localeCompare(right.rootId));
   }
 
@@ -985,114 +738,6 @@ export class LibraryRepository {
     });
   }
 
-  private assertMaintenanceSource(source: MaintenanceLibrarySourceRecord | undefined): void {
-    if (!source) return;
-    const currentFiles = this.database.db
-      .select()
-      .from(libraryItemFiles)
-      .where(eq(libraryItemFiles.itemId, source.libraryItemId))
-      .all();
-    if (
-      currentFiles.length !== source.files.length ||
-      currentFiles.some(
-        (file) =>
-          !source.files.some(
-            (expected) =>
-              expected.libraryFileId === file.id &&
-              expected.rootId === file.rootId &&
-              expected.rootRelativePath === file.rootRelativePath,
-          ),
-      )
-    ) {
-      throw new Error("影片文件集合已变化，请重新预览");
-    }
-    const file = this.database.db
-      .select({ id: libraryItemFiles.id })
-      .from(libraryItemFiles)
-      .where(
-        and(
-          eq(libraryItemFiles.id, source.libraryFileId),
-          eq(libraryItemFiles.itemId, source.libraryItemId),
-          eq(libraryItemFiles.rootId, source.rootId),
-          eq(libraryItemFiles.rootRelativePath, source.rootRelativePath),
-        ),
-      )
-      .limit(1)
-      .get();
-    if (!file) throw new Error("原媒体库条目或文件引用已变化，请重新预览");
-  }
-
-  private assertNoMaintenanceTargetConflict(
-    candidates: readonly RootPathCandidate[],
-    allowedItemId: string | undefined,
-  ): void {
-    for (const candidate of candidates) {
-      const occupant = this.database.db
-        .select({ itemId: libraryItemFiles.itemId })
-        .from(libraryItemFiles)
-        .where(
-          and(
-            eq(libraryItemFiles.rootId, candidate.rootId),
-            eq(libraryItemFiles.rootRelativePath, candidate.rootRelativePath),
-          ),
-        )
-        .limit(1)
-        .get();
-      if (occupant && occupant.itemId !== allowedItemId) {
-        throw new Error(
-          `维护目标路径已属于另一个媒体库条目 ${occupant.itemId}：${candidate.rootId}:${candidate.rootRelativePath}`,
-        );
-      }
-    }
-  }
-
-  private buildMaintenanceAssets(
-    input: CommitMaintenanceRefreshInput,
-    preferredRootId: string,
-  ): MaintenanceAssetInput[] {
-    const outputs: MaintenanceAssetInput[] = [];
-    const localKinds = new Set<string>();
-    const addLocal = (kind: string, value: string | undefined): void => {
-      const absolutePath = value?.trim();
-      if (!absolutePath) return;
-      const candidates = this.pathCandidates(absolutePath);
-      if (candidates.length === 0) {
-        throw new Error(`维护生成的本地资源不属于任何已注册媒体目录：${absolutePath}`);
-      }
-      const mapped = chooseRootCandidate(candidates, preferredRootId);
-      outputs.push({
-        kind,
-        uri: mapped.rootRelativePath,
-        rootId: mapped.rootId,
-        relativePath: mapped.rootRelativePath,
-      });
-      localKinds.add(kind);
-    };
-
-    addLocal("thumb", input.assets.thumb);
-    addLocal("poster", input.assets.poster);
-    addLocal("fanart", input.assets.fanart);
-    addLocal("trailer", input.assets.trailer);
-    for (const sceneImage of input.assets.sceneImages) addLocal("scene", sceneImage);
-    for (const actorPhoto of input.assets.actorPhotos) addLocal("actor", actorPhoto);
-
-    const addRemoteFallback = (kind: string, values: Array<string | undefined>): void => {
-      if (localKinds.has(kind)) return;
-      for (const value of values) {
-        const uri = value?.trim();
-        if (!uri || !isRemoteAssetUri(uri)) continue;
-        outputs.push({ kind, uri, rootId: null, relativePath: null });
-      }
-    };
-    const crawlerData = input.crawlerData;
-    addRemoteFallback("thumb", [crawlerData?.thumb_source_url, crawlerData?.thumb_url]);
-    addRemoteFallback("poster", [crawlerData?.poster_source_url, crawlerData?.poster_url]);
-    addRemoteFallback("fanart", [crawlerData?.fanart_source_url, crawlerData?.fanart_url]);
-    addRemoteFallback("trailer", [crawlerData?.trailer_source_url, crawlerData?.trailer_url]);
-    addRemoteFallback("scene", crawlerData?.scene_images ?? []);
-    return outputs;
-  }
-
   private async getLibraryItem(id: string): Promise<LibraryItemRow> {
     const row = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
     if (!row) {
@@ -1105,16 +750,13 @@ export class LibraryRepository {
     const rows =
       ids.length > 0
         ? this.database.db
-            .select({ file: libraryItemFiles, sourceRunId: scrapeRunItems.runId })
+            .select()
             .from(libraryItemFiles)
-            .leftJoin(scrapeItemOutcomes, eq(scrapeItemOutcomes.id, libraryItemFiles.sourceOutcomeId))
-            .leftJoin(scrapeAttempts, eq(scrapeAttempts.id, scrapeItemOutcomes.attemptId))
-            .leftJoin(scrapeRunItems, eq(scrapeRunItems.id, scrapeAttempts.itemId))
             .where(inArray(libraryItemFiles.itemId, ids))
-            .orderBy(libraryItemFiles.createdAt)
+            .orderBy(asc(libraryItemFiles.partNumber), asc(libraryItemFiles.createdAt), asc(libraryItemFiles.id))
             .all()
         : [];
-    return groupByItem(rows.map((row) => toLibraryItemFileRecord(row.file, row.sourceRunId)));
+    return groupByItem(rows.map((row) => toLibraryItemFileRecord(row)));
   }
 
   private async listAssetsForItems(ids: string[]): Promise<Map<string, LibraryItemAssetRecord[]>> {
@@ -1123,7 +765,7 @@ export class LibraryRepository {
         ? this.database.db
             .select()
             .from(libraryItemAssets)
-            .where(and(inArray(libraryItemAssets.itemId, ids), eq(libraryItemAssets.historical, false)))
+            .where(inArray(libraryItemAssets.itemId, ids))
             .orderBy(libraryItemAssets.kind)
             .all()
         : [];
@@ -1136,13 +778,6 @@ export class LibraryRepository {
     );
   }
 }
-
-const chooseRootCandidate = (candidates: readonly RootPathCandidate[], preferredRootId?: string): RootPathCandidate => {
-  const longest = candidates[0];
-  if (!longest) throw new Error("路径不属于任何已注册媒体目录");
-  const sameDepth = candidates.filter((candidate) => candidate.hostPath.length === longest.hostPath.length);
-  return sameDepth.find((candidate) => candidate.rootId === preferredRootId) ?? longest;
-};
 
 const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
   const filters: SQL[] = [];

@@ -23,6 +23,7 @@ const resultFor = (item: ScrapeRunItem, status: "success" | "failed"): ScrapeRes
   relativePath: item.relativePath,
   fileName: item.relativePath,
   status,
+  size: 12,
   assets: [],
   ...(status === "failed" ? { error: "failed" } : {}),
 });
@@ -43,7 +44,6 @@ const waitForAbort = async (signal: AbortSignal, gate: Promise<void>): Promise<v
 
 const createStore = (run: Run): ScrapeRunStore<Run> => ({
   rerunDirectory: vi.fn(async () => run),
-  retry: vi.fn(async () => run),
   finalize: vi.fn(async () => run),
   interruptUnfinished: vi.fn(),
 });
@@ -52,26 +52,30 @@ const createHost = (
   run: Run,
   executeItem: (item: ScrapeRunItem, signal: AbortSignal) => Promise<ScrapeResult>,
   concurrency = 1,
-): ScrapeHostPort<string, Run, undefined> => ({
+): ScrapeHostPort<string, Run, ScrapeRunItem, undefined> => ({
   create: vi.fn(async () => run),
+  retry: vi.fn(async () => run),
   runId: (entry) => entry.id,
-  describe: (entry) => ({ executionGeneration: 0, totalItems: entry.items.length }),
+  describe: (entry) => ({ totalItems: entry.items.length }),
   createExecution: async (entry) => ({
-    items: entry.items.map((item) => ({ ...item, sourcePath: `/media/${item.relativePath}` })),
     concurrency,
-    admitItem: async (item) => `${item.id}:attempt`,
-    prepareItem: async () => ({ status: "prepared", prepared: undefined }),
-    validatePrepared: vi.fn(async () => undefined),
-    acquireItems: () => () => undefined,
-    executePreparedItems: async (items, signal) =>
-      await Promise.all(
-        items.map(async ({ item }) => ({
+    prepareGroup: async () => ({ status: "prepared", prepared: undefined }),
+    checkTargets: vi.fn(async () => undefined),
+    movieGroups: entry.items.map((item) => ({
+      movieId: item.id,
+      members: [{ ...item, sourcePath: `/media/${item.relativePath}` }],
+      assets: [],
+    })),
+    executePreparedGroup: async ({ group }, signal) => ({
+      results: await Promise.all(
+        group.members.map(async (item) => ({
           itemId: item.id,
           result: await executeItem(item, signal),
         })),
       ),
-    commitPreparationItem: async (_item, result) => result,
-    commitItems: async (items) => items.map(({ item, result }) => ({ itemId: item.id, result })),
+    }),
+    commitItems: async (items) =>
+      items.map(({ item, result }) => ({ itemId: item.id, result: result as ScrapeResult })),
   }),
   onInvalidate: vi.fn(),
 });
@@ -92,7 +96,7 @@ describe("ScrapeCoordinator", () => {
     let discoverySignal: AbortSignal | undefined;
     const execute = vi.fn(async (item: ScrapeRunItem) => resultFor(item, "success"));
     const host = createHost(run, execute);
-    host.describe = (entry) => ({ executionGeneration: 0, totalItems: fixed ? entry.items.length : null });
+    host.describe = (entry) => ({ totalItems: fixed ? entry.items.length : null });
     host.discover = vi.fn(async (entry, signal, report) => {
       discoverySignal = signal;
       report({ directories: 3, candidates: 1, skipped: 0, elapsedMs: 10, currentPath: "/media/sub", warnings: [] });
@@ -103,8 +107,8 @@ describe("ScrapeCoordinator", () => {
       fixed = true;
       return { ...entry, items: outcome === "empty" ? [] : entry.items };
     });
-    const commitItems = vi.fn(async (items: readonly { item: ScrapeRunItem; result: ScrapeResult }[]) =>
-      items.map(({ item, result }) => ({ itemId: item.id, result })),
+    const commitItems = vi.fn(async (items: readonly { item: ScrapeRunItem; result?: ScrapeResult }[]) =>
+      items.map(({ item, result }) => ({ itemId: item.id, result: result as ScrapeResult })),
     );
     const create = host.createExecution;
     const createExecution = vi.fn(async (...args: Parameters<typeof create>) => ({
@@ -181,7 +185,9 @@ describe("ScrapeCoordinator", () => {
     expect(createExecution).toHaveBeenCalledTimes(outcome === "files" ? 1 : 0);
     if (outcome === "interrupted") {
       expect(store.interruptUnfinished).toHaveBeenCalledOnce();
-      expect(store.finalize).not.toHaveBeenCalled();
+      expect(store.finalize).toHaveBeenCalledWith(
+        expect.objectContaining({ disposition: "interrupted", totalBytes: 0 }),
+      );
     } else {
       expect(store.finalize).toHaveBeenCalledTimes(outcome === "stopped" ? 2 : 1);
       expect(store.finalize).toHaveBeenCalledWith(
@@ -229,7 +235,7 @@ describe("ScrapeCoordinator", () => {
                 await release.promise;
               }
               openAttempts.delete(item.id);
-              return { itemId: item.id, result };
+              return { itemId: item.id, result: result as ScrapeResult };
             }),
           ),
       };
@@ -283,7 +289,7 @@ describe("ScrapeCoordinator", () => {
     "prepare",
     "preflight",
     "publication",
-  ] as const)("isolates item failures and stops publication conflicts (%s)", async (stage) => {
+  ] as const)("isolates item failures and continues past publication conflicts (%s)", async (stage) => {
     const run: Run = {
       id: `conflict-${stage}`,
       items: [
@@ -298,24 +304,24 @@ describe("ScrapeCoordinator", () => {
     const create = host.createExecution;
     host.createExecution = async (entry, reporter) => ({
       ...(await create(entry, reporter)),
-      prepareItem: async (item) =>
-        stage === "prepare" && item.id === "one"
-          ? { status: "failed", result: resultFor(item, "failed") }
+      prepareGroup: async ({ members }) =>
+        stage === "prepare" && members[0]?.id === "one"
+          ? { status: "failed", result: resultFor(members[0], "failed") }
           : { status: "prepared", prepared: undefined },
-      validatePrepared: async () => {
+      checkTargets: async () => {
         if (stage === "preflight") throw new PublicationConflictError("/one", "/two");
       },
       commitItems: async (items) =>
         items.map(({ item, result }) => {
-          if (stage === "publication" && item.id === "one" && result.status === "success")
+          if (stage === "publication" && item.id === "one" && result?.status === "success")
             throw new PublicationConflictError("/one", "/two");
-          return { itemId: item.id, result };
+          return { itemId: item.id, result: result as ScrapeResult };
         }),
     });
     const coordinator = new ScrapeCoordinator(store, host);
     await coordinator.start("start");
     await coordinator.waitForIdle();
-    expect(executeItem).toHaveBeenCalledTimes(stage === "preflight" ? 0 : 1);
+    expect(executeItem).toHaveBeenCalledTimes(stage === "preflight" ? 0 : stage === "publication" ? 2 : 1);
     expect(host.onTerminal).toHaveBeenCalledWith(
       run,
       expect.objectContaining({
@@ -325,7 +331,7 @@ describe("ScrapeCoordinator", () => {
             ? [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })]
             : stage === "preflight"
               ? [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "failed" })]
-              : [expect.objectContaining({ status: "skipped" }), expect.objectContaining({ status: "skipped" })],
+              : [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })],
       }),
     );
     expect(store.finalize).toHaveBeenCalledOnce();
@@ -348,7 +354,7 @@ describe("ScrapeCoordinator", () => {
     await started.promise;
     await coordinator.waitForIdle();
 
-    expect(store.retry).toHaveBeenCalledWith("run-1");
+    expect(host.retry).toHaveBeenCalledWith("run-1", undefined);
     expect(host.create).not.toHaveBeenCalled();
     expect(snapshot.runId).toBe("run-1");
     expect(host.onInvalidate).toHaveBeenCalledWith([
@@ -379,7 +385,7 @@ describe("ScrapeCoordinator", () => {
     await coordinator.start("start");
     await started.promise;
     await expect(coordinator.retry(run.id)).rejects.toThrow("Scrape run is already live");
-    expect(store.retry).not.toHaveBeenCalled();
+    expect(host.retry).not.toHaveBeenCalled();
     release.resolve();
     await coordinator.waitForIdle();
   });
@@ -454,7 +460,7 @@ describe("ScrapeCoordinator", () => {
         items.map(({ item, result }) => {
           committed.push(item.id);
           if (committed.length === 2) processingCommitted.resolve();
-          return { itemId: item.id, result };
+          return { itemId: item.id, result: result as ScrapeResult };
         }),
     });
     host.createExecution = vi.fn(host.createExecution);
@@ -491,7 +497,16 @@ describe("ScrapeCoordinator", () => {
     await coordinator.start("start");
     await coordinator.waitForIdle();
 
-    expect(store.finalize).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-mixed", disposition: "failed" }));
+    expect(store.finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-mixed",
+        disposition: "failed",
+        successCount: 1,
+        failedCount: 1,
+        skippedCount: 0,
+        totalBytes: 12,
+      }),
+    );
     expect(coordinator.liveRuns()).toEqual([]);
   });
 

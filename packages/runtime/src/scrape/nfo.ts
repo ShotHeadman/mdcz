@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
-import { atomicCopyFile, atomicWriteFile } from "@mdcz/media-store";
+import { atomicWriteFile } from "@mdcz/media-store";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
@@ -405,22 +405,6 @@ const mergeActorNodes = (existing: unknown, generated: unknown): unknown => {
     if (!("thumb" in (actor as Record<string, unknown>))) delete merged.thumb;
     return merged;
   });
-};
-
-export const reconcileExistingNfoFiles = async (
-  nfoPath: string,
-  nfoNaming: NfoNamingMode = "both",
-  pathExists: PathExists,
-): Promise<string | undefined> => {
-  const { primaryPath, canonicalPath, requiredPaths } = getNfoWritePaths(nfoPath, nfoNaming);
-  const sourcePath = await findExistingNfoPath(nfoPath, nfoNaming, pathExists);
-  if (!sourcePath) return undefined;
-  await mkdir(dirname(primaryPath), { recursive: true });
-  for (const requiredPath of requiredPaths) {
-    if (requiredPath === sourcePath || (await pathExists(requiredPath))) continue;
-    await atomicCopyFile(sourcePath, requiredPath);
-  }
-  return canonicalPath;
 };
 
 export interface NfoNamingPaths {

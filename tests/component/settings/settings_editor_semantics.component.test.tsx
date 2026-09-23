@@ -84,7 +84,6 @@ function SettingsSurfaceHarness() {
       behavior: {
         ...defaultConfiguration.behavior,
         metadataOnly: true,
-        generateStrm: true,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -385,14 +384,12 @@ test("settings sections expose public labels and naming placeholder help", async
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
 });
 
-test("output settings save mappings and show preview failures", async () => {
-  const saveConfig = vi.fn<SettingsServices["saveConfig"]>(async () => undefined);
+test("output settings show preview failures", async () => {
   const screen = await render(
     <FormHarness
       values={defaultConfiguration}
       services={createSettingsServices({
         isServer: true,
-        saveConfig,
         previewNaming: vi.fn(async () => {
           throw new Error("模板结果越出输出根目录");
         }),
@@ -403,21 +400,7 @@ test("output settings save mappings and show preview failures", async () => {
     </FormHarness>,
   );
   await screen.getByRole("switch", { name: "仅输出元数据" }).click();
-  await screen.getByRole("switch", { name: "同时生成 .strm 播放流文件" }).click();
-  await screen.getByRole("button", { name: "添加路径映射" }).click();
-  await screen.getByLabelText("1 MDCz 可见路径前缀").fill("D:\\Downloads");
-  await screen.getByLabelText("1 播放器可见路径前缀").fill("/player");
-  await expect
-    .poll(() => saveConfig.mock.calls.some(([value]) => JSON.stringify(value).includes("/player")))
-    .toBe(true);
   await expect.element(screen.getByText("模板结果越出输出根目录")).toBeVisible();
-  await expect
-    .element(
-      screen.getByText(
-        "源路径和输出目录属于 MDCz 服务端文件系统；STRM 映射目标属于播放器可见路径，无需服务端能够访问。",
-      ),
-    )
-    .toBeVisible();
 });
 
 test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {

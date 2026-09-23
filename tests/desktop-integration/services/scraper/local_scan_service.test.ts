@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
@@ -53,14 +53,13 @@ describe("LocalScanService", () => {
     expect(entries[0]?.assets.trailer).toBe(trailerPath);
   });
 
-  it("uses registered metadata paths after settings change and excludes generated STRMs from scans", async () => {
+  it("uses registered metadata paths after settings change", async () => {
     const root = await createTempDir();
     const source = join(root, "source");
     const metadata = join(root, "metadata");
     await Promise.all([mkdir(source), mkdir(metadata)]);
     const video = join(source, "ABC-123-original.mp4");
     const nfo = join(metadata, "ABC-123-template.nfo");
-    const strm = join(metadata, "ABC-123-template.strm");
     await writeFile(video, "video");
     await writeFile(join(source, "DEF-456.mp4"), "another video");
     await writeFile(join(metadata, "poster.jpg"), "poster");
@@ -68,10 +67,14 @@ describe("LocalScanService", () => {
       nfo,
       '<movie><num>ABC-123</num><title>Registered</title><thumb aspect="poster">poster.jpg</thumb></movie>',
     );
-    await writeFile(strm, video);
-    const oldStrm = join(root, "old-output.strm");
-    await writeFile(oldStrm, video);
-    const mediaRoot = { id: "root", hostPath: root, displayName: "root", createdAt: new Date(), updatedAt: new Date() };
+    const mediaRoot = {
+      id: "root",
+      hostPath: root,
+      realPath: null,
+      displayName: "root",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     const locations = {
       mediaPath: "/changed",
       metadataPath: "/changed-metadata",
@@ -80,8 +83,6 @@ describe("LocalScanService", () => {
           video,
           {
             nfoPath: nfo,
-            strmPath: strm,
-            generatedStrmPaths: [strm, oldStrm],
             assets: { poster: join(metadata, "poster.jpg"), sceneImages: [], actorPhotos: [] },
           },
         ],
@@ -96,18 +97,13 @@ describe("LocalScanService", () => {
     const [entry] = await scanner.scanFiles(mediaRoot, [video], "extrafanart", undefined, locations);
     expect(entry).toMatchObject({
       nfoPath: nfo,
-      strmPath: strm,
       crawlerData: { title: "Registered" },
       assets: { poster: join(metadata, "poster.jpg") },
     });
-    await expect(scanner.scanFiles(mediaRoot, [strm], "extrafanart", undefined, locations)).rejects.toThrow("生成");
-    await expect(scanner.scanFiles(mediaRoot, [oldStrm], "extrafanart", undefined, locations)).rejects.toThrow("生成");
     await rm(nfo);
-    await rm(strm);
     await writeFile(join(source, "movie.nfo"), "source metadata");
     const [missing] = await scanner.scanFiles(mediaRoot, [video], "extrafanart", undefined, locations);
     expect(missing.nfoPath).toBe(nfo);
-    expect(missing.strmPath).toBe(strm);
     expect(missing.scanError).toContain("NFO");
   });
 
@@ -164,27 +160,48 @@ describe("LocalScanService", () => {
     expect(entry?.assets.poster).toBe(posterPath);
   });
 
-  it("skips FC2 feature sidecars and prefers the multipart base NFO over movie.nfo", async () => {
+  it("selects regular and symlink NFOs by priority for multipart movies without sharing ambiguous metadata", async () => {
     const root = await createTempDir();
-    const movieDir = join(root, "FC2-123456");
-    const partPath = join(movieDir, "FC2-123456-cd1.mp4");
-    const featurePath = join(movieDir, "FC2-123456-花絮.mp4");
-    const multipartNfoPath = join(movieDir, "FC2-123456.nfo");
-    const partNfoPath = join(movieDir, "FC2-123456-cd1.nfo");
-    const movieNfoPath = join(movieDir, "movie.nfo");
+    const xml = "<movie><num>FC2-123456</num><title>Local metadata</title></movie>";
+    const linkedMetadata = join(root, "metadata.xml");
+    await writeFile(linkedMetadata, xml);
 
-    await mkdir(movieDir, { recursive: true });
-    await writeFile(partPath, "video");
-    await writeFile(featurePath, "feature");
-    await writeFile(multipartNfoPath, "<movie />");
-    await writeFile(partNfoPath, "<movie />");
-    await writeFile(movieNfoPath, "<movie />");
+    for (const linked of [false, true]) {
+      const movieDir = join(root, linked ? "linked" : "regular");
+      await mkdir(movieDir);
+      const partPaths = [1, 2].map((part) => join(movieDir, `FC2-123456-cd${part}.mp4`));
+      for (const partPath of partPaths) await writeFile(partPath, "video");
+      await writeFile(join(movieDir, "FC2-123456-花絮.mp4"), "feature");
+      const nfoPaths = ["FC2-123456.nfo", "FC2-123456-cd1.nfo", "movie.nfo", "external.NFO"].map((name) =>
+        join(movieDir, name),
+      );
+      for (const nfoPath of nfoPaths) {
+        if (linked) await symlink(linkedMetadata, nfoPath, "file");
+        else await writeFile(nfoPath, xml);
+      }
 
-    const entries = await new LocalScanService().scan(root, "extrafanart");
+      const scanner = new LocalScanService();
+      for (const [index, nfoPath] of nfoPaths.entries()) {
+        const entries = await scanner.scan(movieDir, "extrafanart");
+        expect(entries.map((entry) => entry.fileInfo.filePath).sort()).toEqual(partPaths);
+        for (const entry of entries) {
+          const expectedNfo = index === 1 && entry.fileInfo.filePath === partPaths[1] ? nfoPaths[2] : nfoPath;
+          expect(entry.nfoPath).toBe(expectedNfo);
+          expect(entry.scanError).toBeUndefined();
+          expect(entry.crawlerData?.title).toBe("Local metadata");
+        }
 
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.fileInfo.filePath).toBe(partPath);
-    expect(entries[0]?.nfoPath).toBe(multipartNfoPath);
+        if (index >= 2) {
+          const unrelatedVideo = join(movieDir, "ABC-123.mp4");
+          await writeFile(unrelatedVideo, "other movie");
+          const sharedEntries = await scanner.scan(movieDir, "extrafanart");
+          expect(sharedEntries).toHaveLength(3);
+          for (const entry of sharedEntries) expect(entry.nfoPath).toBeUndefined();
+          await rm(unrelatedVideo);
+        }
+        await rm(nfoPath);
+      }
+    }
   });
 
   it("does not treat non-FC2 files with feature keywords as generated sidecars", async () => {

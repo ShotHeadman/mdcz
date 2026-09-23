@@ -91,6 +91,7 @@ export function WorkbenchSetupAdapter({
   } = useWorkbenchSetupStore();
   const presetId = useMaintenanceStore((state) => state.presetId);
   const [draftDir, setDraftDir] = useState(scanDir);
+  const [directoryError, setDirectoryError] = useState("");
   useEffect(() => setDraftDir(scanDir), [scanDir]);
   const scanPlan = useMemo(
     () => resolveMediaCandidateScanPlan(mode, scanDir, recursive, config),
@@ -116,7 +117,7 @@ export function WorkbenchSetupAdapter({
     [candidates],
   );
   const scanning = scanStatus === "scanning";
-  const needsTarget = mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all";
+  const needsTarget = mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all";
   const draftDirty =
     Boolean(draftDir.trim()) !== Boolean(scanDir.trim()) ||
     normalizeComparableHostPath(draftDir) !== normalizeComparableHostPath(scanDir);
@@ -217,6 +218,7 @@ export function WorkbenchSetupAdapter({
       }
       setScanDir(selectedPath);
       setDraftDir(selectedPath);
+      setDirectoryError("");
       if (!targetDir || !isAbsoluteHostPath(targetDir)) {
         setTargetDir(
           mode === "maintenance"
@@ -249,9 +251,22 @@ export function WorkbenchSetupAdapter({
     setStartPending(true);
     try {
       if (!previewMode) {
+        if (!isAbsoluteHostPath(scanDir)) {
+          setDirectoryError("请输入完整路径");
+          return;
+        }
+        setDirectoryError("");
         scanRequestRef.current += 1;
         await stopPreview();
-        await onStartDirectory({ kind: "directory", scanDir, recursive }, needsTarget ? targetDir : scanDir, presetId);
+        try {
+          await onStartDirectory(
+            { kind: "directory", scanDir, recursive },
+            needsTarget ? targetDir : scanDir,
+            presetId,
+          );
+        } catch (error) {
+          setDirectoryError(toErrorMessage(error));
+        }
       } else if (mode === "maintenance") {
         await onStartMaintenance(selectedCandidates, presetId, needsTarget ? targetDir : undefined);
       } else {
@@ -277,6 +292,7 @@ export function WorkbenchSetupAdapter({
       }}
       configLoading={configLoading}
       scanDir={draftDir}
+      scanDirError={directoryError}
       recursive={recursive}
       onRecursiveChange={setRecursive}
       onCommitScanDir={() => {
@@ -321,6 +337,7 @@ export function WorkbenchSetupAdapter({
       onBrowseTargetDir={needsTarget ? handleChooseTargetDir : undefined}
       onScanDirChange={(value) => {
         setDraftDir(value);
+        setDirectoryError("");
       }}
       onTargetDirChange={needsTarget ? setTargetDir : undefined}
       refreshDisabled={!scanReady || draftDirty}

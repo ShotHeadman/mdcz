@@ -5,11 +5,11 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { BatchTranslateApplyResultItem, BatchTranslateField, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
-import {
-  commitRegisteredPublication,
-  type RegisteredPublicationContext,
-  resolveRegisteredNfoPaths,
-} from "../publication";
+import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
+import type { PublicationOutputPort } from "../publication/types";
+import { WriteOutput } from "../publication/WriteOutput";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,
@@ -21,6 +21,7 @@ import {
   toLlmTextRequest,
   toTarget,
 } from "../scrape";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
@@ -73,7 +74,11 @@ type PendingTranslationResult = {
 };
 
 export interface BatchNfoTranslatorDependencies {
-  publication?: RegisteredPublicationContext;
+  publication?: {
+    roots: readonly { id: string; hostPath: string }[];
+    outputs?: PublicationOutputPort;
+    library?: MovieLibrary;
+  };
   localScanService?: BatchTranslateLocalScanService;
   llmApiClient?: Pick<LlmApiClient, "generateText">;
   nfoGenerator?: NfoGenerator;
@@ -316,7 +321,7 @@ export const applyBatchNfoTranslations = async (
     throw new Error("Batch NFO translation apply requires an llmApiClient dependency");
   }
   const publication = dependencies.publication;
-  if (!publication) throw new Error("Batch NFO translation requires a publication context");
+  if (!publication) throw new Error("Batch NFO translation requires registered roots");
 
   assertLlmConfiguration(config);
 
@@ -425,7 +430,7 @@ export const applyBatchNfoTranslations = async (
 
     try {
       const detectedNfoNaming = await resolveExistingNfoNaming(entry.nfoPath);
-      const artifacts = new Map<string, string>();
+      const artifactsByPath = new Map<string, string>();
       const savedNfoPath = await writeNfo({
         assets: {
           downloaded: [],
@@ -447,7 +452,7 @@ export const applyBatchNfoTranslations = async (
         nfoPath: entry.nfoPath,
         sourceVideoPath: entry.fileInfo.filePath,
         writeFile: async (path, content) => {
-          artifacts.set(path, content);
+          artifactsByPath.set(path, content);
         },
       });
       const registered = publication.outputs
@@ -457,20 +462,39 @@ export const applyBatchNfoTranslations = async (
             return root;
           })
         : undefined;
-      await commitRegisteredPublication(
-        {
-          operationId: `batch-nfo-translation:${entry.nfoPath}`,
-          mediaPaths: registered?.mediaPaths,
-          readOnlyDirectories: registered?.readOnlyDirectories,
-          operationType: "maintenance",
-          artifacts: [...artifacts]
-            .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
-            .map(([targetPath, data]) => ({ targetPath, content: { kind: "text", data } })),
-          replaceExistingArtifacts: true,
-          editExistingFiles: true,
-        },
-        publication,
+      const artifacts = [...artifactsByPath]
+        .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
+        .map(([targetPath, data]) => ({ targetPath, data }));
+      const inventory = new DirectoryInventory();
+      const release = await acquireOutputDirectories(
+        artifacts.map((artifact) => artifact.targetPath),
+        (directory) => inventory.canonicalDirectory(directory),
       );
+      try {
+        await new WriteOutput().install(artifacts, {
+          protectedMediaFiles: registered?.mediaPaths,
+          commit: async () => {
+            if (!registered) return;
+            if (!publication.library) throw new Error("Registered NFO write requires library updates");
+            await writePublishedMovie(
+              publication.library,
+              registered.movieId,
+              artifacts.map((artifact) => {
+                const ref = toRootFileRef(artifact.targetPath, publication.roots);
+                return {
+                  kind: "nfo",
+                  uri: ref.relativePath,
+                  rootId: ref.rootId,
+                  relativePath: ref.relativePath,
+                  published: true,
+                };
+              }),
+            );
+          },
+        });
+      } finally {
+        release();
+      }
 
       results.push({
         ...baseResult,

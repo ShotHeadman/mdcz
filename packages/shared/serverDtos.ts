@@ -12,7 +12,7 @@ import { assetRefSchema, type RootFileRef, rootFileRefSchema, wireRelativeDirect
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
-export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
+export const maintenancePresetIdSchema = z.enum(["inspect_local", "refresh_metadata", "local_organize", "rebuild_all"]);
 export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({
@@ -224,7 +224,6 @@ export const scrapeRunTaskSchema = z.object({
   skippedCount: z.number().int().nonnegative(),
   error: z.string().nullable(),
   revision: z.number().int().nonnegative(),
-  executionGeneration: z.number().int().nonnegative(),
   continuity: z.enum(["live", "final", "interrupted"]),
 });
 
@@ -320,8 +319,7 @@ export const scrapeRerunDirectoryInputSchema = z.object({ taskId: z.string().tri
 export type ScrapeRerunDirectoryInput = z.infer<typeof scrapeRerunDirectoryInputSchema>;
 
 export const scrapeConfirmUncensoredInputSchema = z.object({
-  taskId: z.string().trim().min(1),
-  items: z.array(z.object({ itemId: z.string().trim().min(1), choice: z.enum(["umr", "leak", "uncensored"]) })).min(1),
+  items: z.array(z.object({ fileId: z.string().trim().min(1), choice: z.enum(["umr", "leak", "uncensored"]) })).min(1),
 });
 
 export type ScrapeConfirmUncensoredInput = z.infer<typeof scrapeConfirmUncensoredInputSchema>;
@@ -627,9 +625,7 @@ export const scrapeMutationAckSchema = z.object({
 
 export type ScrapeMutationAckDto = z.infer<typeof scrapeMutationAckSchema>;
 
-export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema.extend({
-  taskId: z.string(),
-});
+export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema;
 
 export type ScrapePendingUncensoredConfirmationItemDto = z.infer<typeof scrapePendingUncensoredConfirmationItemSchema>;
 
@@ -793,7 +789,6 @@ export const overviewOutputSummarySchema = z.object({
   totalBytes: z.number(),
   outputAt: z.string().nullable(),
   rootPath: z.string().nullable(),
-  unresolvedRepairCount: z.number().int().nonnegative(),
 });
 
 export type OverviewOutputSummaryDto = z.infer<typeof overviewOutputSummarySchema>;

@@ -52,7 +52,7 @@ export function ScrapeWorkbenchAdapter({
           <div className="space-y-4 p-8" role="status">
             <h2 className="text-lg font-semibold">
               {snapshot.task.status === "queued"
-                ? "目录任务已排队"
+                ? "任务已排队"
                 : snapshot.task.status === "discovering"
                   ? "正在扫描视频文件"
                   : snapshot.task.status === "stopping"

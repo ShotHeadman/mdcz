@@ -189,17 +189,6 @@ describe("settings editor save and content helpers", () => {
       (fieldPath) => (fieldPath === "translate.engine" ? "openai" : undefined),
     );
 
-    expect(
-      buildAutoSaveFlatPayload(
-        "paths.metadataPath",
-        "/metadata",
-        { paths: { strmPathMappings: [{ from: { type: "server", message: "重复前缀" } }] } },
-        (path) => (path === "paths.strmPathMappings" ? [{ from: "/source", to: "/player" }] : undefined),
-      ),
-    ).toEqual({
-      "paths.metadataPath": "/metadata",
-      "paths.strmPathMappings": [{ from: "/source", to: "/player" }],
-    });
     expect(payload).toEqual({
       "translate.engine": "openai",
       "translate.llmApiKey": "secret",

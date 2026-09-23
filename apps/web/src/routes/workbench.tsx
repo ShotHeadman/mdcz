@@ -141,11 +141,10 @@ function WorkbenchPage() {
           requestScrapeLiveRunsRefresh();
         });
       }
-      toast.success("目录任务已提交");
+      toast.success("任务已提交");
     } catch (error) {
-      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setError(toErrorMessage(error));
-      else useScrapeStore.getState().setError(toErrorMessage(error));
-      setStartError(error);
+      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setPending(false);
+      throw error;
     }
   };
 
@@ -257,17 +256,13 @@ function WorkbenchPage() {
   };
 
   const handleConfirmUncensored = async (selections: UncensoredConfirmSelection[]) => {
-    if (!hydrationState.uncensoredTaskId) {
-      throw new Error("缺少刮削任务 ID");
-    }
     await api.scrape.confirmUncensored({
-      taskId: hydrationState.uncensoredTaskId,
       items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
     });
     clearUncensoredConfirmation();
     requestScrapeLiveRunsRefresh();
     requestPendingUncensoredConfirmationRefresh();
-    toast.success("已提交无码确认重刮任务");
+    toast.success("已更新无码类型");
   };
 
   return (

@@ -138,7 +138,7 @@ export function MaintenanceBatchBarView({
             <div className="flex min-w-44 items-center gap-3 px-1">
               {progressValue === null ? (
                 <span role="status" className="text-xs">
-                  正在扫描文件，即将计算进度...
+                  正在分析文件...
                 </span>
               ) : (
                 <>

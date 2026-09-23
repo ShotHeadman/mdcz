@@ -36,50 +36,56 @@ describe("Persistence migration baseline", () => {
       }),
       expect.objectContaining({ idx: 2, when: 1_787_600_000_000, tag: "0002_legacy_012_bridge" }),
       expect.objectContaining({ idx: 3, when: 1_787_875_200_000, tag: "0003_additive_roots_and_scan_tasks" }),
-      expect.objectContaining({ idx: 4, when: 1_787_961_600_000, tag: "0004_publication_and_directory_tasks" }),
-      expect.objectContaining({ idx: 5, when: 1_789_257_600_000, tag: "0005_movie_file_model" }),
-      expect.objectContaining({ idx: 6, when: 1_789_344_000_000, tag: "0006_drop_maintenance_directory_tasks" }),
+      expect.objectContaining({ idx: 4, when: 1_787_961_600_000, tag: "0004_movie_file_model" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
 
-  it("creates the strict journal, attempt, and library target schema", () => {
+  it("creates the scrape run and authoritative library schema without publication recovery tables", () => {
     const database = createTestPersistenceDatabase();
     try {
       const tables = database.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
         .map((row) => (row as { name: string }).name);
-      expect(tables).toEqual(
-        expect.arrayContaining(["publication_journal", "scrape_attempts", "scrape_item_outcomes"]),
-      );
+      expect(tables).toContain("scrape_runs");
+      expect(tables).not.toContain("scrape_run_items");
+      expect(tables).not.toContain("publication_journal");
+      expect(tables).not.toContain("library_repair_issues");
+      expect(tables).not.toContain("scrape_attempts");
+      expect(tables).not.toContain("scrape_item_outcomes");
+      expect(tables).not.toContain("maintenance_directory_tasks");
 
       const columns = (table: string) =>
         database.sqlite
           .prepare(`PRAGMA table_info(${table})`)
           .all()
           .map((row) => (row as { name: string }).name);
-      expect(columns("scrape_item_outcomes")).toContain("attempt_id");
+      expect(columns("scrape_runs")).toContain("previous_run_id");
+      expect(columns("scrape_runs")).toContain("manifest_json");
+      expect(columns("scrape_runs")).toContain("total_items");
+      expect(columns("scrape_runs")).toContain("success_count");
+      expect(columns("scrape_runs")).not.toContain("execution_generation");
+      expect(columns("scrape_runs")).not.toContain("revision");
+      expect(columns("library_items")).toContain("uncensored_ambiguous");
       expect(columns("library_item_files")).toEqual(
-        expect.arrayContaining(["part_number", "part_suffix", "resolution", "source_outcome_id"]),
+        expect.arrayContaining(["part_number", "part_suffix", "resolution"]),
       );
+      expect(columns("library_item_files")).toContain("entry_identity");
+      expect(columns("library_item_files")).not.toContain("source_outcome_id");
       expect(columns("library_item_assets")).toContain("file_id");
+      expect(columns("library_item_assets")).not.toContain("historical");
+
       const fileIndexes = database.sqlite
         .prepare("PRAGMA index_list(library_item_files)")
         .all()
         .map((row) => (row as { name: string }).name);
       expect(fileIndexes).not.toContain("library_item_files_item_id_idx");
       expect(fileIndexes).not.toContain("library_item_files_item_idx");
+      expect(fileIndexes).toContain("library_item_files_entry_identity_idx");
 
       const strict = database.sqlite.prepare("PRAGMA table_list").all() as Array<{ name: string; strict: number }>;
-      for (const name of [
-        "publication_journal",
-        "scrape_attempts",
-        "scrape_item_outcomes",
-        "library_items",
-        "library_item_files",
-        "library_item_assets",
-      ]) {
+      for (const name of ["library_items", "library_item_files", "library_item_assets"]) {
         expect(strict.find((table) => table.name === name)?.strict).toBe(1);
       }
 

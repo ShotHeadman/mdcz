@@ -99,30 +99,6 @@ describe("RuntimeConfigProfileStore", () => {
 });
 
 describe("runtime config helpers", () => {
-  it.each([
-    [{ from: "D:\\Downloads", to: "/player" }],
-    [{ from: "\\\\server\\share", to: "E:\\Media" }],
-    [{ from: "/media", to: "\\\\player\\share" }],
-  ])("accepts absolute STRM mappings without checking player accessibility: %j", (mapping) => {
-    const config = parseRuntimeConfiguration({ paths: { strmPathMappings: [mapping] } });
-    expect(config.paths.strmPathMappings).toEqual([mapping]);
-  });
-
-  it.each([
-    [{ from: "relative", to: "/player" }],
-    [{ from: "/media", to: "https://player" }],
-    [{ from: "D:relative", to: "/player" }],
-    [{ from: "/media/../outside", to: "/player" }],
-    [
-      { from: "D:\\Downloads", to: "/a" },
-      { from: "d:/downloads/", to: "/b" },
-    ],
-  ])("rejects invalid or duplicated STRM mapping prefixes: %j", (...mappings) => {
-    expect(() => parseRuntimeConfiguration({ paths: { strmPathMappings: mappings } })).toThrow(
-      RuntimeConfigValidationError,
-    );
-  });
-
   it("merges patches, reports field errors, and builds naming previews", () => {
     const merged = mergeRuntimeConfig(defaultConfiguration, { network: { timeout: 33 } });
 

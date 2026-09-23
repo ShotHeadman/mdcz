@@ -2,16 +2,23 @@ import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicCopyFile } from "@mdcz/media-store";
 
+import type { DirectoryInventory } from "../../DirectoryInventory";
 import { throwIfAborted } from "../../utils/abort";
 import {
   buildSceneImageFileName,
   getSceneImageSets,
-  listExistingSceneImages,
   resolveExistingImageAsset,
+  SCENE_IMAGE_FILE_PATTERN,
   shouldKeepAsset,
   uniqueFilePaths,
 } from "./helpers";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan } from "./types";
+
+const listExistingSceneImages = async (sceneDir: string, inventory: DirectoryInventory): Promise<string[]> =>
+  (await inventory.entries(sceneDir))
+    .filter((entry) => entry.isFile() && SCENE_IMAGE_FILE_PATTERN.test(entry.name))
+    .map((entry) => join(sceneDir, entry.name))
+    .sort((a, b) => a.localeCompare(b));
 
 export class SceneImageAssetDownloader implements AssetDownloader {
   shouldDownload(plan: DownloadExecutionPlan): boolean {
@@ -30,7 +37,10 @@ export class SceneImageAssetDownloader implements AssetDownloader {
     if (keepSceneImages) {
       const preservedSceneImages =
         plan.existingAssets?.sceneImages ??
-        (await listExistingSceneImages(join(plan.existingAssetDir, plan.config.paths.sceneImagesFolder)));
+        (await listExistingSceneImages(
+          join(plan.existingAssetDir, plan.config.paths.sceneImagesFolder),
+          plan.inventory,
+        ));
       if (preservedSceneImages.length > 0) {
         assets.sceneImages.push(...preservedSceneImages);
         return;
@@ -39,11 +49,11 @@ export class SceneImageAssetDownloader implements AssetDownloader {
 
     throwIfAborted(plan.signal);
 
-    const existingSceneImages = await listExistingSceneImages(sceneDir);
+    const existingSceneImages = await listExistingSceneImages(sceneDir, plan.inventory);
     const sceneImageComparisonPaths = uniqueFilePaths([
       assets.thumb,
       plan.existingAssets?.fanart ??
-        (await resolveExistingImageAsset(join(plan.existingAssetDir, plan.assetFileNames.fanart))),
+        (await resolveExistingImageAsset(join(plan.existingAssetDir, plan.assetFileNames.fanart), plan.inventory)),
     ]);
     const targetSceneCount = Math.max(0, plan.config.aggregation.behavior.maxSceneImages);
     const sceneImageSets = getSceneImageSets(plan.data, plan.imageAlternatives, targetSceneCount);

@@ -1,11 +1,6 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import {
-  type AggregationResult,
-  DownloadManager,
-  type MountedRootScrapeAggregationService,
-  PosterWatermarkService,
-} from "@mdcz/runtime/scrape";
+import { type AggregationResult, DownloadManager, PosterWatermarkService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,8 +15,11 @@ import {
   syncMediaRootFromConfig,
   waitForScrapeRunStatus,
 } from "./app.testSupport";
+import type { ScrapeServiceResources } from "./services/scrapeService";
 
-const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScrapeAggregationService => ({
+const createAmbiguousUncensoredAggregation = (
+  imageUrl: string,
+): NonNullable<ScrapeServiceResources["aggregationService"]> => ({
   async aggregate(number: string): Promise<AggregationResult> {
     return {
       data: {
@@ -64,7 +62,7 @@ const createAmbiguousUncensoredAggregation = (imageUrl: string): MountedRootScra
 const createGatedAggregation = (
   imageUrl: string,
 ): {
-  aggregation: MountedRootScrapeAggregationService;
+  aggregation: NonNullable<ScrapeServiceResources["aggregationService"]>;
   aggregatedNumbers: string[];
   firstCallStarted: Promise<void>;
   releaseFirstCall: () => void;
@@ -87,14 +85,14 @@ const createGatedAggregation = (
       releaseFirstCall();
     },
     aggregation: {
-      async aggregate(number, configuration, signal, manualScrape): Promise<AggregationResult | null> {
+      async aggregate(number): Promise<AggregationResult> {
         const isFirstCall = aggregatedNumbers.length === 0;
         aggregatedNumbers.push(number);
         if (isFirstCall) {
           resolveStarted();
           await gate;
         }
-        return await inner.aggregate(number, configuration, signal, manualScrape);
+        return await inner.aggregate(number);
       },
     },
   };
@@ -119,7 +117,7 @@ describe("buildServer scrape integration", () => {
     "files",
     "empty",
     "missing",
-  ] as const)("accepts a directory scope and completes discovery in the backend (%s)", async (kind) => {
+  ] as const)("validates directory admission before backend discovery (%s)", async (kind) => {
     const root = await createTempRoot("directory-task");
     const source = join(root, "source");
     const targetDir = join(root, "output");
@@ -148,41 +146,21 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { executionMode: "batch", source: { kind: "directory", scanDir: source, recursive: true }, targetDir },
     });
+    if (kind === "missing") {
+      expect(accepted.statusCode).toBe(400);
+      expect(accepted.body).toContain("目录不存在或无法访问");
+      return;
+    }
     expect(accepted.statusCode).toBe(200);
     const taskId = accepted.json().result.data.runId;
-    await waitForScrapeRunStatus(fastify, token, taskId, kind === "missing" ? "failed" : "completed");
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
     const snapshot = await services.scrape.snapshot({ taskId });
     expect(snapshot.directorySource).toMatchObject({ scanDir: source, recursive: true });
-    expect(snapshot.task.totalItems).toBe(kind === "missing" ? null : kind === "files" ? 1 : 0);
+    expect(snapshot.task.totalItems).toBe(kind === "files" ? 1 : 0);
     const manifest = await (await services.persistence.getState()).repositories.scrapeRuns.get(taskId);
     expect(manifest.items.map((item) => item.relativePath)).toEqual(kind === "files" ? ["nested/ABC-123.mp4"] : []);
-    expect(manifest.manifestFixedAt === null).toBe(kind === "missing");
-    if (kind !== "files") expect(manifest.attempts).toEqual([]);
-    if (kind === "missing") {
-      const retry = await fastify.inject({
-        method: "POST",
-        url: "/trpc/scrape.retry",
-        headers: { authorization: `Bearer ${token}` },
-        payload: { taskId },
-      });
-      expect(retry.statusCode).not.toBe(200);
-      expect(retry.body).toContain("目录文件列表尚未生成，无法重试，请重新扫描目录");
-      await mkdir(source);
-      await writeFile(join(source, "DEF-456.mp4"), "new video");
-      const rerun = await fastify.inject({
-        method: "POST",
-        url: "/trpc/scrape.rerunDirectory",
-        headers: { authorization: `Bearer ${token}` },
-        payload: { taskId },
-      });
-      expect(rerun.statusCode).toBe(200);
-      const rerunId = rerun.json().result.data.runId;
-      expect(rerunId).not.toBe(taskId);
-      await waitForScrapeRunStatus(fastify, token, rerunId, "completed");
-      const repository = (await services.persistence.getState()).repositories.scrapeRuns;
-      expect((await repository.get(rerunId)).items.map((item) => item.relativePath)).toEqual(["DEF-456.mp4"]);
-      expect(await repository.get(taskId)).toEqual(manifest);
-    }
+    expect(manifest.manifestFixedAt).not.toBeNull();
+    if (kind !== "files") expect(manifest.items).toEqual([]);
   });
   it.each([
     "conflict",
@@ -204,9 +182,10 @@ describe("buildServer scrape integration", () => {
     const aggregation = createTestAggregation("https://unused.example/image.png");
     const aggregateOriginal = aggregation.aggregate.bind(aggregation);
     const aggregate = vi.spyOn(aggregation, "aggregate");
-    aggregate.mockImplementation(async (...args) =>
-      failure === "metadata" && args[0] === "ABF-981" ? null : await aggregateOriginal(...args),
-    );
+    aggregate.mockImplementation(async (...args) => {
+      if (failure === "metadata" && args[0] === "ABF-981") throw new Error("Metadata failure");
+      return await aggregateOriginal(...args);
+    });
     const { fastify, services } = await createTestServer({ scrapeAggregation: aggregation });
     await services.config.update({
       naming: { folderTemplate: "fixed/{number}", fileTemplate: "{number}" },
@@ -222,10 +201,14 @@ describe("buildServer scrape integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     const entry = await state.repositories.library.upsertEntry({
-      rootId,
-      rootRelativePath: "JAV_output/fixed/ABF-981/ABF-981.mp4",
-      title: "Original title",
-      number: "ABF-981",
+      movie: { title: "Original title", number: "ABF-981" },
+      files: [
+        {
+          rootId,
+          rootRelativePath: "JAV_output/fixed/ABF-981/ABF-981.mp4",
+          fileId: `${rootId}:JAV_output/fixed/ABF-981/ABF-981.mp4`,
+        },
+      ],
     });
     const response = await fastify.inject({
       method: "POST",
@@ -497,7 +480,7 @@ describe("buildServer scrape integration", () => {
     });
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    const outputRoot = await services.mediaRoots.ensurePath({ hostPath: outputPath });
+    const outputRoot = await services.mediaRoots.prepareOutputDirectory({ hostPath: outputPath });
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -655,7 +638,7 @@ describe("buildServer scrape integration", () => {
       payload: {
         download: { downloadSceneImages: false, downloadTrailer: false },
         paths: { metadataPath: metadataRoot },
-        behavior: { metadataOnly: true, successFileMove: move, successFileRename: move, generateStrm: true },
+        behavior: { metadataOnly: true, successFileMove: move, successFileRename: move },
         naming: { fileTemplate: "{number}_output" },
       },
     });
@@ -683,7 +666,6 @@ describe("buildServer scrape integration", () => {
     const directory = "Actor A/ABC-123";
     const outputRelativePath = "ABC-123.mp4";
     const nfoRelativePath = `${directory}/ABC-123_output.nfo`;
-    const strmRelativePath = `${directory}/ABC-123_output.strm`;
     const posterRelativePath = `${directory}/poster.png`;
 
     expect(result).toMatchObject({
@@ -697,9 +679,6 @@ describe("buildServer scrape integration", () => {
     await expect(readFile(join(mediaRoot, outputRelativePath), "utf8")).resolves.toBe("video");
     await expect(readFile(join(mediaRoot, nfoRelativePath), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(metadataRoot, nfoRelativePath), "utf8")).resolves.toContain("Runtime Title ABC-123");
-    await expect(readFile(join(metadataRoot, strmRelativePath), "utf8")).resolves.toBe(
-      join(mediaRoot, outputRelativePath),
-    );
     const posterContent = await readFile(join(metadataRoot, posterRelativePath));
     expect([...posterContent.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -752,12 +731,8 @@ describe("buildServer scrape integration", () => {
     expect(nfoResponse.json().result.data.data).toMatchObject({ number: "ABC-123" });
     const state = await services.persistence.getState();
     const entry = await state.repositories.library.getEntry(rootId, outputRelativePath);
-    expect(entry.assets.map((asset) => asset.kind)).toEqual(
-      expect.arrayContaining(["nfo", "strm", "subtitle", "poster"]),
-    );
-    await expect(readFile(join(metadataRoot, directory, "ABC-123_output.en.forced.srt"), "utf8")).resolves.toBe(
-      "subtitle",
-    );
+    expect(entry.assets.map((asset) => asset.kind)).toEqual(expect.arrayContaining(["nfo", "subtitle", "poster"]));
+    await expect(readFile(join(mediaRoot, "ABC-123.en.forced.srt"), "utf8")).resolves.toBe("subtitle");
     const edit = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.nfoWrite",
@@ -770,6 +745,10 @@ describe("buildServer scrape integration", () => {
     });
     expect(edit.statusCode).toBe(200);
     expect(await readFile(join(metadataRoot, nfoRelativePath), "utf8")).toContain("Edited independent output");
+    expect(await state.repositories.library.getEntryById(entry.id)).toMatchObject({
+      title: "Edited independent output",
+      crawlerDataJson: expect.stringContaining("Edited independent output"),
+    });
     const crop = await fastify.inject({
       method: "GET",
       url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: result.id }))}`,
@@ -787,37 +766,49 @@ describe("buildServer scrape integration", () => {
     const retainedPath = `${directory}/checksum.txt`;
     await writeFile(join(metadataRoot, retainedPath), "retained resource");
     await state.repositories.library.upsertEntry({
-      ...entry,
-      fileId: entry.files[0].id,
-      rootId: entry.files[0].rootId,
-      rootRelativePath: entry.files[0].rootRelativePath,
-      sourceOutcomeId: entry.files[0].sourceOutcomeId,
-      assets: [
-        ...entry.assets,
-        { kind: "checksum", uri: retainedPath, rootId: result.nfoRootId, relativePath: retainedPath, published: true },
+      movie: {
+        ...entry,
+        assets: [
+          ...entry.assets.filter((asset) => asset.fileId === null),
+          {
+            kind: "checksum",
+            uri: retainedPath,
+            rootId: result.nfoRootId,
+            relativePath: retainedPath,
+            published: true,
+          },
+        ],
+      },
+      files: [
+        {
+          ...entry,
+          fileId: entry.files[0].id,
+          rootId: entry.files[0].rootId,
+          rootRelativePath: entry.files[0].rootRelativePath,
+          assets: entry.assets.filter((asset) => asset.fileId === entry.files[0].id),
+        },
       ],
     });
-    const manifest = await state.repositories.scrapeRuns.get(taskId);
     const confirmation = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
-      payload: { taskId, items: [{ itemId: manifest.items[0].id, choice: "uncensored" }] },
+      payload: { items: [{ fileId: entry.files[0].id, choice: "uncensored" }] },
     });
     expect(confirmation.statusCode, confirmation.body).toBe(200);
     const confirmed = await state.repositories.library.getEntryById(entry.id);
+    expect(confirmed.title).toBe("Edited independent output");
     expect(confirmed.assets.map((asset) => asset.kind)).toEqual(
-      expect.arrayContaining(["nfo", "strm", "subtitle", "poster", "checksum"]),
+      expect.arrayContaining(["nfo", "subtitle", "poster", "checksum"]),
     );
-    const revised = (await state.repositories.scrapeRuns.get(taskId)).outcomes.find(
-      (outcome) => outcome.id === result.id,
-    );
+    const run = await state.repositories.scrapeRuns.get(taskId);
+    const revised = run.items.find((item) => item.id === result.id);
     if (!revised) throw new Error("Confirmation outcome disappeared");
     expect(confirmed.assets).toContainEqual(
       expect.objectContaining({
         kind: "nfo",
-        rootId: revised.nfoRootId ?? revised.outputRootId,
-        relativePath: revised.nfoRelativePath,
+        rootId: result.nfoRootId,
+        relativePath: nfoRelativePath,
       }),
     );
     const localFiles = [
@@ -854,7 +845,6 @@ describe("buildServer scrape integration", () => {
     for (const name of names) await writeFile(join(root, name), name);
     const imageServer = await startTestImageServer();
     const aggregation = createTestAggregation(`${imageServer.url}/image.png`);
-    const aggregate = vi.spyOn(aggregation, "aggregate");
     const downloadAll = vi.spyOn(DownloadManager.prototype, "downloadAll");
     const { fastify, services } = await createTestServer({
       scrapeAggregation: aggregation,
@@ -878,17 +868,12 @@ describe("buildServer scrape integration", () => {
     expect(startResponse.json().result.data).toEqual({ runId: expect.any(String) });
     const taskId = startResponse.json().result.data.runId;
 
-    const liveRunsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/scrape.liveRuns",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(liveRunsResponse.json().result.data.runs[0]).toMatchObject({
+    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+    const snapshot = await services.scrape.snapshot({ taskId });
+    expect(snapshot).toMatchObject({
       task: { id: taskId, kind: "scrape" },
       items: names.map((relativePath) => expect.objectContaining({ rootId, relativePath })),
     });
-    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
-    expect(aggregate).toHaveBeenCalledOnce();
     expect(downloadAll).toHaveBeenCalledOnce();
     const entries = await services.persistence
       .getState()
@@ -902,7 +887,6 @@ describe("buildServer scrape integration", () => {
         ]),
       }),
     ]);
-    expect(entries[0]?.files).toHaveLength(2);
   });
 
   it.each([
@@ -910,7 +894,7 @@ describe("buildServer scrape integration", () => {
     "multipart",
     "missing",
     "conflicting",
-    "rollback",
+    "commit_failure",
   ] as const)("confirms every registered movie file atomically (%s)", async (scenario) => {
     const root = await createTempRoot("ambiguous-uncensored-root");
     const names = scenario === "single" ? ["ABP-999-U.mp4"] : ["ABP-999-U-CD1.mp4", "ABP-999-U-CD2.mp4"];
@@ -942,28 +926,29 @@ describe("buildServer scrape integration", () => {
     const taskId = startResponse.json().result.data.runId;
 
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
-    const initialResults = await services.persistence.getState().then(async (state) => {
-      const run = await state.repositories.scrapeRuns.get(taskId);
-      return state.repositories.scrapeRuns.latestOutcomes(run);
-    });
-    const initialResult = initialResults[0];
-    expect(initialResult?.outputRelativePath).not.toBe(names[0]);
-    await expect(readFile(join(root, names[0]))).rejects.toMatchObject({ code: "ENOENT" });
-    const state = await services.persistence.getState();
-    const originalEntry = await state.repositories.library.getEntryBySourceOutcomeId(initialResult.id);
-    if (!originalEntry) throw new Error("Expected registered movie");
-
     const pendingConfirmationResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/scrape.pendingUncensoredConfirmation",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(pendingConfirmationResponse.json().result.data.items).toEqual(
-      names.map((relativePath) => expect.objectContaining({ taskId, ref: { rootId, relativePath } })),
-    );
-    if (scenario === "missing") await rm(join(root, initialResults[1].outputRelativePath as string));
-    if (scenario === "rollback")
-      vi.spyOn(state.repositories.scrapeRuns, "reviseSuccess").mockImplementation(() => {
+    const pendingItems = pendingConfirmationResponse.json().result.data.items;
+    expect(pendingItems).toHaveLength(names.length);
+    expect(pendingItems.every((item: object) => !("taskId" in item))).toBe(true);
+    const state = await services.persistence.getState();
+    const originalEntry = await state.repositories.library.getEntryByFileId(pendingItems[0].fileId);
+    if (!originalEntry) throw new Error("Expected registered movie");
+    const primaryFile = originalEntry.files[0];
+    expect(primaryFile.rootRelativePath).not.toBe(names[0]);
+    await expect(readFile(join(root, names[0]))).rejects.toMatchObject({ code: "ENOENT" });
+
+    if (scenario === "missing") {
+      const secondEntry = await state.repositories.library.getEntryByFileId(pendingItems[1].fileId);
+      const targetFile = secondEntry.files.find((file) => file.id === pendingItems[1].fileId);
+      if (!targetFile) throw new Error("Expected second registered file");
+      await rm(join(root, targetFile.rootRelativePath));
+    }
+    if (scenario === "commit_failure")
+      vi.spyOn(state.repositories.library, "writeEntry").mockImplementation(() => {
         throw new Error("injected confirmation failure");
       });
 
@@ -972,26 +957,24 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        taskId,
         items: [
-          { itemId: initialResult?.itemId ?? "", choice: "leak" },
-          ...(scenario === "conflicting" ? [{ itemId: initialResults[1].itemId, choice: "uncensored" }] : []),
+          { fileId: pendingItems[0].fileId, choice: "leak" },
+          ...(scenario === "conflicting" ? [{ fileId: pendingItems[1].fileId, choice: "uncensored" }] : []),
         ],
       },
     });
 
-    if (scenario === "missing" || scenario === "conflicting" || scenario === "rollback") {
+    if (scenario === "missing" || scenario === "conflicting" || scenario === "commit_failure") {
       expect(confirmResponse.statusCode).toBe(400);
-      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("output files not found");
-      expect(state.repositories.scrapeRuns.latestOutcomes(await state.repositories.scrapeRuns.get(taskId))).toEqual(
-        initialResults,
-      );
+      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("维护扫描失败");
       expect((await state.repositories.library.getEntryById(originalEntry.id)).files).toEqual(originalEntry.files);
-      await expect(readFile(join(root, initialResult.outputRelativePath as string), "utf8")).resolves.toBe("video");
+      if (scenario !== "commit_failure")
+        await expect(readFile(join(root, primaryFile.rootRelativePath), "utf8")).resolves.toBe("video");
+      expect((await state.repositories.library.getEntryById(originalEntry.id)).uncensoredAmbiguous).toBe(true);
       return;
     }
     expect(confirmResponse.statusCode).toBe(200);
-    expect(confirmResponse.json().result.data).toEqual({ runId: taskId });
+    expect(confirmResponse.json().result.data).toMatchObject({ updatedCount: names.length });
     expect(aggregateCount).toBe(1);
     const confirmedHistoryResponse = await fastify.inject({
       method: "GET",
@@ -1017,16 +1000,15 @@ describe("buildServer scrape integration", () => {
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        taskId,
-        items: [{ itemId: initialResult?.itemId ?? "", choice: "leak" }],
+        items: [{ fileId: pendingItems[0].fileId, choice: "leak" }],
       },
     });
     expect(repeatedResponse.statusCode).toBe(200);
-    expect(repeatedResponse.json().result.data).toEqual({ runId: taskId });
+    expect(repeatedResponse.json().result.data).toMatchObject({ updatedCount: names.length });
     expect(aggregateCount).toBe(1);
   });
 
-  it("rejects uncensored confirmation items outside the task", async () => {
+  it("rejects uncensored confirmation for unknown library files", async () => {
     const root = await createTempRoot("uncensored-invalid-root");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
@@ -1049,11 +1031,11 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.confirmUncensored",
       headers: { authorization: `Bearer ${token}` },
-      payload: { taskId, items: [{ itemId: "missing-item", choice: "uncensored" }] },
+      payload: { items: [{ fileId: "missing-item", choice: "uncensored" }] },
     });
 
     expect(confirmResponse.statusCode).toBe(400);
-    expect(confirmResponse.json().error.message).toContain("Item does not belong to scrape task");
+    expect(confirmResponse.json().error.message).toContain("Library file not found");
   });
 
   it("accepts scrape refs that span multiple registered media roots", async () => {
@@ -1165,17 +1147,13 @@ describe("buildServer scrape integration", () => {
       rootId,
       executionMode: "batch",
       createdAt: new Date(1_700_000_000_000),
-      items: [
-        { id: "interrupted-item", ordinal: 0, rootId, relativePath: "ABC-126.mp4" },
-        { id: "failed-item", ordinal: 1, rootId, relativePath: "ABC-127.mp4" },
-      ],
+      items: [{ id: "failed-item", ordinal: 0, rootId, relativePath: "ABC-127.mp4" }],
     });
-    await state.repositories.scrapeRuns.commitOutcome({
-      outcome: "failed",
-      id: "failed-outcome",
-      attemptId: state.repositories.scrapeRuns.admitAttempt("failed-item").id,
+    await state.repositories.scrapeRuns.finalize({
+      runId: manifest.id,
+      disposition: "interrupted",
       error: "boom",
-      completedAt: new Date(1_700_000_001_000),
+      failedCount: 1,
     });
 
     const readTotalChanges = (): number => {
@@ -1196,16 +1174,10 @@ describe("buildServer scrape integration", () => {
     expect(historyResponse.json().result.data.runs[0]).toMatchObject({
       id: manifest.id,
       disposition: "interrupted",
-      completedAt: null,
+      completedAt: expect.any(String),
+      failedCount: 1,
     });
-    expect(historyResponse.json().result.data.results).toEqual([
-      expect.objectContaining({
-        id: "failed-outcome",
-        persistenceState: "terminal",
-        status: "failed",
-        error: "boom",
-      }),
-    ]);
+    expect(historyResponse.json().result.data.results).toEqual([]);
 
     const repeatedHistoryResponse = await fastify.inject({
       method: "GET",
@@ -1253,18 +1225,16 @@ describe("buildServer scrape integration", () => {
     // Pause while the first file is still inside its aggregation call, so the second file has
     // not been dequeued yet and stays pending.
     await gated.firstCallStarted;
-    const pauseResponse = fastify.inject({
+    const pausedResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.pause",
       headers: { authorization: `Bearer ${token}` },
       payload: { taskId },
     });
-    await Promise.resolve();
-    gated.releaseFirstCall();
-    const pausedResponse = await pauseResponse;
     expect(pausedResponse.statusCode).toBe(200);
     expect(pausedResponse.json().result.data).toEqual({ runId: taskId });
     await waitForScrapeRunStatus(fastify, token, taskId, "paused");
+    gated.releaseFirstCall();
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
 
     await expect
@@ -1281,7 +1251,7 @@ describe("buildServer scrape integration", () => {
       )
       .toMatchObject({
         task: { id: taskId, status: "paused", continuity: "live" },
-        progress: { percent: 50, completedItems: 0, totalItems: 2 },
+        progress: { percent: 25, completedItems: 0, totalItems: 2 },
         items: expect.arrayContaining([
           expect.objectContaining({ status: "pending" }),
           expect.objectContaining({ status: "pending" }),

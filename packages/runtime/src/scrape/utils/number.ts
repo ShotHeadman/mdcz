@@ -355,3 +355,32 @@ export const parseFileInfo = (filePath: string, escapeStrings: string[] = []): F
     part,
   };
 };
+
+const relativeRetryDirectory = (item: { rootId: string; relativePath: string }): string => {
+  const slash = item.relativePath.lastIndexOf("/");
+  const directory = slash === -1 ? "" : item.relativePath.slice(0, slash);
+  return JSON.stringify([item.rootId, directory]);
+};
+
+export const scrapeRetryMovieKey = (
+  item: { relativePath: string; manualUrl?: string | null },
+  directoryIdentity: string,
+  ignoreTokens: readonly string[] = [],
+): string => {
+  const parsed = parseFileInfo(item.relativePath, [...ignoreTokens]);
+  const movieIdentity = parsed.number.trim().toUpperCase() || item.relativePath;
+  return JSON.stringify([directoryIdentity, movieIdentity, item.manualUrl ?? ""]);
+};
+
+export const expandScrapeRetryItems = <
+  T extends { id: string; rootId: string; relativePath: string; manualUrl?: string | null },
+>(
+  items: readonly T[],
+  itemIds: readonly string[],
+  ignoreTokens: readonly string[] = [],
+  directoryOf: (item: T) => string = relativeRetryDirectory,
+): string[] => {
+  const keyOf = (item: T) => scrapeRetryMovieKey(item, directoryOf(item), ignoreTokens);
+  const keys = new Set(items.filter((item) => itemIds.includes(item.id)).map(keyOf));
+  return items.filter((item) => keys.has(keyOf(item))).map((item) => item.id);
+};

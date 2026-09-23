@@ -1,9 +1,11 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
+  canonicalizeRootFileRefs,
+  filesystemPathKey,
+  isPathInside,
   type MediaRoot,
   normalizeHostPath,
-  resolveRootFile,
   resolveRootRelativePath,
   toRootRelativePath,
 } from "@mdcz/media-store";
@@ -25,6 +27,8 @@ export interface MediaRootRegistryPort {
 
 const isRemoteUrl = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim());
 const hasInvalidPathBytes = (value: string): boolean => value.includes("\0");
+
+export class MediaDirectoryUnavailableError extends Error {}
 
 export const toMediaRootDto = (root: MediaRoot & { availability?: MediaRootAvailabilityDto }): MediaRootDto => ({
   id: root.id,
@@ -52,17 +56,39 @@ export class ConfiguredMediaRootService {
   }
 
   async ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse> {
-    const parsed = mediaRootEnsurePathInputSchema.parse(input);
-    const root = await this.ensurePathRecord(parsed);
+    const root = await this.ensurePathRecord(input);
     return {
       ...toMediaRootDto(root),
-      relativeDirectory: toRootRelativePath(root, normalizeHostPath(parsed.hostPath)),
+      relativeDirectory: "",
     };
   }
 
   async registerPathIntent(hostPath: string): Promise<MediaRoot> {
     this.validatePathSyntax(hostPath.trim());
-    return await this.registry.ensurePath(normalizeHostPath(hostPath));
+    const normalized = normalizeHostPath(hostPath);
+    const canonical = await realpath(normalized).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    const roots = await this.listRoots();
+    for (const [index, root] of roots.entries()) {
+      if (canonical !== null && root.realPath == null && isPathInside(root.hostPath, normalized))
+        roots[index] = await this.registry.ensurePath(root.hostPath);
+    }
+    const enclosing = roots
+      .filter((root) => isPathInside(root.realPath ?? root.hostPath, canonical ?? normalized))
+      .sort((left, right) => (right.realPath ?? right.hostPath).length - (left.realPath ?? left.hostPath).length)[0];
+    return enclosing ?? (await this.registry.ensurePath(normalized));
+  }
+
+  async admitDirectory(input: MediaRootEnsurePathInput) {
+    const parsed = mediaRootEnsurePathInputSchema.parse(input);
+    const root = await this.registerPathIntent(await this.validateMountedFilesystemPath(parsed.hostPath));
+    const relativeDirectory = toRootRelativePath(
+      { hostPath: root.realPath ?? (await realpath(root.hostPath)) },
+      await realpath(parsed.hostPath),
+    );
+    return { root, relativeDirectory, hostPath: resolveRootRelativePath(root, relativeDirectory) };
   }
 
   async ensurePathRecord(input: MediaRootEnsurePathInput): Promise<MediaRoot> {
@@ -76,7 +102,8 @@ export class ConfiguredMediaRootService {
     const targetPath = parsed.hostPath.trim();
     this.validatePathSyntax(targetPath);
     await mkdir(targetPath, { recursive: true });
-    return await this.ensurePath(parsed);
+    const { root, relativeDirectory } = await this.admitDirectory(parsed);
+    return { ...toMediaRootDto(root), relativeDirectory };
   }
 
   async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {
@@ -90,13 +117,37 @@ export class ConfiguredMediaRootService {
 
   async canonicalizeFileRefs(refs: readonly RootFileRef[]): Promise<RootFileRef[]> {
     const roots = await this.listRoots();
-    const rootsById = new Map(roots.map((root) => [root.id, root]));
-    return refs.map((ref) => {
-      const referencedRoot = rootsById.get(ref.rootId);
-      if (!referencedRoot) throw new Error(`Media root not found: ${ref.rootId}`);
-      const resolved = resolveRootFile(roots, resolveRootRelativePath(referencedRoot, ref.relativePath));
-      return { rootId: resolved.root.id, relativePath: resolved.relativePath };
-    });
+    return canonicalizeRootFileRefs(roots, refs);
+  }
+
+  async assertRootIntegrity(rootIds: Iterable<string>): Promise<void> {
+    for (const id of new Set(rootIds)) {
+      let root = await this.registry.get(id);
+      if (root.realPath === null) {
+        await this.registry.ensurePath(root.hostPath);
+        root = await this.registry.get(id);
+      }
+      const current = await realpath(root.hostPath);
+      if (root.realPath === null || filesystemPathKey(current) !== filesystemPathKey(root.realPath)) {
+        throw new Error(`Media root canonical path changed: ${root.hostPath}`);
+      }
+    }
+  }
+
+  rootIntegrityGuard(checkedRootIds: Iterable<string> = []) {
+    const checks = new Map([...checkedRootIds].map((id) => [id, Promise.resolve()]));
+    return async (rootIds: Iterable<string>): Promise<void> => {
+      await Promise.all(
+        [...new Set(rootIds)].map((id) => {
+          let check = checks.get(id);
+          if (!check) {
+            check = this.assertRootIntegrity([id]);
+            checks.set(id, check);
+          }
+          return check;
+        }),
+      );
+    };
   }
 
   async assertConfiguredMediaPath(
@@ -133,7 +184,7 @@ export class ConfiguredMediaRootService {
     const normalized = normalizeHostPath(trimmed);
     const availability = await this.checkAvailability(normalized);
     if (!availability.available) {
-      throw new Error(availability.error ?? `媒体目录不存在：${trimmed}`);
+      throw new MediaDirectoryUnavailableError("目录不存在或无法访问，请检查");
     }
     return normalized;
   }

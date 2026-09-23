@@ -62,7 +62,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
       activeGroup.previewItems.find((item) => item.fileId === activeId)
     );
   }, [activeGroup, activeId, detailEntry]);
-  const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const handleFieldSelectionChange = (
     fileId: string,
     field: import("@mdcz/shared/types").FieldDiff["field"],
@@ -105,14 +105,14 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
           <div role="status" className="space-y-4 p-8">
             <h2 className="text-lg font-semibold">
               {snapshot.status === "discovering"
-                ? "正在扫描维护文件"
+                ? "正在扫描文件"
                 : snapshot.status === "queued"
                   ? "维护任务已排队"
                   : snapshot.status === "stopping"
                     ? "正在停止，等待当前文件处理完成"
                     : snapshot.status === "completed"
                       ? snapshot.totalEntries === 0
-                        ? "未找到可维护视频"
+                        ? "未找到待处理视频"
                         : "维护任务已完成"
                       : (snapshot.error ?? "正在读取本地文件")}
             </h2>
@@ -133,7 +133,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
             {snapshot?.previews.find((preview) => preview.entry?.fileId === detailEntry?.fileId)?.affectedFiles
               ?.length ? (
               <section className="space-y-2 border-b p-4 text-sm">
-                <h3 className="font-semibold">影片受影响文件</h3>
+                <h3 className="font-semibold">文件变动</h3>
                 {snapshot.previews
                   .find((preview) => preview.entry?.fileId === detailEntry?.fileId)
                   ?.affectedFiles?.map((file) => (

@@ -38,8 +38,7 @@ function buildMenuContent(
     ref: result.output ?? { rootId: result.rootId, relativePath: result.relativePath },
   };
   const canOpenFolder = typeof port.openFolder === "function";
-  const strm = result.assets.find((asset) => asset.type === "local" && asset.kind === "strm");
-  const metadataRef = strm?.type === "local" ? (result.nfo ?? strm.file) : undefined;
+  const metadataRef = result.nfo;
   const canPlay = typeof port.play === "function";
 
   const handleCopyNumber = async () => {

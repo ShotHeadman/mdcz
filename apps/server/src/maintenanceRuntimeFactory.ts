@@ -5,7 +5,6 @@ import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   type ActorImageService,
-  AggregationService,
   applyPosterTagBadgesIfNeeded,
   DownloadManager,
   FileOrganizer,
@@ -31,7 +30,8 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
   return new MaintenanceRuntime({
     actorImageService: deps.actorImageService,
     actorSourceProvider: deps.actorSourceProvider,
-    aggregationService: new AggregationService(deps.crawlerProvider, { logger }),
+    crawlerProvider: deps.crawlerProvider,
+    logger,
     config: deps.config,
     downloadManager: new DownloadManager(deps.networkClient, {
       imageHostCooldownStore: deps.imageHostCooldownStore,

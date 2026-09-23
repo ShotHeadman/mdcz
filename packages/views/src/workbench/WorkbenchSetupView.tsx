@@ -15,6 +15,7 @@ export interface WorkbenchSetupViewProps {
   onExitPreview?: () => void;
   configLoading?: boolean;
   scanDir: string;
+  scanDirError?: string;
   recursive?: boolean;
   onRecursiveChange?: (recursive: boolean) => void;
   onCommitScanDir?: () => void;
@@ -99,6 +100,7 @@ function PathControl({
   onCommit,
   supportsBrowse,
   loadSuggestions,
+  error,
 }: {
   label: string;
   value: string;
@@ -108,6 +110,7 @@ function PathControl({
   onCommit?: () => void;
   supportsBrowse?: boolean;
   loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
+  error?: string;
 }) {
   return (
     <div className="space-y-2">
@@ -131,6 +134,11 @@ function PathControl({
           </Button>
         ) : null}
       </div>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -190,6 +198,7 @@ export function WorkbenchSetupView({
   onExitPreview,
   configLoading = false,
   scanDir,
+  scanDirError,
   recursive = false,
   onRecursiveChange,
   onCommitScanDir,
@@ -242,7 +251,7 @@ export function WorkbenchSetupView({
           <section className="mb-10">
             <div
               className={
-                mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all"
+                mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all"
                   ? "grid gap-6 lg:grid-cols-2 lg:gap-8"
                   : "grid gap-6"
               }
@@ -250,6 +259,7 @@ export function WorkbenchSetupView({
               <PathControl
                 label="扫描目录"
                 value={scanDir}
+                error={scanDirError}
                 placeholder={configLoading ? "正在读取配置..." : "请选择需要扫描的媒体目录"}
                 onBrowse={onBrowseScanDir}
                 onChange={onScanDirChange}
@@ -257,7 +267,7 @@ export function WorkbenchSetupView({
                 supportsBrowse={!isServer}
                 loadSuggestions={onSuggestScanDir ? (value) => onSuggestScanDir({ path: value }) : undefined}
               />
-              {mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all" ? (
+              {mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all" ? (
                 <PathControl
                   label="输出目录"
                   value={targetDir}
@@ -337,7 +347,7 @@ export function WorkbenchSetupView({
               </Button>
             ) : (
               <p className="text-sm text-muted-foreground">
-                直接点击“开始”即可{mode === "scrape" ? "处理目录下的所有视频" : "对目录执行维护操作"}。
+                直接点击“开始”即可{mode === "scrape" ? "处理全部视频" : "开始维护"}。
               </p>
             )}
           </div>
@@ -441,7 +451,7 @@ export function WorkbenchSetupView({
       {scanDir ? (
         <FloatingWorkbenchBar contentClassName="mx-auto flex w-fit max-w-[min(92vw,26rem)] items-center justify-between gap-3 px-3 py-2.5 md:max-w-[26rem] md:px-4">
           <div className="min-w-0 font-numeric text-sm font-extrabold tracking-tight">
-            {previewMode ? `已选 ${selectedPaths.length} / ${candidates.length} 个文件` : `整个目录 · ${scopeLabel}`}
+            {previewMode ? `已选 ${selectedPaths.length} / ${candidates.length} 个文件` : `全部文件 · ${scopeLabel}`}
             {previewMode && selectedSize > 0 ? (
               <span className="ml-2 text-xs font-bold text-muted-foreground">
                 {formatBytes(selectedSize, { trimTrailingZeros: true })}

@@ -1,128 +1,134 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ScrapeTargetConflictError, validatePreparedScrapeFiles } from "./preflightScrapeTask";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DirectoryInventory } from "./DirectoryInventory";
+import { checkScrapeTargets, ScrapeTargetConflictError } from "./preflightScrapeTask";
 
 let root: string;
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "mdcz-scrape-prepared-check-"));
+  root = await fs.mkdtemp(join(tmpdir(), "mdcz-targets-"));
 });
-afterEach(() => rm(root, { recursive: true, force: true }));
-
-const target = (
-  itemId: string,
-  sourcePath: string,
-  targetVideoPath: string,
-  mediaIdentity?: string,
-  partNumber?: number | null,
-) => ({
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await fs.rm(root, { recursive: true, force: true });
+});
+const target = (itemId: string, sourcePath: string, targetVideoPath: string, artifactPaths?: readonly string[]) => ({
   itemId,
   sourcePath,
-  outputPlan: { targetVideoPath },
-  mediaIdentity,
-  partNumber,
+  targetVideoPath,
+  artifactPaths,
 });
+const group = (...members: ReturnType<typeof target>[]) => ({ members });
 
-describe("validatePreparedScrapeFiles", () => {
-  it("rejects an existing main video with the same extensionless name", async () => {
-    const sourcePath = join(root, "source", "ABF-981.mp4");
-    const targetPath = join(root, "output", "ABF-981.mkv");
-    await mkdir(dirname(sourcePath), { recursive: true });
-    await mkdir(dirname(targetPath), { recursive: true });
-    await writeFile(sourcePath, "source");
-    await writeFile(targetPath, "existing");
-
-    const run = validatePreparedScrapeFiles([target("one", sourcePath, join(root, "output", "ABF-981.mp4"))]);
-    const error = await run.catch((cause: unknown) => cause);
-    expect(error).toBeInstanceOf(ScrapeTargetConflictError);
-    expect((error as Error).message).toBe(`目标目录已存在同名影片\n待处理：${sourcePath}\n目标路径：${targetPath}`);
-    expect((error as ScrapeTargetConflictError).conflicts).toEqual([
-      expect.objectContaining({ itemId: "one", targetPath }),
-    ]);
-  });
-
-  it("rejects duplicate planned main-video names inside the batch", async () => {
-    const first = join(root, "source", "first.mp4");
-    const second = join(root, "source", "second.mkv");
-    await mkdir(dirname(first), { recursive: true });
-    await writeFile(first, "first");
-    await writeFile(second, "second");
-
+describe("inventory target conflicts", () => {
+  it("rejects existing and batch-duplicate extensionless movie names without inspecting unrelated entries", async () => {
+    await fs.writeFile(join(root, "ABC-123.mkv"), "existing");
+    const missing = join(root, "missing");
+    await fs.mkdir(missing);
+    await fs.symlink(missing, join(root, "unrelated.link"), process.platform === "win32" ? "junction" : "dir");
+    await fs.rm(missing, { recursive: true });
+    const inventory = new DirectoryInventory();
+    const stats = vi.spyOn(fs, "stat");
     await expect(
-      validatePreparedScrapeFiles([
-        target("one", first, join(root, "output", "ABC-123.mp4")),
-        target("two", second, join(root, "output", "ABC-123.mkv")),
-      ]),
+      checkScrapeTargets([group(target("one", join(root, "source.mp4"), join(root, "ABC-123.mp4")))], inventory),
+    ).rejects.toBeInstanceOf(ScrapeTargetConflictError);
+    await expect(
+      checkScrapeTargets(
+        [
+          group(target("one", join(root, "one.mp4"), join(root, "output", "DEF-456.mp4"))),
+          group(target("two", join(root, "two.mp4"), join(root, "output", "DEF-456.mkv"))),
+        ],
+        inventory,
+      ),
     ).rejects.toMatchObject({
       conflicts: [expect.objectContaining({ itemId: "one" }), expect.objectContaining({ itemId: "two" })],
     });
-  });
-
-  it("allows multipart targets, different directories, attachments, and in-place rescrapes", async () => {
-    const first = join(root, "source", "ABC-123-CD1.mp4");
-    const second = join(root, "source", "ABC-123-CD2.mp4");
-    await mkdir(dirname(first), { recursive: true });
-    await writeFile(first, "first");
-    await writeFile(second, "second");
-    await writeFile(join(root, "source", "ABC-123-CD1.nfo"), "nfo");
-    await writeFile(join(root, "source", "ABC-123-CD1-poster.jpg"), "poster");
-    await writeFile(join(root, "source", "ABC-123-CD1-trailer.mp4"), "trailer");
-
     await expect(
-      validatePreparedScrapeFiles([
-        target("one", first, first),
-        target("two", second, join(root, "other", "ABC-123-CD2.mp4")),
-        target("three", join(root, "third.mp4"), join(root, "another", "ABC-123-CD1.mkv")),
-      ]),
-    ).resolves.toBeUndefined();
-  });
-
-  it.each([
-    {
-      label: "mixed multipart and standalone files",
-      items: [
-        ["one", "ABC-123-CD1.mp4", 1],
-        ["two", "ABC-123.mp4", null],
-      ] as const,
-      message: "同时包含分盘文件和独立文件",
-    },
-    {
-      label: "duplicate part numbers",
-      items: [
-        ["one", "ABC-123-CD1.mp4", 1],
-        ["two", "ABC-123-part1.mkv", 1],
-      ] as const,
-      message: "重复分盘号：1",
-    },
-  ])("rejects ambiguous candidate sets: $label", async ({ items, message }) => {
-    const sourceDirectory = join(root, "source");
-    await mkdir(sourceDirectory, { recursive: true });
-    const prepared = items.map(([id, name, partNumber]) => {
-      const sourcePath = join(sourceDirectory, name);
-      return target(id, sourcePath, join(root, "output", name), "ABC-123", partNumber);
-    });
-
-    await expect(validatePreparedScrapeFiles(prepared)).rejects.toMatchObject({
-      conflicts: prepared.map(({ itemId }) =>
-        expect.objectContaining({ itemId, message: expect.stringContaining(message) }),
+      checkScrapeTargets(
+        [
+          group(
+            target("one", join(root, "IPX-123.mp4"), join(root, "output", "IPX-123.mp4")),
+            target("two", join(root, "IPX-123-影片日文名称.mp4"), join(root, "output", "IPX-123.mp4")),
+          ),
+        ],
+        inventory,
       ),
+    ).rejects.toMatchObject({
+      conflicts: [
+        expect.objectContaining({
+          itemId: "one",
+          message: "同一影片的多个视频目标文件名重复，请调整命名规则以区分这些视频",
+        }),
+        expect.objectContaining({
+          itemId: "two",
+          message: "同一影片的多个视频目标文件名重复，请调整命名规则以区分这些视频",
+        }),
+      ],
     });
+    await expect(
+      checkScrapeTargets(
+        [
+          group(target("one", join(root, "left.mp4"), join(root, "left.mp4"), [join(root, "poster.jpg")])),
+          group(target("two", join(root, "right.mp4"), join(root, "right.mp4"), [join(root, "poster.jpg")])),
+        ],
+        inventory,
+      ),
+    ).rejects.toMatchObject({
+      conflicts: [expect.objectContaining({ itemId: "one" }), expect.objectContaining({ itemId: "two" })],
+    });
+    expect(stats).not.toHaveBeenCalled();
   });
 
-  it("allows multiple optional files for the same movie", async () => {
-    const sourceDirectory = join(root, "source");
+  it("allows in-place alias rescrapes, multipart targets, separate directories, and generated sidecars", async () => {
+    const source = join(root, "media");
+    const alias = join(root, "alias");
+    await fs.mkdir(source);
+    await fs.symlink(source, alias, process.platform === "win32" ? "junction" : "dir");
+    await fs.writeFile(join(source, "ABC-123-CD1.mp4"), "video");
+    await fs.writeFile(join(source, "ABC-123-CD1-trailer.mp4"), "feature");
+    const inventory = new DirectoryInventory();
+    await inventory.entries(source);
+    const listing = vi.spyOn(fs, "readdir");
+    const stats = vi.spyOn(fs, "stat");
+    const refs = [{ rootId: "source", relativePath: "ABC-123-CD1.mp4" }];
+    const resolveRoot = async (id: string) => ({ id, hostPath: alias });
+    await Promise.all([
+      inventory.admitRefs(refs, resolveRoot),
+      inventory.admitRefs(refs, resolveRoot),
+      inventory.stats(join(source, "ABC-123-CD1.mp4")),
+    ]);
+    expect(stats).toHaveBeenCalledTimes(1);
+    await inventory.admitRefs(refs, resolveRoot);
+    expect(stats).toHaveBeenCalledTimes(1);
+    await fs.link(join(source, "ABC-123-CD1.mp4"), join(source, "hardlink.mp4"));
+    const distinct = [...refs, { rootId: "source", relativePath: "hardlink.mp4" }];
+    if (process.platform !== "win32") {
+      await fs.symlink(join(source, "ABC-123-CD1.mp4"), join(source, "symlink.mp4"));
+      distinct.push({ rootId: "source", relativePath: "symlink.mp4" });
+    }
+    await expect(inventory.admitRefs(distinct, resolveRoot)).resolves.toEqual(distinct);
+    await fs.writeFile(join(source, "ABC-123-CD1.nfo"), "<movie><num>ABC-123</num><title>Title</title></movie>");
+    const reads = vi.spyOn(fs, "readFile");
+    expect(reads).not.toHaveBeenCalled();
+    await Promise.all([
+      inventory.loadNfo(join(source, "ABC-123-CD1.nfo")),
+      inventory.loadNfo(join(alias, "ABC-123-CD1.nfo")),
+      inventory.readNfo(join(alias, "ABC-123-CD1.nfo")),
+    ]);
+    expect(reads).toHaveBeenCalledTimes(1);
     await expect(
-      validatePreparedScrapeFiles([
-        target(
-          "1080p",
-          join(sourceDirectory, "ABC-123-1080p.mp4"),
-          join(root, "output", "ABC-123-1080p.mp4"),
-          "ABC-123",
-          null,
-        ),
-        target("4k", join(sourceDirectory, "ABC-123-4K.mp4"), join(root, "output", "ABC-123-4K.mp4"), "ABC-123", null),
-      ]),
+      checkScrapeTargets(
+        [
+          group(
+            target("one", join(alias, "ABC-123-CD1.mp4"), join(source, "ABC-123-CD1.mp4")),
+            target("two", join(source, "ABC-123-CD2.mp4"), join(source, "ABC-123-CD2.mp4")),
+          ),
+          group(target("three", join(source, "other.mp4"), join(root, "other", "ABC-123-CD1.mkv"))),
+        ],
+        inventory,
+      ),
     ).resolves.toBeUndefined();
+    expect(listing.mock.calls.filter(([path]) => path === source)).toHaveLength(0);
   });
 });

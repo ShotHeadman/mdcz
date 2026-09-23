@@ -34,21 +34,7 @@
       "idx": 4,
       "version": "7",
       "when": 1787961600000,
-      "tag": "0004_publication_and_directory_tasks",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1789257600000,
-      "tag": "0005_movie_file_model",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1789344000000,
-      "tag": "0006_drop_maintenance_directory_tasks",
+      "tag": "0004_movie_file_model",
       "breakpoints": true
     }
   ]

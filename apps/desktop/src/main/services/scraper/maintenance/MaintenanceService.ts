@@ -1,20 +1,17 @@
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
-import { toRootRelativePath } from "@mdcz/media-store";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import {
-  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { registeredOutputPaths } from "@mdcz/runtime/publication";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { DirectorySource } from "@mdcz/shared/directoryTasks";
@@ -77,43 +74,34 @@ export class MaintenanceService {
       deps.coordinator ??
       new MaintenanceSessionCoordinator({
         roots: {
+          assertRootIntegrity: (ids) => mediaRoots.assertRootIntegrity(ids),
           get: async (rootId) => {
             return await mediaRoots.get(rootId);
           },
           list: async () => await mediaRoots.listRoots(),
-          ensurePathRecord: async (input) => await mediaRoots.ensurePathRecord(input),
         },
         runtime: this.runtime,
-        discoverDirectory: async (scope, configuration, signal, onProgress) => {
-          const generatedStrms = await registeredOutputPaths(
-            (await this.persistenceService.getState()).repositories.library,
-            (id) => mediaRoots.get(id),
-            "strm",
-          );
+        discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
           return (
             await discoverDirectoryFiles({
               scope,
               configuration,
               signal,
               onProgress,
-              generatedStrms,
+              inventory,
               mediaRoots,
               platform: "desktop",
             })
           ).refs;
         },
-        library: createMaintenanceLibraryPort({
-          getRepositories: async () => {
+        persistence: {
+          get: async () => {
             const { repositories } = await this.persistenceService.getState();
             return {
               library: repositories.library,
-              mediaRoots: repositories.mediaRoots,
-              publicationJournal: repositories.publicationJournal,
-              libraryRepairIssues: repositories.libraryRepairIssues,
             };
           },
-          resolveRoot: async (rootId) => await mediaRoots.get(rootId),
-        }),
+        },
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       });
   }
@@ -150,14 +138,17 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     const configuration = await this.runtime.getConfiguration();
     const directoryScope = createDirectoryScope(source, targetDir ?? source.scanDir, configuration, "maintenance");
-    const root = await this.mediaRoots.registerPathIntent(directoryScope.scanDir);
-    const output = await this.mediaRoots.registerPathIntent(directoryScope.targetDir);
+    const scan = await this.mediaRoots.admitDirectory({ hostPath: directoryScope.scanDir });
+    const output =
+      directoryScope.targetDir === directoryScope.scanDir
+        ? { id: scan.root.id, relativeDirectory: scan.relativeDirectory }
+        : await this.mediaRoots.prepareOutputDirectory({ hostPath: directoryScope.targetDir });
     return await this.coordinator.startPreview({
-      rootId: root.id,
+      rootId: scan.root.id,
       presetId,
       refs: [],
       outputRootId: output.id,
-      outputRelativeDirectory: toRootRelativePath(output, directoryScope.targetDir),
+      outputRelativeDirectory: output.relativeDirectory,
       directoryScope,
       configuration,
     });
@@ -188,7 +179,7 @@ export class MaintenanceService {
     if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.requireActiveSession();
     if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
-    if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    if (presetId === "inspect_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
     if (selections.some((selection) => !previewIds.has(selection.previewId))) {
       throw new Error("维护项目不属于当前任务");

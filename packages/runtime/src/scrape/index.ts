@@ -2,8 +2,8 @@ export * from "./ActorImageService";
 export * from "./actorOutput";
 export * from "./aggregation";
 export * from "./canonicalizeActorAliases";
-export * from "./confirmUncensored";
 export * from "./crawlerOptions";
+export * from "./DirectoryInventory";
 export * from "./directoryDiscovery";
 export * from "./download";
 export * from "./executionPolicy";
@@ -11,11 +11,10 @@ export {
   buildScrapePublicationKey,
   FileOrganizer,
   type OrganizePlan,
-  resolveMetadataOutputDir,
+  type ResolvedPublicationLayout,
 } from "./FileOrganizer";
 export * from "./FileScraper";
 export * from "./media";
-export * from "./mountedRootScrapeRuntime";
 export * from "./nfo";
 export * from "./organize/NamingEngine";
 export * from "./output/applyPosterTagBadges";
@@ -27,7 +26,9 @@ export * from "./PosterCropService";
 export * from "./PosterWatermarkService";
 export * from "./posterBadges";
 export * from "./preflightScrapeTask";
+export * from "./registeredArtifacts";
 export * from "./restGate";
+export * from "./ScrapeRunner";
 export * from "./TranslateService";
 export * from "./translate/engines/LlmApiClient";
 export * from "./translate/shared";

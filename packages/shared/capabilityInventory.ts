@@ -193,8 +193,7 @@ export const CROSS_HOST_CAPABILITIES = [
   {
     desktop: IpcChannel.Scraper_ConfirmUncensored,
     server: "scrape.confirmUncensored",
-    status: "blocked",
-    reason: SCRAPE_EXECUTION_REASON,
+    status: "aligned",
   },
   {
     desktop: IpcChannel.File_NfoRead,
@@ -382,10 +381,7 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "scans.start", reason: "Server scan task API." },
   { path: "scrape.removeRecord", reason: "Removes library records while retaining all files." },
   { path: "scrape.liveRuns", reason: "Web-only authoritative in-process scrape snapshot read." },
-  {
-    path: "scrape.pendingUncensoredConfirmation",
-    reason: "Web-only durable post-processing query for terminal scrape outcomes.",
-  },
+  { path: "scrape.pendingUncensoredConfirmation", reason: "Web task synchronization for pending uncensored entries." },
   { path: "scrape.result", reason: "Server persisted scrape result detail." },
   { path: "scrape.snapshot", reason: "Server scrape task snapshot API; desktop uses Scraper_GetStatus." },
   { path: "scrape.history", reason: "Server scrape history query; desktop stores in-process." },

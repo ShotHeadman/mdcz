@@ -38,11 +38,8 @@ describe("Crawler aggregation real fixture replay integration", () => {
 
     const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
     const config = makeScrapeConfig([Website.DMM, Website.DMM_TV, Website.AVBASE]);
-    const service = new AggregationService(provider);
-
-    const aggregated = await runWithScrapeItem(item, async () => {
-      return await service.aggregate(number, config);
-    });
+    const service = new AggregationService(provider, { config });
+    const aggregated = await runWithScrapeItem(item, async () => await service.aggregate(number));
 
     expect(aggregated).not.toBeNull();
     if (!aggregated) throw new Error("Expected aggregated result");

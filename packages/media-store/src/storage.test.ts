@@ -1,5 +1,5 @@
 import type * as NodeFsPromises from "node:fs/promises";
-import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +38,7 @@ import {
   atomicWriteFile,
   atomicWriteRootFile,
   createMediaRoot,
+  inspectFileEntry,
   listRootDirectory,
   listRootFiles,
   normalizeRootRelativePath,
@@ -84,6 +85,7 @@ describe("storage root-relative paths", () => {
       id: "root-1",
       displayName: "Movies",
       hostPath: path.resolve(directory.path),
+      realPath: null,
       createdAt: new Date("2026-04-28T00:00:00.000Z"),
       updatedAt: new Date("2026-04-28T00:00:00.000Z"),
     });
@@ -227,6 +229,15 @@ describe("mounted filesystem helpers", () => {
       "links/linked-dir/target.mp4",
       "movie.mkv",
     ]);
+    const direct = await inspectFileEntry(path.join(root.hostPath, "linked/target.mp4"));
+    const aliased = await inspectFileEntry(path.join(root.hostPath, "links/linked-dir/target.mp4"));
+    expect(aliased.entryIdentity).toBe(direct.entryIdentity);
+    expect(aliased.traversalIdentity).toBe(direct.traversalIdentity);
+    await link(path.join(root.hostPath, "movie.mkv"), path.join(root.hostPath, "hardlink.mkv"));
+    const original = await inspectFileEntry(path.join(root.hostPath, "movie.mkv"));
+    const hardlink = await inspectFileEntry(path.join(root.hostPath, "hardlink.mkv"));
+    expect(hardlink.entryIdentity).not.toBe(original.entryIdentity);
+    expect(hardlink.referentFacts.ino).toBe(original.referentFacts.ino);
   });
 
   it("maps missing filesystem paths to stable missing-path errors", async () => {

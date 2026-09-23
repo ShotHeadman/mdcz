@@ -1,5 +1,4 @@
 import { type Configuration, configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse } from "@mdcz/runtime/crawler/base/types";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -12,8 +11,9 @@ import {
   TranslateService,
 } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager, prepareAndExecuteFile } from "../../../helpers/scraper";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { createTempDirectory } from "../../../harness/tempDirectory";
+import { createFileScraper, mockConfigManager, prepareFile } from "../../../helpers/scraper";
 
 class OrderedStubCrawlerProvider extends CrawlerProvider {
   readonly calledSites: Website[] = [];
@@ -58,14 +58,16 @@ describe("FileScraper site aggregation", () => {
 
   it("uses configured filename ignore tokens before aggregation receives the authoritative number", async () => {
     const crawlerProvider = new OrderedStubCrawlerProvider();
-    const filePath = "/tmp/[7SiS-001]+ ABF-252.mp4";
-    mockConfigManager(
-      createConfig({
-        filenameIgnoreTokens: ["[7sis-001]+"],
-      }),
-    );
+    const directory = await createTempDirectory("scrape-ignore-tokens");
+    onTestFinished(directory.cleanup);
+    const filePath = join(directory.path, "[7SiS-001]+ ABF-252.mp4");
+    await writeFile(filePath, "video");
+    const config = createConfig({
+      filenameIgnoreTokens: ["[7sis-001]+"],
+    });
+    mockConfigManager(config);
     const scraper = createFileScraper({
-      aggregationService: new AggregationService(crawlerProvider),
+      aggregationService: new AggregationService(crawlerProvider, { config }),
       translateService: new TranslateService(new NetworkClient()),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(new NetworkClient(), {
@@ -74,9 +76,10 @@ describe("FileScraper site aggregation", () => {
       fileOrganizer: new FileOrganizer(),
     });
 
-    const result = await prepareAndExecuteFile(scraper, filePath, undefined, undefined, {
+    const result = await prepareFile(scraper, filePath, undefined, undefined, {
       roots: [{ id: "test", hostPath: "/tmp" }],
     });
+    if (result.status === "prepared") throw new Error("Expected all configured crawlers to miss");
 
     expect(crawlerProvider.calledNumbers).toEqual(["ABF-252", "ABF-252", "ABF-252"]);
     expect(result.fileName).toBe("[7SiS-001]+ ABF-252");
@@ -84,3 +87,6 @@ describe("FileScraper site aggregation", () => {
     expect(result.crawlerData?.number ?? result.fileName).toContain("ABF-252");
   });
 });
+
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";

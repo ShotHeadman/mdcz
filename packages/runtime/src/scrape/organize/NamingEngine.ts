@@ -9,7 +9,6 @@ import { resolveFileInfoSubtitleTag } from "../utils/subtitles";
 export interface NamingLayout {
   folderRelativePath: string;
   targetVideoFileName: string;
-  strmFileName: string;
   nfoFileName: string;
 }
 
@@ -366,7 +365,6 @@ export class NamingEngine {
     return {
       folderRelativePath,
       targetVideoFileName,
-      strmFileName: `${fileBaseName}${partSuffix}.strm`,
       nfoFileName,
     };
   }

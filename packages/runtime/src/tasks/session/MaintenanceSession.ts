@@ -35,7 +35,7 @@ export interface MaintenanceBatchItem {
   updatedAt: Date;
 }
 
-export class StaleMaintenanceGenerationError extends Error {}
+export class InactiveMaintenanceSessionError extends Error {}
 
 export class MaintenanceSession {
   readonly id: string;
@@ -48,7 +48,6 @@ export class MaintenanceSession {
   readonly outputRelativeDirectory: string;
   private phaseValue: "preview" | "apply" = "preview";
   private statusValue: MaintenanceSessionStatus = "queued";
-  private generationValue: number;
   private refsValue: MaintenanceSessionRef[];
   private timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
   private errorValue: string | null = null;
@@ -62,9 +61,7 @@ export class MaintenanceSession {
     rootId: string;
     presetId: MaintenancePresetId;
     refs: readonly MaintenanceSessionRef[];
-    generation: number;
     now?: Date;
-    initialEntries?: readonly LocalScanEntry[];
     outputRootId?: string;
     outputRelativeDirectory?: string;
   }) {
@@ -76,12 +73,8 @@ export class MaintenanceSession {
     this.presetId = input.presetId;
     this.outputRootId = input.outputRootId ?? input.rootId;
     this.outputRelativeDirectory = input.outputRelativeDirectory ?? "";
-    this.generationValue = input.generation;
     this.refsValue = input.refs.map((ref) => ({ ...ref }));
     this.timestamps = { createdAt: now, updatedAt: now, startedAt: null, completedAt: null };
-    if (input.initialEntries) {
-      this.populateInitialEntries(input.initialEntries, now);
-    }
   }
 
   get phase(): "preview" | "apply" {
@@ -90,10 +83,6 @@ export class MaintenanceSession {
 
   get status(): MaintenanceSessionStatus {
     return this.statusValue;
-  }
-
-  get generation(): number {
-    return this.generationValue;
   }
 
   get refs(): readonly MaintenanceSessionRef[] {
@@ -108,14 +97,14 @@ export class MaintenanceSession {
     return ACTIVE_MAINTENANCE_STATUSES.includes(this.statusValue);
   }
 
-  assertGeneration(generation: number, statuses?: readonly MaintenanceSessionStatus[]): void {
-    if (this.generationValue !== generation || (statuses && !statuses.includes(this.statusValue))) {
-      throw new StaleMaintenanceGenerationError(`Stale maintenance result for ${this.id}`);
+  assertActive(statuses?: readonly MaintenanceSessionStatus[]): void {
+    if (statuses && !statuses.includes(this.statusValue)) {
+      throw new InactiveMaintenanceSessionError(`Inactive maintenance result for ${this.id}`);
     }
   }
 
-  startRunning(generation: number): void {
-    this.assertGeneration(generation, ["queued", "paused"]);
+  startRunning(): void {
+    this.assertActive(["queued", "paused"]);
     const now = new Date();
     this.statusValue = "running";
     this.errorValue = null;
@@ -127,20 +116,20 @@ export class MaintenanceSession {
     };
   }
 
-  startDiscovery(generation: number): void {
-    this.assertGeneration(generation, ["running"]);
+  startDiscovery(): void {
+    this.assertActive(["running"]);
     this.statusValue = "discovering";
     this.touch();
   }
 
-  recordDiscovery(generation: number, progress: DiscoveryProgress): void {
-    this.assertGeneration(generation, ["discovering", "stopping"]);
+  recordDiscovery(progress: DiscoveryProgress): void {
+    this.assertActive(["discovering", "stopping"]);
     this.discoveryValue = structuredClone(progress);
     this.touch();
   }
 
-  fixDiscoveredRefs(generation: number, refs: readonly MaintenanceSessionRef[]): void {
-    this.assertGeneration(generation, ["discovering"]);
+  fixDiscoveredRefs(refs: readonly MaintenanceSessionRef[]): void {
+    this.assertActive(["discovering"]);
     if (this.manifestFixed) throw new Error("维护文件清单已固定");
     this.refsValue = refs.map((ref) => ({ ...ref }));
     this.manifestFixed = true;
@@ -156,7 +145,7 @@ export class MaintenanceSession {
     return true;
   }
 
-  beginApply(selections: readonly MaintenanceApplySelection[]): { generation: number; batchId: string } {
+  beginApply(selections: readonly MaintenanceApplySelection[]): { batchId: string } {
     if (this.statusValue !== "completed" && this.statusValue !== "failed") {
       throw new Error("维护预览生成完成后才能应用");
     }
@@ -174,7 +163,13 @@ export class MaintenanceSession {
     for (const original of selections) {
       const selection = {
         previewId: original.previewId,
-        ...(original.fieldSelections ? { fieldSelections: { ...original.fieldSelections } } : {}),
+        ...((original.fieldSelections ?? this.draft.fieldSelections[original.previewId])
+          ? {
+              fieldSelections: {
+                ...(original.fieldSelections ?? this.draft.fieldSelections[original.previewId]),
+              },
+            }
+          : {}),
       };
       items.set(selection.previewId, {
         id: randomUUID(),
@@ -186,31 +181,25 @@ export class MaintenanceSession {
       });
       if (selection.fieldSelections) this.draft.fieldSelections[selection.previewId] = { ...selection.fieldSelections };
     }
-    this.generationValue += 1;
     this.phaseValue = "apply";
     this.statusValue = "queued";
     this.currentBatch = { id: randomUUID(), items };
     this.errorValue = null;
     this.timestamps = { ...this.timestamps, updatedAt: now, startedAt: null, completedAt: null };
-    return { generation: this.generationValue, batchId: this.currentBatch.id };
+    return { batchId: this.currentBatch.id };
   }
 
-  beginStopping(error: string): number {
+  beginStopping(error: string): void {
     if (["completed", "failed", "stopped", "interrupted", "stopping"].includes(this.statusValue)) {
-      return this.generationValue;
+      return;
     }
     this.statusValue = "stopping";
     this.errorValue = error;
     this.touch();
-    return this.generationValue;
   }
 
-  invalidate(): void {
-    this.generationValue += 1;
-  }
-
-  finish(generation: number, status: "completed" | "failed" | "stopped" | "interrupted", error: string | null): void {
-    this.assertGeneration(generation, ["running", "discovering", "stopping"]);
+  finish(status: "completed" | "failed" | "stopped" | "interrupted", error: string | null): void {
+    this.assertActive(["running", "discovering", "stopping"]);
     const now = new Date();
     this.statusValue = status;
     this.errorValue = error;
@@ -239,18 +228,14 @@ export class MaintenanceSession {
     }
   }
 
-  initializeEntries(generation: number, entries: readonly LocalScanEntry[]): void {
-    this.assertGeneration(generation, ["running"]);
+  initializeEntries(entries: readonly LocalScanEntry[]): void {
+    this.assertActive(["running"]);
     if (this.previews.size) throw new Error("维护文件清单已初始化");
     this.populateInitialEntries(entries, new Date());
   }
 
-  markPreviewProcessing(
-    generation: number,
-    rootId: string,
-    relativePath: string,
-  ): MaintenanceSessionPreview | undefined {
-    this.assertGeneration(generation, ["running"]);
+  markPreviewProcessing(rootId: string, relativePath: string): MaintenanceSessionPreview | undefined {
+    this.assertActive(["running"]);
     const preview = [...this.previews.values()].find(
       (item) => item.rootId === rootId && item.relativePath === relativePath,
     );
@@ -262,10 +247,9 @@ export class MaintenanceSession {
   }
 
   commitPreview(
-    generation: number,
     preview: Omit<MaintenanceSessionPreview, "id" | "sessionId" | "presetId" | "createdAt" | "updatedAt">,
   ): MaintenanceSessionPreview {
-    this.assertGeneration(generation, ["running", "paused", "stopping"]);
+    this.assertActive(["running", "paused", "stopping"]);
     const existing = [...this.previews.values()].find(
       (item) => item.rootId === preview.rootId && item.relativePath === preview.relativePath,
     );
@@ -279,8 +263,9 @@ export class MaintenanceSession {
       existing.proposedCrawlerData = preview.proposedCrawlerData ?? null;
       existing.imageAlternatives = preview.imageAlternatives;
       existing.entry = preview.entry ?? existing.entry;
-      existing.librarySource = preview.librarySource ?? existing.librarySource;
+      existing.movieGroup = preview.movieGroup;
       existing.affectedFiles = preview.affectedFiles;
+      existing.files = preview.files;
       existing.updatedAt = now;
       this.touch(now);
       return this.clonePreview(existing);
@@ -303,26 +288,32 @@ export class MaintenanceSession {
     return preview ? this.clonePreview(preview) : undefined;
   }
 
-  updateDraft(previewId: string, fieldSelections?: Record<string, "old" | "new">): void {
+  updateDraft(
+    previewId: string,
+    fieldSelections?: Record<string, "old" | "new">,
+    paths?: Pick<MaintenanceSessionPreview, "pathDiff" | "affectedFiles">,
+  ): void {
     const preview = this.previews.get(previewId);
     if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
       throw new Error("维护预览不存在或已提交");
     }
     if (fieldSelections) this.draft.fieldSelections[previewId] = { ...fieldSelections };
+    if (paths) {
+      preview.pathDiff = paths.pathDiff;
+      preview.affectedFiles = paths.affectedFiles;
+      preview.updatedAt = new Date();
+    }
     this.touch();
   }
 
-  markApplyProcessing(
-    generation: number,
-    item: MaintenanceBatchItem,
-  ): {
+  markApplyProcessing(item: MaintenanceBatchItem): {
     item: MaintenanceBatchItem;
     preview?: MaintenanceSessionPreview;
   } {
-    this.assertGeneration(generation, ["running"]);
+    this.assertActive(["running"]);
     const current = this.currentBatch?.items.get(item.selection.previewId);
     if (!current || current.id !== item.id || current.status !== "pending") {
-      throw new StaleMaintenanceGenerationError(`Stale maintenance item for ${this.id}`);
+      throw new InactiveMaintenanceSessionError(`Inactive maintenance item for ${this.id}`);
     }
     current.status = "processing";
     current.error = null;
@@ -331,8 +322,8 @@ export class MaintenanceSession {
     return { item: this.cloneBatchItem(current), preview: this.preview(item.selection.previewId) };
   }
 
-  commitItem(generation: number, item: MaintenanceBatchItem, result: MaintenanceApplyItemResult): boolean {
-    this.assertGeneration(generation, ["running", "paused", "stopping"]);
+  commitItem(item: MaintenanceBatchItem, result: MaintenanceApplyItemResult): boolean {
+    this.assertActive(["running", "paused", "stopping"]);
     const current = this.currentBatch?.items.get(item.selection.previewId);
     if (!current || current.id !== item.id || TERMINAL_ITEM_STATUSES.has(current.status)) return false;
     const preview = this.previews.get(item.selection.previewId);
@@ -350,12 +341,12 @@ export class MaintenanceSession {
     return true;
   }
 
-  skipOutstanding(generation: number, error: string): boolean {
-    this.assertGeneration(generation, ["running", "paused", "stopping"]);
+  skipOutstanding(error: string): boolean {
+    this.assertActive(["running", "paused", "stopping"]);
     let changed = false;
     for (const item of this.currentBatch?.items.values() ?? []) {
       if (TERMINAL_ITEM_STATUSES.has(item.status)) continue;
-      changed = this.commitItem(generation, item, { status: "skipped", error }) || changed;
+      changed = this.commitItem(item, { status: "skipped", error }) || changed;
     }
     return changed;
   }
@@ -467,7 +458,6 @@ export class MaintenanceSession {
       presetId: this.presetId,
       phase: this.phaseValue,
       status: this.statusValue,
-      generation: this.generationValue,
       refs: this.refsValue.map((ref) => ({ ...ref })),
       ...this.progress(),
       totalEntries: this.manifestFixed ? this.progress().totalEntries : null,

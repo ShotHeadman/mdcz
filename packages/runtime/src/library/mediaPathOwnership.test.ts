@@ -2,60 +2,29 @@ import { describe, expect, it } from "vitest";
 import { MediaPathOwnership } from "./mediaPathOwnership";
 
 describe("MediaPathOwnership", () => {
-  it("rejects concurrent ownership of the same normalized root-relative path", () => {
+  it("acquires physical paths atomically and allows independent files", () => {
     const ownership = new MediaPathOwnership();
-    const release = ownership.acquire("root-1", "movies\\ABC-001.mp4");
-
-    expect(() => ownership.acquire("root-1", "movies/ABC-001.mp4")).toThrow("already being modified");
-    expect(() => ownership.acquire("root-2", "movies/ABC-001.mp4")).not.toThrow();
-
+    const first = ownership.acquire("/media/b.mp4");
+    expect(() => ownership.acquireAll(["/media/a.mp4", "/media/b.mp4"])).toThrow("already being modified");
+    const independent = ownership.acquire("/media/a.mp4");
+    independent();
+    first();
+    const release = ownership.acquireAll(["/media/b.mp4", "/media/a.mp4"]);
+    expect(() => ownership.acquire("/media/a.mp4")).toThrow("already being modified");
     release();
-    expect(() => ownership.acquire("root-1", "movies/ABC-001.mp4")).not.toThrow();
+    release();
+    ownership.acquire("/media/a.mp4")();
+    expect(() => ownership.acquire("")).toThrow("Media path key is required");
   });
 
-  it("rejects paths that escape their root", () => {
+  it("merges aliases and preserves the outer reservation after a nested release", () => {
     const ownership = new MediaPathOwnership();
-    expect(() => ownership.acquire("root-1", "../outside.mp4")).toThrow("Invalid media relative path");
-  });
-
-  it("acquires every ref all-or-nothing in sorted order", () => {
-    const ownership = new MediaPathOwnership();
-    const releaseFirst = ownership.acquire("root-1", "b.mp4");
-
-    expect(() =>
-      ownership.acquireAll([
-        { rootId: "root-1", relativePath: "a.mp4" },
-        { rootId: "root-1", relativePath: "b.mp4" },
-      ]),
-    ).toThrow("already being modified");
-
-    const releaseA = ownership.acquire("root-1", "a.mp4");
-    releaseA();
-    releaseFirst();
-    const releaseAll = ownership.acquireAll([
-      { rootId: "root-2", relativePath: "z.mp4" },
-      { rootId: "root-1", relativePath: "a.mp4" },
-    ]);
-    expect(() => ownership.acquire("root-1", "a.mp4")).toThrow("already being modified");
-    expect(() => ownership.acquire("root-2", "z.mp4")).toThrow("already being modified");
-    releaseAll();
-  });
-
-  it("allows one operation to extend its reservation without exposing paths during nested release", () => {
-    const ownership = new MediaPathOwnership();
-    const releaseSession = ownership.acquire("root-1", "video.mp4", "maintenance-1");
-    const releasePublication = ownership.acquireAll(
-      [
-        { rootId: "root-1", relativePath: "video.mp4" },
-        { rootId: "root-1", relativePath: "video.nfo" },
-      ],
-      "maintenance-1",
-    );
-
-    releasePublication();
-    expect(() => ownership.acquire("root-1", "video.mp4")).toThrow("already being modified");
-    expect(() => ownership.acquire("root-1", "video.nfo")).not.toThrow();
-    releaseSession();
-    expect(() => ownership.acquire("root-1", "video.mp4")).not.toThrow();
+    const outer = ownership.acquire("/media/video.mp4", "maintenance");
+    const inner = ownership.acquireAll(["/media/video.mp4", "/media/video.mp4", "/media/video.nfo"], "maintenance");
+    inner();
+    expect(() => ownership.acquire("/media/video.mp4")).toThrow("already being modified");
+    ownership.acquire("/media/video.nfo")();
+    outer();
+    ownership.acquire("/media/video.mp4")();
   });
 });

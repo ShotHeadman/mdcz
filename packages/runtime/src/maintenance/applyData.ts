@@ -292,7 +292,12 @@ const buildAssetDecisions = (
     const selection = fieldSelections?.[diff.field] ?? getDefaultMaintenanceFieldSelection(diff);
 
     if (diff.field === "thumb_url" && diff.kind === "image") {
+      assetDecisions.thumb = selection === "old" ? "preserve" : "replace";
       assetDecisions.fanart = selection === "old" ? "preserve" : "replace";
+    }
+
+    if (diff.field === "poster_url" && diff.kind === "image") {
+      assetDecisions.poster = selection === "old" ? "preserve" : "replace";
     }
 
     if (diff.field === "scene_images" && diff.kind === "imageCollection") {

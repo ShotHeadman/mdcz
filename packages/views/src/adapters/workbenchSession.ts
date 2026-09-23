@@ -122,10 +122,10 @@ export interface UncensoredConfirmationSelection {
 export const buildUncensoredConfirmationItems = (
   ambiguousItems: AmbiguousUncensoredItemDto[],
   selections: UncensoredConfirmationSelection[],
-): Array<{ itemId: string; choice: UncensoredChoice }> => {
+): Array<{ fileId: string; choice: UncensoredChoice }> => {
   const choicesById = new Map(selections.map((selection) => [selection.id, selection.choice]));
   return ambiguousItems.map((item) => ({
-    itemId: item.fileId,
+    fileId: item.fileId,
     choice: choicesById.get(item.id) ?? "uncensored",
   }));
 };
@@ -177,7 +177,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     await options.port.preview(refs, options.presetId, options.targetDir);
     await options.onRefreshConfig?.();
     options.toast.success(
-      options.presetId === "read_local" ? `本地读取已启动，共 ${options.candidates.length} 项` : "维护预览已启动",
+      options.presetId === "inspect_local" ? `本地读取已启动，共 ${options.candidates.length} 项` : "维护预览已启动",
     );
   } catch (error) {
     if (options.toErrorMessage(error) === "Operation aborted") {

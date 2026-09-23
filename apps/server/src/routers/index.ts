@@ -1,3 +1,4 @@
+import { MediaDirectoryUnavailableError } from "@mdcz/runtime/library";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   authLoginInputSchema,
@@ -239,9 +240,15 @@ export const appRouter = t.router({
     resume: protectedProcedure
       .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.resume(input)),
-    start: protectedProcedure
-      .input(maintenanceStartInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.start(input)),
+    start: protectedProcedure.input(maintenanceStartInputSchema).mutation(async ({ ctx, input }) => {
+      try {
+        return await ctx.services.maintenance.start(input);
+      } catch (error) {
+        if (error instanceof MediaDirectoryUnavailableError)
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        throw error;
+      }
+    }),
     stop: protectedProcedure
       .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.stop(input)),
@@ -317,7 +324,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.rerunDirectory(input)).task.id })),
     confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        return { runId: await ctx.services.scrape.confirmUncensored(input) };
+        return await ctx.services.scrape.confirmUncensored(input);
       } catch (error) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -326,9 +333,15 @@ export const appRouter = t.router({
         });
       }
     }),
-    start: scrapeLaunchProcedure
-      .input(scrapeStartInputSchema)
-      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.start(input)).task.id })),
+    start: scrapeLaunchProcedure.input(scrapeStartInputSchema).mutation(async ({ ctx, input }) => {
+      try {
+        return { runId: (await ctx.services.scrape.start(input)).task.id };
+      } catch (error) {
+        if (error instanceof MediaDirectoryUnavailableError)
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        throw error;
+      }
+    }),
     stop: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: await ctx.services.scrape.stop(input) })),

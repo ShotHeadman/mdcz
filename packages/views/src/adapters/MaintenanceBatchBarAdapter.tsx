@@ -50,7 +50,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
   const presetMeta = getMaintenancePresetMeta(presetId);
   const supportsExecution = presetMeta.supportsExecution !== false;
-  const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const activeExecution = executionStatus !== "idle";
   const paused = executionStatus === "paused";
   const stopping = executionStatus === "stopping";
@@ -133,7 +133,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
   const handleExecute = async (previewMapOverride?: Record<string, MaintenancePreviewItem>) => {
     if (!supportsExecution) {
-      toast.info("“读取本地”预设只需扫描目录，无需执行。");
+      toast.info("“本地查看”预设只需扫描目录，无需执行。");
       return;
     }
 

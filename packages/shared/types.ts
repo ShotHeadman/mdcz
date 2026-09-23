@@ -96,6 +96,7 @@ export interface DownloadedAssets {
 }
 
 export interface ScrapeResult {
+  size?: number;
   resultId?: string;
   fileId: FileId;
   rootId: string;
@@ -125,7 +126,6 @@ export interface NfoLocalState {
 export interface UncensoredConfirmResultItem {
   fileId: FileId;
   sourceVideoPath: string;
-  sourceNfoPath?: string;
   targetVideoPath: string;
   targetNfoPath?: string;
   choice: UncensoredChoice;
@@ -140,9 +140,6 @@ export interface NamingPreviewItem {
   sourcePath?: string;
   mediaPath?: string;
   metadataDir?: string;
-  strmFileName?: string;
-  strmContent?: string;
-  subtitles?: string[];
   outputs?: string[];
   label: string;
   folder: string;
@@ -167,7 +164,7 @@ export interface IpcError {
 
 // ── Maintenance Mode ──────────────────────────────────────────────
 
-export type MaintenancePresetId = "read_local" | "refresh_data" | "organize_files" | "rebuild_all";
+export type MaintenancePresetId = "inspect_local" | "refresh_metadata" | "local_organize" | "rebuild_all";
 /** Assets discovered on disk for an existing video. */
 export interface DiscoveredAssets {
   thumb?: string;
@@ -184,7 +181,6 @@ export interface LocalScanEntry {
   ref: RootFileRef;
   fileInfo: FileInfo;
   nfoPath?: string;
-  strmPath?: string;
   crawlerData?: CrawlerData;
   nfoLocalState?: NfoLocalState;
   scanError?: string;
@@ -264,6 +260,8 @@ export interface MaintenanceImageAlternatives {
 }
 
 export interface MaintenanceAssetDecisions {
+  thumb?: "preserve" | "replace";
+  poster?: "preserve" | "replace";
   fanart?: "preserve" | "replace";
   sceneImages?: "preserve" | "replace";
   trailer?: "preserve" | "replace";

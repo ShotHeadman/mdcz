@@ -19,7 +19,6 @@ import { writeTaskEventsStream } from "./http/sse";
 import { defaultWebStaticDir, registerStaticWeb } from "./http/staticWeb";
 import { createServerMaintenanceRuntime } from "./maintenanceRuntimeFactory";
 import { appRouter } from "./routers";
-import { createServerScrapeRuntime } from "./scrapeRuntimeFactory";
 import type { ServerServiceOptions, ServerServices } from "./services";
 import { AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
@@ -32,7 +31,7 @@ import { ServerPersistenceService } from "./services/persistenceService";
 import { RuntimeActionService } from "./services/runtimeActionService";
 import { RuntimeLogService } from "./services/runtimeLogService";
 import { ScanQueueService } from "./services/scanQueueService";
-import { ScrapeService } from "./services/scrapeService";
+import { ScrapeService, type ScrapeServiceResources } from "./services/scrapeService";
 import { ServerPathService } from "./services/serverPathService";
 import { SystemService } from "./services/systemService";
 import { ToolsService } from "./services/toolsService";
@@ -47,6 +46,7 @@ export interface ServerResourceOverrides {
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
   mappingStore?: FileTranslationMappingStore;
+  aggregationService?: ScrapeServiceResources["aggregationService"];
   prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
 }
 
@@ -120,16 +120,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
       networkClient,
-      runtime: createServerScrapeRuntime({
-        config,
-        networkClient,
-        crawlerProvider,
-        imageHostCooldownStore,
-        actorImageService,
-        actorSourceProvider,
-        mappingStore,
-      }),
+      crawlerProvider,
       imageHostCooldownStore,
+      actorImageService,
+      actorSourceProvider,
+      mappingStore,
+      aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
   const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);

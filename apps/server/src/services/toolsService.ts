@@ -1,3 +1,4 @@
+import { registeredMediaLocations } from "@mdcz/runtime";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
@@ -12,7 +13,6 @@ import {
   probeMediaServer,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { registeredMediaLocations } from "@mdcz/runtime/publication";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
@@ -23,6 +23,7 @@ import {
   scanAmazonPosters,
   scanBatchNfoTranslations,
 } from "@mdcz/runtime/tools";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
 import type { ToolCatalogResponse, ToolExecuteInput, ToolExecuteResponse } from "@mdcz/shared/serverDtos";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
@@ -45,8 +46,8 @@ export interface ToolsServiceDependencies {
 
 export class ToolsService {
   private readonly networkClient: NetworkClient;
+  private readonly crawlerProvider: CrawlerProvider;
   private readonly actorSourceProvider: ActorSourceProvider;
-  private readonly aggregation: AggregationService;
   private readonly translate: TranslateService;
   private readonly localScanService = new LocalScanService(async (paths) => {
     const state = await this.persistence.getState();
@@ -64,7 +65,7 @@ export class ToolsService {
   ) {
     this.networkClient = deps.networkClient;
     this.actorSourceProvider = deps.actorSourceProvider;
-    this.aggregation = new AggregationService(deps.crawlerProvider);
+    this.crawlerProvider = deps.crawlerProvider;
     this.translate = new TranslateService(deps.networkClient);
     this.llmApiClient = new LlmApiClient(deps.networkClient);
   }
@@ -89,22 +90,24 @@ export class ToolsService {
         return { toolId: input.toolId, ok: true, message: `已创建刮削任务 ${task.task.id}`, data: task };
       }
       case "crawler-tester": {
-        const config = await this.config.get();
-        const result = await this.aggregation.aggregate(
-          input.number,
-          config,
-          undefined,
-          resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
-        );
-        if (!result) {
-          return { toolId: input.toolId, ok: false, message: "未抓取到可聚合结果" };
+        try {
+          const config = await this.config.get();
+          const result = await new AggregationService(this.crawlerProvider, { config }).aggregate(input.number, {
+            manualScrape: resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
+          });
+          return {
+            toolId: input.toolId,
+            ok: true,
+            message: `爬虫测试完成：${result.stats.successCount}/${result.stats.totalSites} 成功`,
+            data: result,
+          };
+        } catch (error) {
+          return {
+            toolId: input.toolId,
+            ok: false,
+            message: toErrorMessage(error),
+          };
         }
-        return {
-          toolId: input.toolId,
-          ok: true,
-          message: `爬虫测试完成：${result.stats.successCount}/${result.stats.totalSites} 成功`,
-          data: result,
-        };
       }
       case "media-library-tools": {
         const server = input.server ?? "jellyfin";
@@ -167,9 +170,8 @@ export class ToolsService {
               nfoGenerator: this.nfoGenerator,
               writeNfo: writePreparedNfo,
               publication: {
-                journal: state.repositories.publicationJournal,
                 outputs: state.repositories.library,
-                repairIssues: state.repositories.libraryRepairIssues,
+                library: state.repositories.library,
                 roots: await this.mediaRoots.listRoots(),
               },
             },
@@ -218,9 +220,8 @@ export class ToolsService {
           }
           const state = await this.persistence.getState();
           const results = await applyAmazonPosters(this.networkClient, items, {
-            journal: state.repositories.publicationJournal,
             outputs: state.repositories.library,
-            repairIssues: state.repositories.libraryRepairIssues,
+            library: state.repositories.library,
             roots: await this.mediaRoots.listRoots(),
           });
           return {

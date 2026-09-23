@@ -45,7 +45,15 @@ export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
 
 export type MaintenanceSessionPreviewStatus = "pending" | "processing" | "ready" | "blocked" | "applied" | "failed";
 
+export interface MaintenanceMovieGroup {
+  movieId: string;
+  files: Array<RootFileRef & { fileId: string }>;
+  assets: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
+}
+
 export interface MaintenanceSessionPreview {
+  files?: LocalScanEntry[];
+  movieGroup?: MaintenanceMovieGroup;
   affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   id: string;
   sessionId: string;
@@ -60,7 +68,6 @@ export interface MaintenanceSessionPreview {
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
   entry?: LocalScanEntry;
-  librarySource?: MaintenanceLibrarySource;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,14 +103,6 @@ export interface MaintenanceSessionEvent {
 export interface MaintenanceApplyItemResult {
   status: "success" | "failed" | "skipped";
   error?: string | null;
-  entry?: LocalScanEntry;
-  crawlerData?: CrawlerData;
-  fieldDiffs?: FieldDiff[];
-  unchangedFieldDiffs?: FieldDiff[];
-  pathDiff?: PathDiff;
-  outputRelativePath?: string;
-  outputSize?: number;
-  outputModifiedAt?: Date | null;
 }
 
 export interface MaintenancePreviewBatch {
@@ -116,16 +115,6 @@ export interface MaintenanceApplyBatch {
   batchId: string;
   items: MaintenanceSessionPreview[];
   applied: MaintenanceSessionApplyLog[];
-}
-
-export interface MaintenanceLibrarySource {
-  files: Array<{ libraryFileId: string; rootId: string; rootRelativePath: string }>;
-  nfo?: RootFileRef;
-  strm?: RootFileRef;
-  libraryItemId: string;
-  libraryFileId: string;
-  rootId: string;
-  rootRelativePath: string;
 }
 
 export interface MaintenanceSessionDraft {
@@ -143,7 +132,6 @@ export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProg
   presetId: MaintenancePresetId;
   phase: MaintenanceSessionPhase;
   status: MaintenanceSessionStatus;
-  generation: number;
   refs: MaintenanceSessionRef[];
   timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
   error: string | null;

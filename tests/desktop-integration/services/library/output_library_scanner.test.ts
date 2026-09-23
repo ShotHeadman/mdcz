@@ -54,37 +54,30 @@ const createCompletedRun = async (
     executionMode: "single",
     items: [{ id: `${input.id}:item`, ordinal: 0, rootId: "root-1", relativePath: input.outputRelativePath }],
   });
-  database.sqlite.transaction(() =>
-    scrapeRuns.commitSuccessOutcomes(
-      [
-        {
-          outcome: "success",
-          attemptId: scrapeRuns.admitAttempt(manifest.items[0].id).id,
-          crawlerDataJson: JSON.stringify({ number: input.id }),
-          outputRootId: "root-1",
-          outputRelativePath: input.outputRelativePath,
-          size: input.size,
-          completedAt: input.completedAt,
-          libraryEntry: {
-            rootId: "root-1",
-            rootRelativePath: input.outputRelativePath,
-            size: input.size,
-            lastKnownPath: input.outputRelativePath,
-          },
-        },
-      ],
+  new LibraryRepository(database).writeEntry(
+    {
+      id: input.id,
+      mediaIdentity: input.id,
+      number: input.id,
+      crawlerDataJson: JSON.stringify({ number: input.id }),
+      createdAt: input.completedAt,
+    },
+    [
       {
-        mediaIdentity: input.id,
-        number: input.id,
-        crawlerDataJson: JSON.stringify({ number: input.id }),
-        createdAt: input.completedAt,
+        fileId: `${input.id}:file`,
+        rootId: "root-1",
+        rootRelativePath: input.outputRelativePath,
+        size: input.size,
+        lastKnownPath: input.outputRelativePath,
       },
-    ),
-  )();
+    ],
+  );
   await scrapeRuns.finalize({
     runId: manifest.id,
     disposition: "completed",
     completedAt: input.completedAt,
+    successCount: 1,
+    totalBytes: input.size,
   });
 };
 
@@ -165,16 +158,19 @@ describe("OutputLibraryScanner", () => {
       }),
     );
     await library.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "A.mp4",
-      size: 4,
-      number: "A",
+      movie: { number: "A" },
+      files: [{ rootId: "root-1", rootRelativePath: "A.mp4", size: 4, fileId: "root-1:A.mp4" }],
     });
     await library.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "nested/B.mkv",
-      size: 6,
-      number: "B",
+      movie: { number: "B" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "nested/B.mkv",
+          size: 6,
+          fileId: "root-1:nested/B.mkv",
+        },
+      ],
     });
 
     const scanner = new OutputLibraryScanner({

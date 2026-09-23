@@ -19,13 +19,15 @@ export class FanartAssetDownloader implements AssetDownloader {
 
     if (thumbPath) {
       const thumbWasRefreshed = assets.downloaded.includes(thumbPath) || plan.forceReplace.fanart;
-      const keepFanart = thumbWasRefreshed
-        ? false
-        : shouldKeepAsset(plan.assetDecisions.fanart, plan.config.download.keepFanart);
+      const keepFanart = shouldKeepAsset(
+        plan.assetDecisions.fanart,
+        thumbWasRefreshed ? false : plan.config.download.keepFanart,
+      );
       const fanartPath = buildImageAssetPathFromSource(fanartTargetPath, thumbPath);
       const existingFanart = await resolveExistingImageAsset(
         plan.existingAssets?.fanart ??
           buildImageAssetPathFromSource(join(plan.existingAssetDir, plan.assetFileNames.fanart), thumbPath),
+        plan.inventory,
       );
 
       if (keepFanart && existingFanart) {
@@ -40,7 +42,7 @@ export class FanartAssetDownloader implements AssetDownloader {
         return;
       }
 
-      if (existingFanart) {
+      if (existingFanart && plan.assetDecisions.fanart !== "replace") {
         assets.fanart = existingFanart;
       }
       return;
@@ -48,8 +50,9 @@ export class FanartAssetDownloader implements AssetDownloader {
 
     const existingFanart = await resolveExistingImageAsset(
       plan.existingAssets?.fanart ?? join(plan.existingAssetDir, plan.assetFileNames.fanart),
+      plan.inventory,
     );
-    if (existingFanart) {
+    if (existingFanart && plan.assetDecisions.fanart !== "replace") {
       assets.fanart = existingFanart;
     }
   }

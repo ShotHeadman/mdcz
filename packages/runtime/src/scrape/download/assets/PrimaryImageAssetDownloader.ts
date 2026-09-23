@@ -1,7 +1,13 @@
 import { join } from "node:path";
 
 import { throwIfAborted } from "../../utils/abort";
-import { buildImageCandidates, resolveExistingImageAsset, runParallel } from "./helpers";
+import {
+  buildImageCandidates,
+  resolveExistingImageAsset,
+  runParallel,
+  shouldFallbackToExistingAsset,
+  shouldKeepAsset,
+} from "./helpers";
 import { PosterImageDerivationService } from "./PosterImageDerivationService";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan, PrimaryImageKey } from "./types";
 
@@ -29,8 +35,12 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
 
     for (const task of primaryTasks) {
-      const existingAsset = await resolveExistingImageAsset(task.existingPath);
-      if (task.keepExisting && existingAsset && !plan.forceReplace[task.key]) {
+      const existingAsset = await resolveExistingImageAsset(task.existingPath, plan.inventory);
+      if (
+        shouldKeepAsset(plan.assetDecisions[task.key], task.keepExisting) &&
+        existingAsset &&
+        !plan.forceReplace[task.key]
+      ) {
         assets[task.key] = existingAsset;
         continue;
       }
@@ -64,8 +74,8 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
 
     for (const task of primaryTasks) {
       if (!assets[task.key]) {
-        const existingAsset = await resolveExistingImageAsset(task.existingPath);
-        if (existingAsset) {
+        const existingAsset = await resolveExistingImageAsset(task.existingPath, plan.inventory);
+        if (existingAsset && shouldFallbackToExistingAsset(plan.assetDecisions[task.key])) {
           assets[task.key] = existingAsset;
         }
       }
@@ -132,7 +142,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     if (
       assets.poster &&
       !assets.downloaded.includes(assets.poster) &&
-      plan.config.download.keepPoster &&
+      shouldKeepAsset(plan.assetDecisions.poster, plan.config.download.keepPoster) &&
       !plan.forceReplace.poster
     )
       return;

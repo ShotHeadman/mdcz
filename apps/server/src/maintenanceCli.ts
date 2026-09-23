@@ -71,7 +71,7 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
     if (integrity.length !== 1 || integrity[0] !== "ok" || source.prepare("PRAGMA foreign_key_check").all().length) {
       throw new Error(`Backup integrity check failed: ${filePath}`);
     }
-    for (const table of ["__drizzle_migrations", "media_roots", "scan_tasks", "scrape_runs", "publication_journal"]) {
+    for (const table of ["__drizzle_migrations", "media_roots", "scan_tasks", "scrape_runs"]) {
       if (!source.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) {
         throw new Error(`Not an MDCz database: missing ${table}`);
       }

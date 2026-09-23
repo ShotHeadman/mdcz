@@ -1,5 +1,6 @@
 import { dirname, join, parse, resolve } from "node:path";
-import { listVideoFiles } from "../utils/filesystem";
+import { DirectoryInventory } from "../DirectoryInventory";
+import { DEFAULT_VIDEO_EXTENSIONS } from "../utils/filesystem";
 import { extractNumber, parseFileInfo } from "../utils/number";
 
 const FC2_SPECIAL_FEATURE_HINTS = ["花絮", "おまけ", "特典", "gift"];
@@ -39,13 +40,24 @@ export const isGeneratedSidecarVideo = (filePath: string): boolean => {
   return FC2_SPECIAL_FEATURE_HINTS.some((hint) => normalizedName.includes(hint));
 };
 
-export const findGeneratedVideoSidecars = async (sourceVideoPath: string): Promise<GeneratedVideoSidecarMatch[]> => {
+export const findGeneratedVideoSidecars = async (
+  sourceVideoPath: string,
+  inventory = new DirectoryInventory(),
+): Promise<GeneratedVideoSidecarMatch[]> => {
   const sourceFileInfo = parseFileInfo(sourceVideoPath);
   if (!sourceFileInfo.number.toUpperCase().startsWith("FC2-")) {
     return [];
   }
 
-  const candidates = await listVideoFiles(dirname(sourceVideoPath), false);
+  const directory = dirname(sourceVideoPath);
+  const candidates: string[] = [];
+  for (const entry of await inventory.entries(directory)) {
+    if (!DEFAULT_VIDEO_EXTENSIONS.has(parse(entry.name).ext.toLowerCase()) || !isGeneratedSidecarVideo(entry.name))
+      continue;
+    const candidate = join(directory, entry.name);
+    if (entry.isFile() || (entry.isSymbolicLink() && (await inventory.stats(candidate)).isFile()))
+      candidates.push(candidate);
+  }
   const matches = candidates
     .filter(
       (candidatePath) => resolve(candidatePath) !== resolve(sourceVideoPath) && isGeneratedSidecarVideo(candidatePath),
