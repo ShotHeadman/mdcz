@@ -112,10 +112,6 @@ export function WorkbenchSetupAdapter({
     () => selectedCandidates.reduce((sum, candidate) => sum + candidate.size, 0),
     [selectedCandidates],
   );
-  const extensionCount = useMemo(
-    () => new Set(candidates.map((candidate) => candidate.extension.replace(/^\./u, "").toLowerCase())).size,
-    [candidates],
-  );
   const scanning = scanStatus === "scanning";
   const needsTarget = mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all";
   const draftDirty =
@@ -128,12 +124,7 @@ export function WorkbenchSetupAdapter({
     (previewMode &&
       (committedPlanKey !== scanPlan.scanKey || scanStatus !== "success" || selectedCandidates.length === 0)) ||
     (needsTarget && !targetDir.trim());
-  const runSummary =
-    candidates.length > 0
-      ? `${candidates.length} 个文件 · ${formatBytes(totalSize, { trimTrailingZeros: true })} · ${extensionCount} 种类型 · ${
-          config?.translate?.enableTranslation ? "翻译已开启" : "翻译关闭"
-        }`
-      : "";
+  const runSummary = candidates.length > 0 ? formatBytes(totalSize, { trimTrailingZeros: true }) : "";
   const suggestDirectory = port.suggestDirectory;
 
   const runScan = useCallback(async () => {
@@ -312,7 +303,6 @@ export function WorkbenchSetupAdapter({
       selectedPaths={selectedPaths}
       selectedSize={selectedSize}
       totalSize={totalSize}
-      extensionCount={extensionCount}
       scanStatus={scanStatus}
       scanError={scanError}
       scanning={scanning}

@@ -73,14 +73,17 @@ test("submits directories without scanning and keeps explicit previews cancellab
   await userEvent.keyboard("{Enter}");
   await screen.getByRole("checkbox", { name: "包含子目录" }).click();
   expect(scanCandidates).not.toHaveBeenCalled();
-  await screen.getByRole("button", { name: "预览并选择文件" }).click();
+  await screen.getByRole("button", { name: "选择文件" }).click();
   await expect.poll(() => requests.length).toBe(1);
   expect(scanCandidates).toHaveBeenLastCalledWith("/next", false, [], expect.any(String));
+  await expect.element(input).not.toBeInTheDocument();
+  await screen.getByRole("button", { name: "返回" }).click();
+  await expect.element(input).toBeVisible();
   await input.fill("/changed");
   await userEvent.keyboard("{Enter}");
   await expect.poll(() => cancelCandidates.mock.calls.length).toBe(1);
   expect(requests).toHaveLength(1);
-  await screen.getByRole("button", { name: "刷新文件预览" }).click();
+  await screen.getByRole("button", { name: "选择文件" }).click();
   await expect.poll(() => requests.length).toBe(2);
   const candidate = (name: string): MediaCandidate => ({
     path: `/changed/${name}.mp4`,
@@ -96,16 +99,16 @@ test("submits directories without scanning and keeps explicit previews cancellab
   requests[1].resolve({ candidates: [first, second], supportedExtensions: ["mp4"] });
   await expect.element(screen.getByText("已选 2 / 2 个文件")).toBeVisible();
   await screen.getByRole("checkbox", { name: /TWO-002/ }).click();
-  await screen.getByRole("button", { name: "刷新文件预览" }).click();
+  await screen.getByRole("button", { name: "刷新文件" }).click();
   await expect.poll(() => requests.length).toBe(3);
   requests[2].resolve({ candidates: [first, second, added], supportedExtensions: ["mp4"] });
   await expect.element(screen.getByText("已选 1 / 3 个文件")).toBeVisible();
   await start.click();
   expect(onStart).toHaveBeenCalledWith([first], "/output");
-  await screen.getByRole("button", { name: "刷新文件预览" }).click();
+  await screen.getByRole("button", { name: "刷新文件" }).click();
   await expect.poll(() => requests.length).toBe(4);
-  await screen.getByRole("button", { name: "退出文件选择" }).click();
-  await expect.element(screen.getByText("全部文件 · 仅当前目录")).toBeVisible();
+  await screen.getByRole("button", { name: "返回" }).click();
+  await expect.element(screen.getByRole("button", { name: "选择文件" })).toBeVisible();
   await screen.rerender(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
   expect(requests).toHaveLength(4);
   await start.click();
@@ -114,7 +117,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
     "/changed",
     "inspect_local",
   );
-  await screen.getByRole("button", { name: "预览并选择文件" }).click();
+  await screen.getByRole("button", { name: "选择文件" }).click();
   await expect.poll(() => requests.length).toBe(5);
   expect(useWorkbenchSetupStore.getState().activePreview).not.toBeNull();
   await screen.unmount();
@@ -206,7 +209,6 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       selectedPaths={[]}
       selectedSize={0}
       totalSize={0}
-      extensionCount={0}
       scanStatus="idle"
       scanning={false}
       startPending={false}

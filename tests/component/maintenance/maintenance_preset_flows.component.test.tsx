@@ -48,7 +48,6 @@ function PresetSelectionHarness() {
         selectedPaths={[]}
         selectedSize={0}
         totalSize={0}
-        extensionCount={0}
         scanStatus="success"
         scanning={false}
         startPending={false}

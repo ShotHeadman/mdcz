@@ -30,7 +30,7 @@ export const openWorkbenchMaintenanceMode = async (page: Page, target: Workbench
       .click();
   }
   await expect(page).toHaveURL(/workbench/u);
-  await expect(page.getByText("维护预设", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: /本地查看/u })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("扫描目录", { exact: true })).toBeVisible({ timeout: 30_000 });
 };
 
