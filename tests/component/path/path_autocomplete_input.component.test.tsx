@@ -4,7 +4,13 @@ import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-function PathHarness({ loadSuggestions }: { loadSuggestions?: (value: string) => Promise<PathAutocompleteResult> }) {
+function PathHarness({
+  loadSuggestions,
+  onCommit,
+}: {
+  loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
+  onCommit?: (value: string) => void;
+}) {
   const [value, setValue] = useState("");
 
   return (
@@ -14,24 +20,36 @@ function PathHarness({ loadSuggestions }: { loadSuggestions?: (value: string) =>
         id="media-path"
         value={value}
         onChange={setValue}
+        onBlur={() => onCommit?.(value)}
         loadSuggestions={loadSuggestions}
         staticSuggestions={[
           { label: "电影", path: "D:/Media/Movies" },
           { label: "剧集", path: "D:/Media/Series" },
         ]}
       />
+      <button type="button">完成</button>
     </div>
   );
 }
 
 test("path autocomplete supports keyboard selection with semantic listbox options", async () => {
-  const screen = await render(<PathHarness />);
+  const onCommit = vi.fn();
+  const screen = await render(<PathHarness onCommit={onCommit} />);
   const input = screen.getByLabelText("媒体目录");
 
   await input.click();
   await expect.element(screen.getByRole("listbox")).toBeVisible();
   await userEvent.keyboard("{ArrowDown}{Enter}");
   await expect.element(input).toHaveValue("D:/Media/Series");
+  await input.fill("D:/Media");
+  await userEvent.keyboard("{Tab}");
+  expect(onCommit).not.toHaveBeenCalled();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(input).toHaveValue("D:/Media/Movies");
+  await input.click();
+  await screen.getByRole("button", { name: "完成" }).click();
+  expect(onCommit).toHaveBeenLastCalledWith("D:/Media/Movies");
+  await expect.element(screen.getByRole("listbox")).not.toBeInTheDocument();
 });
 
 test("path autocomplete exposes loading and resolved asynchronous suggestions", async () => {

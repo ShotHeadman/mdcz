@@ -71,7 +71,6 @@ export function PathAutocompleteInput({
 }: PathAutocompleteInputProps) {
   const listId = useId();
   const requestRef = useRef(0);
-  const blurTimerRef = useRef<number | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -79,7 +78,7 @@ export function PathAutocompleteInput({
   const [entries, setEntries] = useState<PathAutocompleteSuggestion[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const canSuggest = Boolean(onChange && !readOnly);
+  const canSuggest = Boolean(onChange && !readOnly && !inputProps.disabled);
 
   const fallbackEntries = useMemo(() => {
     const needle = value.trim().toLocaleLowerCase();
@@ -186,7 +185,15 @@ export function PathAutocompleteInput({
   };
 
   return (
-    <div className={cn("relative min-w-0 flex-1", className)}>
+    <fieldset
+      disabled={inputProps.disabled}
+      className={cn("relative min-w-0 flex-1", className)}
+      onBlur={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        setOpen(false);
+        onBlur?.();
+      }}
+    >
       <Input
         id={id}
         {...inputProps}
@@ -197,21 +204,12 @@ export function PathAutocompleteInput({
         aria-controls={showPanel ? listId : undefined}
         aria-expanded={showPanel}
         className={inputClassName}
-        onBlur={() => {
-          blurTimerRef.current = window.setTimeout(() => {
-            setOpen(false);
-            onBlur?.();
-          }, 120);
-        }}
         onChange={(event) => {
           onChange?.(event.target.value);
           setActiveIndex(0);
           setOpen(true);
         }}
         onFocus={() => {
-          if (blurTimerRef.current) {
-            window.clearTimeout(blurTimerRef.current);
-          }
           setOpen(true);
         }}
         onKeyDown={handleKeyDown}
@@ -259,6 +257,6 @@ export function PathAutocompleteInput({
             : null}
         </div>
       ) : null}
-    </div>
+    </fieldset>
   );
 }

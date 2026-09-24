@@ -123,6 +123,12 @@ describe("workbench setup contract", () => {
     state.beginScan();
     state.applyScanResult("recursive", [second, added], [".mp4"]);
     expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([second.path, added.path]);
+    state.setPathsSelected([second.path], false);
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([added.path]);
+    state.setPathsSelected([second.path, "missing.mp4"], true);
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([second.path, added.path]);
+    state.setPathsSelected([], false);
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([second.path, added.path]);
   });
 
   it("still clears the file list immediately when the scan directory changes", () => {

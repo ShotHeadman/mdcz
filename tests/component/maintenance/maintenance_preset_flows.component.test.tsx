@@ -49,11 +49,9 @@ function PresetSelectionHarness() {
         selectedSize={0}
         totalSize={0}
         scanStatus="success"
-        scanning={false}
         startPending={false}
         supportedExtensions={[".mp4"]}
         presetId={presetId}
-        runSummary=""
         primaryDisabled
         formatBytes={() => "0 B"}
         onBrowseScanDir={() => undefined}
@@ -61,7 +59,7 @@ function PresetSelectionHarness() {
         onPresetChange={setPresetId}
         onStart={() => undefined}
         onToggleCandidate={() => undefined}
-        onToggleAll={() => undefined}
+        onSelectCandidates={() => undefined}
       />
     </>
   );

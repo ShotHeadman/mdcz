@@ -12,6 +12,7 @@ import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
 import { ipc } from "@renderer/client/ipc";
+import { ShortcutHandler } from "@renderer/components/ShortcutHandler";
 import ScrapeCompletionDialog from "@renderer/components/workbench/ScrapeCompletionDialog";
 import { StrictMode } from "react";
 import { expect, test, vi } from "vitest";
@@ -19,14 +20,25 @@ import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { buildScrapeSnapshot } from "../../unit/renderer/scrapeTestSupport";
 
+const shortcutRoute = vi.hoisted(() => ({ pathname: "/workbench" }));
+vi.mock("@tanstack/react-router", () => ({
+  useLocation: () => shortcutRoute,
+  useNavigate: () => vi.fn(),
+}));
+vi.mock("@renderer/api/manual", () => ({ retryScrapeSelection: vi.fn(), stopScrape: vi.fn() }));
+vi.mock("@renderer/utils/playback", () => ({ playMediaPath: vi.fn() }));
 vi.mock("@renderer/client/ipc", () => ({
-  ipc: { scraper: { confirmUncensored: vi.fn() } },
+  ipc: { on: { shortcut: vi.fn(() => vi.fn()) }, scraper: { confirmUncensored: vi.fn() } },
 }));
 
 const rootDir = "/media";
 
 test("submits directories without scanning and keeps explicit previews cancellable and scoped", async () => {
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
+  useScrapeStore.setState(useScrapeStore.getInitialState(), true);
+  useUIStore.setState(useUIStore.getInitialState(), true);
+  const shortcuts = await render(<ShortcutHandler />);
+  const triggerStart = () => vi.mocked(ipc.on.shortcut).mock.calls.at(-1)?.[0]({ action: "start-or-stop-scrape" });
   const config = {
     ...defaultConfiguration,
     paths: {
@@ -50,11 +62,11 @@ test("submits directories without scanning and keeps explicit previews cancellab
     cancelCandidates,
   };
   const onStart = vi.fn(async () => undefined);
-  const onStartDirectory = vi.fn(async () => undefined);
+  const onStartDirectory = vi.fn(async (): Promise<void> => undefined);
   const props = { config, port, onStartDirectory, onStartScrape: onStart, onStartMaintenance: onStart };
   const screen = await render(<WorkbenchSetupAdapter {...props} mode="scrape" configLoading />);
   await screen.rerender(<WorkbenchSetupAdapter {...props} mode="scrape" />);
-  const start = screen.getByRole("button", { name: "开始", exact: true });
+  const start = screen.getByRole("button", { name: "开始刮削", exact: true });
   await expect.element(start).toBeEnabled();
   expect(scanCandidates).not.toHaveBeenCalled();
   await start.click();
@@ -63,6 +75,25 @@ test("submits directories without scanning and keeps explicit previews cancellab
     "/output",
     "inspect_local",
   );
+  let finishStart!: () => void;
+  const pendingStart = new Promise<void>((resolve) => {
+    finishStart = resolve;
+  });
+  onStartDirectory.mockReturnValueOnce(pendingStart);
+  triggerStart();
+  triggerStart();
+  await expect.poll(() => onStartDirectory.mock.calls.length).toBe(2);
+  await expect.element(screen.getByLabelText("扫描目录", { exact: true })).toBeDisabled();
+  await expect.element(screen.getByLabelText("输出目录", { exact: true })).toBeDisabled();
+  finishStart();
+  await expect.element(start).toBeEnabled();
+  expect(onStart).not.toHaveBeenCalled();
+  shortcutRoute.pathname = "/overview";
+  await shortcuts.rerender(<ShortcutHandler />);
+  triggerStart();
+  expect(onStartDirectory).toHaveBeenCalledTimes(2);
+  shortcutRoute.pathname = "/workbench";
+  await shortcuts.rerender(<ShortcutHandler />);
   onStartDirectory.mockRejectedValueOnce(new Error("目录不存在或无法访问"));
   await start.click();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("目录不存在或无法访问");
@@ -70,21 +101,26 @@ test("submits directories without scanning and keeps explicit previews cancellab
   await input.fill("/next");
   await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
   await expect.element(start).toBeDisabled();
+  triggerStart();
+  await useWorkbenchSetupStore.getState().startTask?.();
+  expect(onStartDirectory).toHaveBeenCalledTimes(3);
   await userEvent.keyboard("{Enter}");
   await screen.getByRole("checkbox", { name: "包含子目录" }).click();
   expect(scanCandidates).not.toHaveBeenCalled();
-  await screen.getByRole("button", { name: "选择文件" }).click();
+  await screen.getByRole("button", { name: "预览文件" }).click();
   await expect.poll(() => requests.length).toBe(1);
   expect(scanCandidates).toHaveBeenLastCalledWith("/next", false, [], expect.any(String));
   await expect.element(input).not.toBeInTheDocument();
-  await screen.getByRole("button", { name: "返回" }).click();
+  await screen.getByRole("button", { name: "01 配置目录" }).click();
   await expect.element(input).toBeVisible();
   await input.fill("/changed");
   await userEvent.keyboard("{Enter}");
+  await expect.poll(() => useWorkbenchSetupStore.getState().scanDir).toBe("/changed");
   await expect.poll(() => cancelCandidates.mock.calls.length).toBe(1);
   expect(requests).toHaveLength(1);
-  await screen.getByRole("button", { name: "选择文件" }).click();
+  await screen.getByRole("button", { name: "预览文件" }).click();
   await expect.poll(() => requests.length).toBe(2);
+  expect(scanCandidates).toHaveBeenLastCalledWith("/changed", false, [], expect.any(String));
   const candidate = (name: string): MediaCandidate => ({
     path: `/changed/${name}.mp4`,
     name: `${name}.mp4`,
@@ -96,40 +132,69 @@ test("submits directories without scanning and keeps explicit previews cancellab
   const first = candidate("ONE-001");
   const second = candidate("TWO-002");
   const added = candidate("NEW-003");
-  requests[1].resolve({ candidates: [first, second], supportedExtensions: ["mp4"] });
+  requests[1].resolve({
+    candidates: [first, second],
+    supportedExtensions: ["mp4"],
+    warnings: { count: 30, paths: ["/restricted/private"] },
+  });
   await expect.element(screen.getByText("已选 2 / 2 个文件")).toBeVisible();
-  await screen.getByRole("checkbox", { name: /TWO-002/ }).click();
+  await expect.element(screen.getByText("/restricted/private")).not.toBeVisible();
+  await screen.getByText("部分路径无法访问，已跳过 30 项").click();
+  await expect.element(screen.getByText("/restricted/private")).toBeVisible();
+  const search = screen.getByRole("textbox", { name: "搜索文件" });
+  const visibleSelection = screen.getByRole("checkbox", { name: "选择当前可见文件" });
+  await search.fill("TWO");
+  await expect.element(visibleSelection).toBeChecked();
+  await visibleSelection.click();
+  expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([first.path]);
+  await visibleSelection.click();
+  expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([first.path, second.path]);
+  await search.fill("not-found");
+  await expect.element(visibleSelection).toBeDisabled();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(search).toHaveValue("");
+  await expect.element(screen.getByText("已选 2 / 2 个文件")).toBeVisible();
+  screen
+    .getByRole("checkbox", { name: /TWO-002/ })
+    .element()
+    .closest("label")
+    ?.click();
+  await expect.element(screen.getByText("已选 1 / 2 个文件")).toBeVisible();
   await screen.getByRole("button", { name: "刷新文件" }).click();
   await expect.poll(() => requests.length).toBe(3);
   requests[2].resolve({ candidates: [first, second, added], supportedExtensions: ["mp4"] });
   await expect.element(screen.getByText("已选 1 / 3 个文件")).toBeVisible();
   await start.click();
   expect(onStart).toHaveBeenCalledWith([first], "/output");
+  triggerStart();
+  await expect.poll(() => onStart.mock.calls.length).toBe(2);
   await screen.getByRole("button", { name: "刷新文件" }).click();
   await expect.poll(() => requests.length).toBe(4);
-  await screen.getByRole("button", { name: "返回" }).click();
-  await expect.element(screen.getByRole("button", { name: "选择文件" })).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(screen.getByRole("button", { name: "预览文件" })).toBeVisible();
   await screen.rerender(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
   expect(requests).toHaveLength(4);
-  await start.click();
+  await screen.getByRole("button", { name: "开始维护" }).click();
   expect(onStartDirectory).toHaveBeenLastCalledWith(
     { kind: "directory", scanDir: "/changed", recursive: false },
     "/changed",
     "inspect_local",
   );
-  await screen.getByRole("button", { name: "选择文件" }).click();
+  await screen.getByRole("button", { name: "预览文件" }).click();
   await expect.poll(() => requests.length).toBe(5);
   expect(useWorkbenchSetupStore.getState().activePreview).not.toBeNull();
   await screen.unmount();
+  expect(useWorkbenchSetupStore.getState().startTask).toBeNull();
   await expect.poll(() => cancelCandidates.mock.calls.length).toBe(3);
   await expect.poll(() => useWorkbenchSetupStore.getState().activePreview).toBeNull();
   const remounted = await render(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
   expect(requests).toHaveLength(5);
-  await expect.element(remounted.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  await expect.element(remounted.getByRole("button", { name: "开始维护", exact: true })).toBeDisabled();
   await remounted.unmount();
   useWorkbenchSetupStore.setState({ activePreview: { id: "reset-preview", stop: async () => undefined } });
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
   expect(useWorkbenchSetupStore.getState().activePreview).toBeNull();
+  await shortcuts.unmount();
 });
 
 test("scopes task dialogs to their result lifecycle without clearing the selected result", async () => {
@@ -210,11 +275,9 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       selectedSize={0}
       totalSize={0}
       scanStatus="idle"
-      scanning={false}
       startPending={false}
       supportedExtensions={[".mp4"]}
       presetId="inspect_local"
-      runSummary=""
       primaryDisabled
       isServer
       formatBytes={() => "0 B"}
@@ -224,20 +287,14 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       onPresetChange={() => undefined}
       onStart={() => undefined}
       onToggleCandidate={() => undefined}
-      onToggleAll={() => undefined}
+      onSelectCandidates={() => undefined}
       onScanDirChange={() => undefined}
       onTargetDirChange={() => undefined}
       onSuggestScanDir={async () => ({
-        path: "",
-        parentPath: "",
-        exists: false,
         accessible: true,
         entries: [],
       })}
       onSuggestTargetDir={async () => ({
-        path: "",
-        parentPath: "",
-        exists: false,
         accessible: true,
         entries: [],
       })}

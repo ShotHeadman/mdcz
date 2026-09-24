@@ -166,6 +166,12 @@ export default defineConfig({
       },
       {
         extends: true,
+        resolve: {
+          alias: [{ find: "@", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") }],
+        },
+        optimizeDeps: {
+          include: ["react/jsx-dev-runtime", "vitest-browser-react"],
+        },
         test: {
           name: "component",
           include: [

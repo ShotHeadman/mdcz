@@ -107,7 +107,7 @@ export const waitForWorkbenchCandidate = async (page: Page, fileName: string): P
 };
 
 export const startWorkbenchScrape = async (page: Page): Promise<void> => {
-  const startButton = page.getByRole("button", { name: "开始", exact: true });
+  const startButton = page.getByRole("button", { name: "开始刮削", exact: true });
   await expect(startButton).toBeEnabled({ timeout: 30_000 });
   await startButton.click();
 };

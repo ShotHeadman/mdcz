@@ -42,7 +42,7 @@ export const selectWorkbenchMaintenancePreset = async (page: Page, label: string
 };
 
 export const startWorkbenchMaintenance = async (page: Page): Promise<void> => {
-  const startButton = page.getByRole("button", { name: "开始", exact: true });
+  const startButton = page.getByRole("button", { name: "开始维护", exact: true });
   await expect(startButton).toBeEnabled({ timeout: 30_000 });
   await startButton.click();
 };

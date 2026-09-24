@@ -7,10 +7,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MoveOutput } from "./MoveOutput";
 import { outputFileSystem } from "./outputFileSystem";
 
+vi.mock("node:fs/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs/promises")>()),
+  readlink: vi.fn(),
+}));
+
 const directories: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.mocked(fs.readlink).mockReset();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
@@ -227,27 +233,29 @@ describe("MoveOutput", () => {
     await expect(readFile(overlapping.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(overlapping.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     const linked = await fixture();
-    const rawPath = path.join(linked.directory, "raw.mp4");
-    await writeFile(rawPath, "video");
-    await fs.rm(linked.sourcePath);
-    await fs.symlink("raw.mp4", linked.sourcePath);
-    const linkedStats = await fs.stat(linked.sourcePath);
+    const linkedStats = await fs.lstat(linked.sourcePath);
+    vi.spyOn(linkedStats, "isSymbolicLink").mockReturnValue(true);
+    vi.mocked(fs.readlink).mockResolvedValueOnce("raw.mp4");
+    const rename = vi.fn(outputFileSystem.rename);
+    const copyFile = vi.fn(outputFileSystem.copyFile);
+    const commit = vi.fn();
     await expect(
-      new MoveOutput().install({
-        moves: [
-          {
-            ...linked.move,
-            dev: linkedStats.dev,
-            ino: linkedStats.ino,
-            size: linkedStats.size,
-            mtimeMs: linkedStats.mtimeMs,
-          },
-        ],
+      new MoveOutput({
+        ...outputFileSystem,
+        lstat: async (source) => (source === linked.sourcePath ? linkedStats : await outputFileSystem.lstat(source)),
+        rename,
+        copyFile,
+      }).install({
+        moves: [linked.move],
         artifacts: [],
-        commit: () => undefined,
+        commit,
       }),
     ).rejects.toThrow("Cannot move a relative file symlink to another directory");
-    await expect(fs.readlink(linked.sourcePath)).resolves.toBe("raw.mp4");
+    expect(fs.readlink).toHaveBeenCalledExactlyOnceWith(linked.sourcePath);
+    expect(rename).not.toHaveBeenCalled();
+    expect(copyFile).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    await expect(readFile(linked.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(linked.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     for (const changed of ["source", "target"] as const) {
       const pending = await fixture();
